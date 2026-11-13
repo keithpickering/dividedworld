@@ -116,9 +116,13 @@ export function setSoundPreference(p: SoundPreference): void {
 
 export interface SoundPlay {
   /** Plays the slot through the mixer and says its caption. Resolves with what the mixer answered (null when nothing sounded). */
-  play(key: string, opts?: { group?: string; fadeMs?: number }): Promise<{ lengthMs: number } | null>;
-  /** Starts a loop; its handle's `setGain` holds the slot's caption under `id` while the gain is above `HELD_FROM`. */
-  loop(key: string, opts: { group?: string; id: string }): Promise<LoopHandle | null>;
+  play(key: string, opts?: { group?: string; fadeMs?: number; tailMs?: number }): Promise<{ lengthMs: number } | null>;
+  /**
+   * Starts a loop and returns its handle at once; the handle works before the sound has loaded (a gain set meanwhile applies when it does, the
+   * latest winning; a `stop` meanwhile means it never sounds). The loop starts silent, and `setGain` holds the slot's caption under `id` while
+   * the gain is above `HELD_FROM`. A key the instance does not supply gives an inert handle (in production).
+   */
+  loop(key: string, opts: { group?: string; id: string }): LoopHandle;
   /** Says a slot's caption without playing it. */
   caption(key: string): void;
 }
@@ -127,6 +131,9 @@ export interface SoundPlay {
 function missing(key: string): void {
   if (import.meta.env.DEV) throw new Error(`the instance's ui.sounds has no sound with the key "${key}"`);
 }
+
+/** What a loop of an unknown key returns: a handle that does nothing. */
+const INERT: LoopHandle = { setGain() { /* nothing sounds */ }, stop() { /* nothing sounds */ } };
 
 const wordsOf = (slot: SoundSlot) => ({ text: slot.caption, ...(slot.ink ? { ink: slot.ink } : {}) });
 
@@ -151,34 +158,52 @@ export function useSound(): SoundPlay {
     },
     loop(key, opts) {
       const slot = find(key);
-      if (!slot) return Promise.resolve(null);
-      /* `live`: the caption follows the gain. A loop the mixer ended because its bus went off releases its caption; a game loop then stays
+      if (!slot) return INERT;
+      /* The handle is made now and works before the sound has loaded: a gain set meanwhile is kept (the latest wins) and applied when the mixer
+         answers, and a stop meanwhile means the source is never made (the mixer asks `cancelled` once it has decoded) and the caption is released.
+         `live`: the caption follows the gain. A loop the mixer ended because its bus went off releases its caption; a game loop then stays
          captioned by gain alone (the captions-with-sound-off path, as a skipped one is), and an interface loop, or one that was stopped or
-         replaced, is done. The caption shows iff the sound would be audible, or is captioned, at that gain. */
+         replaced, is done. The caption shows iff the sound would be audible, or is captioned, at that gain. An interface loop is captioned only
+         once it sounds, so until the mixer answers (and when it skips) its gain is kept but nothing is held. */
       let live = true;
+      let stopped = false;
+      let gain: number | null = null;
       let inner: LoopHandle | null = null;
-      return page.mixer.loop(slot, { ...(opts.group === undefined ? {} : { group: opts.group }), onStop: (why) => {
-        captions.release(opts.id);
-        if (why !== 'bus' || slot.bus !== 'game') live = false;
-      } }).then((made) => {
+      let answered = false;
+      const caption = (): void => {
+        if (!live || gain === null || (slot.bus !== 'game' && !inner)) return;
+        if (gain > HELD_FROM) captions.hold(opts.id, wordsOf(slot));
+        else captions.release(opts.id);
+      };
+      void page.mixer.loop(slot, {
+        ...(opts.group === undefined ? {} : { group: opts.group }),
+        cancelled: () => stopped,
+        onStop: (why) => {
+          captions.release(opts.id);
+          if (why !== 'bus' || slot.bus !== 'game') live = false;
+        },
+      }).then((made) => {
+        answered = true;
+        if (stopped) { made?.stop(0); return; }
         inner = made;
-        /* A skipped game loop is still captioned, as a skipped game sound is; a skipped interface loop is not. */
-        if (!inner && slot.bus !== 'game') return null;
-        const handle: LoopHandle = {
-          setGain(g) {
-            inner?.setGain(g);
-            if (!live) return;
-            if (g > HELD_FROM) captions.hold(opts.id, wordsOf(slot));
-            else captions.release(opts.id);
-          },
-          stop(fadeMs) {
-            live = false;
-            captions.release(opts.id);
-            inner?.stop(fadeMs);
-          },
-        };
-        return handle;
+        if (gain !== null) inner?.setGain(gain);
+        if (!inner && slot.bus !== 'game') live = false;
+        caption();
       });
+      return {
+        setGain(g) {
+          if (stopped) return;
+          gain = g;
+          inner?.setGain(g);
+          caption();
+        },
+        stop(fadeMs) {
+          stopped = true;
+          live = false;
+          captions.release(opts.id);
+          if (answered) inner?.stop(fadeMs);
+        },
+      };
     },
     caption(key) {
       const slot = find(key);

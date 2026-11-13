@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { Character } from '../data/api.ts';
+import type { Character, ShownTrophy } from '../data/api.ts';
 import { Postbit, type PostbitPerson } from './Postbit.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
+import type { Piece } from '../../rules/cosmetics.ts';
+import { useKayfa } from '../context.tsx';
 
 const meta: Meta<typeof Postbit> = {
   title: 'Postbit/Postbit',
@@ -17,7 +19,7 @@ const picture = (w: number, h: number) => `data:image/svg+xml;utf8,<svg xmlns="h
 
 const character = (over: Partial<Character> = {}): Character => ({
   id: 'story-character', name: 'Pipewrench', title: 'Professional Wrench', signature: '', avatarSquare: picture(100, 100), avatarPortrait: picture(100, 200),
-  squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members', ...over,
+  squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members', ...over,
 });
 const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): PostbitPerson => ({
   character: character(c), posts: 212, standing: 650, revealed: null, turnedAt: null, ...over,
@@ -48,3 +50,25 @@ export const Banned: Story = { args: { person: person({}, { bannedUntil: '2099-0
 export const Member: Story = { args: { person: person({}, { group: 'members' }), layout: 'side' } };
 export const TrialMember: Story = { args: { person: person({}, { group: 'trialMembers', warnPoints: 6 }), layout: 'side' } };
 export const Staff: Story = { args: { person: staffPerson({ name: 'The Clerk', title: 'Head of Board Operations', staff: 'the-clerk', office: 'boss', group: 'personalityCores' }), layout: 'side' } };
+
+/*
+ * A mask wearing gear: the first pieces the instance's own gear table offers (the engine names none), one reaching above the slot, one on the
+ * face, one turned. The portrait is 1:1.4 (its tallness), the square the portrait's top 1:1.4 (its frame), so the stacked band shows the same
+ * pieces cut through it. The name, title and rank stay on the board's ground over a piece that reaches behind them.
+ */
+function Wearing({ layout }: { readonly layout: 'side' | 'stacked' }) {
+  const { ui } = useKayfa();
+  const keys = Object.keys(ui.gear);
+  const spots = [{ x: 0.5, y: 0, w: 0.7, turn: -8 }, { x: 0.5, y: 0.3, w: 0.5, turn: 0 }, { x: 0.7, y: 0.62, w: 0.3, turn: 14 }];
+  const outfit: Piece[] = keys.slice(0, 3).map((gear, i) => ({ gear, layer: i, ...spots[i]! }));
+  return <Postbit person={person({}, { outfit, portraitTallness: 1.4, squareFrame: { x: 0, y: 0, w: 1, h: 1 / 1.4 } })} layout={layout} />;
+}
+export const WearingGear: Story = { render: () => <Wearing layout="side" /> };
+export const WearingGearStacked: Story = { render: () => <Wearing layout="stacked" /> };
+
+/* Trophies drawn here as plain badges, so a story needs no file: three chosen and a held belt (the fourth chosen is past `shownMost` and is not drawn). */
+const badge = (fill: string, w = 24) => `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} 24"><rect width="${w}" height="24" rx="4" fill="${fill}"/></svg>`;
+const trophy = (n: number, name: string, fill: string, belt = false): ShownTrophy => ({ award: `story-award-${n}`, trophy: `story-${n}`, name, art: badge(fill, belt ? 48 : 24), belt, held: belt });
+const shelf = [trophy(1, 'First Place', 'goldenrod'), trophy(2, 'Second Place', 'silver'), trophy(3, 'Third Place', 'peru'), trophy(4, 'Fourth Place', 'steelblue'), trophy(5, 'Story Belt', 'maroon', true)];
+export const WithTrophiesAndABelt: Story = { args: { person: person({}, { trophies: shelf }), layout: 'side' } };
+export const StackedHeldBeltOnly: Story = { args: { person: person({}, { trophies: shelf }), layout: 'stacked' } };

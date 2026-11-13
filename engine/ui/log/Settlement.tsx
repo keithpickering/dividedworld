@@ -57,8 +57,8 @@ function shownTab(data: LogData, tab: Id | null) {
 
 /** The summary of the newest settlement in `data`, for one character's tab: the ready state's content, inside the page's ways out. */
 export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly tab: Id | null; readonly onTab: (tab: Id) => void }) {
-  const { instance, ui, settings } = useKayfa();
-  const words: Words = { instance, ui, postsPerPage: settings.postsPerPage, economy: economyNow(instance.settings, settings.economy) };
+  const { api, instance, ui, settings } = useKayfa();
+  const words: Words = { instance, ui, postsPerPage: settings.postsPerPage, economy: economyNow(instance.settings, settings.economy), now: api.now() };
   const s = data.log.settlements[0]!;
   const tabs = tabsOf(data);
   const current = shownTab(data, tab);
@@ -112,7 +112,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
                 <h2 className="kb-settled-why-head" id="kb-settled-why">{why}</h2>
                 <ul className="kb-settled-lines" aria-labelledby="kb-settled-why">
                   {lines.map((l) => (
-                    <li key={l.reason} className="kb-settled-line">
+                    <li key={`${l.reason}:${l.params?.['card'] ?? ''}`} className="kb-settled-line">
                       <span data-kb-reason="">{ui.reasonWords(l.reason, paramsOf(l, words.economy))}</span>
                       <span className="kb-settled-amount" data-kb-amount="" data-kb-sign={Math.sign(l.amount)}>{signed(l.amount)}</span>
                     </li>
@@ -158,7 +158,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
 }
 
 /** A document for a screen that is signed out and so draws none of it. */
-const EMPTY_DOC: LogDoc = { estimate: null, page: { log: { settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], before: null }, acts: [], states: {}, people: [], threads: [], boards: [], standings: {}, turns: [], season: null } };
+const EMPTY_DOC: LogDoc = { estimate: null, page: { log: { settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], cosmetics: [], before: null }, acts: [], states: {}, people: [], threads: [], boards: [], standings: {}, turns: [], season: null } };
 
 /** The summary at /log/settlement: the newest settlement of the player's, the HUD's character's tab first; Esc goes back. */
 export function SettlementScreen({ doc }: { readonly doc: ScreenDoc<LogDoc> }) {

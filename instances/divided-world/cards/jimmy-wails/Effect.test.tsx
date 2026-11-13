@@ -11,6 +11,7 @@ import type { CardPlay, Drive, EffectProps } from '../../../../engine/ui/cards/t
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { PLATES } from '../../ui/jimmy-wails/plates.ts';
 import { ADVANCE_MS, JimmyWailsEffect } from './Effect.tsx';
+import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 
 const post = { id: 'post-1', character: 'author', kind: 'post', thread: 't', payload: { body: 'Hello' }, currentPayload: { body: 'Hello' }, targetActId: null, seq: 3, createdAt: '2026-11-03T09:00:00.000Z', editedAt: null, shownEditedAt: null } as unknown as Act;
 const names: Record<string, string> = { author: 'Pipewrench', c1: 'Spritey', c2: 'Gloomba', c3: 'Toad' };
@@ -32,7 +33,7 @@ function mount(o: Options = {}) {
     return (
       <JimmyWailsEffect
         post={post} plays={drives.flatMap((d) => d.plays)} states={{}} released={new Set()} written={new Map()} reader={{ author: o.author ?? false, caster: false }} place={o.place ?? 'thread'}
-        reach="post" still={o.still ?? false} save={async () => ({ ok: false, error: 'no' })} release={async () => ({ ok: false, error: 'no' })} show={() => {}} met={() => {}} holdScreen={() => {}} marks={null}
+        reach="post" still={o.still ?? false} save={async () => ({ ok: false, error: 'no' })} release={async () => ({ ok: false, error: 'no' })} show={() => {}} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null}
         nameOf={(id) => (id === null ? 'Somebody' : names[id] ?? id)} drives={drives} give={gives} moreGifts={async () => {}} wallet={'wallet' in o ? o.wallet! : { balance: 500, cap: 1000 }}
       >
         <p>Hello, this is the post.</p>
@@ -105,6 +106,22 @@ describe('the carousel', () => {
     expect(active()).toBe('2 of 3');
     expect(screen.getByRole('button', { name: 'Show appeal 2' }).getAttribute('aria-current')).toBe('true');
     expect(screen.getAllByRole('figure')).toHaveLength(1);
+  });
+
+  test('credits one photograph, the one on view, under the slides and outside their live region; a hidden slide is inert', () => {
+    mount({ drives: [drive({ plays: [play(1, 'dark-logo'), play(2, 'close-up'), play(3, 'pinstripe')] })] });
+    const credits = () => [...document.querySelectorAll('.dw-jw-credit')];
+    expect(credits()).toHaveLength(1);
+    expect(credits()[0]!.textContent).toBe('Photo: Nicolas Goldberg, CC BY-SA 3.0, edited');
+    expect(document.querySelector('.dw-jw-slides')!.contains(credits()[0]!)).toBe(false);
+    expect(document.querySelector('.dw-jw-carousel')!.contains(credits()[0]!)).toBe(true);
+    expect(screen.getAllByRole('link')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Show appeal 3' }));
+    expect(credits()).toHaveLength(1);
+    expect(credits()[0]!.textContent).toBe('Photo: Manuel Archain, CC BY-SA 3.0, edited');
+    const hidden = [...document.querySelectorAll('.dw-jw-slide')].filter((slide) => slide.getAttribute('data-active') !== 'true');
+    expect(hidden).toHaveLength(2);
+    for (const slide of hidden) expect(slide.hasAttribute('inert')).toBe(true);
   });
 
   test('pauses while the pointer is over it', async () => {

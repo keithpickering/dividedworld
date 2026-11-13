@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { CardEvent, WalletEvent } from './api.ts';
 import { cutLog, justBefore, LOG_ROWS, micros, readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from './log-page.ts';
 
-const none: LogRead = { ledger: [], shares: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [] };
+const none: LogRead = { ledger: [], shares: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], cosmetics: [] };
 const line = (settlement: number, endsAt: string, character: string, reason: string, amount: number): LedgerRow =>
   ({ settlement, startsAt: '2026-10-28T08:17:00Z', endsAt, sharesKept: true, character, reason, amount });
 const bought = (at: string): CardEvent => ({ card: 'whoops', kind: 'bought', act: null, price: 100, at });
@@ -45,6 +45,16 @@ test('the texts cards wrote on the player\'s posts are a source of their own: a 
   assert.deepEqual(log.cards.map((c) => c.at), ['2026-10-30T09:30:00Z']);
 });
 
+test('the draws and the washes on a surface are two sources of their own: each full one ends the page at its oldest time, and a page that holds none leaves them out', () => {
+  const r = (act: string, at: string) => ({ act, kind: 'draw' as const, play: 'k', post: 'p', character: 'c', mine: 'm', at, cells: 600 });
+  const log = cutLog({ ...none, draws: [r('d2', '2026-10-30T10:00:00Z'), r('d1', '2026-10-30T09:00:00Z')], wallsDrawn: [r('d4', '2026-10-30T09:30:00Z'), r('d3', '2026-10-30T08:00:00Z')] }, 2);
+  assert.equal(log.before, '2026-10-30T09:00:00Z');
+  assert.deepEqual(log.draws?.map((x) => x.act), ['d2']);
+  assert.deepEqual(log.wallsDrawn?.map((x) => x.act), ['d4']);
+  assert.equal('draws' in cutLog(none, 2), false);
+  assert.equal('wallsDrawn' in cutLog(none, 2), false);
+});
+
 test('a settlement whose lines ran past a full read is left whole for the next page', () => {
   const ledger = [
     line(5, '2026-10-31T08:17:00Z', 'p', 'heel.drewHeat', 20),
@@ -67,8 +77,8 @@ test('the cursor is the source\'s own time, to the microsecond, so a row a milli
 test('each line carries its shares, largest first, and a line the estimate valued nothing for carries none', () => {
   const ledger = [line(7, '2026-10-30T08:17:00Z', 'p', 'heel.drewHeat', 20), line(7, '2026-10-30T08:17:00Z', 'p', 'heel.shrugged', -5)];
   const shares: ShareRow[] = [
-    { settlement: 7, character: 'p', reason: 'heel.drewHeat', act: 'a1', quadrant: 'excitedNegative', amount: 8 },
-    { settlement: 7, character: 'p', reason: 'heel.drewHeat', act: 'a2', quadrant: 'excitedNegative', amount: 12 },
+    { settlement: 7, character: 'p', reason: 'heel.drewHeat', card: null, act: 'a1', quadrant: 'excitedNegative', amount: 8 },
+    { settlement: 7, character: 'p', reason: 'heel.drewHeat', card: null, act: 'a2', quadrant: 'excitedNegative', amount: 12 },
   ];
   const [s] = cutLog({ ...none, ledger, shares }).settlements;
   assert.deepEqual(s!.lines, [
@@ -80,8 +90,8 @@ test('each line carries its shares, largest first, and a line the estimate value
 test('shares of one size are ordered by their Act, and lines by character and then reason, so both backends hand the same order', () => {
   const ledger = [line(7, '2026-10-30T08:17:00Z', 'q', 'heel.shrugged', -5), line(7, '2026-10-30T08:17:00Z', 'p', 'heel.stoleThunder', 4), line(7, '2026-10-30T08:17:00Z', 'p', 'heel.drewHeat', 4)];
   const shares: ShareRow[] = [
-    { settlement: 7, character: 'p', reason: 'heel.drewHeat', act: 'b', quadrant: 'excitedNegative', amount: 2 },
-    { settlement: 7, character: 'p', reason: 'heel.drewHeat', act: 'a', quadrant: 'excitedNegative', amount: 2 },
+    { settlement: 7, character: 'p', reason: 'heel.drewHeat', card: null, act: 'b', quadrant: 'excitedNegative', amount: 2 },
+    { settlement: 7, character: 'p', reason: 'heel.drewHeat', card: null, act: 'a', quadrant: 'excitedNegative', amount: 2 },
   ];
   const [s] = cutLog({ ...none, ledger, shares }).settlements;
   assert.deepEqual(s!.lines.map((l) => [l.character, l.reason]), [['p', 'heel.drewHeat'], ['p', 'heel.stoleThunder'], ['q', 'heel.shrugged']]);
@@ -144,4 +154,18 @@ test('the microsecond before an instant is written in UTC to the microsecond, wh
   assert.equal(justBefore('2026-10-30T08:17:00Z'), '2026-10-30T08:16:59.999999+00:00');
   assert.equal(justBefore('2026-01-01T00:00:00+00:00'), '2025-12-31T23:59:59.999999+00:00');
   for (const iso of ['2026-10-30T10:17:00.5+02:00', '2026-10-30T08:17:00.123456-05:30', '2026-10-30T08:17:00Z']) assert.equal(micros(iso) - micros(justBefore(iso)), 1);
+});
+
+test('a share finds the line of its own card: two card lines of one character and reason each hold only their own share', () => {
+  const ride = (card: string, amount: number): LedgerRow => ({ ...line(5, '2026-10-30T08:17:00Z', 'p', 'card.ride', amount), params: { card } });
+  const share = (card: string | null, amount: number): ShareRow => ({ settlement: 5, character: 'p', reason: 'card.ride', card, act: 'a1', quadrant: 'excitedPositive', amount });
+  const log = cutLog({ ...none, ledger: [ride('y', 7), ride('x', 3)], shares: [share('x', 3), share('y', 7)] });
+  assert.deepEqual(log.settlements[0]!.lines.map((l) => [l.params?.card, l.shares.map((s) => s.amount)]), [['x', [3]], ['y', [7]]]);
+});
+
+test('lines of one character and reason are ordered by card, no card first, and a share with no card never files under a card', () => {
+  const ride = (card: string | null, amount: number): LedgerRow => ({ ...line(5, '2026-10-30T08:17:00Z', 'p', 'card.ride', amount), ...(card === null ? {} : { params: { card } }) });
+  const share = (card: string | null, amount: number): ShareRow => ({ settlement: 5, character: 'p', reason: 'card.ride', card, act: 'a1', quadrant: 'excitedPositive', amount });
+  const log = cutLog({ ...none, ledger: [ride('y', 7), ride('x', 3), ride(null, 1)], shares: [share('y', 7), share(null, 1), share('x', 3)] });
+  assert.deepEqual(log.settlements[0]!.lines.map((l) => [l.params?.card ?? null, l.shares.map((s) => s.amount)]), [[null, [1]], ['x', [3]], ['y', [7]]]);
 });

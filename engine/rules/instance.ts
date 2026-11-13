@@ -5,8 +5,10 @@
 import { ALIGNMENTS, QUADRANTS } from './types.ts';
 import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
-import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
+import type { DeveloperPersona, EconomyRead, Instance, Persona, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
+import { BEAT_KEY, conditionProblem, dueProblem } from '../system/conditions.ts';
+import { MOVE_KINDS } from '../system/moves.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { POSTING_OFFICES, TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
@@ -15,6 +17,7 @@ import { pronounProblems } from './pronouns.ts';
 import { BEYOND_POST, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
 import type { Pull, SlotSeed } from './packs.ts';
+import type { EventLine } from './cosmetics.ts';
 
 /**
  * What a Mod Bot's bribe may cost, in hundredths of an orb, for every bot in every instance: dear enough to be a
@@ -200,6 +203,64 @@ function apologyRule(v: unknown): string | null {
   return null;
 }
 
+/** The code of conduct's numbers (`Settings.conduct`): the most open reports an account holds, and the admin address replies go to (null until the owner sets it). */
+const CONDUCT_KEYS = ['openReportsMost', 'adminAddress'] as const;
+function conductRule(v: unknown): string | null {
+  const shape = 'an object giving openReportsMost (the most reports to admins one account holds open, a whole number, at least 1) and adminAddress (null, or an email address containing "@")';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const extra = Object.keys(v).find((k) => !(CONDUCT_KEYS as readonly string[]).includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  const o = v as Record<string, unknown>;
+  if (!isWhole(o['openReportsMost'], 1)) return `${shape}; "openReportsMost" is not`;
+  const a = o['adminAddress'];
+  if (a !== null && !(typeof a === 'string' && a.includes('@'))) return `${shape}; "adminAddress" is not`;
+  return null;
+}
+
+/**
+ * The cosmetics' settings (`Settings.cosmetics`): exactly the fields of CosmeticsSettings, each held as its own words say. Every
+ * weight is a positive whole number, and only an event's `none` may be 0.
+ */
+const COSMETICS_OUTCOMES = ['line', 'gear', 'card'] as const;
+function cosmeticsRule(v: unknown): string | null {
+  const shape = 'an object giving gear (wornMost, a whole number, at least 1; reach, a fraction of the portrait\'s width from 0 to 2), trophies (shownMost, a whole number, at least 1) and events (windowMinutes, a whole number from 1 to 1440; dayMost, a whole number, at least 1; outcomes, a positive whole weight for line, gear and card and an optional whole weight, at least 0, for none; gearRarity and cardRarity, each a positive whole weight for one or more of ' + RARITIES.join(', ') + ')';
+  const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+  const exactly = (x: unknown, keys: readonly string[], name: string): string | null => {
+    if (!object(x)) return name === 'cosmetics' ? shape : `"${name}" must be an object giving ${keys.join(', ')}`;
+    const extra = Object.keys(x).find((k) => !keys.includes(k));
+    return extra === undefined ? null : `"${name}.${extra}" is not one of ${name}'s fields (${keys.join(', ')})`;
+  };
+  const weights = (x: unknown, keys: readonly string[], name: string, zeroOk: readonly string[] = []): string | null => {
+    const bad = exactly(x, keys, name);
+    if (bad) return bad;
+    const o = x as Record<string, unknown>;
+    if (!Object.keys(o).length) return `"${name}" must give at least one weight`;
+    for (const [k, w] of Object.entries(o)) if (!isWhole(w, zeroOk.includes(k) ? 0 : 1)) return `"${name}.${k}" has a weight of ${JSON.stringify(w)}, and a weight is a positive whole number`;
+    return null;
+  };
+  const top = exactly(v, ['gear', 'trophies', 'events'], 'cosmetics');
+  if (top) return top;
+  const c = v as Record<string, unknown>;
+  const gear = exactly(c.gear, ['wornMost', 'reach'], 'gear');
+  if (gear) return gear;
+  const g = c.gear as Record<string, unknown>;
+  if (!isWhole(g.wornMost, 1)) return `"gear.wornMost" must be a whole number, at least 1`;
+  if (!(typeof g.reach === 'number' && g.reach >= 0 && g.reach <= 2)) return `"gear.reach" must be a number from 0 to 2`;
+  const trophies = exactly(c.trophies, ['shownMost'], 'trophies');
+  if (trophies) return trophies;
+  if (!isWhole((c.trophies as Record<string, unknown>).shownMost, 1)) return `"trophies.shownMost" must be a whole number, at least 1`;
+  const events = exactly(c.events, ['windowMinutes', 'dayMost', 'outcomes', 'gearRarity', 'cardRarity'], 'events');
+  if (events) return events;
+  const e = c.events as Record<string, unknown>;
+  if (!isWhole(e.windowMinutes, 1) || e.windowMinutes > 1440) return `"events.windowMinutes" must be a whole number from 1 to 1440`;
+  if (!isWhole(e.dayMost, 1)) return `"events.dayMost" must be a whole number, at least 1`;
+  const outcomes = weights(e.outcomes, [...COSMETICS_OUTCOMES, 'none'], 'events.outcomes', ['none']);
+  if (outcomes) return outcomes;
+  const o = e.outcomes as Record<string, unknown>;
+  for (const k of COSMETICS_OUTCOMES) if (!(k in o)) return `"events.outcomes.${k}" is missing; it must be a positive whole weight`;
+  return weights(e.gearRarity, RARITIES, 'events.gearRarity') ?? weights(e.cardRarity, RARITIES, 'events.cardRarity');
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -245,6 +306,15 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   structuralHoldHours: whole(1, 'hours'),
   microEventDailyCalls: whole(0, 'calls'),
   digestThreads: whole(1, 'threads', DIGEST_MOST.threads),
+  digestBoards: whole(1, 'boards', DIGEST_MOST.boards),
+  digestBoardDays: whole(1, 'days', DIGEST_MOST.boardDays),
+  /** A year at most: a stub is a pointer for a while, not a second index of where threads went. SQL's settings_held holds the same. */
+  movedStubDays: whole(1, 'days', 365),
+  /** A month at most (720 hours): the window before a season's end in which the Boss writes its farewell and its handoff. SQL's settings_held holds the same. */
+  farewellWindowHours: whole(1, 'hours', 720),
+  /** A bundle holds one to sixteen parts, as SQL's settings_held holds: a composed bundle is bounded by a setting, never by what a model proposes. */
+  bundleMostParts: whole(1, 'parts', 16),
+  bundleAuthoredMostParts: whole(1, 'parts', 16),
   digestExcerpts: whole(1, 'posts', DIGEST_MOST.excerpts),
   digestExcerptChars: whole(1, 'characters', DIGEST_MOST.excerptChars),
   memoryOpinions: whole(1, 'opinions'),
@@ -255,6 +325,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   modBots: modBotsRule,
   warnBar: warnBarRule,
   apology: apologyRule,
+  conduct: conductRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),
@@ -266,6 +337,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
     const t = v as Record<string, unknown>;
     return ['strong', 'light'].every((k) => typeof t[k] === 'string' && (t[k] as string).trim() !== '') ? null : shape;
   },
+  cosmetics: cosmeticsRule,
 };
 
 export function settingsProblems(settings: Settings): string[] {
@@ -348,6 +420,51 @@ function packProblems(instance: Instance): string[] {
   return out;
 }
 
+/** Problems with the gear, the trophy catalog, the event lines and the odds that draw from them, each a sentence naming what is wrong. */
+function cosmeticsProblems(instance: Instance): string[] {
+  const out: string[] = [];
+  const gear = Array.isArray(instance.gear) ? instance.gear : (out.push('the instance has no gear list'), []);
+  const catalog = instance.trophies;
+  const lines: readonly EventLine[] = Array.isArray(instance.events?.lines) ? instance.events.lines : (out.push('the instance has no event lines list'), []);
+  for (const k of duplicates(gear, (g) => g.key)) out.push(`gear key "${k}" is used twice`);
+  for (const g of gear) {
+    if (instance.cards.some((c) => c.key === g.key)) out.push(`gear key "${g.key}" is also a card's key; the log's lines name both`);
+    if (!RARITIES.includes(g.rarity)) out.push(`gear "${g.key}" has the rarity ${JSON.stringify(g.rarity)}; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
+  }
+  if (typeof catalog !== 'object' || catalog === null || !Array.isArray(catalog.kinds)) out.push('the instance has no trophy catalog');
+  else {
+    for (const k of duplicates(catalog.kinds, (t) => t.key)) out.push(`trophy key "${k}" is used twice`);
+    // What trophy_kinds holds (supabase/migrations/0206_trophies.sql): a key of lower-case words, never the admin page's `made-` prefix, a short name, short words.
+    for (const t of catalog.kinds) {
+      if (typeof t.key === 'string' && t.key.startsWith('made-')) out.push(`trophy key "${t.key}" begins "made-", which is the admin page's`);
+      else if (typeof t.key !== 'string' || !/^[a-z][a-z0-9-]*$/.test(t.key)) out.push(`trophy key "${String(t.key)}" is not lower-case words (letters, digits and hyphens, beginning with a letter)`);
+      if (typeof t.name !== 'string' || t.name.length < 1 || t.name.length > 60) out.push(`trophy "${t.key}" has a name of ${typeof t.name === 'string' ? t.name.length : 0} characters; a name is 1 to 60`);
+      if (t.line !== undefined && t.line.length > 200) out.push(`trophy "${t.key}" has words of ${t.line.length} characters; at most 200`);
+    }
+    const kind = (key: string) => catalog.kinds.find((t) => t.key === key);
+    const named = (who: string, key: string) => (kind(key) ? true : (out.push(`${who} "${key}", and the instance has no such kind`), false));
+    (Array.isArray(catalog.seasonPlaces) ? catalog.seasonPlaces : []).forEach((key, i) => {
+      if (named(`season place ${i + 1} names the trophy`, key) && kind(key)!.belt) out.push(`season place ${i + 1} is the belt "${key}"; a belt has one holder, and a place is given to each who earns it`);
+    });
+    if (!Array.isArray(catalog.seasonPlaces) || catalog.seasonPlaces.length !== 3) out.push('the trophy catalog names three season places: first, second and third');
+    for (const key of catalog.boss ?? []) named('the Boss\'s trophies name', key);
+    if (named('the trophy for a met demand names', catalog.demandMet) && kind(catalog.demandMet)!.belt) out.push(`the trophy for a met demand is the belt "${catalog.demandMet}"; every counted character gets it, and a belt has one holder`);
+  }
+  for (const k of duplicates(lines, (l) => l.key)) out.push(`event line key "${k}" is used twice`);
+  for (const l of lines) {
+    if (typeof l.text !== 'string' || l.text.trim() === '') out.push(`event line "${l.key}" has no text`);
+    else if ((l.outcome === 'gear' || l.outcome === 'card') && !l.text.includes('{item}')) out.push(`event line "${l.key}" is a ${l.outcome} line and does not say {item}, the found item's name`);
+    if (!(COSMETICS_OUTCOMES as readonly string[]).includes(l.outcome)) out.push(`event line "${l.key}" has the outcome ${JSON.stringify(l.outcome)}; an outcome is line, gear or card`);
+  }
+  // Settings are checked on their own; the odds read here only once they hold.
+  const events = instance.settings?.cosmetics?.events;
+  if (cosmeticsRule(instance.settings?.cosmetics) === null && events) {
+    for (const o of COSMETICS_OUTCOMES) if (!lines.some((l) => l.outcome === o)) out.push(`the events' outcome "${o}" has no event line, and a Random Event that picks it would have nothing to say`);
+    for (const rarity of Object.keys(events.gearRarity)) if (!gear.some((g) => g.rarity === rarity)) out.push(`events.gearRarity names ${rarity}, and the instance has no gear of that rarity`);
+    for (const rarity of Object.keys(events.cardRarity)) if (!instance.cards.some((c) => c.rarity === rarity)) out.push(`events.cardRarity names ${rarity}, and the instance has no card of that rarity`);
+  }
+  return out;
+}
 export function instanceProblems(instance: Instance): string[] {
   const out: string[] = [];
   const lists = ['classes', 'cards', 'reactions', 'boards', 'ranks', 'pipStyles'] as const;
@@ -363,6 +480,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
+    out.push(...surfaceProblems(c));
     out.push(...playProblems(c, new Set(instance.reactions.map((r) => r.key))), ...reachProblems(c, instance.settings), ...drawProblems(c), ...driveProblems(c, instance.settings), ...needsMessageProblems(c));
   }
   if (!instance.boards.length) out.push('the instance has no board');
@@ -371,7 +489,7 @@ export function instanceProblems(instance: Instance): string[] {
   if (!systems.length) out.push('no board is The System\'s: exactly one board sets system: true, where The System posts');
   if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
-  out.push(...developerProblems(instance.developer), ...packProblems(instance));
+  out.push(...developerProblems(instance.developer), ...packProblems(instance), ...cosmeticsProblems(instance));
   out.push(...groupsProblems(instance.groups));
   if (!instance.ranks.length) out.push('the instance has no rank');
   instance.ranks.forEach((r, i) => {
@@ -427,6 +545,19 @@ export function instanceProblems(instance: Instance): string[] {
   return out;
 }
 
+/** A surface card is a cast card on a post with a stack of 1 (surface design), and its limit is one of its screenReads, so the settings hold it within bounds. */
+function surfaceProblems(c: CardRules): string[] {
+  if (c.surface === undefined) return [];
+  const out: string[] = [];
+  const who = `card "${c.key}" has a surface`;
+  if ((c.play ?? 'cast') !== 'cast') out.push(`${who}, and only a cast card does`);
+  if (c.reaches !== undefined && !(c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${who}, and a card that does reaches a post alone`);
+  if ((c.stack ?? 1) !== 1) out.push(`${who} and a stack of ${JSON.stringify(c.stack)}; a surface card has a stack of 1`);
+  if (!(c.screenReads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === c.surface?.limitKey)) out.push(`${who} whose limit "${c.surface.limitKey}" is not one of its screenReads`);
+  if (!isWhole(c.surface.mostLive, 1)) out.push(`${who} whose most live draws is ${JSON.stringify(c.surface.mostLive)}; it is a whole number, at least 1`);
+  return out;
+}
+
 /**
  * A card's rarity, play, trap and gimmick, each refused naming the card (the card types design, sections 4 and 5). Only a set card has a
  * trap, only a use card has a gimmick, and each says its way out. seed_instance holds the same pairings.
@@ -441,7 +572,9 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (play === 'keep') out.push(`${who} is kept, and Keep is not built until it is designed`);
   if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a set card has one`);
   if (play === 'set' && c.trap === undefined) out.push(`${who} is a set card with no trap`);
-  if (c.gimmick !== undefined && play !== 'use') out.push(`${who} has a gimmick, and only a use card has one`);
+  const castEarn = play === 'cast' && c.gimmick?.kind === 'earn' && Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'character';
+  if (c.gimmick !== undefined && play !== 'use' && !castEarn) out.push(`${who} has a gimmick, and only a use card has one, or a cast card on a character an earn`);
+  if (castEarn) out.push(...gimmickProblems(c.gimmick, who, reactionKeys));
   if (play === 'use') {
     if (c.gimmick === undefined) out.push(`${who} is a use card with no gimmick`);
     else out.push(...gimmickProblems(c.gimmick, who, reactionKeys));
@@ -462,6 +595,7 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   else if (match !== undefined && play === 'set') out.push(...matchProblems(match, who));
   if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
   else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a set card that springs on a cast does`);
+  if (c.gimmick?.kind === 'noQuote' && c.reaches !== undefined && !(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${who} stops quotes, and a card that stops quotes reaches a post alone`);
   if (c.gimmick?.kind === 'ride' && postAlone === false) out.push(`${who} has a ride, and a card with a ride reaches a post alone`);
   if (c.trap?.outcome !== undefined) out.push(...outcomeProblems(c.trap.outcome, who, play, on, match));
   if (c.skim !== undefined) out.push(...skimProblems(c, who, play));
@@ -540,6 +674,7 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
   } else if (e.kind === 'earn') {
     if (typeof e.by !== 'number' || !(e.by > 0 && e.by <= 1)) out.push(e.by === undefined ? `${who} has an earn with no by; by is above 0 and at most 1` : `${who} has an earn of ${JSON.stringify(e.by)}; by is above 0 and at most 1`);
     if (e.quadrants === undefined && e.reactions === undefined) out.push(`${who} has an earn that names no quadrant and no reaction`);
+    if (e.group !== undefined && (typeof e.group !== 'string' || e.group === '')) out.push(`${who} has an earn with the group ${JSON.stringify(e.group)}; a group is a word`);
     if (e.quadrants !== undefined) {
       if (!list(e.quadrants)) out.push(`${who} has an earn naming no quadrant; a quadrant is ${QUADRANTS.join(', ')}`);
       else for (const q of e.quadrants) if (!QUADRANTS.includes(q as never)) out.push(`${who} has an earn naming the quadrant ${JSON.stringify(q)}; a quadrant is ${QUADRANTS.join(', ')}`);
@@ -554,6 +689,8 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
   } else if (e.kind === 'ride') {
     const why = shareProblem(e, who, 'a ride', 'a ride of');
     if (why) out.push(why);
+  } else if (e.kind === 'noQuote') {
+    // It has no numbers: a card that stops quotes stops them all, and what it reaches is playProblems'.
   } else {
     out.push(`${who} has a gimmick of kind ${JSON.stringify(e.kind)}; a gimmick is ${GIMMICK_KINDS.slice(0, -1).join(', ')} or ${GIMMICK_KINDS.at(-1)}`);
   }
@@ -661,6 +798,107 @@ export const STAFF_TITLE_MAX = 40;
 export const STAFF_SIGNATURE_MAX = 500;
 
 /** Checks of `instance.system`, the content The System reads, each a sentence naming what is wrong. */
+/** The most beats one persona's arc and mini-arcs hold together: each is read by the tick, so the pass is bounded by the persona's file and never by the instance's history. */
+export const ARC_BEATS_MOST = 24;
+
+const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Problems with a persona's arc, mini-arcs and held-back kinds (fangame split design, sections 1 to 3), each naming the predicate that failed in parentheses. The beats are in one
+ * order, the arc's and then the mini-arcs': a `beatLanded` names a beat before it (so no two wait on each other), and a role from another beat names a beat before it whose bundle makes it.
+ * `authoredMostParts` is `bundleAuthoredMostParts`, null where the settings are not whole enough to say.
+ */
+function arcProblems(who: string, p: Persona, authoredMostParts: number | null): string[] {
+  const out: string[] = [];
+  const lists: [string, unknown][] = [['arc', p.arc], ['miniArcs', p.miniArcs], ['holdsBack', p.holdsBack]];
+  for (const [name, list] of lists) if (list !== undefined && !Array.isArray(list)) out.push(`${who} has ${name} that is no list (isArray)`);
+  const arc = Array.isArray(p.arc) ? p.arc : [];
+  const minis = Array.isArray(p.miniArcs) ? p.miniArcs : [];
+  const beats = [...arc.map((b) => ({ b, mini: false })), ...minis.map((b) => ({ b, mini: true }))];
+  if (beats.length > ARC_BEATS_MOST) out.push(`${who} has ${beats.length} beats between its arc and mini-arcs, more than the ${ARC_BEATS_MOST} the tick reads for one persona (atMost(${ARC_BEATS_MOST}))`);
+  const at = new Map<string, number>();
+  beats.forEach(({ b }, i) => { if (isObj(b) && typeof b.key === 'string' && !at.has(b.key)) at.set(b.key, i); });
+  for (const k of duplicates(beats.filter(({ b }) => isObj(b)), ({ b }) => String(b.key))) out.push(`${who}: beat "${k}" is used twice (isUnique)`);
+  const bundleOf = (key: string) => beats[at.get(key) ?? -1]?.b.bundle;
+  /** A role of a template's part, from another beat: `{role, beat}`; the beat is the persona's, its bundle makes the role, and (for a part) it comes before the beat that names it. */
+  const ref = (pre: string, r: Record<string, unknown>, from: number, mustPrecede: boolean): string | null => {
+    const beat = String(r['beat']);
+    const role = String(r['role']);
+    const i = at.get(beat);
+    if (i === undefined) return `${pre} names role "${role}" of beat "${beat}", which is no beat of the persona (beatOfPersona)`;
+    const parts = beats[i]!.b.bundle?.parts;
+    if (!Array.isArray(parts) || !parts.some((x) => x.role === role && x.kind === 'createBoard')) return `${pre} names role "${role}" of beat "${beat}", which that beat's bundle never makes (roleMade)`;
+    if (mustPrecede && i >= from) return `${pre} names role "${role}" of beat "${beat}", which is not before it (earlierBeat)`;
+    return null;
+  };
+  const kinds = MOVE_KINDS.map((k) => k.key);
+  beats.forEach(({ b, mini }, from) => {
+    if (!isObj(b)) { out.push(`${who} has a beat that is no object (isObject)`); return; }
+    const pre = `${who} beat "${String(b.key)}"`;
+    if (typeof b.key !== 'string' || !BEAT_KEY.test(b.key)) out.push(`${pre} is not a key: lowercase letters, digits, hyphens and underscores, from a letter, at most 40 (isKey)`);
+    if (typeof b.brief !== 'string' || b.brief.trim() === '') out.push(`${pre} has no brief: it is the Boss's private intent, shown once the beat unlocks (required)`);
+    if (!Array.isArray(b.unlock) || b.unlock.length < 1) out.push(`${pre} has no unlock condition: it needs at least one (atLeast(1))`);
+    else b.unlock.forEach((c: unknown, i: number) => {
+      const bad = conditionProblem(c);
+      if (bad) { out.push(`${pre} unlock ${i + 1}: ${bad.said} (${bad.predicate})`); return; }
+      const cond = c as Record<string, unknown>;
+      if (cond['kind'] === 'beatLanded') {
+        const to = at.get(String(cond['beat']));
+        if (to === undefined) out.push(`${pre} unlock ${i + 1} waits on "${String(cond['beat'])}", which is no beat of the persona (beatOfPersona)`);
+        else if (to >= from) out.push(`${pre} unlock ${i + 1} waits on "${String(cond['beat'])}", which is not before it (earlierBeat)`);
+      } else if (cond['kind'] === 'boardActivity') {
+        for (const side of ['board', 'above', 'below']) {
+          const r = cond[side];
+          if (isObj(r)) { const why = ref(`${pre} unlock ${i + 1}`, r, from, false); if (why) out.push(why); }
+        }
+      }
+    });
+    if (b.due !== undefined) {
+      if (mini) out.push(`${pre} is a mini-arc and has a due point, which a mini-arc never has (noDueOnMiniArc)`);
+      else { const bad = dueProblem(b.due); if (bad) out.push(`${pre} due: ${bad.said} (${bad.predicate})`); }
+    }
+    if (b.repeatable !== undefined && b.repeatable !== false && !mini) out.push(`${pre} is repeatable, which only a mini-arc may be (miniArcOnly)`);
+    const t = b.bundle;
+    if (t === undefined) return;
+    if (!isObj(t) || !Array.isArray(t.parts)) { out.push(`${pre} has a bundle that is no template with parts (isObject)`); return; }
+    if (typeof t.name !== 'string' || t.name.trim() === '' || t.name.length > 120) out.push(`${pre} has a bundle with no name, or one over 120 characters (atMost(120))`);
+    if (t.parts.length < 1) out.push(`${pre} has a bundle with no part (atLeast(1))`);
+    if (authoredMostParts !== null && t.parts.length > authoredMostParts) out.push(`${pre} has a bundle of ${t.parts.length} parts, more than bundleAuthoredMostParts allows (atMost(${authoredMostParts}))`);
+    const made = new Set<string>();
+    for (const r of duplicates(t.parts, (x) => String(x?.role))) out.push(`${pre}: role "${r}" is used twice in its bundle (isUnique)`);
+    for (const part of t.parts) {
+      if (!isObj(part)) { out.push(`${pre} has a part that is no object (isObject)`); continue; }
+      const at2 = `${pre} part "${String(part.role)}"`;
+      if (typeof part.role !== 'string' || !BEAT_KEY.test(part.role)) out.push(`${at2} has a role that is not a key (isKey)`);
+      if (!kinds.includes(String(part.kind))) out.push(`${at2} is "${String(part.kind)}", which is not a move kind (oneOf(${kinds.join(', ')}))`);
+      const fixed = isObj(part.params) ? part.params : {};
+      const slots = isObj(part.slots) ? part.slots : {};
+      for (const [name, slot] of Object.entries(slots)) {
+        if (name in fixed) out.push(`${at2} has slot "${name}", which is also a fixed param (notFixed)`);
+        if (!isObj(slot) || slot.default === undefined || typeof slot.hint !== 'string' || slot.hint.trim() === '') out.push(`${at2} has slot "${name}" with no default or no hint (required)`);
+      }
+      for (const v of [...Object.values(fixed), ...Object.values(slots).map((x) => (isObj(x) ? x.default : undefined))]) {
+        if (!isObj(v) || typeof v['role'] !== 'string') continue;
+        if (Object.keys(v).length === 1) {
+          if (!made.has(v['role'])) out.push(`${at2} names role "${v['role']}", which no earlier part of its bundle makes (roleMade)`);
+        } else if (Object.keys(v).length === 2 && typeof v['beat'] === 'string') {
+          const why = ref(at2, v, from, true);
+          if (why) out.push(why);
+        }
+      }
+      if (part.kind === 'createBoard' && typeof part.role === 'string') made.add(part.role);
+    }
+  });
+  const hb = Array.isArray(p.holdsBack) ? p.holdsBack : [];
+  for (const h of hb) {
+    if (!isObj(h)) { out.push(`${who} holdsBack has an entry that is no object (isObject)`); continue; }
+    if (!kinds.includes(String(h.kind))) out.push(`${who} holdsBack "${String(h.kind)}" is not a move kind (oneOf(${kinds.join(', ')}))`);
+    if (typeof h.until !== 'string' || !at.has(h.until)) out.push(`${who} holdsBack "${String(h.kind)}" until "${String(h.until)}", which is no beat of the persona (beatOfPersona)`);
+  }
+  for (const k of duplicates(hb.filter(isObj), (h) => String(h.kind))) out.push(`${who} holdsBack "${k}" is named twice (isUnique)`);
+  return out;
+}
+
 function systemProblems(instance: Instance): string[] {
   const sys: SystemContent | undefined = instance.system;
   if (typeof sys !== 'object' || sys === null) return ['the instance has no system content (system)'];
@@ -692,6 +930,8 @@ function systemProblems(instance: Instance): string[] {
       }
     }
     if (p.pronouns !== undefined) for (const why of pronounProblems(p.pronouns)) out.push(`${who} has pronouns that fail: ${why}`);
+    const authoredMost = instance.settings?.bundleAuthoredMostParts;
+    out.push(...arcProblems(who, p, typeof authoredMost === 'number' && Number.isInteger(authoredMost) ? authoredMost : null));
     if (p.strictness === undefined || p.strictness === null) out.push(`${who} has no strictness`);
     if (p.inheritsMemoryOf !== undefined && (p.inheritsMemoryOf === p.key || !rosterKeys.has(p.inheritsMemoryOf))) out.push(`${who} inherits the memory of "${p.inheritsMemoryOf}", who is not another persona in the roster`);
     for (const ph of PHASES) {

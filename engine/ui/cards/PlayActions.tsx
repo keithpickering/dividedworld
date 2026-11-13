@@ -50,6 +50,8 @@ export function GhostMark({ act }: { readonly act: Act }) {
   /* Rest or focus on the mark reads the post early, so the press that follows opens the form at once (glass/prepared.ts). */
   const rest = useRest(() => { if (play && rules && target) play.readyForm(rules.key, target); });
   if (!play || !hudCharacter || !target || act.seq === null || !rules) return null;
+  /* While a compose is open on another post, this post offers nothing: the picked post stands alone. `compose` is the signed-in account's own, so an ended one hides nothing. */
+  if (play.compose !== null && play.compose.target.post?.id !== act.id) return null;
   /* A Set and a Use go on a post of the reader's own characters alone: decided on the reader's screen, from their own characters, never sent. */
   const how = playOf(rules);
   const own = actingCharacters.some((c) => c.id === act.character);
@@ -60,7 +62,25 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const sets = how === 'cast' && own && landing(rules, act, here.plays, { ...context, faceDown: true }).ok;
   if (!casts && !sets) return null;
   const down = sets && (play.faceDown || !casts);
-  const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
+  const cardUi = ui.cards.find((c) => c.key === rules.key);
+  const face = faceOf(rules, cardUi, withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
+  /* A card played on the post itself opens no form: its Compose mounts in the post's slot. It is cast face up and never set, so it has one mark. */
+  if (cardUi?.Compose) {
+    if (!casts) return null;
+    return (
+      <button
+        type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={ghostName(rules.name, how, act.seq)} data-kb-card={rules.key} data-kb-alignment={rules.alignment}
+        aria-pressed={play.compose?.card === rules.key && play.compose.target.post?.id === act.id}
+        style={{ '--kb-mark-color': face.art.color } as CSSProperties}
+        onClick={() => play.openCompose(rules.key, target)}
+      >
+        <span className="kb-meta-tile-in" aria-hidden="true">
+          {face.art.mark && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark} alt="" draggable={false} />}
+          <span className="kb-mark-plus">+</span>
+        </span>
+      </button>
+    );
+  }
   return (
     <button
       type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={ghostName(rules.name, down ? 'set' : how, act.seq)} data-kb-card={rules.key} data-kb-alignment={rules.alignment}
@@ -116,13 +136,15 @@ export const reachGhostName = (card: string, play: Play, name: string): string =
 export function ReachGhost({ at }: { readonly at: ReachAt }) {
   const play = usePlay();
   const { hudCharacter, actingCharacters } = usePlayer();
-  const { instance, settings, ui } = useKayfa();
+  const { api, instance, settings, ui } = useKayfa();
   const here = usePlays(at.plays, at.target);
   const onThread = usePlays(at.plays, at.thread ?? '');
   const onBoard = usePlays(at.plays, at.board ?? '');
   const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
   const rest = useRest(() => { if (play && rules) play.readyForm(rules.key, { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know }); });
   if (!play || !hudCharacter || !rules || !reachesOf(rules).includes(at.reach)) return null;
+  /* A compose is open on a post, which is never this target: it offers nothing until the compose ends. */
+  if (play.compose !== null) return null;
   const how = playOf(rules);
   if (how === 'set' || how === 'keep') return null;
   if (how === 'use' && at.reach === 'character' && !actingCharacters.some((c) => c.id === at.target)) return null;
@@ -130,11 +152,11 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   if (how === 'use' && (at.reach === 'board' || (at.reach === 'thread' && (at.starter ?? null) !== hudCharacter.id))) return null;
   const effect = effectOf(instance.cards);
   const above = {
-    ...(at.thread ? { thread: livePlays(onThread.plays).filter((p) => p.reach === 'thread').map(effect) } : {}),
-    ...(at.board ? { board: livePlays(onBoard.plays).filter((p) => p.reach === 'board').map(effect) } : {}),
+    ...(at.thread ? { thread: livePlays(onThread.plays, api.now()).filter((p) => p.reach === 'thread').map(effect) } : {}),
+    ...(at.board ? { board: livePlays(onBoard.plays, api.now()).filter((p) => p.reach === 'board').map(effect) } : {}),
   };
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
-  if (!landingOn(rules, goal, livePlays(here.plays), { cards: instance.cards, above }).ok) return null;
+  if (!landingOn(rules, goal, livePlays(here.plays, api.now()), { cards: instance.cards, above }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
   const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, ...(at.pronouns ? { pronouns: at.pronouns } : {}), above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (

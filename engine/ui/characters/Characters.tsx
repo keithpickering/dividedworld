@@ -254,7 +254,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
           <button type="button" className="kb-roster-turn-button kb-glass-skew" data-kb-return="" disabled aria-label={`Turn ${c.name}`} aria-describedby={`turn-soon-${c.id} turn-when-${c.id}`}>
             <span className="kb-glass-upright">Turn · opens {shortDate(c.turnOpensAt)}</span>
           </button>
-          <span id={`turn-soon-${c.id}`} className="kb-visually-hidden">Opens {inDays(c.turnOpensAt)}.</span>
+          <span id={`turn-soon-${c.id}`} className="kb-visually-hidden">Opens {inDays(c.turnOpensAt, api.now())}.</span>
           <p id={`turn-when-${c.id}`} className="kb-roster-line kb-turn-when">
             A character can Turn once every {spanWords(settings.turnCooldown).replace(/^1 /u, '')}. {c.name} last Turned at the {shortDate(c.classSince)} settlement.
           </p>
@@ -349,6 +349,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
         <div className="kb-roster-actions">
           {turnCell(c)}
           {live && <GlassButton to="/characters/edit" state={{ character: c.id }} aria-label="Edit profile">Edit profile</GlassButton>}
+          {live && <GlassButton to="/wardrobe" state={{ character: c.id }} aria-label={`Dress up ${c.name}`}>Dress up</GlassButton>}
           {/* Its own tab of My log, chosen by the navigation's state and never the address (engine/ui/log/Log.tsx), as the Roster board draws the link. */}
           <GlassButton to="/log" state={{ character: c.id }}>{c.name}'s log</GlassButton>
           {live && c.classShownAt === null && <GlassButton aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</GlassButton>}

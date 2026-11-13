@@ -4,7 +4,7 @@
  * posts to offer a card on and which cards to offer a post.
  */
 import { describe, expect, test } from 'vitest';
-import { landsOn, quadrantFree, type CardRules } from '../../rules/cards.ts';
+import { economyOf, landsOn, quadrantFree, type CardRules } from '../../rules/cards.ts';
 import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import { effectsOf, landing, landingOn, lengthOf } from './land.ts';
@@ -89,6 +89,12 @@ describe('wards, backs and catches, as a screen offers a card', () => {
     expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi' }, [], { cards: [...cards, writer] }).ok).toBe(true);
   });
 
+  test('a card whose length is read from the economy lands on a post too: the screens hold no settings, so where it lands never asks what it buys', () => {
+    const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { tokens: (_config, settings) => economyOf(settings, 'writer.tokens'), frame: () => ({ prompt: '', stop: [] }) } };
+    expect(landing(writer, post('hi'), [], { cards: [...cards, writer] }).ok).toBe(true);
+    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi' }, [], { cards: [...cards, writer] }).ok).toBe(true);
+  });
+
   test('a caught play holds no place in its card\'s stack', () => {
     expect(landing(blot, post('hi'), [{ ...play('blot', 1), caught: 'back' }], { cards }).ok).toBe(true);
   });
@@ -157,6 +163,21 @@ describe('a card whose canApply reads its configuration, as a screen offers it',
   test('arming it neither throws nor applies the placeholder quadrant\'s check', () => {
     expect(() => landing(reading, post('hi'), [], { cards: [reading] })).not.toThrow();
     expect(landing(reading, post('hi'), [], { cards: [reading] }).ok).toBe(true);
+  });
+});
+
+/* A surface card's play needs its first draw (decidePlay refuses "draw your tag first"), which is the composer's, made on the post after the mark is pressed: the screen
+   asks only where the card lands, so the mark is offered, and a wall already on the post still says so. */
+describe('a surface card, as a screen offers it', () => {
+  const wall: CardRules = {
+    key: 'wall', name: 'Wall', alignment: 'salty', rarity: 'rare', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }),
+    surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: () => ({ ok: false, why: 'unused' }), validateWash: () => ({ ok: false, why: 'unused' }) },
+    canApply: (t, e, _c, now) => landsOn({ key: 'wall', surface: {} }, t, e, now),
+  };
+  test('it is offered on a post with no draw made yet, face up and face down, and not where a wall already is', () => {
+    expect(landing(wall, post('hi'), [], { cards: [wall] })).toEqual({ ok: true, value: undefined });
+    expect(landing(wall, post('hi'), [], { cards: [wall], faceDown: true }).ok).toBe(true);
+    expect(landing(wall, post('hi'), [play('wall', 1)], { cards: [wall] })).toEqual({ ok: false, why: 'This post is already a wall. Draw on it instead.' });
   });
 });
 

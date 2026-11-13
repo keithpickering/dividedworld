@@ -55,8 +55,8 @@ export interface RankingsProps {
   readonly href?: (page: number) => string;
   /** The seasons whose results have landed (`finishedSeasons`), newest first: with any, the page offers the season choice. */
   readonly seasons?: readonly SeasonFinished[];
-  /** A finished season's final table, drawn in place of the standings (`resultsPage`); `highlight` is the character whose row opens marked. */
-  readonly final?: { readonly season: SeasonFinished; readonly rows: readonly SeasonResultRow[]; readonly highlight: Id | null; readonly unplaced?: boolean } | null;
+  /** A finished season's final table, drawn in place of the standings (`resultsPage`); `highlight` is the character whose row opens marked, `absent` that the linked character has no row that season. */
+  readonly final?: { readonly season: SeasonFinished; readonly rows: readonly SeasonResultRow[]; readonly highlight: Id | null; readonly absent?: boolean } | null;
   /** Drawn inside the season page, whose heading and tabs are above: the table and the pager are as ever, the heading is left out. */
   readonly embedded?: boolean;
 }
@@ -96,6 +96,12 @@ function FinalClassCell({ shown, className }: { readonly shown: SeasonResultRow[
       {f.turnedAt && <span className="kb-rankings-when">Has Turned since {shortDate(f.turnedAt)}</span>}
     </span>
   );
+}
+
+/** A row's place: its number, or a dash read as "Unplaced" where it stands at 0 or below (#492), as the class column reads "Not revealed". */
+function PlaceCell({ place }: { readonly place: number | null }) {
+  if (place !== null) return <>{place}</>;
+  return <><span aria-hidden="true" className="kb-rankings-none">—</span><span className="kb-visually-hidden">Unplaced</span></>;
 }
 
 /** The season choice: "Season 4 (now)", then each finished season. It leaves the page by replacing it, as the tabs do. */
@@ -158,15 +164,15 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
       <div className="kb-rankings-area">
       <CalmRegion as="p" className="kb-rankings-lead">
         {done
-          ? 'The final standings, as the season ended. Your own characters are marked. A class shows only once its player had revealed it that season.'
-          : <>The season's standings, as the last settlement left them. Your own characters are marked, with their classes, which
+          ? 'The final standings, as the season ended. A character that finished at 0 Aura or below takes no place. Your own characters are marked. A class shows only once its player had revealed it that season.'
+          : <>The season's standings, as the last settlement left them. A character at 0 Aura or below takes no place. Your own characters are marked, with their classes, which
             only you see here. Anyone else's class shows only once its player has revealed it.</>}
       </CalmRegion>
       {rows.length === 0
         ? <CalmRegion as="p" className="kb-rankings-empty">{count === 0 ? 'No character has debuted yet. The first settlement puts them here.' : 'Nothing on this page.'}</CalmRegion>
         : (
           <>
-          {done?.unplaced && <CalmRegion as="p" className="kb-rankings-empty">{`That character has no row in Season ${done.season.number}'s final standings.`}</CalmRegion>}
+          {done?.absent && <CalmRegion as="p" className="kb-rankings-empty">{`That character has no row in Season ${done.season.number}'s final standings.`}</CalmRegion>}
           <CalmRegion className="kb-rankings-board">
             <table className="kb-rankings-table" role="table">
               <caption className="kb-visually-hidden">{done ? `Season ${done.season.number} final standings` : season ? `Season ${season.number} rankings` : 'Rankings'}, highest standing first</caption>
@@ -186,7 +192,7 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
                   const marked = done !== null && done.highlight === s.character;
                   return (
                     <tr key={s.character} role="row" data-kb-own={mineHere ? '' : undefined} data-kb-highlight={marked ? '' : undefined} aria-current={marked ? 'true' : undefined}>
-                      <td role="cell" className="kb-rankings-place kb-num">{s.place}</td>
+                      <td role="cell" className="kb-rankings-place kb-num"><PlaceCell place={s.place} /></td>
                       <th scope="row" role="rowheader" className="kb-rankings-name">
                         <Link to={`/c/${encodeURIComponent(s.character)}`}>{s.name}</Link>
                         {marked && <span className="kb-visually-hidden"> (the character you followed)</span>}
@@ -239,6 +245,6 @@ export function RankingsScreen({ doc, embedded = false, href = rankingsPage, sea
   const ended = doc.finished.find((f) => f.number === season);
   /* The document is of a finished season, so the season is there: a season that is not is a document the server does not answer (the router's "can't be found"). */
   if (!ended) return null;
-  const final = { season: ended, rows: doc.results, highlight: character ?? null, unplaced: character !== undefined && doc.place === null };
+  const final = { season: ended, rows: doc.results, highlight: character ?? null, absent: character !== undefined && doc.place === null };
   return <Rankings season={doc.season} settledAt={null} standings={[]} reveals={[]} turns={[]} mine={mine} seasons={doc.finished} final={final} page={doc.page} href={href} embedded={embedded} />;
 }

@@ -44,7 +44,7 @@ content_path = "./supabase/templates/sign-up.html"
 # use. settle, meet, chatter, write and seed accept only the secret key named kayfabb_jobs, in apikey
 # (fromTheService, supabase/functions/_shared/serve.ts); staff runs the filing run for that key alone and takes a player's
 # report only after open_report, called with the player's own session, has taken it; act, avatar and estimate do nothing as
-# the service before whoami(), read with the caller's session, names an account; account calls
+# the service before whoami(), read with the caller's session, names an account (wardrobe the same; trophy-art, before is_admin(), read the same way, says it is an admin's); account calls
 # Auth with the publishable key, as any visitor may.
 [functions.account]
 verify_jwt = false
@@ -53,6 +53,12 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.avatar]
+verify_jwt = false
+
+[functions.trophy-art]
+verify_jwt = false
+
+[functions.wardrobe]
 verify_jwt = false
 
 [functions.chatter]
@@ -74,4 +80,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.settle]
+verify_jwt = false
+
+[functions.mail]
 verify_jwt = false

@@ -193,7 +193,7 @@ declare
     jsonb_build_array('{"key": "pr3", "rarity": "common", "play": "use", "reaches": ["character"], "lasts": {"unit": "week", "count": 1}, "gimmick": {"kind": "ride", "share": 0.5}}',
       'card "pr3" has a ride, and a card with a ride reaches a post alone'),
     jsonb_build_array('{"key": "pr4", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "week", "count": 1}, "gimmick": {"kind": "boost"}}',
-      'card "pr4" has a gimmick of kind "boost"; a gimmick is ward, earn, price or ride'),
+      'card "pr4" has a gimmick of kind "boost"; a gimmick is ward, earn, price, ride or noQuote'),
     jsonb_build_array('{"key": "pr5", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}, "outcome": {"kind": "ride", "share": 1}}}',
       'card "pr5" has an outcome beside a match; a ride outcome names its card (catches)'),
     jsonb_build_array('{"key": "pr6", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "visit"}, "outcome": {"kind": "ride", "share": 1}}}',

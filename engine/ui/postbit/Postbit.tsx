@@ -18,9 +18,11 @@ import { rankIndex } from '../../rules/ranks.ts';
 import { monthYear, shortDate } from './dates.ts';
 import { Link } from '../router.tsx';
 import type { Statement } from './reveals.ts';
+import { Outfit, slotShape } from '../gear/Outfit.tsx';
 import { GroupBar } from './GroupBar.tsx';
 import { StaffBadge, showsStaffBadge } from './StaffBadge.tsx';
 import { WarnMeter } from './WarnMeter.tsx';
+import { TrophyBadge, heldBelts, postbitTrophies } from './Trophy.tsx';
 import './postbit.css';
 
 /** A character and what a postbit shows beside it, gathered once for a page of posts. */
@@ -33,23 +35,32 @@ export interface PostbitPerson extends Statement {
 
 export type PostbitLayout = 'side' | 'stacked';
 
-/** The avatar slot: the portrait in the tall slot, the square where there is none, the initial where there is no avatar. */
+/**
+ * The avatar slot: the portrait in the tall slot, the square where there is none, the initial where there is no avatar. A portrait draws at the shape it
+ * was cut (`portraitTallness`) and wears its outfit; the square, on the stacked band and on a phone, wears the same pieces cut through its own frame.
+ * A mask with no portrait wears nothing.
+ */
 function Avatar({ character, layout }: { readonly character: Character; readonly layout: PostbitLayout }) {
-  const { avatarSquare: square, avatarPortrait: portrait } = character;
+  const { avatarSquare: square, avatarPortrait: portrait, outfit, squareFrame, portraitTallness } = character;
+  const squareFor = portrait && outfit.length > 0 ? <Outfit pieces={outfit} on="square" frame={squareFrame ?? (portraitTallness ? { x: 0, y: 0, w: 1, h: 1 / portraitTallness } : null)} /> : null;
   if (layout === 'stacked' || !portrait) {
     const src = layout === 'stacked' ? square : square ?? portrait;
     return (
       <span className="kb-postbit-avatar" data-kb-slot={layout === 'side' && src ? 'tall' : 'square'} aria-hidden="true">
         {src ? <img src={src} alt="" loading="lazy" decoding="async" /> : <span className="kb-postbit-none">{character.name.slice(0, 1)}</span>}
+        {src && src === square && squareFor}
       </span>
     );
   }
+  /* Both layers are always here and the stylesheet shows one by the width the <picture> source uses, so a phone never paints the tall slot and swaps. */
   return (
-    <span className="kb-postbit-avatar" data-kb-slot="portrait" aria-hidden="true">
+    <span className="kb-postbit-avatar" data-kb-slot="portrait" data-kb-square={square ? '' : undefined} data-kb-shaped={portraitTallness === null ? undefined : ''} aria-hidden="true" style={slotShape(portraitTallness)}>
       <picture>
         {square && <source media="(max-width: 40em)" srcSet={square} />}
         <img src={portrait} alt="" loading="lazy" decoding="async" />
       </picture>
+      <Outfit pieces={outfit} on="portrait" />
+      {square && squareFor}
     </span>
   );
 }
@@ -71,7 +82,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   /** The character's own marks (its live plays beyond a post), drawn under its name: the thread hands them in. */
   readonly marks?: ReactNode;
 }) {
-  const { instance, ui, settings } = useKayfa();
+  const { api, instance, ui, settings } = useKayfa();
   const { character: c } = person;
   /* The look of the group it is in; a key the settings do not list (an answer older than groups) draws no bar rather than a wrong one. */
   const group = settings.groups.find((g) => g.key === c.group);
@@ -83,13 +94,16 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   const className = (key: string | undefined) => (key === undefined ? undefined : instance.classes.find((k) => k.key === key)?.name ?? key);
   const joined = monthYear(c.joined);
   /* A ban holds while its time is in the future (characters_public.banned_until): the page read it, and the title line says so for as long as the page is open. */
-  const banned = c.bannedUntil !== undefined && Date.parse(c.bannedUntil) > Date.now();
+  const banned = c.bannedUntil !== undefined && Date.parse(c.bannedUntil) > api.now();
+  /* The side layout shows the chosen trophies and any belt under the rank; the stacked band and a phone show a held belt only, beside the name. */
+  const shelf = counts ? postbitTrophies(c.trophies, instance.settings.cosmetics.trophies.shownMost) : [];
+  const belts = counts ? [] : heldBelts(c.trophies);
   const pipImages = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   return (
     <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={layout}>
       <Avatar character={c} layout={layout} />
       <div className="kb-postbit-text">
-        <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}</span>
+        <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}{belts.length > 0 && <span className="kb-postbit-belts">{belts.map((t) => <TrophyBadge key={t.award} trophy={t} />)}</span>}</span>
         {/* The group's bar under the name; a staff character's has its office title beside it. */}
         {(group || showsStaffBadge(c)) && <span className="kb-postbit-group">{group && <GroupBar look={group} />}<StaffBadge character={c} /></span>}
         {marks && <span className="kb-postbit-marks">{marks}</span>}
@@ -106,6 +120,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
             {instance.ranks.length > 0 && <Pips ranks={instance.ranks.length} index={index} name={rank} style={pipImages} />}
           </span>
         )}
+        {shelf.length > 0 && <span className="kb-postbit-trophies">{shelf.map((t) => <TrophyBadge key={t.award} trophy={t} />)}</span>}
         {c.warnPoints !== undefined && c.warnPoints > 0 && !c.staff && <WarnMeter points={c.warnPoints} size={instance.settings.warnBar.size} />}
         {counts && (
           <span className="kb-postbit-counts kb-small kb-muted">

@@ -218,8 +218,9 @@ describe('My log', () => {
   });
 
   /** A player with Pipewrench and Mrs. Hooligan debuted and nothing settled, the next settlement 7 h 42 min off (the empty log's board). */
-  function nothingYet(next: number | null = Date.now() + (7 * 60 + 42) * 60_000) {
+  function nothingYet(from: number | null = (7 * 60 + 42) * 60_000) {
     const fake = buildWorld();
+    const next = from === null ? null : fake.clock.now() + from;
     const me = fake.seed.account('me');
     const pipe = fake.seed.character(me, 'Pipewrench', 'heel', { pronouns: PRONOUN_PRESETS.she });
     const hoo = fake.seed.character(me, 'Mrs. Hooligan', 'face', { pronouns: PRONOUN_PRESETS.they });
@@ -253,7 +254,8 @@ describe('My log', () => {
     await open(fake, me, hoo);
     await screen.findByRole('table');
     const named = () => (into.mock.contexts as HTMLElement[]).map((e) => e.textContent);
-    expect(named()[0], 'the first frame scrolls the tab that is current').toBe('Mrs. Hooligan');
+    /* The scroll is an effect of the frame that drew the table, and an effect can run a moment after its frame is found on a busy machine. */
+    await waitFor(() => expect(named()[0], 'the first frame scrolls the tab that is current').toBe('Mrs. Hooligan'));
     expect(into).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'center' });
     into.mockClear();
     fireEvent.click(tab('All'));
@@ -290,7 +292,7 @@ describe('My log', () => {
   });
 
   test('a settlement that is due names no time either, and one settled leaves no empty row', async () => {
-    const due = nothingYet(Date.now() - 60_000);
+    const due = nothingYet(-60_000);
     await open(due.fake, due.me, due.pipe);
     await screen.findByRole('table');
     expect(cells(bodyRows()[0]!)[2]).toBe('Nothing has settled for Pipewrench yet. A line comes here when a settlement scores her.');
@@ -545,6 +547,22 @@ describe('My log is its document', () => {
     await waitFor(() => expect(bodyRows()[0]).toHaveAttribute('data-kb-estimate'));
     await waitFor(() => expect(cells(bodyRows()[0]!)[2]).toMatch(/^A Hype reaction on your post #3\./u));
   }, 10_000);
+
+  test('the log says plainly when an admin hid a post and when it ended, in order with the other lines, naming no reporter', async () => {
+    const { fake, me, pipe, p2 } = world();
+    fake.seed.conductDecision({ account: me, outcome: 'hide', version: p2, at: at(29, 20) });
+    fake.seed.conductDecision({ account: me, outcome: 'unhide', version: p2, at: at(30, 9) });
+    await open(fake, me, pipe);
+    await waitFor(() => expect(bodyRows().some((r) => /brought back your post/u.test(r.textContent ?? ''))).toBe(true));
+    const said = bodyRows().map((r) => cells(r)[2] ?? '');
+    const hidden = said.findIndex((t) => t.startsWith('An admin hid your post in a thread (code of conduct). An admin may have emailed you the details.'));
+    const back = said.findIndex((t) => t === 'An admin brought back your post in a thread.');
+    expect(hidden).toBeGreaterThan(-1);
+    expect(back).toBeGreaterThan(-1);
+    expect(back).toBeLessThan(hidden);
+    expect(said.filter((t) => /An admin hid your post/u.test(t))).toHaveLength(1);
+    expect(said.join(' ')).not.toMatch(/report(ed|er)/iu);
+  });
 
   test('a hover on the Log tab makes one log_page, and writes nothing: no see_* call, no mark read', async () => {
     const { fake, me, pipe } = world();
@@ -907,9 +925,9 @@ describe('My log: the way out of a ban', () => {
   function banned() {
     const w = world();
     const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
-    const visit = w.fake.seed.visit(clerk, w.p2, { at: Date.now() - 4 * 3_600_000, endsInMs: 3_600_000 });
+    const visit = w.fake.seed.visit(clerk, w.p2, { at: w.fake.clock.now() - 4 * 3_600_000, endsInMs: 3_600_000 });
     const inf = w.fake.seed.infraction(visit, { points: 10, band: 'severe' });
-    const ban = w.fake.seed.ban(w.pipe, Date.now() + 86_400_000, { infraction: inf, days: 1 });
+    const ban = w.fake.seed.ban(w.pipe, w.fake.clock.now() + 86_400_000, { infraction: inf, days: 1 });
     return { ...w, ban };
   }
 

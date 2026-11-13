@@ -13,6 +13,7 @@ import { QUADRANTS } from './types.ts';
 import { parse, safeColor } from '../bbcode/parse.ts';
 import { visibleText } from '../bbcode/visible.ts';
 import { phraseIn } from '../bbcode/phrase.ts';
+import { GRID, cellsOf, toBits, type SurfaceStroke } from './surface.ts';
 
 /**
  * Where a card can land (the card mechanic's design, section 7): a post, a character, a thread or a
@@ -82,15 +83,18 @@ export interface CardEffect {
  * What a use card does while it is up: one of a fixed list the engine holds, each card picking one and setting its numbers.
  * A ward turns away casts on its own target (by rarity, printed flavor or card key); an earn raises what reactions earn the
  * character or post it is on (never deepens a loss); a price adds a flat amount to a cast of the named flavors on its target or anything under it;
- * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up.
+ * earn effects on one character or post that share a `group` do not add: for each earning the largest `by` among them applies (an earn with no group boosts on its own);
+ * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up;
+ * a no-quote stops a post that quotes the post it is on, before that post is written.
  */
 export type GimmickEffect =
   | { readonly kind: 'ward'; readonly upTo?: Rarity; readonly flavors?: readonly Alignment[]; readonly cards?: readonly string[] }
-  | { readonly kind: 'earn'; readonly quadrants?: readonly Quadrant[]; readonly reactions?: readonly string[]; readonly by: number }
+  | { readonly kind: 'earn'; readonly quadrants?: readonly Quadrant[]; readonly reactions?: readonly string[]; readonly by: number; readonly group?: string }
   | { readonly kind: 'price'; readonly flavors: readonly Alignment[]; readonly add: Hundredths }
-  | { readonly kind: 'ride'; readonly share: number };
+  | { readonly kind: 'ride'; readonly share: number }
+  | { readonly kind: 'noQuote' };
 export type WardEffect = Extract<GimmickEffect, { kind: 'ward' }>;
-export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride']);
+export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote']);
 
 /** What a cast set card matches, besides a named card (`catches`): the printed flavors, and the rarity it takes up to. Pepperoni is its own flavor. */
 export interface Match {
@@ -150,6 +154,16 @@ export function wardWords(wardName: string, effect: WardEffect, rules: Pick<Card
   if (effect.upTo !== undefined && atOrBelow(rules.rarity, effect.upTo)) return `${head} cards up to ${effect.upTo}`;
   if (effect.flavors?.includes(rules.alignment)) return `${head} ${capital(rules.alignment)} cards`;
   return `${head} ${rules.name}`;
+}
+
+/** The live no-quote effect on a post, if it has one: the play that stops quotes of it. */
+export const quoteStop = (effects: readonly CardEffect[], now: Date = new Date()): CardEffect | undefined =>
+  effects.find((e) => e.gimmick?.kind === 'noQuote' && (e.reach ?? 'post') === 'post' && isLive(e, now));
+
+/** A stopped quote's refusal, the same for every writer; the guard on acts says it in the same words. `seq` is the quoted post's number where it is in the thread written to. */
+export function noQuoteWords(cardName: string, ends: string | undefined, seq: number | null): string {
+  const post = seq === null ? 'a post in another thread' : `post ${seq}`;
+  return `${post} carries ${cardName}, so it cannot be quoted until ${ends ? refusalTime(ends) : 'it ends'}; take that quote out and send again`;
 }
 
 /** How each play is said in a refusal of the wrong one. */
@@ -221,7 +235,10 @@ export interface CardRules<Config = unknown> {
    * for one settlement window. Whether the window can be named is the server's, which reads the settlements.
    */
   readonly scoresAs?: true;
-  /** A use card's effect while it is up. Every use card has one, and nothing else does. */
+  /**
+   * A use card's effect while it is up; every use card has one. A cast card that reaches a character alone may carry an earn, which the character it
+   * lands on has while the play is up. Nothing else has one.
+   */
   readonly gimmick?: GimmickEffect;
   /** Where it can land; a post unless it says (`['post']`). A reach beyond a post takes at least its `reachRarity`. */
   readonly reaches?: readonly Reach[];
@@ -283,6 +300,23 @@ export interface CardRules<Config = unknown> {
    * even with no default configuration and no `staffConfigs`.
    */
   readonly staffOptions?: { readonly prompt: string; readonly schema: Record<string, unknown> };
+  /**
+   * A persona's options repaired against the post before they are decided (CLAUDE.md, "A validator tighter than the schema"): a card whose
+   * options a model can overshoot (a list longer than its most, an entry that is not in the post) trims what it can and names each trim.
+   * It never invents an option. A player's play is never repaired. If it throws, the persona's options are decided as given (no repair) and the call's record names the throw. Given the options unchecked and the post as the card's rules see it.
+   */
+  repairStaff?(config: unknown, target: PostTarget): { readonly config: unknown; readonly trims: readonly { readonly path: string; readonly predicate: string; readonly before: number; readonly after: number }[] };
+  /**
+   * A play whose layer any character may add to (a draw) and its own character may take ink off (a wash). `limitKey` is the `screenReads` key
+   * holding the most the layer may cover, in whole percent of the grid's cells; `mostLive` the most live draws one play holds. The card's
+   * validators keep a draw or a wash in its own shape and return the strokes the engine counts. A surface card is a cast card with a stack of 1.
+   */
+  readonly surface?: {
+    readonly limitKey: string;
+    readonly mostLive: number;
+    validateDraw(input: unknown): Verdict<{ readonly strokes: readonly SurfaceStroke[]; readonly payload: Record<string, unknown> }>;
+    validateWash(input: unknown): Verdict<{ readonly strokes: readonly SurfaceStroke[]; readonly payload: Record<string, unknown> }>;
+  };
   /** For a card whose effect holds state (Whoops!'s strokes): checks a state to be saved. */
   validateState?(state: unknown): Verdict<unknown>;
 }
@@ -319,7 +353,7 @@ export const withheld = (rules: Pick<CardRules, 'writes'>, settings: Partial<Pic
  * of the checked configuration, against the settings of this moment). The tokens are the play's own fact: the server writes them with the play
  * (supabase/migrations/0149_card_writes.sql), and a regeneration and the log read them there, never the settings of a later day.
  */
-export interface Decided { readonly price: Hundredths; readonly config: unknown; readonly message: string; readonly tokens?: number }
+export interface Decided { readonly price: Hundredths; readonly config: unknown; readonly message: string; readonly tokens?: number; readonly draw?: DecidedDraw }
 
 const namedQuadrant = (v: unknown): boolean => QUADRANTS.includes((v as { quadrant?: never } | null)?.quadrant as never);
 
@@ -353,10 +387,48 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   return ok({ price, config: checked.value, message: said.value, tokens });
 }
 
+/** A draw as decided: the card's payload, the cells its strokes cover as Postgres `bit(10000)` text, and the most cells the layer may cover. */
+export interface DecidedDraw { readonly payload: Record<string, unknown>; readonly cells: string; readonly most: number }
+
+const noSurface = (rules: Pick<CardRules, 'name'>) => refuse(`${rules.name} has no surface to draw on`);
+
+/** The most cells a surface card's layer may cover: its limit, whole percent of the grid, from the card settings. A limit the settings do not hold is a fault of the instance, which instanceProblems refuses first. */
+export function surfaceMost(key: string, limitKey: string, settings: Settings): number {
+  const limit = settings.cardSettings[limitKey];
+  if (typeof limit !== 'number' || !Number.isFinite(limit)) throw new Error(`card ${key} reads the limit "${limitKey}", which the settings do not hold`);
+  return Math.round((limit / 100) * GRID * GRID);
+}
+
+/** A draw on a surface card, kept as the card keeps it, with the cells the engine counts and the limit read from the settings (`surface.limitKey`). */
+export function decideDraw(rules: CardRules, settings: Settings, input: unknown): Verdict<DecidedDraw> {
+  if (rules.surface === undefined) return noSurface(rules);
+  const checked = rules.surface.validateDraw(input);
+  if (!checked.ok) return checked;
+  return ok({ payload: checked.value.payload, cells: toBits(cellsOf(checked.value.strokes)), most: surfaceMost(rules.key, rules.surface.limitKey, settings) });
+}
+
+/** A wash on a surface card: the card's payload and the cells its strokes cover, which the server takes off the layer. */
+/** `settings` is unused: a wash has no limit to read. It is kept so a draw and a wash are decided the same way. */
+export function decideWash(rules: CardRules, _settings: Settings, input: unknown): Verdict<{ readonly payload: Record<string, unknown>; readonly cells: string }> {
+  if (rules.surface === undefined) return noSurface(rules);
+  const checked = rules.surface.validateWash(input);
+  if (!checked.ok) return checked;
+  return ok({ payload: checked.value.payload, cells: toBits(cellsOf(checked.value.strokes)) });
+}
+
+/** A surface card's first draw, decided with its play: refused when it names none, so a play always starts with a tag on the surface. */
+function firstDraw(rules: CardRules, settings: Settings, first: unknown): Verdict<DecidedDraw | undefined> {
+  if (rules.surface === undefined) return ok(undefined);
+  if (first === undefined) return refuse('draw your tag first');
+  return decideDraw(rules, settings, first);
+}
+
 /** What a decision reads beyond the play: the time, and each card's name by key, for a ward's refusal. */
 export interface PlayContext {
   readonly now?: Date;
   readonly nameOf?: (key: string) => string;
+  /** A surface card's first draw, as the caster made it (`CardRules.surface`); a surface card is refused without one. */
+  readonly first?: unknown;
 }
 
 /**
@@ -374,7 +446,11 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   const now = context.now ?? new Date();
   const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
-  return decided(rules, settings, target, effects, config, message, now, true);
+  const play = decided(rules, settings, target, effects, config, message, now, true);
+  if (!play.ok || rules.surface === undefined) return play;
+  const first = firstDraw(rules, settings, context.first);
+  if (!first.ok) return first;
+  return ok({ ...play.value, draw: first.value });
 }
 
 /**
@@ -383,7 +459,10 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
  */
 export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: Pick<PlayContext, 'now'> = {}): Verdict<Decided> {
   if (playOf(rules) !== 'use') return wrongPlay(rules);
-  return decided(rules, settings, target, effects, config, message, context.now ?? new Date());
+  const now = context.now ?? new Date();
+  // A back springs on a quote and a no-quote stops one, so the two never share a post; each says how it is undone.
+  if (rules.gimmick?.kind === 'noQuote' && effects.some((e) => e.faceDown && isLive(e, now))) return refuse(`${rules.name} stops quotes, and this post holds a card face down; take that card back first`);
+  return decided(rules, settings, target, effects, config, message, now);
 }
 
 /**
@@ -414,11 +493,12 @@ const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
 /**
  * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, needs a message, draws or runs a
  * drive. Each of those is done at the cast, on the post the caster chose (the tail is bought, the message is said, the draw is made, the drive opens), and a
- * back that sprang later on a quote would land with none of it. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
+ * back that sprang later on a quote would land with none of it. A surface card is one too (docs/plans/2026-11-12-graffiti-face-up-design.md, section 1):
+ * its first tag is drawn on the post the caster chose, and a back would carry it blind to a quoting post's box nobody drew for. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
  * server holds the same on face_down (supabase/migrations/0153_drives.sql, face_down_never_writes).
  */
-export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive'>): boolean =>
-  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined;
+export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface'>): boolean =>
+  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined;
 
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
@@ -426,10 +506,12 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // A card that writes is cast face up and never set face down: its tail is bought at the cast, on the post the caster chose.
   if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
-  // So is one that needs a message, draws or runs a drive: faceUpOnly says which, and one sentence covers them.
+  // So is one that needs a message, draws, runs a drive or is drawn on (a surface card): faceUpOnly says which, and one sentence covers them.
   if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
+  const stop = quoteStop(effects, now);
+  if (stop) return refuse(`this post's ${cards.find((c) => c.key === stop.card)?.name ?? stop.card} stops quotes until ${stop.ends ? refusalTime(stop.ends) : 'it ends'}, so no card is set face down here until then`);
   // A Move that lands beyond a post (Glitter Bomb on a character) is set on a post all the same and lands on what the quote reaches (design section 3); whether it can land there is the spring's to decide.
   if (play === 'set' && rules.trap === undefined) return refuse(`${rules.name} has no trap to spring`);
   const lands = reachesOf(rules).includes('post') ? rules.canApply(target, effects, undefined, now) : ok(undefined);
@@ -567,7 +649,7 @@ export function drawnInMoment(rules: Pick<CardRules, 'validateState' | 'stack' |
  * carries at most its stack of it (one unless the card says more) that are still up, each its own play, counting only the
  * effects on that same target, never those above it. A board carries one board card at a time, of any card, until it ends.
  */
-export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
+export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'> & { readonly surface?: unknown }, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
   const reaches = reachesOf(rules);
   if (!reaches.includes(target.reach)) return refuse(`this card lands on ${listed(reaches)}`);
   if (target.reach === 'post' && target.kind !== 'post') return refuse('a card lands on a post');
@@ -579,6 +661,8 @@ export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>, tar
   }
   const stack = rules.stack ?? 1;
   if (here.filter((e) => e.card === rules.key).length >= stack) {
+    // A surface card's play is the post's wall: a second says so, in the database's words (place_cast).
+    if (rules.surface !== undefined && target.reach === 'post') return refuse('This post is already a wall. Draw on it instead.');
     const where = target.reach === 'post' ? 'this post' : `this ${target.reach}`;
     return refuse(stack === 1 ? `${where} already carries that card` : `${where} already carries ${stack} of that card, the most it takes`);
   }
@@ -608,6 +692,17 @@ export function staffConfigOf(card: CardRules, rng: () => number): unknown | nul
   return chosen.ok ? chosen.value : null;
 }
 
+/**
+ * A Mod Bot's first draw on a surface card where its own pick fails or it gave none: one of the card's `staffConfigs` that the card's `surface.validateDraw`
+ * accepts, picked by `rng` (in [0, 1)); null for a card with no surface or with no such entry. `staffConfigOf` cannot give it: a surface card's `validateConfig({})`
+ * accepts, so the play's configuration is `{}` and its `staffConfigs` are never read there. They are draws, and are read here.
+ */
+export function staffDrawOf(card: CardRules, rng: () => number): unknown | null {
+  if (card.surface === undefined) return null;
+  const draws = (card.staffConfigs ?? []).filter((c) => card.surface!.validateDraw(c).ok);
+  return draws.length === 0 ? null : draws[Math.floor(rng() * draws.length)];
+}
+
 /** A color as a post's [color] tag reads one (engine/bbcode/parse.ts), surrounding spaces aside. */
 export function color(value: unknown): string | null {
   return typeof value === 'string' ? safeColor(value.trim()) : null;
@@ -620,7 +715,11 @@ export function color(value: unknown): string | null {
  */
 export function staffOffers(card: CardRules): boolean {
   if (card.trap?.trigger.on === 'visit') return false;
+  // A staff character's Acts are not settled, so an earn a persona cast would never be paid.
+  if (card.gimmick !== undefined && (card.play ?? 'cast') === 'cast') return false;
   // A persona plays a card with no caster message, so a card that needs one could never land.
   if (card.needsMessage !== undefined) return false;
+  // A surface card is played with a first draw, which a persona names (`staffOptions`) or code picks (`staffDrawOf`); a persona never sets one.
+  if (card.surface !== undefined) return playOf(card) === 'cast' && (staffDrawOf(card, () => 0) !== null || card.staffOptions !== undefined);
   return staffConfigOf(card, () => 0) !== null || card.staffOptions !== undefined;
 }

@@ -53,7 +53,7 @@ begin
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and has_table_privilege('kayfabb_digest', oid, 'insert,update,delete,truncate,references,trigger');
   if bad is not null then raise exception 'the digest role writes %', bad; end if;
   -- The role's reach, whole: it cannot create in the schema (the owner change takes the grant and gives it back), no client
-  -- role can become it, and the functions it may execute are exactly the eighteen reviewed here: a new grant fails this.
+  -- role can become it, and the functions it may execute are exactly the twenty-two reviewed here: a new grant fails this.
   if has_schema_privilege('kayfabb_digest', 'public', 'create') then raise exception 'the digest role can create in public'; end if;
   foreach t in array array['anon', 'authenticated', 'service_role'] loop
     if pg_has_role(t, 'kayfabb_digest', 'member') then raise exception '% is a member of the digest role', t; end if;
@@ -63,6 +63,8 @@ begin
     and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e');
   if fns is distinct from (select string_agg(x, ', ' order by x) from unnest(array[
       'setting(text)', 'span_interval(jsonb)', 'standings_season()', 'current_boss()', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)',
+      -- Who a met demand credits (0206), reading the same public Acts and their public tallies; never `reactions`.
+      'demand_contributors(uuid)',
       'system_digest(timestamp with time zone,timestamp with time zone)', 'staff_career(text)',
       -- The pool's signals (0088): the two functions it owns, and the folds it matches names with.
       'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)', 'name_skeleton(text)',
@@ -73,8 +75,10 @@ begin
       -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused; each reads no table.
       'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
       -- The same kind for a pack's pulls (0139): pure, reading no table.
-      'pack_pulls_problem(jsonb)']) x) then
-    raise exception 'the functions the digest role may execute are not the reviewed eighteen: %', fns;
+      'pack_pulls_problem(jsonb)',
+      -- What acts_public calls as its reader (0340): whether a version is hidden, what its quoting body's layer comes to and what a payload shows of it, so a digest never reads a hidden version's words.
+      'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'conceal_layer(uuid)', 'shown_payload(jsonb,boolean,boolean,boolean,text)']) x) then
+    raise exception 'the functions the digest role may execute are not the reviewed twenty-two: %', fns;
   end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;
 
@@ -123,6 +127,8 @@ begin
   -- A later function given the role's ownership fails here, to be reviewed (0046 added the demand evaluator).
   select string_agg(p.oid::regprocedure::text, ', ') into bad from pg_proc p join pg_roles r on r.oid = p.proowner
   where r.rolname = 'kayfabb_digest' and p.oid::regprocedure::text <> all (array['system_digest(timestamp with time zone,timestamp with time zone)', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)',
+      -- Who a met demand credits (0206), reading the same public Acts and their public tallies; never `reactions`.
+      'demand_contributors(uuid)',
     'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)',
     'pool_thread(uuid,integer,integer,uuid)', 'character_faces(jsonb)', 'patrol_sample(uuid[],integer)']);
   if bad is not null then raise exception 'functions owned by the digest role that this file has not reviewed: %', bad; end if;

@@ -1,7 +1,7 @@
 /**
  * Booster packs board 01, the machine (docs/research/2026-11-07-booster-packs/01-machine.html, 1440 by 1080), as the story `Boards/Booster packs`,
  * `Machine` (engine/ui/vending/Packs.board.stories.tsx) draws it with the Booster selected by a press, as a player does: the wallet and the hand, the
- * machine's slots in the admin's order (the Booster in A1, the card slot in A2 pulled by the Boss, E1 marked up, E2 sealed, the hidden Main Event
+ * machine's slots in the admin's order (the Booster in A1, the card slot in A2 pulled by the Boss, E1 marked up, E2 sealed, the hidden Main Event and Graffiti
  * drawing no slot), the selected pack's price, what is in it and Buy beside the slots, and the column to the right: the pack's odds, and the Boss's moves in
  * force in plain words. The plan is docs/plans/2026-11-04-booster-packs-plan.md, Task 5.
  *
@@ -22,6 +22,7 @@
  *    Hall Pass and E2 Force Field, each held by its place, with the board's words (`name`) and the build's (`buildName`). Glitter Bomb, the one marked up (the board's mark on E1), is the
  *    build's G2, two rows under the board's empty E2 in the same column, which it is compared to, so the build is held to the board's place plus (0, 253). The wrapped grid is 253px
  *    taller (seven rows of slots where the board draws five), which nothing else on the board stands under. Below the Fold then took the slot after Glitter Bomb (H1), so no slot above it moves; the grid is one row taller again (eight rows), which nothing stands under either.
+ *    Mooch, Toll, 4D Chess and Jimmy Wails, then Hype-Up and Last Word (card notes Part 4), took the slots after Below the Fold, so no slot above them moves; the grid gains rows below the board's slots, which nothing stands under, and the hidden Main Event, Off Day and Sugar Coat draw no slot.
  *  - A slot's price is "orbs" and the board's "orb" (the glass's names say "1.00 orb" and "3.00 orbs", as board 07 holds them).
  *  - The wallet's name says "buying Booster", where the board draws "buying the Booster": a card's reads "buying Whoops!" and a pack is named as one.
  *  - The machine's sign is a marquee the instance picks at random, and the machine's drawing is the instance's art (`data-kb-art`): not compared.
@@ -101,7 +102,7 @@ export default manifest;
  *  - The admin screen (`The machine, for an admin`; the story is engine/ui/admin/Machine.board.stories.tsx) is held as board 05 holds the 1440 page
  *    (e2e/boards/2026-11-07-booster-packs/05-admin.ts), each part from a part above it, with its departures: the board's phone has no lead under the title (the
  *    1440 board's lead does not appear on it), so the lead is not compared; the board draws "seven more slots, then Save changes" and no Save, so only the first three
- *    slots (Booster, Whoops!, Stick Around) are held. The strip's buttons are the glass's phone control (The machine 12px narrower than the board's), the
+ *    slots (Booster, Whoops!, Stick Around) are held. The strip's buttons are the glass's phone control (The machine 12px narrower than the board's, and standing 103px further right of the board's for the Reports button the reports plan, Task 7, put before it), the
  *    first row stands 16px lower under the strip, and the third 37px lower under the second (the Whoops! row's tag line is taller in the build), and the move
  *    arrows and the price stand 18, 9 and 17px to the left of the board's, 10px lower, for the glass's control measure. Move down is 15px nearer the board's
  *    than Move up because a glass button is at least as wide as the spinner it holds in its label's cell (Button.tsx, parts.css), so the arrow before it is wider. The title stands 17px lower under the bar
@@ -172,9 +173,9 @@ export const phone: BoardManifest = {
         ...bar(1),
         at('title', 'heading', 'THE MACHINE', 'menu', { y: 17 }, { buildName: 'The machine', originEdge: 'bottom' }),
         at('moves', 'link', 'MOVES', 'title', { y: 178 }, { buildName: 'Moves', originEdge: 'bottom' }),
-        at('machine', 'link', 'THE MACHINE', 'title', { x: -12, y: 178 }, { buildName: 'The machine', originEdge: 'bottom' }),
+        at('machine', 'link', 'THE MACHINE', 'title', { x: 91, y: 178 }, { buildName: 'The machine', originEdge: 'bottom' }),
         ...([['a1', 'A1', 'Booster', 'moves'], ['a2', 'A2', 'Whoops!', 'a1-code'], ['b1', 'B1', 'Stick Around', 'a2-code']] as const).flatMap(([k, code, card, from], i) => [
-          at(`${k}-code`, 'text', code, from, k === 'a1' ? { y: 16 } : k === 'b1' ? { y: 37 } : {}, { originEdge: 'bottom' }),
+          at(`${k}-code`, 'text', code, from, k === 'a1' ? { y: 16 + 42.3 } : k === 'b1' ? { y: 37 } : {}, { originEdge: 'bottom' }),
           at(`${k}-up`, 'button', 'Move up', `${k}-code`, { x: -18, y: 10 }, { buildName: `${card}: move up`, nth: i, buildNth: 0 }),
           at(`${k}-down`, 'button', 'Move down', `${k}-code`, { x: -9, y: 10 }, { buildName: `${card}: move down`, nth: i, buildNth: 0 }),
           at(`${k}-availability`, 'combobox', `${card}: availability`, `${k}-code`),

@@ -17,7 +17,7 @@ function authMail(theme: MailTheme, p: AuthParts, w: { kind: string; heading: st
     preheader: `Your code is ${p.code}.`,
     blocks: [
       { type: 'heading', text: `${w.heading} ${theme.name}` },
-      { type: 'paragraph', text: `Type this code where you asked for it, or use the button to ${w.end}.` },
+      { type: 'paragraph', text: `Type this code where you asked for it, or use the button: it opens ${theme.name}, where one more press ${w.end}.` },
       { type: 'code', label: 'Your code', code: p.code },
       { type: 'button', label: w.button, href: p.link },
       { type: 'note', text: w.note },
@@ -29,7 +29,7 @@ export function signIn(theme: MailTheme, p: AuthParts): Mail {
   return authMail(theme, p, {
     kind: 'sign-in',
     heading: 'Sign in to',
-    end: 'sign in',
+    end: 'signs you in',
     button: 'Sign in',
     note: 'If you did not ask to sign in, you can ignore this email: nobody can sign in without the code or the link.',
   });
@@ -39,7 +39,7 @@ export function signUp(theme: MailTheme, p: AuthParts): Mail {
   return authMail(theme, p, {
     kind: 'sign-up',
     heading: 'Finish signing up for',
-    end: 'finish signing up',
+    end: 'finishes signing you up',
     button: 'Finish signing up',
     note: 'If you did not ask to sign up, you can ignore this email: nothing is made without the code or the link.',
   });

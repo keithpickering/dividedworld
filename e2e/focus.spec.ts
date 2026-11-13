@@ -525,3 +525,35 @@ test('smooth: pressing Settings › The board swaps the body without ever filter
   expect(bad, 'ancestors of the shown title with a filter or a fade').toEqual([]);
   await expect(nav.getByRole('link', { name: 'The board' })).toBeFocused();
 });
+
+test('the emailed link\'s panel: its button is reached and pressed by keyboard, and focus lands on the signed-in sentence', async ({ page }) => {
+  await page.goto('/b/general');
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Your reply' })).toBeVisible();
+  const thread = new URL(page.url()).pathname;
+  await page.goto('/settings?section=account');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
+  const goInApp = (to: string) => page.evaluate((p) => { history.pushState(null, '', p); window.dispatchEvent(new PopStateEvent('popstate')); }, to);
+  await goInApp('/sign-in');
+  await page.getByLabel('Email address').fill('demo-player@example.test');
+  await page.keyboard.press('Enter');
+  await expect(page.getByLabel('Code from the email')).toBeVisible();
+  await goInApp('/');
+  await expect(page.getByLabel('Code from the email')).toHaveCount(0);
+  await goInApp(`/sign-in?next=${encodeURIComponent(thread)}#token_hash=test-link-hash-0123456789_ABCDEF`);
+  /* The panel's first sentence has focus as it stands, and the button is the next stop. */
+  const lead = page.getByText('This link signs you in. It works once.');
+  await expect(lead).toBeFocused();
+  const press = page.getByRole('button', { name: 'Sign in', exact: true });
+  await page.keyboard.press('Tab');
+  await expect(press).toBeFocused();
+  await page.keyboard.press('Enter');
+  const signedIn = page.getByText('You are signed in as demo-player@example.test.');
+  await expect(signedIn).toBeFocused();
+  /* Continue is the next stop, and Enter on it lands on the thread. */
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Continue' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL((u) => u.pathname === thread);
+});

@@ -47,8 +47,17 @@ faketime`). It touches no deployed database.
 - `--light <model>`: the same for the light tier.
 - The report (`report.html`, with `log.json`) is written under `rehearsals/`, which git ignores; the command prints its
   path. `npm run test:rehearse` runs the tests that need Postgres and libfaketime.
-- A live run needs the Anthropic key stored on the environment as a credential, added through the secure form, never
-  pasted into a chat, a command line or a file.
+- A live run needs an Anthropic key in `ANTHROPIC_API_KEY`, passed from a variable rather than typed out, so the key
+  never lands in a chat, a command line, the shell's history or a file (`tools/rehearse/key.ts`). In a cloud session
+  whose environment holds the key as `DIVIDED_ANTHROPIC_KEY` (a session started after the variable was added):
+
+  ```bash
+  ANTHROPIC_API_KEY="$DIVIDED_ANTHROPIC_KEY" npm run rehearse -- season-opening --cap 5
+  ```
+
+  A cloud session's network proxy will not hold a credential for Anthropic's own API, so the key has to come from the
+  environment. With no key set, a live run sends a placeholder, which only a proxy holding the key can replace. `--stub`
+  and `--offline` never read the key.
 
 ## Deploying Divided World
 
@@ -140,6 +149,10 @@ In the dashboard, under **Authentication**:
 4. **Emails > Templates**: set **Magic Link** to the subject `Your Divided World sign-in code` and the body of
    `supabase/templates/sign-in.html`, and **Confirm signup** to `Your Divided World sign-up code` and the body of
    `supabase/templates/sign-up.html`. Both must keep `{{ .Token }}`: the `account` function signs in with the code.
+   The button's link must keep `{{ .RedirectTo }}` and `{{ .TokenHash }}`: the page opens with the hash, and the
+   player's `next` rides on the redirect. Paste the files again whenever they change. Auth takes a redirect only on
+   its Site URL or its allow list, and otherwise puts the Site URL in the link, so **Authentication > URL
+   Configuration > Site URL** must be the instance's own site (scheme, host and port).
 5. **Rate Limits**: with custom SMTP on, raise the emails-per-hour limit to what a sign-up evening needs; a few
    dozen an hour is plenty for a small circle.
 
@@ -147,7 +160,8 @@ Send yourself a code from the site once it is up (step 8) and check that it arri
 
 ### 5. Supabase: the Edge Functions
 
-The functions are `account`, `act`, `avatar`, `estimate`, `meet`, `seed` and `settle`. Supabase gives each of them
+The functions are the directories under `supabase/functions/` other than `_shared`, each listed in
+`supabase/config.toml`. Supabase gives each of them
 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEYS` and `SUPABASE_SECRET_KEYS` itself, every key of each kind by its name; the
 functions take the ones named `default`, and the secret key named `kayfabb_jobs` as the only key the scheduled calls
 may carry (`supabase/functions/_shared/serve.ts`). A function with no `default` key of either kind stops and says
@@ -158,8 +172,48 @@ rest as secrets, under **Edge Functions > Secrets** or with the CLI:
   setting is on, which Divided World ships off (issue #73 turns it on); setting the key now does no harm.
 - `KAYFABB_PROFILE`: `playtest` for the playtest's three-week season and seven-day Turn cooldown; leave it unset for
   the full game's numbers. Any other value is refused (`supabase/functions/_shared/instance.ts`).
+- `SYSTEM_COMPLETIONS_URL`: the base address of the old voice's server (below), such as `https://old-voice.example.org`,
+  without `/v1/completions`, which the code adds (`supabase/functions/_shared/models/completions.ts`). Without it,
+  every old-voice call fails: You Were Saying? refunds each cast after three tries, and an old-voice Mod Bot's posts
+  and filings fail as any failed model call does. An instance with no server sets its `oldVoice` setting to `false` instead, which takes the card off
+  sale.
+- `SYSTEM_COMPLETIONS_KEY`: the bearer key the server checks. Optional to the code, but a server on the public internet
+  should have one.
+- `SYSTEM_COMPLETIONS_MODEL`: the model name the server expects in a request. llama.cpp ignores it; vLLM needs the name
+  it serves. Leave it unset for llama.cpp.
 
-Then deploy all seven:
+#### The old voice's server
+
+The old voice is a 2019–2021 base model on raw completion, run on a server of the instance's own
+(`docs/plans/2026-10-30-the-system-design.md`, section 6): GPT-2 XL under llama.cpp's `llama-server` is what Divided
+World runs. It needs no GPU. A VPS with 3 vCPUs and 4 GB of memory writes a 200-token tail in well under a minute, and
+the tail is written in the background, so speed matters little. On Ubuntu 24.04, as root:
+
+1. Point a hostname at the server (an `A` record), and open only SSH and the web:
+   `ufw allow OpenSSH && ufw allow 80,443/tcp && ufw --force enable`. Add 2 GB of swap: converting the model briefly
+   needs more than 4 GB of memory.
+2. Build the server: install `build-essential cmake git libcurl4-openssl-dev python3-venv python3-pip`, clone
+   `https://github.com/ggml-org/llama.cpp` into `/opt/llama`, and build the `llama-server` target with CMake.
+3. Fetch `openai-community/gpt2-xl` from Hugging Face (its `*.json`, `*.txt` and `model.safetensors`) and convert it
+   with llama.cpp's `convert_hf_to_gguf.py` and `--outtype q8_0`, in a virtual environment holding the converter's
+   requirements. The result is about 1.7 GB. If the converter stops with `Can not map tensor 'h.0.attn.bias'`, its
+   `conversion/gpt2.py` passes on the tensors its comment says to skip: delete the
+   `yield from super().modify_tensors(data_torch, name, bid)` line under `if name.endswith((".attn.bias",
+   ".attn.masked_bias")):`, so that branch only returns, and convert again.
+4. Make a key without showing it, into a file only root reads:
+   `(umask 077; printf 'LLAMA_API_KEY=%s\n' "$(openssl rand -hex 32)" > /etc/llama-server.env)`. `llama-server` reads
+   `LLAMA_API_KEY` from its environment.
+5. Run it as a systemd service, as an unprivileged user, with `EnvironmentFile=/etc/llama-server.env` and
+   `llama-server -m <the .gguf> --host 127.0.0.1 --port 8080 -c 1024 -t 3 -np 1`. GPT-2's window is 1,024 tokens, so
+   `-c 1024` is its whole context.
+6. Put Caddy in front for HTTPS, serving only `/v1/completions` from `127.0.0.1:8080` and a 404 for every other path.
+   Caddy fetches the certificate itself once the hostname resolves.
+7. Check it: a `POST` to `https://<host>/v1/completions` with the key as a bearer token and a short prompt answers with
+   a `text`, and one without the key answers 401.
+8. Set `SYSTEM_COMPLETIONS_URL` and `SYSTEM_COMPLETIONS_KEY` as above, copying the key from `/etc/llama-server.env`
+   straight into the dashboard. A cast of You Were Saying? then shows a call in `model_calls` with the outcome `ok`.
+
+Then deploy them all:
 
 ```bash
 supabase functions deploy --use-api

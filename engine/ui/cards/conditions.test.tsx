@@ -94,7 +94,7 @@ async function open(w: ReturnType<typeof world>) {
 const post = (seq: number) => document.getElementById(`post-${seq}`)!;
 async function armAndOpen(user: ReturnType<typeof userEvent.setup>, card: string, markName: string, seq: number) {
   await user.click(screen.getByRole('button', { name: /^Hand, \d+ postcards?/u }));
-  await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: new RegExp(`^${card},`, 'u') })[0]!);
+  await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: new RegExp(`^${card},`, 'u') })[0]!);
   await user.click(await within(post(seq)).findByRole('button', { name: markName }));
   return screen.findByRole('dialog');
 }
@@ -270,6 +270,18 @@ describe('They quote…', () => {
     window.getSelection()!.removeAllRanges();
     window.getSelection()!.addRange(range);
     act(() => { document.dispatchEvent(new Event('selectionchange')); });
+    expect(field).toHaveValue('nice');
+  });
+
+  test('a selection left standing in the post while focus is in the passage field does not refill it', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const dialog = await setBlot(user, w);
+    const group = await openGroup(user, dialog);
+    const field = within(group).getByRole('textbox', { name: 'They quote…' });
+    await user.type(field, 'nice');
+    field.focus();
+    select(dialog, 4, 13);
     expect(field).toHaveValue('nice');
   });
 

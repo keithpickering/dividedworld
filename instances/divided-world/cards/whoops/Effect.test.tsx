@@ -5,7 +5,7 @@
  * attributes it publishes; the pure rules behind them are scrub.test.ts's, and the pixels are the board
  * match's and e2e/whoops.spec.ts's.
  */
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, screen, within } from '@testing-library/react';
 import { useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
@@ -15,17 +15,31 @@ import { Kit } from '../../../../engine/ui/cards/Kit.tsx';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { STROKES, whoops } from '../whoops.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
-import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, percentWashed } from './Effect.tsx';
+import { DROPS_SPEED, Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, dropsOf, percentWashed, savedOf } from './Effect.tsx';
+import { FIELD_SCALE, buildLayer, layerKey, type BuildInput } from './build.ts';
+import type { BuildClient } from './buildClient.ts';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { cursor } from './cursor.ts';
-import { paint, type PaintLayer } from './paint.ts';
-import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, type Pt, type Stroke } from './scrub.ts';
-import { DESIGN, makeSplat, type Box } from './splat.ts';
+import { paint, paintStandIn, type PaintLayer } from './paint.ts';
+import { decodePoints, packStroke } from './points.ts';
+import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, fits, fitStroke, minStepOf, type Pt, type Stroke } from './scrub.ts';
+import { DESIGN, THRESHOLD, makeSplat, type Box } from './splat.ts';
 import * as suds from './suds.ts';
+import { createClaims } from '../../../../engine/ui/cards/claims.ts';
 
 /* The suds and the drawn cursor are their own modules' (suds.test.ts, cursor.test.tsx): here the effect is seen to call them. */
 vi.mock('./suds.ts', () => ({ register: vi.fn(), unregister: vi.fn(), wash: vi.fn(), puff: vi.fn() }));
 vi.mock('./cursor.ts', () => ({ cursor: { over: vi.fn(), press: vi.fn(), leave: vi.fn() } }));
+
+/*
+ * The page's build client is the test's to hold: by default the real one with no worker (a light layer is built on the spot, as in the
+ * game), and a test that sets `seam.client` sees every request and decides when each is answered.
+ */
+const seam = vi.hoisted(() => ({ client: null as null | BuildClient, real: null as null | BuildClient }));
+vi.mock('./buildClient.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./buildClient.ts')>();
+  return { ...real, buildClient: () => seam.client ?? (seam.real ??= real.createBuildClient({ makeWorker: null })) };
+});
 
 /* Every ink grid the component builds is counted, so a test can tell a rebuild from a kept grid. Tests that count do not build their own. */
 const built = vi.hoisted(() => ({ grids: 0 }));
@@ -68,6 +82,7 @@ beforeEach(() => {
   boxHeight = null;
   frameBox = null;
   vi.clearAllMocks();
+  seam.client = null;
   /* The body's box (the cell in the thread, the frame in the ORIGIN box); jsdom lays nothing out, so every rect is at 0, 0 and the frame sits at the cell's corner. */
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-whoops-frame') && frameBox ? frameBox.w : isBox(this) ? boxNow().w : 0; } });
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-whoops-frame') && frameBox ? frameBox.h : isBox(this) ? boxNow().h : 0; } });
@@ -129,7 +144,7 @@ function mount(o: Options = {}) {
   const show: EffectProps['show'] = (view) => { shown.push(view); say(view); };
   const props: EffectProps = {
     post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), written: new Map(), reader: { author: o.author ?? false, caster: false },
-    place: o.place ?? 'thread', reach: 'post', still: o.still ?? false, save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), holdScreen: () => {}, marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>{textOf(layoutLines)}</p>,
+    place: o.place ?? 'thread', reach: 'post', still: o.still ?? false, save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), ink: createClaims().at('post:whoops', 0), holdScreen: () => {}, marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>{textOf(layoutLines)}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};
@@ -173,16 +188,46 @@ const px = (x: number, y: number): [number, number] => [x * boxNow().w, y * boxN
 function drag(frame: HTMLElement, points: readonly (readonly [number, number])[]) {
   const [first, ...rest] = points.map(([x, y]) => px(x, y));
   act(() => { fireEvent.pointerDown(frame, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-  for (const [x, y] of rest) act(() => { fireEvent.pointerMove(frame, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
+  for (const [x, y] of rest) act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
   const [lx, ly] = rest[rest.length - 1] ?? first!;
   act(() => { fireEvent.pointerUp(frame, { clientX: lx, clientY: ly, pointerId: 1, pointerType: 'mouse' }); });
 }
 
-/** A point on the splat's ink, in shares: its core's center. */
+/**
+ * A point on the splat's ink, in shares, where ONE wash pass shows. A wash takes `WASH_TAKES` (1.5) of the field a pass and a splat's
+ * core is 2 to 8 deep, so a single drag from the core's center leaves it inked (the old rule, one pass clears what is under the brush,
+ * no longer holds): the spot is the thin ink nearest the core, where a short drag to the right of it does wash some cells.
+ */
+const spots = new Map<string, [number, number]>();
 function inkSpot(ink: LayerInk): [number, number] {
+  const b = ink.box;
+  const key = `${ink.splat.placement.cx},${ink.splat.placement.cy},${b.w}x${b.h}`;
+  const kept = spots.get(key);
+  if (kept) return kept;
+  const { cx, cy } = ink.splat.placement;
+  const x0 = cx / DESIGN.w;
+  const candidates: [number, number][] = [];
+  for (let y = 0; y <= 1; y += 6 / b.h) for (let x = 0; x <= 1; x += 6 / b.w) if (ink.has(x, y) && ink.valueAt(x, y) < 1) candidates.push([x, y]);
+  candidates.sort((p, q) => Math.hypot(p[0] - x0, p[1] - cy) - Math.hypot(q[0] - x0, q[1] - cy));
+  for (const [x, y] of candidates.slice(0, 60)) {
+    const fresh = new LayerInk(ink.splat, [{ tool: 'wash', ...brushOf(BRUSH_PX, b), points: [[x, y], [x + 0.05, y]] }], b);
+    if (fresh.washed > 0) { spots.set(key, [x, y]); return [x, y]; }
+  }
+  throw new Error('no thin ink on this splat');
+}
+
+/** A point on the splat's ink, in shares: its core's center, which takes several passes to wash. */
+function coreSpot(ink: LayerInk): [number, number] {
   const { cx, cy } = ink.splat.placement;
   const x = cx / DESIGN.w;
   return ink.has(x, cy) ? [x, cy] : [x, cy + 0.05];
+}
+
+/** A wash through `points` on the model, as the Effect makes one: a line begun, moved along and lifted. */
+function washOn(ink: LayerInk, points: readonly Pt[], b: { width: number; aspect: number }): void {
+  const line = ink.begin({ tool: 'wash', ...b, points: [] });
+  for (const p of points) line.to(p);
+  line.end();
 }
 
 /** The points of a drag along y across the ink there: from its first inked point to its last. */
@@ -192,14 +237,19 @@ function rowAcross(ink: LayerInk, y: number): [number, number][] {
   return row.filter((_, i) => i === 0 || i % 5 === 0 || i === row.length - 1);
 }
 
-/** Drag rows across a layer's ink until it is washed to `share`, as a hand would. */
+/** The most passes over the whole layer a test scrubs: a pass takes `WASH_TAKES` (1.5) of the field and a core is up to about 8.5 deep, so cleaning takes several. */
+const MOST_PASSES = 14;
+
+/** Drag rows across a layer's ink, pass after pass over it, until it is washed to `share`, as a hand would. Each row is found again on the model, which keeps up with what was washed. */
 function scrubTo(frame: HTMLElement, root: HTMLElement, layer: number, ink: LayerInk, share: number) {
   const b = brush();
-  for (let y = 0; y <= 1 && washed(root)[layer]! < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
-    const row = rowAcross(ink, y);
-    if (row.length >= 2) {
-      drag(frame, row);
-      ink.wash(row, b.width, b.aspect);
+  for (let pass = 0; pass < MOST_PASSES && washed(root)[layer]! < share; pass++) {
+    for (let y = 0; y <= 1 && washed(root)[layer]! < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
+      const row = rowAcross(ink, y);
+      if (row.length >= 2) {
+        drag(frame, row);
+        washOn(ink, row, b);
+      }
     }
   }
 }
@@ -209,13 +259,15 @@ function scrubPath(ink: LayerInk, share: number): [number, number][] {
   const b = brush();
   const path: [number, number][] = [];
   let back = false;
-  for (let y = 0; y <= 1 && ink.washed < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
-    const row = rowAcross(ink, y);
-    if (row.length < 2) continue;
-    if (back) row.reverse();
-    back = !back;
-    ink.wash(path.length > 0 ? [path[path.length - 1]!, ...row] : row, b.width, b.aspect);
-    path.push(...row);
+  for (let pass = 0; pass < MOST_PASSES && ink.washed < share; pass++) {
+    for (let y = 0; y <= 1 && ink.washed < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
+      const row = rowAcross(ink, y);
+      if (row.length < 2) continue;
+      if (back) row.reverse();
+      back = !back;
+      washOn(ink, path.length > 0 ? [path[path.length - 1]!, ...row] : row, b);
+      path.push(...row);
+    }
   }
   return path;
 }
@@ -234,6 +286,37 @@ function coveredLine(ink: LayerInk): { line: number; y: number } {
   throw new Error('no line lies under this splat');
 }
 const nameOfLine = (line: number) => `L${String(line).padStart(2, '0')} alpha beta gamma`;
+
+describe('a saved state, read defensively', () => {
+  const ink = (points: Pt[], extra: object = {}) => ({ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: packStroke({ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points }).points, ...extra });
+  test('a piece that carries drops is a line\'s last: a continued piece after it is not joined (the card refuses a line that goes on past its drops)', () => {
+    const last = ink([[0.1, 0.1], [0.2, 0.2]], { drops: 1 });
+    const after = ink([[0.2, 0.2], [0.3, 0.3]], { continues: true });
+    const read = savedOf({ strokes: [last, after] }).strokes;
+    expect(read).toHaveLength(2);
+    expect(read[0]!.tool === 'ink' && read[0]!.drops).toBe(1);
+    expect(read[1]!.continues).toBeUndefined();
+    /* Drops of 0 are drops all the same, and a piece before them with none is joined as ever. */
+    expect(savedOf({ strokes: [ink([[0.1, 0.1], [0.2, 0.2]], { drops: 0 }), after] }).strokes[1]!.continues).toBeUndefined();
+    expect(savedOf({ strokes: [ink([[0.1, 0.1], [0.2, 0.2]]), after] }).strokes[1]!.continues).toBe(true);
+  });
+
+  test('a continued stroke after a dropped one is not joined to whatever now precedes it', () => {
+    const good = ink([[0.1, 0.1], [0.2, 0.2]]);
+    const bad = ink([[0.2, 0.2], [0.3, 0.3]], { points: 'not+base64url' });
+    const orphan = ink([[0.3, 0.3], [0.4, 0.4]], { continues: true });
+    const read = savedOf({ strokes: [good, bad, orphan] }).strokes;
+    expect(read).toHaveLength(2);
+    expect(read[1]!.continues).toBeUndefined();
+    /* A continued piece that does follow its kept predecessor stays joined. */
+    const joined = savedOf({ strokes: [good, ink([[0.2, 0.2], [0.4, 0.4]], { continues: true })] }).strokes;
+    expect(joined[1]!.continues).toBe(true);
+    /* A different color, or a first point that is not the last one, is not a continuation. */
+    expect(savedOf({ strokes: [good, ink([[0.2, 0.2], [0.4, 0.4]], { continues: true, color: 'blue' })] }).strokes[1]!.continues).toBeUndefined();
+    expect(savedOf({ strokes: [good, ink([[0.25, 0.2], [0.4, 0.4]], { continues: true })] }).strokes[1]!.continues).toBeUndefined();
+    expect(savedOf({ strokes: [ink([[0.1, 0.1]], { continues: true })] }).strokes[0]!.continues).toBeUndefined();
+  });
+});
 
 describe('the layers', () => {
   test('a post with three plays draws three layers, the latest on top, and still draws its words', () => {
@@ -299,12 +382,15 @@ describe('scrubbing', () => {
     expect(spot, 'two splats on one post overlap somewhere').not.toBeNull();
     /* Wash the top layer away around the spot, then start there again. */
     const around: [number, number][] = [[spot![0], spot![1]], [spot![0] + 0.06, spot![1]], [spot![0] + 0.12, spot![1]], [spot![0], spot![1]], [spot![0] - 0.06, spot![1]], [spot![0] - 0.12, spot![1]]];
-    drag(frame, around);
-    top.wash(around, brush().width, brush().aspect);
+    for (let pass = 0; pass < MOST_PASSES && top.has(spot![0], spot![1]); pass++) {
+      drag(frame, around);
+      washOn(top, around, brush());
+    }
     const before = washed(root);
     expect(before[1]).toBeGreaterThan(0);
     expect(before[0]).toBe(0);
-    drag(frame, [[spot![0], spot![1]], [spot![0] + 0.03, spot![1]], [spot![0] + 0.06, spot![1]]]);
+    /* The layer under may be deep there: its first pass takes some of it, and a few more open a hole. */
+    for (let pass = 0; pass < MOST_PASSES && washed(root)[0] === 0; pass++) drag(frame, [[spot![0], spot![1]], [spot![0] + 0.03, spot![1]], [spot![0] + 0.06, spot![1]]]);
     expect(washed(root)[0]).toBeGreaterThan(0);
   });
 
@@ -358,21 +444,22 @@ describe('scrubbing', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     boxHeight = 330;
     const wide = mount({ author: true });
-    const [x, y] = inkSpot(inkOf(0));
-    drag(wide.frame, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    const [x, y] = coreSpot(inkOf(0));
+    /* Passes take some each: six over the same places leave a hole on the phone's box too, whatever is there. */
+    for (let pass = 0; pass < 6; pass++) drag(wide.frame, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
     act(() => { vi.advanceTimersByTime(2000); });
-    const saved = wide.save.mock.calls[0]![1] as { strokes: { width: number; aspect: number; points: [number, number][] }[] };
-    expect(saved.strokes).toHaveLength(1);
+    const saved = wide.save.mock.calls[0]![1] as { strokes: { width: number; aspect: number; points: string }[] };
+    expect(saved.strokes).toHaveLength(6);
     /* The brush is 30px on its drawer's screen: a share of the width, with the box's proportions beside it. */
     expect(saved.strokes[0]!.width).toBeCloseTo(30 / 988, 4);
     expect(saved.strokes[0]!.aspect).toBeCloseTo(988 / 330, 2);
-    expect(saved.strokes[0]!.points[0]).toEqual([Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4]);
+    expect(decodePoints(saved.strokes[0]!.points)![0]).toEqual([Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4]);
     wide.unmount();
     boxWidth = PHONE_FRAME;
     boxHeight = 1100;
     const tall = mount({ states: { 'play-1': { state: saved, savedAt: '2026-10-29T22:00:00.000Z' } } });
     /* The same points on the phone's box, as ellipses: across 30/988 of 390px, down that and the aspect of 1100px. */
-    const model = inkOf(0, saved.strokes.map((s) => ({ tool: 'wash', ...s }) as Stroke));
+    const model = inkOf(0, saved.strokes.map((s) => ({ tool: 'wash', ...s, points: decodePoints(s.points)! }) as Stroke));
     expect(model.washed).toBeGreaterThan(0);
     expect(washed(tall.root)[0]).toBeCloseTo(model.washed, 3);
     /* A dab on the phone is that screen's own round 30px brush. */
@@ -411,7 +498,7 @@ describe('scrubbing', () => {
     const { frame, root, save } = mount({ author: true, clean: 40 });
     const [first, ...rest] = scrubPath(inkOf(0), 0.5).map(([x, y]) => px(x, y));
     act(() => { fireEvent.pointerDown(frame, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-    for (const [x, y] of rest) act(() => { fireEvent.pointerMove(frame, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
+    for (const [x, y] of rest) act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
     expect(states(root), 'clean before the button is let go').toEqual(['clean']);
     const [lx, ly] = rest[rest.length - 1]!;
     act(() => { fireEvent.pointerUp(frame, { clientX: lx, clientY: ly, pointerId: 1, pointerType: 'mouse' }); });
@@ -426,8 +513,8 @@ describe('scrubbing', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     /* The card's whole bound in strokes, each a dab in the post's top corner, clear of the splat. */
     const full: Stroke[] = Array.from({ length: STROKES.most }, () => ({ tool: 'wash', ...brush(), points: [[0.01, 0.01], [0.02, 0.01]] }));
-    expect(whoops.validateState!({ strokes: full }).ok).toBe(true);
-    const first = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    expect(whoops.validateState!({ strokes: full.map(packStroke) }).ok).toBe(true);
+    const first = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full.map(packStroke) }, savedAt: '2026-10-29T22:00:00.000Z' } } });
     const ink = inkOf(0, full);
     /* Short of the share, a stroke with no room is not saved, and the author is told so. */
     const [x, y] = inkSpot(ink);
@@ -555,7 +642,7 @@ describe('the view the effect publishes (marks-and-the-lens design, sections 3 a
   test('the save\'s report is in the view and in the status region once, and no line of it is drawn on a plate', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const full: Stroke[] = Array.from({ length: STROKES.most }, () => ({ tool: 'wash', ...brush(), points: [[0.01, 0.01], [0.02, 0.01]] }));
-    const { shown, frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    const { shown, frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full.map(packStroke) }, savedAt: '2026-10-29T22:00:00.000Z' } } });
     expect(last(shown).report).toBeUndefined();
     const [x, y] = inkSpot(inkOf(0, full));
     drag(frame, [[x, y], [x + 0.06, y]]);
@@ -624,9 +711,13 @@ describe('the keyboard path', () => {
     hold(button);
     frames(8000);
     expect(states(root)).toEqual(['live']);
-    frames(55000);
+    /* Every pass takes `WASH_TAKES` of the ink and a core takes several, so it is about 86 seconds at the sweep's pace (it was a minute while one pass cleared): a hand's time, never a moment and never none. */
+    /* It measures the sweep's own time to clean one layer in fake time: 86 seconds. The upper bound is 1.25 times that, so a sweep that slows by a quarter is caught. */
+    let t = 8000;
+    while (states(root)[0] === 'live' && t < 108_000) { frames(1000); t += 1000; }
     expect(states(root)).toEqual(['clean']);
-  }, 30_000);
+    expect(t).toBeGreaterThan(30_000);
+  }, 60_000);
 
   test('a line it uncovers is said, in the polite region on the page from the start', () => {
     clock();
@@ -645,9 +736,11 @@ describe('the keyboard path', () => {
     const { root } = mount({ layers: 2 });
     const button = screen.getByRole('button', { name: 'Hold to scrub' });
     hold(button);
-    frames(60000);
+    /* Each layer takes a hand's time, as one does alone (about 86 seconds each at the sweep's pace). */
+    let t = 0;
+    while (states(root)[1] === 'live' && t < 150_000) { frames(1000); t += 1000; }
     expect(states(root)[1]).toBe('clean');
-    frames(60000);
+    while (states(root)[0] === 'live' && t < 300_000) { frames(1000); t += 1000; }
     expect(states(root)).toEqual(['clean', 'clean']);
   }, 60_000);
 });
@@ -783,7 +876,7 @@ describe('the author\'s pen strokes belong to their layer', () => {
   })();
   const lineY = (line: number) => ((line + 0.5) * LINE_PX) / (TEXT_LINES * LINE_PX);
   const penAt = (line: number): Stroke => ({ tool: 'ink', color: COLORS[0]!, ...pen(), points: [[0, lineY(line)], [0.5, lineY(line)], [1, lineY(line)]] });
-  const saved = (id: string, strokes: Stroke[]): Record<string, EffectState> => ({ [id]: { state: { strokes }, savedAt: '2026-10-29T22:00:00.000Z' } });
+  const saved = (id: string, strokes: Stroke[]): Record<string, EffectState> => ({ [id]: { state: { strokes: strokes.map(packStroke) }, savedAt: '2026-10-29T22:00:00.000Z' } });
   const name = nameOfLine;
 
   test('a line under a pen stroke is hidden from a screen reader as from the eye, and one clear of it is read', () => {
@@ -798,7 +891,8 @@ describe('the author\'s pen strokes belong to their layer', () => {
   test('a reader\'s stroke over a pen stroke removes it on their screen, and the line is read', () => {
     const { frame, root, save } = mount({ states: saved('play-1', [penAt(penLine)]) });
     expect(readout(root)).not.toContain(name(penLine));
-    drag(frame, [0.1, 0.3, 0.5, 0.7, 0.9].map((x): [number, number] => [x, lineY(penLine)]));
+    /* A pass takes 1.5 of a field that is 1 under a pen line, so one clears the pen, but a splat's core on the same line takes several: the whole width, a few times over. */
+    for (let pass = 0; pass < 6; pass++) drag(frame, [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1].map((x): [number, number] => [x, lineY(penLine)]));
     expect(readout(root)).toContain(name(penLine));
     expect(save).not.toHaveBeenCalled();
   });
@@ -867,13 +961,15 @@ describe('the canvas', () => {
     (globalThis as { Path2D?: unknown }).Path2D ??= class {};
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 64;
+    canvases.set(canvas, 'main');
     const stroke: Stroke = { tool: 'ink', color: '#19e3ff', ...pen(), points: [[0.2, 0.2], [0.4, 0.2]] };
     const painted = document.createElement('canvas');
+    const geo = { dpr: 1, box: { w: 64, h: 64 }, left: 0, top: 0 };
     const layers: PaintLayer[] = [
-      { painted, color: COLORS[0]!, strokes: [stroke], alpha: 1 },
-      { painted, color: COLORS[1]!, strokes: [], alpha: 1 },
+      { picture: paintStandIn({ painted, color: COLORS[0]!, strokes: [stroke] }, geo, 64, 64, 0), alpha: 1 },
+      { picture: paintStandIn({ painted, color: COLORS[1]!, strokes: [] }, geo, 64, 64, 1), alpha: 1 },
     ];
-    paint(canvas, { dpr: 1, box: { w: 64, h: 64 }, left: 0, top: 0 }, layers);
+    paint(canvas, geo, layers);
     expect(penColors).toEqual(['work:#19e3ff']);
     expect(log.filter((l) => l === 'main.stroke')).toEqual([]);
   });
@@ -887,7 +983,7 @@ describe('the body\'s box', () => {
   function press(target: HTMLElement, points: readonly (readonly [number, number])[], pointerType = 'mouse') {
     const [first, ...rest] = points.map(([x, y]) => px(x, y));
     const down = fireEvent.pointerDown(target, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType });
-    for (const [x, y] of rest) act(() => { fireEvent.pointerMove(target, { clientX: x, clientY: y, pointerId: 1, pointerType }); });
+    for (const [x, y] of rest) act(() => { fireEvent.pointerMove(target, { buttons: 1, clientX: x, clientY: y, pointerId: 1, pointerType }); });
     const [lx, ly] = rest[rest.length - 1] ?? first!;
     act(() => { fireEvent.pointerUp(target, { clientX: lx, clientY: ly, pointerId: 1, pointerType }); });
     return down;
@@ -940,7 +1036,7 @@ describe('the body\'s box', () => {
     const [x, y] = inkSpot(inkOf(0));
     const [a, b] = [px(x, y), px(x + 0.06, y)];
     act(() => { fireEvent.pointerDown(cell, { clientX: a[0], clientY: a[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-    act(() => { fireEvent.pointerMove(cell, { clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(cell, { buttons: 1, clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
     unmount();
     act(() => { vi.advanceTimersByTime(SAVE_AFTER_MS * 2); });
     expect(save).toHaveBeenCalledTimes(1);
@@ -957,7 +1053,7 @@ describe('the body\'s box', () => {
     const [a, b] = [px(x, y), px(x + 0.06, y)];
     const stroke = (target: HTMLElement, id: number, dy = 0) => {
       act(() => { fireEvent.pointerDown(target, { clientX: a[0], clientY: a[1] + dy, pointerId: id, button: 0, pointerType: 'mouse' }); });
-      act(() => { fireEvent.pointerMove(target, { clientX: b[0], clientY: b[1] + dy, pointerId: id, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerMove(target, { buttons: 1, clientX: b[0], clientY: b[1] + dy, pointerId: id, pointerType: 'mouse' }); });
       act(() => { fireEvent.pointerUp(target, { clientX: b[0], clientY: b[1] + dy, pointerId: id, pointerType: 'mouse' }); });
     };
     stroke(frame, 1);
@@ -978,28 +1074,35 @@ describe('the body\'s box', () => {
     const moved: Box = { w: 600, h: 300 };
     frameBox = moved;
     away.append(root);
-    const [x, y] = inkSpot(new LayerInk(splatFor(0), [], moved));
-    const at = (b: Box, dx = 0) => ({ clientX: (x + dx) * b.w, clientY: y * b.h, pointerId: 1, button: 0, pointerType: 'mouse' as const });
+    /* The core is ink on the screen's old box as well as on the moved one: the press that finds the words moved is taken on the model as it stood. */
+    const [x, y] = coreSpot(new LayerInk(splatFor(0), [], moved));
+    const at = (b: Box, dx = 0) => ({ buttons: 1, clientX: (x + dx) * b.w, clientY: y * b.h, pointerId: 1, button: 0, pointerType: 'mouse' as const });
     /* The old cell is told nothing and does nothing. */
     expect(fireEvent.pointerDown(cell, at(moved)), 'the cell it left takes nothing').toBe(true);
     expect(washed(root)[0]).toBe(0);
-    act(() => { fireEvent.pointerDown(frame, at(moved)); });
-    act(() => { fireEvent.pointerMove(frame, at(moved, 0.06)); });
-    act(() => { fireEvent.pointerUp(frame, at(moved, 0.06)); });
+    /* A pass takes some, and a core takes several. */
+    const PASSES = 6;
+    for (let pass = 0; pass < PASSES; pass++) {
+      act(() => { fireEvent.pointerDown(frame, at(moved)); });
+      act(() => { fireEvent.pointerMove(frame, at(moved, 0.06)); });
+      act(() => { fireEvent.pointerUp(frame, at(moved, 0.06)); });
+    }
     const canvas = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
     expect(washed(root)[0], 'the frame takes the press where it now lives').toBeGreaterThan(0);
     expect(canvas.width, 'in the frame\'s box, not the cell\'s').toBe(600);
-    const expected = new LayerInk(splatFor(0), [{ tool: 'wash', ...brushOf(BRUSH_PX, moved), points: [[x, y], [x + 0.06, y]] }], moved).washed;
+    const expected = new LayerInk(splatFor(0), Array.from({ length: PASSES }, () => ({ tool: 'wash', ...brushOf(BRUSH_PX, moved), points: [[x, y], [x + 0.06, y]] }) as Stroke), moved).washed;
     expect(washed(root)[0]).toBeCloseTo(expected, 1);
     const before = washed(root)[0]!;
     /* Back in the cell by appendChild alone: a press in its gutter, outside the frame, washes again. */
     frameBox = null;
     cell.append(root);
-    const [x2, y2] = inkSpot(inkOf(0));
-    const gutter = (dx: number) => ({ clientX: (x2 + dx) * boxNow().w, clientY: (y2 + 6 * LINE_PX / boxNow().h) * boxNow().h, pointerId: 2, button: 0, pointerType: 'mouse' as const });
-    act(() => { fireEvent.pointerDown(cell, gutter(0)); });
-    act(() => { fireEvent.pointerMove(cell, gutter(0.06)); });
-    act(() => { fireEvent.pointerUp(cell, gutter(0.06)); });
+    const [x2, y2] = coreSpot(inkOf(0));
+    const gutter = (dx: number) => ({ buttons: 1, clientX: (x2 + dx) * boxNow().w, clientY: (y2 + 6 * LINE_PX / boxNow().h) * boxNow().h, pointerId: 2, button: 0, pointerType: 'mouse' as const });
+    for (let pass = 0; pass < PASSES; pass++) {
+      act(() => { fireEvent.pointerDown(cell, gutter(0)); });
+      act(() => { fireEvent.pointerMove(cell, gutter(0.06)); });
+      act(() => { fireEvent.pointerUp(cell, gutter(0.06)); });
+    }
     expect(washed(root)[0], 'the cell takes it again').toBeGreaterThan(before);
     away.remove();
   });
@@ -1008,12 +1111,12 @@ describe('the body\'s box', () => {
     const { frame, root } = mount();
     const [x, y] = inkSpot(inkOf(0));
     const [a, b] = [px(x, y), px(x + 0.06, y)];
-    act(() => { fireEvent.pointerMove(frame, { clientX: a[0], clientY: a[1], pointerId: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: a[0], clientY: a[1], pointerId: 1, pointerType: 'mouse' }); });
     expect(vi.mocked(cursor.over), 'one move is read once').toHaveBeenCalledTimes(1);
     vi.mocked(cursor.over).mockClear();
     act(() => { fireEvent.pointerDown(frame, { clientX: a[0], clientY: a[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
     expect(vi.mocked(cursor.press), 'one press is taken once').toHaveBeenCalledTimes(1);
-    act(() => { fireEvent.pointerMove(frame, { clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
     expect(vi.mocked(suds.wash), 'one move throws its suds once').toHaveBeenCalledTimes(1);
     act(() => { fireEvent.pointerUp(frame, { clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
     expect(washed(root)[0]).toBeGreaterThan(0);
@@ -1092,7 +1195,7 @@ describe('the body\'s box', () => {
 
   describe('the drawn cursor', () => {
     const over = vi.mocked(cursor.over);
-    const move = (target: HTMLElement, at: readonly [number, number], pointerType = 'mouse') => act(() => { fireEvent.pointerMove(target, { clientX: px(...at)[0], clientY: px(...at)[1], pointerId: 1, pointerType }); });
+    const move = (target: HTMLElement, at: readonly [number, number], pointerType = 'mouse') => act(() => { fireEvent.pointerMove(target, { buttons: 1, clientX: px(...at)[0], clientY: px(...at)[1], pointerId: 1, pointerType }); });
     const modes = () => over.mock.calls.map((c) => c[2]);
 
     test('is a sponge over ink a stroke would take, and nothing over bare margin', () => {
@@ -1163,6 +1266,35 @@ describe('a finger', () => {
   /** A finger on the splat's ink, and the same shifted by px. */
   const spot = () => px(...inkSpot(inkOf(0)));
   const shifted = (p: readonly [number, number], dx: number, dy: number): readonly [number, number] => [p[0] + dx, p[1] + dy];
+
+  test('a finger tapping while a pen stroke is live is refused, as a second mouse press is: nothing throws and the pen stroke completes and saves', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const errors: unknown[] = [];
+    const onError = (e: ErrorEvent) => { errors.push(e.error ?? e.message); e.preventDefault(); };
+    window.addEventListener('error', onError);
+    try {
+      const { frame, cell, save } = mount({ author: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Write in ink' }));
+      const line: [number, number][] = [[0.03, 0.985], [0.08, 0.985], [0.13, 0.985]];
+      const [first, ...rest] = line.map(([x, y]) => px(x, y));
+      act(() => { fireEvent.pointerDown(frame, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: rest[0]![0], clientY: rest[0]![1], pointerId: 1, pointerType: 'mouse' }); });
+      /* A finger taps while the pen is down: the pen's stroke is the one live, and stays so. */
+      const tap = px(0.5, 0.5);
+      touch(cell, 'touchstart', [{ id: 7, at: tap }], [{ id: 7, at: tap }]);
+      touch(cell, 'touchend', [], [{ id: 7, at: tap }]);
+      act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: rest[1]![0], clientY: rest[1]![1], pointerId: 1, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerUp(frame, { clientX: rest[1]![0], clientY: rest[1]![1], pointerId: 1, pointerType: 'mouse' }); });
+      expect(errors, 'no handler threw').toEqual([]);
+      await settle(SAVE_AFTER_MS);
+      expect(save).toHaveBeenCalledTimes(1);
+      const strokes = savedOf(save.mock.calls[0]![1]).strokes;
+      expect(strokes.map((s) => s.tool), 'the pen stroke, and no wash from the tap').toEqual(['ink']);
+      expect(strokes[0]!.points.length, 'the pen stroke carried on to its end').toBeGreaterThanOrEqual(2);
+    } finally {
+      window.removeEventListener('error', onError);
+    }
+  });
 
   test('a quick vertical swipe from ink washes nothing, and its touchmove is not prevented', () => {
     clock();
@@ -1404,9 +1536,48 @@ describe('saving, one at a time', () => {
     await settle(SAVE_AFTER_MS * 4);
     expect(net.flight.most).toBe(1);
     expect(net.calls, 'and nothing is left to save').toHaveLength(2);
-    const last = net.calls.at(-1)!.state as { strokes: Stroke[] };
+    const last = net.calls.at(-1)!.state as { strokes: { points: string }[] };
     expect(last.strokes).toHaveLength(3);
-    expect(last.strokes.map((s) => s.points[0]![1])).toEqual([a, b, c].map((r) => Math.round(r![0]![1] * 10_000) / 10_000));
+    expect(last.strokes.map((s) => decodePoints(s.points)![0]![1])).toEqual([a, b, c].map((r) => Math.round(r![0]![1] * 10_000) / 10_000));
+  });
+
+  test('the saved state heard before the save is answered holds the stroke the save carried: the layer is built with it once, not twice', async () => {
+    authorClock();
+    const net = gated();
+    const [x, y] = inkSpot(inkOf(0));
+    const line: [number, number][] = [[x, y], [x + 0.03, y], [x + 0.05, y]];
+    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    drag(frame, line);
+    const once = inkOf(0, [washStroke(line)]).washed;
+    const twice = inkOf(0, [washStroke(line), washStroke(line)]).washed;
+    expect(twice, 'the premise: a second wash over the same line takes more').toBeGreaterThan(once + 0.001);
+    expect(washed(root)[0]).toBeCloseTo(once, 3);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(1);
+    /* The server's state reaches this screen (another channel than the answer) before the answer does; the page may also have settled a little, so the layer is built again, not taken as the echo (the engine draws the post's plays again with the news). */
+    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    expect(washed(root)[0], 'the stroke the save carried is in the saved state and is not added again from the ones kept').toBeCloseTo(once, 3);
+    await net.accept(0);
+    expect(washed(root)[0]).toBeCloseTo(once, 3);
+  });
+
+  test('a scrub back and forth in one drag is saved pass for pass: the saved state washes the layer as far as the author\'s own screen did', async () => {
+    authorClock();
+    const { frame, root, save } = mount({ author: true });
+    const [x, y] = coreSpot(inkOf(0));
+    /* Three times there and back along one row, with points between the turns, as a hand scrubbing a stubborn core does. */
+    const leg = (from: number, to: number): [number, number][] => Array.from({ length: 7 }, (_, k): [number, number] => [from + ((to - from) * (k + 1)) / 7, y]);
+    const path: [number, number][] = [[x, y]];
+    for (let trip = 0; trip < 3; trip++) path.push(...leg(x, x + 0.12), ...leg(x + 0.12, x));
+    drag(frame, path);
+    const onScreen = washed(root)[0]!;
+    const onePass = inkOf(0, [washStroke([[x, y], [x + 0.12, y]])]).washed;
+    expect(onScreen, 'the premise: six passes wash cells that one does not').toBeGreaterThan(onePass + 0.002);
+    await settle(SAVE_AFTER_MS);
+    expect(save).toHaveBeenCalledTimes(1);
+    const sent = savedOf(save.mock.calls[0]![1]).strokes;
+    /* The saved points are simplified within a quarter of the brush, so the share they wash is the screen's to within a tenth of it. */
+    expect(Math.abs(inkOf(0, sent).washed - onScreen), 'every pass is in what was saved, not one pass for the six').toBeLessThan(onScreen * 0.1);
   });
 
   test('strokes made while a save is on its way are sent after it, not lost with the ones it carried', async () => {
@@ -1566,7 +1737,7 @@ describe('the share that counts as clean', () => {
       const row = rowAcross(ink, y);
       if (row.length < 2) continue;
       drag(frame, row);
-      ink.wash(row, b.width, b.aspect);
+      washOn(ink, row, b);
       seen.push({ share: washed(root)[0]!, clean: states(root)[0] === 'clean' });
     }
     return { seen, save };
@@ -1588,9 +1759,12 @@ describe('the share that counts as clean', () => {
       const { frame, root } = mount({ clean });
       const ink = inkOf(0);
       let share = 0;
-      for (let y = 0; y <= 1 && share < 0.5 && states(root)[0] === 'live'; y += (BRUSH_PX * 0.7) / boxNow().h) {
-        const row = rowAcross(ink, y);
-        if (row.length >= 2) { drag(frame, row); share = washed(root)[0]!; }
+      /* A pass takes some, so the rows are gone over again until the share is reached (the model's rows follow what is left). */
+      for (let pass = 0; pass < MOST_PASSES && share < 0.5 && states(root)[0] === 'live'; pass++) {
+        for (let y = 0; y <= 1 && share < 0.5 && states(root)[0] === 'live'; y += (BRUSH_PX * 0.7) / boxNow().h) {
+          const row = rowAcross(ink, y);
+          if (row.length >= 2) { drag(frame, row); washOn(ink, row, brush()); share = washed(root)[0]!; }
+        }
       }
       return { state: states(root)[0], root };
     };
@@ -1599,9 +1773,11 @@ describe('the share that counts as clean', () => {
     /* The unrounded share, as the ink holds it: read it back from a rebuild of the same strokes. */
     const mirror = inkOf(0);
     let share = 0;
-    for (let y = 0; y <= 1 && share < 0.5; y += (BRUSH_PX * 0.7) / boxNow().h) {
-      const row = rowAcross(mirror, y);
-      if (row.length >= 2) { mirror.wash(row, brush().width, brush().aspect); share = mirror.washed; }
+    for (let pass = 0; pass < MOST_PASSES && share < 0.5; pass++) {
+      for (let y = 0; y <= 1 && share < 0.5; y += (BRUSH_PX * 0.7) / boxNow().h) {
+        const row = rowAcross(mirror, y);
+        if (row.length >= 2) { washOn(mirror, row, brush()); share = mirror.washed; }
+      }
     }
     expect(reach(share * 100 * (1 + 1e-6)).state, 'a hair under the share').toBe('live');
     expect(reach(share * 100).state, 'at the share').toBe('clean');
@@ -1671,7 +1847,7 @@ describe('what a post costs a page', () => {
     const before = built.grids;
     await net.accept(0);
     expect(built.grids, 'the echo of what was just sent').toBe(before);
-    hear({ 'play-1': { state: { strokes: [{ tool: 'wash', ...brush(), points: [[0.5, 0.5]] }] }, savedAt: SAVED_AT } });
+    hear({ 'play-1': { state: { strokes: [packStroke({ tool: 'wash', ...brush(), points: [[0.5, 0.5]] })] }, savedAt: SAVED_AT } });
     expect(built.grids, 'a state from somewhere else').toBe(before + 1);
   });
 });
@@ -1681,7 +1857,7 @@ describe('what the effect says to a screen reader', () => {
   test('the report is written into a region that was on the page, empty, before it spoke', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const full: Stroke[] = Array.from({ length: STROKES.most }, () => ({ tool: 'wash', ...brush(), points: [[0.01, 0.01], [0.02, 0.01]] }));
-    const { frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    const { frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full.map(packStroke) }, savedAt: '2026-10-29T22:00:00.000Z' } } });
     const region = root.querySelector<HTMLElement>('[data-kb-report]');
     expect(region).not.toBeNull();
     expect(region).toHaveAttribute('role', 'status');
@@ -1716,16 +1892,16 @@ describe('what the effect says to a screen reader', () => {
  */
 describe('in a moment, still', () => {
   /** A saved state washing a layer about `share` of the way, as the author's strokes would. */
-  function savedWash(layer: number, share: number): { state: { strokes: Stroke[] }; washed: number } {
+  function savedWash(layer: number, share: number): { state: { strokes: ReturnType<typeof packStroke>[] }; washed: number } {
     const ink = inkOf(layer);
     const strokes: Stroke[] = [];
     for (let y = 0; y <= 1 && ink.washed < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
       const row = rowAcross(ink, y);
       if (row.length < 2) continue;
-      ink.wash(row, brush().width, brush().aspect);
+      washOn(ink, row, brush());
       strokes.push(washStroke(row));
     }
-    return { state: { strokes }, washed: ink.washed };
+    return { state: { strokes: strokes.map(packStroke) }, washed: ink.washed };
   }
   const at = '2026-10-29T22:00:00.000Z';
   const lastView = (shown: readonly (CardView | null)[]) => shown.filter((v): v is CardView => v !== null).at(-1)!;
@@ -1809,5 +1985,676 @@ describe('the canvas, with the frame offset in the cell', () => {
     expect(drawn.length).toBeGreaterThan(0);
     for (const [, x, y] of drawn) expect([x, y]).toEqual([0, 0]);
     for (const m of moved) expect([m[4], m[5]]).toEqual([0, 0]);
+  });
+});
+
+/* ------------------------------------------------------------ the ink field: what is drawn ---- */
+
+describe('the ink field: the picture a layer is drawn from', () => {
+  const clock = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+  const frames = () => act(() => { vi.advanceTimersByTime(60); });
+
+  interface Fake { w: number; h: number; surface: Uint8ClampedArray; puts: { sx: number; sy: number; sw: number; sh: number }[]; draws: HTMLCanvasElement[]; strokes: number }
+  /** 2D contexts that keep what is put on them, so a test reads a canvas's pixels (jsdom has none), and log what is drawn onto it. */
+  function fakeCanvases() {
+    const fakes = new Map<HTMLCanvasElement, Fake>();
+    const of = (c: HTMLCanvasElement): Fake => {
+      let f = fakes.get(c);
+      if (!f) { f = { w: -1, h: -1, surface: new Uint8ClampedArray(0), puts: [], draws: [], strokes: 0 }; fakes.set(c, f); }
+      if (f.w !== c.width || f.h !== c.height) { f.w = c.width; f.h = c.height; f.surface = new Uint8ClampedArray(f.w * f.h * 4); }
+      return f;
+    };
+    vi.stubGlobal('ImageData', class { constructor(readonly data: Uint8ClampedArray, readonly width: number, readonly height: number) {} });
+    (globalThis as { Path2D?: unknown }).Path2D ??= class {};
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
+      const f = of(this);
+      const state: Record<string, unknown> = {};
+      return new Proxy({}, {
+        get: (_t, key: string) => {
+          if (key in state) return state[key];
+          if (key === 'canvas') return this;
+          if (key === 'createImageData') return (w: number, h: number) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
+          if (key === 'putImageData') {
+            return (img: { width: number; height: number; data: Uint8ClampedArray }, dx: number, dy: number, sx = 0, sy = 0, sw = img.width, sh = img.height) => {
+              f.puts.push({ sx: dx + sx, sy: dy + sy, sw, sh });
+              for (let y = sy; y < sy + sh; y++) for (let x = sx; x < sx + sw; x++) for (let c = 0; c < 4; c++) f.surface[((dy + y) * f.w + dx + x) * 4 + c] = img.data[(y * img.width + x) * 4 + c]!;
+            };
+          }
+          if (key === 'drawImage') return (src: HTMLCanvasElement) => { f.draws.push(src); };
+          if (key === 'stroke') return () => { f.strokes++; };
+          if (key === 'createRadialGradient' || key === 'createLinearGradient') return () => ({ addColorStop() {} });
+          return () => undefined;
+        },
+        set: (_t, key: string, value) => { state[key] = value; return true; },
+      });
+    } as unknown as HTMLCanvasElement['getContext'];
+    return { of };
+  }
+
+  /** A client that holds every build until told (or answers at once), and records what was asked and dropped. */
+  function heldClient(holding = true) {
+    const asks = new Map<string, { input: BuildInput; onDone: (b: ReturnType<typeof buildLayer>) => void }>();
+    const requested: string[] = [], cancelled: string[] = [];
+    let hold = holding;
+    const client: BuildClient = {
+      requestBuild(key, input, onDone) {
+        requested.push(key);
+        if (hold) asks.set(key, { input, onDone }); else onDone(buildLayer(input));
+      },
+      cancel(key) { cancelled.push(key); asks.delete(key); },
+      active: () => false,
+    };
+    seam.client = client;
+    return {
+      requested, cancelled, asks,
+      release: () => act(() => { hold = false; for (const [k, a] of [...asks]) { asks.delete(k); a.onDone(buildLayer(a.input)); } }),
+    };
+  }
+
+  /** A pointer event with a time of its own (jsdom stamps every event within a millisecond of the last). */
+  function at(el: HTMLElement, type: 'pointerDown' | 'pointerMove' | 'pointerUp', [x, y]: readonly [number, number], t: number) {
+    const [cx, cy] = px(x, y);
+    const ev = createEvent[type](el, { buttons: type === 'pointerMove' ? 1 : 0, clientX: cx, clientY: cy, pointerId: 1, button: 0, pointerType: 'mouse' });
+    Object.defineProperty(ev, 'timeStamp', { value: t });
+    act(() => { fireEvent(el, ev); });
+  }
+  /** A drag whose moves are `ms` apart and that lifts `rest` ms after the last. */
+  function dragTimed(frame: HTMLElement, points: readonly (readonly [number, number])[], ms: number, rest = 1) {
+    let t = 1000;
+    at(frame, 'pointerDown', points[0]!, t);
+    for (const p of points.slice(1)) at(frame, 'pointerMove', p, (t += ms));
+    at(frame, 'pointerUp', points.at(-1)!, t + rest);
+  }
+  const writeInk = () => fireEvent.click(screen.getByRole('button', { name: 'Write in ink' }));
+  /** A line along bare paper (no layer-0 splat reaches it), in 49px steps: slow enough at 100ms a move to throw nothing. */
+  const BARE: [number, number][] = [[0.03, 0.985], [0.08, 0.985], [0.13, 0.985]];
+  const penOn = (points: readonly Pt[], drops?: 0 | 1 | 2 | 3): Stroke => ({ tool: 'ink', color: COLORS[0]!, ...pen(), points, ...(drops !== undefined ? { drops } : null) });
+  const referenceOf = (strokes: readonly Stroke[], layer = 0) => buildLayer({ seed: SEEDS[layer]!, color: COLORS[layer]!, box: boxNow(), density: 1, strokes }).image.data;
+  const inkCanvas = (root: HTMLElement) => root.querySelector<HTMLCanvasElement>('canvas[data-kb-effect-ink]')!;
+  /** What `paint` last drew on the ink canvas: the layer's picture, and whether it is a build's (put on) or the stand-in's (drawn). */
+  const lastPicture = (fk: ReturnType<typeof fakeCanvases>, root: HTMLElement) => {
+    const src = fk.of(inkCanvas(root)).draws.at(-1)!;
+    return { src, build: fk.of(src).puts.length > 0 };
+  };
+  const maxDiff = (a: Uint8ClampedArray, b: Uint8ClampedArray) => { let m = 0; for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i]! - b[i]!)); return m; };
+
+  test('the premise: the line below is on bare paper on layer 0', () => {
+    const ink = inkOf(0);
+    for (let x = 0; x <= 0.15; x += 0.01) for (let y = 0.96; y <= 1; y += 0.01) expect(ink.valueAt(x, y), `${x},${y}`).toBe(0);
+  });
+
+  test('a pen stroke on a light layer changes the picture inside its rectangle and nowhere else', () => {
+    clock();
+    const fk = fakeCanvases();
+    const { frame, root } = mount({ author: true });
+    writeInk();
+    frames();
+    const first = lastPicture(fk, root);
+    expect(first.build, 'a light layer is built before its first frame').toBe(true);
+    const picture = fk.of(first.src);
+    const before = Uint8ClampedArray.from(picture.surface);
+    const puts = picture.puts.length;
+    dragTimed(frame, BARE, 100);
+    frames();
+    expect(lastPicture(fk, root).src, 'the same canvas is updated in place').toBe(first.src);
+    /* The stroke's reach: 2r = 16px each side of the line, and a pixel of shading around that. */
+    const b = boxNow();
+    /* The line's reach is 2r = 16px, and the bulb at its end (1.35r, reaching twice that) a little further: 26 all round. */
+    const [x0, x1, y0, y1] = [0.03 * b.w - 26, 0.13 * b.w + 26, 0.985 * b.h - 26, 0.985 * b.h + 26];
+    let changed = 0;
+    for (let y = 0; y < picture.h; y++) for (let x = 0; x < picture.w; x++) {
+      const i = (y * picture.w + x) * 4;
+      if (before[i]! === picture.surface[i]! && before[i + 1]! === picture.surface[i + 1]! && before[i + 2]! === picture.surface[i + 2]! && before[i + 3]! === picture.surface[i + 3]!) continue;
+      changed++;
+      expect(x >= x0 && x <= x1 && y >= y0 && y <= y1, `pixel ${x},${y} changed outside the stroke's rectangle`).toBe(true);
+    }
+    expect(changed).toBeGreaterThan(500);
+    /* Only that rectangle was put on the canvas. */
+    const newPuts = picture.puts.slice(puts);
+    expect(newPuts.length).toBeGreaterThan(0);
+    for (const r of newPuts) expect([r.sx >= x0 - 2, r.sx + r.sw <= x1 + 2, r.sy >= y0 - 2, r.sy + r.sh <= y1 + 2], `put ${JSON.stringify(r)}`).toEqual([true, true, true, true]);
+  });
+
+  test('the stand-in, then the build: a stroke made between is in both, once', () => {
+    clock();
+    const fk = fakeCanvases();
+    const held = heldClient();
+    const { frame, root } = mount({ author: true });
+    writeInk();
+    frames();
+    const stand = lastPicture(fk, root);
+    expect(stand.build, 'held back, the layer is drawn by the stand-in').toBe(false);
+    const flat = fk.of(stand.src).strokes;
+    dragTimed(frame, BARE, 100);
+    frames();
+    expect(lastPicture(fk, root).build).toBe(false);
+    expect(fk.of(lastPicture(fk, root).src).strokes, 'the stroke is drawn flat by the stand-in').toBeGreaterThan(flat);
+    held.release();
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build, 'released, the build').toBe(true);
+    const line = penOn(BARE, 0);
+    const got = fk.of(done.src).surface;
+    expect(maxDiff(got, referenceOf([line])), 'the stroke is in the build, as if it had been in it from the first').toBeLessThanOrEqual(4);
+    expect(maxDiff(got, referenceOf([line, line])), 'and it is in once: twice would be a wider line').toBeGreaterThan(8);
+  });
+
+  test('a wash finished while the build was out is in the grid that arrived once: a wash takes more the second time', () => {
+    clock();
+    const fk = fakeCanvases();
+    const held = heldClient();
+    const { frame, root } = mount();
+    frames();
+    expect(lastPicture(fk, root).build, 'held back, the layer is drawn by the stand-in').toBe(false);
+    const [x, y] = inkSpot(inkOf(0));
+    const line: [number, number][] = [[x, y], [x + 0.03, y], [x + 0.05, y]];
+    drag(frame, line);
+    frames();
+    held.release();
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build, 'released, the build').toBe(true);
+    const wash = washStroke(line);
+    const once = referenceOf([wash]), twice = referenceOf([wash, wash]);
+    expect(maxDiff(once, twice), 'the premise: a second wash over the same line shows').toBeGreaterThan(8);
+    const got = fk.of(done.src).surface;
+    expect(maxDiff(got, once), 'the wash is in the build, as if it had been in it from the first').toBeLessThanOrEqual(4);
+    expect(maxDiff(got, twice), 'and it is in once, not twice').toBeGreaterThan(8);
+  });
+
+  test('a stroke still open when the build arrives goes on to the grid that arrived, and is in it once', () => {
+    clock();
+    const fk = fakeCanvases();
+    const held = heldClient();
+    const { frame, root } = mount({ author: true });
+    writeInk();
+    frames();
+    at(frame, 'pointerDown', BARE[0]!, 1000);
+    at(frame, 'pointerMove', BARE[1]!, 1100);
+    held.release();
+    frames();
+    at(frame, 'pointerMove', BARE[2]!, 1200);
+    at(frame, 'pointerUp', BARE[2]!, 1201);
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build).toBe(true);
+    const line = penOn(BARE, 0);
+    expect(maxDiff(fk.of(done.src).surface, referenceOf([line]))).toBeLessThanOrEqual(4);
+  });
+
+  test('a build that already holds the stroke is not given it again, and the one it replaced is dropped', () => {
+    clock();
+    const fk = fakeCanvases();
+    const held = heldClient();
+    const { frame, root, hear } = mount({ author: true });
+    writeInk();
+    frames();
+    dragTimed(frame, BARE, 100);
+    frames();
+    const first = [...held.asks.keys()];
+    expect(first).toHaveLength(1);
+    /* Another device saves a dab: the layer is built again, from its strokes, this one in them. The first request is let go. */
+    const dab: Stroke = { tool: 'wash', ...brush(), points: [[0.5, 0.2]] };
+    hear({ 'play-1': { state: { strokes: [packStroke(dab)] }, savedAt: SAVED_AT } });
+    frames();
+    expect(held.cancelled).toContain(first[0]);
+    expect(held.asks.size).toBe(1);
+    expect([...held.asks.keys()][0]).not.toBe(first[0]);
+    /* The new request holds what the other device saved, and the stroke as it is kept (simplified, its drops on it). */
+    const asked = [...held.asks.values()][0]!.input.strokes;
+    expect(asked.map((s) => s.tool)).toEqual(['wash', 'ink']);
+    held.release();
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build).toBe(true);
+    const kept = asked[1]!;
+    expect(maxDiff(fk.of(done.src).surface, referenceOf([dab, kept])), 'the stroke is in it, once').toBeLessThanOrEqual(4);
+    expect(maxDiff(fk.of(done.src).surface, referenceOf([dab, kept, kept]))).toBeGreaterThan(8);
+  });
+
+  test('a rebuild of the model in the middle of a stroke does not leave the rest of it on a dead model', () => {
+    const { frame, root, replay } = mount();
+    const [x, y] = inkSpot(inkOf(0));
+    const path: Pt[] = [[x, y], [x + 0.01, y], [x + 0.02, y], [x + 0.03, y], [x + 0.04, y], [x + 0.05, y]];
+    const px2 = (p: Pt) => px(p[0], p[1]);
+    act(() => { fireEvent.pointerDown(frame, { clientX: px2(path[0]!)[0], clientY: px2(path[0]!)[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+    for (const p of path.slice(1, 3)) act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: px2(p)[0], clientY: px2(p)[1], pointerId: 1, pointerType: 'mouse' }); });
+    replay();
+    for (const p of path.slice(3)) act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: px2(p)[0], clientY: px2(p)[1], pointerId: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerUp(frame, { clientX: px2(path.at(-1)!)[0], clientY: px2(path.at(-1)!)[1], pointerId: 1, pointerType: 'mouse' }); });
+    const whole = inkOf(0, [{ tool: 'wash', ...brush(), points: path }]);
+    expect(whole.washed).toBeGreaterThan(0);
+    expect(washed(root)[0], 'the current model washed the whole stroke').toBeCloseTo(whole.washed, 3);
+  });
+
+  test('pointer speed over the last 50ms is the drops: floor(speed / DROPS_SPEED), at most 3, none for a tap or a pause', () => {
+    expect(DROPS_SPEED).toBe(900);
+    const line = (ms: number, step: number, count: number, rest = 0) => {
+      const trail = Array.from({ length: count }, (_, i) => ({ x: i * step, y: 0, t: i * ms }));
+      return dropsOf(trail, trail.at(-1)!.t + rest);
+    };
+    expect(line(10, 4, 20), '400 px/s').toBe(0);
+    expect(line(10, 9, 20), '900 px/s').toBe(1);
+    expect(line(10, 19, 20), '1900 px/s').toBe(2);
+    expect(line(10, 28, 20), '2800 px/s').toBe(3);
+    expect(line(10, 500, 20), 'far faster is still 3').toBe(3);
+    expect(line(10, 28, 20, 60), 'held still for 60ms before lifting').toBe(0);
+    expect(dropsOf([{ x: 5, y: 5, t: 100 }], 100), 'a tap').toBe(0);
+    expect(dropsOf([], 100)).toBe(0);
+    /* A drag that is all inside the window counts its own span: 90px in 50ms is 1800 px/s. */
+    expect(dropsOf([{ x: 0, y: 0, t: 0 }, { x: 90, y: 0, t: 50 }], 50)).toBe(2);
+    /* A segment half in the window counts half its length. */
+    expect(dropsOf([{ x: 0, y: 0, t: 0 }, { x: 180, y: 0, t: 100 }], 100)).toBe(2);
+  });
+
+  test('a fast lift saves drops above 0 with the stroke, and a slow one saves 0', async () => {
+    authorClock();
+    const fast = mount({ author: true });
+    writeInk();
+    dragTimed(fast.frame, BARE, 5);
+    await settle(SAVE_AFTER_MS);
+    const saved = (fast.save.mock.calls.at(-1)![1] as { strokes: { tool: string; drops?: number }[] }).strokes.at(-1)!;
+    expect(saved.tool).toBe('ink');
+    expect(saved.drops).toBe(3);
+    fast.unmount();
+    const slow = mount({ author: true });
+    writeInk();
+    dragTimed(slow.frame, BARE, 100);
+    await settle(SAVE_AFTER_MS);
+    expect((slow.save.mock.calls.at(-1)![1] as { strokes: { drops?: number }[] }).strokes.at(-1)!.drops).toBe(0);
+  });
+
+  test('what is saved is encoded, simplified and within fits, and what is kept is the same', async () => {
+    authorClock();
+    const { frame, save } = mount({ author: true });
+    writeInk();
+    /* 700 moves along one straight line: a hand reports far more than a line needs. */
+    const many = Array.from({ length: 700 }, (_, i): [number, number] => [0.02 + (0.9 * i) / 699, 0.985]);
+    dragTimed(frame, many, 100);
+    await settle(SAVE_AFTER_MS);
+    const state = save.mock.calls.at(-1)![1] as { strokes: { points: unknown; continues?: true; drops?: number }[] };
+    expect(state.strokes.every((s) => typeof s.points === 'string'), 'the points are packed').toBe(true);
+    const kept = savedOf(state).strokes;
+    expect(kept).toHaveLength(state.strokes.length);
+    const points = kept.reduce((n, s) => n + s.points.length, 0);
+    expect(points, 'simplified: a straight line is its two ends').toBeLessThan(10);
+    expect(fits(kept)).toBe(true);
+    expect(whoops.validateState!(state).ok).toBe(true);
+    expect(state.strokes.slice(1).every((s) => s.continues === true), 'pieces of one line continue it').toBe(true);
+  });
+
+  test('a post that leaves lets its pictures go, and builds again when it returns', () => {
+    clock();
+    fakeCanvases();
+    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const see = (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+    const held = heldClient(false);
+    const { root } = mount();
+    see(true);
+    frames();
+    expect(root.dataset.kbPictures, 'built for the post that is near').toBe('1');
+    expect(held.requested).toHaveLength(1);
+    see(false);
+    frames();
+    expect(root.dataset.kbPictures, 'the cache is empty').toBe('0');
+    see(true);
+    frames();
+    expect(root.dataset.kbPictures).toBe('1');
+    expect(held.requested, 'and built again').toHaveLength(2);
+  });
+
+  test('a build still out when the post leaves is dropped, and its answer is not used', () => {
+    clock();
+    fakeCanvases();
+    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const see = (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+    const held = heldClient();
+    const { root } = mount();
+    see(true);
+    frames();
+    const [key] = [...held.asks.keys()];
+    expect(key).toBeDefined();
+    see(false);
+    expect(held.cancelled).toContain(key);
+    held.release();
+    frames();
+    expect(root.dataset.kbPictures).toBe('0');
+  });
+
+  /** A post that goes far from the viewport and comes back, and the build client held by the test. */
+  function viewport() {
+    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    return (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+  }
+
+  test('a resize while the build is out, with one stroke finished and one still open: after the build arrives both are in the picture once, and in the model', () => {
+    clock();
+    layoutLines = TEXT_LINES;
+    const resizes: (() => void)[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { resizes.push(cb); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const fk = fakeCanvases();
+    const held = heldClient();
+    const { frame, root } = mount({ author: true });
+    writeInk();
+    frames();
+    /* Two lines no splat covers at either width, so only a pen stroke can hide them. */
+    const lineY = (k: number) => (k + 0.5) / TEXT_LINES;
+    const clear = (k: number) => [MAX_FRAME, 800].every((w) => !coveredLines([{ top: lineY(k) - 0.001, bottom: lineY(k) + 0.001, text: '' }], [new LayerInk(splatFor(0), [], { w, h: TEXT_LINES * LINE_PX })])[0]);
+    const k1 = Array.from({ length: TEXT_LINES - 6 }, (_, k) => k).find((k) => clear(k) && clear(k + 3) && clear(k + 6))!;
+    expect(k1, 'a pair of clear lines exists').toBeDefined();
+    const y1 = lineY(k1), y2 = lineY(k1 + 3);
+    const [first, second]: [number, number][][] = [[[0.02, y1], [0.5, y1], [0.98, y1]], [[0.02, y2], [0.5, y2], [0.98, y2]]];
+    const oldPen = pen();
+    /* One stroke finished, then one open, with the first request still out. */
+    at(frame, 'pointerDown', first![0]!, 1000);
+    at(frame, 'pointerMove', first![1]!, 1100);
+    at(frame, 'pointerMove', first![2]!, 1200);
+    at(frame, 'pointerUp', first![2]!, 1400);
+    at(frame, 'pointerDown', second![0]!, 2000);
+    at(frame, 'pointerMove', second![1]!, 2100);
+    /* The body is resized: the model is built again and the build asked for again at the new size. */
+    boxWidth = 800;
+    act(() => { resizes.forEach((r) => r()); });
+    frames();
+    expect(held.asks.size, 'only the new size is waited for').toBe(1);
+    const asked = [...held.asks.values()][0]!.input;
+    expect(asked.box.w).toBe(800);
+    expect(asked.strokes.map((s) => s.tool), 'the finished stroke is in what the build is asked for').toEqual(['ink']);
+    held.release();
+    frames();
+    at(frame, 'pointerMove', second![2]!, 2200);
+    at(frame, 'pointerUp', second![2]!, 2400);
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build).toBe(true);
+    const open: Stroke = { tool: 'ink', color: COLORS[0]!, ...oldPen, points: second!, drops: 0 };
+    const got = fk.of(done.src).surface;
+    /* A line of pixels along a stroke's edge sits on the threshold, where the build's stored field (rounded to 1/4096) and the live grid's differ in the last place: so the pictures are compared by how many pixels differ, not by the worst one. */
+    const apart = (a: Uint8ClampedArray, b: Uint8ClampedArray) => { let n = 0; for (let i = 0; i < a.length; i += 4) if (Math.abs(a[i]! - b[i]!) > 4 || Math.abs(a[i + 3]! - b[i + 3]!) > 4) n++; return n; };
+    expect(apart(got, referenceOf([...asked.strokes, open])), 'both strokes are in the picture').toBeLessThan(boxNow().w);
+    expect(apart(got, referenceOf([...asked.strokes, ...asked.strokes, open])), 'the finished one is in once').toBeGreaterThan(5 * boxNow().w);
+    expect(apart(got, referenceOf([...asked.strokes, open, open])), 'and so is the open one').toBeGreaterThan(5 * boxNow().w);
+    expect(apart(got, referenceOf(asked.strokes)), 'the open one is in').toBeGreaterThan(5 * boxNow().w);
+    /* The model has both: the line under each is hidden from a screen reader. */
+    expect(readout(root)).not.toContain(nameOfLine(k1));
+    expect(readout(root)).not.toContain(nameOfLine(k1 + 3));
+    expect(readout(root), 'a line clear of both is still read').toContain(nameOfLine(k1 + 6));
+  });
+
+  test('a reader\'s unsaved strokes survive the post leaving and returning, in the model and in the picture', () => {
+    clock();
+    const fk = fakeCanvases();
+    const see = viewport();
+    const held = heldClient();
+    const { frame, root } = mount();
+    see(true);
+    frames();
+    held.release();
+    frames();
+    const [x, y] = inkSpot(inkOf(0));
+    const rows: [number, number][][] = [0, 0.02, 0.04].map((dy) => [[x, y + dy], [x + 0.05, y + dy], [x + 0.1, y + dy]]);
+    for (const row of rows) drag(frame, row);
+    const share = washed(root)[0]!;
+    expect(share, 'the strokes washed something').toBeGreaterThan(0);
+    see(false);
+    frames();
+    expect(root.dataset.kbPictures).toBe('0');
+    see(true);
+    frames();
+    /* The model came back from the strokes kept on this screen. */
+    expect(washed(root)[0], 'the washed share is the same').toBeCloseTo(share, 3);
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build).toBe(true);
+    /* The strokes come back as this screen kept them: simplified, as a stroke is when it is kept (`fitStroke`). */
+    const made = rows.flatMap((row) => fitStroke(washStroke(row), minStepOf(boxNow())));
+    expect(maxDiff(fk.of(done.src).surface, referenceOf(made)), 'the picture holds them').toBeLessThanOrEqual(4);
+    expect(maxDiff(fk.of(done.src).surface, referenceOf([])), 'and is not the untouched layer').toBeGreaterThan(8);
+  });
+
+  test('after live strokes the picture\'s grid and the model agree: the washed share, and the field at the model\'s cell centers', () => {
+    clock();
+    const fk = fakeCanvases();
+    /* Builds answered at once by a client of the test's own (the page's shared one may hold a key another test left waiting under fake timers). */
+    heldClient(false);
+    const { frame, root } = mount();
+    frames();
+    const [x, y] = inkSpot(inkOf(0));
+    /* The strokes as the screen made them (a reader's, full resolution: both the model and the grid hold them so until the next rebuild). */
+    const kept = [0, 0.02, 0.04, 0.06].map((dy) => washStroke([[x - 0.05, y + dy], [x, y + dy], [x + 0.05, y + dy], [x + 0.1, y + dy]]));
+    for (const dy of [0, 0.02, 0.04, 0.06]) drag(frame, [[x - 0.05, y + dy], [x, y + dy], [x + 0.05, y + dy], [x + 0.1, y + dy]]);
+    frames();
+    const picture = lastPicture(fk, root);
+    expect(picture.build).toBe(true);
+    expect(maxDiff(fk.of(picture.src).surface, referenceOf(kept)), 'the picture is the grid the strokes were applied to').toBeLessThanOrEqual(4);
+    /* The grid as built from the same strokes, read at the model's cell centers. */
+    const box = boxNow();
+    const model = inkOf(0, kept);
+    const grid = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box, density: 1, strokes: kept });
+    const once = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box, density: 1, strokes: [] });
+    const cols = Math.ceil(box.w);
+    const at1 = (field: Uint16Array, cx: number, cy: number) => field[Math.min(Math.ceil(box.h) - 1, Math.floor(cy)) * cols + Math.min(cols - 1, Math.floor(cx))]! / FIELD_SCALE;
+    const { cols: mc, rows: mr, step } = model.cells;
+    let total = 0, left = 0, apart = 0;
+    for (let j = 0; j < mr; j++) for (let i = 0; i < mc; i++) {
+      const cx = (i + 0.5) * step, cy = (j + 0.5) * step;
+      const was = at1(once.field, cx, cy) >= THRESHOLD, now = at1(grid.field, cx, cy) >= THRESHOLD;
+      if (was) { total++; if (now) left++; }
+      if (now !== (model.cells.values[j * mc + i]! >= THRESHOLD)) apart++;
+    }
+    expect(total).toBeGreaterThan(0);
+    expect(1 - left / total, 'the grid\'s washed share, at the model\'s cells').toBeCloseTo(model.washed, 1);
+    expect(1 - left / total).toBeCloseTo(washed(root)[0]!, 1);
+    expect(apart / (mc * mr), 'cells where the grid and the model disagree on ink: a rounding\'s worth').toBeLessThan(0.01);
+  });
+
+  test('a layer a reader scrubs clean lets its picture, grid and canvas go while the post stays', () => {
+    clock();
+    fakeCanvases();
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    const held = heldClient(false);
+    const { frame, root } = mount({ layers: 1 });
+    frames();
+    expect(root.dataset.kbPictures, 'drawn from a build').toBe('1');
+    scrubTo(frame, root, 0, inkOf(0), 0.96);
+    frames();
+    expect(states(root)).toEqual(['clean']);
+    expect(root.dataset.kbPictures, 'nothing is held for a layer that is gone').toBe('0');
+    expect(held.cancelled.length, 'its build slot was let go').toBeGreaterThanOrEqual(1);
+  }, 60_000);
+
+  test('a layer is asked for with the key of its strokes, so a stroke changes it', () => {
+    clock();
+    fakeCanvases();
+    const held = heldClient(false);
+    mount({ states: { 'play-1': { state: { strokes: [packStroke({ tool: 'wash', ...brush(), points: [[0.5, 0.5], [0.6, 0.5]] })] }, savedAt: SAVED_AT } } });
+    frames();
+    expect(held.requested).toEqual([layerKey('play-1', boxNow(), 1, [{ tool: 'wash', ...brush(), points: [[0.5, 0.5], [0.6, 0.5]] }])]);
+  });
+});
+
+/* A save that got no answer may still have been stored: its strokes are then in the state heard, and must be counted once, here and in the retry. */
+describe('a save whose answer was lost', () => {
+  const lost = { ok: false as const, error: LOST_ANSWER, uncertain: true as const };
+  const lineAt = (): [number, number][] => { const [x, y] = inkSpot(inkOf(0)); return [[x, y], [x + 0.03, y], [x + 0.05, y]]; };
+
+  test('that the server stored: its state heard afterwards holds the stroke, counted once in the model, and the retry sends it once', async () => {
+    authorClock();
+    const net = gated();
+    const line = lineAt();
+    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    drag(frame, line);
+    const once = inkOf(0, [washStroke(line)]).washed;
+    const twice = inkOf(0, [washStroke(line), washStroke(line)]).washed;
+    expect(twice, 'the premise: a second wash over the same line takes more').toBeGreaterThan(once + 0.001);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(1);
+    await act(async () => { net.calls[0]!.answer(lost); });
+    /* The server did store it, and the state reaches this screen (the page is also drawn again, so the layer is built from it). */
+    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    expect(washed(root)[0], 'the stroke in the saved state is not added again from the ones kept').toBeCloseTo(once, 3);
+    await settle(RETRY_AFTER_MS);
+    expect(net.calls).toHaveLength(2);
+    expect((net.calls[1]!.state as { strokes: unknown[] }).strokes, 'the retry holds the stroke once').toHaveLength(1);
+    await net.accept(1);
+    await settle(SAVE_AFTER_MS * 4);
+    expect(net.calls, 'and nothing is left to send').toHaveLength(2);
+    expect(washed(root)[0]).toBeCloseTo(once, 3);
+  });
+
+  test('that the server did not store: the state heard is unchanged, and the retry still carries the stroke', async () => {
+    authorClock();
+    const net = gated();
+    const line = lineAt();
+    const { frame, root } = mount({ author: true, save: net.save });
+    drag(frame, line);
+    await settle(SAVE_AFTER_MS);
+    await act(async () => { net.calls[0]!.answer(lost); });
+    expect(washed(root)[0]).toBeCloseTo(inkOf(0, [washStroke(line)]).washed, 3);
+    await settle(RETRY_AFTER_MS);
+    expect(net.calls).toHaveLength(2);
+    expect((net.calls[1]!.state as { strokes: unknown[] }).strokes).toHaveLength(1);
+  });
+
+  test('two lost answers with only the first stored: the first state heard still holds its stroke, counted once, and the retry has no duplicate', async () => {
+    authorClock();
+    const net = gated();
+    const [a, b] = rows();
+    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    drag(frame, a!);
+    await settle(SAVE_AFTER_MS);
+    await act(async () => { net.calls[0]!.answer(lost); });
+    drag(frame, b!);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls, 'the second save carries both').toHaveLength(2);
+    await act(async () => { net.calls[1]!.answer(lost); });
+    /* Only the first was stored. */
+    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    const once = inkOf(0, [washStroke(a!), washStroke(b!)]).washed;
+    expect(washed(root)[0], 'the stroke the first save stored is counted once').toBeCloseTo(once, 3);
+    await settle(RETRY_AFTER_MS * 4);
+    const last = net.calls[net.calls.length - 1]!;
+    expect(net.calls.length).toBeGreaterThan(2);
+    expect((last.state as { strokes: unknown[] }).strokes, 'the retry holds each stroke once').toHaveLength(2);
+  });
+
+  test('an uncertain save stored, then a later save refused: the refusal does not forget it, so nothing is counted or sent twice', async () => {
+    authorClock();
+    const net = gated();
+    const [a, b, c] = rows();
+    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    drag(frame, a!);
+    await settle(SAVE_AFTER_MS);
+    await act(async () => { net.calls[0]!.answer(lost); });
+    drag(frame, b!);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(2);
+    await act(async () => { net.calls[1]!.answer({ ok: false, error: 'at most 200 strokes' }); });
+    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    expect(washed(root)[0], 'counted once').toBeCloseTo(inkOf(0, [washStroke(a!), washStroke(b!)]).washed, 3);
+    drag(frame, c!);
+    await settle(SAVE_AFTER_MS);
+    const last = net.calls[net.calls.length - 1]!;
+    expect(net.calls).toHaveLength(3);
+    expect((last.state as { strokes: unknown[] }).strokes, 'a, b and c once each').toHaveLength(3);
+  });
+
+  test('refused outright: every stroke is kept, and the next save carries them all', async () => {
+    authorClock();
+    const net = gated();
+    const [a, b] = rows();
+    const { frame } = mount({ author: true, save: net.save });
+    drag(frame, a!);
+    await settle(SAVE_AFTER_MS);
+    await act(async () => { net.calls[0]!.answer({ ok: false, error: 'at most 200 strokes' }); });
+    drag(frame, b!);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(2);
+    expect((net.calls[1]!.state as { strokes: unknown[] }).strokes).toHaveLength(2);
+  });
+});
+
+/* No player is ever stuck: a stroke whose pointerup never came ends by the other signs a browser gives, and never washes on hover or refuses a finger for good. */
+describe('a stroke whose pointerup was lost', () => {
+  /** A finger wipe sideways from `at`: the touch events as a browser sends them. */
+  const wipe = (target: HTMLElement, at: readonly [number, number]) => {
+    const send = (type: 'touchstart' | 'touchmove' | 'touchend', dx: number) => {
+      const list = [{ identifier: 1, clientX: at[0] + dx, clientY: at[1], target }];
+      const event = new TouchEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, { touches: { value: type === 'touchend' ? [] : list }, targetTouches: { value: type === 'touchend' ? [] : list }, changedTouches: { value: list } });
+      act(() => { target.dispatchEvent(event); });
+    };
+    send('touchstart', 0);
+    send('touchmove', 30);
+    send('touchmove', 90);
+    send('touchmove', 150);
+    send('touchend', 150);
+  };
+  /** A mouse press and a move with the button down, and no lift. */
+  function hold() {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const m = mount();
+    const [x, y] = inkSpot(inkOf(0));
+    const [a, b] = [px(x, y), px(x + 0.06, y)];
+    act(() => { fireEvent.pointerDown(m.frame, { clientX: a[0], clientY: a[1], pointerId: 1, button: 0, buttons: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(m.frame, { clientX: b[0], clientY: b[1], pointerId: 1, buttons: 1, pointerType: 'mouse' }); });
+    return { ...m, a, b };
+  }
+  const wipesAfter = (m: ReturnType<typeof hold>) => {
+    vi.mocked(suds.wash).mockClear();
+    wipe(m.cell, px(...coreSpot(inkOf(0))));
+    expect(vi.mocked(suds.wash), 'a finger wipes again: no stroke is left live to refuse it').toHaveBeenCalled();
+  };
+
+  test('lostpointercapture ends it, and a finger wipes after', () => {
+    const m = hold();
+    act(() => { fireEvent.lostPointerCapture(m.frame, { pointerId: 1, pointerType: 'mouse' }); });
+    wipesAfter(m);
+  });
+
+  test('the window losing focus ends it, and a finger wipes after', () => {
+    const m = hold();
+    act(() => { fireEvent.blur(window); });
+    wipesAfter(m);
+  });
+
+  test('the page being hidden ends it, and a finger wipes after', () => {
+    const m = hold();
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    try { act(() => { fireEvent(document, new Event('visibilitychange')); }); } finally { delete (document as { hidden?: unknown }).hidden; }
+    wipesAfter(m);
+  });
+
+  test('a mouse move with no button down ends it, and washes nothing: the hover after a lost pointerup is only a hover', () => {
+    const m = hold();
+    vi.mocked(suds.wash).mockClear();
+    const [cx, cy] = px(...coreSpot(inkOf(0)));
+    act(() => { fireEvent.pointerMove(m.frame, { clientX: cx, clientY: cy, pointerId: 1, buttons: 0, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(m.frame, { clientX: cx + 20, clientY: cy, pointerId: 1, buttons: 0, pointerType: 'mouse' }); });
+    expect(vi.mocked(suds.wash), 'the hover throws no suds: it washes nothing').not.toHaveBeenCalled();
+    wipesAfter(m);
   });
 });

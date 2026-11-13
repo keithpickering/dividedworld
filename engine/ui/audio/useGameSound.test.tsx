@@ -18,6 +18,19 @@ describe('useGameSound', () => {
     await findByText('sound on');
   });
 
+  test('set(false) saves off after on', async () => {
+    const fake = buildWorld();
+    fake.signInAs(fake.seed.account('me'));
+    let latest: ReturnType<typeof useGameSound> | null = null;
+    function Probe() { latest = useGameSound(); return <p>{latest.on ? 'sound on' : 'sound off'}</p>; }
+    const { findByText } = renderIn(fake, <Probe />);
+    await findByText('sound off');
+    await waitFor(() => { act(() => latest!.set(true)); expect(document.body.textContent).toBe('sound on'); });
+    await findByText('sound on');
+    act(() => latest!.set(false));
+    await findByText('sound off');
+  });
+
   test('set keeps its identity across renders', async () => {
     const fake = buildWorld();
     fake.signInAs(fake.seed.account('me'));

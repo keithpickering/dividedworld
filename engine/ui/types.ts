@@ -7,6 +7,7 @@
  * Everything here a player reads out of character is plain and true ("The fiction may lie; the
  * log never does"). The System's in-character words are the rules' `Copy`.
  */
+import type { ConductMailOverride } from '../mail/conduct.ts';
 import type { Quadrant, Span } from '../rules/types.ts';
 import type { CardArt, CardUi } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
@@ -383,6 +384,14 @@ export interface GlassTheme {
   readonly orbs: { readonly gradients: readonly GlassOrbStops[]; readonly body: { readonly core: string; readonly edge: string } };
 }
 
+/** An instance's code of conduct: a version and its sections, read by engine/ui/conduct/Conduct.tsx. */
+export interface ConductUi {
+  readonly version: number;
+  readonly sections: readonly { readonly key: string; readonly title: string; readonly text: string }[];
+  /** Words for the moderation emails in place of the engine's (engine/mail/conduct.ts); a template left out keeps the engine's. */
+  readonly mail?: ConductMailOverride;
+}
+
 export interface InstanceUi {
   /** The themes a player may pick; the first is the house theme, used when the account says "system". */
   readonly themes: readonly ThemeOption[];
@@ -416,10 +425,19 @@ export interface InstanceUi {
   readonly glass: GlassTheme;
   /** The instance's pictures for its personas, by the key its rules name (`DeveloperPersona.avatar`) as a URL; a persona with none is drawn as an initial. */
   readonly avatars?: Readonly<Record<string, string>>;
+  /**
+   * The instance's pictures for its staff personas, by the roster key (`Persona.key`): a square, and a portrait where it has one (engine/ui/data/staff-faces.ts
+   * gives them to the persona's character); a persona with none is drawn as an initial.
+   */
+  readonly staffAvatars?: Readonly<Record<string, { readonly square: string; readonly portrait?: string }>>;
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
   readonly cards: readonly CardUi[];
   /** How each pack the instance sells draws itself, by the rules' `PackRules.key`: its name and its face art, placed as a card's face art is (engine/ui/cards/types.ts, `CardArt`). */
   readonly packs: Readonly<Record<string, { readonly name: string; readonly art: CardArt }>>;
+  /** Each piece of gear's art, by the rules' `GearRules.key`: a URL the bundler resolved, and the art's height over its width. */
+  readonly gear: Readonly<Record<string, { readonly art: string; readonly aspect: number }>>;
+  /** Each trophy kind's badge art, by the rules' `TrophyRules.key`, as a URL the bundler resolved. */
+  readonly trophies: Readonly<Record<string, { readonly art: string }>>;
   /**
    * The instance's look for a card's back (`PostcardBack`), each a URL the bundler resolved. `mark` is drawn at the center of the
    * back's crossed bands; without it the back is the bands alone. `canvas` is a picture for the back, a canvas as a card's is
@@ -431,6 +449,11 @@ export interface InstanceUi {
   readonly onboarding: OnboardingUi;
   /** The instance's Strategy Guide: its prose, and Gabe's hint for each class (docs/plans/2026-11-02-onboarding-plan.md, Task 8). */
   readonly guide: GuideUi;
+  /**
+   * The instance's code of conduct (docs/plans/2026-11-02-conduct-design.md, section 9): versioned, so an account accepts the current
+   * version. Each section's `key` is its anchor on /conduct, its `title` the bold sentence, its `text` plain Markdown.
+   */
+  readonly conduct: ConductUi;
   /** What a signed-out visitor meets: a made-up sample thread, the developer persona's note and the HUD's prompt (docs/plans/2026-11-05-front-door-design.md, section 4). */
   readonly frontDoor: FrontDoorUi;
 }

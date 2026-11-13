@@ -9,11 +9,17 @@
  * play and is tried again on the next, and the mixer never throws into its caller.
  *
  * `fadeMs` on `play` is the cross-fade between sounds of one group, so it does nothing without a `group`: a sound in no group
- * starts at full level and plays through, overlapping whatever else sounds.
+ * overlaps whatever else sounds. No voice ever steps, though: a voice starts at 0 and ramps to its level, and ramps back to 0 when
+ * it ends or is replaced, over at least `EDGE_MS`, because a level that jumps is a click in the speaker. A play may ask for a `tailMs`,
+ * a fade to nothing over the last of its file, so a take ends by fading, not by stopping. A bus's volume moves to its new level over
+ * a few milliseconds for the same reason. Each slot's `gain` multiplies the level its voice ramps to, so an instance levels its files
+ * against each other (a gain that is not a finite number above 0 is read as 1). A level the caller hands in that is not a finite number (a bus's volume, a loop's `setGain`) is read as 0, since a param throws on it.
  *
  * Engine code: it names no card and no instance.
  */
 import type { SoundBus, SoundSlot } from './types.ts';
+/** The shortest ramp any voice gets in or out, in milliseconds. */
+export const EDGE_MS = 8;
 export interface AudioParamLike { value: number; cancelScheduledValues(t: number): unknown; setValueAtTime(v: number, t: number): unknown; linearRampToValueAtTime(v: number, t: number): unknown; setTargetAtTime(v: number, t: number, c: number): unknown }
 export interface GainNodeLike { gain: AudioParamLike; connect(to: unknown): unknown; disconnect(): unknown }
 export interface SourceLike { buffer: unknown; loop: boolean; onended: (() => void) | null; connect(to: unknown): unknown; disconnect(): unknown; start(when?: number): unknown; stop(when?: number): unknown }
@@ -32,8 +38,12 @@ export interface Mixer {
   setBus(bus: SoundBus, s: { on: boolean; volume: number }): void;
   /** Resolves whether the mixer is now unlocked: false when the browser refused, so the next gesture may try again. */
   unlock(): Promise<boolean>; suspend(): Promise<void>; resume(): Promise<void>;
-  play(slot: SoundSlot, o?: { group?: string; fadeMs?: number }): Promise<{ lengthMs: number } | null>;
-  loop(slot: SoundSlot, o?: { group?: string; onStop?: (why: LoopStop) => void }): Promise<LoopHandle | null>;
+  play(slot: SoundSlot, o?: { group?: string; fadeMs?: number; tailMs?: number }): Promise<{ lengthMs: number } | null>;
+  /**
+   * A loop starts at gain 0, silent until its owner's `setGain` raises it. `cancelled` is asked once the sound is decoded: true resolves null
+   * with no source made and no group voice replaced, for an owner that gave up while the file loaded.
+   */
+  loop(slot: SoundSlot, o?: { group?: string; onStop?: (why: LoopStop) => void; cancelled?: () => boolean }): Promise<LoopHandle | null>;
 }
 export function createMixer(deps: MixerDeps): Mixer {
   /** The context once made; `ctx` is the same context once it has resumed, and only then may anything sound. */
@@ -44,11 +54,14 @@ export function createMixer(deps: MixerDeps): Mixer {
     interface: { on: false, volume: 100, node: null },
   };
   const loops: Record<SoundBus, Set<(why: LoopStop) => void>> = { game: new Set(), interface: new Set() };
-  /** A group's current voice, and the way to end it over `fadeMs` (a play fades out, a loop stops). */
+  /** A group's current voice, and the way to end it over `fadeMs` (a play fades out, a loop stops). A play's fade-out ends by its file's end, but never takes less than `EDGE_MS`, so a play replaced in its last few milliseconds outlasts its file by up to that. */
   const groups = new Map<string, { source: SourceLike; end(fadeMs: number): void }>();
   const buffers = new Map<string, Promise<{ readonly duration: number } | null>>();
 
-  const level = (b: SoundBus): number => (buses[b].on ? Math.min(Math.max(buses[b].volume, 0), 100) / 100 : 0);
+  /** A bus's level: 0 when it is off or its volume is not a finite number (a NaN handed to a param throws), else the volume over 100, clamped to 0..1. */
+  const level = (b: SoundBus): number => (buses[b].on && Number.isFinite(buses[b].volume) ? Math.min(Math.max(buses[b].volume, 0), 100) / 100 : 0);
+  /** A slot's own level: its `gain`, or 1 when it has none or it is not a finite number above 0. */
+  const gainOf = (slot: SoundSlot): number => (typeof slot.gain === 'number' && Number.isFinite(slot.gain) && slot.gain > 0 ? slot.gain : 1);
   function busNode(c: AudioContextLike, b: SoundBus): GainNodeLike {
     let node = buses[b].node;
     if (!node) {
@@ -77,31 +90,53 @@ export function createMixer(deps: MixerDeps): Mixer {
     }
     return pending;
   }
-  /** Fade a voice out over `fadeMs` and stop its source then; the source's end disconnects both. */
-  function fadeOut(c: AudioContextLike, voice: GainNodeLike, source: SourceLike, fadeMs: number): void {
+  /**
+   * Fade a voice out over `fadeMs` and stop its source then; the source's end disconnects both, once, whichever of the natural end or this
+   * stop comes first. A played voice has a natural end (`naturalEnd`, on the context's clock) and its source stops there on its own, so
+   * the ramp is shortened to finish by it: a ramp still partway down when the source ends is a click. The ramp is never shorter than
+   * `EDGE_MS`, so a voice replaced in its last few milliseconds, or after its end, still ramps over a real interval. A loop has no end.
+   */
+  function fadeOut(c: AudioContextLike, voice: GainNodeLike, source: SourceLike, fadeMs: number, naturalEnd?: number): void {
     const now = c.currentTime;
-    const at = now + Math.max(fadeMs, 0) / 1000;
+    const edge = EDGE_MS / 1000;
+    const wanted = Math.max(fadeMs, EDGE_MS) / 1000;
+    const at = now + (naturalEnd === undefined ? wanted : Math.min(wanted, Math.max(naturalEnd - now, edge)));
     voice.gain.cancelScheduledValues(now);
     voice.gain.setValueAtTime(voice.gain.value, now);
     voice.gain.linearRampToValueAtTime(0, at);
     source.stop(at);
   }
-  /** Build a voice (source through its own gain into the bus) for a decoded buffer, started now. */
-  function start(c: AudioContextLike, slot: SoundSlot, buffer: { readonly duration: number }, looped: boolean, fadeInMs: number) {
+  /**
+   * Build a voice (source through its own gain into the bus) for a decoded buffer, started now. It always starts at 0. A play ramps to the
+   * slot's level over `fadeInMs` (at least `EDGE_MS`, at most half the file) and then, over its last `tailMs` (at least `EDGE_MS`), back to 0.
+   * The tail never starts inside the fade-in: it starts at the later of "`tailMs` before the end" and "the end of the ramp up", so a tail as
+   * long as the file, or a file shorter than fade-in plus tail, still ramps up fully and then down, and neither is a step (a level set at the
+   * start of the fade-in would be the click the ramps exist to remove). A loop gets no ramp up and no tail, and stays silent until its owner's `setGain`.
+   * A play also returns its natural end (a loop has none), which a later fade-out needs.
+   */
+  function start(c: AudioContextLike, slot: SoundSlot, buffer: { readonly duration: number }, looped: boolean, fadeInMs: number, tailMs = 0) {
     const bus = busNode(c, slot.bus);
     const source = c.createBufferSource();
     const voice = c.createGain();
     source.buffer = buffer;
     source.loop = looped;
-    if (fadeInMs > 0) {
-      voice.gain.setValueAtTime(0, c.currentTime);
-      voice.gain.linearRampToValueAtTime(1, c.currentTime + fadeInMs / 1000);
-    } else voice.gain.value = 1;
+    const now = c.currentTime;
+    voice.gain.setValueAtTime(0, now);
+    const naturalEnd = looped ? undefined : now + buffer.duration;
+    if (naturalEnd !== undefined) {
+      const level = gainOf(slot);
+      const fadeIn = Math.min(Math.max(fadeInMs, EDGE_MS) / 1000, buffer.duration / 2);
+      const tail = Math.max(tailMs, EDGE_MS) / 1000;
+      const rampedUp = now + fadeIn;
+      voice.gain.linearRampToValueAtTime(level, rampedUp);
+      voice.gain.setValueAtTime(level, Math.max(naturalEnd - tail, rampedUp));
+      voice.gain.linearRampToValueAtTime(0, naturalEnd);
+    }
     source.connect(voice);
     voice.connect(bus);
     source.onended = () => { source.disconnect(); voice.disconnect(); };
     source.start();
-    return { source, voice };
+    return { source, voice, naturalEnd };
   }
   /** Both entry points' shared gate: null where nothing may sound, else the context and the decoded buffer. */
   async function ready(slot: SoundSlot) {
@@ -117,7 +152,12 @@ export function createMixer(deps: MixerDeps): Mixer {
       buses[bus].on = s.on;
       buses[bus].volume = s.volume;
       const node = buses[bus].node;
-      if (node) node.gain.value = level(bus);
+      if (node && made) {
+        const now = made.currentTime;
+        node.gain.cancelScheduledValues(now);
+        node.gain.setValueAtTime(node.gain.value, now);
+        node.gain.setTargetAtTime(level(bus), now, 0.015);
+      } else if (node) node.gain.value = level(bus);
       if (!s.on) for (const end of [...loops[bus]]) end('bus');
     },
     async unlock() {
@@ -138,10 +178,10 @@ export function createMixer(deps: MixerDeps): Mixer {
         const fadeMs = o.fadeMs ?? 0;
         const prior = o.group === undefined ? undefined : groups.get(o.group);
         if (prior) prior.end(fadeMs);
-        const { source, voice } = start(c, slot, buffer, false, o.group === undefined ? 0 : fadeMs);
+        const { source, voice, naturalEnd } = start(c, slot, buffer, false, o.group === undefined ? 0 : fadeMs, o.tailMs);
         if (o.group !== undefined) {
           const group = o.group;
-          groups.set(group, { source, end: (ms) => fadeOut(c, voice, source, ms) });
+          groups.set(group, { source, end: (ms) => fadeOut(c, voice, source, ms, naturalEnd) });
           const done = source.onended;
           source.onended = () => { done?.(); if (groups.get(group)?.source === source) groups.delete(group); };
         }
@@ -151,7 +191,7 @@ export function createMixer(deps: MixerDeps): Mixer {
     async loop(slot, o = {}) {
       try {
         const r = await ready(slot);
-        if (!r) return null;
+        if (!r || o.cancelled?.()) return null;
         const { c, buffer } = r;
         const prior = o.group === undefined ? undefined : groups.get(o.group);
         if (prior) prior.end(0);
@@ -172,7 +212,7 @@ export function createMixer(deps: MixerDeps): Mixer {
             const now = c.currentTime;
             voice.gain.cancelScheduledValues(now);
             voice.gain.setValueAtTime(voice.gain.value, now);
-            voice.gain.setTargetAtTime(Math.min(Math.max(g, 0), 1), now, 0.05);
+            voice.gain.setTargetAtTime((typeof g === 'number' && Number.isFinite(g) ? Math.min(Math.max(g, 0), 1) : 0) * gainOf(slot), now, 0.05);
           },
           stop(fadeMs) { end('stopped', fadeMs); },
         };

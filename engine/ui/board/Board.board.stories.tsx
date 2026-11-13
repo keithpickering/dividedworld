@@ -56,6 +56,29 @@ const world: World = (fake, instance) => {
   })().catch(() => {});
 };
 
+/**
+ * A thread spun from post 1 of another, with one reply from a character whose name is long, and a newest thread whose title is long: what the
+ * list rows' end-to-end cases (e2e/list-rows.spec.ts, docs/plans/2026-11-12-list-rows-design.md, sections 2.1 and 2.2) need to see a "spun from"
+ * line and a last post that does not fit one line. Compared with no manifest. The spin is an Act dated at the clock, so the spun thread is the
+ * board's first row.
+ */
+const spunWorld: World = (fake, instance) => {
+  const [first, second] = instance.classes;
+  const me = fake.seed.account('story-player', { seasoned: true });
+  const other = fake.seed.account('story-other');
+  const mine = fake.seed.character(me, 'Mrs. Hooligan', (second ?? first)!.key, { at: OCT(1) });
+  const long = fake.seed.character(other, 'Sir Reginald Featherstonehaugh-Wetherby the Third', first!.key, { at: OCT(1) });
+  const general = instance.boards.find((b) => !b.system)!.slug;
+  const origin = fake.seed.thread(general, long, 'Gabe my beloved', 'Where to begin.', { at: OCT(20) });
+  fake.seed.thread(general, mine, 'A title that goes on and on and on, well past the width a last post leaves it, so that it has to wrap', 'Be kind.', { at: OCT(21) });
+  fake.seed.settle({ at: OCT(28), wallet: { [me]: 240 } });
+  fake.signInAs(me);
+  void (async () => {
+    const spun = await fake.spin(origin.act, mine, 'Spun out of the first post', 'Carrying on over here.');
+    if (spun.ok) fake.seed.post(spun.value.thread.id, long, 'A reply, from a long name.');
+  })().catch(() => {});
+};
+
 function BoardStory() {
   return <Frame><LoadedBoard slug="general" /></Frame>;
 }
@@ -71,3 +94,6 @@ type Story = StoryObj<typeof BoardStory>;
 
 /** General's thread list on the Main board's layout, at 1440 wide. */
 export const Board: Story = {};
+
+/** The list with a spun thread (one reply, a long-named last poster) and a thread with a long title; compared with no manifest. */
+export const Spun: Story = { parameters: { world: spunWorld } };

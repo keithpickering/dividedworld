@@ -22,9 +22,7 @@ const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty'
 const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: () => 'blot', canApply: () => ok(undefined) };
 /** A common Move, set face down with a Who condition naming only a retired character, so its back looks like a trap's and never springs. */
 const dud: CardRules = { ...base, key: 'dud', name: 'Dud', alignment: 'pepperoni', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'dud' }, t, e, now) };
-const instance: Instance = { ...testInstance, cards: [blot, snare, dud], settings: { ...testInstance.settings, economy: { 'x.price': 100 },
-  /* Long, because the screens read a back's end against the real clock and the fake's starts on a fixed date. */
-  setLasts: { unit: 'day', count: 3650 } } };
+const instance: Instance = { ...testInstance, cards: [blot, snare, dud], settings: { ...testInstance.settings, economy: { 'x.price': 100 } } };
 
 /** Blot draws a marker around the post's words, so a test sees whether its effect was drawn. */
 function Splash({ children }: EffectProps) {
@@ -108,6 +106,20 @@ describe('a card back', () => {
     expect(said.ends).toMatch(/^Ends \w+ \d+, [\d:]+\s[AP]M, unless it springs first\.$/u);
   });
 
+  test('whose time passes while its Lens is open is gone from the Lens on the next render, read from the one clock then', async () => {
+    const w = await world();
+    await open(w);
+    await waitFor(() => expect(back(2)).not.toBeNull());
+    const user = userEvent.setup();
+    await user.click(back(2)!);
+    const lens = await screen.findByRole('dialog', { name: 'Cards on this post' });
+    expect(lens.querySelector('.kb-lens-line')!.textContent).toBe('Face down on this post');
+    w.fake.clock.advance(8 * 86_400_000);
+    /* A render the Lens has of its own (the fold of Who), with no remount and no read of the plays. */
+    await user.click(within(lens).getByRole('button', { name: /^1 play/u }));
+    await waitFor(() => expect(screen.queryByText('Face down on this post')).toBeNull());
+  });
+
   test('is the face-down card itself: no picture inside, not even the instance\'s mark, and no card\'s alignment', async () => {
     const w = await world();
     await open(w);
@@ -189,7 +201,7 @@ describe('arming a Set', () => {
     await open(w);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
-    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Snare, Salty, Set/u })[0]!);
+    await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: /^Snare, Salty, Set/u })[0]!);
     await waitFor(() => expect(within(post(4)).queryByRole('button', { name: 'Set Snare face down on post 4' })).not.toBeNull());
     for (const seq of [1, 2, 3]) expect(within(post(seq)).queryByRole('button', { name: /face down on post/u })).toBeNull();
   });

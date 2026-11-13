@@ -81,7 +81,7 @@ test('a rename is queued, lands, is met by three characters and ends, and the ne
     if (String(url).includes('anthropic')) {
       if (second) asked = firstMessageOf(body);
       const part = partOf(body);
-      assert.ok(part, 'the meeting asks for one of its three parts');
+      assert.ok(part, 'the meeting asks for one of its parts');
       const reply = partAnswer(second ? { ...answer, moves: [] } : answer, part);
       return new Response(JSON.stringify({ model: tiers.strong, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(reply) }], usage: { input_tokens: 4000, output_tokens: 700, service_tier: 'standard' } }), { status: 200 });
     }

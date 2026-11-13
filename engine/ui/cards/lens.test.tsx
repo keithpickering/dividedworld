@@ -9,6 +9,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
+import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
@@ -232,12 +233,55 @@ describe('what the Lens says and offers', () => {
     const second = fake.seed.post(thread, spritey, 'post 2');
     fake.signInAs(me);
     fake.clock.advance(60_000);
-    fake.seed.card(spritey, second, 'k2', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    fake.seed.card(spritey, second, 'k2', { ends: new Date(fake.clock.now() + 3_600_000).toISOString() });
     renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: warded, cards });
     await userEvent.click(await markOf(2, 'Card 2'));
     const report = lens().querySelector('.kb-lens-report');
     expect(report).toHaveTextContent('Turns away cards up to uncommon, Salty and Sweet cards, Card 3 and Card 4.');
     expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Turns away some cards');
+  });
+
+  test('the Lens of a live no-quote play says it cannot be quoted and when it ends', async () => {
+    width(false);
+    const stops = {
+      ...instance,
+      cards: instance.cards.map((c) => (c.key === 'k2' ? { ...c, play: 'use' as const, gimmick: { kind: 'noQuote' as const }, lasts: { unit: 'day' as const, count: 7 } } : c)),
+    };
+    const fake = buildWorld(undefined, stops);
+    const me = fake.seed.account('me');
+    const spritey = fake.seed.character(fake.seed.account('other'), 'Spritey', 'face');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.signInAs(me);
+    fake.clock.advance(60_000);
+    const ends = new Date(fake.clock.now() + 3_600_000).toISOString();
+    fake.seed.card(spritey, second, 'k2', { ends });
+    renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: stops, cards });
+    await userEvent.click(await markOf(2, 'Card 2'));
+    const panel = within(lens()).getByRole('tabpanel');
+    expect(panel).toHaveTextContent('Cannot be quoted');
+    expect(panel).toHaveTextContent(/Ends /u);
+  });
+
+  test('the Lens of a cast earn reads "Earns 10% more from some reactions", whatever its play', async () => {
+    width(false);
+    const earns = {
+      ...instance,
+      cards: instance.cards.map((c) => (c.key === 'k3' ? { ...c, play: 'cast' as const, gimmick: { kind: 'earn' as const, by: 0.1, quadrants: ['excitedPositive' as const], group: 'test' } } : c)),
+    };
+    const fake = buildWorld(undefined, earns);
+    const me = fake.seed.account('me');
+    const spritey = fake.seed.character(fake.seed.account('other'), 'Spritey', 'face');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.signInAs(me);
+    fake.clock.advance(60_000);
+    fake.seed.card(spritey, second, 'k3', { ends: new Date(fake.clock.now() + 3_600_000).toISOString() });
+    renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: earns, cards });
+    await userEvent.click(await markOf(2, 'Card 3'));
+    expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Earns 10% more from some reactions');
   });
 
   test('Act draws the view\'s controls from the kit, and a card with none has no Act row', async () => {
@@ -704,6 +748,9 @@ describe('Who across tabs', () => {
   });
 });
 
+/** The plain link at the very foot of a post's Lens: the last stop in it. */
+const reportToAdmins = () => within(lens()).getByRole('button', { name: 'Report to admins' });
+
 describe('the Tab order around a Lens drawn at the end of the body', () => {
   test('Tab past its last control goes to the element after the mark, Shift+Tab before its first goes back to the mark, and it stays open', async () => {
     width(false);
@@ -712,12 +759,12 @@ describe('the Tab order around a Lens drawn at the end of the body', () => {
     open(w);
     const mark = await markOf(2, 'Card 2');
     await userEvent.click(mark);
-    /* The first stop is the open tab and the last is Who's disclosure. */
+    /* The first stop is the open tab and the last is Report to admins, the plain link at the foot of the Lens (the conduct plan, Task 6). */
     expect(tab('Card 2')).toHaveFocus();
     await userEvent.tab({ shift: true });
     expect(mark).toHaveFocus();
     expect(lens()).toBeInTheDocument();
-    whoButton().focus();
+    reportToAdmins().focus();
     await userEvent.tab();
     expect(within(await article(2)).getByRole('link', { name: 'Permalink to post #2' })).toHaveFocus();
     expect(lens()).toBeInTheDocument();
@@ -737,7 +784,7 @@ describe('the Tab order around a Lens drawn at the end of the body', () => {
       mark.closest('header')!.insertBefore(hidden, link);
     }
     await userEvent.click(mark);
-    whoButton().focus();
+    reportToAdmins().focus();
     await userEvent.tab();
     expect(link).toHaveFocus();
   });
@@ -1052,7 +1099,7 @@ describe('End this card', () => {
     const w = world();
     w.fake.seed.admin(w.me);
     w.fake.clock.advance(60_000);
-    w.fake.seed.set(w.spritey, w.second, 'k2', { at: Date.now() });
+    w.fake.seed.set(w.spritey, w.second, 'k2', { at: w.fake.clock.now() });
     open(w);
     await userEvent.click(await within(await article(2)).findByRole('button', { name: /^A card set face down/u }));
     await unfold();
@@ -1083,7 +1130,7 @@ describe('End this card', () => {
     const w = world();
     w.fake.seed.admin(w.me);
     w.fake.clock.advance(60_000);
-    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(Date.now() - 3_600_000).toISOString() });
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(w.fake.clock.now() - 3_600_000).toISOString() });
     open(w);
     await openKind(2, 'Card 2');
     expect(endButton()).toBeNull();
@@ -1094,8 +1141,8 @@ describe('End this card', () => {
     const w = world();
     w.fake.seed.admin(w.me);
     w.fake.clock.advance(60_000);
-    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(Date.now() - 3_600_000).toISOString() });
-    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(w.fake.clock.now() - 3_600_000).toISOString() });
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(w.fake.clock.now() + 3_600_000).toISOString() });
     open(w);
     await openKind(2, 'Card 2');
     expect(within(lens()).getAllByRole('button', { name: 'End this card' })).toHaveLength(1);
@@ -1188,7 +1235,7 @@ describe('a visit\'s tab', () => {
     const w = world();
     const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.they });
     const post = o.mine ? w.fake.seed.post(w.thread, w.pipe, 'post 4') : w.second;
-    const visit = w.fake.seed.visit(clerk, post, { at: Date.now(), endsInMs: o.endsInMs ?? 161 * 60_000, line: 'Routine inspection.', ...(o.challenge ? { challenge: o.challenge } : {}) });
+    const visit = w.fake.seed.visit(clerk, post, { at: w.fake.clock.now(), endsInMs: o.endsInMs ?? 161 * 60_000, line: 'Routine inspection.', ...(o.challenge ? { challenge: o.challenge } : {}) });
     return { ...w, clerk, post, visit, seq: o.mine ? 4 : 2 };
   }
   const openVisit = (w: ReturnType<typeof visited>) =>
@@ -1482,7 +1529,7 @@ describe('a visit\'s tab', () => {
       openVisit(w);
       const mark = await visitMark(w.seq);
       /* The page was read with the bar at 2; another visit filed before the Lens opened, so the bar stands at 6. */
-      const other = w.fake.seed.visit(w.clerk, w.third, { at: Date.now() });
+      const other = w.fake.seed.visit(w.clerk, w.third, { at: w.fake.clock.now() });
       w.fake.seed.visitEnd(other, { outcome: 'filed', line: 'Filed.' });
       w.fake.seed.infraction(other, { points: 4, band: 'moderate' });
       await userEvent.click(mark);
@@ -1495,7 +1542,7 @@ describe('a visit\'s tab', () => {
       width(false);
       const w = visited({ challenge: QUIZ });
       w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
-      w.fake.seed.infraction(w.visit, { points: 2, at: Date.now() - 30 * 24 * HOUR, expiresAt: Date.now() - 16 * 24 * HOUR });
+      w.fake.seed.infraction(w.visit, { points: 2, at: w.fake.clock.now() - 30 * 24 * HOUR, expiresAt: w.fake.clock.now() - 16 * 24 * HOUR });
       openVisit(w);
       const l = await press(w);
       await within(l).findByText(/they dropped off on/u);
@@ -1575,7 +1622,7 @@ describe('a visit\'s tab', () => {
       width(false);
       const w = visited({ challenge: QUIZ, mine: true });
       w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
-      w.fake.seed.infraction(w.visit, { points: 2, at: Date.now() - 30 * 24 * HOUR, expiresAt: Date.now() - 16 * 24 * HOUR });
+      w.fake.seed.infraction(w.visit, { points: 2, at: w.fake.clock.now() - 30 * 24 * HOUR, expiresAt: w.fake.clock.now() - 16 * 24 * HOUR });
       openVisit(w);
       const l = await press(w);
       await within(l).findByText(/they dropped off on/u);
@@ -1606,7 +1653,8 @@ describe('a visit\'s tab', () => {
       expect(within(l).getByRole('tab', { name: 'Dropped' })).toHaveAttribute('aria-selected', 'true');
       expect(within(l).getByRole('heading', { name: 'The Clerk could not be filed and was dropped' })).toBeInTheDocument();
       expect(l).toHaveTextContent(/The visit could not be filed and was dropped on .*Nothing landed on Spritey\./u);
-      expect(l).not.toHaveTextContent(/admin/u);
+      /* The words about the visit send nobody to an admin; the post's own Report to admins link, at the foot of every Lens (the conduct plan), is not the visit's words. */
+      expect((l.textContent ?? '').replace('Report to admins', '')).not.toMatch(/admin/u);
     });
 
     test('trapped, it says a trap on the post ended it', async () => {
@@ -1626,9 +1674,9 @@ describe('a visit\'s tab', () => {
       width(false);
       const w = visited({ challenge: QUIZ });
       /* Dated by the real clock, as the visit is: the rows are in the order the Acts happened. */
-      const report = w.fake.seed.report(w.gloomba, w.second, 'Third time this week.', { at: Date.now() - 2 * 60_000 });
-      w.fake.seed.verdict(report, w.clerk, 'visit', { line: 'Noted. Inspecting.', visit: w.visit, at: Date.now() - 60_000 });
-      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.', at: Date.now() + 60_000 });
+      const report = w.fake.seed.report(w.gloomba, w.second, 'Third time this week.', { at: w.fake.clock.now() - 2 * 60_000 });
+      w.fake.seed.verdict(report, w.clerk, 'visit', { line: 'Noted. Inspecting.', visit: w.visit, at: w.fake.clock.now() - 60_000 });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.', at: w.fake.clock.now() + 60_000 });
       w.fake.seed.infraction(w.visit, { points: 2 });
       openVisit(w);
       const l = await press(w);
@@ -1917,8 +1965,8 @@ describe('a play that did not take', () => {
     expect(within(row(live)).queryByText(/Didn't take/u)).toBeNull();
     /* It stays an Act the room can react to. */
     expect(within(row(lost)).getByRole('button', { name: /react/iu })).toBeInTheDocument();
-    /* Nothing says an admin did anything. */
-    expect(within(lens()).queryByText(/admin/iu)).toBeNull();
+    /* Nothing says an admin did anything (the Report to admins button at the foot is a button, and says nothing of this play). */
+    expect(within(lens()).queryByText(/admin/iu, { ignore: 'button' })).toBeNull();
   });
 
   test('its effect is not drawn: the card\'s effect is given the plays that took alone', async () => {
@@ -1956,7 +2004,7 @@ describe('taking a back back', () => {
     const w = world();
     const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
     w.fake.clock.advance(60_000);
-    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() });
+    w.fake.seed.set(w.pipe, post, 'k2', { at: w.fake.clock.now() });
     return w;
   };
 
@@ -1964,7 +2012,7 @@ describe('taking a back back', () => {
     width(false);
     const w = mine();
     w.fake.clock.advance(60_000);
-    w.fake.seed.set(w.spritey, w.second, 'k3', { at: Date.now() });
+    w.fake.seed.set(w.spritey, w.second, 'k3', { at: w.fake.clock.now() });
     open(w);
     await openBack(4);
     expect(takeButton()).not.toBeNull();
@@ -1979,7 +2027,7 @@ describe('taking a back back', () => {
     const w = world();
     const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
     /* The screen's setLasts is seven days: ten days on, a back worked out from it would be over. */
-    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() - 10 * 86_400_000, endsAt: Date.now() + 20 * 86_400_000 });
+    w.fake.seed.set(w.pipe, post, 'k2', { at: w.fake.clock.now() - 10 * 86_400_000, endsAt: w.fake.clock.now() + 20 * 86_400_000 });
     const [set] = await w.fake.cardsOn(post, 10);
     open(w);
     await openBack(4);
@@ -1991,7 +2039,7 @@ describe('taking a back back', () => {
     width(false);
     const w = world();
     const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
-    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() - 86_400_000, endsAt: Date.now() - 3_600_000 });
+    w.fake.seed.set(w.pipe, post, 'k2', { at: w.fake.clock.now() - 86_400_000, endsAt: w.fake.clock.now() - 3_600_000 });
     open(w);
     await article(4);
     expect(within(await article(4)).queryByRole('button', { name: /^A card set face down/u })).toBeNull();
@@ -2019,5 +2067,105 @@ describe('taking a back back', () => {
     await openBack(4);
     await userEvent.click(takeButton()!);
     expect(await within(lens()).findByRole('alert')).toHaveTextContent('There is no face-down card to take back there.');
+  });
+});
+
+/**
+ * A surface play's tab (docs/plans/2026-11-11-graffiti-design.md, sections 3 and 8): below the play's own Who row, one row for each live draw and wash, oldest first, with who, when, what the card names of the
+ * draw and the share of the surface it still owns; and one line for the older draws that left the live list. The words are the card's, and the engine's own where it gives none.
+ */
+describe('a surface play\'s tab', () => {
+  const stroke = (y: number, width: number) => ({ width, aspect: 1, points: [[0, y], [1, y]] as [number, number][] });
+  const check = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
+    ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes, colors: (input as { colors?: unknown }).colors } }) : refuse('strokes'));
+  const slab = { ...testInstance.cards[0]!, key: 'slab', name: 'Slab', stack: 1, reaches: ['post' as const], surface: { limitKey: 'slab.limit', mostLive: 48, validateDraw: check, validateWash: check } } as unknown as CardRules;
+  const surfaced = { ...testInstance, cards: [slab], settings: { ...testInstance.settings, cardSettings: { 'slab.limit': 40 } } };
+  const slabUi = (extra: Partial<CardUi> = {}) => [cardUi('slab', { describeDraw: (p) => (typeof p.colors === 'string' ? p.colors : ''), logDraw: { verb: 'tagged', noun: 'tag', nouns: 'tags', surface: 'the wall' }, ...extra })];
+
+  /* Spritey wrote post 2; Gloomba played the slab on it; the reader (Pipewrench) is a third party. */
+  async function wall(oldOnes = 0) {
+    const fake = buildWorld(undefined, surfaced);
+    const me = fake.seed.account('me'); const other = fake.seed.account('other'); const third = fake.seed.account('third');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const spritey = fake.seed.character(other, 'Spritey', 'face');
+    const gloomba = fake.seed.character(third, 'Gloomba', 'heel');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const post = fake.seed.post(thread, spritey, 'post 2');
+    fake.clock.advance(60_000);
+    const play = fake.seed.card(gloomba, post, 'slab', { message: 'a wall' });
+    const as = async (account: Id, run: () => Promise<unknown>) => { fake.signInAs(account); fake.clock.advance(60_000); const a = await run() as { ok: boolean }; expect(a.ok).toBe(true); };
+    /* Old tags, painted over wholly by the next one at the same cells. */
+    for (let i = 0; i < oldOnes; i++) await as(third, () => fake.draw(play, gloomba, { strokes: [stroke(0.8, 0.02)], colors: 'black' }));
+    await as(other, () => fake.draw(play, spritey, { strokes: [stroke(0.8, 0.06)], colors: 'white' }));
+    await as(third, () => fake.draw(play, gloomba, { strokes: [stroke(0.2, 0.06)], colors: 'pink and lime' }));
+    await as(other, () => fake.wash(play, spritey, { strokes: [stroke(0.8, 0.02)] }));
+    fake.signInAs(me);
+    return { fake, thread, play };
+  }
+  const openSlab = async (w: { fake: Fake; thread: Id }, ui: readonly CardUi[] = slabUi()) => {
+    width(false);
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: surfaced, cards: ui });
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: /^Slab, 1 play/u }));
+    return lens();
+  };
+  const draws = (box: HTMLElement) => [...box.querySelectorAll<HTMLElement>('[data-kb-surface-act]')];
+  const said = (el: HTMLElement) => el.querySelector('.kb-lens-by')!.textContent!.replace(/\s+/g, ' ').trim();
+
+  test('lists each live draw and wash oldest first, with who, what the card names and the share of the wall each draw still owns', async () => {
+    const box = await openSlab(await wall());
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    const [white, pink, washed] = draws(box).map(said);
+    /* Spritey's white tag covered 600 cells and the wash took 200 back: 400 are still its own. Gloomba's pink tag owns its 600. */
+    expect(white).toMatch(/^Spritey · .+ · white · 4% of the wall$/u);
+    expect(pink).toMatch(/^Gloomba · .+ · pink and lime · 6% of the wall$/u);
+    expect(washed).toMatch(/^Spritey · .+ · washed$/u);
+    expect(draws(box).map((r) => r.getAttribute('data-kb-surface-act'))).toHaveLength(3);
+    expect(within(box).getByRole('list', { name: 'Drawn and washed' })).toBeInTheDocument();
+    expect(box.querySelectorAll('[data-kb-surface-act] time')).toHaveLength(3);
+  });
+  test('sits below the Who row, which is still the play\'s own', async () => {
+    const box = await openSlab(await wall());
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    const who = whoButton();
+    expect(who.compareDocumentPosition(draws(box)[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(rows()).toHaveLength(0);
+    await userEvent.click(who);
+    expect(rows()).toHaveLength(1);
+    expect(draws(box)).toHaveLength(3);
+  });
+  test('says how many older draws are no longer live, in the card\'s words', async () => {
+    const box = await openSlab(await wall(2));
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    expect(within(box).getByText('and 2 older tags, washed or painted over')).toBeInTheDocument();
+  });
+  test('says one older draw in the singular, and nothing where none left the list', async () => {
+    const one = await openSlab(await wall(1));
+    await waitFor(() => expect(draws(one)).toHaveLength(3));
+    expect(within(one).getByText('and 1 older tag, washed or painted over')).toBeInTheDocument();
+  });
+  test('adds no older line where every draw is live', async () => {
+    const box = await openSlab(await wall(0));
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    expect(box.textContent).not.toMatch(/older/u);
+  });
+  test('the engine\'s own words stand where the card gives none, and name no card\'s', async () => {
+    const box = await openSlab(await wall(2), [cardUi('slab')]);
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    expect(draws(box).map(said).map((t) => t.replace(/^(\w+) · .+? · /u, '$1 · '))).toEqual(['Spritey · 4% of the surface', 'Gloomba · 6% of the surface', 'Spritey · washed']);
+    expect(within(box).getByText('and 2 older drawings, washed or painted over')).toBeInTheDocument();
+  });
+  test('a tab of a card with no surface has no such rows', async () => {
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    expect(lens().querySelectorAll('[data-kb-surface-act]')).toHaveLength(0);
+    expect(within(lens()).queryByRole('list', { name: 'Drawn and washed' })).toBeNull();
+  });
+  test('names no owner and no class: only the characters the Acts name', async () => {
+    const box = await openSlab(await wall());
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    expect(draws(box).map(said).join(' ')).not.toMatch(/heel|face|owner|player|Pipewrench/u);
   });
 });

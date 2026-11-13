@@ -1,7 +1,8 @@
 /**
  * Divided World's Vending Machine, slot by slot in grid order (docs/plans/2026-11-04-booster-packs-design.md): a price in
  * hundredths of an orb and whether it is on sale. Starting numbers the season review replaces. Main Event starts hidden:
- * the Boss's moves bring it out, and so does Off Day, the legendary.
+ * the Boss's moves bring it out. Off Day, the legendary, and Sugar Coat, the second rare, start hidden too and follow it, and Graffiti, the third rare, the last slot.
+ * Jimmy Wails was the last on-sale slot; Hype-Up and Last Word (card notes, Part 4) follow it, so no drawn slot moves.
  */
 import { deepFreeze } from '../../engine/rules/instance.ts';
 import type { SlotSeed } from '../../engine/rules/packs.ts';
@@ -26,6 +27,11 @@ export const machine: readonly SlotSeed[] = deepFreeze<SlotSeed[]>([
   { item: { card: 'toll' }, availability: 'onSale', price: 150 },
   { item: { card: '4d-chess' }, availability: 'onSale', price: 150 },
   { item: { card: 'jimmy-wails' }, availability: 'onSale', price: 200 },
+  { item: { card: 'hype-up' }, availability: 'onSale', price: 150 },
+  { item: { card: 'last-word' }, availability: 'onSale', price: 150 },
+  { item: { card: 'laugh-track' }, availability: 'onSale', price: 150 },
   { item: { card: 'main-event' }, availability: 'hidden', price: 300 },
   { item: { card: 'off-day' }, availability: 'hidden', price: 500 },
+  { item: { card: 'sugar-coat' }, availability: 'hidden', price: 300 },
+  { item: { card: 'graffiti' }, availability: 'hidden', price: 300 },
 ]);

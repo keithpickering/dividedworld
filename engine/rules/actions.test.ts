@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decide } from './actions.ts';
 import type { Instance } from './types.ts';
-import { systemSettings, testSystem, testGroups } from './test-system.ts';
+import { systemSettings, testCosmeticsContent, testSystem, testGroups } from './test-system.ts';
 
 const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3).
@@ -17,7 +17,7 @@ const instance: Instance = {
   },
   ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
-  packs: [], machine: [{ item: { card: 'splat' }, availability: 'onSale', price: 100 }],
+  packs: [], machine: [{ item: { card: 'splat' }, availability: 'onSale', price: 100 }], ...testCosmeticsContent,
 };
 const id = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
@@ -293,4 +293,33 @@ test('a gift names the character, the drive and a whole amount, and is the servi
   assert.match(refusal({ action: 'donate', character: id, drive: other }) ?? '', /^amount:/);
   assert.match(refusal({ action: 'donate', character: id, drive: other, amount: 0 }) ?? '', /^amount:/);
   assert.match(refusal({ action: 'donate', character: id, drive: other, amount: 2.5 }) ?? '', /^amount:/);
+});
+
+// A surface card (docs/plans/2026-11-11-graffiti-plan.md, Task 3): a fixture, since the engine names no instance's card.
+const dab = { strokes: [{ width: 0.01, aspect: 1, points: [[0.5, 0.5]] }] };
+const wall = { ...splat, key: 'wall', name: 'Wall', surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: (i: unknown) => ({ ok: true as const, value: { strokes: [], payload: i as Record<string, unknown> } }), validateWash: (i: unknown) => ({ ok: true as const, value: { strokes: [], payload: i as Record<string, unknown> } }) } };
+const walled: Instance = { ...instance, cards: [splat, sparkle, wall] };
+
+test('a draw and a wash name the character, the play and the drawing, and are the service\'s call for the account, read against the card that holds the wall', () => {
+  assert.deepEqual(decide({ action: 'draw', character: id, play: other, input: dab }, walled),
+    { ok: true, rpc: 'draw_on_surface', args: { through: id, play: other, input: dab }, asService: true, needsSurface: true });
+  assert.deepEqual(decide({ action: 'wash', character: id, play: other, input: dab }, walled),
+    { ok: true, rpc: 'wash_surface', args: { through: id, play: other, input: dab }, asService: true, needsSurface: true });
+  for (const action of ['draw', 'wash']) {
+    assert.match(refusal2({ action, character: 'x', play: other, input: dab }, walled), /^character:/);
+    assert.match(refusal2({ action, character: id, play: 'x', input: dab }, walled), /^play:/);
+    assert.match(refusal2({ action, character: id, play: other }, walled), /^input:/);
+  }
+});
+
+test('a surface card is played with its first draw, and refused before SQL without one; a set and a card with no surface carry none', () => {
+  const play = { action: 'playCard', card: 'wall', character: id, target: other };
+  assert.equal(refusal2(play, walled), 'first: draw your tag first');
+  const cast = decide({ ...play, first: dab }, walled);
+  assert.ok(cast.ok && cast.rpc === 'play_card' && cast.needsTarget === true);
+  assert.deepEqual(cast.ok && cast.args.first, dab);
+  const set = decide({ action: 'setCard', card: 'wall', character: id, target: other, first: dab }, walled);
+  assert.ok(set.ok && !('first' in set.args), 'a set carries no drawing: a surface card is never set, which decideSet refuses');
+  const plain = decide({ action: 'playCard', card: 'splat', character: id, target: other, first: dab }, walled);
+  assert.ok(plain.ok && !('first' in plain.args), 'a card with no surface is sent no drawing');
 });

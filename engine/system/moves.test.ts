@@ -1,15 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ASKABLE_MOVE_KINDS, MOVE_KINDS, machineLimits, moveKind, moveParamsProblems } from './moves.ts';
+import { ASKABLE_MOVE_KINDS, MOVE_KINDS, machineLimits, moveKind, moveParamsProblems, type TrophyFacts } from './moves.ts';
 import { MACHINE_DEFAULTS } from '../rules/packs.ts';
 
 const board = '11111111-1111-4111-8111-111111111111';
 const rename = { board, name: 'Pointless Toast Palace', premise: 'Toast, and only toast.', description: 'A 2003 board index.' };
 
 test('the catalog holds renameBoard, structural, with a long plain label', () => {
-  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['conferGroup', false], ['pullSlot', false], ['repriceSlot', false], ['flashSale', false]]);
-  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'conferGroup', 'pullSlot', 'repriceSlot', 'flashSale'], 'a successor is named in its own answer, never among the moves');
-  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false, false, false, false]);
+  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['conferGroup', false], ['pullSlot', false], ['repriceSlot', false], ['flashSale', false], ['awardTrophy', false], ['createBoard', true], ['moveThread', false], ['mergeBoard', true]]);
+  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'conferGroup', 'pullSlot', 'repriceSlot', 'flashSale', 'awardTrophy', 'createBoard', 'moveThread', 'mergeBoard'], 'a successor is named in its own answer, never among the moves');
+  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false, false, false, false, false, true, false, true]);
   assert.equal(moveKind('renameBoard')?.label, '{role} renamed this board');
   assert.equal(moveKind('shout'), undefined);
 });
@@ -189,7 +189,7 @@ test('a pull and a markup carry a demand; a markdown and a flash sale carry none
   assert.equal(moveKind('repriceSlot')!.demand({ slot, percent: 150 }), 'required');
   assert.equal(moveKind('repriceSlot')!.demand({ slot, percent: 50 }), 'none');
   assert.equal(moveKind('flashSale')!.demand({ slot, hours: 24 }), 'none');
-  for (const k of MOVE_KINDS.filter((x) => x.askable && !x.key.match(/Slot$|flashSale/))) assert.equal(k.demand({}), 'required', `${k.key} still carries a demand`);
+  for (const k of MOVE_KINDS.filter((x) => x.askable && !x.lasting && !x.key.match(/Slot$|flashSale|awardTrophy/))) assert.equal(k.demand({}), 'required', `${k.key} still carries a demand`);
 });
 
 test('the machine\'s moves read in plain words, with nothing unfilled and the slot named when the screen knows it', () => {
@@ -245,4 +245,149 @@ test('conferGroup reads in plain words from the names it is given, and never nam
   assert.deepEqual(k.parts(p, null, 'done', names), ['Put Pipewrench in Trial Members, barred from ', { board, name: 'General' }]);
   assert.deepEqual(k.parts(p, null, 'plan', names), ['Put Pipewrench in Trial Members, barred from ', { board, name: 'General' }, ' (planned)']);
   assert.deepEqual(k.parts({ character: who, group: 'regular' }, null, 'done', { character: 'Pipewrench', group: 'Regulars' }), ['Put Pipewrench in Regulars']);
+});
+
+test('every move kind declares whether it is lasting; the three that build the board are', () => {
+  for (const k of MOVE_KINDS) assert.equal(typeof (k as { lasting?: unknown }).lasting, 'boolean', `${k.key} declares lasting`);
+  assert.deepEqual(MOVE_KINDS.filter((k) => k.lasting).map((k) => k.key), ['createBoard', 'moveThread', 'mergeBoard']);
+});
+
+test('a lasting kind carries no demand, whatever its params (a catalog invariant)', () => {
+  for (const k of MOVE_KINDS.filter((x) => x.lasting)) assert.equal(k.demand({}), 'none', `${k.key} declares no demand`);
+});
+
+const thread = '22222222-2222-4222-8222-222222222222';
+const other = '33333333-3333-4333-8333-333333333333';
+const create = { name: 'Toast Corner', premise: 'Toast, and only toast.', description: 'A new board.' };
+
+test('the three lasting board moves are the Boss\'s, askable, with no demand; two are structural and shape a board', () => {
+  for (const [key, structural] of [['createBoard', true], ['moveThread', false], ['mergeBoard', true]] as const) {
+    const k = moveKind(key)!;
+    assert.deepEqual([k.lasting, k.structural, k.shapesBoard, k.askable, k.offices, k.demand({})], [true, structural, structural, true, ['boss'], 'none'], key);
+  }
+  assert.deepEqual([moveKind('createBoard')!.label, moveKind('moveThread')!.label, moveKind('mergeBoard')!.label], ['Created a board', 'Moved a thread', 'Merged a board']);
+});
+
+test('createBoard keeps good params, names an optional fallback by uuid, trims a long name and refuses a missing premise', () => {
+  assert.ok(moveParamsProblems('createBoard', create).ok);
+  const withFallback = moveParamsProblems('createBoard', { ...create, fallback: board.toUpperCase() });
+  assert.ok(withFallback.ok && (withFallback.value as { fallback: string }).fallback === board, JSON.stringify(withFallback));
+  const without = moveParamsProblems('createBoard', create);
+  assert.ok(without.ok && (without.value as { fallback: unknown }).fallback === null, JSON.stringify(without));
+  const bad = moveParamsProblems('createBoard', { ...create, fallback: 'x'.repeat(36) });
+  assert.ok(!bad.ok && bad.path === 'fallback' && bad.predicate === 'isUuid', JSON.stringify(bad));
+  const long = moveParamsProblems('createBoard', { ...create, name: 'x'.repeat(260) });
+  assert.ok(long.ok && long.trims.length === 1 && long.trims[0]?.path === 'name', JSON.stringify(long));
+  const missing = moveParamsProblems('createBoard', { name: 'Toast Corner', description: 'x' });
+  assert.ok(!missing.ok && missing.path === 'premise', JSON.stringify(missing));
+});
+
+test('moveThread and mergeBoard name uuids; a merge of a board into itself is refused', () => {
+  assert.ok(moveParamsProblems('moveThread', { thread, board }).ok);
+  const noThread = moveParamsProblems('moveThread', { thread: 'x'.repeat(36), board });
+  assert.ok(!noThread.ok && noThread.path === 'thread' && noThread.predicate === 'isUuid', JSON.stringify(noThread));
+  assert.ok(moveParamsProblems('mergeBoard', { board, into: other }).ok);
+  const same = moveParamsProblems('mergeBoard', { board, into: board.toUpperCase() });
+  assert.ok(!same.ok && same.path === 'into' && same.predicate === 'differsFromBoard', JSON.stringify(same));
+  const noInto = moveParamsProblems('mergeBoard', { board });
+  assert.ok(!noInto.ok && noInto.path === 'into', JSON.stringify(noInto));
+});
+
+test('the three lasting board moves read in plain words, and name the boards they touch', () => {
+  assert.equal(moveKind('createBoard')!.template(create, 'The Boss'), 'The Boss made a board named "Toast Corner". Its subject is: Toast, and only toast.');
+  assert.deepEqual(moveKind('createBoard')!.parts(create, null, 'plan'), ['Create a board named "Toast Corner"']);
+  assert.deepEqual(moveKind('createBoard')!.parts(create, null, 'done'), ['Created a board named "Toast Corner"']);
+  assert.deepEqual(moveKind('moveThread')!.parts({ thread, board }, null, 'done', { board: 'General' }), ['Moved a thread to ', { board, name: 'General' }]);
+  assert.deepEqual(moveKind('mergeBoard')!.parts({ board, into: other }, 'Toast', 'plan', { board: 'General' }), ['Merge ', { board, name: 'Toast' }, ' into ', { board: other, name: 'General' }]);
+  for (const k of ['createBoard', 'moveThread', 'mergeBoard']) assert.doesNotMatch(moveKind(k)!.template({ ...create, thread, board, into: other }, 'The Boss'), /[{}]|undefined|null/, k);
+});
+
+test('inside a bundle a board param may be {role}, the board the part of that role makes; outside one it is refused', () => {
+  const role = { role: 'minus' };
+  const inside = moveParamsProblems('moveThread', { thread, board: role }, machineLimits(), true);
+  assert.ok(inside.ok && JSON.stringify((inside.value as { board: unknown }).board) === JSON.stringify(role), JSON.stringify(inside));
+  const outside = moveParamsProblems('moveThread', { thread, board: role });
+  assert.ok(!outside.ok && outside.path === 'board' && outside.predicate === 'roleInsideBundle', JSON.stringify(outside));
+  assert.ok(moveParamsProblems('createBoard', { ...create, fallback: role }, machineLimits(), true).ok, 'a fallback may name a role');
+  assert.ok(moveParamsProblems('mergeBoard', { board: { role: 'fangames' }, into: role }, machineLimits(), true).ok, 'a merge may name two roles');
+  assert.ok(moveParamsProblems('mergeBoard', { board, into: role }, machineLimits(), true).ok, 'a merge may name a role and a board');
+  const same = moveParamsProblems('mergeBoard', { board: role, into: { role: 'minus' } }, machineLimits(), true);
+  assert.ok(!same.ok && same.path === 'into' && same.predicate === 'differsFromBoard', 'a board is never merged into itself, even by role: ' + JSON.stringify(same));
+});
+
+test('a role is a name and nothing more, and never stands for a thread or a board of a move that does not build the board', () => {
+  const asThread = moveParamsProblems('moveThread', { thread: { role: 'minus' }, board }, machineLimits(), true);
+  assert.ok(!asThread.ok && asThread.path === 'thread', JSON.stringify(asThread));
+  for (const bad of [{ role: '' }, { role: 'Minus' }, { role: 'a'.repeat(41) }, { role: 7 }, { role: 'minus', beat: 'Split' }, { role: 'minus', beat: 7 }, { role: 'minus', beat: 'split', extra: 1 }, { beat: 'split' }, {}, { name: 'minus' }]) {
+    const r = moveParamsProblems('moveThread', { thread, board: bad }, machineLimits(), true);
+    assert.ok(!r.ok && r.path === 'board', `${JSON.stringify(bad)} is no role: ${JSON.stringify(r)}`);
+  }
+  // A role of an earlier beat's bundle (Task 6) is a role: {role, beat}, the beat written as a key is.
+  assert.ok(moveParamsProblems('moveThread', { thread, board: { role: 'minus', beat: 'split' } }, machineLimits(), true).ok);
+  const rename = moveParamsProblems('renameBoard', { board: { role: 'minus' }, name: 'x', premise: 'y', description: 'z' }, machineLimits(), true);
+  assert.ok(!rename.ok && rename.path === 'board', JSON.stringify(rename));
+});
+
+test('a part that names a role reads in plain words without a link to a board that is not there yet', () => {
+  const parts = moveKind('moveThread')!.parts({ thread, board: { role: 'minus' } }, null, 'plan');
+  assert.deepEqual(parts, ['Move a thread to ', 'the board the part "minus" makes']);
+  assert.deepEqual(moveKind('mergeBoard')!.parts({ board: { role: 'b' }, into: { role: 'a' } }, null, 'plan'), ['Merge ', 'the board the part "b" makes', ' into ', 'the board the part "a" makes']);
+  assert.doesNotMatch(moveKind('moveThread')!.template({ thread, board: { role: 'minus' } }, 'The Boss'), /[{}]|undefined|null|\[object/);
+});
+
+/* ------------------------------------------------------------------------- the Boss's trophy ---- */
+
+const ann = '22222222-2222-4222-8222-222222222222';
+const bob = '33333333-3333-4333-8333-333333333333';
+const facts: TrophyFacts = {
+  boss: [
+    { key: 'pet', name: 'Pet', belt: false, holder: null, holderName: null },
+    { key: 'belt', name: 'Belt', belt: true, holder: ann, holderName: 'Ann' },
+  ],
+  barred: new Set([bob]),
+  given: new Set([`pet:${ann}`]),
+};
+
+test('awardTrophy is the Boss\'s alone, a favor with no demand, and reads in plain words', () => {
+  const k = moveKind('awardTrophy')!;
+  assert.deepEqual([k.offices, k.structural, k.shapesBoard, k.askable], [['boss'], false, false, true]);
+  assert.deepEqual(Object.keys((k.params as { fields: object }).fields), ['trophy', 'character']);
+  assert.equal(k.demand({ trophy: 'pet', character: ann }), 'none');
+  const words = k.template({ trophy: 'pet', character: ann }, 'The Boss', { character: 'Ann', trophy: 'Pet' });
+  assert.equal(words, 'The Boss gave Ann the trophy Pet.');
+  assert.doesNotMatch(k.parts({ trophy: 'pet', character: ann }, null, 'plan').join(''), /[{}]|undefined|null/);
+  assert.equal(k.parts({ trophy: 'pet', character: ann }, null, 'done', { character: 'Ann', trophy: 'Pet' }).join(''), 'Gave Ann the trophy Pet');
+  assert.equal(k.parts({ trophy: 'pet', character: ann }, null, 'plan', { character: 'Ann', trophy: 'Pet' }).join(''), 'Give Ann the trophy Pet');
+});
+
+test('each limit on an award is refused by moveParamsProblems, naming the path and the predicate', () => {
+  const no = (params: unknown, trophies: TrophyFacts | null = facts) => {
+    const r = moveParamsProblems('awardTrophy', params, { ...machineLimits({}), ...(trophies ? { trophies } : {}) });
+    assert.ok(!r.ok, `${JSON.stringify(params)} should be refused`);
+    return `${r.path}:${r.predicate}`;
+  };
+  const carol = '44444444-4444-4444-8444-444444444444';
+  assert.equal(no({ trophy: 'pet', character: 'x'.repeat(36) }), 'character:isUuid');
+  assert.equal(no({ trophy: 'pet' }), 'character:required');
+  assert.equal(no({ trophy: 'hat', character: carol }), 'trophy:onBossList');
+  assert.equal(no({ trophy: 'pet', character: carol }, null), 'trophy:onBossList', 'with no list the award fails closed');
+  assert.equal(no({ trophy: 'pet', character: bob }), 'character:notStaffOrRetired');
+  assert.equal(no({ trophy: 'pet', character: ann }), 'trophy:notGivenThisSeason');
+  assert.equal(no({ trophy: 'belt', character: ann }), 'trophy:notItsHolder');
+  assert.ok(moveParamsProblems('awardTrophy', { trophy: 'pet', character: carol }, { ...machineLimits({}), trophies: facts }).ok);
+  assert.ok(moveParamsProblems('awardTrophy', { trophy: 'belt', character: carol }, { ...machineLimits({}), trophies: facts }).ok, 'a belt passes to someone else');
+});
+
+test('the Boss\'s trophy award announces the trophy and the character by name, both derived by SQL from the instance\'s rows', () => {
+  const k = moveKind('awardTrophy')!;
+  assert.deepEqual([...(k.derived ?? [])].sort(), ['characterName', 'trophyName']);
+  assert.match(k.plain, /\{trophyName\}/);
+  assert.match(k.plain, /\{characterName\}/);
+});
+
+test('a trophy given this season is found whatever the case of the key (one normalization, in the check)', () => {
+  const k = moveKind('awardTrophy')!;
+  const who = '11111111-1111-4111-8111-AAAAAAAAAAAA';
+  const trophies = { boss: [{ key: 'Pet-Rock', name: 'Pet', belt: false, holder: null, holderName: null }], barred: new Set<string>(), given: new Set([`pet-rock:${who.toLowerCase()}`]) };
+  assert.deepEqual(k.check!({ trophy: 'Pet-Rock', character: who }, { ...machineLimits(), trophies }), { path: 'trophy', predicate: 'notGivenThisSeason' });
 });

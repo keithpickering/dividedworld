@@ -163,6 +163,54 @@ describe('what the adapter may request', () => {
     await expect(refused.api.here({ kind: 'index' }, B)).rejects.toThrow('you do not play that character');
   });
 
+  it('reads a version\'s hidden flag from acts_public, absent when it is not hidden', async () => {
+    const row = { id: B, character: A, kind: 'post', thread: T, target_act_id: null, seq: 1, created_at: '2026-11-01T00:00:00+00:00', payload: { body: null }, current_payload: { body: null }, edited_at: null, shown_edited_at: null };
+    const h = harness((r) => (r.url.pathname === `${REST}/acts_public` ? rows([{ ...row, hidden: true, any_hidden: true }, { ...row, id: A, payload: { body: 'Shown.' }, current_payload: { body: 'Shown.' } }]) : undefined));
+    const versions = await h.api.history(B);
+    expect(versions.map((a) => a.hidden)).toEqual([true, undefined]);
+    expect(versions.map((a) => a.anyHidden)).toEqual([true, undefined]);
+  });
+
+  it('reads what a version\'s own words are from payload_hidden and payload_concealing, not from its body', async () => {
+    const row = { id: B, character: A, kind: 'post', thread: T, target_act_id: null, seq: 1, created_at: '2026-11-01T00:00:00+00:00', payload: { body: null }, current_payload: { body: 'Shown.' }, edited_at: null, shown_edited_at: null };
+    const h = harness((r) => (r.url.pathname === `${REST}/acts_public` ? rows([{ ...row, payload_concealing: true }, { ...row, id: A, payload_hidden: true }, { ...row, id: T }]) : undefined));
+    const versions = await h.api.history(B);
+    expect(versions.map((a) => a.payloadConcealing)).toEqual([true, undefined, undefined]);
+    expect(versions.map((a) => a.payloadHidden)).toEqual([undefined, true, undefined]);
+  });
+
+  it('reports a version to admins through report_post, the note empty as null, and refuses in the server\'s words', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/report_post')
+      ? (r.body as { section?: string }).section === 'hate' ? json({ code: '53400', message: 'you have 3 reports open, the most an account can; an admin will close one', hint: 'kayfabb.refusal' }, 400) : json(7)
+      : json({}, 404)));
+    expect(await h.api.reportPost(B, 'person', '   ')).toEqual({ ok: true, value: null });
+    expect(h.to('rpc/report_post')[0]?.body).toEqual({ version_act: B, section: 'person', note: null });
+    expect(await h.api.reportPost(B, 'person', 'a note')).toEqual({ ok: true, value: null });
+    expect(h.to('rpc/report_post')[1]?.body).toEqual({ version_act: B, section: 'person', note: 'a note' });
+    expect(await h.api.reportPost(B, 'hate', '')).toEqual({ ok: false, error: 'you have 3 reports open, the most an account can; an admin will close one', field: 'limit' });
+    expect(await h.api.reportPost('not-an-id', 'person', '')).toEqual({ ok: false, error: 'that post could not be found' });
+  });
+
+  it('counts the account\'s own open reports, null where it could not be read', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/my_open_reports') ? json({ open: 3, most: 3 }) : json({}, 404)));
+    expect(await h.api.myOpenReports()).toEqual({ open: 3, most: 3 });
+    const down = harness(() => json({}, 500));
+    expect(await down.api.myOpenReports()).toBeNull();
+  });
+
+  it('reads the author\'s own hidden words and its waiting state, nothing for anything else', async () => {
+    let answer: unknown = { status: 'hiddenUntilEdited', version: B, words: 'My words.' };
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/my_hidden_version') ? json(answer) : json({}, 404)));
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'hiddenUntilEdited', version: B, words: 'My words.' });
+    expect(h.to('rpc/my_hidden_version')[0]?.body).toEqual({ act: B });
+    answer = { status: 'waiting', version: A, words: 'My edit.' };
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'waiting', version: A, words: 'My edit.' });
+    answer = null;
+    expect(await h.api.myHiddenVersion(B)).toBeNull();
+    answer = { status: 'something', version: A };
+    expect(await h.api.myHiddenVersion(B)).toBeNull();
+  });
+
   it('hides a mask from presence through set_presence_hidden, and answers whether it is hidden', async () => {
     const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_presence_hidden') ? json({ character: B, hidden: true }) : json({}, 404)));
     expect(await h.api.setPresenceHidden(B, true)).toEqual({ ok: true, value: true });
@@ -282,6 +330,10 @@ describe('reads and their rows', () => {
     expect(landing[0]?.debuts).toEqual([{ character: A, name: 'Thwompson', class: 'face', was: null }]);
     expect(landing[0]?.turns).toEqual([{ character: B, name: 'Pipewrench', class: 'heel', was: 'face' }]);
     expect(news[2]).toMatchObject({ act: null, thread: null, seq: null, quote: null, name: 'Mister Spreadsheet', top: [], debuts: [], turns: [] });
+    /* The podium is the placed alone (#492): a row with no place, which the server does not send, is no step of it. */
+    const unplaced = await harness(() => rows([{ kind: 'results', act: null, thread: null, seq: null, at: '2026-10-28T12:00:00Z', season: 1, name: null, quote: null, count: 2,
+      detail: { top: [{ character: A, name: 'Spritey', place: 1, standing: 500, shown: [] }, { character: B, name: 'Idle', place: null, standing: 0, shown: [] }] } }])).api.seasonNews();
+    expect(unplaced[0]?.top.map((t) => t.character)).toEqual([A]);
   });
 
   it('counts a character\'s posts, spins and cards from its one counter row, never from its Acts', async () => {
@@ -343,6 +395,8 @@ describe('reads and their rows', () => {
     const refused = harness(() => json({ message: 'no' }, 400));
     await expect(refused.api.standingPlace(B)).rejects.toThrow();
     expect(await harness(() => json({})).api.standingPlace('not-an-id')).toBeNull();
+    /* A standing of 0 or below holds no place (#492): null, never 0. */
+    expect(await harness(() => json({ standing: 0, place: null, of: 40 })).api.standingPlace(B)).toEqual({ standing: 0, place: null, of: 40 });
   });
 
 
@@ -362,6 +416,8 @@ describe('reads and their rows', () => {
     expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['rpc/standings_page']);
     expect(h.to('rpc/standings_page')[0]?.body).toEqual({ page_offset: 1200, page_limit: 50 });
     expect(h.to('season_standings')).toEqual([]);
+    /* A row at 0 or below is unplaced (#492): its place is null, never 0. */
+    expect(await harness(() => json([{ character: B, name: 'Bea', standing: -5, place: null }])).api.standingsPage(0, 50)).toEqual([{ character: B, name: 'Bea', standing: -5, place: null }]);
     /* At most a row cap's worth, whatever is asked; no page asked of no rows; a page past the end is no rows. */
     const capped = harness(() => json([]));
     expect(await capped.api.standingsPage(0, 5000)).toEqual([]);
@@ -498,19 +554,151 @@ describe('reads and their rows', () => {
     expect(h.rest()).toEqual([]);
   });
 
-  it('joins characters_public with character_profiles in two reads and defaults an absent profile', async () => {
+  it('joins characters_public, character_profiles and gear_worn in three parallel reads, and defaults an absent profile', async () => {
+    const worn = { character: B, layer: 0, gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: -10 };
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Bea', joined: '2026-10-01' }, { id: A, name: 'Al', joined: '2026-09-01' }]);
-      return rows([{ character: B, title: 'Champ', signature: '[b]hi[/b]', avatar_square: 'sq.webp', avatar_portrait: 'po.webp', square_frame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portrait_frame: null, pip_style: 'fancy', pronouns: PRONOUN_PRESETS.she }]);
+      if (r.url.pathname.endsWith('/gear_worn')) return rows([{ ...worn, layer: 1, gear: 'mustache' }, worn]);
+      return rows([{ character: B, title: 'Champ', signature: '[b]hi[/b]', avatar_square: 'sq.webp', avatar_portrait: 'po.webp', square_frame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portrait_frame: null, portrait_tallness: 1.5, pip_style: 'fancy', pronouns: PRONOUN_PRESETS.she }]);
     });
     const list = await h.api.characters([B, A]);
     expect(h.to('characters_public')[0]?.url.searchParams.get('id')).toBe(`in.(${B},${A})`);
     expect(h.to('character_profiles')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
-    expect(h.to('character_profiles')[0]?.url.searchParams.get('select')?.split(',')).toContain('pronouns');
+    expect(h.to('character_profiles')[0]?.url.searchParams.get('select')?.split(',')).toEqual(expect.arrayContaining(['pronouns', 'portrait_tallness']));
+    expect(h.to('gear_worn')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
+    expect(h.to('gear_worn')[0]?.url.searchParams.get('select')).toBe('character,layer,gear,x,y,w,turn');
     expect(list).toEqual([
-      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' },
-      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-09-01', group: '' },
+      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, portraitTallness: 1.5, outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: -10, layer: 0 }, { gear: 'mustache', x: 0.5, y: 0.1, w: 0.4, turn: -10, layer: 1 }], trophies: [], pipStyle: 'fancy', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' },
+      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-09-01', group: '' },
     ]);
+  });
+
+  it('reads gear_worn a page at a time, ordered, so past the row cap no piece is cut off silently', async () => {
+    const pieces = Array.from({ length: 1500 }, (_, i) => ({ character: B, layer: i, gear: `g${i}`, x: 0.5, y: 0.5, w: 0.4, turn: 0 }));
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/gear_worn')) {
+        const offset = Number(r.url.searchParams.get('offset') ?? 0);
+        return rows(pieces.slice(offset, offset + Number(r.url.searchParams.get('limit'))));
+      }
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Bea', joined: '2026-10-01' }]);
+      return rows([{ character: B, title: '', signature: '', pip_style: 'default' }]);
+    });
+    const [bea] = await h.api.characters([B]);
+    expect(bea!.outfit).toHaveLength(1500);
+    expect(h.to('gear_worn').length).toBeGreaterThan(1);
+    expect(h.to('gear_worn')[0]?.url.searchParams.get('order')).toBe('character.asc,layer.asc');
+  });
+
+  it('maps a profile projection\'s outfit and trophies (the shelf, with art URLs for an admin\'s kind)', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_profile') ? json({
+      character: B, title: 'T', signature: 's', pip_style: 'default', pronouns: PRONOUN_PRESETS.she, portrait_tallness: 2,
+      outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0 }],
+      trophies: [
+        { award: A, trophy: 'belt', name: 'The Belt', line: 'x', art: null, belt: true, at: '2026-10-01T00:00:00+00:00', by: 'the Boss', season: null, held: true },
+        { award: T, trophy: 'made-1', name: 'Mine', line: null, art: 'k.webp', belt: false, at: '2026-10-01T00:00:00+00:00', by: 'an admin', season: null, held: null },
+      ],
+    }) : json({ id: B, name: 'Bea', joined: '2026-10-01' })));
+    const set = await h.api.setProfile(B, 'T', 's', 'default');
+    expect(set).toMatchObject({ ok: true, value: {
+      portraitTallness: 2, outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0 }],
+      trophies: [{ award: A, trophy: 'belt', name: 'The Belt', art: null, belt: true, held: true }, { award: T, trophy: 'made-1', name: 'Mine', art: `${URL_}/storage/v1/object/public/trophies/k.webp`, belt: false, held: false }],
+    } });
+  });
+
+  it('reads the wardrobe, a page of trophies and a belt\'s lineage through their functions, and keeps the words of a refusal', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_wardrobe')) return json([{ gear: 'hat', rarity: 'rare', held: 2, worn_by: [B] }]);
+      if (r.url.pathname.endsWith('/rpc/trophies_of')) return json({ awards: [{ award: A, trophy: 'p1', name: 'First', line: null, art: null, belt: false, at: '2026-10-01T00:00:00+00:00', by: 'the season', season: 3, move: null, shown: true, held: null }, { award: T, trophy: 'pet', name: 'Pet', line: null, art: null, belt: false, at: '2026-10-01T00:00:00+00:00', by: 'Bo, the Boss', season: null, move: { act: B, thread: A, seq: 7 }, shown: false, held: null }], more: true });
+      if (r.url.pathname.endsWith('/rpc/belt_lineage')) return r.body && (r.body as { trophy_key: string }).trophy_key === 'pet' ? json({ code: '22023', message: '"pet" is not a belt', details: null, hint: 'kayfabb.refusal' }, 400) : json({ reigns: [{ award: A, character: B, name: 'Bea', began: '2026-10-01T00:00:00+00:00', ended: null, by: 'an admin' }], more: true });
+      return undefined;
+    });
+    expect(await h.api.wardrobe()).toEqual({ ok: true, value: [{ gear: 'hat', rarity: 'rare', held: 2, wornBy: [B] }] });
+    expect(await h.api.trophies(B, { before: '2026-10-02T00:00:00+00:00', beforeId: T })).toEqual({
+      awards: [{ award: A, trophy: 'p1', name: 'First', art: null, belt: false, held: false, line: null, at: '2026-10-01T00:00:00+00:00', by: 'the season', season: 3, move: null, shown: true },
+        { award: T, trophy: 'pet', name: 'Pet', art: null, belt: false, held: false, line: null, at: '2026-10-01T00:00:00+00:00', by: 'Bo, the Boss', season: null, move: { act: B, thread: A, seq: 7 }, shown: false }], more: true,
+    });
+    expect(h.to('rpc/trophies_of')[0]?.body).toEqual({ of_character: B, before: '2026-10-02T00:00:00+00:00', before_id: T, most: 50 });
+    expect(await h.api.beltLineage('belt')).toEqual({ ok: true, value: { reigns: [{ award: A, character: B, name: 'Bea', began: '2026-10-01T00:00:00+00:00', ended: null, by: 'an admin' }], more: true } });
+    expect(h.to('rpc/belt_lineage')[0]?.body).toEqual({ trophy_key: 'belt', before: null, before_id: null, most: 20 });
+    await h.api.beltLineage('belt', { before: '2026-10-02T00:00:00+00:00', beforeId: T });
+    expect(h.to('rpc/belt_lineage')[1]?.body).toEqual({ trophy_key: 'belt', before: '2026-10-02T00:00:00+00:00', before_id: T, most: 20 });
+    expect(await h.api.beltLineage('pet')).toEqual({ ok: false, error: '"pet" is not a belt' });
+  });
+
+  it('saves an outfit, the shown trophies and rolls an event through the wardrobe function, as the player\'s own session; null is a roll that found nothing', async () => {
+    const piece = { gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0 };
+    const found = { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'You find {item}.', lineKey: 'found', character: B };
+    const h = harness((r) => {
+      const body = r.body as { action?: string } | null;
+      if (r.url.pathname !== '/functions/v1/wardrobe') return undefined;
+      if (body?.action === 'setOutfit') return json({ worn: 1 });
+      if (body?.action === 'showTrophies') return json({ error: '3 trophies are shown; at most 2' }, 400);
+      return json({ event: found });
+    });
+    expect(await h.api.setOutfit(B, [piece])).toEqual({ ok: true, value: { worn: 1 } });
+    expect(await h.api.showTrophies(B, [A, T, C])).toEqual({ ok: false, error: '3 trophies are shown; at most 2' });
+    expect(await h.api.randomEvent(B)).toEqual({ ok: true, value: { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'You find {item}.', lineKey: 'found', character: B } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/wardrobe').map((r) => r.body)).toEqual([
+      { action: 'setOutfit', character: B, pieces: [piece] }, { action: 'showTrophies', character: B, awards: [A, T, C] }, { action: 'randomEvent', character: B },
+    ]);
+    const none = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? json({ event: null }) : undefined));
+    expect(await none.api.randomEvent(B)).toEqual({ ok: true, value: null });
+    /* An answer that is not an event (an outcome or rarity it does not know) is no event, and nothing is invented from it. */
+    for (const bad of [{ ...found, outcome: 'jackpot' }, { ...found, rarity: 'mythic' }, { ...found, outcome: 'gear', item: 3 }]) {
+      const odd = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? json({ event: bad }) : undefined));
+      expect(await odd.api.randomEvent(B), JSON.stringify(bad)).toMatchObject({ ok: false });
+    }
+    const noKey = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? json({ event: { event: A, outcome: 'line', item: null, rarity: null, line: 'Nothing.', character: B } }) : undefined));
+    expect(await noKey.api.randomEvent(B)).toEqual({ ok: true, value: { event: A, outcome: 'line', item: null, rarity: null, line: 'Nothing.', character: B } });
+    const lost = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? new TypeError('network') : undefined));
+    expect(await lost.api.randomEvent(B)).toMatchObject({ ok: false, uncertain: true });
+  });
+
+  it('an admin gives gear and trophies through their functions, and makes a trophy by storing its art first', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/trophy-art') return json({ key: 'art.webp' });
+      if (r.url.pathname.endsWith('/rpc/grant_gear')) return json({ granted: 2 });
+      if (r.url.pathname.endsWith('/rpc/award_trophy')) return json({ award: A });
+      if (r.url.pathname.endsWith('/rpc/reverse_award')) return json({ reversed: A });
+      if (r.url.pathname.endsWith('/rpc/make_trophy')) return json({ trophy: 'made-1' });
+      if (r.url.pathname.endsWith('/rpc/give_failed_award')) return json({ award: A });
+      if (r.url.pathname.endsWith('/rpc/trophy_award_failures')) return json({ failures: [{ id: A, move: T, season: null, at: '2026-10-01T00:00:00+00:00', error: 'x', trophy: 'met', open: true, characters: [{ id: B, name: 'Bea', given: false }, { id: C, name: 'Cy', place: 2, given: true }] }, { id: B, move: null, season: 3, at: '2026-10-01T00:00:00+00:00', error: 'y', trophy: null, open: false, characters: null }], more: true });
+      return undefined;
+    });
+    expect(await h.api.grantGear(B, 'hat', 2)).toEqual({ ok: true, value: { granted: 2 } });
+    expect(await h.api.awardTrophy('pet', B, 'good')).toEqual({ ok: true, value: { award: A } });
+    expect(await h.api.reverseAward(A)).toEqual({ ok: true, value: { reversed: A } });
+    expect(await h.api.makeTrophy('Mine', 'words', new Blob(['x'], { type: 'image/webp' }), true)).toEqual({ ok: true, value: { trophy: 'made-1' } });
+    expect(await h.api.makeTrophy('Plain', null, null, false)).toEqual({ ok: true, value: { trophy: 'made-1' } });
+    expect(h.to('rpc/grant_gear')[0]?.body).toEqual({ of_character: B, gear_key: 'hat', copies: 2 });
+    expect(h.to('rpc/award_trophy')[0]?.body).toEqual({ trophy_key: 'pet', of_character: B, said: 'good' });
+    expect(h.to('rpc/reverse_award')[0]?.body).toEqual({ of_award: A });
+    expect(h.to('rpc/make_trophy').map((r) => r.body)).toEqual([{ trophy_name: 'Mine', said: 'words', art_key: 'art.webp', is_belt: true }, { trophy_name: 'Plain', said: null, art_key: null, is_belt: false }]);
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/trophy-art')).toHaveLength(1);
+    /* A stored picture that answers no key is no picture: the kind is not made without it. */
+    const keyless = harness((r) => (r.url.pathname === '/functions/v1/trophy-art' ? json({}) : undefined));
+    expect(await keyless.api.makeTrophy('Mine', null, new Blob(['x'], { type: 'image/webp' }), false)).toMatchObject({ ok: false });
+    expect(keyless.to('rpc/make_trophy')).toHaveLength(0);
+    expect(await h.api.trophyAwardFailures({ before: '2026-10-02T00:00:00+00:00', beforeId: C, beforeOpen: true })).toEqual({ ok: true, value: { more: true, failures: [
+      { id: A, move: T, season: null, at: '2026-10-01T00:00:00+00:00', error: 'x', trophy: 'met', open: true, characters: [{ id: B, name: 'Bea', given: false }, { id: C, name: 'Cy', place: 2, given: true }] },
+      { id: B, move: null, season: 3, at: '2026-10-01T00:00:00+00:00', error: 'y', trophy: null, open: false, characters: null }] } });
+    expect(h.to('rpc/trophy_award_failures')[0]?.body).toEqual({ before: '2026-10-02T00:00:00+00:00', before_id: C, before_open: true, most: 50 });
+    expect(await h.api.giveFailedAward(A, B)).toEqual({ ok: true, value: { award: A } });
+    expect(h.to('rpc/give_failed_award')[0]?.body).toEqual({ failure: A, of_character: B });
+  });
+
+  it('an admin reads the awards given and finds a character by name, through their functions', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/admin_awards')) return json({ awards: [{ award: A, trophy: 'pet', name: 'Pet', art: null, belt: false, character: B, to: 'Bea', by: 'an admin', at: '2026-10-01T00:00:00+00:00', line: null, reversed: true }], kinds: [{ key: 'pet', name: 'Pet', belt: false, made: false, art: null }], more: true });
+      if (r.url.pathname.endsWith('/rpc/admin_character_named')) return json(r.body && (r.body as { of_name: string }).of_name === 'Bea' ? { id: B, name: 'Bea' } : null);
+      return undefined;
+    });
+    expect(await h.api.adminAwards({ before: '2026-10-02T00:00:00+00:00', beforeId: A })).toEqual({ ok: true, value: {
+      awards: [{ award: A, trophy: 'pet', name: 'Pet', art: null, belt: false, character: B, to: 'Bea', by: 'an admin', at: '2026-10-01T00:00:00+00:00', line: null, reversed: true }],
+      kinds: [{ key: 'pet', name: 'Pet', belt: false, made: false, art: null }], more: true } });
+    expect(h.to('rpc/admin_awards')[0]?.body).toEqual({ before: '2026-10-02T00:00:00+00:00', before_id: A, most: 20 });
+    expect(await h.api.adminCharacterNamed('Bea')).toEqual({ ok: true, value: { id: B, name: 'Bea' } });
+    expect(await h.api.adminCharacterNamed('Nobody')).toEqual({ ok: true, value: null });
   });
 
   it('marks a set as unread only where a profile row came without one: a row with a set, and a character with no row, carry no marker', async () => {
@@ -750,7 +938,7 @@ describe('a visitor\'s calls', () => {
     });
     await h.api.settings();
     await h.api.boards();
-    await h.api.requestCode('a@b.c', null).catch(() => undefined);
+    await h.api.requestCode('a@b.c', null, null).catch(() => undefined);
     expect(h.log.length).toBeGreaterThanOrEqual(3);
     expect(h.log.some((r) => r.url.pathname === '/functions/v1/account')).toBe(true);
     for (const r of h.log) {
@@ -1126,17 +1314,28 @@ describe('signing in goes through the account function', () => {
       }
       if (r.url.pathname === '/auth/v1/user') return json(SESSION.user);
       if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
       return undefined;
     });
-    expect(await h.api.requestCode(' a@b.c ', 'inv')).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
+    expect(await h.api.requestCode(' a@b.c ', 'inv', '/board/general?page=2', 4)).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
     expect(await h.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: true } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/account').map((r) => r.body)).toEqual([
-      { action: 'requestCode', email: ' a@b.c ', invite: 'inv' },
+      { action: 'requestCode', email: ' a@b.c ', invite: 'inv', next: '/board/general?page=2', conduct: 4 },
       { action: 'verifyCode', email: 'a@b.c', code: '123456' },
     ]);
-    expect(await h.api.session()).toEqual({ signedIn: true, account: A });
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: true });
     expect(h.to('rpc/whoami')[0]?.headers.get('authorization')).toBe(`Bearer ${JWT}`);
     expect(h.log.some((r) => /\/auth\/v1\/(otp|verify|recover|signup|magiclink)/.test(r.url.pathname))).toBe(false);
+  });
+
+  it('answers a sign-in Auth refused as barred with the barred answer, signed out, never "try again"', async () => {
+    const barred = harness(() => json({ error: 'this account is locked, so it cannot sign in; reach an admin through Contact to appeal', hint: 'kayfabb.barred' }, 403));
+    expect(await barred.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: false, barred: { until: undefined } } });
+  });
+
+  it('answers a link Auth refused as barred with the barred answer too, signed out, never the link\'s own refusal', async () => {
+    const barred = harness(() => json({ error: 'this account is locked, so it cannot sign in; reach an admin through Contact to appeal', hint: 'kayfabb.barred' }, 403));
+    expect(await barred.api.verifyLink('pkce_0123456789abcdef-hash')).toEqual({ ok: true, value: { account: false, barred: { until: undefined } } });
   });
 
   it('passes a wrong code through with its field and says why an account stayed closed', async () => {
@@ -1146,9 +1345,38 @@ describe('signing in goes through the account function', () => {
     expect(await closed.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: false, why: 'registration is closed; when an admin opens it again, your next sign-in opens your account' } });
   });
 
+  it('verifies a link hash there, installs the session it carries, and says why an account stayed closed', async () => {
+    const hash = 'abcDEF123_-abcDEF123_-abcDEF123_-';
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/account') return json({ session: SESSION, account: true });
+      if (r.url.pathname === '/auth/v1/user') return json(SESSION.user);
+      if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
+      return undefined;
+    });
+    expect(await h.api.verifyLink(hash)).toEqual({ ok: true, value: { account: true } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/account').map((r) => r.body)).toEqual([{ action: 'verifyLink', tokenHash: hash }]);
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: true });
+    expect(h.log.some((r) => /\/auth\/v1\/(otp|verify|recover|signup|magiclink)/.test(r.url.pathname))).toBe(false);
+    const closed = harness((r) => (r.url.pathname === '/auth/v1/user' ? json(SESSION.user) : json({ session: SESSION, account: false, why: 'registration is closed; when an admin opens it again, your next sign-in opens your account' })));
+    expect(await closed.api.verifyLink(hash)).toEqual({ ok: true, value: { account: false, why: 'registration is closed; when an admin opens it again, your next sign-in opens your account' } });
+  });
+
+  it('passes a refused link through with its field and sets no session, and a body with no session is not done', async () => {
+    const hash = 'abcDEF123_-abcDEF123_-abcDEF123_-';
+    const sentence = 'that link does not work, or it has expired: ask for a new code';
+    const wrong = harness(() => json({ field: 'link', error: sentence }, 400));
+    expect(await wrong.api.verifyLink(hash)).toEqual({ ok: false, error: sentence, field: 'link' });
+    expect(await wrong.api.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
+    const bare = harness(() => json({ account: true }));
+    const answer = await bare.api.verifyLink(hash);
+    expect(answer.ok).toBe(false);
+    expect(await bare.api.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
+  });
+
   it('is signed out with no account call when there is no session', async () => {
     const h = harness(() => undefined);
-    expect(await h.api.session()).toEqual({ signedIn: false, account: null });
+    expect(await h.api.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
     expect(h.log).toEqual([]);
   });
 
@@ -1281,14 +1509,14 @@ describe('the estimate across sessions', () => {
     w.become('A', 'TOKEN_REFRESHED');
     w.become('A', 'SIGNED_IN');
     await w.tick();
-    expect(w.whoami).toHaveBeenCalledTimes(1);
+    expect(w.whoami.mock.calls.filter((c) => (c as unknown[])[0] === 'whoami')).toHaveLength(1);
     expect(heard).toHaveBeenCalledTimes(1);
     w.become('B');
     await w.tick();
-    expect(w.whoami).toHaveBeenCalledTimes(2);
+    expect(w.whoami.mock.calls.filter((c) => (c as unknown[])[0] === 'whoami')).toHaveLength(2);
     w.become(null, 'SIGNED_OUT');
     await w.tick();
-    expect(heard).toHaveBeenLastCalledWith({ signedIn: false, account: null });
+    expect(heard).toHaveBeenLastCalledWith({ signedIn: false, account: null, bar: null, conductAccepted: true });
   });
 });
 
@@ -1583,6 +1811,11 @@ describe('the log', () => {
       if (name === 'my_posts_written_on') {
         return rows([{ play: C, post: A, version: A, failed: false, opening: true, over: false, at: '2026-10-29T22:30:00+00:00' }, { play: C, post: A, version: SET, failed: true, opening: false, over: false, at: '2026-10-29T22:20:00+00:00' }]);
       }
+      /* A surface in the log (0317): the drawer's own draw and the wash that cut it, and the draws and washes on the player's own post. */
+      if (name === 'my_draws') {
+        return rows([{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }, { act: A, kind: 'draw', play: C, post: A, character: A, mine: A, at: '2026-10-29T22:10:00+00:00', cells: 600 }]);
+      }
+      if (name === 'my_walls_drawn_on') return rows([{ act: SPRING, kind: 'wash', play: C, post: A, character: B, mine: B, at: '2026-10-29T22:50:00+00:00', cells: 450 }]);
       if (name === 'my_face_down') {
         /* The setter's own back, asked for by the sets in the ledger (what a Trap Card waits for); the ended views are the other read. */
         if (r.url.searchParams.get('select') === 'play,catches,phrase,passage,who,who_except') return rows([{ play: SET, catches: 'whoops', phrase: null }]);
@@ -1593,6 +1826,7 @@ describe('the log', () => {
       if (name === 'my_infractions') return rows([{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, rule_number: 2, rule: 'Rule 2: No double posting', mod_name: 'The Clerk', post: A, post_seq: 41, thread: T, expires_at: '2026-11-12T20:30:00+00:00', relief: 0, emptied_at: null }]);
       if (name === 'my_bans') return rows([{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: 'reduced', own_until: '2026-10-31T20:31:00+00:00' }]);
       if (name === 'my_group_moves') return rows([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00', ruled_office: 'boss' }]);
+      if (name === 'my_cosmetic_log') return rows([{ kind: 'lost', id: 'l1', at: '2026-10-29T19:30:00+00:00', character: B, outcome: null, item: null, text: null, copies: null, trophy: 'belt', name: 'The Belt', by: 'boss', by_name: 'Sighbot', season: null, place: null, line: null, to_name: 'Sock Puppet' }]);
       if (name === 'my_reports') return rows([{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, post_seq: 41, thread: T, verdict: 'dismissed', verdict_at: '2026-10-29T17:00:03+00:00', mod_name: 'The Clerk', refund: null }]);
       if (name === 'my_appeals') return rows([{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishment_kind: 'infraction', post_seq: 41, thread: T, verdict: 'reduced', ruled_at: '2026-10-29T21:00:04+00:00', points_delta: -1, hearer_name: 'The Clerk', refund: null },
         { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishment_kind: 'move', post_seq: null, thread: T, verdict: null, ruled_at: null, points_delta: null, hearer_name: null, refund: null }]);
@@ -1620,6 +1854,8 @@ describe('the log', () => {
       packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['dud', 'whoops'], at: '2026-10-29T17:00:00+00:00' }],
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
       writes: [{ play: C, post: A, version: A, failed: false, opening: true, over: false, at: '2026-10-29T22:30:00+00:00' }, { play: C, post: A, version: SET, failed: true, opening: false, over: false, at: '2026-10-29T22:20:00+00:00' }],
+      draws: [{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }, { act: A, kind: 'draw', play: C, post: A, character: A, mine: A, at: '2026-10-29T22:10:00+00:00', cells: 600 }],
+      wallsDrawn: [{ act: SPRING, kind: 'wash', play: C, post: A, character: B, mine: B, at: '2026-10-29T22:50:00+00:00', cells: 450 }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
       setEnds: [{ play: SET, card: 'dud', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00', endedBy: 'taken back' }],
       caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, at: '2026-10-29T19:00:00+00:00' }],
@@ -1630,6 +1866,7 @@ describe('the log', () => {
       reports: [{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, postSeq: 41, thread: T, verdict: 'dismissed', verdictAt: '2026-10-29T17:00:03+00:00', mod: 'The Clerk', refund: null }],
       appeals: [{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'reduced', ruledAt: '2026-10-29T21:00:04+00:00', pointsDelta: -1, hearer: 'The Clerk', refund: null },
         { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishmentKind: 'move', postSeq: null, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null }],
+      cosmetics: [{ kind: 'lost', id: 'l1', at: '2026-10-29T19:30:00+00:00', character: B, outcome: null, item: null, text: null, copies: null, trophy: 'belt', name: 'The Belt', by: 'boss', byName: 'Sighbot', season: null, place: null, line: null, toName: 'Sock Puppet' }],
       before: null,
     });
     const [ledger] = h.to('my_ledger');
@@ -1649,6 +1886,11 @@ describe('the log', () => {
     expect(saves?.url.searchParams.get('saved_at')).toBe('not.is.null');
     const [written] = h.to('my_posts_written_on');
     expect([written?.url.searchParams.get('order'), written?.url.searchParams.get('limit')]).toEqual(['at.desc,play.asc,version.asc', '200']);
+    /* The surface's two views (0317): newest first by when each landed, then in a fixed order, a page long. */
+    for (const name of ['my_draws', 'my_walls_drawn_on']) {
+      const [req] = h.to(name);
+      expect([name, req?.url.searchParams.get('order'), req?.url.searchParams.get('limit'), req?.url.searchParams.get('select')]).toEqual([name, 'at.desc,act.asc,mine.asc', '200', 'act,kind,play,post,character,mine,at,cells']);
+    }
     const [ends] = h.to('my_face_down');
     expect([ends?.url.searchParams.get('order'), ends?.url.searchParams.get('ended_at'), ends?.url.searchParams.get('limit')]).toEqual(['ended_at.desc', 'not.is.null', '200']);
     const [caught] = h.to('my_caught');
@@ -1656,7 +1898,7 @@ describe('the log', () => {
     const [ended] = h.to('my_cards_ended');
     expect([ended?.url.searchParams.get('order'), ended?.url.searchParams.get('limit')]).toEqual(['at.desc', '200']);
     /* The Mod Bots' four views (0111): each newest first and a page long, and every one the caller's own on the server. */
-    for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals']) {
+    for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals', 'my_cosmetic_log']) {
       const [req] = h.to(name);
       expect([name, req?.url.searchParams.get('order'), req?.url.searchParams.get('limit')]).toEqual([name, 'at.desc', '200']);
     }
@@ -1676,9 +1918,10 @@ describe('the log', () => {
     expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_face_down')[0]?.url.searchParams.getAll('ended_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_posts_written_on')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    for (const name of ['my_draws', 'my_walls_drawn_on']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_caught')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_cards_ended')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
-    for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals', 'my_cosmetic_log']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
   });
 
   /* #89 F2: a settlement made before its shares were kept says so, and the log says it plainly rather than "no post". */
@@ -1912,6 +2155,22 @@ describe('reads by many ids', () => {
     expect(log.settlements.every((s) => s.lines[0]?.shares.length === 1)).toBe(true);
   });
 
+  it('reads the log\'s shares with their card, ordered by it between reason and act, and files each card\'s shares under its own line', async () => {
+    const ledger = (card: string | null, amount: number) => ({ settlement: 9, starts_at: 'a', ends_at: '2026-10-01T00:00:00Z', character: B, reason: 'card.ride', amount, shares_kept: true, params: card === null ? null : { card } });
+    const share = (card: string | null, amount: number) => ({ settlement: 9, character: B, reason: 'card.ride', card, act: A, quadrant: 'excitedPositive', amount });
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_ledger') return rows([ledger('x', 3), ledger('y', 7)]);
+      if (name === 'my_ledger_shares') return rows([share('x', 3), share('y', 7)]);
+      return rows([]);
+    });
+    const log = await h.api.log();
+    const [req] = h.to('my_ledger_shares');
+    expect(req?.url.searchParams.get('select')).toBe('settlement,character,reason,card,act,quadrant,amount');
+    expect(req?.url.searchParams.get('order')).toBe('settlement.desc,character.asc,reason.asc,card.asc,act.asc,quadrant.asc');
+    expect(log.settlements[0]!.lines.map((l) => [l.params?.['card'], l.shares.map((s) => s.amount)])).toEqual([['x', [3]], ['y', [7]]]);
+  });
+
   /** A table of rows the harness answers as one PostgREST query would: filtered by the request's `in.(…)`, ordered by `order`, cut at `limit`. */
   const asOneQuery = (table: readonly Row[], column: string, order: (a: Row, b: Row) => number) => (r: Rec) => {
     const asked = new Set(askedIn(r));
@@ -2103,14 +2362,19 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
       roster: [{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }, { staff: 7, name: 'bad' }],
       todos: [{ season: 3, boss: 'the-clerk', bossName: 'The Clerk', bossPronouns: PRONOUN_PRESETS.he, bossWas: 'mod', outgoing: 'director', outgoingName: 'The Director', outgoingPronouns: null, outgoingOffice: 'member', how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }],
     };
+    /* A part of a bundle says its bundle, role and the bundle's name (0329); a move that is none says null for each. */
+    queue.waiting[0] = { ...queue.waiting[0]!, bundle: C, role: 'minus', bundleName: 'The Split', waitsFor: [{ id: 3, role: 'minus', kind: 'createBoard', name: 'World -1' }, 'junk'] } as (typeof queue.waiting)[0];
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/admin_queue')) return json(queue);
-      if (r.url.pathname.endsWith('/rpc/hold_move')) return json({ id: 4, heldAt: '2026-10-31T15:00:00+00:00' });
-      if (r.url.pathname.endsWith('/rpc/reverse_move')) return json({ act: A, endedBy: B });
+      if (r.url.pathname.endsWith('/rpc/hold_move')) return json({ id: 4, heldAt: '2026-10-31T15:00:00+00:00', heldAlso: [5, 6] });
+      if (r.url.pathname.endsWith('/rpc/reverse_move')) return json({ act: A, endedBy: B, alsoEnded: [C], heldAlso: [7] });
       return json({}, 404);
     });
     const q = await h.api.adminQueue();
     expect(q.waiting[0]).toMatchObject({ id: 4, boss: 'The Director', boardName: 'General', failure: 'it did not land', failedAt: '2026-10-31T14:11:00+00:00', demand: { kind: 'postsOnBoard' } });
+    expect(q.waiting[0]).toMatchObject({ bundle: C, role: 'minus', bundleName: 'The Split' });
+    expect(q.waiting[0]?.waitsFor).toEqual([{ id: 3, role: 'minus', kind: 'createBoard', name: 'World -1' }]);
+    expect([q.inForce[0], q.ended[0]]).toMatchObject([{ bundle: null, role: null, bundleName: null }, { bundle: null, role: null, bundleName: null }]);
     expect(q.inForce[0]?.progress).toEqual({ done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' });
     expect(q.ended.map((e) => e.how)).toEqual(['held', 'met']);
     expect(q.more).toEqual({ waiting: false, inForce: false, staffCards: false, ended: true });
@@ -2121,9 +2385,9 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(q.ended[1]?.bossPronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
     expect(q.todos[0]).toMatchObject({ bossPronouns: PRONOUN_PRESETS.he, outgoingPronouns: ENGINE_DEFAULT_PRONOUNS });
     expect(q.waiting[0]?.replacedAt).toBeNull();
-    expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00' } });
+    expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00', heldAlso: [5, 6] } });
     expect(h.to('rpc/hold_move')[0]?.body).toEqual({ id: 4 });
-    expect(await h.api.reverseMove(A)).toEqual({ ok: true, value: { act: A, endedBy: B } });
+    expect(await h.api.reverseMove(A)).toEqual({ ok: true, value: { act: A, endedBy: B, alsoEnded: [C], heldAlso: [7] } });
     expect(h.to('rpc/reverse_move')[0]?.body).toEqual({ move_act: A });
   });
 
@@ -2151,6 +2415,57 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(h.to('rpc/replace_successor')[0]?.body).toEqual({ id: 4, boss: 'hype-man' });
     const refused = harness(() => json({ code: '55000', message: 'that nomination has already landed; reverse it instead', hint: 'kayfabb.refusal' }, 400));
     expect(await refused.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: false, error: 'that nomination has already landed; reverse it instead' });
+  });
+
+  it('reads the reports screen from admin_reports and admin_failed_mail, sends a decision as decide_report and an approval as decide, and gives a player no page', async () => {
+    const A = '00000000-0000-4000-8000-00000000000a';
+    const B = '00000000-0000-4000-8000-00000000000b';
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/is_admin')) return json(true);
+      if (r.url.pathname.endsWith('/rpc/admin_reports')) {
+        return json({
+          reports: [{ id: 3, versionAct: A, post: A, thread: B, section: 'hate', note: null, at: '2026-11-01T10:00:00+00:00', author: B, words: 'Words.', past: [{ outcome: 'nudge', until: null, at: '2026-10-30T10:00:00+00:00', note: 'Easy.' }] }],
+          reviews: [{ decision: 9, post: A, versionAct: B, thread: B, editedAt: '2026-11-02T10:00:00+00:00', author: null, words: 'Better.' }],
+        });
+      }
+      if (r.url.pathname.endsWith('/rpc/admin_failed_mail')) return json({ failed: [{ id: 5, template: 'nudge', account: B, kind: 'refused', error: 'no mailbox', at: '2026-11-02T11:00:00+00:00' }], waiting: 2, addressSet: false });
+      if (r.url.pathname.endsWith('/rpc/decide_report')) return json([11, 12]);
+      if (r.url.pathname.endsWith('/rpc/decide')) return json(13);
+      return json({}, 404);
+    });
+    const page = await h.api.reportsPage();
+    expect(page?.reports[0]).toEqual({ id: 3, versionAct: A, post: A, thread: B, section: 'hate', note: null, at: '2026-11-01T10:00:00+00:00', author: B, words: 'Words.', past: [{ outcome: 'nudge', until: null, at: '2026-10-30T10:00:00+00:00', note: 'Easy.' }] });
+    expect(page?.reviews[0]).toMatchObject({ decision: 9, versionAct: B, author: null, words: 'Better.' });
+    expect(page?.failed).toEqual([{ id: 5, template: 'nudge', account: B, kind: 'refused', error: 'no mailbox', at: '2026-11-02T11:00:00+00:00' }]);
+    expect([page?.waiting, page?.addressSet]).toEqual([2, false]);
+    expect(await h.api.decideReport(3, [{ outcome: 'suspend', until: '2026-12-01T12:00:00.000Z', note: 'A week.' }])).toEqual({ ok: true, value: { decisions: [11, 12] } });
+    expect(h.to('rpc/decide_report')[0]?.body).toEqual({ report: 3, outcomes: [{ outcome: 'suspend', until: '2026-12-01T12:00:00.000Z', note: 'A week.' }] });
+    expect(await h.api.decide({ version: B }, 'approve')).toEqual({ ok: true, value: null });
+    expect(h.to('rpc/decide')[0]?.body).toEqual({ account: null, version_act: B, outcome: 'approve', until: null, note: '' });
+    const player = harness((r) => (r.url.pathname.endsWith('/rpc/is_admin') ? json(false) : json({}, 404)));
+    expect(await player.api.reportsPage()).toBeNull();
+    expect(player.to('rpc/admin_reports')).toHaveLength(0);
+  });
+
+  it('reads the page\'s cut flags, coerces a mail kind it does not know to failed, and passes decide_report\'s and decide\'s refusals through in the server\'s words', async () => {
+    const B = '00000000-0000-4000-8000-00000000000b';
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/is_admin')) return json(true);
+      if (r.url.pathname.endsWith('/rpc/admin_reports')) return json({ reports: [], moreReports: true, reviews: [], moreReviews: true });
+      if (r.url.pathname.endsWith('/rpc/admin_failed_mail')) {
+        return json({ failed: [{ id: 5, template: 'nudge', account: B, kind: 'bounced', error: 'x', at: '2026-11-02T11:00:00+00:00' }, { id: 6, template: 'nudge', account: B, kind: 'refused', error: 'y', at: '2026-11-02T11:00:00+00:00' }], moreFailed: true, waiting: 0, addressSet: true });
+      }
+      if (r.url.pathname.endsWith('/rpc/decide_report')) return json({ code: '23514', message: 'that report is already decided; use decide to act further', hint: 'kayfabb.refusal' }, 400);
+      if (r.url.pathname.endsWith('/rpc/decide')) return json({ code: '42501', message: 'only an admin decides', hint: 'kayfabb.refusal' }, 403);
+      return json({}, 404);
+    });
+    const page = await h.api.reportsPage();
+    expect([page?.moreReports, page?.moreReviews, page?.moreFailed]).toEqual([true, true, true]);
+    expect(page?.failed.map((m) => m.kind)).toEqual(['failed', 'refused']);
+    expect(await h.api.decideReport(3, [{ outcome: 'none' }])).toEqual({ ok: false, error: 'that report is already decided; use decide to act further' });
+    expect(await h.api.decide({ version: B }, 'approve')).toEqual({ ok: false, error: 'only an admin decides' });
+    const plain = harness((r) => (r.url.pathname.endsWith('/rpc/is_admin') ? json(true) : r.url.pathname.endsWith('/rpc/admin_reports') ? json({ reports: [], reviews: [] }) : json({ failed: [], waiting: 0, addressSet: true })));
+    expect(await plain.api.reportsPage()).toMatchObject({ moreReports: false, moreReviews: false, moreFailed: false });
   });
 
   it('passes an admin function\'s refusal through in the server\'s words, and throws a plain error when the queue cannot be read', async () => {
@@ -2219,7 +2534,7 @@ describe('Updates', () => {
 describe('a screen in one call', () => {
   const PROFILE = { title: 'Champ', signature: 'sig', avatar_square: 'sq', avatar_portrait: null, square_frame: { x: 1, y: 2, w: 3, h: 4 }, portrait_frame: null, pip_style: 'star', pronouns: PRONOUN_PRESETS.she };
   const CHAR = { id: B, name: 'Bea', joined: '2026-10-01', staff: null, office: null };
-  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, pipStyle: 'star', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' };
+  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'star', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' };
   const PRESENCE = { names: [{ id: B, name: 'Bea', staff: false }], others: 1 };
   const PLAY_ROW = { ...ACT_ROW, id: SET, kind: 'card', target_act_id: A, payload: { card: 'splat' }, current_payload: { card: 'splat' } };
   const ABOVE_ROW = { play: SPRING, reach: 'thread', target: T, ends_at: '2026-10-02T10:00:00+00:00', act: { ...ACT_ROW, id: SPRING, kind: 'card', payload: { card: 'whoops' } } };
@@ -2294,6 +2609,29 @@ describe('a screen in one call', () => {
     expect(page?.mine).toEqual([{ act: SET, kind: 'fire', character: B }]);
     expect(page?.characters).toEqual([{ ...BEA, title: '', signature: '', avatarSquare: null, squareFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS }]);
     expect(await once('board_page', null).api.boardPage('nowhere', 1, [])).toBeNull();
+  });
+
+  it('board_page: maps the stubs of moved threads, and a closed board\'s merge or fallback; an open board is not closed', async () => {
+    const rest = { board: BOARD_ROW, total: 0, page: 1, threads: [], pins: [], banner: [], states: [], releases: [], tallies: [], mine: [], reading: [], views: [], characters: [], presence: PRESENCE, unread: 0 };
+    const open = await once('board_page', { ...rest, closed: false, mergedInto: null, fallback: null, stubs: [{ id: T, title: 'Best bread', moved_to: C, moved_to_slug: 'off-topic', moved_to_name: 'Off Topic', moved_at: '2026-10-01T10:00:00+00:00' }] }).api.boardPage('general', 1, []);
+    expect(open?.closed).toBeNull();
+    expect(open?.stubs).toEqual([{ thread: T, title: 'Best bread', movedTo: { id: C, slug: 'off-topic', name: 'Off Topic' }, movedAt: '2026-10-01T10:00:00+00:00' }]);
+    const merged = await once('board_page', { ...rest, closed: true, mergedInto: { id: C, slug: 'general', name: 'General' }, goesTo: { id: B, slug: 'open', name: 'Open' }, fallback: null, stubs: [], presence: null }).api.boardPage('minus', 1, []);
+    expect(merged?.closed).toEqual({ mergedInto: { id: C, slug: 'general', name: 'General' }, fallback: null, goesTo: { id: B, slug: 'open', name: 'Open' } });
+    expect(merged?.threads).toEqual([]);
+    const made = await once('board_page', { ...rest, closed: true, mergedInto: null, fallback: { id: C, slug: 'general', name: 'General' }, stubs: [], presence: null }).api.boardPage('short', 1, []);
+    expect(made?.closed).toEqual({ mergedInto: null, fallback: { id: C, slug: 'general', name: 'General' }, goesTo: null });
+    /* A page from before the stubs (no keys) is an open board with none. */
+    const older = await once('board_page', rest).api.boardPage('general', 1, []);
+    expect(older?.closed).toBeNull();
+    expect(older?.stubs).toEqual([]);
+  });
+
+  it('move_thread_names: sends the thread and move of each item, and maps the titles and the boards left by key; a bad id is not sent', async () => {
+    const h = once('move_thread_names', [{ key: A, title: 'Best bread', left: C }, { key: T, title: 'Waiting', left: null }]);
+    const got = await h.api.moveThreadNames([{ thread: T, act: A }, { thread: T, act: null }, { thread: 'nope', act: null }]);
+    expect(only(h, 'move_thread_names')).toEqual({ items: [{ thread: T, act: A }, { thread: T, act: null }] });
+    expect(got).toEqual({ [A]: { title: 'Best bread', left: C }, [T]: { title: 'Waiting', left: null } });
   });
 
   it('search_posts and search_threads: send the filters by their column names and the cursor as given, and map the page to camelCase', async () => {
@@ -2539,12 +2877,21 @@ describe('a screen in one call', () => {
       expect(older.log).not.toHaveProperty('scoredAs');
     });
 
+    it('files each card\'s shares under its own line, where two lines of one character and reason name two cards', async () => {
+      const ride = (card: string, amount: number) => ({ ...LEDGER_ROW, reason: 'card.ride', amount, params: { card } });
+      const share = (card: string | null, amount: number) => ({ settlement: 9, character: B, reason: 'card.ride', card, act: A, quadrant: 'excitedPositive', amount });
+      const page = await once('log_page', doc(SRC({ ledger: [ride('x', 3), ride('y', 7)] }), { shares: [share('x', 3), share('y', 7)] })).api.logPage(null);
+      expect(page.log.settlements[0]!.lines.map((l) => [l.params?.['card'], l.shares.map((s) => s.amount)])).toEqual([['x', [3]], ['y', [7]]]);
+    });
+
     it('sends the cursor by name and maps the sources through the log\'s own mappers, and what the lines name', async () => {
       const answer = doc(SRC({
         ledger: [LEDGER_ROW], wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }],
         saves: [{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }],
         writes: [{ play: C, post: A, version: A, failed: true, opening: true, over: true, at: '2026-10-29T22:30:00+00:00' }],
         groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00', ruled_office: 'boss' }],
+        draws: [{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }],
+        wallsDrawn: [{ act: SPRING, kind: 'wash', play: C, post: A, character: B, mine: B, at: '2026-10-29T22:50:00+00:00', cells: 450 }],
       }), {
         shares: [{ settlement: 9, character: B, reason: 'heel.drewHeat', act: A, quadrant: 'excitedNegative', amount: 20 }], acts: [ACT_ROW], states: [{ play: C, state: { n: 1 }, saved_at: '2026-10-29T23:00:00+00:00' }],
         people: [{ ...CHAR, profile: PROFILE }], threads: [THREAD_ROW], boards: [BOARD_ROW], standings: [{ character: B, standing: 340 }], turns: [{ ...TURN_ROW, act: A, at: '2026-09-02T10:00:00+00:00', was: 'heel' }, TURN_ROW], season: SEASON_ROW,
@@ -2560,6 +2907,9 @@ describe('a screen in one call', () => {
       expect(page.log.saves).toEqual([{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }]);
       /* The texts cards wrote on the player's posts (log_page, 0149), mapped as log() maps my_posts_written_on. */
       expect(page.log.writes).toEqual([{ play: C, post: A, version: A, failed: true, opening: true, over: true, at: '2026-10-29T22:30:00+00:00' }]);
+      /* The surface's two sources (log_page, 0317), mapped as log() maps my_draws and my_walls_drawn_on. */
+      expect(page.log.draws).toEqual([{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }]);
+      expect(page.log.wallsDrawn).toEqual([{ act: SPRING, kind: 'wash', play: C, post: A, character: B, mine: B, at: '2026-10-29T22:50:00+00:00', cells: 450 }]);
       /* The group moves (log_page, 0134), mapped as log() maps my_group_moves. */
       expect(page.log.groupMoves).toEqual([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00', ruledOffice: 'boss' }]);
       expect(page.log.before).toBeNull();
@@ -2620,6 +2970,8 @@ describe('a screen in one call', () => {
       { character: B, name: 'Pipewrench', place: 2, standing: 40, shown: [] },
     ]);
     expect(only(page, 'results_page')).toEqual({ in_season: 2, page: 3 });
+    /* An unplaced row (a standing of 0 or below, #492) keeps its null place. */
+    expect(await once('results_page', [{ character: A, name: 'Idle', place: null, standing: 0, shown: [] }]).api.resultsPage(2, 1)).toEqual([{ character: A, name: 'Idle', place: null, standing: 0, shown: [] }]);
     expect(await once('results_page', null).api.resultsPage(2, 1)).toEqual([]);
     const place = once('result_place', 51);
     expect(await place.api.resultPlace(2, B)).toBe(51);
@@ -2809,5 +3161,161 @@ describe('reports, appeals and what a page says of a ban', () => {
     const log = await h.api.movesLog('clerk');
     expect(log.rows[0]).toMatchObject({ kind: 'visit', outcome: 'filed', params: { post: 41 } });
     expect(log.rows[1]?.outcome).toBeUndefined();
+  });
+});
+
+describe('a refresh Auth refuses as banned (a barred player whose stored session is stale)', () => {
+  const EXPIRED = `${B64({ alg: 'HS256', typ: 'JWT' })}.${B64({ sub: 'u-1', aud: 'authenticated', role: 'authenticated', exp: 1000 })}.sig`;
+  const BAR = { signedIn: false, account: null, bar: { until: null, unknown: true }, conductAccepted: true };
+  /** A harness whose sign-in installs an expired token, so Auth is asked to refresh it and answers as banned. */
+  const banned = () => harness((r) => {
+    if (r.url.pathname === '/functions/v1/account') return json({ session: { ...SESSION, access_token: EXPIRED }, account: true });
+    if (r.url.pathname === '/auth/v1/token') return json({ code: 400, error_code: 'user_banned', msg: 'User is banned' }, 400);
+    if (r.url.pathname === '/auth/v1/logout') return new Response(null, { status: 204 });
+    return undefined;
+  });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  it('is signed out with a bar of unknown end, read from the refusal, and the listeners are told', async () => {
+    const h = banned();
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await h.api.verifyCode('a@b.c', '123456');
+    await settle();
+    expect(h.log.some((r) => r.url.pathname === '/auth/v1/token')).toBe(true);
+    expect(await h.api.session()).toEqual(BAR);
+    expect(heard).toHaveBeenCalledWith(BAR);
+  });
+
+  it('a refusal on another auth path, or another answer on the refresh, sets no bar', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/account') return json({ session: { ...SESSION, access_token: EXPIRED }, account: true });
+      if (r.url.pathname === '/auth/v1/token') return json({ code: 400, error_code: 'refresh_token_not_found' }, 400);
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    await settle();
+    expect((await h.api.session()).bar).toBeNull();
+  });
+
+  it('signing out clears the bar, so Use another address leaves the barred screen', async () => {
+    const h = banned();
+    await h.api.verifyCode('a@b.c', '123456');
+    await settle();
+    expect((await h.api.session()).bar).toEqual({ until: null, unknown: true });
+    await h.api.signOut();
+    expect(await h.api.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
+  });
+});
+
+describe('the session carries the bar and the code (the conduct plan, Task 4)', () => {
+  const signedIn = (extra: (r: Rec) => Response | undefined) => harness((r) => {
+    if (r.url.pathname === '/functions/v1/account') return json({ session: SESSION, account: true });
+    if (r.url.pathname === '/auth/v1/user') return json(SESSION.user);
+    if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
+    return extra(r);
+  });
+
+  it('reads my_conduct_log for the caller: each outcome a row, an outcome it does not know none, and no admin, note or reporter anywhere', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_conduct_log') ? json([
+      { decision: 7, outcome: 'hide', version_act: 'v1', post: 'p1', thread: 't1', at: '2026-11-01T00:00:00+00:00' },
+      { decision: 6, outcome: 'nudge', version_act: 'v1', post: 'p1', thread: 't1', at: '2026-11-01T00:00:00+00:00' },
+      { decision: 5, outcome: 'approve', version_act: 'v2', post: 'p2', thread: 't2', at: '2026-10-31T00:00:00+00:00' },
+    ]) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.conductLog()).toEqual([
+      { decision: 7, outcome: 'hide', versionAct: 'v1', post: 'p1', thread: 't1', at: '2026-11-01T00:00:00+00:00' },
+      { decision: 5, outcome: 'approve', versionAct: 'v2', post: 'p2', thread: 't2', at: '2026-10-31T00:00:00+00:00' },
+    ]);
+  });
+
+  it('reads my_bar and conduct_accepted for a signed-in account, beside whoami', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json({ kind: 'suspended', until: '2026-12-01T00:00:00+00:00' }) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json(false) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: { until: '2026-12-01T00:00:00+00:00' }, conductAccepted: false });
+    const ban = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json({ kind: 'banned', until: null }) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json(true) : undefined));
+    await ban.api.verifyCode('a@b.c', '123456');
+    expect(await ban.api.session()).toEqual({ signedIn: true, account: A, bar: { until: null }, conductAccepted: true });
+  });
+
+  it('a failed conduct_accepted read counts as NOT accepted, so the code is shown again (agreeing is harmless)', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json(null) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json({ message: 'boom' }, 500) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: false });
+  });
+
+  it('a failed my_bar read stays no bar: the server refuses a barred account\'s writes and the hint reloads', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json({ message: 'boom' }, 500) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json(true) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: true });
+  });
+
+  it('accepting while a reload is in flight still ends with the code accepted: the read after the accept is a fresh one', async () => {
+    let accepted = false;
+    const h = signedIn((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_bar')) return json(null);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) { const was = accepted; return new Promise<Response>((res) => setTimeout(() => res(json(was)), 60)) as unknown as Response; }
+      if (r.url.pathname.endsWith('/rpc/accept_conduct')) { accepted = true; return json(null); }
+      if (r.url.pathname.endsWith('/rpc/mark_read')) return json({ code: '28000', message: 'this account is banned', hint: 'kayfabb.barred' }, 401);
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await new Promise((r) => setTimeout(r, 200));
+    heard.mockClear();
+    await h.api.markRead(T, 3, null); // starts a reload that reads accepted = false, slowly
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await h.api.acceptConduct(2)).toEqual({ ok: true, value: {} });
+    await vi.waitFor(() => expect(heard).toHaveBeenLastCalledWith({ signedIn: true, account: A, bar: null, conductAccepted: true }));
+  });
+
+  it('keeps the signed-out path unchanged: no my_bar and no conduct_accepted without a session', async () => {
+    const h = harness(() => undefined);
+    await h.api.session();
+    expect(h.to('rpc/my_bar')).toEqual([]);
+    expect(h.to('rpc/conduct_accepted')).toEqual([]);
+  });
+
+  it('accepts the code through accept_conduct with the version', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/accept_conduct') ? json(null) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.acceptConduct(2)).toEqual({ ok: true, value: {} });
+    expect(h.to('rpc/accept_conduct')[0]?.body).toEqual({ version: 2 });
+  });
+
+  it('a refusal with the hint kayfabb.barred from any action reloads the session and tells its listeners', async () => {
+    let barred = false;
+    const h = signedIn((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_bar')) return json(barred ? { kind: 'banned', until: null } : null);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
+      if (r.url.pathname.endsWith('/rpc/mark_read')) { barred = true; return json({ code: '28000', message: 'this account is banned', hint: 'kayfabb.barred' }, 401); }
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await new Promise((r) => setTimeout(r, 30));
+    heard.mockClear();
+    await h.api.markRead(T, 3, null);
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledWith({ signedIn: true, account: A, bar: { until: null }, conductAccepted: true }));
+  });
+
+  it('an edge function answer carrying the hint kayfabb.barred reloads the session the same way', async () => {
+    let barred = false;
+    const h = signedIn((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_bar')) return json(barred ? { kind: 'suspended', until: '2099-01-01T00:00:00+00:00' } : null);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
+      if (r.url.pathname === '/functions/v1/act') { barred = true; return json({ error: 'this account is suspended until 2099-01-01', hint: 'kayfabb.barred' }, 403); }
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await new Promise((r) => setTimeout(r, 30));
+    heard.mockClear();
+    const out = await h.api.post(T, B, 'hi', null);
+    expect(out.ok).toBe(false);
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledWith({ signedIn: true, account: A, bar: { until: '2099-01-01T00:00:00+00:00' }, conductAccepted: true }));
   });
 });

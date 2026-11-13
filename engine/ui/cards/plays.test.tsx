@@ -6,7 +6,8 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
-import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, inPlayOrder, isBack, livePlays, markedPlays, playOf, shownPlays } from './plays.ts';
+import { backoff, REPEAT_TRIES } from './tails.ts';
+import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, markedPlays, playOf, shownPlays } from './plays.ts';
 import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -97,7 +98,7 @@ test('only the cards the instance draws an effect for have a state to read', () 
 
 describe('the kinds of Act that hold a card\'s effect', () => {
   test('are the ones drawn as words: not a card, an unmask, an announcement, a tally, a reveal, a move, the end of one, a Boss keeping one, a card back, a take-back, a spring or an update', () => {
-    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false, donation: false };
+    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false, donation: false, draw: false, wash: false };
     for (const [kind, held] of Object.entries(kinds)) expect(holdsEffects(kind as ActKind), kind).toBe(held);
   });
 });
@@ -368,7 +369,7 @@ describe('a back that sprang, and a new back set on the same post', () => {
   });
   test('a back whose time has passed with nothing springing it is no longer shown', () => {
     const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: '2020-01-01T00:00:00.000Z', endsAt: '2020-01-08T00:00:00.000Z' }, { ...playOf(base('s2', 'set', {}))!, playedAt: new Date().toISOString(), endsAt: '2999-01-01T00:00:00.000Z' }];
-    expect(shownPlays(backs).map((p) => p.id)).toEqual(['s2']);
+    expect(shownPlays(backs, Date.now()).map((p) => p.id)).toEqual(['s2']);
   });
   test('a back is over at the end the server stored, whatever the setting says', () => {
     const day = 86_400_000;
@@ -376,7 +377,7 @@ describe('a back that sprang, and a new back set on the same post', () => {
       { ...playOf(base('s1', 'set', {}))!, playedAt: new Date(Date.now() - 10 * day).toISOString(), endsAt: new Date(Date.now() + 20 * day).toISOString() },
       { ...playOf(base('s2', 'set', {}))!, playedAt: new Date(Date.now() - 1 * day).toISOString(), endsAt: new Date(Date.now() - day / 2).toISOString() },
     ];
-    expect(shownPlays(backs).map((p) => p.id)).toEqual(['s1']);
+    expect(shownPlays(backs, Date.now()).map((p) => p.id)).toEqual(['s1']);
   });
   test('a set Act carries its end onto its play, and a card Act has none', () => {
     expect(playOf({ ...base('s1', 'set', {}), endsAt: '2026-11-20T00:00:00.000Z' })!.endsAt).toBe('2026-11-20T00:00:00.000Z');
@@ -386,7 +387,7 @@ describe('a back that sprang, and a new back set on the same post', () => {
   test('a back its setter took back leaves the post: it is not shown', () => {
     const now = new Date().toISOString();
     const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: now, takenBack: { at: now } }, { ...playOf(base('s2', 'set', {}))!, playedAt: now }];
-    expect(shownPlays(backs).map((p) => p.id)).toEqual(['s2']);
+    expect(shownPlays(backs, Date.now()).map((p) => p.id)).toEqual(['s2']);
   });
 });
 
@@ -407,7 +408,7 @@ describe('a play an admin ended', () => {
     const got = plays.get('p1');
     expect(got.billed.map((p) => [p.id, p.reversed])).toEqual([['k2', undefined], ['k1', true]]);
     expect(heard).toHaveBeenCalledTimes(1);
-    expect(livePlays(got.plays).map((p) => p.id)).toEqual(['k2']);
+    expect(livePlays(got.plays, Date.now()).map((p) => p.id)).toEqual(['k2']);
   });
 
   test('a card_end that arrives before its play is held, and the play arrives reversed', () => {
@@ -416,7 +417,7 @@ describe('a play an admin ended', () => {
     expect(plays.get('p1').plays).toEqual([]);
     plays.add([act('k1', 'card', { card: 'whoops' })]);
     expect(plays.get('p1').plays.map((p) => p.reversed)).toEqual([true]);
-    expect(livePlays(plays.get('p1').plays)).toEqual([]);
+    expect(livePlays(plays.get('p1').plays, Date.now())).toEqual([]);
   });
 
   test('the same end again changes nothing, and an end is no play of its own', () => {
@@ -432,8 +433,8 @@ describe('a play an admin ended', () => {
     const post = playOf(act('k1', 'card', { card: 'whoops' }))!;
     const beyond = playOf(act('k2', 'card', { card: 'sparkly', reach: 'thread', thread: 'th', ends: '2099-01-01T00:00:00.000Z' }, 'p1'))!;
     const ended = [{ ...post, reversed: true as const }, { ...beyond, reversed: true as const }];
-    expect(livePlays(ended)).toEqual([]);
-    expect(markedPlays(ended).map((p) => p.id)).toEqual(['k1']);
+    expect(livePlays(ended, Date.now())).toEqual([]);
+    expect(markedPlays(ended, Date.now()).map((p) => p.id)).toEqual(['k1']);
   });
 });
 
@@ -450,7 +451,7 @@ describe('a play ended by being absent from a page read again', () => {
     plays.subscribe('p1', heard);
     expect(plays.setEnded(['k1'])).toBe(true);
     expect(plays.get('p1').billed.map((p) => [p.id, p.reversed])).toEqual([['k1', true], ['k2', undefined]]);
-    expect(livePlays(plays.get('p1').plays).map((p) => p.id)).toEqual(['k2']);
+    expect(livePlays(plays.get('p1').plays, Date.now()).map((p) => p.id)).toEqual(['k2']);
     expect(heard).toHaveBeenCalledTimes(1);
   });
 
@@ -489,7 +490,133 @@ describe('a play that did not take', () => {
     plays.add([act('k1'), act('k2', { untaken: true }), act('k3')]);
     const got = plays.get('p1');
     expect(got.plays.map((p) => p.id)).toEqual(['k1', 'k2', 'k3']);
-    expect(livePlays(got.plays).map((p) => p.id)).toEqual(['k1', 'k3']);
-    expect(markedPlays(got.plays).map((p) => p.id)).toEqual(['k1', 'k2', 'k3']);
+    expect(livePlays(got.plays, Date.now()).map((p) => p.id)).toEqual(['k1', 'k3']);
+    expect(markedPlays(got.plays, Date.now()).map((p) => p.id)).toEqual(['k1', 'k2', 'k3']);
+  });
+});
+
+/* A surface (0317): what the page's read carries of it is its covered cells and its live Acts' ids; the live Acts' own words are read where a wall is near. */
+describe('a surface, in the store', () => {
+  const wall = 'k-wall';
+  const drawn = (id: string): Act => ({ id, kind: 'draw', character: 'c1', thread: 't', targetActId: wall, seq: null, createdAt: '2026-10-30T10:00:00.000Z', payload: { strokes: [], cells: '0'.repeat(10000) }, currentPayload: {}, editedAt: null, shownEditedAt: null });
+  const play = (): Act => card({ id: wall, payload: { card: 'slab', layer: 1, message: '', config: {} } });
+
+  test('hydrate carries the page\'s surfaces: the cells covered and the live ids, with no Acts read yet', () => {
+    const plays = createPlays();
+    hydrate(plays, [play()], {}, [], {}, { [wall]: { covered: 120, live: ['d1', 'd2'] } });
+    expect(plays.get(POST).surfaces).toEqual({ [wall]: { covered: 120, live: ['d1', 'd2'], acts: null } });
+  });
+
+  test('a surface for a play not here yet is kept for when it is, and a later page\'s numbers replace the earlier\'s', () => {
+    const plays = createPlays();
+    plays.setSurfaces({ [wall]: { covered: 5, live: ['d1'] } });
+    expect(plays.get(POST).surfaces).toEqual({});
+    plays.add([play()]);
+    expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 5, live: ['d1'] });
+    plays.setSurfaces({ [wall]: { covered: 9, live: ['d1', 'd2'] } });
+    expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 9, live: ['d1', 'd2'] });
+  });
+
+  test('a change to a surface wakes its post alone, and the same again wakes none', () => {
+    const plays = createPlays();
+    plays.add([play()]);
+    const here = vi.fn();
+    const there = vi.fn();
+    plays.subscribe(POST, here);
+    plays.subscribe(OTHER, there);
+    plays.setSurfaces({ [wall]: { covered: 5, live: [] } });
+    expect(here).toHaveBeenCalledTimes(1);
+    plays.setSurfaces({ [wall]: { covered: 5, live: [] } });
+    expect(here).toHaveBeenCalledTimes(1);
+    expect(there).not.toHaveBeenCalled();
+  });
+
+  test('a surface\'s Acts are read once when asked for, and again on a change; a play never asked for is never read', async () => {
+    const plays = createPlays();
+    plays.add([play()]);
+    const surfaceActs = vi.fn(async () => ({ covered: 7, acts: [drawn('d1')], older: 0 }));
+    const api = { surfaceActs } as never;
+    expect(plays.wantSurface(wall)).toBe(true);
+    expect(plays.wantSurface(wall)).toBe(false);
+    await readSurface(api, plays, wall);
+    expect(surfaceActs).toHaveBeenCalledWith(wall);
+    expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 7, acts: [expect.objectContaining({ id: 'd1' })] });
+    expect(plays.wantsSurface(wall)).toBe(true);
+    expect(plays.wantsSurface('other-wall')).toBe(false);
+  });
+
+  test('a read that fails leaves the surface as it was, keeps the want, and is tried again after the backoff until it lands', async () => {
+    vi.useFakeTimers();
+    try {
+      const plays = createPlays();
+      plays.add([play()]);
+      expect(plays.wantSurface(wall)).toBe(true);
+      const surfaceActs = vi.fn()
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValue({ covered: 3, acts: [drawn('d1')], older: 0 });
+      await readSurface({ surfaceActs } as never, plays, wall);
+      expect(plays.get(POST).surfaces[wall]?.acts ?? null).toBeNull();
+      expect(plays.wantsSurface(wall)).toBe(true);
+      await vi.advanceTimersByTimeAsync(backoff(0) - 1);
+      expect(surfaceActs).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(surfaceActs).toHaveBeenCalledTimes(2);
+      expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 3, acts: [expect.objectContaining({ id: 'd1' })] });
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('a read that keeps failing is tried a bounded number of times, and the want stays so a broadcast reads again', async () => {
+    vi.useFakeTimers();
+    try {
+      const plays = createPlays();
+      plays.add([play()]);
+      plays.wantSurface(wall);
+      const surfaceActs = vi.fn().mockRejectedValue(new Error('offline'));
+      await readSurface({ surfaceActs } as never, plays, wall);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(surfaceActs.mock.calls.length).toBe(REPEAT_TRIES);
+      expect(plays.wantsSurface(wall)).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('an answer that lands after a newer one is dropped', async () => {
+    const plays = createPlays();
+    plays.add([play()]);
+    const later: ((v: unknown) => void)[] = [];
+    const surfaceActs = vi.fn(() => new Promise((resolve) => { later.push(resolve); }));
+    const first = readSurface({ surfaceActs } as never, plays, wall);
+    const second = readSurface({ surfaceActs } as never, plays, wall);
+    later[1]!({ covered: 9, acts: [drawn('new')], older: 0 });
+    await second;
+    later[0]!({ covered: 1, acts: [drawn('old')], older: 0 });
+    await first;
+    expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 9, acts: [expect.objectContaining({ id: 'new' })] });
+  });
+
+  test('a read that finds no surface leaves the cells covered as they were', async () => {
+    const plays = createPlays();
+    plays.add([play()]);
+    plays.setSurfaces({ [wall]: { covered: 40, live: ['d1'] } });
+    await readSurface({ surfaceActs: async () => null } as never, plays, wall);
+    expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 40 });
+  });
+
+  test('a page read again reads the acts of a wanted wall whose live list changed, and no other', async () => {
+    const plays = createPlays();
+    const other = 'k-other';
+    plays.add([play(), card({ id: other, payload: { card: 'slab', layer: 1, message: '', config: {} } }), card({ id: 'k-third', payload: { card: 'slab', layer: 1, message: '', config: {} } })]);
+    plays.setSurfaceActs(wall, 1, [drawn('d1')]);
+    plays.setSurfaceActs(other, 1, [drawn('e1')]);
+    plays.wantSurface(wall); plays.wantSurface(other);
+    const surfaceActs = vi.fn(async () => ({ covered: 2, acts: [drawn('d1'), drawn('d2')], older: 0 }));
+    const surfaces = { [wall]: { covered: 2, live: ['d1', 'd2'] }, [other]: { covered: 1, live: ['e1'] }, 'k-third': { covered: 5, live: ['z'] } };
+    plays.setSurfaces(surfaces);
+    await rereadSurfaces({ surfaceActs } as never, plays, surfaces);
+    expect(surfaceActs.mock.calls).toEqual([[wall]]);
+  });
+
+  test('a draw or a wash is no card effect and no line of a thread', () => {
+    expect(holdsEffects('draw')).toBe(false);
+    expect(holdsEffects('wash')).toBe(false);
   });
 });

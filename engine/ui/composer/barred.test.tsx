@@ -27,7 +27,7 @@ function barred(by: 'boss' | 'mod' = 'boss') {
   const w = threadWorld(2, { groups: GROUPS });
   w.fake.seed.wallet(w.me, 500);
   const boss = w.fake.seed.staff('director', 'The Director', by);
-  const at = Date.now() - 3_600_000;
+  const at = w.fake.clock.now() - 3_600_000;
   const move = w.fake.seed.groupMove('director', { character: w.pipe, group: 'trialMembers', board: 'general', at, expiresAt: at + 3 * DAY });
   return { ...w, boss, move, at, ends: at + 3 * DAY };
 }
@@ -145,7 +145,7 @@ describe('the box of a barred mask', () => {
     const most = testInstance.settings.moveExpiryMostDays;
     w.fake.seed.wallet(w.me, 500);
     w.fake.seed.staff('director', 'The Director', 'boss');
-    const at = Date.now() - 3_600_000;
+    const at = w.fake.clock.now() - 3_600_000;
     w.fake.seed.groupMove('director', { character: w.pipe, group: 'trialMembers', board: 'general', at, expiresAt: at + (most - 1) * DAY });
     w.fake.seed.judging({ appeal: 'increased' });
     const move = (await w.fake.myCharacters())[0]!.bars![0]!.move;
@@ -156,7 +156,7 @@ describe('the box of a barred mask', () => {
   test('says plainly that a move with no end date cannot be shortened or lengthened', async () => {
     const w = threadWorld(2, { groups: GROUPS });
     w.fake.seed.staff('director', 'The Director', 'boss');
-    w.fake.seed.groupMove('director', { character: w.pipe, group: 'trialMembers', board: 'general', at: Date.now() - 3_600_000, expiresAt: null });
+    w.fake.seed.groupMove('director', { character: w.pipe, group: 'trialMembers', board: 'general', at: w.fake.clock.now() - 3_600_000, expiresAt: null });
     openThread(w, undefined, { settings: { groups: GROUPS } });
     await userEvent.click(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' }));
     expect(await screen.findByRole('form', { name: 'Appeal' })).toHaveTextContent('It has no end date, so a reduction or an increase changes nothing and is recorded as upheld.');
@@ -182,7 +182,7 @@ describe('the box of a barred mask', () => {
   test('is not offered for a bar a favor carries, which is no punishment', async () => {
     const w = threadWorld(2, { groups: GROUPS });
     w.fake.seed.staff('director', 'The Director', 'boss');
-    w.fake.seed.groupMove('director', { character: w.pipe, group: 'teachersPet', board: 'general', at: Date.now() - 3_600_000 });
+    w.fake.seed.groupMove('director', { character: w.pipe, group: 'teachersPet', board: 'general', at: w.fake.clock.now() - 3_600_000 });
     openThread(w, undefined, { settings: { groups: GROUPS } });
     await screen.findByRole('link', { name: 'See the move' });
     expect(screen.queryByRole('button', { name: /^Appeal to/u })).toBeNull();
@@ -277,7 +277,7 @@ describe('the three states of an apology', () => {
 
   test('rejected: says when the next may be written, and offers none before then', async () => {
     const w = barred();
-    const wrote = Date.now() - 3_600_000;
+    const wrote = w.fake.clock.now() - 3_600_000;
     w.fake.seed.apology(w.pipe, w.move, 'rejected', { at: wrote });
     openThread(w, undefined, { settings: { groups: GROUPS } });
     const next = new Date(wrote + 24 * 3_600_000).toISOString();
@@ -287,14 +287,14 @@ describe('the three states of an apology', () => {
 
   test('a rejection a day old no longer waits: the apology can be written again', async () => {
     const w = barred();
-    w.fake.seed.apology(w.pipe, w.move, 'rejected', { at: Date.now() - 25 * 3_600_000 });
+    w.fake.seed.apology(w.pipe, w.move, 'rejected', { at: w.fake.clock.now() - 25 * 3_600_000 });
     openThread(w, undefined, { settings: { groups: GROUPS } });
     expect(await screen.findByRole('button', { name: 'Write an apology' })).toBeInTheDocument();
   });
 
   test('returned: the judgment failed, and the next may be written at once', async () => {
     const w = barred();
-    w.fake.seed.apology(w.pipe, w.move, 'returned', { at: Date.now() - 60_000 });
+    w.fake.seed.apology(w.pipe, w.move, 'returned', { at: w.fake.clock.now() - 60_000 });
     openThread(w, undefined, { settings: { groups: GROUPS } });
     expect(await screen.findByRole('button', { name: 'Write an apology' })).toBeInTheDocument();
   });
@@ -303,7 +303,7 @@ describe('the three states of an apology', () => {
 describe('a returned apology', () => {
   test('says it could not be judged, and offers another at once', async () => {
     const w = barred();
-    w.fake.seed.apology(w.pipe, w.move, 'returned', { at: Date.now() - 60_000 });
+    w.fake.seed.apology(w.pipe, w.move, 'returned', { at: w.fake.clock.now() - 60_000 });
     openThread(w, undefined, { settings: { groups: GROUPS } });
     expect(await screen.findByText('Your last apology couldn\'t be judged. You can write another.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Write an apology' })).toBeInTheDocument();
@@ -314,9 +314,9 @@ describe('a mask both barred and banned', () => {
   test('is told of its ban instead, and is offered no apology while it holds', async () => {
     const w = barred();
     const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
-    const visit = w.fake.seed.visit(clerk, w.ids[1]!, { at: Date.now() - 3_600_000, endsInMs: 60_000 });
+    const visit = w.fake.seed.visit(clerk, w.ids[1]!, { at: w.fake.clock.now() - 3_600_000, endsInMs: 60_000 });
     const inf = w.fake.seed.infraction(visit, { points: 10, band: 'severe' });
-    w.fake.seed.ban(w.pipe, Date.now() + 5 * 3_600_000, { infraction: inf });
+    w.fake.seed.ban(w.pipe, w.fake.clock.now() + 5 * 3_600_000, { infraction: inf });
     openThread(w, undefined, { settings: { groups: GROUPS } });
     await screen.findByText(/is banned until/u);
     expect(screen.queryByRole('heading', { name: /can't post on General/u })).toBeNull();

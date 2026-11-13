@@ -15,6 +15,7 @@ import { setSoundPreference } from '../../engine/ui/audio/sound.ts';
 import { DEFAULT_PREFERENCES } from '../../engine/ui/data/api.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
+import { LinkHandProvider } from '../../engine/ui/account/LinkHand.tsx';
 import { AccountGate } from '../../engine/ui/account/OpenAccount.tsx';
 import { ProfileScreen } from '../../engine/ui/profile/Profile.tsx';
 import { RecordScreen } from '../../engine/ui/profile/Record.tsx';
@@ -28,6 +29,7 @@ import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer, type PlayerInitial } from '../../engine/ui/player.tsx';
 import { seasonAt } from '../../engine/ui/season/Season.tsx';
+import { Captions } from '../../engine/ui/audio/Captions.tsx';
 import { SendToWelcome } from '../../engine/ui/welcome/Welcome.tsx';
 import { SettlementOnLoad } from '../../engine/ui/log/Settlement.tsx';
 import { match, RouterProvider, useLocation, useNavigate, useRouterAccount, useRouterInternals } from '../../engine/ui/router.tsx';
@@ -60,9 +62,13 @@ const screens: GlassScreens = {
   updates: lazyScreen(() => import('../../engine/ui/updates/Updates.tsx').then((m) => ({ default: m.UpdatesScreen }))),
   guide: lazyScreen(() => import('../../engine/ui/guide/Guide.tsx').then((m) => ({ default: m.GuideScreen }))),
   contact: lazyScreen(() => import('../../engine/ui/contact/Contact.tsx').then((m) => ({ default: m.ContactScreen }))),
+  conduct: lazyScreen(() => import('../../engine/ui/conduct/Conduct.tsx').then((m) => ({ default: m.ConductScreen }))),
   welcome: lazyScreen(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen }))),
   queue: lazyScreen(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen }))),
+  reports: lazyScreen(() => import('../../engine/ui/admin/Reports.tsx').then((m) => ({ default: m.ReportsScreen }))),
   machine: lazyScreen(() => import('../../engine/ui/admin/Machine.tsx').then((m) => ({ default: m.MachineScreen }))),
+  trophies: lazyScreen(() => import('../../engine/ui/admin/Trophies.tsx').then((m) => ({ default: m.TrophiesScreen }))),
+  wardrobe: lazyScreen(() => import('../../engine/ui/wardrobe/Wardrobe.tsx').then((m) => ({ default: m.Wardrobe }))),
   log: lazyScreen(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen }))),
   settlement: lazyScreen(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen }))),
 };
@@ -126,12 +132,18 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/guide': 'settings',
   /* Reach a person stands on the same page smoke, for the same reason, and is readable signed out. */
   '/contact': 'settings',
+  /* The code of conduct stands on the same page smoke, for the same reason, and is readable signed out (registration links to it). */
+  '/conduct': 'settings',
   /* The welcome stands on the same page smoke, for the same reason. */
   '/welcome': 'settings',
   /* Alerts stands on the same page smoke as Updates, for the same reason: no surface of its own. */
   '/alerts': 'settings',
   '/admin/queue': 'settings',
+  '/admin/reports': 'settings',
   '/admin/machine': 'settings',
+  '/admin/trophies': 'settings',
+  /* The dress-up page stands on the page smoke of Settings, for the same reason: no surface of its own. */
+  '/wardrobe': 'settings',
   '/log': 'log',
   '/log/settlement': 'settlement',
 };
@@ -212,9 +224,12 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
   }
   const content = (
     <AccountGate>
-      <Suspense fallback={<div aria-busy="true" />}>
-        <Routes key={mountedFor.n} routes={routes} {...(surface ? { failures: GLASS_FAILURES } : {})} />
-      </Suspense>
+      {/* The emailed link in hand is the sign-in page's alone, and outlives the screen starting afresh under the account it signed in: the provider sits above the keyed Routes, in each world's own content. */}
+      <LinkHandProvider>
+        <Suspense fallback={<div aria-busy="true" />}>
+          <Routes key={mountedFor.n} routes={routes} {...(surface ? { failures: GLASS_FAILURES } : {})} />
+        </Suspense>
+      </LinkHandProvider>
       {/* A world that is leaving moves nobody: what a board page does on its own (below) stops with its exit, not at its end (the crossing, below). */}
       <WhilePresent>
         {/* The first load of a board page after a settlement the device has not seen opens its summary (engine/ui/log/Settlement.tsx). */}
@@ -255,6 +270,7 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
   const { exitRested, onRest } = useRest(world);
   const leave: PinnedExit = { scrollY: window.scrollY, rested: exitRested };
   return (
+    <>
     <AnimatePresence initial={false} custom={leave}>
       {surface
         ? (
@@ -267,6 +283,9 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
         )
         : <Leaving key="board" pin holdUntil={feel ? holdBoard : undefined} className="kb-world" data-kb-world="board"><Frame>{content}</Frame></Leaving>}
     </AnimatePresence>
+    {/* The caption bar is the page's, once, outside both worlds: the glass pages play sound too, and it stands above the HUD where there is one (--kb-hud-measured, 0px fallback) and at the screen's bottom where there is none. Sound captions are never behind a sign-in. */}
+    <Captions />
+    </>
   );
 }
 
@@ -307,7 +326,7 @@ interface Known {
   settings: ScreenSettings | null;
 }
 
-const sessionOnce = (api: KayfaApi, known: Known): Promise<Session> => (known.session ??= api.session().catch((): Session => ({ signedIn: false, account: null })));
+const sessionOnce = (api: KayfaApi, known: Known): Promise<Session> => (known.session ??= api.session().catch((): Session => ({ signedIn: false, account: null, bar: null, conductAccepted: true })));
 
 /**
  * The first page draws once (the forum-load plan, Tasks 12 and 13, and the design, section 3): boot and the estimate start together once

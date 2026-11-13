@@ -30,21 +30,26 @@
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, ReadFailure, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import type { SignedIn } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
+import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
 import { ENGINE_DEFAULT_PRONOUNS, normalizePronouns, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
+import type { Piece } from '../../../engine/rules/cosmetics.ts';
+import { RARITIES } from '../../../engine/rules/cards.ts';
 import type { Career } from '../../../engine/system/career.ts';
+import type { HandoffFacts } from '../../../engine/system/meeting.ts';
 import type {
+  SurfaceAct, SurfaceNow, SurfaceWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
-  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
+  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -56,12 +61,16 @@ export interface SupabaseApiOptions {
   readonly fetch?: typeof fetch;
   /** For tests of the live channels: a client made elsewhere. */
   readonly client?: SupabaseClient;
+  /** Applied to every character the adapter reads, once, where it is made: the instance's pictures for its staff (engine/ui/data/staff-faces.ts). */
+  readonly face?: (character: Character) => Character;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 
 const REFUSAL_HINT = 'kayfabb.refusal';
+/** The hint a refusal for a barred account carries (0236_conduct.sql, refuse_if_barred). */
+const BARRED_HINT = 'kayfabb.barred';
 const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
 const NOT_READ = 'that could not be read right now; try again';
@@ -102,6 +111,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+/** A season place as the reads answer it: a number, or null where the mask is unplaced (a standing of 0 or below, #492). */
+const placeOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 /** A jsonb object of numbers by key (a ledger row's `params`, 0073), and for a card's boost the card's key as a string; null where it is none or holds anything else. */
 const numbers = (v: unknown): Readonly<Record<string, number | string>> | null =>
   typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every((x) => typeof x === 'string' || (typeof x === 'number' && Number.isFinite(x))) ? v as Record<string, number | string> : null;
@@ -132,6 +143,20 @@ const beyond = (reach: string | undefined, fromPost: string | undefined): Record
 /** The characters a body puts words in the mouth of, as the act function reads them (engine/rules/actions.ts): nothing when there are none. */
 const framed = (framing: readonly string[] | undefined): Record<string, unknown> => (framing && framing.length > 0 ? { framing } : {});
 
+/** A draw or a wash as `surface_acts` carries it: the public Act, and a draw's `share`, the cells it owns now. */
+function toSurfaceAct(r: Row): SurfaceAct {
+  return { ...toAct(r), ...(typeof r['share'] === 'number' ? { share: r['share'] } : {}) };
+}
+/** What draw_on_surface and wash_surface answer: the Act's projection, the cells now covered and the live Acts' ids. */
+function toSurfaceWritten(r: Row): SurfaceWritten {
+  return { ...toSurfaceAct(r), covered: num(r['covered']), live: (Array.isArray(r['live']) ? r['live'] : []).filter((x): x is Id => typeof x === 'string') };
+}
+/** thread_page's `surfaces`: by surface play, its cells covered and its live Acts' ids. */
+function toSurfaces(v: unknown): Record<Id, SurfaceNow> {
+  if (!isObject(v)) return {};
+  return Object.fromEntries(Object.entries(v).filter(([, s]) => isObject(s)).map(([play, s]) => [play, { covered: num((s as Row)['covered']), live: ((s as Row)['live'] as unknown[] | undefined ?? []).filter((x): x is Id => typeof x === 'string') }]));
+}
+
 function toAct(r: Row): Act {
   return {
     id: r['id'],
@@ -145,6 +170,11 @@ function toAct(r: Row): Act {
     currentPayload: r['current_payload'] ?? r['payload'] ?? {},
     editedAt: r['edited_at'] ?? null,
     shownEditedAt: r['shown_edited_at'] ?? null,
+    ...(r['hidden'] === true ? { hidden: true } : {}),
+    ...(r['any_hidden'] === true ? { anyHidden: true } : {}),
+    ...(r['concealing'] === true ? { concealing: true } : {}),
+    ...(r['payload_hidden'] === true ? { payloadHidden: true } : {}),
+    ...(r['payload_concealing'] === true ? { payloadConcealing: true } : {}),
     ...(r['untaken'] === true ? { untaken: true as const } : {}),
     ...(typeof r['ends_at'] === 'string' ? { endsAt: r['ends_at'] } : {}),
   };
@@ -183,12 +213,13 @@ function toShown(v: unknown): SeasonShown[] {
 /** One row of a finished season's table (`results_page`), or one of the top three a results item carries. A row with no character is no row. */
 function toResult(t: Row): SeasonResultRow[] {
   return typeof t?.['character'] === 'string'
-    ? [{ character: t['character'], name: String(t['name'] ?? ''), place: num(t['place']), standing: num(t['standing']), shown: toShown(t['shown']) }] : [];
+    ? [{ character: t['character'], name: String(t['name'] ?? ''), place: placeOrNull(t['place']), standing: num(t['standing']), shown: toShown(t['shown']) }] : [];
 }
 /** One row of `season_news` (0063, 0099, 0100). Its public detail is read as the server wrote it; what is not in the shape is left out. A results item has no Act, thread or sequence number. */
 function toSeasonNews(r: Row): SeasonNewsItem {
   const detail = (r['detail'] ?? {}) as Row;
-  const top = rowsOf(detail['top']).flatMap(toResult);
+  /* The podium is the placed rows alone (season_news, 0206); an unplaced row the server should not send is no step of it (#492). */
+  const top = rowsOf(detail['top']).flatMap(toResult).flatMap((t) => (t.place === null ? [] : [{ ...t, place: t.place }]));
   return {
     kind: r['kind'], act: r['act'] ?? null, thread: r['thread'] ?? null, seq: r['seq'] === null || r['seq'] === undefined ? null : num(r['seq']), at: String(r['at']),
     season: num(r['season']), name: str(r['name']), quote: str(r['quote']), count: r['count'] === null || r['count'] === undefined ? null : num(r['count']),
@@ -197,7 +228,7 @@ function toSeasonNews(r: Row): SeasonNewsItem {
 }
 /** One of a character's past seasons, as profile_page and record_page answer it; a row with no season number is no row. */
 function toSeasonRecord(r: Row): SeasonRecordRow[] {
-  return typeof r?.['season'] === 'number' ? [{ season: r['season'], place: num(r['place']), standing: num(r['standing']), at: String(r['at']) }] : [];
+  return typeof r?.['season'] === 'number' ? [{ season: r['season'], place: placeOrNull(r['place']), standing: num(r['standing']), at: String(r['at']) }] : [];
 }
 
 /** A search cursor as the search reads return it; one with no time or Act is no cursor. */
@@ -373,7 +404,7 @@ const toPlayAbove = (x: Row): PlayAbove => ({ play: x['play'], reach: x['reach']
 const toPinned = (x: Row): PinnedThread => ({ thread: toThread(x['thread']), play: x['play'], endsAt: x['ends_at'], act: toAct(x['act']) });
 /** standing_place's answer; null where it is none. */
 const toStandingPlace = (v: unknown): StandingPlace | null =>
-  v && typeof v === 'object' && !Array.isArray(v) ? { standing: num((v as Row)['standing']), place: num((v as Row)['place']), of: num((v as Row)['of']) } : null;
+  v && typeof v === 'object' && !Array.isArray(v) ? { standing: num((v as Row)['standing']), place: placeOrNull((v as Row)['place']), of: num((v as Row)['of']) } : null;
 /** The bell's count as alertsUnread() answers it: whole, at least 0, to the bound. */
 const toUnread = (v: unknown): number => Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(v))));
 /** character_post_counts' row, or none: a character that has done nothing counts zero. */
@@ -447,14 +478,39 @@ function toFrame(v: unknown): Frame | null {
   return [f['x'], f['y'], f['w'], f['h']].every((n) => typeof n === 'number' && Number.isFinite(n)) ? { x: f['x'], y: f['y'], w: f['w'], h: f['h'] } : null;
 }
 
+/** The numbers of an array the server sent; anything else is none. */
+const numberList = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : []);
 const orNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const params = (v: unknown): Readonly<Record<string, unknown>> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+
+/** The bundle a move is a part of, as admin_queue says it: all null where it is no part of one. */
+const bundleOf = (r: Row) => ({ bundle: orNull(r['bundle']), role: orNull(r['role']), bundleName: orNull(r['bundleName']) });
 
 function toQueued(r: Row): QueuedMove {
   return {
     id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
     why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
     failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']), adminDescription: orNull(r['adminDescription']),
+    waitsFor: (Array.isArray(r['waitsFor']) ? r['waitsFor'] : []).filter((x): x is Row => !!x && typeof x === 'object').map((x) => ({ id: num(x['id']), role: orNull(x['role']), kind: String(x['kind'] ?? ''), name: orNull(x['name']) })),
+    ...bundleOf(r),
+  };
+}
+
+/** The facts of a season as admin_queue hands them (handoff_facts, 0337): each list read defensively, so a row the database could not make is an empty list and not a crash. */
+function toHandoffFacts(v: unknown): HandoffFacts {
+  const r = params(v) as Row;
+  const board = (x: Row) => ({ board: String(x['board'] ?? ''), name: String(x['name'] ?? '') });
+  const ranked = (x: Row) => ({ ...board(x), posts: num(x['posts']) });
+  return {
+    created: rowsOf(r['created']).map(board),
+    merged: rowsOf(r['merged']).map((x) => ({ ...board(x), into: String(x['into'] ?? ''), intoName: String(x['intoName'] ?? '') })),
+    closed: rowsOf(r['closed']).map(board),
+    beats: rowsOf(r['beats']).map((x) => ({ staff: String(x['staff'] ?? ''), beat: String(x['beat'] ?? ''), at: String(x['at'] ?? '') })),
+    moves: rowsOf(r['moves']).map((x) => ({
+      act: String(x['act'] ?? ''), kind: String(x['kind'] ?? ''), params: params(x['params']), landedAt: String(x['landedAt'] ?? ''), expiresAt: orNull(x['expiresAt']), by: String(x['by'] ?? ''), boardName: orNull(x['boardName']),
+    })),
+    busiest: rowsOf(r['busiest']).map(ranked),
+    quietest: rowsOf(r['quietest']).map(ranked),
   };
 }
 
@@ -462,6 +518,7 @@ function toTodo(r: Row): HandoverTodo {
   return {
     season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossPronouns: pronounsOrDefault(r['bossPronouns']), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
     outgoingName: orNull(r['outgoingName']), outgoingPronouns: pronounsOrDefault(r['outgoingPronouns']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
+    note: orNull(r['note']), facts: toHandoffFacts(r['facts']),
   };
 }
 
@@ -469,6 +526,7 @@ function toInForce(r: Row): MoveInForce {
   return {
     act: r['act'], id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: String(r['landedAt'] ?? ''), expiresAt: orNull(r['expiresAt']), progress: toProgress(r['progress']),
+    ...bundleOf(r),
   };
 }
 
@@ -478,6 +536,7 @@ function toEnded(r: Row): MoveEnded {
     how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' || how === 'refused' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
     id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']), card: orNull(r['card']), reason: orNull(r['reason']),
+    ...bundleOf(r),
   };
 }
 
@@ -528,7 +587,7 @@ const toFinished = (x: Row): SeasonFinished[] => (typeof x?.['number'] === 'numb
   ? [{ number: x['number'], startsAt: String(x['starts_at']), endsAt: String(x['ends_at']), resultsAt: String(x['results_at']), characters: num(x['characters']) }] : []);
 
 /** One row of `standings_page`, or of the season page's standings. */
-const toStanding = (x: Row): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: num(x['place']) });
+const toStanding = (x: Row): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: placeOrNull(x['place']) });
 
 /** One row of `my_alerts`; a kind this build does not know (a newer server's) is no line, rather than a line a screen cannot word. */
 function toAlert(a: Row): Alert[] {
@@ -556,14 +615,20 @@ function toAdminQueue(v: unknown): AdminQueue {
 /** One of the roster rows `boss_roster_names` answers. */
 const toBosses = (v: unknown): { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']), pronouns: pronounsOrDefault(x['pronouns']) }] : []));
 
+/** A draw or a wash on a surface, as the log reads it (`my_draws`, `my_walls_drawn_on`, 0317): public facts and the reader's own character. */
+const surfaceLogRow = (r: Row): SurfaceLogRow => ({ act: r['act'], kind: r['kind'], play: r['play'], post: r['post'], character: r['character'], mine: r['mine'], at: r['at'], cells: num(r['cells']) });
+const COSMETIC_KINDS = ['found', 'granted', 'awarded', 'reversed', 'lost', 'beltBack'] as const;
+const COSMETIC_OUTCOMES = ['line', 'gear', 'card'] as const;
+const COSMETIC_BYS = ['season', 'boss', 'demand', 'admin'] as const;
+
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
   }));
   const shares: ShareRow[] = [...shareRows].sort((a, b) => num(b['settlement']) - num(a['settlement']))
-    .map((r) => ({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) }));
+    .map((r) => ({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], card: r['card'] ?? null, act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) }));
   return {
     ledger,
     shares,
@@ -588,6 +653,8 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     })),
     playsOnMine: src['playsOnMine'].map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
     writes: src['writes'].map((r): WrittenOnMine => ({ play: r['play'], post: r['post'], version: r['version'], failed: r['failed'] === true, opening: r['opening'] === true, over: r['over'] === true, at: r['at'] })),
+    draws: src['draws'].map(surfaceLogRow),
+    wallsDrawn: src['wallsDrawn'].map(surfaceLogRow),
     saves: src['saves'].map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
     setEnds: src['setEnds'].map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'], endedBy: r['ended_by'] === 'taken back' || r['ended_by'] === 'sprung' || r['ended_by'] === 'time' ? r['ended_by'] : r['spring'] ? 'sprung' : 'time' })),
     caught: src['caught'].map((r): CaughtPlay => ({
@@ -615,6 +682,12 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
       report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
       verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: r['refund'] === 'failed' || r['refund'] === 'stale' ? r['refund'] : null,
     })),
+    cosmetics: src['cosmetics'].map((r): LogCosmetic => ({
+      kind: COSMETIC_KINDS.find((k) => k === r['kind']) ?? 'found', id: String(r['id']), at: r['at'], character: str(r['character']),
+      outcome: COSMETIC_OUTCOMES.find((o) => o === r['outcome']) ?? null, item: str(r['item']), text: str(r['text']), copies: typeof r['copies'] === 'number' ? r['copies'] : null,
+      trophy: str(r['trophy']), name: str(r['name']), by: COSMETIC_BYS.find((b) => b === r['by']) ?? null, byName: str(r['by_name']),
+      season: typeof r['season'] === 'number' ? r['season'] : null, place: typeof r['place'] === 'number' ? r['place'] : null, line: str(r['line']), toName: str(r['to_name']),
+    })),
     appeals: src['appeals'].map((r): LogAppeal => ({
       appeal: r['appeal'], character: r['character'], at: r['at'], punishment: r['punishment'], punishmentKind: r['punishment_kind'] === 'ban' ? 'ban' : r['punishment_kind'] === 'move' ? 'move' : 'infraction',
       postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], verdict: RULINGS.find((v) => v === r['verdict']) ?? null, ruledAt: str(r['ruled_at']),
@@ -639,19 +712,30 @@ function toEstimate(r: Row): Estimate {
 
 /* ---------------------------------------------------------------------- the adapter ---- */
 
-type Res = { data: unknown; error: { message: string; hint?: string | null } | null; status: number };
+type Res = { data: unknown; error: { message: string; hint?: string | null; code?: string | null } | null; status: number };
 
 export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
+  let bannedByRefresh = false;
+  const signedOutSession = (): Session => ({ signedIn: false, account: null, bar: bannedByRefresh ? { until: null, unknown: true } : null, conductAccepted: true });
   const { url, publishableKey, settingsFallback } = options;
+  const face = options.face ?? ((c: Character) => c);
   const doFetch: typeof fetch = options.fetch ?? ((...a) => globalThis.fetch(...a));
   // supabase-js sends its key as the bearer where there is no session; a publishable key goes in apikey alone (Supabase's
   // migration guide, docs/plans/2026-11-02-api-keys-design.md), so a bearer that is the key itself is taken off. A session's
   // token is passed on as it is.
-  const clientFetch: typeof fetch = (input, init) => {
+  const clientFetch: typeof fetch = async (input, init) => {
     const headers = new Headers(init?.headers);
-    if (headers.get('authorization') !== `Bearer ${publishableKey}`) return doFetch(input, init);
-    headers.delete('authorization');
-    return doFetch(input, { ...init, headers });
+    const res = headers.get('authorization') !== `Bearer ${publishableKey}` ? await doFetch(input, init) : await doFetch(input, { ...init, headers: (headers.delete('authorization'), headers) });
+    /* The one place a refusal because the account is barred is noticed, whatever asked: the session is read again so the gate shows at once. */
+    if (res.status >= 400 && res.status < 500) {
+      const refresh = String(input instanceof Request ? input.url : input).includes('/auth/v1/token');
+      void res.clone().text().then((t) => {
+        /* Auth refused a token refresh because the login is banned: the sign-in screen is signed out, so the bar is kept here and every screen shows the barred words, never "try again". */
+        if (refresh && t.includes('user_banned')) { bannedByRefresh = true; void reloadSession(); }
+        else if (t.includes(BARRED_HINT)) void reloadSession();
+      }, () => undefined);
+    }
+    return res;
   };
   const client: SupabaseClient =
     options.client ??
@@ -660,6 +744,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       global: { fetch: clientFetch },
     });
   const avatarUrl = (key: string | null): string | null => (key ? `${url}/storage/v1/object/public/avatars/${key}` : null);
+  /** An admin's trophy art, in the public `trophies` bucket (an instance's own kinds have none: their art is the instance UI's, by the kind's key). */
+  const trophyArtUrl = (key: string | null): string | null => (key ? `${url}/storage/v1/object/public/trophies/${key}` : null);
 
   /* ------------------------------------------------------------- the request layer ---- */
 
@@ -757,16 +843,18 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       parsed = null;
     }
     if (got.status >= 200 && got.status < 300 && parsed) return { ok: true, value: parsed };
+    /* A refusal for a bar, from a function that answers for the player: the session is read again, as the rpc path does. */
+    if (parsed?.['hint'] === BARRED_HINT) void reloadSession();
     const words = parsed ? str(parsed['error']) : null;
     /* A 5xx from a write is an answer that may not say whether it was done: its words are shown, and the caller looks before it resends. */
     if (got.status >= 500 && !resend && lost === LOST && parsed?.['sent'] === false) return notSent(words ?? NOT_SENT);
     if (got.status >= 500 && !resend && lost === LOST) return { ok: false, error: words ?? LOST, uncertain: true };
-    if (words) return refusal(words, str(parsed?.['field']) ?? undefined);
+    if (words) return { ...refusal(words, str(parsed?.['field']) ?? undefined), ...(parsed?.['hint'] === BARRED_HINT ? { barred: true as const } : {}) };
     return refusal(got.status >= 500 ? lost : NOT_DONE);
   }
 
   /** A direct rpc that writes: its refusals are the server's words, a lost answer is never resent. */
-  async function rpcWrite(run: () => PromiseLike<unknown>): Promise<Answer<Row>> {
+  async function rpcWrite(run: () => PromiseLike<unknown>, fieldOf?: (code: string | null | undefined) => string | undefined): Promise<Answer<Row>> {
     if (offline()) return notSent();
     let r: Res;
     try {
@@ -775,17 +863,51 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return uncertain();
     }
     if (!r.error) return { ok: true, value: (r.data && typeof r.data === 'object' ? r.data : {}) as Row };
-    if (r.error.hint === REFUSAL_HINT && r.error.message) return refusal(r.error.message);
+    if (r.error.hint === REFUSAL_HINT && r.error.message) return refusal(r.error.message, fieldOf?.(r.error.code));
     return r.status === 0 || r.status >= 500 ? uncertain() : refusal(NOT_DONE);
   }
 
   /* ----------------------------------------------------------------- session ---- */
 
+  /** What a sign-in answer from the account function comes to, for a code and a link alike: the session it carries installed, and whether an account opened. */
+  async function signedIn(a: Answer<Row>): Promise<Answer<SignedIn>> {
+    /* Auth refused the sign-in because the login is barred (the function's 403 with the barred hint), after a code or a link alike: its end is not known here, so the screen says no date. */
+    if (!a.ok && a.barred) { bannedByRefresh = false; return { ok: true, value: { account: false, barred: { until: undefined } } }; }
+    if (!a.ok) return a;
+    bannedByRefresh = false;
+    const s = a.value['session'] as Row | undefined;
+    if (!s || !str(s['access_token']) || !str(s['refresh_token'])) return refusal(NOT_DONE);
+    const set = await client.auth.setSession({ access_token: s['access_token'], refresh_token: s['refresh_token'] }).catch(() => null);
+    if (!set || set.error) return refusal(NOT_DONE);
+    const why = str(a.value['why']);
+    return { ok: true, value: { account: a.value['account'] === true, ...(why ? { why } : {}) } };
+  }
   async function currentSession(): Promise<Session> {
     const { data } = await client.auth.getSession();
-    if (!data.session) return { signedIn: false, account: null };
-    const r = await read(() => client.rpc('whoami'));
-    return { signedIn: true, account: typeof r.data === 'string' ? r.data : null };
+    if (!data.session) return signedOutSession();
+    /* The bar and the code are read beside whoami. A failed my_bar read is no bar (the server refuses a barred account's writes, and its hint reloads this); a failed conduct_accepted read is NOT accepted, since nothing server-side enforces the code and agreeing again is harmless. */
+    const [r, bar, accepted] = await Promise.all([
+      read(() => client.rpc('whoami')),
+      read(() => client.rpc('my_bar')).then((x) => x.data, () => null),
+      read(() => client.rpc('conduct_accepted')).then((x) => x.data, () => false),
+    ]);
+    const until = bar && typeof bar === 'object' ? (bar as Row)['until'] : undefined;
+    return {
+      signedIn: true,
+      account: typeof r.data === 'string' ? r.data : null,
+      bar: bar && typeof bar === 'object' ? { until: typeof until === 'string' ? until : null } : null,
+      conductAccepted: accepted === true,
+    };
+  }
+
+  /** Everyone who asked to hear the session, so a refusal for a bar can tell them without waiting for Auth to change. */
+  const sessionListeners = new Set<(s: Session) => void>();
+  let reloading: Promise<void> | null = null;
+  function reloadSession(): Promise<void> {
+    reloading ??= currentSession()
+      .then((s) => { for (const l of [...sessionListeners]) l(s); }, () => undefined)
+      .finally(() => { reloading = null; });
+    return reloading;
   }
 
   /* ---------------------------------------------------------------- settings ---- */
@@ -816,12 +938,19 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /** The office characters_public shows a staff character; anything else it might say is no office. */
   const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' ? o : undefined);
 
+  /** A piece worn as gear_worn or a profile's `outfit` has it, in layer order. */
+  const toPieces = (v: unknown): Piece[] => rowsOf(v).map((w): Piece => ({ gear: w['gear'], x: num(w['x']), y: num(w['y']), w: num(w['w']), turn: num(w['turn']), layer: num(w['layer']) })).sort((a, b) => a.layer - b.layer);
+  /** An award as `trophy_item` has it; `held` is a belt's alone, null otherwise. */
+  const toShownTrophy = (t: Row): ShownTrophy => ({ award: t['award'], trophy: t['trophy'], name: t['name'], art: trophyArtUrl(str(t['art'])), belt: t['belt'] === true, held: t['held'] === true });
+  const toTrophyItem = (t: Row): TrophyItem => ({ ...toShownTrophy(t), line: str(t['line']), at: t['at'], by: t['by'], season: typeof t['season'] === 'number' ? t['season'] : null,
+    move: ((m: Row | null) => (m ? { act: m['act'], thread: m['thread'], seq: m['seq'] } : null))(typeof t['move'] === 'object' ? (t['move'] as Row | null) : null), shown: t['shown'] === true });
+
   /* A character from its row and its profile row. Where a profile row came without a set (a select or a projection dropped the column: the column is not null), the
      engine's it/its stands for display only and `pronounsUnread` marks it, so Edit profile never offers it for saving over the set the player chose. With no profile row
      at all (a character made before an instance was seeded, 0124) nothing is stored to overwrite: it/its is what a read shows, unmarked, and set_profile makes the row. */
   const toCharacter = (c: Row, p: Row | undefined): Character => {
     const set = p?.['pronouns'];
-    return {
+    return face({
       id: c['id'],
       name: c['name'],
       title: p?.['title'] ?? '',
@@ -830,6 +959,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       avatarPortrait: avatarUrl(p?.['avatar_portrait'] ?? null),
       squareFrame: toFrame(p?.['square_frame']),
       portraitFrame: toFrame(p?.['portrait_frame']),
+      portraitTallness: typeof p?.['portrait_tallness'] === 'number' ? p['portrait_tallness'] : null,
+      outfit: toPieces(p?.['outfit']),
+      trophies: rowsOf(p?.['trophies']).map(toShownTrophy),
       pipStyle: p?.['pip_style'] ?? 'default',
       pronouns: isObject(set) ? pronounsOrDefault(set) : ENGINE_DEFAULT_PRONOUNS,
       ...(p !== undefined && !isObject(set) ? { pronounsUnread: true as const } : {}),
@@ -838,7 +970,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
       ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
       group: typeof c['group'] === 'string' ? c['group'] : '',
-    };
+    });
   };
 
   /** A character a document carries with its profile nested (`profile` null where it has none). */
@@ -846,11 +978,17 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
     if (ids.length === 0) return [];
-    const [cs, ps] = await Promise.all([
+    /* Three reads in parallel, each a lookup by character: its name, its profile and the pieces it wears (gear_worn, public by character). The shelf of trophies has no
+       table to read (trophy_shelf is the server's): a face read here carries none, and a screen document carries it nested with the profile. */
+    const [cs, ps, worn] = await Promise.all([
       byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office,group').in('id', part))),
-      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style,pronouns').in('character', part))),
+      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,portrait_tallness,pip_style,pronouns').in('character', part))),
+      /* Paged and ordered, since a chunk of masks can wear more than the row cap holds: a page cut short would drop pieces silently. */
+      byChunks(ids, (part) => every((start, end) => client.from('gear_worn').select('character,layer,gear,x,y,w,turn').in('character', part).order('character', { ascending: true }).order('layer', { ascending: true }).range(start, end))),
     ]);
-    const profile = new Map(ps.map((p) => [p['character'] as string, p]));
+    const outfits = new Map<string, Row[]>();
+    for (const w of worn) outfits.set(w['character'] as string, [...(outfits.get(w['character'] as string) ?? []), w]);
+    const profile = new Map(ps.map((p) => [p['character'] as string, { ...p, outfit: outfits.get(p['character'] as string) ?? [] }]));
     const byId = new Map(cs.map((c) => [c['id'] as string, c]));
     return ids.flatMap((id) => {
       const c = byId.get(id);
@@ -996,7 +1134,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
       return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
     };
-    const [ledgerRows, walletRows, cardRows, packRows, playRows, writeRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows] = await Promise.all([
+    const [ledgerRows, walletRows, cardRows, packRows, playRows, writeRows, drawRows, wallRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows, cosmeticRows] = await Promise.all([
       rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
         (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
       rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -1006,6 +1144,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
       /* The texts and failures of cards that write on the posts the player's characters wrote (0149): the rows are the author's alone, and public facts. */
       rows(() => client.from('my_posts_written_on').select('play,post,version,failed,opening,over,at'), 'at', (q) => q.order('play', { ascending: true }).order('version', { ascending: true }), ['play', 'version']),
+      /* What was drawn and washed on a surface (0317): the player's own draws and the washes that cut them, and what was drawn on and washed off the walls of their own posts; each reads the caller's own characters. */
+      rows(() => client.from('my_draws').select('act,kind,play,post,character,mine,at,cells'), 'at', (q) => q.order('act', { ascending: true }).order('mine', { ascending: true }), ['act', 'mine']),
+      rows(() => client.from('my_walls_drawn_on').select('act,kind,play,post,character,mine,at,cells'), 'at', (q) => q.order('act', { ascending: true }).order('mine', { ascending: true }), ['act', 'mine']),
       rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
       /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
       rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at,ended_by').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
@@ -1019,6 +1160,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until,ruled_office'), 'at', (q) => q, ['move']),
       rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
       rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
+      /* What happened to the player's characters beside Aura (0213): a find, an admin's gear, a trophy given or taken back, a belt lost; the caller's own rows alone. */
+      rows(() => client.from('my_cosmetic_log').select('kind,id,at,character,outcome,item,text,copies,trophy,name,by,by_name,season,place,line,to_name'), 'at', (q) => q, ['kind', 'id']),
     ]);
     const ids = [...new Set(ledgerRows.map((r) => num(r['settlement'])))];
     /* Paged within each chunk of settlements, then merged in the read's own order. A settlement's rows all come from
@@ -1026,15 +1169,17 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
        by settlement alone, newest first, which keeps that order inside each settlement. The log files each share
        under its line (engine/ui/data/log-page.ts), so no screen sees the order across settlements; the sort keeps
        the read's promise of each source newest first, as one query answered it. */
-    const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', part)
-      .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
+    const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,card,act,quadrant,amount').in('settlement', part)
+      .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('card', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
       .range(start, end)));
-    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows }, shareRows, await readBacks(cardRows));
+    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, draws: drawRows, wallsDrawn: wallRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows, cosmetics: cosmeticRows }, shareRows, await readBacks(cardRows));
   };
 
   const api: KayfaApi = {
+    now: () => Date.now(),
     session: currentSession,
     onSession(listener) {
+      sessionListeners.add(listener);
       let heardFor: string | null | undefined;
       const { data } = client.auth.onAuthStateChange((_event, s) => {
         const id = s?.user?.id ?? null;
@@ -1044,31 +1189,30 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         heardFor = id;
         // Not awaited inside the callback: Auth holds its lock while it runs.
         setTimeout(() => {
-          void (s ? currentSession() : Promise.resolve<Session>({ signedIn: false, account: null }))
-            .catch((): Session => ({ signedIn: !!s, account: null }))
+          void (s ? currentSession() : Promise.resolve<Session>(signedOutSession()))
+            .catch((): Session => ({ signedIn: !!s, account: null, bar: null, conductAccepted: true }))
             .then(listener);
         }, 0);
       });
-      return () => data.subscription.unsubscribe();
+      return () => { sessionListeners.delete(listener); data.subscription.unsubscribe(); };
     },
-    async requestCode(email, invite) {
-      const a = await edge('account', { action: 'requestCode', email, invite }, NOT_DONE);
+    async acceptConduct(version) {
+      const a = await rpcWrite(() => client.rpc('accept_conduct', { version }));
+      /* A reload already in flight may have read before this accept landed: wait for it, then read afresh. */
+      if (a.ok) { await reloading; await reloadSession(); }
+      return a.ok ? { ok: true, value: {} } : a;
+    },
+    async requestCode(email, invite, next, conduct) {
+      const a = await edge('account', { action: 'requestCode', email, invite, next, ...(typeof conduct === 'number' ? { conduct } : {}) }, NOT_DONE);
       return a.ok ? { ok: true, value: { message: String(a.value['message'] ?? ''), ...(str(a.value['invite']) ? { invite: a.value['invite'] } : {}) } } : a;
     },
-    async verifyCode(email, code) {
-      const a = await edge('account', { action: 'verifyCode', email, code }, NOT_DONE);
-      if (!a.ok) return a;
-      const s = a.value['session'] as Row | undefined;
-      if (!s || !str(s['access_token']) || !str(s['refresh_token'])) return refusal(NOT_DONE);
-      const set = await client.auth.setSession({ access_token: s['access_token'], refresh_token: s['refresh_token'] }).catch(() => null);
-      if (!set || set.error) return refusal(NOT_DONE);
-      const why = str(a.value['why']);
-      return { ok: true, value: { account: a.value['account'] === true, ...(why ? { why } : {}) } };
-    },
+    verifyCode: async (email, code) => signedIn(await edge('account', { action: 'verifyCode', email, code }, NOT_DONE)),
+    verifyLink: async (tokenHash) => signedIn(await edge('account', { action: 'verifyLink', tokenHash }, NOT_DONE)),
     openAccount: (invite) => act({ action: 'openAccount', invite }, (r) => ({ opened: r['opened'] === true })),
     async signOut() {
       lastEstimate = null;
       await client.auth.signOut();
+      if (bannedByRefresh) { bannedByRefresh = false; await reloadSession(); }
     },
     /* Reads the client's own session for its address, which is not signing in, up or a reset, so it is outside Task 11's rule that those go through the account function; no table is read. */
     async signInAddress() {
@@ -1106,6 +1250,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const [now, own] = await Promise.all([list(() => client.from('boards_now').select('id,slug,name')), list(() => client.from('boards').select('id,name'))]);
       const was = new Map(own.map((b) => [b['id'] as string, String(b['name'])]));
       return now.map((b): BoardName => ({ id: b['id'], slug: b['slug'], name: b['name'], was: was.get(b['id']) ?? b['name'] }));
+    },
+    async moveThreadNames(items) {
+      const wanted = items.filter((i) => idOk(i.thread)).slice(0, 50);
+      if (wanted.length === 0) return {};
+      const d = (await read(() => client.rpc('move_thread_names', { items: wanted.map((i) => ({ thread: i.thread, act: i.act })) }))).data;
+      return Object.fromEntries(rowsOf(d).map((r) => [r['key'] as Id, { title: str(r['title']) ?? '', left: typeof r['left'] === 'string' ? r['left'] : null }]));
     },
     async moveNotice(id) {
       if (!idOk(id)) return null;
@@ -1216,7 +1366,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async holdMove(id) {
       const a = await rpcWrite(() => client.rpc('hold_move', { id }));
-      return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? '') } } : a;
+      return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? ''), heldAlso: numberList(a.value['heldAlso']) } } : a;
     },
     async replaceSuccessor(id, boss) {
       const a = await rpcWrite(() => client.rpc('replace_successor', { id, boss }));
@@ -1244,7 +1394,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async reverseMove(act) {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
-      return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'] } } : a;
+      return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'], alsoEnded: Array.isArray(a.value['alsoEnded']) ? a.value['alsoEnded'] : [], heldAlso: numberList(a.value['heldAlso']) } } : a;
     },
     /* An admin's end of a card goes through the act function, which owns the broadcasts (a layer comes off for everyone reading). */
     reverseCard: (play) => act({ action: 'reverseCard', play }, (r) => ({ act: r['id'], play: r['play'] })),
@@ -1391,7 +1541,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const d = isObject(r.data) ? r.data : {};
       return { gifts: toDriveGifts(d['gifts']), more: d['more'] === true };
     },
-    playCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
+    playCard: (card, character, target, config, message, reach, fromPost, first) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(first === undefined ? {} : { first }) }, toAct),
     setCard: (card, character, target, config, when) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) }, toAct),
     takeBack: (character, set) => act({ action: 'takeBack', character, set }, toAct),
     useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
@@ -1401,6 +1551,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return Object.fromEntries(rows.map((r) => [r['play'], r['card']]));
     },
     saveEffect: (play, character, state) => act({ action: 'saveEffect', character, play, state }, (r) => ({ play: r['play'], savedAt: r['saved_at'] })),
+    /* A draw and a wash are written by the act function's `draw` and `wash` (draw_on_surface, wash_surface, 0154); the answer is the Act with the cells covered and the live ids. */
+    draw: (play, character, input) => act({ action: 'draw', character, play, input }, toSurfaceWritten),
+    wash: (play, character, input) => act({ action: 'wash', character, play, input }, toSurfaceWritten),
+    async surfaceActs(play) {
+      if (!idOk(play)) return null;
+      const r = await read(() => client.rpc('surface_acts', { play }));
+      const d = r.data as Row | null;
+      if (!isObject(d)) return null;
+      return { covered: num(d['covered']), acts: rowsOf(d['acts']).map(toSurfaceAct), older: num(d['older']) };
+    },
     characters,
     async characterCounts(id): Promise<CharacterCounts> {
       // One row of counters kept by a trigger (0030), never a count of the character's Acts; none for a character that has done nothing.
@@ -1602,8 +1762,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const marked = [...pins.map((p) => p.act.id), ...banner.map((p) => p.act.id)];
       const reading: Record<Id, number> = {};
       for (const r of rowsOf(d['reading'])) reading[r['thread']] = num(r['furthest_seq']);
+      const ref = (v: unknown): BoardRef | null => (isObject(v) && typeof v['id'] === 'string' ? { id: v['id'], slug: str(v['slug']) ?? '', name: str(v['name']) ?? '' } : null);
+      const stubs = rowsOf(d['stubs']).flatMap((s): BoardStub[] => {
+        const to = ref({ id: s['moved_to'], slug: s['moved_to_slug'], name: s['moved_to_name'] });
+        return to ? [{ thread: s['id'], title: str(s['title']) ?? '', movedTo: to, movedAt: str(s['moved_at']) ?? '' }] : [];
+      });
       return {
-        board: toBoard(d['board'] as Row), total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
+        board: toBoard(d['board'] as Row), closed: d['closed'] === true ? { mergedInto: ref(d['mergedInto']), fallback: ref(d['fallback']), goesTo: ref(d['goesTo']) } : null, stubs,
+        total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
         states: toStates(rowsOf(d['states'])), releases: rowsOf(d['releases']).map((r): Id => r['play']),
         tallies: toTallies(marked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), reading,
         views: toViews([...pins.map((p) => p.thread.id), ...threads.map((t) => t.id)], rowsOf(d['views'])),
@@ -1630,6 +1796,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         })),
         visits: rowsOf(d['visits']).map(toVisit),
         plays, above, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])), states: toStates(rowsOf(d['states'])),
+        surfaces: toSurfaces(d['surfaces']),
         releases: (Array.isArray(d['releases']) ? d['releases'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
         board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
@@ -1694,6 +1861,31 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         /* my_reports_left (0111): the caller's own characters' quotas, by open_report's own rule; a character that is not theirs has no row. */
         const r = (await list(() => client.from('my_reports_left').select('left').eq('character', character).limit(1)))[0];
         return typeof r?.['left'] === 'number' ? r['left'] : null;
+      } catch {
+        return null;
+      }
+    },
+    async reportPost(version, section, note) {
+      if (!idOk(version)) return refusal('that post could not be found');
+      /* The open-report limit (errcode 53400) is told apart by `field: 'limit'`, so the form can say it as its own state and ask for the account's own count. */
+      const a = await rpcWrite(() => client.rpc('report_post', { version_act: version, section, note: note.trim() === '' ? null : note }), (code) => (code === '53400' ? REPORT_LIMIT : undefined));
+      return a.ok ? { ok: true, value: null } : a;
+    },
+    async myOpenReports(): Promise<{ readonly open: number; readonly most: number } | null> {
+      try {
+        const d = (await read(() => client.rpc('my_open_reports'))).data;
+        return isObject(d) && typeof d['open'] === 'number' && typeof d['most'] === 'number' ? { open: d['open'], most: d['most'] } : null;
+      } catch {
+        return null;
+      }
+    },
+    async myHiddenVersion(post): Promise<MyHiddenVersion | null> {
+      if (!idOk(post)) return null;
+      try {
+        const d = (await read(() => client.rpc('my_hidden_version', { act: post }))).data;
+        if (!isObject(d) || typeof d['version'] !== 'string') return null;
+        if (d['status'] === 'hiddenUntilEdited' && typeof d['words'] === 'string') return { status: 'hiddenUntilEdited', version: d['version'], words: d['words'] };
+        return d['status'] === 'waiting' && typeof d['words'] === 'string' ? { status: 'waiting', version: d['version'], words: d['words'] } : null;
       } catch {
         return null;
       }
@@ -1795,6 +1987,35 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         bosses: toBosses(d['bosses']), contact: toContact(d['contact']),
       };
     },
+    async reportsPage(): Promise<ReportsPage | null> {
+      /* A caller who is not an admin has no page (admin_reports would refuse them); is_admin is the one way to ask. */
+      if ((await read(() => client.rpc('is_admin'))).data !== true) return null;
+      const [reports, mail] = await Promise.all([read(() => client.rpc('admin_reports')), read(() => client.rpc('admin_failed_mail'))]);
+      const r = isObject(reports.data) ? reports.data : {};
+      const m = isObject(mail.data) ? mail.data : {};
+      const id = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+      return {
+        reports: rowsOf(r['reports']).map((x): AdminReport => ({
+          id: num(x['id']), versionAct: String(x['versionAct'] ?? ''), post: String(x['post'] ?? ''), thread: id(x['thread']), section: String(x['section'] ?? ''), note: id(x['note']), at: String(x['at'] ?? ''),
+          author: id(x['author']), words: String(x['words'] ?? ''),
+          past: rowsOf(x['past']).map((d): PastDecision => ({ outcome: String(d['outcome'] ?? ''), until: id(d['until']), at: String(d['at'] ?? ''), note: String(d['note'] ?? '') })),
+        })),
+        reviews: rowsOf(r['reviews']).map((x): AdminReview => ({
+          decision: num(x['decision']), post: String(x['post'] ?? ''), versionAct: String(x['versionAct'] ?? ''), thread: id(x['thread']), editedAt: String(x['editedAt'] ?? ''), author: id(x['author']), words: String(x['words'] ?? ''),
+        })),
+        failed: rowsOf(m['failed']).map((x): FailedMail => ({ id: num(x['id']), template: String(x['template'] ?? ''), account: String(x['account'] ?? ''), kind: x['kind'] === 'refused' ? 'refused' : 'failed', error: String(x['error'] ?? ''), at: String(x['at'] ?? '') })),
+        moreReports: r['moreReports'] === true, moreReviews: r['moreReviews'] === true, moreFailed: m['moreFailed'] === true,
+        waiting: num(m['waiting']), addressSet: m['addressSet'] !== false,
+      };
+    },
+    async decideReport(report, outcomes) {
+      const a = await rpcWrite(() => client.rpc('decide_report', { report, outcomes: outcomes.map((o) => ({ outcome: o.outcome, ...(o.until === undefined ? {} : { until: o.until }), ...(o.note === undefined ? {} : { note: o.note }) })) }));
+      return a.ok ? { ok: true, value: { decisions: (Array.isArray(a.value) ? (a.value as unknown[]) : []).map((n) => num(n)) } } : a;
+    },
+    async decide(on, outcome, until, note) {
+      const a = await rpcWrite(() => client.rpc('decide', { account: on.account ?? null, version_act: on.version ?? null, outcome, until: until ?? null, note: note ?? '' }));
+      return a.ok ? { ok: true, value: null } : a;
+    },
     async presenceBox(place): Promise<Presence> {
       const at = place.kind === 'thread' ? place.thread : place.kind === 'board' ? place.board : null;
       const d = (await read(() => client.rpc('presence_box', { in_kind: place.kind, in_place: at }))).data as Row | null;
@@ -1895,15 +2116,24 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     log(before) {
       return readLogPage(readLogViews, before ?? null);
     },
+    /* What admins did to the player's own posts (`my_conduct_log`, 0340): the caller's own rows, newest first; an unknown outcome is no row. */
+    async conductLog() {
+      const d = (await read(() => client.rpc('my_conduct_log'))).data;
+      return rowsOf(d).flatMap((r): ConductLogRow[] => {
+        const outcome = r['outcome'];
+        return outcome === 'hide' || outcome === 'hideUntilEdited' || outcome === 'unhide' || outcome === 'approve'
+          ? [{ decision: num(r['decision']), outcome, versionAct: String(r['version_act']), post: String(r['post']), thread: String(r['thread']), at: String(r['at']) }] : [];
+      });
+    },
     /* The log page in one read (`log_page`, 0123): the first range of the views comes from the document, and a page that would not move reads its one instant by the views as `log` does. */
     async logPage(before): Promise<LogPage> {
       const d = (await read(() => client.rpc('log_page', { in_before: before ?? null }))).data as Row | null;
       if (!isObject(d)) throw new ReadFailure('server');
       const sources: Row = isObject(d['sources']) ? d['sources'] : {};
       const first = toLogRead({
-        ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), saves: rowsOf(sources['saves']),
+        ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), draws: rowsOf(sources['draws']), wallsDrawn: rowsOf(sources['wallsDrawn']), saves: rowsOf(sources['saves']),
         setEnds: rowsOf(sources['setEnds']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
-        infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']),
+        infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']), cosmetics: rowsOf(sources['cosmetics']),
       }, rowsOf(d['shares']), await readBacks(rowsOf(sources['cards'])));
       /* The scored-as rows (`my_scored_as`) ride beside the sources, newest first; the column is `named_class` (a readable view column may not be `class_key`), and an older payload has none. */
       const firstRead: LogRead = Array.isArray(d['scoredAs'])
@@ -1972,9 +2202,99 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return a.ok ? { ok: true, value: await profileCharacter(a.value) } : a;
     },
 
+    async wardrobe() {
+      /* rpcWrite is the one rpc call that answers with the server's refusal words (a read() would throw them away); my_wardrobe writes nothing, so a lost answer costs only a look again. */
+      const a = await rpcWrite(() => client.rpc('my_wardrobe'));
+      return a.ok ? { ok: true, value: rowsOf(a.value).map((w): WardrobeItem => ({ gear: w['gear'], rarity: w['rarity'], held: num(w['held']), wornBy: Array.isArray(w['worn_by']) ? (w['worn_by'] as Id[]) : [] })) } : a;
+    },
+    async setOutfit(character, pieces) {
+      const a = await edge('wardrobe', { action: 'setOutfit', character, pieces }, LOST);
+      return a.ok ? { ok: true, value: { worn: num(a.value['worn']) } } : a;
+    },
+    async trophies(character, cursor) {
+      /* A read of public facts about a character: the page is the same for everyone, and 50 awards to a page. */
+      const d = (await read(() => client.rpc('trophies_of', { of_character: character, before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, most: TROPHIES_PAGE }))).data as Row | null;
+      return { awards: rowsOf(d?.['awards']).map(toTrophyItem), more: d?.['more'] === true };
+    },
+    async beltLineage(trophy, cursor) {
+      /* rpcWrite for its refusal words, as wardrobe does: "not a belt" is the server's answer to show. */
+      const a = await rpcWrite(() => client.rpc('belt_lineage', { trophy_key: trophy, before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, most: REIGNS_PAGE }));
+      return a.ok ? { ok: true, value: { reigns: rowsOf(a.value['reigns']).map((r): BeltReign => ({ award: r['award'], character: r['character'], name: r['name'], began: r['began'], ended: str(r['ended']), by: r['by'] })), more: a.value['more'] === true } } : a;
+    },
+    async showTrophies(character, awards) {
+      const a = await edge('wardrobe', { action: 'showTrophies', character, awards }, LOST);
+      return a.ok ? { ok: true, value: { shown: num(a.value['shown']) } } : a;
+    },
+    async randomEvent(character) {
+      const a = await edge('wardrobe', { action: 'randomEvent', character }, LOST);
+      if (!a.ok) return a;
+      const e = isObject(a.value['event']) ? (a.value['event'] as Row) : null;
+      if (e === null) return { ok: true, value: null };
+      /* An outcome or rarity the client does not know, or an item that is not text, is no event it can show: a bad answer, never an event made up from it. */
+      const outcome = e['outcome'];
+      const rarity = str(e['rarity']);
+      if ((outcome !== 'line' && outcome !== 'gear' && outcome !== 'card') || (rarity !== null && !(RARITIES as readonly string[]).includes(rarity)) || (e['item'] != null && typeof e['item'] !== 'string')) return refusal(NOT_READ);
+      const lineKey = str(e['lineKey']);
+      return { ok: true, value: { event: e['event'], outcome, item: str(e['item']), rarity: rarity as RandomEvent['rarity'], line: str(e['line']), ...(lineKey !== null ? { lineKey } : {}), character: e['character'] } };
+    },
+    async grantGear(character, gear, copies) {
+      const a = await rpcWrite(() => client.rpc('grant_gear', { of_character: character, gear_key: gear, copies }));
+      return a.ok ? { ok: true, value: { granted: num(a.value['granted']) } } : a;
+    },
+    async awardTrophy(trophy, character, line) {
+      const a = await rpcWrite(() => client.rpc('award_trophy', { trophy_key: trophy, of_character: character, said: line ?? null }));
+      return a.ok ? { ok: true, value: { award: a.value['award'] } } : a;
+    },
+    async reverseAward(award) {
+      const a = await rpcWrite(() => client.rpc('reverse_award', { of_award: award }));
+      return a.ok ? { ok: true, value: { reversed: a.value['reversed'] } } : a;
+    },
+    async makeTrophy(name, line, art, belt) {
+      /* The picture is stored first, by the trophy-art function (an admin's alone), and make_trophy is given the key it answers; a kind that fails after leaves a file nobody names. */
+      let key: string | null = null;
+      if (art !== null) {
+        const form = new FormData();
+        form.append('file', art, 'art.webp');
+        const stored = await edge('trophy-art', form, LOST);
+        if (!stored.ok) return stored;
+        key = str(stored.value['key']);
+        /* A 200 with no key is no stored picture: a kind made without it would be pictureless, which is not what was asked. */
+        if (key === null) return refusal(NOT_DONE);
+      }
+      const a = await rpcWrite(() => client.rpc('make_trophy', { trophy_name: name, said: line, art_key: key, is_belt: belt }));
+      return a.ok ? { ok: true, value: { trophy: a.value['trophy'] } } : a;
+    },
+    async trophyAwardFailures(cursor) {
+      const a = await rpcWrite(() => client.rpc('trophy_award_failures', { before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, before_open: cursor?.beforeOpen ?? null, most: TROPHY_FAILURES_PAGE }));
+      return a.ok ? { ok: true, value: {
+        failures: rowsOf(a.value['failures']).map((f): TrophyAwardFailure => ({
+          id: f['id'], move: str(f['move']), season: typeof f['season'] === 'number' ? f['season'] : null, at: f['at'], error: f['error'], trophy: str(f['trophy']), open: f['open'] === true,
+          characters: Array.isArray(f['characters']) ? rowsOf(f['characters']).map((c) => ({ id: c['id'], name: c['name'], ...(typeof c['place'] === 'number' ? { place: c['place'] } : {}), given: c['given'] === true })) : null,
+        })),
+        more: a.value['more'] === true,
+      } } : a;
+    },
+    async giveFailedAward(failure, character) {
+      const a = await rpcWrite(() => client.rpc('give_failed_award', { failure, of_character: character }));
+      return a.ok ? { ok: true, value: { award: a.value['award'] } } : a;
+    },
+    async adminAwards(cursor) {
+      const a = await rpcWrite(() => client.rpc('admin_awards', { before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, most: ADMIN_AWARDS_PAGE }));
+      return a.ok ? { ok: true, value: {
+        awards: rowsOf(a.value['awards']).map((x): AdminAward => ({ award: x['award'], trophy: x['trophy'], name: x['name'], art: str(x['art']), belt: x['belt'] === true, character: x['character'], to: x['to'], by: x['by'], at: x['at'], line: str(x['line']), reversed: x['reversed'] === true })),
+        kinds: rowsOf(a.value['kinds']).map((k): AdminKind => ({ key: k['key'], name: k['name'], belt: k['belt'] === true, made: k['made'] === true, art: str(k['art']) })),
+        more: a.value['more'] === true,
+      } } : a;
+    },
+    async adminCharacterNamed(name) {
+      const a = await rpcWrite(() => client.rpc('admin_character_named', { of_name: name }));
+      return a.ok ? { ok: true, value: isObject(a.value) && typeof a.value['id'] === 'string' ? { id: a.value['id'], name: String(a.value['name']) } : null } : a;
+    },
+
     subscribeThread(thread, l) {
-      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'card_text'], (event, p) => {
+      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'surface', 'card_text'], (event, p) => {
         if (event === 'act') l.onAct?.(toAct(p));
+        else if (event === 'surface') l.onSurface?.(p['play'], num(p['covered']));
         else if (event === 'tally') l.onTally?.(p['act'], (p['tally'] ?? {}) as Tally);
         else if (event === 'effect') l.onEffect?.(p['play'], p['saved_at']);
         else if (event === 'card_text') l.onText?.(p['play'], p['version']);

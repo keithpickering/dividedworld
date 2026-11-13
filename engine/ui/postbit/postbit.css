@@ -3,8 +3,13 @@
  * a tall avatar slot, 1:2, as the Main board draws it, then the counts. Stacked: a band with a
  * square avatar beside the text, above the post. A phone (40em and under) is always stacked,
  * whatever the reader chose. Percentages and em throughout.
+ *
+ * Forced colors: reasoned, not tested. Gear is `<img>` art and keeps its colors; the text runs and the post's cells keep their grounds, which
+ * the system maps to Canvas, so no letters sit on art. A browser test with forced-colors emulation would be the proof.
  */
 .kb-postbit {
+  /* Its own stacking context: the outfit and the text over it (below) are ordered here and never against the page. */
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: 0.3em;
@@ -28,6 +33,44 @@
 .kb-postbit-class {
   display: flex;
   flex-direction: column;
+}
+
+/* The shown trophies, small 2003-style badges in a row under the rank; a belt is wider than a trophy (the cosmetics board 01). */
+.kb-postbit-trophies,
+.kb-postbit-belts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25em;
+}
+
+.kb-postbit-belts {
+  margin-left: 0.4em;
+  vertical-align: middle;
+}
+
+.kb-postbit .kb-trophy {
+  height: 1.6em;
+  width: auto;
+  max-width: 1.6em;
+  object-fit: contain;
+}
+
+/* A belt is twice a trophy's width (board 01: 40px against 20px), under the rank at the trophy's height; beside the name it is 32 by 16. */
+.kb-postbit .kb-trophy-belt {
+  max-width: 3.2em;
+}
+
+.kb-postbit-belts .kb-trophy-belt {
+  height: 1.3em;
+  max-width: 2.6em;
+}
+
+/* A trophy with no picture is its name in words: no image box, so its height and width limits do not apply. */
+.kb-postbit span.kb-trophy {
+  height: auto;
+  max-width: none;
+  font-size: 0.75em;
 }
 
 /* The rank's name on its line, its pips under it. */
@@ -60,6 +103,9 @@
 
 /* The avatar slot */
 .kb-postbit-avatar {
+  /* The outfit's layer (gear/outfit.css) is placed against this box, under the text's layer (below). */
+  position: relative;
+  z-index: 1;
   display: block;
   border: 1px solid var(--kb-rule);
   overflow: hidden;
@@ -111,6 +157,17 @@
   aspect-ratio: 1;
 }
 
+/* The portrait's slot lets its outfit reach past it (outfit.css cuts the reach); the portrait fills the slot at its own shape, never cropped. */
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] {
+  overflow: visible;
+  container-type: inline-size;
+}
+
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture > img,
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture {
+  object-fit: fill;
+}
+
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="square"] {
   width: 3.2em;
   aspect-ratio: 1;
@@ -122,21 +179,83 @@
  * nothing. The phone shows the square instead (the picture's source, below), so it keeps its own rule.
  */
 @media not all and (max-width: 40em) {
+  /*
+   * Gear may reach past the tall slot (a cap above it), drawn under the text: the name, title, rank, trophies and counts are each on a layer
+   * above the slot, every run on the post's own ground, so no piece is ever behind letters that are read over it (the cosmetics board 01).
+   * The ground is the post cell's token (thread.css sets it per row, even rows differ in several themes), with the board's where a postbit
+   * is shown outside a post. Wide windows only: the phone's slot is a small square and nothing overlaps.
+   */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-text > * {
+    position: relative;
+    z-index: 2;
+    align-self: flex-start;
+    max-width: 100%;
+    background: var(--kb-post-bg, var(--kb-bg));
+  }
+
+  /*
+   * Except the character's marks strip, which is no run of words: it lies over the postbit's top corner out of the flow (cards/marks.css,
+   * `.kb-postbit .kb-postbit-marks`), and the rule above, more specific, would put it back in the flow on a ground of its own with the runs
+   * after it covering its tiles. At auto, its tiles (z-index 3) are over the runs and the gear in the postbit's own stack.
+   */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-text > .kb-postbit-marks {
+    position: absolute;
+    z-index: auto;
+    max-width: none;
+    background: none;
+  }
+
+  /* The square's gear is for the phone. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > .kb-outfit[data-kb-on="square"] {
+    display: none;
+  }
+
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] {
     aspect-ratio: auto;
   }
 
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] picture {
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture {
     height: auto;
   }
 
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] img {
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture > img {
     height: auto;
     aspect-ratio: auto 1 / 2;
+  }
+
+  /* A portrait whose tallness is known sets the slot's shape inline (Outfit's slotShape), and the picture fills it. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture,
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture > img {
+    height: 100%;
+    aspect-ratio: auto;
   }
 }
 
 @media (max-width: 40em) {
+  /* The portrait's slot is the small square here, whatever shape it was given inline; the square's gear shows and the portrait's does not. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] {
+    overflow: hidden;
+    aspect-ratio: 1 !important;
+  }
+
+  /* A portrait with no square never stretches in the small square slot. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture > img {
+    object-fit: cover;
+  }
+
+  .kb-postbit-avatar[data-kb-square] > .kb-outfit[data-kb-on="portrait"] {
+    display: none;
+  }
+
+  /* With no square the picture is the portrait cropped to the 1:1 slot, which the portrait's percentages do not fit: it wears nothing here. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"]:not([data-kb-square]) > .kb-outfit[data-kb-on="portrait"] {
+    display: none;
+  }
+
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > .kb-outfit[data-kb-on="square"] {
+    display: block;
+  }
+
   .kb-postbit[data-kb-postbit="side"] {
     flex-direction: row;
     align-items: center;

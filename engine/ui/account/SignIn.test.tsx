@@ -1,8 +1,12 @@
+import { useState } from 'react';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { TEST_CODE } from '../data/fake.ts';
+import { LOST_ANSWER } from '../data/api.ts';
+import { TEST_CODE, TEST_LINK } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
+import { LinkHandProvider } from './LinkHand.tsx';
+import { useLocation, useNavigate } from '../router.tsx';
 import { SignInScreen } from './SignIn.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -15,6 +19,12 @@ function world(mode: 'open' | 'invite' | 'closed' = 'invite') {
 }
 const open = (w: ReturnType<typeof world>, mode: 'sign-in' | 'register', path = mode === 'register' ? '/register' : '/sign-in', registrationMode?: 'open' | 'invite' | 'closed') =>
   renderIn(w.fake, <SignInScreen mode={mode} />, { path, settings: registrationMode ? { registrationMode } : undefined });
+
+/** Checks both boxes Register asks for: that the player is 18 or older, and that they agree to the code of conduct. */
+const agree = async () => {
+  await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+  await userEvent.click(screen.getByRole('checkbox', { name: /agree to the code of conduct/u }));
+};
 
 const ask = async (email: string) => {
   await userEvent.type(await screen.findByLabelText('Email address'), email);
@@ -142,7 +152,7 @@ describe('Sign in', () => {
     expect(status).not.toHaveTextContent('Another code was asked for.');
     await userEvent.click(screen.getByRole('button', { name: 'Send a new code' }));
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
-    expect(spy).toHaveBeenLastCalledWith('known@example.test', null);
+    expect(spy).toHaveBeenLastCalledWith('known@example.test', null, null);
     await waitFor(() => expect(status).toHaveTextContent('Another code was asked for.'));
     expect(screen.getByRole('status')).toBe(status);
   });
@@ -174,7 +184,7 @@ describe('Sign in', () => {
     const w = world();
     let release!: () => void;
     const real = w.fake.requestCode.bind(w.fake);
-    const spy = vi.spyOn(w.fake, 'requestCode').mockImplementation((email, invite) => new Promise((resolve) => { release = () => resolve(real(email, invite)); }));
+    const spy = vi.spyOn(w.fake, 'requestCode').mockImplementation((email, invite, next) => new Promise((resolve) => { release = () => resolve(real(email, invite, next)); }));
     open(w, 'sign-in');
     await ask('known@example.test');
     const send = screen.getByRole('button', { name: 'Send a code' });
@@ -252,7 +262,7 @@ describe('Sign in', () => {
     const w = world();
     w.fake.requestCode = async () => ({ ok: false, error: 'is too long', field: 'invite' });
     open(w, 'register', '/register?invite=x');
-    await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+    await agree();
     await ask('new@example.test');
     const alert = await screen.findByRole('alert');
     const invite = screen.getByLabelText('Invite');
@@ -293,6 +303,17 @@ describe('Sign in', () => {
     expect(went[0]).toBe('/standings');
   });
 
+  test('asking for a code passes the page the player came from, and nothing where there is none or it is not this site\'s', async () => {
+    for (const [search, sent] of [['?next=%2Fboard%2Fgeneral%3Fpage%3D2', '/board/general?page=2'], ['', null], ['?next=%2F', null], ['?next=%2F%2Fevil.example', null]] as const) {
+      const w = world();
+      open(w, 'sign-in', `/sign-in${search}`);
+      await ask('known@example.test');
+      await screen.findByLabelText('Code from the email');
+      expect(w.fake.lastNext(), search).toBe(sent);
+      cleanup();
+    }
+  });
+
   test('after the code it returns only to a path on this site', async () => {
     const w = world();
     open(w, 'sign-in', '/sign-in?next=%2F%2Fevil.example%2Fx');
@@ -318,7 +339,7 @@ describe('Register, the same for every address', () => {
     const run = async (email: string) => {
       const w = world();
       const r = open(w, 'register', '/register?invite=wrong');
-      await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+      await agree();
       await ask(email);
       await userEvent.type(await screen.findByLabelText('Code from the email'), '000000{Enter}');
       await screen.findByRole('alert');
@@ -343,7 +364,59 @@ describe('Register', () => {
     expect(screen.queryByLabelText('Code from the email')).toBeNull();
     await userEvent.click(box);
     await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Check the box to agree to the code of conduct; then ask for a code.');
+    expect(screen.queryByLabelText('Code from the email')).toBeNull();
+    await userEvent.click(screen.getByRole('checkbox', { name: /agree to the code of conduct/u }));
+    await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
     expect(await screen.findByLabelText('Code from the email')).toBeInTheDocument();
+  });
+
+  test('the code of conduct is a box of its own, linked to /conduct, and its refusal is tied to it', async () => {
+    const w = world();
+    const requested = vi.spyOn(w.fake, 'requestCode');
+    open(w, 'register', '/register?invite=abc123');
+    const box = await screen.findByRole('checkbox', { name: "I've read and agree to the code of conduct." });
+    expect(box).not.toBeChecked();
+    const link = screen.getByRole('link', { name: 'code of conduct' });
+    expect(link).toHaveAttribute('href', '/conduct');
+    expect(box.closest('label')).toContainElement(link);
+    /* With the 18+ box checked and this one not, the account cannot be asked for. */
+    await userEvent.click(screen.getByRole('checkbox', { name: /18 or older/u }));
+    await ask('new@example.test');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Check the box to agree to the code of conduct; then ask for a code.');
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(box.getAttribute('aria-describedby')).toBe(alert.id);
+    expect(requested).not.toHaveBeenCalled();
+    /* With it checked, it can. */
+    await userEvent.click(box);
+    await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
+    expect(await screen.findByLabelText('Code from the email')).toBeInTheDocument();
+    expect(requested).toHaveBeenCalledTimes(1);
+  });
+
+  test('registering sends the version of the code the box agreed to; signing in sends none', async () => {
+    const w = world();
+    const requested = vi.spyOn(w.fake, 'requestCode');
+    open(w, 'register', '/register?invite=abc123');
+    await agree();
+    await ask('new@example.test');
+    await screen.findByLabelText('Code from the email');
+    expect(requested).toHaveBeenCalledTimes(1);
+    expect(requested.mock.calls[0]![3]).toBeGreaterThanOrEqual(1);
+    cleanup();
+    const w2 = world();
+    const signing = vi.spyOn(w2.fake, 'requestCode');
+    open(w2, 'sign-in');
+    await ask('someone@example.test');
+    await screen.findByLabelText('Code from the email');
+    expect(signing.mock.calls[0]![3] ?? null).toBeNull();
+  });
+
+  test('Sign in asks for no agreement: the code of conduct box is Register\'s alone', async () => {
+    open(world(), 'sign-in', '/sign-in');
+    await screen.findByLabelText('Email address');
+    expect(screen.queryByRole('checkbox', { name: /code of conduct/u })).toBeNull();
   });
 
   test('has no invite field while registration is open', async () => {
@@ -357,7 +430,7 @@ describe('Register', () => {
     const code = (await (async () => { w.fake.signInAs(w.known); const r = await w.fake.createInvite(); w.fake.signInAs(null); return r; })());
     if (!code.ok) throw new Error('seed');
     open(w, 'register', `/register?invite=${code.value.code}`);
-    await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+    await agree();
     await ask('new@example.test');
     await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
     await waitFor(async () => expect((await w.fake.session()).account).not.toBeNull());
@@ -367,7 +440,7 @@ describe('Register', () => {
   test('an invite that opens nothing is said plainly, and the way on is another invite after the code', async () => {
     const w = world();
     open(w, 'register', '/register?invite=wrong');
-    await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+    await agree();
     await ask('new@example.test');
     expect(await screen.findByText("that invite opens nothing, so no new login is made with it")).toBeInTheDocument();
     await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
@@ -405,11 +478,363 @@ describe('Register', () => {
     const w = world();
     const made = await (async () => { w.fake.signInAs(w.known); const r = await w.fake.createInvite(); w.fake.signInAs(null); return r; })();
     if (!made.ok) throw new Error('seed');
-    await w.fake.requestCode('linked@example.test', null);
+    await w.fake.requestCode('linked@example.test', null, null);
     await w.fake.verifyCode('linked@example.test', TEST_CODE);
     expect((await w.fake.session()).account).toBeNull();
+    const opening = vi.spyOn(w.fake, 'openAccount');
     open(w, 'sign-in');
     await userEvent.type(await screen.findByLabelText('Invite'), `${made.value.code}{Enter}`);
     await waitFor(async () => expect((await w.fake.session()).account).not.toBeNull());
+    /* This path shows no code of conduct, so it agrees to none: only the invite is sent, and the Accept gate asks the player. */
+    expect(opening.mock.calls[0]).toEqual([made.value.code]);
+  });
+});
+
+describe('A barred login that gives the right code', () => {
+  test('is told plainly it is barred, while signed out, with the way to reach a person; the screen asked for a code the same as for any address', async () => {
+    const w = world();
+    w.fake.seed.bar(w.known, Date.parse('2099-11-12T23:30:00Z'));
+    open(w, 'sign-in');
+    await ask('known@example.test');
+    await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
+    expect(await screen.findByRole('heading', { name: 'This account is suspended' })).toBeInTheDocument();
+    expect(screen.getByText('This account is suspended until November 12, 2099 at 23:30 UTC. An admin may have emailed you the details. To appeal, reply to that email, or reach a person through Contact.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+    expect(screen.queryByText(/try again/iu)).toBeNull();
+    expect((await w.fake.session()).signedIn).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Use another address' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+  });
+});
+
+describe('The emailed link', () => {
+  const FRAGMENT = `#token_hash=${TEST_LINK}`;
+  /* The address the last code was asked for is the one the fake's link signs in, as the email's would. */
+  const linked = async (address = 'known@example.test') => {
+    const w = world();
+    await w.fake.requestCode(address, null, null);
+    return w;
+  };
+  const went = () => {
+    const urls: string[] = [];
+    for (const how of ['pushState', 'replaceState'] as const) {
+      const real = window.history[how].bind(window.history);
+      vi.spyOn(window.history, how).mockImplementation((data, unused, url) => { urls.push(String(url)); real(data, unused, url); });
+    }
+    return urls;
+  };
+
+  test('a barred login pressing its link lands on the barred answer, signed out, never "try again"', async () => {
+    const w = await linked();
+    w.fake.seed.bar(w.known, Date.parse('2099-11-12T23:30:00Z'));
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('heading', { name: 'This account is suspended' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+    expect(screen.queryByText(/try again|link does not work/iu)).toBeNull();
+    expect((await w.fake.session()).signedIn).toBe(false);
+  });
+
+  test('shows the panel and no email field, has asked nothing yet, and leaves no fragment in the address', async () => {
+    const w = await linked();
+    const verify = vi.spyOn(w.fake, 'verifyLink');
+    open(w, 'sign-in', `/sign-in?next=%2Fstandings${FRAGMENT}`);
+    expect(await screen.findByText('This link signs you in. It works once.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use a code instead' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Email address')).toBeNull();
+    expect(screen.getByRole('complementary', { name: 'Other ways in' })).toBeInTheDocument();
+    expect(verify).not.toHaveBeenCalled();
+    await waitFor(() => expect(window.location.hash).toBe(''));
+    expect(window.location.pathname).toBe('/sign-in');
+    expect(window.location.search).toBe('?next=%2Fstandings');
+    expect(window.location.href).not.toContain(TEST_LINK);
+  });
+
+  test('the fragment is stripped by replacing the entry, and no pushed address ever held the token', async () => {
+    const w = await linked();
+    const push = vi.spyOn(window.history, 'pushState');
+    const replace = vi.spyOn(window.history, 'replaceState');
+    open(w, 'sign-in', `/sign-in?next=%2Fstandings${FRAGMENT}`);
+    await screen.findByText('This link signs you in. It works once.');
+    await waitFor(() => expect(replace).toHaveBeenCalled());
+    expect(replace.mock.calls.some(([, , url]) => !String(url).includes(TEST_LINK))).toBe(true);
+    expect(push.mock.calls.filter(([, , url]) => String(url).includes(TEST_LINK))).toEqual([]);
+  });
+
+  test('when the address cannot be read, the signed-in states still say a sentence and take focus', async () => {
+    const w = await linked();
+    vi.spyOn(w.fake, 'signInAddress').mockRejectedValue(new Error('offline'));
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    const done = await screen.findByText('You are signed in.');
+    await waitFor(() => expect(document.activeElement).toBe(done));
+  });
+
+  test('moves focus to the panel\'s first sentence when it stands, and again when the state changes', async () => {
+    open(await linked(), 'sign-in', `/sign-in${FRAGMENT}`);
+    const lead = await screen.findByText('This link signs you in. It works once.');
+    await waitFor(() => expect(document.activeElement).toBe(lead));
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    const done = await screen.findByText('You are signed in as known@example.test.');
+    await waitFor(() => expect(document.activeElement).toBe(done));
+  });
+
+  test('the press signs in, names the address, and Continue goes on to the page the player came from', async () => {
+    const w = await linked();
+    open(w, 'sign-in', `/sign-in?next=%2Fstandings${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('You are signed in as known@example.test.');
+    expect((await w.fake.session()).account).not.toBeNull();
+    const urls = went();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(urls.length).toBeGreaterThan(0));
+    expect(urls[0]).toBe('/standings');
+  });
+
+  test('Continue goes to the index where the link\'s next is another site\'s', async () => {
+    const w = await linked();
+    open(w, 'sign-in', `/sign-in?next=%2F%2Fevil.example%2Fx${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await screen.findByText('You are signed in as known@example.test.');
+    const urls = went();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(urls.length).toBeGreaterThan(0));
+    expect(urls).toEqual(['/']);
+  });
+
+  test('Not you? Sign out signs out and shows the form', async () => {
+    const w = await linked();
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Not you? Sign out' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect((await w.fake.session()).signedIn).toBe(false);
+    expect(screen.queryByText(/You are signed in as/u)).toBeNull();
+  });
+
+  test('a sign-out that fails says so, keeps the panel and moves nobody on; a second press signs out', async () => {
+    const w = await linked();
+    open(w, 'sign-in', `/sign-in?next=%2Fstandings${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await screen.findByText('You are signed in as known@example.test.');
+    const urls = went();
+    const failing = vi.spyOn(w.fake, 'signOut').mockRejectedValueOnce(new Error('no answer'));
+    await userEvent.click(screen.getByRole('button', { name: 'Not you? Sign out' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Signing out did not work. You are still signed in as known@example.test.');
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+    expect(urls).toEqual([]);
+    expect((await w.fake.session()).signedIn).toBe(true);
+    failing.mockRestore();
+    await userEvent.click(screen.getByRole('button', { name: 'Not you? Sign out' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect((await w.fake.session()).signedIn).toBe(false);
+  });
+
+  test('a link the server refuses shows the form with its sentence in the alert', async () => {
+    const w = await linked();
+    open(w, 'sign-in', '/sign-in#token_hash=aaaaaaaaaaaaaaaaaaaa');
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('that link does not work, or it has expired: ask for a new code');
+    expect(screen.getByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email address')).not.toHaveAttribute('aria-invalid');
+  });
+
+  test('a lost answer says so, and the button reads Try again', async () => {
+    const w = await linked();
+    vi.spyOn(w.fake, 'verifyLink').mockRejectedValueOnce(new Error('network'));
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(LOST_ANSWER);
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+  });
+
+  test('Use a code instead sets the link aside and shows the form', async () => {
+    const w = await linked();
+    const verify = vi.spyOn(w.fake, 'verifyLink');
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Use a code instead' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  describe('opened while signed in as another address', () => {
+    const other = async () => {
+      const w = await linked('other@example.test');
+      w.fake.seed.account('other', { email: 'other@example.test' });
+      w.fake.signInAs(w.known);
+      return w;
+    };
+
+    test('names that address, and Stay signed in goes on as that account without asking the link', async () => {
+      const w = await other();
+      const verify = vi.spyOn(w.fake, 'verifyLink');
+      open(w, 'sign-in', `/sign-in?next=%2Fstandings${FRAGMENT}`);
+      expect(await screen.findByText('This browser is signed in as known@example.test. Using the link signs that account out.')).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('This browser is signed in as known@example.test.');
+      expect(window.location.pathname).toBe('/sign-in');
+      const urls = went();
+      await userEvent.click(screen.getByRole('button', { name: 'Stay signed in' }));
+      await waitFor(() => expect(urls.length).toBeGreaterThan(0));
+      expect(urls[0]).toBe('/standings');
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    test('a hash the server refuses is seen: the sentence shows in the alert, nothing navigates, and Stay signed in then goes on', async () => {
+      const w = await other();
+      open(w, 'sign-in', '/sign-in?next=%2Fstandings#token_hash=aaaaaaaaaaaaaaaaaaaa');
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in with the link' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('that link does not work, or it has expired: ask for a new code');
+      expect(screen.getByLabelText('Email address')).toBeInTheDocument();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(window.location.pathname).toBe('/sign-in');
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      const urls = went();
+      await userEvent.click(screen.getByRole('button', { name: 'Stay signed in' }));
+      await waitFor(() => expect(urls.length).toBeGreaterThan(0));
+      expect(urls[0]).toBe('/standings');
+    });
+
+    test('a signed-out refusal offers no Stay signed in', async () => {
+      const w = await linked();
+      open(w, 'sign-in', '/sign-in#token_hash=aaaaaaaaaaaaaaaaaaaa');
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      await screen.findByRole('alert');
+      expect(screen.queryByRole('button', { name: 'Stay signed in' })).toBeNull();
+    });
+
+    test('Sign in with the link replaces the session and names the new address', async () => {
+      const w = await other();
+      open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in with the link' }));
+      expect(await screen.findByText('You are signed in as other@example.test.')).toBeInTheDocument();
+      expect(w.fake.emailOf((await w.fake.session()).account!)).toBe('other@example.test');
+    });
+  });
+
+  test('a login with no open account shows the way on with its reason', async () => {
+    const w = await linked('new@example.test');
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText(/that invite opens nothing; open the account with another invite/u)).toBeInTheDocument();
+    expect(screen.getByLabelText('Invite')).toBeInTheDocument();
+    expect(screen.queryByText(/You are signed in as/u)).toBeNull();
+  });
+
+  test('on Register its words are true for a new player and a returning one', async () => {
+    const w = await linked();
+    open(w, 'register', `/register${FRAGMENT}`);
+    expect(await screen.findByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeInTheDocument();
+    /* The words are true for a returning player whose invite sent the link here, so they claim no sign-up. */
+    expect(screen.queryByRole('button', { name: 'Finish signing up' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+  });
+
+  test.each(['#top', '#token_hash=', '#token_hash=short'])('a fragment of %s shows the ordinary form', async (fragment) => {
+    open(await linked(), 'sign-in', `/sign-in${fragment}`);
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+  });
+
+  /* No provider is rendered here: the link lives in the screen's own state, so a screen that is gone holds nothing for the next. */
+  test('a screen with no provider holds nothing: a later visit with no fragment shows the ordinary form', async () => {
+    const w = await linked();
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    expect(await screen.findByText('This link signs you in. It works once.')).toBeInTheDocument();
+    cleanup();
+    open(w, 'sign-in', '/sign-in');
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+  });
+
+  test('the same after a press that signed in: the next visit is the ordinary form', async () => {
+    const w = await linked();
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    cleanup();
+    open(w, 'sign-in', '/sign-in');
+    expect(screen.queryByText(/You are signed in as/u)).toBeNull();
+    expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+  });
+
+  /* A provider above the screen (the app's) keeps the link and the press across the screen starting afresh, which a key change stands in for. */
+  describe('under a link hand provider', () => {
+    function Remountable({ mode = 'sign-in' }: { readonly mode?: 'sign-in' | 'register' }) {
+      const [n, setN] = useState(0);
+      return <><button type="button" onClick={() => setN((v) => v + 1)}>Start afresh</button><SignInScreen key={n} mode={mode} /></>;
+    }
+    /* The routes render the same screen at the same position for both paths, so a move between them does not remount it. */
+    function Moves() {
+      const navigate = useNavigate();
+      const { path } = useLocation();
+      return <><button type="button" onClick={() => navigate('/register')}>Go to register</button><SignInScreen mode={path === '/register' ? 'register' : 'sign-in'} /></>;
+    }
+    const openHeld = (w: ReturnType<typeof world>, path: string) => renderIn(w.fake, <LinkHandProvider><Remountable /></LinkHandProvider>, { path });
+
+    test('a screen started afresh after the press still says the press signed in', async () => {
+      const w = await linked();
+      openHeld(w, `/sign-in${FRAGMENT}`);
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
+      expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+    });
+
+    test('after Continue, a screen started afresh shows no panel', async () => {
+      const w = await linked();
+      openHeld(w, `/sign-in${FRAGMENT}`);
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
+      await waitFor(() => expect(screen.queryByText(/You are signed in as/u)).toBeNull());
+      expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+    });
+
+    test('a move of the address to the other screen sets the link aside, under the provider too', async () => {
+      const w = await linked();
+      const verify = vi.spyOn(w.fake, 'verifyLink');
+      renderIn(w.fake, <LinkHandProvider><Moves /></LinkHandProvider>, { path: `/sign-in${FRAGMENT}` });
+      await screen.findByText('This link signs you in. It works once.');
+      await userEvent.click(screen.getByRole('button', { name: 'Go to register' }));
+      expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+      expect(screen.queryByText(/This link/u)).toBeNull();
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    test('a refused link leaves the form, and a screen started afresh shows no panel', async () => {
+      const w = await linked();
+      openHeld(w, '/sign-in#token_hash=aaaaaaaaaaaaaaaaaaaa');
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('that link does not work');
+      await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
+      expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+      expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+    });
+
+    test('a link that opens no account shows the way on, and a screen started afresh brings no panel back', async () => {
+      const w = world('closed');
+      await w.fake.requestCode('new@example.test', null, null);
+      renderIn(w.fake, <LinkHandProvider><Remountable mode="register" /></LinkHandProvider>, { path: `/register${FRAGMENT}`, settings: { registrationMode: 'closed' } });
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      await waitFor(() => expect(screen.queryByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeNull());
+      await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
+      await waitFor(() => expect(screen.queryByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeNull());
+      expect(screen.queryByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeNull();
+      expect(screen.queryByLabelText('Email address')).toBeNull();
+    });
+
+    test('a link not yet pressed is still in hand after starting afresh', async () => {
+      const w = await linked();
+      openHeld(w, `/sign-in${FRAGMENT}`);
+      await screen.findByText('This link signs you in. It works once.');
+      await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
+      expect(await screen.findByText('This link signs you in. It works once.')).toBeInTheDocument();
+    });
   });
 });

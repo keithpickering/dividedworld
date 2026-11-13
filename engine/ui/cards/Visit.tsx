@@ -297,7 +297,7 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
       setTaken((t) => new Map(t).set(mask.id, answer));
       if (a.value.succeeded) {
         /* The visit is over whether or not the story can be read again: the mark and the tab follow from here. */
-        const over: VisitEnd = { act: a.value.act, at: new Date().toISOString(), outcome: 'intercepted', byAct: a.value.act, line: '' };
+        const over: VisitEnd = { act: a.value.act, at: new Date(api.now()).toISOString(), outcome: 'intercepted', byAct: a.value.act, line: '' };
         setLocalEnd(over);
         ended.current(over);
       }

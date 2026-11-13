@@ -11,7 +11,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { Settings } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
-import type { Act, Answer, Donated, DriveGift, EffectState, Id, Wallet } from '../data/api.ts';
+import type { Act, Answer, Donated, DriveGift, EffectState, Id, SurfaceAct, Wallet } from '../data/api.ts';
 import type { CardFace } from './faces.ts';
 
 /**
@@ -236,6 +236,34 @@ export interface EffectProps {
   readonly moreGifts: (drive: Id) => Promise<void>;
   /** The reader's own settled wallet, from the header's store (null before it is known): a give button short of Aura is the reader's own fact. */
   readonly wallet: Wallet | null;
+  /**
+   * The surface of this card's play on the post, for a card with `CardRules.surface`; undefined for every other card, and in a moment.
+   * Any character may add to it (`draw`) and the post's own character takes ink off (`wash`); both refuse without asking in a moment and on a sample page.
+   */
+  readonly surface?: {
+    /** The cells the layer covers now, of the grid's 10,000 (from the page's read, then the channel's). */
+    readonly covered: number;
+    /** The most cells it may cover: the card's limit (`CardRules.surface.limitKey`) as cells. */
+    readonly most: number;
+    /** The live draws and washes, oldest first; null until read (fetched near the viewport). */
+    readonly acts: readonly SurfaceAct[] | null;
+    /** Ask for `acts`: read once, and again each time the surface changes after. A page of many walls reads only the walls that ask. */
+    near(): void;
+    draw(play: Id, as: Id, input: unknown): Promise<Answer<SurfaceAct>>;
+    /** As the post's character; refused for anyone else. */
+    wash(play: Id, input: unknown): Promise<Answer<SurfaceAct>>;
+  };
+  /**
+   * The post's ink registry, so two cards that hold ink on one post share it: each effect that holds ink `claim`s a hit test (client px) and
+   * starts a stroke only where `topAt` is true, which it is for the outermost claimant whose hit test is true at that point. A press on an
+   * outer card's ink works that card, and a press beside it falls through to the card beneath.
+   */
+  readonly ink: {
+    /** Register a hit test; the answer takes it back. */
+    claim(hit: (x: number, y: number) => boolean): () => void;
+    /** Whether this effect is the outermost claimant whose hit test is true at the point. */
+    topAt(x: number, y: number): boolean;
+  };
   readonly children: ReactNode;
 }
 
@@ -275,6 +303,40 @@ export interface CardArt {
   readonly tagline?: string;
 }
 
+/**
+ * A card whose play is made on the post itself (`CardUi.Compose`): mounted in the post's effect slot, innermost, where the card draws what it
+ * plays. The engine knows nothing of what is drawn; it says when to open, lands the play and holds the ways out.
+ */
+export interface ComposeProps {
+  readonly post: Act;
+  /** The box of the post's words (`under`) as the slot measures it, in client px, with no layer's chrome in it; null before it is measured. A card whose drawing must match its effect's box (shares of the post body, which can be far taller than a one-line post's words) measures the post body itself (`under.closest('.kb-act-main')`) and takes this only as a fallback. */
+  readonly box: { readonly w: number; readonly h: number } | null;
+  /**
+   * The element directly around the post's words, inside every card's layer on the post: a card portals a preview into it to draw beneath the layers
+   * (a splat that will cover what is drawn). It is the same element for as long as the compose is open, whatever lands on the post; null where the page has no document.
+   */
+  readonly under: HTMLElement | null;
+  /**
+   * Land the play: `first` is the card's first draw, `config` its configuration. The answer is the play's or its refusal in the database's
+   * words; on a refusal the compose stays mounted and the card shows it. On success the compose is closed.
+   */
+  submit(config: unknown, first: unknown): Promise<Answer<unknown>>;
+  /** Leave, asking first when `hold` says work is held (Esc and the armed card pressed again do the same). */
+  cancel(): void;
+  /**
+   * Say whether the card holds work that leaving would lose. `ask` is the question put before any way out, in the card's own words
+   * ("Leave without tagging? Your drawing isn't saved."), or null when nothing is held. While one is held the browser asks too before the page is left.
+   */
+  hold(ask: string | null): void;
+  /**
+   * Say the card's screen is on the page: whatever it sets over the window's edges (a dock) is mounted and has set the root's scroll padding. The engine then brings the
+   * post's body clear of it (clear.ts). A card whose screen is mounted in the commit that opens it need not call this, the engine measures once after that commit; one
+   * that loads late (a lazy chunk) must, or the post is measured before anything covers it and left behind the dock. Calling it again is harmless.
+   */
+  ready(): void;
+  readonly children: ReactNode;
+}
+
 export interface CardUi {
   /** The rules' `CardRules.key`. */
   readonly key: string;
@@ -310,6 +372,10 @@ export interface CardUi {
   readonly summary?: string;
   /** The effect covers the post (the reader cannot read it as it stands), so the Lens leads with the card's controls. */
   readonly takeover?: boolean;
+  /** `PostEffects` nests this card's effect innermost, whatever its play order, under every card without it (a layer other cards' ink lies on); among several, play order holds. A takeover is still outermost. */
+  readonly beneath?: true;
+  /** The card is played on the post itself: its ghost mark mounts this in the post's effect slot, innermost, instead of opening the play form. */
+  readonly Compose?: ComponentType<ComposeProps>;
   /** One short line the Lens gives a reader who has not yet met the card's effect: the first-meet line. */
   readonly hint?: string;
   /**
@@ -350,4 +416,17 @@ export interface CardUi {
     readonly again: (card: string) => string;
     readonly failed: string;
   };
+  /**
+   * For a card with `CardRules.surface`: the colors (or whatever else a drawing names) of one draw on the surface, as a short phrase ("pink and lime"), read from the draw's
+   * payload, for the Lens's row of that draw. Out of character and true to the payload; a card that gives none, or answers an empty string, adds nothing to the row.
+   */
+  readonly describeDraw?: (payload: Readonly<Record<string, unknown>>) => string;
+  /**
+   * For a card with `CardRules.surface`: the words the player's log and the Lens say a draw in. `verb` follows its drawer ("tagged": "You tagged Spritey's post #4 (6% of the
+   * wall)"), `noun` and `nouns` name one draw and several ("tag", "tags": "and 14 older tags, washed or painted over"), and `surface` names what a share is of ("the wall": "6% of the wall").
+   * The engine's own words, when a card gives none, are "drew on", "drawing", "drawings" and "the surface". Out of character and true.
+   */
+  readonly logDraw?: { readonly verb: string; readonly noun: string; readonly nouns: string; readonly surface: string };
+  /** For a card with `CardRules.surface`: the verb of the post's own wash, after its subject ("washed": "You washed 9% of the wall off your post #4"). The engine's own is "washed". */
+  readonly logWash?: { readonly verb: string };
 }

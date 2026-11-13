@@ -50,6 +50,12 @@ const settings: Settings = {
   structuralHoldHours: 24,
   microEventDailyCalls: 20,
   digestThreads: 10,
+  digestBoards: 30,
+  digestBoardDays: 21,
+  movedStubDays: 7,
+  bundleMostParts: 4,
+  farewellWindowHours: 36,
+  bundleAuthoredMostParts: 8,
   digestExcerpts: 8,
   digestExcerptChars: 280,
   memoryOpinions: 40,
@@ -60,12 +66,18 @@ const settings: Settings = {
   modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
+  conduct: { openReportsMost: 3, adminAddress: null },
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
   demandChecksPerTick: 40,
   moveExpiryLeastHours: 24,
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
+  cosmetics: {
+    gear: { wornMost: 12, reach: 0.4 },
+    trophies: { shownMost: 3 },
+    events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80, uncommon: 17, rare: 3 }, cardRarity: { common: 80, uncommon: 17, rare: 3 } },
+  },
   setLasts: { unit: 'day', count: 7 },
   reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
   reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
@@ -98,11 +110,16 @@ const system: SystemContent = {
   announcementsTitle: 'Announcements',
 };
 
+const testCard = (over: Record<string, unknown>) => ({ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...over });
+const packCards = [
+  testCard({ key: 'a', rarity: 'common' }), testCard({ key: 'b', rarity: 'uncommon' }), testCard({ key: 'c', rarity: 'rare' }),
+] as unknown as Instance['cards'];
+
 const good: Instance = {
   key: 'test-world',
   name: 'Test World',
   classes: [{ key: 'a', name: 'A', earn: () => [] }],
-  cards: [],
+  cards: packCards,
   reactions: [
     { key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' },
     { key: 'zzz', emoji: '💤', quadrant: 'boredNegative' },
@@ -116,6 +133,22 @@ const good: Instance = {
   system,
   packs: [],
   machine: [],
+  gear: [
+    { key: 'cap', name: 'Cap', line: 'A cap.', rarity: 'common' },
+    { key: 'monocle', name: 'Monocle', line: 'A monocle.', rarity: 'uncommon' },
+    { key: 'crown', name: 'Crown', line: 'A crown.', rarity: 'rare' },
+  ],
+  trophies: {
+    kinds: [{ key: 'first', name: 'First' }, { key: 'second', name: 'Second' }, { key: 'third', name: 'Third' }, { key: 'pet', name: 'Pet' }, { key: 'met', name: 'Met' }, { key: 'belt', name: 'Belt', belt: true }],
+    seasonPlaces: ['first', 'second', 'third'],
+    boss: ['pet', 'belt'],
+    demandMet: 'met',
+  },
+  events: { lines: [
+    { key: 'plain', outcome: 'line', text: 'Something happened.' },
+    { key: 'found', outcome: 'gear', text: 'You found a {item}.' },
+    { key: 'stuck', outcome: 'card', text: 'A {item} was stuck to your shoe.' },
+  ] },
 };
 
 test('a whole instance has no problems', () => {
@@ -132,7 +165,7 @@ test('exactly one board is The System\'s, and at least one is not', () => {
 });
 
 test('a card\'s stack is a whole number, at least 1', () => {
-  const card = (stack: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, stack, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  const card = (stack: unknown) => ({ ...good, cards: [testCard({ stack }), ...packCards] }) as unknown as Instance;
   assert.deepEqual(instanceProblems(card(3)), []);
   assert.deepEqual(instanceProblems(card(undefined)), []);
   for (const bad of [0, 1.5, '3', -1]) assert.match(instanceProblems(card(bad)).join('\n'), /card "splat" stacks .*; a stack is a whole number, at least 1/, String(bad));
@@ -179,7 +212,7 @@ test('the numbers a card gives the screens are an object of named numbers, like 
 });
 
 test('a number a card reads for the screens is one the settings hold, within the card\'s bounds', () => {
-  const card = (screenReads: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, screenReads, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  const card = (screenReads: unknown) => ({ ...good, cards: [testCard({ screenReads }), ...packCards] }) as unknown as Instance;
   const reads = [{ key: 'splat.clean', whole: true, min: 1, max: 100 }];
   assert.deepEqual(instanceProblems(card(reads)), []);
   assert.match(instanceProblems(card([{ key: 'splat.other' }])).join('\n'), /card "splat" reads card setting "splat\.other", which the settings do not hold/);
@@ -187,6 +220,16 @@ test('a number a card reads for the screens is one the settings hold, within the
   assert.match(instanceProblems(held(101)).join('\n'), /card "splat" reads card setting "splat\.clean" as 101; it must be at most 100/);
   assert.match(instanceProblems(held(0)).join('\n'), /at least 1/);
   assert.match(instanceProblems(held(94.5)).join('\n'), /whole number/);
+});
+
+test('a surface card is a cast card with a stack of 1, and its limit is a number it reads for the screens', () => {
+  const surface = { limitKey: 'splat.clean', mostLive: 48, validateDraw: () => ({ ok: true as const, value: { strokes: [], payload: {} } }), validateWash: () => ({ ok: true as const, value: { strokes: [], payload: {} } }) };
+  const card = (extra: object) => ({ ...good, cards: [{ key: 'wall', name: 'Wall', alignment: 'salty' as const, rarity: 'rare' as const, surface, screenReads: ['splat.clean'], playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...extra }, ...packCards] }) as unknown as Instance;
+  assert.deepEqual(instanceProblems(card({ stack: 1 })), []);
+  assert.match(instanceProblems(card({ stack: 2 })).join('\n'), /card "wall" has a surface and a stack of 2; a surface card has a stack of 1/);
+  assert.deepEqual(instanceProblems(card({})), [], 'a stack left out is 1');
+  assert.match(instanceProblems(card({ stack: 1, play: 'use' })).join('\n'), /card "wall" has a surface, and only a cast card does/);
+  assert.match(instanceProblems(card({ stack: 1, screenReads: [] })).join('\n'), /card "wall" has a surface whose limit "splat\.clean" is not one of its screenReads/);
 });
 
 test('ranks start at 0 and rise, each named', () => {
@@ -559,7 +602,7 @@ test('the new settings are checked like the others', () => {
   assert.match(bad('meetingCron', 'daily'), /meetingCron/);
   assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
   assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
-  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
+  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestBoards', 'digestBoardDays', 'movedStubDays', 'farewellWindowHours', 'bundleMostParts', 'bundleAuthoredMostParts', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
     assert.match(bad(k, -1), new RegExp(k), k);
     assert.match(bad(k, 1.5), new RegExp(k), k);
   }
@@ -568,11 +611,22 @@ test('the new settings are checked like the others', () => {
     assert.match(bad(k, 2.5), new RegExp(k), k);
   }
   // The digest settings have a ceiling too: an admin setting cannot grow the meeting's prompt without bound.
-  for (const [k, most] of [['digestThreads', DIGEST_MOST.threads], ['digestExcerpts', DIGEST_MOST.excerpts], ['digestExcerptChars', DIGEST_MOST.excerptChars]] as const) {
+  for (const [k, most] of [['digestThreads', DIGEST_MOST.threads], ['digestBoards', DIGEST_MOST.boards], ['digestBoardDays', DIGEST_MOST.boardDays], ['digestExcerpts', DIGEST_MOST.excerpts], ['digestExcerptChars', DIGEST_MOST.excerptChars]] as const) {
     assert.match(bad(k, most + 1), new RegExp(k), k);
     assert.deepEqual(settingsProblems({ ...settings, [k]: most }), [], `${k} may be its ceiling`);
   }
   // The tick's demand-check pacing: at least 1, and a ceiling so a setting cannot make the per-minute transaction unbounded.
+  // How long a moved thread's stub stays on the board it left: at least a day, at most a year, as the migration's check holds.
+  assert.match(bad('movedStubDays', 0), /movedStubDays/);
+  assert.match(bad('movedStubDays', 366), /movedStubDays/);
+  assert.deepEqual(settingsProblems({ ...settings, movedStubDays: 365 }), []);
+  // The bundle bounds: a composed bundle and an authored one each hold from one part to sixteen, so a setting cannot make a bundle unbounded.
+  for (const k of ['bundleMostParts', 'bundleAuthoredMostParts']) {
+    assert.match(bad(k, 0), new RegExp(k), k);
+    assert.match(bad(k, 17), new RegExp(k), k);
+    assert.deepEqual(settingsProblems({ ...settings, [k]: 16 }), [], `${k} may be 16`);
+    assert.deepEqual(settingsProblems({ ...settings, [k]: 1 }), [], `${k} may be 1`);
+  }
   for (const [k, most] of [['demandCheckMinutes', 1440], ['demandChecksPerTick', 1000]] as const) {
     assert.match(bad(k, 0), new RegExp(k), k);
     assert.match(bad(k, most + 1), new RegExp(k), k);
@@ -599,6 +653,20 @@ test('the new settings are checked like the others', () => {
   assert.match(bad('apology', 'x'), /apology/);
   assert.match(bad('apology', null), /apology/);
   assert.deepEqual(settingsProblems({ ...settings, microEventDailyCalls: 0, rosterRecentExcluded: 0, inheritanceGraceDays: 0 }), [], 'zero is allowed where it means none');
+});
+
+test('the conduct settings: openReportsMost a whole number of at least 1, adminAddress null or an address, and nothing else in the object', () => {
+  const bad = (k: string, v: unknown) => settingsProblems({ ...settings, [k]: v } as unknown as Settings).join('\n');
+  const gs = settings.conduct;
+  for (const v of [0, -1, 1.5, '3', null]) assert.match(bad('conduct', { ...gs, openReportsMost: v }), new RegExp('conduct.*"openReportsMost" is not'), `openReportsMost = ${String(v)}`);
+  assert.deepEqual(settingsProblems({ ...settings, conduct: { ...gs, openReportsMost: 1 } }), [], 'openReportsMost may be 1');
+  for (const v of ['', 'admin', 3, undefined]) assert.match(bad('conduct', { ...gs, adminAddress: v }), /conduct.*"adminAddress" is not/, `adminAddress = ${String(v)}`);
+  assert.deepEqual(settingsProblems({ ...settings, conduct: { ...gs, adminAddress: 'admins@dw.gripe' } }), [], 'an address is allowed');
+  assert.deepEqual(settingsProblems({ ...settings, conduct: { ...gs, adminAddress: null } }), [], 'null means not set yet');
+  assert.match(bad('conduct', { ...gs, other: 1 }), /conduct.*"other" is not one of its fields/);
+  assert.match(bad('conduct', { openReportsMost: 3 }), /conduct.*"adminAddress" is not/);
+  assert.match(bad('conduct', 'x'), /conduct/);
+  assert.match(bad('conduct', null), /conduct/);
 });
 
 test('a bot voice that is neither chat nor oldVoice is a problem', () => {
@@ -664,8 +732,8 @@ test('toastDefaults: the kinds that toast until a player chooses, each a kind of
 });
 
 // The card mechanic's pairings (docs/plans/2026-11-01-card-plays-plan.md, Task 1): each refused, naming the card.
-const testCard = (over: Record<string, unknown>) => ({ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...over });
-const withCards = (...cards: Record<string, unknown>[]) => ({ ...good, cards: cards.map(testCard) }) as unknown as Instance;
+// The cards under test, beside the three whose rarities the event odds name.
+const withCards = (...cards: Record<string, unknown>[]) => ({ ...good, cards: [...cards.map(testCard), ...packCards] }) as unknown as Instance;
 
 test('a card carries one of the four rarities', () => {
   assert.deepEqual(instanceProblems(withCards({ rarity: 'legendary' })), []);
@@ -694,6 +762,28 @@ test('a trap is a set card\'s, and a gimmick and a time up are a use card\'s', (
   assert.match(instanceProblems(withCards({ play: 'deal' })).join('\n'), /card "splat" is played "deal"; a card is cast, used, set or kept/);
 });
 
+test('a cast card on a character may carry an earn, and nothing else a gimmick', () => {
+  const earn = { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 };
+  const hours = { unit: 'hour', count: 36 };
+  const cast = (over: Record<string, unknown>) => instanceProblems(withCards({ rarity: 'uncommon', lasts: hours, ...over })).join('\n');
+  assert.equal(cast({ reaches: ['character'], gimmick: earn }), '', 'a cast earn on a character passes');
+  assert.equal(cast({ reaches: ['character'], gimmick: { ...earn, group: 'warm' } }), '');
+  assert.match(cast({ gimmick: earn }), /card "splat" has a gimmick, and only a use card has one, or a cast card on a character an earn/, 'a cast earn on a post');
+  assert.match(cast({ reaches: ['character'], gimmick: { kind: 'ward', flavors: ['salty'] } }), /only a use card has one, or a cast card on a character an earn/, 'a cast ward');
+  assert.match(cast({ rarity: 'rare', reaches: ['character', 'post'], gimmick: earn }), /only a use card has one, or a cast card on a character an earn/, 'a cast earn on a character and a post');
+  assert.match(cast({ reaches: ['character'], gimmick: { ...earn, group: '' } }), /card "splat" has an earn with the group ""; a group is a word/);
+  assert.match(cast({ reaches: ['character'], gimmick: { ...earn, group: 3 } }), /card "splat" has an earn with the group 3; a group is a word/);
+});
+
+test('a card that stops quotes reaches a post alone', () => {
+  const week = { unit: 'day', count: 7 };
+  const stop = (over: Record<string, unknown>) => instanceProblems(withCards({ play: 'use', lasts: week, gimmick: { kind: 'noQuote' }, ...over })).join('\n');
+  assert.equal(stop({}), '', 'no reaches is a post');
+  assert.equal(stop({ reaches: ['post'] }), '');
+  assert.match(stop({ reaches: ['character'] }), /card "splat" stops quotes, and a card that stops quotes reaches a post alone/);
+  assert.match(stop({ rarity: 'rare', reaches: ['post', 'thread'] }), /card "splat" stops quotes, and a card that stops quotes reaches a post alone/);
+});
+
 test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   const lasts = { unit: 'day', count: 7 };
   const use = (gimmick: unknown) => instanceProblems(withCards({ play: 'use', lasts, gimmick })).join('\n');
@@ -702,7 +792,7 @@ test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   assert.match(use({ kind: 'ward' }), /card "splat" has a ward that names no rarity, flavor or card/);
   assert.match(use({ kind: 'ward', upTo: 'mythic' }), /card "splat" has a ward up to "mythic"/);
   assert.match(use({ kind: 'ward', flavors: ['bitter'] }), /card "splat" has a ward of the flavors \["bitter"\]/);
-  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price or ride/);
+  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price, ride or noQuote/);
   assert.equal(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5 }), '');
   assert.equal(use({ kind: 'earn', reactions: ['fire'], by: 1 }), '');
   assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0 }), /card "splat" has an earn of 0; by is above 0 and at most 1/);
@@ -895,9 +985,6 @@ test('only a card that reaches a thread pins', () => {
 });
 
 // Packs and the machine's slots (docs/plans/2026-11-04-booster-packs-plan.md, Task 1).
-const packCards = [
-  testCard({ key: 'a', rarity: 'common' }), testCard({ key: 'b', rarity: 'uncommon' }), testCard({ key: 'c', rarity: 'rare' }),
-] as unknown as Instance['cards'];
 const stocked = (over: Partial<Instance>): Instance => ({ ...good, cards: packCards, packs: [{ key: 'p', pulls: [{ weights: { common: 1 } }, { weights: { uncommon: 3, rare: 1 } }] }], machine: [{ item: { card: 'a' }, availability: 'onSale', price: 100 }, { item: { pack: 'p' }, availability: 'onSale', price: 300 }], ...over });
 
 test('an instance with packs and slots that agree has no problems', () => {
@@ -978,11 +1065,226 @@ test('a scrubWords entry that is empty or not lower case is a problem', () => {
   assert.match(instanceProblems({ ...good, system: { ...system, scrubWords: undefined } } as unknown as Instance).join('\n'), /no system\.scrubWords list/);
 });
 
+/* ------------------------------------------------------------------------ arcs: beats, conditions, held-back kinds ---- */
+
+const split = {
+  key: 'split',
+  unlock: [{ kind: 'phase', phase: 'reign' }],
+  due: { phase: 'reign', daysIntoPhase: 7 },
+  brief: 'Make two boards.',
+  bundle: {
+    name: 'The Split',
+    parts: [
+      { role: 'minus', kind: 'createBoard', params: { name: 'World -1', premise: 'Everything else.', description: 'Not fangames.' } },
+      { role: 'fangames', kind: 'createBoard', params: {}, slots: { name: { default: 'Palace', hint: 'a board name' } } },
+    ],
+  },
+} as const;
+const picking = { key: 'picking-apart', unlock: [{ kind: 'beatLanded', beat: 'split' }], brief: 'Move threads.' } as const;
+const everything = {
+  key: 'everything',
+  unlock: [{ kind: 'phase', daysBeforeEnd: 7 }, { kind: 'beatLanded', beat: 'split' }],
+  due: { daysBeforeEnd: 2 },
+  brief: 'Merge it all.',
+  bundle: { name: 'Everything', parts: [{ role: 'final', kind: 'mergeBoard', params: { board: { role: 'fangames', beat: 'split' }, into: { role: 'minus', beat: 'split' } } }] },
+} as const;
+const lap = {
+  key: 'victory-lap',
+  unlock: [{ kind: 'boardActivity', board: { role: 'fangames', beat: 'split' }, days: 7, above: { role: 'minus', beat: 'split' } }],
+  brief: 'Tidy.',
+} as const;
+const arcFields = {
+  arc: [split, picking, everything],
+  miniArcs: [lap],
+  holdsBack: [{ kind: 'createBoard', until: 'split' }, { kind: 'moveThread', until: 'picking-apart' }],
+} as unknown as Partial<Persona>;
+const arcOf = (change: Record<string, unknown>) => said(withBoss({ ...arcFields, ...change } as Partial<Persona>));
+const arcWith = (arc: unknown[], extra: Record<string, unknown> = {}) => arcOf({ arc, ...extra });
+
+test('a persona with an arc, a mini-arc and held-back kinds passes; one with none runs as every persona does', () => {
+  assert.deepEqual(instanceProblems(withBoss(arcFields)), []);
+  assert.deepEqual(instanceProblems(withBoss({})), []);
+});
+
+test('two beats with one key are a problem, across the arc and the mini-arcs', () => {
+  assert.match(arcWith([split, { ...picking, key: 'split' }]), /persona "boss-a".*beat "split" is used twice.*\(isUnique\)/);
+  assert.match(arcOf({ miniArcs: [{ ...lap, key: 'split' }] }), /persona "boss-a".*beat "split" is used twice.*\(isUnique\)/);
+});
+
+test('a beat key is a lowercase key, and a beat needs a brief and an unlock', () => {
+  assert.match(arcWith([{ ...split, key: 'The Split' }]), /persona "boss-a".*beat "The Split".*\(isKey\)/);
+  assert.match(arcWith([{ ...split, brief: ' ' }]), /persona "boss-a".*beat "split".*brief.*\(required\)/);
+  assert.match(arcWith([{ ...split, unlock: [] }]), /persona "boss-a".*beat "split".*unlock.*\(atLeast\(1\)\)/);
+});
+
+test('a beat whose condition key is unknown is a problem naming the key and the list', () => {
+  assert.match(arcWith([{ ...split, unlock: [{ kind: 'fullMoon' }] }]), /persona "boss-a".*beat "split".*unlock 1.*"fullMoon".*\(oneOf\(phase, beatLanded, boardActivity, moveReversed, demandResolved\)\)/);
+  assert.match(arcWith([{ ...split, unlock: [{ kind: 'demandResolved', outcome: 'late' }] }]), /persona "boss-a".*beat "split".*unlock 1.*\(oneOf\(met, failed\)\)/);
+});
+
+test('a beatLanded that names no beat of the persona, itself or a later beat is a problem', () => {
+  assert.match(arcWith([split, { ...picking, unlock: [{ kind: 'beatLanded', beat: 'ghost' }] }]), /persona "boss-a".*beat "picking-apart".*"ghost".*\(beatOfPersona\)/);
+  assert.match(arcWith([split, { ...picking, unlock: [{ kind: 'beatLanded', beat: 'picking-apart' }] }]), /persona "boss-a".*beat "picking-apart".*\(earlierBeat\)/);
+  assert.match(arcWith([{ ...split, unlock: [{ kind: 'beatLanded', beat: 'picking-apart' }] }, picking]), /persona "boss-a".*beat "split".*"picking-apart".*\(earlierBeat\)/);
+});
+
+test('a bundle template part whose kind is not in the catalog is a problem', () => {
+  const bundle = { ...split.bundle, parts: [{ ...split.bundle.parts[0], kind: 'burnBoard' }, split.bundle.parts[1]] };
+  assert.match(arcWith([{ ...split, bundle }]), /persona "boss-a".*beat "split".*part "minus".*"burnBoard".*\(oneOf\(renameBoard, .*createBoard.*\)\)/);
+});
+
+test('a role used and never made is a problem: in its bundle, or from another beat', () => {
+  const lost = { ...split, bundle: { ...split.bundle, parts: [{ ...split.bundle.parts[0], params: { ...split.bundle.parts[0].params, board: { role: 'nowhere' } } }, split.bundle.parts[1]] } };
+  assert.match(arcWith([lost]), /persona "boss-a".*beat "split".*part "minus".*role "nowhere".*\(roleMade\)/);
+  // A part names the parts before it only: the role is made by a later part.
+  const later = { ...split, bundle: { ...split.bundle, parts: [{ role: 'a', kind: 'mergeBoard', params: { board: { role: 'b' }, into: { role: 'b' } } }, { role: 'b', kind: 'createBoard', params: {} }] } };
+  assert.match(arcWith([later]), /persona "boss-a".*beat "split".*part "a".*role "b".*\(roleMade\)/);
+  // {role, beat}: the beat must be an earlier one of the persona's with a bundle that has the role.
+  const wrongRole = { ...everything, bundle: { ...everything.bundle, parts: [{ role: 'final', kind: 'mergeBoard', params: { board: { role: 'fangames', beat: 'split' }, into: { role: 'void', beat: 'split' } } }] } };
+  assert.match(arcWith([split, picking, wrongRole]), /persona "boss-a".*beat "everything".*role "void".*beat "split".*\(roleMade\)/);
+  assert.match(arcWith([split, { ...picking, unlock: [{ kind: 'boardActivity', board: { role: 'fangames', beat: 'picking-apart' }, days: 7, above: 1 }] }]), /persona "boss-a".*beat "picking-apart".*role "fangames".*beat "picking-apart".*\(roleMade\)/);
+  assert.match(arcOf({ miniArcs: [{ ...lap, unlock: [{ kind: 'boardActivity', board: { role: 'fangames', beat: 'ghost' }, days: 7, above: 1 }] }] }), /persona "boss-a".*beat "victory-lap".*beat "ghost".*\(beatOfPersona\)/);
+});
+
+test('a role made twice in one bundle is a problem', () => {
+  const twice = { ...split, bundle: { ...split.bundle, parts: [split.bundle.parts[0], { ...split.bundle.parts[1], role: 'minus' }] } };
+  assert.match(arcWith([twice]), /persona "boss-a".*beat "split".*role "minus" is used twice.*\(isUnique\)/);
+});
+
+test('a slot that is also a fixed param is a problem', () => {
+  const both = { ...split, bundle: { ...split.bundle, parts: [split.bundle.parts[0], { ...split.bundle.parts[1], params: { name: 'Fixed' } }] } };
+  assert.match(arcWith([both]), /persona "boss-a".*beat "split".*part "fangames".*slot "name".*\(notFixed\)/);
+});
+
+test('holdsBack naming an unknown kind or an unknown beat is a problem', () => {
+  assert.match(arcOf({ holdsBack: [{ kind: 'burnBoard', until: 'split' }] }), /persona "boss-a".*holdsBack.*"burnBoard".*\(oneOf\(renameBoard, .*createBoard.*\)\)/);
+  assert.match(arcOf({ holdsBack: [{ kind: 'createBoard', until: 'ghost' }] }), /persona "boss-a".*holdsBack.*"createBoard".*"ghost".*\(beatOfPersona\)/);
+  assert.match(arcOf({ holdsBack: [{ kind: 'createBoard', until: 'split' }, { kind: 'createBoard', until: 'picking-apart' }] }), /persona "boss-a".*holdsBack.*"createBoard".*twice.*\(isUnique\)/);
+});
+
+test('a due point on a mini-arc is a problem, and so is repeatable on an arc beat', () => {
+  assert.match(arcOf({ miniArcs: [{ ...lap, due: { daysBeforeEnd: 2 } }] }), /persona "boss-a".*beat "victory-lap".*mini-arc.*due.*\(noDueOnMiniArc\)/);
+  assert.match(arcWith([{ ...split, repeatable: true }]), /persona "boss-a".*beat "split".*repeatable.*\(miniArcOnly\)/);
+  assert.deepEqual(instanceProblems(withBoss({ ...arcFields, miniArcs: [{ ...lap, repeatable: true }] } as Partial<Persona>)), []);
+});
+
+test('a due point is held to its shape', () => {
+  assert.match(arcWith([{ ...split, due: {} }]), /persona "boss-a".*beat "split".*due.*\(atLeastOneOf\(phase, daysIntoPhase, daysBeforeEnd\)\)/);
+  assert.match(arcWith([{ ...split, due: { daysIntoPhase: 3 } }]), /persona "boss-a".*beat "split".*due.*\(requires\(phase\)\)/);
+});
+
+test('an authored bundle over bundleAuthoredMostParts is a problem, and a persona has a bounded number of beats', () => {
+  const part = (i: number) => ({ role: `p${i}`, kind: 'createBoard', params: {} });
+  const nine = { ...split, bundle: { name: 'Nine', parts: Array.from({ length: 9 }, (_, i) => part(i)) } };
+  assert.match(arcWith([nine]), /persona "boss-a".*beat "split".*9 parts.*\(atMost\(8\)\)/);
+  const eight = { ...split, bundle: { name: 'Eight', parts: Array.from({ length: 8 }, (_, i) => part(i)) } };
+  assert.deepEqual(instanceProblems(withBoss({ ...arcFields, arc: [eight], miniArcs: [], holdsBack: [] } as Partial<Persona>)), []);
+  const many = Array.from({ length: 25 }, (_, i) => ({ ...picking, key: `b${i}`, unlock: [{ kind: 'phase', phase: 'reign' }] }));
+  assert.match(arcWith(many, { miniArcs: [], holdsBack: [] }), /persona "boss-a".*25 beats.*\(atMost\(24\)\)/);
+});
+
+// Cosmetics: gear, trophies and Random Events (docs/plans/2026-11-04-cosmetics-plan.md, Task 1).
+const cosmeticsSettings = (events: Partial<Settings['cosmetics']['events']>): Settings => ({ ...settings, cosmetics: { ...settings.cosmetics, events: { ...settings.cosmetics.events, ...events } } });
+const trophied = (over: Partial<Instance['trophies']>): Instance => ({ ...good, trophies: { ...good.trophies, ...over } });
+
+test('an instance with gear, trophies and event lines that agree has no problems', () => {
+  assert.deepEqual(instanceProblems(good), []);
+});
+
+test('a gear key is used once, a trophy key is used once, and no gear is named as a card is', () => {
+  const cap = good.gear[0]!;
+  assert.match(said({ ...good, gear: [...good.gear, cap] }), /gear key "cap" is used twice/);
+  assert.match(said(trophied({ kinds: [...good.trophies.kinds, { key: 'pet', name: 'Pet again' }] })), /trophy key "pet" is used twice/);
+  assert.match(said({ ...good, gear: [...good.gear, { key: 'a', name: 'A', line: 'x', rarity: 'common' }] }), /gear key "a" is also a card's key/);
+});
+
+test('a trophy kind is held to what the database holds: a key of lower-case words that never begins "made-", a name of 1 to 60 characters, words of at most 200 (0206)', () => {
+  const kinds = (k: Partial<Instance['trophies']['kinds'][number]> & { key: string }) => trophied({ kinds: [...good.trophies.kinds, { name: 'Ok', ...k }] });
+  assert.match(said(kinds({ key: 'made-1' })), /trophy key "made-1" begins "made-", which is the admin page's/);
+  assert.match(said(kinds({ key: 'Bad Key' })), /trophy key "Bad Key" is not lower-case words/);
+  assert.match(said(kinds({ key: 'long', name: 'x'.repeat(61) })), /trophy "long" has a name of 61 characters; a name is 1 to 60/);
+  assert.match(said(kinds({ key: 'wordy', line: 'x'.repeat(201) })), /trophy "wordy" has words of 201 characters; at most 200/);
+  assert.deepEqual(instanceProblems(kinds({ key: 'fine-one', line: 'x'.repeat(200) })), []);
+});
+
+test('the season places, the Boss\'s list and the demand name kinds the catalog has', () => {
+  assert.match(said(trophied({ seasonPlaces: ['first', 'ghost', 'third'] })), /season place 2 names the trophy "ghost", and the instance has no such kind/);
+  assert.match(said(trophied({ boss: ['pet', 'ghost'] })), /the Boss's trophies name "ghost", and the instance has no such kind/);
+  assert.match(said(trophied({ demandMet: 'ghost' })), /the trophy for a met demand names "ghost", and the instance has no such kind/);
+});
+
+test('the demand\'s trophy and the season places are never belts', () => {
+  assert.match(said(trophied({ demandMet: 'belt' })), /the trophy for a met demand is the belt "belt"/);
+  assert.match(said(trophied({ seasonPlaces: ['first', 'belt', 'third'] })), /season place 2 is the belt "belt"/);
+});
+
+test('an event outcome has a line, and a gear or card line says {item}', () => {
+  const lines = good.events.lines;
+  for (const outcome of ['line', 'gear', 'card'] as const) {
+    const without = lines.filter((l) => l.outcome !== outcome);
+    assert.match(said({ ...good, events: { lines: without } }), new RegExp(`outcome "${outcome}" has no event line`), outcome);
+  }
+  const noItem = lines.map((l) => (l.outcome === 'gear' ? { ...l, text: 'You found nothing.' } : l));
+  assert.match(said({ ...good, events: { lines: noItem } }), /event line "found" is a gear line and does not say \{item\}/);
+  const noCardItem = lines.map((l) => (l.outcome === 'card' ? { ...l, text: 'A card.' } : l));
+  assert.match(said({ ...good, events: { lines: noCardItem } }), /event line "stuck" is a card line and does not say \{item\}/);
+  assert.match(said({ ...good, events: { lines: [...lines, lines[0]!] } }), /event line key "plain" is used twice/);
+  assert.match(said({ ...good, events: { lines: lines.map((l) => (l.key === 'plain' ? { ...l, text: ' ' } : l)) } }), /event line "plain" has no text/);
+});
+
+test('the event odds are never a promise the draw cannot keep: a rarity with no item at it is a problem', () => {
+  assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: { legendary: 1 } }) }), /events\.gearRarity names legendary, and the instance has no gear of that rarity/);
+  assert.match(said({ ...good, settings: cosmeticsSettings({ cardRarity: { legendary: 1 } }) }), /events\.cardRarity names legendary, and the instance has no card of that rarity/);
+  assert.match(said({ ...good, gear: good.gear.filter((g) => g.rarity !== 'rare') }), /events\.gearRarity names rare, and the instance has no gear of that rarity/);
+  assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: {} }) }), /setting "cosmetics"/);
+});
+
+test('an event weight is a positive whole number, and only none may be 0', () => {
+  for (const w of [0, -1, 1.5, Number.NaN]) {
+    assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: { common: w } }) }), /setting "cosmetics".*weight/, `gearRarity ${w}`);
+    assert.match(said({ ...good, settings: cosmeticsSettings({ outcomes: { line: w, gear: 20, card: 10 } }) }), /setting "cosmetics".*weight/, `outcomes ${w}`);
+  }
+  assert.deepEqual(instanceProblems({ ...good, settings: cosmeticsSettings({ outcomes: { line: 70, gear: 20, card: 10, none: 0 } }) }), []);
+  assert.deepEqual(instanceProblems({ ...good, settings: cosmeticsSettings({ outcomes: { line: 70, gear: 20, card: 10, none: 5 } }) }), []);
+  assert.match(said({ ...good, settings: cosmeticsSettings({ outcomes: { line: 70, gear: 20, card: 10, none: -1 } }) }), /setting "cosmetics"/);
+});
+
+test('the cosmetics settings are held as their words say', () => {
+  const bad = (cosmetics: unknown) => settingsProblems({ ...settings, cosmetics } as unknown as Settings).join('\n');
+  const c = settings.cosmetics;
+  assert.match(settingsProblems((({ cosmetics: _g, ...rest }) => rest)(settings) as unknown as Settings).join('\n'), /setting "cosmetics" is missing/);
+  assert.match(bad(null), /cosmetics/);
+  assert.match(bad({ ...c, gear: { ...c.gear, wornMost: 0 } }), /wornMost/);
+  assert.match(bad({ ...c, gear: { ...c.gear, reach: -0.1 } }), /reach/);
+  assert.match(bad({ ...c, gear: { ...c.gear, reach: 3 } }), /reach/);
+  assert.match(bad({ ...c, trophies: { shownMost: 0 } }), /shownMost/);
+  assert.match(bad({ ...c, events: { ...c.events, windowMinutes: 0 } }), /windowMinutes/);
+  assert.match(bad({ ...c, events: { ...c.events, dayMost: 0 } }), /dayMost/);
+  assert.match(bad({ ...c, events: { ...c.events, outcomes: { line: 1, gear: 1 } } }), /outcomes/);
+  assert.match(bad({ ...c, events: { ...c.events, outcomes: { ...c.events.outcomes, extra: 1 } } }), /outcomes/);
+  assert.match(bad({ ...c, events: { ...c.events, gearRarity: { epic: 1 } } }), /gearRarity/);
+  assert.match(bad({ ...c, stray: 1 }), /stray/);
+  assert.deepEqual(settingsProblems(settings), []);
+});
+
+test('a cosmetics field that fails names that one field and what it must be, and only the object failure gives the whole shape', () => {
+  const one = (cosmetics: unknown) => settingsProblems({ ...settings, cosmetics } as unknown as Settings).join('\n');
+  const c = settings.cosmetics;
+  const wornMost = one({ ...c, gear: { ...c.gear, wornMost: 0 } });
+  assert.match(wornMost, /"gear\.wornMost" must be a whole number, at least 1/);
+  assert.doesNotMatch(wornMost, /an object giving/);
+  assert.match(one({ ...c, gear: { ...c.gear, reach: 3 } }), /"gear\.reach" must be a number from 0 to 2/);
+  assert.match(one({ ...c, trophies: { shownMost: 0 } }), /"trophies\.shownMost" must be a whole number, at least 1/);
+  assert.match(one({ ...c, events: { ...c.events, windowMinutes: 2000 } }), /"events\.windowMinutes" must be a whole number from 1 to 1440/);
+  assert.match(one({ ...c, events: { ...c.events, dayMost: 0 } }), /"events\.dayMost" must be a whole number, at least 1/);
+  assert.match(one(null), /an object giving/);
+});
+
 // A draw and a drive (docs/plans/2026-11-03-jimmy-wails-plan.md, Task 1): each refused, naming the card.
 test('a draw is a list of distinct keys, and a drive is a Cast on a post with real gifts, an overhead and a span', () => {
   const eco = { ...good, settings: { ...settings, economy: { ...settings.economy, 'g.small': 10, 'g.big': 50, 'g.over': 25 } } };
-  const withDrive = (over: Record<string, unknown>, drive: Record<string, unknown> = {}) => ({ ...eco, cards: [testCard({ ...over, drive: { lasts: { unit: 'day', count: 7 }, gifts: ['g.small', 'g.big'], overhead: 'g.over', ...drive } })] }) as unknown as Instance;
-  const withDraws = (draws: unknown) => ({ ...good, cards: [testCard({ draws })] }) as unknown as Instance;
+  const withDrive = (over: Record<string, unknown>, drive: Record<string, unknown> = {}) => ({ ...eco, cards: [testCard({ ...over, drive: { lasts: { unit: 'day', count: 7 }, gifts: ['g.small', 'g.big'], overhead: 'g.over', ...drive } }), ...packCards] }) as unknown as Instance;
+  const withDraws = (draws: unknown) => ({ ...good, cards: [testCard({ draws }), ...packCards] }) as unknown as Instance;
   const say = (i: Instance) => instanceProblems(i).join('\n');
   assert.deepEqual(instanceProblems(withDraws(['a', 'b-2'])), []);
   assert.deepEqual(instanceProblems(withDrive({})), []);
@@ -991,8 +1293,8 @@ test('a draw is a list of distinct keys, and a drive is a Cast on a post with re
   assert.match(say(withDraws(['Bad Key'])), /card "splat" draws "Bad Key"; a draw is lowercase letters, digits and hyphens, 1 to 40/);
   assert.match(say(withDraws('a')), /card "splat" draws "a"; draws is a list/);
   assert.match(say(withDraws([7])), /card "splat" draws 7; a draw is lowercase letters/);
-  assert.match(say({ ...eco, cards: [testCard({ drive: 'weekly' })] } as unknown as Instance), /card "splat" has a drive that is not an object of lasts, gifts and overhead/);
-  assert.match(say({ ...eco, cards: [testCard({ drive: null })] } as unknown as Instance), /card "splat" has a drive that is not an object/);
+  assert.match(say({ ...eco, cards: [testCard({ drive: 'weekly' }), ...packCards] } as unknown as Instance), /card "splat" has a drive that is not an object of lasts, gifts and overhead/);
+  assert.match(say({ ...eco, cards: [testCard({ drive: null }), ...packCards] } as unknown as Instance), /card "splat" has a drive that is not an object/);
   assert.match(say(withDrive({}, { gifts: ['g.small', 'g.small'] })), /card "splat" has a drive that lists gift "g\.small" twice/);
   assert.match(say({ ...withDrive({}), settings: { ...eco.settings, economy: { ...eco.settings.economy, 'g.small': 'ten' } } } as unknown as Instance), /card "splat" has a drive gift "g\.small", which is not a number the economy holds/);
   assert.match(say(withDrive({}, { gifts: [] })), /card "splat" has a drive with no gift amounts \(gifts\)/);
@@ -1018,8 +1320,8 @@ test('a draw is a list of distinct keys, and a drive is a Cast on a post with re
 
 // A card that needs a message (`needsMessage`): the refusal's words, for a card that carries a message, never a Set.
 test('needsMessage is a sentence for a cast or a use, and nothing for a set', () => {
-  const say = (over: Record<string, unknown>) => instanceProblems({ ...good, cards: [testCard(over)] } as unknown as Instance).join('\n');
-  assert.deepEqual(instanceProblems({ ...good, cards: [testCard({ needsMessage: 'say something' })] } as unknown as Instance), []);
+  const say = (over: Record<string, unknown>) => instanceProblems({ ...good, cards: [testCard(over), ...packCards] } as unknown as Instance).join('\n');
+  assert.deepEqual(instanceProblems({ ...good, cards: [testCard({ needsMessage: 'say something' }), ...packCards] } as unknown as Instance), []);
   assert.match(say({ needsMessage: '' }), /card "splat" needs a message, and its refusal is empty/);
   assert.match(say({ needsMessage: '   ' }), /card "splat" needs a message, and its refusal is empty/);
   assert.match(say({ needsMessage: true }), /card "splat" needsMessage true; it is the sentence a blank message is refused with/);

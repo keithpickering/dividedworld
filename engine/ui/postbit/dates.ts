@@ -18,7 +18,7 @@ export function shortDate(iso: string): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
-/** Whether a date is in the current year, in the reader's zone, by the clock the page reads (`nowMs`, Date.now() where the page gives none). */
-export function sameYear(d: Date, nowMs = Date.now()): boolean {
+/** Whether a date is in the current year, in the reader's zone, by the clock the page reads (`nowMs`, the backend's: `api.now()`). */
+export function sameYear(d: Date, nowMs: number): boolean {
   return d.getFullYear() === new Date(nowMs).getFullYear();
 }

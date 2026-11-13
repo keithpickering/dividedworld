@@ -359,7 +359,8 @@ begin
   -- cache's choices move a count by a handful between runs (CI read 38 and 44 at 200 and 2,000 posts). Work that grows with the
   -- thread grows tenfold between these two sizes, so the guard allows 25.
   if big > small + 25 then raise exception 'play_moment touches % buffers in a thread of 2,000 posts and % in one of 20,000; it is a few probes', small, big; end if;
-  -- A full stack reads its few more layers, a probe each, and nothing that grows: at most a stack's worth (five layers) over one layer.
+  -- A full stack reads its few more layers, two probes each (the version, and whether an admin hid it: 0340's public_payload), and nothing that grows: at most a stack's
+  -- worth (five layers) over one layer. Measured 27 more buffers before the conduct migration and 35 to 45 after it, in the same run order; 55 holds both and still fails a read that grows.
   -- An old play: 2,000 plays on its post's author began after it, each still live then and since. The read is the plays live then.
   set local session_replication_role = replica;
   with later as (
@@ -373,5 +374,5 @@ begin
   aged := pg_temp.buffers_of(format('select play_moment(%L)', one_play));
   raise notice 'play_moment touched % buffers for a play with 2,000 later plays on its author', aged;
   if aged > big + 25 then raise exception 'play_moment touches % buffers for a play and % once 2,000 plays began after it; it reads the plays live then', big, aged; end if;
-  if stacked > small + 40 then raise exception 'play_moment touches % buffers on a post with one layer and % with its stack full; it is a probe per layer', small, stacked; end if;
+  if stacked > small + 55 then raise exception 'play_moment touches % buffers on a post with one layer and % with its stack full; it is a probe per layer', small, stacked; end if;
 end $$;

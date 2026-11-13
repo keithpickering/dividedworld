@@ -14,6 +14,8 @@ const small: Digest = {
   threads: [{ thread: id(1), title: 'Who ate the pie', board: 'General', posts: 9, heat: 0.38, controversy: 0.5, length: 40 }],
   standings: [{ rank: 1, character: id(2), amount: 120 }],
   moves: [],
+  boards: [{ id: id(60), name: 'Busy Place', premise: 'Where it is loud.', posts: 12 }, { id: id(61), name: 'Empty Place', premise: '', posts: 0 }],
+  boardDays: 21,
   quotes: [{ from: id(2), to: id(3), count: 2 }],
   bossReactions: [{ act: id(9), thread: id(1), total: 5, tally: { fire: 4, skull: 1 } }],
   excerpts: [{ act: id(8), thread: id(1), character: id(3), reactions: 7, text: 'It was me all along' }],
@@ -33,10 +35,12 @@ const memory: Memory = {
 
 test('a digest renders as plain text with each section and the characters by name', () => {
   const text = renderDigest(small, memory, ['A feed item']);
-  for (const heading of ['What you remember', 'Hot threads', 'Standings', 'Moves', 'Quotes between characters', 'Reactions to your own posts', 'Top posts', 'Outside']) {
+  for (const heading of ['What you remember', 'Hot threads', 'Boards', 'Standings', 'Moves', 'Quotes between characters', 'Reactions to your own posts', 'Top posts', 'Outside']) {
     assert.ok(text.includes(`## ${heading}`), heading);
   }
   assert.ok(text.includes('"Who ate the pie" on General: 9 posts in the window (0.38 an hour), 40 in all, controversy 0.5.'));
+  assert.ok(text.includes('Busy Place (Where it is loud.): 12 posts in 21 days'));
+  assert.ok(text.includes('Empty Place: 0 posts in 21 days'), 'a board with no premise reads without parentheses');
   assert.ok(text.includes('1. Mario (she/her): 120'));
   assert.ok(text.includes('Mario (she/her) quoted Luigi (they/them) 2 times.'));
   assert.ok(text.includes('5 in all: fire 4, skull 1.'));
@@ -47,7 +51,7 @@ test('a digest renders as plain text with each section and the characters by nam
 });
 
 test('a new Boss is told it has no memory, and empty sections say so', () => {
-  const text = renderDigest({ ...small, threads: [], standings: [], quotes: [], bossReactions: [], excerpts: [] }, null, []);
+  const text = renderDigest({ ...small, threads: [], boards: [], standings: [], quotes: [], bossReactions: [], excerpts: [] }, null, []);
   assert.ok(text.includes('You are new to this board.'));
   assert.ok(text.includes('No settlement landed in the window.'));
   assert.ok(text.includes('Nothing from outside.'));
@@ -86,7 +90,7 @@ test('a move that ended met says who met it, by name, up to the ceiling, and nam
 });
 
 test('the rendered length is bounded by the ceilings, whatever the digest holds', () => {
-  const { threads: T, excerpts: E, excerptChars: C, feed: F, metBy: M } = DIGEST_MOST;
+  const { threads: T, excerpts: E, excerptChars: C, feed: F, metBy: M, boards: B } = DIGEST_MOST;
   const OVER = 3;
   const long = (n: number): string => 'x'.repeat(n);
   const names = Array.from({ length: (4 + M) * (E + OVER) }, (_, i) => ({ id: id(1000 + i), name: long(500), staff: false, pronouns: PRONOUN_PRESETS.it }));
@@ -97,6 +101,8 @@ test('the rendered length is bounded by the ceilings, whatever the digest holds'
     threads: lists(T + OVER).map((i) => ({ thread: id(i), title: long(5000), board: long(5000), posts: 99999999, heat: 99999999.99, controversy: 0.7499, length: 99999999 })),
     standings: lists(E + OVER).map((i) => ({ rank: i + 1, character: names[i]!.id, amount: 2000000000 })),
     moves: lists(E + OVER).map((i) => ({ move: long(5000), i, metBy: lists(M + OVER).map((k) => names[4 * (E + OVER) + (i * M + k) % (M * (E + OVER))]!.id) })),
+    boards: lists(B + OVER).map((i) => ({ id: id(i), name: long(5000), premise: long(5000), posts: 99999999 })),
+    boardDays: 99999999,
     quotes: lists(E + OVER).map((i) => ({ from: names[i]!.id, to: names[i + 1]!.id, count: 99999999 })),
     bossReactions: lists(E + OVER).map((i) => ({ act: id(i), thread: id(i), total: 99999999, tally: Object.fromEntries(lists(12).map((k) => [long(100) + k, 99999999])) })),
     excerpts: lists(E + OVER).map((i) => ({ act: id(i), thread: id(i), character: names[i]!.id, reactions: 99999999, text: long(5 * C) })),
@@ -108,6 +114,7 @@ test('the rendered length is bounded by the ceilings, whatever the digest holds'
   const bound =
     2000 + // headings, the window, the empty-section sentences
     T * (CLIPS.title + CLIPS.board + LINE) +
+    B * (CLIPS.board + CLIPS.premise + LINE) + // boards
     E * (CLIPS.name + LINE) + // standings
     E * (CLIPS.move + LINE + M * (CLIPS.name + 2)) + // moves, and those who met them
     E * (2 * CLIPS.name + LINE) + // quotes
@@ -121,6 +128,7 @@ test('the rendered length is bounded by the ceilings, whatever the digest holds'
     return body.split('\n').length;
   };
   assert.equal(lines('Hot threads'), T);
+  assert.equal(lines('Boards'), B);
   assert.equal(lines('Standings'), E);
   assert.equal(lines('Moves'), E);
   assert.equal(lines('Quotes between characters'), E);
@@ -129,6 +137,29 @@ test('the rendered length is bounded by the ceilings, whatever the digest holds'
   assert.equal(lines('Outside'), F);
   assert.ok(text.split('\n').every((l) => !l.includes('x'.repeat(C + 1))), 'an excerpt is clipped to the excerpt maximum');
   // Longer free text does not make it longer: the clips hold.
-  const longer = renderDigest({ ...digest, threads: digest.threads.map((t) => ({ ...t, title: long(50000) })) }, null, []);
+  const longer = renderDigest({ ...digest, threads: digest.threads.map((t) => ({ ...t, title: long(50000) })), boards: digest.boards.map((b) => ({ ...b, name: long(50000), premise: long(50000) })) }, null, []);
   assert.equal(longer.length, renderDigest(digest, null, []).length);
+});
+
+test('the board lines read name, premise, posts and days, cut to their bounds', () => {
+  const text = renderDigest({ ...small, boards: [{ id: id(70), name: '  Spaced\n out  ', premise: 'Line one.\nLine two.', posts: 1 }, { id: id(71), name: 'N'.repeat(500), premise: 'P'.repeat(500), posts: 3 }], boardDays: 7 }, null, []);
+  const body = text.split('## Boards\n')[1]!.split('\n\n')[0]!.split('\n');
+  assert.equal(body[0], 'Spaced out (Line one. Line two.): 1 post in 7 days.');
+  assert.equal(body[1], `${'N'.repeat(CLIPS.board)} (${'P'.repeat(CLIPS.premise)}): 3 posts in 7 days.`);
+  const none = renderDigest({ ...small, boards: [] }, null, []);
+  assert.ok(none.includes('## Boards\nNo board is open.'), 'an empty list says so');
+});
+
+test('the lines name no owner, class or reaction: a board line is its name, premise and count', () => {
+  const text = renderDigest(small, null, []);
+  const line = text.split('\n').find((l) => l.startsWith('Busy Place'))!;
+  assert.equal(line, 'Busy Place (Where it is loud.): 12 posts in 21 days.');
+});
+
+test('a board line with a days count that is no number never reads NaN', () => {
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, undefined as unknown as number, '21' as unknown as number]) {
+    const text = renderDigest({ ...small, boardDays: bad }, null, []);
+    assert.ok(!text.includes('NaN') && !text.includes('Infinity') && !text.includes('undefined'), String(bad));
+    assert.ok(text.includes('Busy Place (Where it is loud.): 12 posts.'), `without days: ${String(bad)}`);
+  }
 });

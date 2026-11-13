@@ -113,7 +113,7 @@ test('two checked crops are stored under random names and written as the charact
   const out = await runAvatar(w.dbs, w.storage, request(), w.name);
   assert.deepEqual(out, { status: 200, body: { character } });
   assert.deepEqual([...w.stored.keys()], ['k1.webp', 'k2.webp']);
-  assert.ok(w.calls.includes(`service:set_avatar:${JSON.stringify({ who: me, through: character, square: 'k1.webp', portrait: 'k2.webp', square_frame: frames.square, portrait_frame: frames.portrait })}`), w.calls.join('\n'));
+  assert.ok(w.calls.includes(`service:set_avatar:${JSON.stringify({ who: me, through: character, square: 'k1.webp', portrait: 'k2.webp', square_frame: frames.square, portrait_frame: frames.portrait, portrait_tallness: 2 })}`), w.calls.join('\n'));
   assert.deepEqual(w.removed, ['old-sq.webp', 'old-pt.webp']);
   assert.deepEqual(w.order, ['whoami', 'put k1.webp', 'put k2.webp', 'set_avatar', 'remove old-sq.webp,old-pt.webp'], 'stored, then written, then the replaced removed');
 });
@@ -160,7 +160,16 @@ test('a recrop sends a new square and its frame alone: the stored portrait is ke
   const out = await runAvatar(w.dbs, w.storage, request({ portrait: null, frames: { square: frames.square, portrait: null } }), w.name);
   assert.equal(out.status, 200);
   assert.deepEqual([...w.stored.keys()], ['k1.webp']);
-  assert.ok(w.calls.some((c) => c.includes('"square":"k1.webp","portrait":null') && c.includes('"portrait_frame":null')), w.calls.join('\n'));
+  assert.ok(w.calls.some((c) => c.includes('"square":"k1.webp","portrait":null') && c.includes('"portrait_frame":null') && c.includes('"portrait_tallness":null')), w.calls.join('\n'));
+});
+
+test('a new portrait is written with how tall it is, from its own bytes; 1 and 2 are the bounds', async () => {
+  for (const [width, height, tallness] of [[256, 384, 1.5], [300, 300, 1], [256, 512, 2]] as const) {
+    const w = world({ whoami: me, set_avatar: { profile: { character }, replaced: [] } });
+    const out = await runAvatar(w.dbs, w.storage, request({ portrait: webp(width, height) }), w.name);
+    assert.equal(out.status, 200);
+    assert.ok(w.calls.some((c) => c.includes(`"portrait_tallness":${tallness}`)), w.calls.join('\n'));
+  }
 });
 
 test('each file is held to its size: a square 256 by 256; a portrait 256 to 512 wide and 1 to 2 times as tall', async () => {
@@ -224,4 +233,12 @@ test('a session the database does not take is refused at whoami(), with nothing 
     // A removal naming no file sends nothing (storage.ts), so only a put, or a removal that names one, touches the bucket.
     assert.deepEqual(w.order.filter((o) => o.startsWith('put') || (o.startsWith('remove') && o !== 'remove ')), [], `${name}: the bucket is not touched`);
   }
+});
+
+test('a barred account is answered 403 with the hint, and the files its upload stored are removed first, so no orphan is left', async () => {
+  const w = world({ whoami: me, set_avatar: new DatabaseError('set_avatar: this account is banned', '28000', 401, 'this account is banned', 'kayfabb.barred') });
+  const out = await runAvatar(w.dbs, w.storage, request(), w.name);
+  assert.deepEqual(out, { status: 403, body: { error: 'this account is banned', hint: 'kayfabb.barred' } });
+  assert.equal(w.stored.size, 0, 'the stored files are removed before the barred answer');
+  assert.ok(w.order.some((o) => o.startsWith('remove ')), 'removal ran');
 });

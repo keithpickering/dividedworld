@@ -1,0 +1,26 @@
+/* The effect */
+/* The effect's wrapper adds no box: the post's words lay out as they would without it. */
+.dw-lt {
+  display: contents;
+}
+/* A fired place: a dotted underline in its sound's flavor ink. It is a text-decoration, so no word moves; before it fires nothing marks the phrase. */
+.dw-lt-fired {
+  text-decoration: underline dotted 2px;
+  text-underline-offset: 3px;
+}
+.dw-lt-fired[data-sound='laugh'] {
+  text-decoration-color: var(--kb-pepperoni);
+}
+.dw-lt-fired[data-sound='cheer'] {
+  text-decoration-color: var(--kb-sweet);
+}
+.dw-lt-fired[data-sound='boo'] {
+  text-decoration-color: var(--kb-salty);
+}
+.dw-lt-fired[role='button'] {
+  cursor: pointer;
+}
+.dw-lt-fired:focus-visible {
+  outline: 2px solid var(--kb-focus);
+  outline-offset: 1px;
+}

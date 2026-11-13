@@ -21,6 +21,8 @@
     "instances/*/ui/**/*.tsx",
     "instances/*/cards/**/*.tsx",
     "instances/*/cards/**/paint.ts",
+    "instances/*/cards/**/spray.ts",
+    "instances/*/cards/**/build*.ts",
     "instances/*/cards/**/lines.ts",
     "instances/*/cards/**/drop.ts",
     "instances/*/cards/autocorrect/residue.ts",

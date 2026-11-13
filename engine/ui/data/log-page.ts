@@ -16,8 +16,8 @@
  * came back short has nothing older, and limits nothing.
  *
  * So a page holds whole settlements: a settlement whose lines ran past a full read is left for the
- * next page, whole. A settlement has at most a line per character and reason (the ledger's unique
- * index, 0034), a few dozen for a player, far under `LOG_ROWS`.
+ * next page, whole. A settlement has at most a line per character, reason and card (the ledger's unique
+ * index, 0034, and 0150), a few dozen for a player, far under `LOG_ROWS`.
  *
  * A source that does hold `LOG_ROWS` rows at one instant would cut the page exactly where it was read from
  * and hand back the same cursor, and Show older lines would read that page forever (#89 F4). Of the two
@@ -25,12 +25,13 @@
  * and moves the cursor to the microsecond before it (`readLogPage`); it does not fail, since a failure
  * would leave the older lines out of reach, a dead end of its own. Weighed at a busy instance: the views
  * are the caller's own, so the second read holds one player's rows at one instant. A settlement writes
- * at most a line per character and reason (with 6 characters and a class's handful of reasons, some 30)
+ * at most a line per character, reason and card (with 6 characters and a class's handful of reasons, some 30)
  * and one wallet event; an action writes a row or two. So it is tens of rows, read only on a page that
  * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
-import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, WalletEvent, WrittenOnMine } from './api.ts';
+import { lineKey } from '../../rules/settle.ts';
+import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogCosmetic, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, SurfaceLogRow, WalletEvent, WrittenOnMine } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -48,11 +49,12 @@ export interface LedgerRow {
   readonly params?: Readonly<Record<string, number | string>>;
 }
 
-/** A share as `my_ledger_shares` reads it, named by its line's settlement, character and reason. */
+/** A share as `my_ledger_shares` reads it, named by its line's settlement, character, reason and card (null where the entry names none). */
 export interface ShareRow extends LogShare {
   readonly settlement: number;
   readonly character: string;
   readonly reason: string;
+  readonly card: string | null;
 }
 
 /** What one page's reads returned, each source newest first and at most `limit` rows; the shares whole for the settlements read. */
@@ -64,6 +66,9 @@ export interface LogRead {
   readonly packs: readonly PackEvent[];
   readonly playsOnMine: readonly PlayOnMine[];
   readonly writes: readonly WrittenOnMine[];
+  /** The draws of the caller's characters and the washes that cut them (`my_draws`), and the draws and washes on their own posts' surfaces (`my_walls_drawn_on`); a backend or an older payload that has none leaves them out. */
+  readonly draws?: readonly SurfaceLogRow[];
+  readonly wallsDrawn?: readonly SurfaceLogRow[];
   readonly saves: readonly EffectSaved[];
   readonly setEnds: readonly FaceDownEnd[];
   readonly caught: readonly CaughtPlay[];
@@ -75,6 +80,7 @@ export interface LogRead {
   readonly groupMoves: readonly LogGroupMove[];
   readonly reports: readonly LogReport[];
   readonly appeals: readonly LogAppeal[];
+  readonly cosmetics: readonly LogCosmetic[];
 }
 
 /**
@@ -97,6 +103,8 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.packs, () => read.packs[read.packs.length - 1]!.at),
     ...reached(read.playsOnMine, () => read.playsOnMine[read.playsOnMine.length - 1]!.at),
     ...reached(read.writes, () => read.writes[read.writes.length - 1]!.at),
+    ...reached(read.draws ?? [], () => read.draws![read.draws!.length - 1]!.at),
+    ...reached(read.wallsDrawn ?? [], () => read.wallsDrawn![read.wallsDrawn!.length - 1]!.at),
     ...reached(read.saves, () => read.saves[read.saves.length - 1]!.savedAt),
     ...reached(read.setEnds, () => read.setEnds[read.setEnds.length - 1]!.endedAt),
     ...reached(read.caught, () => read.caught[read.caught.length - 1]!.at),
@@ -107,6 +115,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.groupMoves, () => read.groupMoves[read.groupMoves.length - 1]!.at),
     ...reached(read.reports, () => read.reports[read.reports.length - 1]!.at),
     ...reached(read.appeals, () => read.appeals[read.appeals.length - 1]!.at),
+    ...reached(read.cosmetics, () => read.cosmetics[read.cosmetics.length - 1]!.at),
   ];
   /* The newest of the times a full source reached, as that source wrote it, so the next read starts exactly there. */
   const after = edges.length === 0 ? null : edges.reduce((a, b) => (micros(b) > micros(a) ? b : a));
@@ -118,20 +127,22 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     if (!keep(row.endsAt)) continue;
     const s = settlements.get(row.settlement) ?? { row, lines: new Map<string, LogShare[]>(), order: [] };
     settlements.set(row.settlement, s);
-    s.lines.set(`${row.character}\u0000${row.reason}`, []);
+    s.lines.set(lineKey(row.character, row.reason, row.params?.card), []);
     s.order.push(row);
   }
   for (const share of read.shares) {
-    const line = settlements.get(share.settlement)?.lines.get(`${share.character}\u0000${share.reason}`);
+    const line = settlements.get(share.settlement)?.lines.get(lineKey(share.character, share.reason, share.card));
     line?.push({ act: share.act, quadrant: share.quadrant, amount: share.amount });
   }
   const byShare = (a: LogShare, b: LogShare) => Math.abs(b.amount) - Math.abs(a.amount) || (a.act < b.act ? -1 : a.act > b.act ? 1 : 0) || String(a.quadrant).localeCompare(String(b.quadrant));
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const cardOf = (l: LedgerRow) => (typeof l.params?.card === 'string' ? l.params.card : '');
   const out: LogSettlement[] = [...settlements.values()]
     .sort((a, b) => micros(b.row.endsAt) - micros(a.row.endsAt))
     .map(({ row, lines, order }) => ({
       id: row.settlement, startsAt: row.startsAt, endsAt: row.endsAt, sharesKept: row.sharesKept,
-      /* By character, then reason, as the adapter's read orders them, so both backends hand the screens one order. */
-      lines: [...order].sort((a, b) => (a.character < b.character ? -1 : a.character > b.character ? 1 : a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0)).map((l): LogLine => ({ character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}), shares: [...lines.get(`${l.character}\u0000${l.reason}`)!].sort(byShare) })),
+      /* By character, then reason, then card (none first): ordered here, whatever order the read handed its rows in, so both backends hand the screens one order. */
+      lines: [...order].sort((a, b) => cmp(a.character, b.character) || cmp(a.reason, b.reason) || cmp(cardOf(a), cardOf(b))).map((l): LogLine => ({ character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}), shares: [...lines.get(lineKey(l.character, l.reason, l.params?.card))!].sort(byShare) })),
     }));
   return {
     settlements: out,
@@ -140,6 +151,8 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     packs: read.packs.filter((e) => keep(e.at)),
     playsOnMine: read.playsOnMine.filter((e) => keep(e.at)),
     writes: read.writes.filter((e) => keep(e.at)),
+    ...(read.draws === undefined ? {} : { draws: read.draws.filter((e) => keep(e.at)) }),
+    ...(read.wallsDrawn === undefined ? {} : { wallsDrawn: read.wallsDrawn.filter((e) => keep(e.at)) }),
     saves: read.saves.filter((e) => keep(e.savedAt)),
     setEnds: read.setEnds.filter((e) => keep(e.endedAt)),
     caught: read.caught.filter((e) => keep(e.at)),
@@ -150,6 +163,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     groupMoves: read.groupMoves.filter((e) => keep(e.at)),
     reports: read.reports.filter((e) => keep(e.at)),
     appeals: read.appeals.filter((e) => keep(e.at)),
+    cosmetics: read.cosmetics.filter((e) => keep(e.at)),
     before: after,
   };
 }

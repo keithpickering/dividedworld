@@ -6,7 +6,7 @@ import type { ThreadSummary } from '../data/api.ts';
 import { buildWorld, holdReads, renderIn, renderInWorld } from '../test-world.tsx';
 import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { useLocation } from '../router.tsx';
-import { BoardScreen } from './Board.tsx';
+import { BoardScreen, ClosedBoard } from './Board.tsx';
 import { Frame } from '../frame/Frame.tsx';
 import { seedMoves } from './move-world.ts';
 import { testInstance } from '../test-world.tsx';
@@ -781,7 +781,7 @@ describe('pinned threads and the banner', () => {
     await screen.findByRole('link', { name: 'Thread 002' });
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
-    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Rumble, /u })[0]!);
+    await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: /^Rumble, /u })[0]!);
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
     await user.click(await within(banner).findByRole('button', { name: 'Play Rumble on General' }));
     const dialog = await screen.findByRole('dialog', { name: /Rumble/u });
@@ -824,5 +824,134 @@ describe('pinned threads and the banner', () => {
     await open();
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
     expect(await within(banner).findByRole('button', { name: /^Rumble, 1 play\b.*Opens the cards on this board\./u })).toBeInTheDocument();
+  });
+});
+
+describe('a thread that moved away leaves a stub, and a closed board says where its threads went', () => {
+  test('a stub row reads "Moved: <title>", links to the thread, and says the board it is on now; it sits below the board\'s own threads', async () => {
+    const { seeded } = renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f, { threads: 2 }); f.seed.moveThread(w.ids[0]!, 'off-topic', { at: f.clock.now() - 2 * DAY }); return w; },
+    });
+    const stub = await screen.findByRole('link', { name: 'Moved: Thread 001' });
+    expect(stub).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1`);
+    const row = stub.closest('tr')!;
+    expect(within(row).getByRole('link', { name: 'Off Topic' })).toHaveAttribute('href', '/b/off-topic');
+    expect(row).toHaveTextContent('now on Off Topic');
+    const own = rowOf('Thread 002');
+    expect(own.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    /* The board it is on lists it as its own thread, with no stub. */
+    expect(screen.queryByRole('link', { name: 'Thread 001' })).toBeNull();
+  });
+
+  test('a board with no move away draws no stub, and a stub row is no thread row: it has no reading folder or counts', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(screen.queryByText(/^Moved:/u)).toBeNull();
+  });
+
+  test('a board that only has a stub is not "No threads here yet": the stub is the page', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f, { threads: 1 }); f.seed.moveThread(w.ids[0]!, 'off-topic', { at: f.clock.now() - DAY }); return w; },
+    });
+    await screen.findByRole('link', { name: 'Moved: Thread 001' });
+  });
+
+  test('a merged board shows one plain line, linked, and no New Thread control and no list', async () => {
+    renderInWorld(<LoadedBoard slug="off-topic" />, {
+      seed: (f) => { const w = world(f, { threads: 1 }); f.seed.closeBoard('off-topic', { mergedInto: 'general' }); return w; },
+    });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Off Topic' })).toBeInTheDocument();
+    const line = await screen.findByText(/^This board was merged into /u);
+    expect(line).toHaveTextContent('This board was merged into General.');
+    expect(within(line).getByRole('link', { name: 'General' })).toHaveAttribute('href', '/b/general');
+    expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByText('No threads here yet.')).toBeNull();
+  });
+
+  test('a closed board that was not merged says where its threads are', async () => {
+    renderInWorld(<LoadedBoard slug="off-topic" />, {
+      seed: (f) => { const w = world(f, { threads: 1 }); f.seed.closeBoard('off-topic', { fallback: 'general' }); return w; },
+    });
+    const line = await screen.findByText(/^This board was closed\./u);
+    expect(line).toHaveTextContent('This board was closed. Its threads are in General.');
+    expect(within(line).getByRole('link', { name: 'General' })).toHaveAttribute('href', '/b/general');
+    expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();
+  });
+
+  test('the index lists no closed board, and starting a thread on one is refused in words that name where its threads went', async () => {
+    const { fake, seeded } = renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f); f.seed.closeBoard('off-topic', { mergedInto: 'general' }); return w; },
+    });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect((await fake.boards()).map((b) => b.slug)).not.toContain('off-topic');
+    const refused = await fake.startThread('off-topic', seeded.mine!, 'Late', 'Hello.');
+    expect(refused.ok).toBe(false);
+    expect(JSON.stringify(refused)).toMatch(/merged into General/u);
+  });
+
+  test('a board merged into one that was merged again names both: where it was merged, and the first open board its threads are in', async () => {
+    renderInWorld(<LoadedBoard slug="off-topic" />, {
+      seed: (f) => { const w = world(f, { threads: 1 }); f.seed.board('third', 'Third'); f.seed.closeBoard('off-topic', { mergedInto: 'third' }); f.seed.closeBoard('third', { mergedInto: 'general' }); return w; },
+    });
+    const line = await screen.findByText(/^This board was merged into /u);
+    expect(line).toHaveTextContent('This board was merged into Third. That board was closed too; its threads are in General.');
+    expect(within(line).getByRole('link', { name: 'Third' })).toHaveAttribute('href', '/b/third');
+    expect(within(line).getByRole('link', { name: 'General' })).toHaveAttribute('href', '/b/general');
+  });
+
+  test('a closed board with no board to name says where to look, linked to the index, in plain words', async () => {
+    const fake = buildWorld();
+    const board = { id: 'b1', slug: 'gone', name: 'Gone', description: '', isSystem: false, moveAct: null };
+    const { container } = renderIn(fake, <ClosedBoard board={board} closed={{ mergedInto: null, fallback: null, goesTo: null }} />);
+    expect(container).toHaveTextContent('This board was closed. Its threads were moved to other boards; look for them on the index.');
+    expect(within(container).getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
+  });
+
+  test('a stub is on the first page of a busy board, below its twenty threads, and not on the second', async () => {
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f, { threads: 26 }); f.seed.moveThread(w.ids[0]!, 'off-topic', { at: f.clock.now() - DAY }); return w; },
+    });
+    await screen.findByRole('link', { name: 'Moved: Thread 001' });
+    expect((await fake.boardPage('general', 1, []))!.stubs).toHaveLength(1);
+    expect((await fake.boardPage('general', 1, []))!.threads).toHaveLength(20);
+    expect((await fake.boardPage('general', 2, []))!.stubs).toHaveLength(0);
+  });
+});
+
+describe('a thread row\'s units and lines (list-rows plan, Task 1)', () => {
+  test('a unit is singular at one: "1 reply", "1 view", "4 replies"', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 2 });
+    replies(fake, w.ids[0]!, w.spritey, 1);
+    replies(fake, w.ids[1]!, w.spritey, 4);
+    fake.seed.views(w.ids[0]!, 1);
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const one = rowOf('Thread 001');
+    expect(one.querySelector('.kb-thread-replies')!.textContent).toBe('1 reply');
+    expect(one.querySelector('.kb-thread-views')!.textContent).toMatch(/1 view$/u);
+    expect(rowOf('Thread 002').querySelector('.kb-thread-replies')!.textContent).toBe('4 replies');
+  });
+
+  test('a spun row\'s "spun from" starts at the arrow, a sibling after the title\'s link', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 1 });
+    const origin = fake.seed.post(w.ids[0]!, w.spritey, 'a line to spin from', { at: T0 + 2 * DAY });
+    expect((await fake.spin(origin, w.mine!, 'Spun thread', 'x')).ok).toBe(true);
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Spun thread' });
+    const row = rowOf('Spun thread');
+    const spun = row.querySelector('.kb-thread-spun') as HTMLElement;
+    expect(spun.textContent!.startsWith('↳')).toBe(true);
+    const title = row.querySelector('.kb-thread-title') as HTMLElement;
+    expect(spun.parentElement).toBe(title.parentElement);
+    expect(title.compareDocumentPosition(spun) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('the last cell starts at "last: ", with no leading separator', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(rowOf('Thread 001').querySelector('.kb-thread-last')!.textContent!.startsWith('last: ')).toBe(true);
   });
 });

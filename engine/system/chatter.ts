@@ -39,6 +39,11 @@ export interface OfferedCard {
   readonly play: 'cast' | 'set';
   /** What the persona is told about the card's options and the shape of them (`CardRules.staffOptions`); the engine reads neither. */
   readonly options?: { readonly prompt: string; readonly schema: Record<string, unknown> };
+  /**
+   * For a surface card (`CardRules.surface`): the open walls of this card on the thread the persona reads, at most three, which it may draw on instead of playing the card
+   * anew (`card.wall` names one by its play). `about` is a few plain words for the persona to tell them apart; the engine reads neither beyond the play.
+   */
+  readonly walls?: readonly { readonly play: string; readonly about: string }[];
 }
 
 /** Where each play lands: a Cast on the post being replied to, a Set on the persona's own new post. */
@@ -52,6 +57,8 @@ export interface ChatterAnswer {
     readonly on: 'reply' | 'own';
     /** The chosen card's own options as the persona gave them, unchecked: the card's validator is the Edge Function's to apply. */
     readonly config?: Record<string, unknown>;
+    /** A wall it chose to draw on (the play of one of the card's offered walls): its options are then the draw's, and no card is played. */
+    readonly wall?: string;
   };
   readonly note?: string;
 }
@@ -73,7 +80,7 @@ export const CHATTER_RULE: Rule = {
     title: { type: 'string', optional: true },
     card: {
       type: 'object', optional: true,
-      fields: { key: { type: 'string' }, on: { type: 'string' }, config: { type: 'any', optional: true } },
+      fields: { key: { type: 'string' }, on: { type: 'string' }, config: { type: 'any', optional: true }, wall: { type: 'any', optional: true } },
     },
     note: { type: 'string', optional: true },
   },
@@ -89,11 +96,13 @@ export function chatterSchema(c: { readonly askedTitle: boolean; readonly offere
   }
   if (c.offered.length > 0) {
     const withOptions = c.offered.filter((o) => o.options);
+    const walls = [...new Set(c.offered.flatMap((o) => (o.walls ?? []).map((w) => w.play)))];
     properties['card'] = {
       type: 'object',
       properties: {
         key: { type: 'string', enum: c.offered.map((o) => o.key) },
         on: { type: 'string', enum: ['reply', 'own'] },
+        ...(walls.length ? { wall: { type: 'string', enum: walls } } : {}),
         // One optional property per card that has options, named by its key: no anyOf, so any provider's structured output holds it.
         ...(withOptions.length ? {
           config: {
@@ -200,6 +209,13 @@ export function repairChatter(raw: unknown, f: RepairFacts): RepairedChatter {
       else if (LANDS[offered.play] !== on) trim('card.on', offered.play === 'cast' ? 'castOnReply' : 'setOnOwn', 1, 0);
       else {
         card = { key, on };
+        // A wall to draw on: one of this card's offered walls, else dropped with the card standing (the pick is a draw on a wall that is not there, which nothing could write).
+        const wall = (c as Record<string, unknown>)['wall'];
+        let walled: string | undefined;
+        if (wall !== undefined && wall !== null) {
+          if (typeof wall === 'string' && (offered.walls ?? []).some((w) => w.play === wall)) walled = wall;
+          else trim('card.wall', 'offered', 1, 0);
+        }
         // The options: only the chosen card's are kept, as the answer's config; every other card's are dropped, each named.
         const given = (c as Record<string, unknown>)['config'];
         if (given !== undefined && given !== null) {
@@ -215,6 +231,7 @@ export function repairChatter(raw: unknown, f: RepairFacts): RepairedChatter {
             }
           }
         }
+        if (walled !== undefined) card = { ...card, wall: walled };
       }
     }
   }
@@ -323,6 +340,7 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
       ...i.offeredCards.flatMap((c) => [
         `- ${c.key}: ${c.name}. ${c.play === 'cast' ? 'Cast on the post you reply to (card.on is "reply")' : 'Set face down on your own post (card.on is "own")'}.`,
         ...(c.options ? [`  Its options go in card.config.${c.key}. ${c.options.prompt}`] : []),
+        ...(c.walls?.length ? [`  Instead of playing it anew, you may draw on a wall already on this thread by naming it in card.wall, with the options in card.config.${c.key} as above. The walls: ${c.walls.map((w) => `${w.play} (${oneLine(w.about)})`).join('; ')}.`] : []),
       ]),
     ].join('\n')
     : 'No card is on offer today; do not answer with one.';

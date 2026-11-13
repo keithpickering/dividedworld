@@ -17,6 +17,7 @@ const NOW = '2026-11-02T10:00:00Z';
 function backend(options: { unread?: () => number; updates?: readonly Update[]; rows?: () => readonly Alert[]; moved?: (id: string) => { count: number; at: string } | null; toasts?: Preferences['toasts'] } = {}) {
   const heard: { account: AccountListener | null; reach: ReachListener | null; accountOff: number; reachOff: number } = { account: null, reach: null, accountOff: 0, reachOff: 0 };
   const api = {
+    now: () => Date.now(),
     alertsUnread: vi.fn(async () => options.unread?.() ?? 0),
     subscribeAccount: vi.fn((l: AccountListener) => { heard.account = l; return () => { heard.accountOff += 1; }; }),
     subscribeReach: vi.fn((l: ReachListener) => { heard.reach = l; return () => { heard.reachOff += 1; }; }),
@@ -65,8 +66,8 @@ beforeEach(() => { window.history.replaceState(null, '', '/'); reduceMotion(true
 afterEach(() => { vi.useRealTimers(); document.documentElement.removeAttribute('data-kb-motion'); });
 
 describe('which kinds toast', () => {
-  test('the design\'s defaults: quotes, cards on yours, traps, rulings, settlements and updates on; followed threads, hints and season news off', () => {
-    expect(Object.entries(TOAST_DEFAULTS).filter(([, on]) => on).map(([k]) => k).sort()).toEqual(['cardEnded', 'cardOnYours', 'framed', 'quote', 'ruling', 'settlement', 'trapSprang', 'trapStruck', 'update']);
+  test('the design\'s defaults: quotes, cards on yours, traps, rulings, settlements, trophies, lost belts and updates on; followed threads, hints and season news off', () => {
+    expect(Object.entries(TOAST_DEFAULTS).filter(([, on]) => on).map(([k]) => k).sort()).toEqual(['beltBack', 'beltLost', 'cardEnded', 'cardOnYours', 'framed', 'quote', 'ruling', 'settlement', 'trapSprang', 'trapStruck', 'trophy', 'update']);
     expect(toastsOn(null, 'quote')).toBe(true);
     expect(toastsOn(null, 'framed')).toBe(true);
     expect(toastsOn(null, 'seasonNews')).toBe(false);

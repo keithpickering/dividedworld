@@ -27,6 +27,7 @@ import { instance } from '../instances/divided-world/index.ts';
 import { instanceUi } from '../instances/divided-world/ui/index.ts';
 import { fallbackSettings } from '../web/src/data/settings.ts';
 import { assertMoment, createBoardsFake, seedBoards } from '../web/src/data/fixtures/boards.ts';
+import { onPageClock } from '../web/src/data/fixtures/page-clock.ts';
 
 /* The instance's glass, as the app puts it on the page. */
 applyGlass(document.documentElement, instanceUi.glass, 'standard');
@@ -43,12 +44,12 @@ const withWorld: Decorator = (Story, context) => {
     if (moment !== undefined) {
       const named = assertMoment(moment);
       const fake = createBoardsFake(named);
-      return { api: fake, path: seedBoards(fake, named) };
+      return { api: onPageClock(fake), path: seedBoards(fake, named) };
     }
     if (!world && !path) return null;
     const fake = createFake({ instance, settings: fallbackSettings });
     world?.(fake, instance);
-    return { api: fake, path };
+    return { api: onPageClock(fake), path };
   }, [world, path, moment]);
   if (!made) return <Story />;
   const { api } = made;
@@ -75,6 +76,7 @@ const preview: Preview = {
      */
     viewport: {
       options: {
+        glassMain1440: { name: 'Main board, 1440 × 900', styles: { width: '1440px', height: '900px' }, type: 'desktop' },
         glassPhone390: { name: 'Phone board, 390 × 844', styles: { width: '390px', height: '844px' }, type: 'mobile' },
         boardAboveSwitch: { name: `Main board scaled, just above the switch, ${ABOVE} × 900`, styles: { width: `${ABOVE}px`, height: '900px' }, type: 'desktop' },
         boardBelowSwitch: { name: `Phone board, just below the switch, ${BELOW} × 900`, styles: { width: `${BELOW}px`, height: '900px' }, type: 'desktop' },

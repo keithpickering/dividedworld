@@ -5,11 +5,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { stickAround } from './stick-around.ts';
 import { STROKES, whoops } from './whoops.ts';
-import { NAMED_COLORS } from '../../../engine/bbcode/parse.ts';
+import { encodePoints } from './whoops/points.ts';
+import type { Pt } from './whoops/scrub.ts';
+import { CANS, CAPS, graffiti } from './graffiti.ts';
+import { STENCILS } from './graffiti/stencils.ts';
+import { GRID, cellsOf, count, type Cells } from '../../../engine/rules/surface.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { atOrBelow, castOnPost, giftSplit, openDrive, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { publicityTour } from './publicity-tour.ts';
+import { atOrBelow, castOnPost, giftSplit, openDrive, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
+import { CUES, PLACES, laughTrack, placesOf, type Cue } from './laugh-track.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
@@ -22,7 +28,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -107,9 +113,11 @@ test('a play is decided by the card\'s own rules: its price, whether it lands, i
   assert.match(String((decidePlay(whoops, settings, post(1200), [1, 2, 3].map((i) => ({ card: 'whoops', act: `k${i}` })), { color: 'red' }, '') as { why: string }).why), /already/);
 });
 
+const pack = (points: Pt[]) => encodePoints(points);
+
 test('Whoops! strokes wash or ink, in shares of the post body\'s box: across 0 to 1, down 0 to 1', () => {
-  const ink = { tool: 'ink', color: '#000000', width: 0.04, aspect: 3, points: [[0.1, 0.2], [0.3, 0.4]] };
-  const wash = { tool: 'wash', width: 0.3, aspect: 2.99, points: [[0.5, 0.5]] };
+  const ink = { tool: 'ink', color: '#000000', width: 0.04, aspect: 3, points: pack([[0.1, 0.2], [0.3, 0.4]]) };
+  const wash = { tool: 'wash', width: 0.3, aspect: 2.99, points: pack([[0.5, 0.5]]) };
   assert.equal(whoops.validateState!({ strokes: [ink, wash] }).ok, true);
   assert.equal(whoops.validateState!({ strokes: [] }).ok, true, 'nothing saved yet');
   assert.deepEqual(whoops.validateState!({ strokes: [wash], clean: true }), { ok: true, value: { strokes: [wash], clean: true } }, 'washed clean, said by the author\'s save');
@@ -121,19 +129,7 @@ test('Whoops! strokes wash or ink, in shares of the post body\'s box: across 0 t
     assert.equal(r.ok, false, label);
     assert.match(String(!r.ok && r.why), why, label);
   };
-  assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[1, 1]] }] }).ok, true, 'down to 1');
-  const axis = (point: number[], named: 'across' | 'down', other: 'across' | 'down', label: string) => {
-    const r = whoops.validateState!({ strokes: [{ ...ink, points: [point] }] });
-    assert.equal(r.ok, false, label);
-    const why = String(!r.ok && r.why);
-    assert.match(why, new RegExp(`a point is ${named} from`), label);
-    assert.doesNotMatch(why, new RegExp(other), `${label}: names only the axis that failed`);
-  };
-  axis([0.5, 1.2], 'down', 'across', 'a down of 1.2');
-  axis([1.2, 0.5], 'across', 'down', 'an across of 1.2');
-  axis([1.01, 0.5], 'across', 'down', 'an across of 1.01');
-  axis([-0.01, 0.5], 'across', 'down', 'a negative across');
-  axis([0.5, -0.01], 'down', 'across', 'a negative down');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: pack([[1, 1]]) }] }).ok, true, 'down to 1');
   refused({ ...ink, aspect: undefined }, /aspect/, 'a missing aspect');
   refused({ ...ink, aspect: 0 }, /aspect/, 'an aspect of 0');
   refused({ ...ink, aspect: 5000 }, /aspect/, 'an aspect of 5000');
@@ -144,33 +140,72 @@ test('Whoops! strokes wash or ink, in shares of the post body\'s box: across 0 t
   refused({ ...ink, color: undefined }, /color/, 'ink carries a color');
   refused({ ...wash, color: 'red' }, /no color/, 'a wash carries none');
   refused({ ...ink, color: 'url(x)' }, /color/, 'not a color');
-  refused({ ...ink, points: Array(501).fill([0.5, 0.5]) }, /points/, 'too many points');
-  refused({ ...ink, points: [[0.1, Number.NaN]] }, /point/, 'a point that is not a number');
   assert.equal(whoops.validateState!({ strokes: Array(201).fill(ink) }).ok, false, 'too many strokes');
   assert.equal(whoops.validateState!({ strokes: 'all of them' }).ok, false);
 });
 
-test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writes them', () => {
-  // The true worst case: the most strokes, each with an equal share of the total points, and every key of every stroke at its longest:
-  // the longest named color, four-decimal points and width, a three-figure aspect with the most digits.
-  const longest = [...NAMED_COLORS].reduce((a, b) => (b.length > a.length ? b : a));
-  const point = [0.12345678, 0.98765432];
-  const each = STROKES.totalPoints / STROKES.most;
-  assert.ok(Number.isInteger(each) && each <= STROKES.points);
-  const strokes = Array.from({ length: STROKES.most }, () => ({ tool: 'ink', color: longest, width: 0.99994321, aspect: 0.00123456, points: Array(each).fill(point) }));
-  const saved = whoops.validateState!({ strokes, clean: false });
-  assert.equal(saved.ok, true);
-  // jsonb's text puts a space after every comma and colon.
-  const asPostgres = JSON.stringify(saved.ok && saved.value).replace(/([,:])/g, '$1 ');
-  assert.ok(Buffer.byteLength(asPostgres) <= 262_144, `${Buffer.byteLength(asPostgres)} bytes`);
-  assert.equal(whoops.validateState!({ strokes: [...strokes, { tool: 'wash', width: 1, aspect: 1, points: [[0, 0]] }] }).ok, false, 'one point past the total');
+test('Whoops! refuses a stroke whose points are not packed as the card writes them, and the old shape', () => {
+  const ink = { tool: 'ink', color: '#000000', width: 0.04, aspect: 3, points: pack([[0.1, 0.2], [0.3, 0.4]]) };
+  const wash = { tool: 'wash', width: 0.3, aspect: 3, points: pack([[0.3, 0.4], [0.5, 0.5]]) };
+  const refused = (strokes: object[], why: RegExp, label: string) => {
+    const r = whoops.validateState!({ strokes });
+    assert.equal(r.ok, false, label);
+    assert.match(String(!r.ok && r.why), why, label);
+  };
+  const packed = /points are packed as the card writes them/;
+  refused([{ ...ink, points: [[0.1, 0.2]] }], packed, 'an old-shape stroke');
+  refused([{ ...ink, points: 'not+base64url' }], packed, 'a string that does not decode');
+  refused([{ ...ink, points: 7 }], packed, 'points that are not a string');
+  refused([{ ...ink, points: '' }], packed, 'no points');
+  refused([{ ...ink, points: pack(Array.from({ length: 501 }, (): Pt => [0.5, 0.5])) }], /at most 500 points in a stroke/, 'too many points in one stroke');
+  refused(Array.from({ length: 81 }, () => ({ ...ink, points: pack(Array.from({ length: 500 }, (): Pt => [0.5, 0.5])) })), /at most 40000 points in all/, 'too many points in all');
+  assert.equal(whoops.validateState!({ strokes: Array.from({ length: 80 }, () => ({ ...ink, points: pack(Array.from({ length: 500 }, (): Pt => [0.5, 0.5])) })) }).ok, true, 'exactly 40,000');
+  // continues: true or absent, and only on a stroke that starts where the last ended.
+  const cont = { ...wash, tool: 'ink', color: '#000000', width: 0.04, aspect: 3, points: pack([[0.3, 0.4], [0.6, 0.6]]) };
+  assert.equal(whoops.validateState!({ strokes: [ink, { ...cont, continues: true }] }).ok, true, 'a piece that starts where the last ended');
+  const started = /a continued stroke starts where the last ended/;
+  refused([ink, { ...cont, continues: false }], /continues/, 'continues is true or absent');
+  refused([{ ...ink, continues: true }], started, 'continues on the first stroke');
+  refused([ink, { ...cont, points: pack([[0.31, 0.4], [0.6, 0.6]]), continues: true }], started, 'a first point that is not the last one');
+  refused([ink, { ...cont, width: 0.05, continues: true }], started, 'a different width');
+  refused([ink, { ...cont, aspect: 2, continues: true }], started, 'a different aspect');
+  refused([wash, { ...cont, continues: true }], started, 'a different tool');
+  refused([ink, { ...cont, color: '#ff0000', continues: true }], started, 'a different color');
+  refused([{ ...ink, drops: 2 }, { ...cont, continues: true }], /only a line's last piece throws drops/, 'drops before a continued piece');
+  assert.equal(whoops.validateState!({ strokes: [ink, { ...cont, continues: true, drops: 2 }] }).ok, true, 'drops on the last piece');
+  // drops: a whole number 0 to 3, on an ink stroke.
+  for (const d of [0, 1, 2, 3]) assert.equal(whoops.validateState!({ strokes: [{ ...ink, drops: d }] }).ok, true, `drops ${d}`);
+  for (const d of [4, -1, 1.5, '1', null]) refused([{ ...ink, drops: d }], /drops are a whole number from 0 to 3/, `drops ${JSON.stringify(d)}`);
+  refused([{ ...wash, drops: 1 }], /drops are a whole number from 0 to 3/, 'drops on a wash');
 });
 
-test('a stroke\'s points and width are kept to a ten-thousandth, its aspect to three significant figures', () => {
-  const saved = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 0.123456, aspect: 2.34567, points: [[0.123456, 0.987654]] }] });
-  assert.deepEqual(saved.ok && saved.value, { strokes: [{ tool: 'ink', color: 'red', width: 0.1235, aspect: 2.35, points: [[0.1235, 0.9877]] }] });
-  const small = whoops.validateState!({ strokes: [{ tool: 'wash', width: 0.5, aspect: 0.0123456, points: [[0, 0]] }] });
-  assert.deepEqual(small.ok && small.value, { strokes: [{ tool: 'wash', width: 0.5, aspect: 0.0123, points: [[0, 0]] }] });
+test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writes them', () => {
+  // The true worst case: the most strokes, each with an equal share of the total points, every key of every stroke at its longest:
+  // a seven-character color, continues, drops 3 (on the last piece, the only one that may), the widest width, a three-figure aspect, and every point's difference the largest.
+  const each = STROKES.totalPoints / STROKES.most;
+  assert.ok(Number.isInteger(each) && each <= STROKES.points);
+  // Alternating corners: each difference is 10,000 or -10,000 (each point packs to four bytes whatever its difference).
+  const corners = (from: 0 | 1) => pack(Array.from({ length: each }, (_, i): Pt => ((i + from) % 2 === 0 ? [0, 0] : [1, 1])));
+  const [there, back] = [corners(0), corners(1)]; // a piece ends on the corner the next one starts on
+  const pieces = Array.from({ length: STROKES.most }, (_, i) => ({ tool: 'ink', color: '#abcdef', width: 0.9999, aspect: 0.00123, points: i % 2 === 0 ? there : back, ...(i > 0 ? { continues: true } : null), ...(i === STROKES.most - 1 ? { drops: 3 } : null) }));
+  const saved = whoops.validateState!({ strokes: pieces, clean: false });
+  assert.equal(saved.ok, true, saved.ok ? '' : saved.why);
+  const plain = JSON.stringify(saved.ok && saved.value);
+  // jsonb's text puts a space after every comma and colon.
+  const asPostgres = JSON.stringify(saved.ok && saved.value).replace(/([,:])/g, '$1 ');
+  console.log(`largest save: ${Buffer.byteLength(plain)} bytes as JSON.stringify, ${Buffer.byteLength(asPostgres)} as Postgres writes it`);
+  assert.ok(Buffer.byteLength(plain) <= 262_144 * 0.95, `${Buffer.byteLength(plain)} bytes`);
+  assert.ok(Buffer.byteLength(asPostgres) <= 262_144 * 0.95, `${Buffer.byteLength(asPostgres)} bytes`);
+  assert.equal(whoops.validateState!({ strokes: [...pieces, { tool: 'wash', width: 1, aspect: 1, points: pack([[0, 0]]) }] }).ok, false, 'one stroke past the most');
+});
+
+test('a stroke\'s width is kept to a ten-thousandth, its aspect to three significant figures, its points packed back', () => {
+  const saved = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 0.123456, aspect: 2.34567, points: pack([[0.123456, 0.987654]]) }] });
+  assert.deepEqual(saved.ok && saved.value, { strokes: [{ tool: 'ink', color: 'red', width: 0.1235, aspect: 2.35, points: pack([[0.1235, 0.9877]]) }] });
+  const small = whoops.validateState!({ strokes: [{ tool: 'wash', width: 0.5, aspect: 0.0123456, points: pack([[0, 0]]) }] });
+  assert.deepEqual(small.ok && small.value, { strokes: [{ tool: 'wash', width: 0.5, aspect: 0.0123, points: pack([[0, 0]]) }] });
+  const pieces = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: pack([[0.1, 0.1], [0.2, 0.2]]) }, { tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: pack([[0.2, 0.2], [0.3, 0.3]]), continues: true, drops: 2 }] });
+  assert.deepEqual(pieces.ok && (pieces.value as { strokes: { continues?: true; drops?: number }[] }).strokes.map((s) => [s.continues, s.drops]), [[undefined, undefined], [true, 2]], 'continues and drops are kept');
 });
 
 test('Stick Around holds no state to save', () => {
@@ -197,10 +232,11 @@ test('the instance sells Card Collector, Force Field and the new Gimmicks, each 
 });
 
 test('Publicity Tour, Heat Magnet, Class Clown and Good Vibes are Gimmicks with the effects the design names', () => {
-  const hours36 = { unit: 'hour', count: 36 };
-  assert.deepEqual([by('publicity-tour').reaches, by('publicity-tour').lasts, by('publicity-tour').gimmick], [['character'], hours36, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.1 }]);
-  assert.deepEqual([by('heat-magnet').reaches, by('heat-magnet').lasts, by('heat-magnet').gimmick], [['character'], hours36, { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], by: 0.1 }]);
-  assert.deepEqual([by('class-clown').reaches, by('class-clown').lasts, by('class-clown').gimmick], [['character'], hours36, { kind: 'earn', reactions: ['laughing', 'eye-roll'], by: 0.5 }]);
+  const days3 = { unit: 'day', count: 3 };
+  assert.deepEqual([by('publicity-tour').reaches, by('publicity-tour').lasts, by('publicity-tour').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.2, group: 'publicity' }]);
+  assert.deepEqual([by('hype-up').reaches, by('hype-up').lasts, by('hype-up').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.2, group: 'publicity' }]);
+  assert.deepEqual([by('heat-magnet').reaches, by('heat-magnet').lasts, by('heat-magnet').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], by: 0.2 }]);
+  assert.deepEqual([by('class-clown').reaches, by('class-clown').lasts, by('class-clown').gimmick], [['character'], days3, { kind: 'earn', reactions: ['laughing', 'eye-roll'], by: 1 }]);
   assert.deepEqual([by('good-vibes').reaches, by('good-vibes').lasts, by('good-vibes').gimmick], [['thread'], { unit: 'day', count: 3 }, { kind: 'price', flavors: ['salty'], add: 25 }]);
   for (const key of ['laughing', 'eye-roll']) assert.ok(instance.reactions.some((r) => r.key === key), key);
 });
@@ -439,11 +475,13 @@ const answers: Record<string, Record<string, unknown>> = {
   'stick-around': { sentence: 'I have read every word of this' },
   'card-collector': { card: 'whoops' },
   '4d-chess': { card: 'whoops', quadrant: 'calmPositive' },
+  graffiti: { stencil: 'horns', can: 'red', spot: 4 },
+  'laugh-track': { cues: [{ phrase: 'the same old', sound: 'laugh' }, { phrase: 'something new', sound: 'boo' }] },
 };
 
 test('each card that lets the model set options gives an object schema its own validateConfig accepts for a sample answer', () => {
   const keys = cards.filter((c) => c.staffOptions).map((c) => c.key).sort();
-  assert.deepEqual(keys, ['4d-chess', 'autocorrect', 'card-collector', 'stick-around', 'whoops']);
+  assert.deepEqual(keys, ['4d-chess', 'autocorrect', 'card-collector', 'graffiti', 'laugh-track', 'stick-around', 'whoops']);
   for (const card of cards) {
     if (!card.staffOptions) continue;
     const { prompt, schema } = card.staffOptions;
@@ -453,7 +491,7 @@ test('each card that lets the model set options gives an object schema its own v
     const props = schema.properties as Record<string, { type?: unknown }>;
     for (const [name, def] of Object.entries(props)) {
       for (const bound of ['maxLength', 'minLength', 'pattern', 'maxItems', 'minItems']) assert.equal(bound in def, false, `${card.key}.${name}: structured output cannot hold ${bound}`);
-      assert.ok(def.type === 'string' || 'enum' in def, `${card.key}.${name}: strings and enums only`);
+      assert.ok(def.type === 'string' || def.type === 'array' || 'enum' in def, `${card.key}.${name}: strings, enums and lists only`);
     }
     for (const name of (schema.required ?? []) as string[]) assert.ok(name in props, `${card.key}: required ${name} is a property`);
     const sample = answers[card.key];
@@ -466,9 +504,18 @@ test('each card that lets the model set options gives an object schema its own v
   assert.equal(staffConfigOf(autocorrect, () => 0), null, 'Autocorrect has no fallback');
 });
 
-test('every property a staffOptions schema names survives that card\'s validateConfig (a field it drops would be asked for and thrown away)', () => {
+test('every property a staffOptions schema names survives that card\'s validateConfig, or for a surface card its validateDraw (a field it drops would be asked for and thrown away)', () => {
   for (const card of cards) {
     if (!card.staffOptions) continue;
+    // A surface card's options are its first draw, not its configuration (its play's configuration is {}): a field the draw drops would be asked for and thrown away just the same.
+    if (card.surface) {
+      const drawn = card.surface.validateDraw(answers[card.key]);
+      assert.equal(drawn.ok, true, card.key);
+      if (!drawn.ok) continue;
+      for (const name of Object.keys(card.staffOptions.schema.properties as object)) assert.ok(name in drawn.value.payload, `${card.key}: "${name}" is dropped by validateDraw`);
+      assert.equal(card.validateConfig({}).ok, true, `${card.key}: the play itself is configured with {}`);
+      continue;
+    }
     const result = card.validateConfig(answers[card.key]);
     assert.equal(result.ok, true, card.key);
     if (!result.ok) continue;
@@ -503,20 +550,23 @@ test('Autocorrect\'s phrase is its set phrase', () => {
   assert.equal(by('card-collector').setPhrase, undefined);
 });
 
-test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the nineteen cards', async () => {
+test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the twenty-four cards', async () => {
   const { packOdds } = await import('../../../engine/rules/packs.ts');
   const booster = instance.packs.find((p) => p.key === 'booster')!;
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks, Part 6 and Jimmy Wails joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: twelve uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
-  assert.equal(cards.length, 20);
-  assert.ok(Math.abs(chance.get('main-event')! - 0.24) < 1e-9, `Main Event at ${chance.get('main-event')}`);
+  // The Gimmicks, Part 6, Jimmy Wails, Part 4 and Laugh Track joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: fifteen uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
+  // Sugar Coat and Graffiti are the second and third rares, which share the 24 with Main Event.
+  assert.equal(cards.length, 25);
+  assert.ok(Math.abs(chance.get('main-event')! - 0.08) < 1e-9, `Main Event at ${chance.get('main-event')}`);
+  assert.ok(Math.abs(chance.get('sugar-coat')! - 0.08) < 1e-9, `Sugar Coat at ${chance.get('sugar-coat')}`);
+  assert.ok(Math.abs(chance.get('graffiti')! - 0.08) < 1e-9, `Graffiti at ${chance.get('graffiti')}`);
   assert.ok(Math.abs(chance.get('off-day')! - 0.02) < 1e-9, `Off Day at ${chance.get('off-day')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 12);
-  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 12) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
-  assert.equal(chance.size, uncommons.length + 2);
+  assert.equal(uncommons.length, 15);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 15) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(chance.size, uncommons.length + 4);
 });
 
 /* Card notes, Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 7): Mooch, Toll, 4D Chess and Off Day. */
@@ -613,6 +663,53 @@ test('Off Day refuses a class the instance lacks and lands on a character', () =
   assert.deepEqual(off.canApply(chara, up(2)), { ok: false, why: 'this character already carries 2 of that card, the most it takes' });
 });
 
+/* Card notes, Part 4 (docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 6): Sugar Coat, Hype-Up and Last Word. */
+test('Sugar Coat, Hype-Up and Last Word are in the instance, sold as the plan says, and the instance stays whole', () => {
+  const slot = (k: string) => instance.machine.find((m) => 'card' in m.item && m.item.card === k);
+  assert.deepEqual(['sugar-coat', 'hype-up', 'last-word'].map((k) => [k, by(k).rarity, by(k).play ?? 'cast', by(k).alignment, slot(k)?.availability, slot(k)?.price]), [
+    ['sugar-coat', 'rare', 'use', 'sweet', 'hidden', 300],
+    ['hype-up', 'uncommon', 'cast', 'sweet', 'onSale', 150],
+    ['last-word', 'uncommon', 'use', 'salty', 'onSale', 150],
+  ]);
+  assert.deepEqual(by('sugar-coat').gimmick, { kind: 'ward', flavors: ['salty', 'pepperoni'] });
+  assert.deepEqual(by('last-word').gimmick, { kind: 'noQuote' });
+  assert.deepEqual([by('sugar-coat').lasts, by('last-word').lasts], [{ unit: 'day', count: 7 }, { unit: 'day', count: 7 }]);
+  assert.deepEqual(instanceProblems(instance), []);
+});
+
+test('Hype-Up holds the very numbers Publicity Tour holds', () => {
+  assert.equal(by('hype-up').gimmick, publicityTour.gimmick);
+  assert.equal(by('hype-up').lasts, publicityTour.lasts);
+});
+
+test('Sugar Coat turns away Salty and Pepperoni cards, and passes a Sweet one', () => {
+  const ward = [{ card: 'sugar-coat', act: 'k1', gimmick: by('sugar-coat').gimmick, ends: new Date(Date.now() + 86_400_000).toISOString() }];
+  const context = { nameOf: (key: string) => cards.find((c) => c.key === key)!.name };
+  const salty = { ...by('whoops'), rarity: 'common' as const };
+  const pepperoni = { ...by('main-event'), alignment: 'pepperoni' as const, rarity: 'legendary' as const, reaches: ['post' as const] };
+  assert.deepEqual(decidePlay(salty, settings, post(10), ward, { color: 'red' }, '', context), { ok: false, why: "this post's Sugar Coat turns away Salty cards" });
+  assert.deepEqual(decidePlay(pepperoni, settings, post(10), ward, {}, '', context), { ok: false, why: "this post's Sugar Coat turns away Pepperoni cards" });
+  const sweet = { ...by('stick-around'), rarity: 'rare' as const };
+  assert.equal(decidePlay(sweet, settings, post(10), ward, { sentence: 'Read it.' }, '', context).ok, true);
+});
+
+test('Last Word is refused on a post with a live back, lands on one without, and a second is refused', () => {
+  const lastWord = by('last-word');
+  const live = new Date(Date.now() + 86_400_000).toISOString();
+  assert.equal(decideUse(lastWord, settings, post(10), [{ card: null, act: 'b1', faceDown: true, ends: live }], {}, '').ok, false, 'a back is live');
+  assert.equal(decideUse(lastWord, settings, post(10), [{ card: null, act: 'b1', faceDown: true, ends: new Date(Date.now() - 1000).toISOString() }], {}, '').ok, true, 'a back that has ended');
+  assert.equal(decideUse(lastWord, settings, post(10), [], {}, '').ok, true);
+  assert.equal(decideUse(lastWord, settings, post(10), [{ card: 'last-word', act: 'k1', gimmick: lastWord.gimmick, ends: live }], {}, '').ok, false, 'a second');
+});
+
+test('Hype-Up lands on a character, is refused on a post, is not cast on a post and is not offered to a persona', () => {
+  const hypeUp = by('hype-up');
+  assert.equal(hypeUp.canApply({ reach: 'character', character: 'c1' }, []).ok, true);
+  assert.equal(hypeUp.canApply(post(10), []).ok, false);
+  assert.equal(castOnPost(hypeUp), false, 'Card Collector cannot name it');
+  assert.equal(staffOffers(hypeUp), false);
+});
+
 // Jimmy Wails (docs/plans/2026-11-03-jimmy-wails-plan.md, Task 6): a Sweet uncommon Cast on a post whose plays share a drive, each drawing a plate and needing a sob story.
 const jimmy = () => cards.find((c) => c.key === 'jimmy-wails')!;
 const hour = 3_600_000;
@@ -628,7 +725,7 @@ test('Jimmy Wails is a Sweet uncommon Cast on a post, sold for 2.00, with a driv
   assert.deepEqual(j.reaches ?? ['post'], ['post']);
   assert.equal(priceOf('jimmy-wails'), 200, 'the machine slot, onSale');
   assert.equal(instance.machine.find((m) => 'card' in m.item && m.item.card === 'jimmy-wails')!.availability, 'onSale');
-  assert.deepEqual(j.draws, ['blue-shirt', 'close-up', 'dark-logo']);
+  assert.deepEqual(j.draws, ['blue-shirt', 'close-up', 'dark-logo', 'black-shirt', 'gray-jacket', 'looking-away', 'red-wall', 'full-length', 'pinstripe']);
   assert.deepEqual(j.drive, { lasts: { unit: 'day', count: 7 }, gifts: ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4'], overhead: 'jimmyWails.overhead' });
   assert.deepEqual(['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4', 'jimmyWails.overhead'].map((k) => settings.economy[k]), [10, 25, 50, 100, 25]);
   assert.equal(giftSplit(10, settings.economy['jimmyWails.overhead']!).overhead, 3, 'a 0.10 gift keeps 0.03 of overhead');
@@ -671,4 +768,235 @@ test('Jimmy Wails: a blank message is refused, in the card\'s words', () => {
 test('Jimmy Wails cannot be set face down: it draws, runs a drive and needs a message, so it is cast now and face up (issue #446)', () => {
   const j = jimmy();
   assert.deepEqual(decideSet(j, settings, on('a post'), [], {}, cards), { ok: false, why: 'Jimmy Wails is cast face up and never set face down' });
+});
+
+/* ---- Laugh Track (docs/plans/2026-11-11-laugh-track-plan.md, Task 9) ---- */
+const cue = (phrase: string, sound: Cue['sound'] = 'laugh'): Cue => ({ phrase, sound });
+const ltConfig = (cues: unknown) => laughTrack.validateConfig({ cues });
+const ltWhy = (v: unknown) => (v as { why: string }).why;
+const ltLands = (body: string, cues: Cue[], effects: { card: string; act: string }[] = []) => laughTrack.canApply(on(body), effects, { cues } as never, new Date());
+
+test('Laugh Track is an uncommon Pepperoni Cast, seeded, that takes one director', () => {
+  assert.deepEqual([laughTrack.key, laughTrack.name, laughTrack.alignment, laughTrack.rarity, laughTrack.play ?? 'cast', laughTrack.stack ?? 1, laughTrack.seeded], ['laugh-track', 'Laugh Track', 'pepperoni', 'uncommon', 'cast', 1, true]);
+  assert.equal(castOnPost(laughTrack as CardRules), true);
+  assert.deepEqual([CUES.most, PLACES.most], [5, 30]);
+  assert.equal(laughTrack.staffConfigs, undefined, 'a fallback cannot know the post');
+});
+
+test('Laugh Track\'s configuration is one to five cues, each a bounded phrase and a sound', () => {
+  assert.deepEqual(ltConfig([{ phrase: '  Mario  ', sound: 'cheer' }]), { ok: true, value: { cues: [{ phrase: 'Mario', sound: 'cheer' }] } });
+  assert.equal(ltConfig(Array.from({ length: 5 }, (_, i) => cue(`word${'abcde'[i]}x`))).ok, true, 'five');
+  assert.equal(ltWhy(ltConfig([])), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(ltConfig(Array.from({ length: 6 }, (_, i) => cue(`word${'abcdef'[i]}x`)))), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(ltConfig('cats')), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(laughTrack.validateConfig({})), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(ltConfig([{ phrase: 'Mario', sound: 'gasp' }])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.equal(ltWhy(ltConfig([{ phrase: 'Mario' }])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.equal(ltWhy(ltConfig([{ phrase: 4, sound: 'boo' }])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.equal(ltWhy(ltConfig([null])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.match(ltWhy(ltConfig([cue('cat')])), /at least 4 letters or digits/);
+  assert.match(ltWhy(ltConfig([cue('x'.repeat(101))])), /at most 100 characters/);
+  assert.match(ltWhy(ltConfig([cue('two\nlines')])), /one line/);
+  assert.equal(ltWhy(ltConfig([cue('Mario Kart'), cue('mario  kart!', 'boo')])), 'two cues have the same phrase');
+});
+
+test('Laugh Track keeps the seed the server adds and no other key', () => {
+  assert.deepEqual(laughTrack.validateConfig({ cues: [cue('Mario')], seed: 12345, extra: 1 }), { ok: true, value: { cues: [cue('Mario')], seed: 12345 } });
+});
+
+test('placesOf is every occurrence of each cue in the text\'s order, with its cue\'s index', () => {
+  const text = 'Mario met Luigi, then Mario hit Luigi again';
+  const places = placesOf(text, [cue('Luigi'), cue('Mario', 'boo')]);
+  assert.deepEqual(places.map((p) => [text.slice(p.start, p.end), p.cue]), [['Mario', 1], ['Luigi', 0], ['Mario', 1], ['Luigi', 0]]);
+  assert.deepEqual(placesOf('nothing here', [cue('Luigi')]), []);
+});
+
+test('Laugh Track lands with one cue and with five', () => {
+  assert.equal(ltLands('Mario is here', [cue('Mario')]).ok, true);
+  const body = 'alpha beta gamma delta epsilon';
+  assert.equal(ltLands(body, ['alpha', 'beta', 'gamma', 'delta', 'epsilon'].map((p) => cue(p))).ok, true);
+  assert.equal(decidePlay(laughTrack as CardRules, settings, on('Mario is here'), [], { cues: [cue('Mario')] }, '').ok, true);
+});
+
+test('Laugh Track refuses what is not in the post, what overlaps, and what is too many places', () => {
+  assert.equal(ltWhy(ltLands('Mario is here', [cue('Mario'), cue('Luigi')])), '“Luigi” is not in this post\'s own words');
+  assert.equal(ltWhy(ltLands('Mario Kart is here', [cue('Mario Kart'), cue('Kart is')])), 'two cues cover the same words');
+  const many = Array(31).fill('word').join(' ');
+  assert.equal(ltWhy(ltLands(many, [cue('word')])), 'these cues cover 31 places in this post; a play covers at most 30');
+  assert.equal(ltLands(Array(30).fill('word').join(' '), [cue('word')]).ok, true, 'thirty is the most');
+});
+
+test('Laugh Track is refused where the post already has an audience, in its own words', () => {
+  const live = [{ card: 'laugh-track', act: 'k1' }];
+  assert.equal(ltWhy(ltLands('Mario is here', [cue('Mario')], live)), 'this post already has an audience');
+  assert.equal(ltWhy(laughTrack.canApply(on('Mario'), live, undefined as never, new Date())), 'this post already has an audience', 'with no cues yet too');
+  assert.equal(ltWhy(decidePlay(laughTrack as CardRules, settings, on('Mario'), live, { cues: [cue('Mario')] }, '')), 'this post already has an audience');
+  assert.equal(laughTrack.canApply(on('Mario'), [{ card: 'laugh-track', act: 'k1', ends: '2000-01-01T00:00:00Z' }], { cues: [cue('Mario')] } as never, new Date()).ok, true, 'an ended one holds no place');
+  assert.equal(laughTrack.canApply(on('Mario'), [{ card: 'whoops', act: 'k1' }], { cues: [cue('Mario')] } as never, new Date()).ok, true);
+});
+
+test('Laugh Track\'s price is 0.05 a place past five, at most 1.00, and a face asks the most', () => {
+  const price = (places: number) => laughTrack.playPrice(settings, on(Array(places).fill('word').join(' ')), { cues: [cue('word')] });
+  assert.equal(price(5), 0);
+  assert.equal(price(6), 5);
+  assert.equal(price(20), 75);
+  assert.equal(price(40), 100, 'capped');
+  assert.equal(laughTrack.playPrice(settings, on('word'), {} as never), 100, 'a face asks the most');
+  assert.equal(laughTrack.playPrice(settings, { reach: 'character', character: 'c' }, { cues: [cue('word')] }), 0);
+  const tuned = withOverrides(settings, { economy: { 'laughTrack.perPlace': 10, 'laughTrack.freePlaces': 1 } });
+  assert.equal(laughTrack.playPrice(tuned, on('word word word'), { cues: [cue('word')] }), 20, 'its numbers are the settings\'');
+});
+
+test('Laugh Track\'s set phrase is its first cue\'s, and it may be set face down', () => {
+  assert.equal(laughTrack.setPhrase?.({ cues: [cue('Mario'), cue('Luigi')] }), 'Mario');
+  assert.equal(decideSet(laughTrack as CardRules, settings, on('Mario is here'), [], { cues: [cue('Mario')] }, cards).ok, true);
+});
+
+test('Laugh Track asks a persona for cues, and its instance has no problems', () => {
+  assert.match(laughTrack.staffOptions!.prompt, /^Choose up to five cues: each a phrase copied exactly from the post you are replying to/);
+  assert.deepEqual((laughTrack.staffOptions!.schema as { properties: { cues: { items: { properties: { sound: { enum: string[] } } } } } }).properties.cues.items.properties.sound.enum, ['laugh', 'cheer', 'boo']);
+  assert.deepEqual(instanceProblems(instance), []);
+});
+
+/* Graffiti (docs/plans/2026-11-11-graffiti-plan.md, Task 7). */
+const surf = graffiti.surface!;
+const draw = (input: unknown) => surf.validateDraw(input);
+const wash = (input: unknown) => surf.validateWash(input);
+const covered = (cells: Cells, x: number, y: number) => (cells[(y * GRID + x) >> 3]! & (0x80 >> ((y * GRID + x) & 7))) !== 0;
+const stroke = (over: Record<string, unknown> = {}) => ({ can: 'red', cap: 'stock', aspect: 1.5, points: [[0.1, 0.2], [0.3, 0.4]], ...over });
+const strokesOf = (v: ReturnType<typeof draw>) => { assert.equal(v.ok, true, JSON.stringify(v)); return v.ok ? v.value.strokes : []; };
+const STENCIL_KEYS_FOR_TEST = ['mustache', 'horns', 'crown', 'kilroy', 'x', 'smiley'] as const;
+const STENCIL_KEYS = ['mustache', 'horns', 'crown', 'kilroy', 'x', 'smiley'] as const;
+
+test('Graffiti: a draw keeps a stroke\'s can and cap and drops a sent width; the engine gets the cap\'s width', () => {
+  const v = draw({ strokes: [stroke({ width: 0.9, aspect: 1.23456 })] });
+  assert.equal(v.ok, true);
+  if (!v.ok) return;
+  assert.deepEqual(v.value.payload, { strokes: [{ can: 'red', cap: 'stock', aspect: 1.23, points: [[0.1, 0.2], [0.3, 0.4]] }] });
+  assert.deepEqual(v.value.strokes, [{ width: CAPS.stock, aspect: 1.23, points: [[0.1, 0.2], [0.3, 0.4]] }]);
+});
+
+test('Graffiti: an unknown can or cap is refused, and the refusal lists the cans', () => {
+  const v = draw({ strokes: [stroke({ can: 'chartreuse' })] });
+  assert.equal(v.ok, false);
+  for (const can of Object.keys(CANS)) assert.match(!v.ok ? v.why : '', new RegExp(can));
+  assert.equal(draw({ strokes: [stroke({ cap: 'huge' })] }).ok, false);
+});
+
+test('Graffiti: a draw has at most 120 strokes, 300 points a stroke and 3,000 points in all', () => {
+  assert.equal(draw({ strokes: Array.from({ length: 120 }, () => stroke()) }).ok, true);
+  assert.equal(draw({ strokes: Array.from({ length: 121 }, () => stroke()) }).ok, false);
+  assert.equal(draw({ strokes: [] }).ok, false, 'a draw with no stroke is nothing');
+  assert.equal(draw({ strokes: [stroke({ points: Array(300).fill([0.5, 0.5]) })] }).ok, true);
+  assert.equal(draw({ strokes: [stroke({ points: Array(301).fill([0.5, 0.5]) })] }).ok, false);
+  assert.equal(draw({ strokes: Array.from({ length: 10 }, () => stroke({ points: Array(300).fill([0.5, 0.5]) })) }).ok, true);
+  assert.equal(draw({ strokes: [...Array.from({ length: 10 }, () => stroke({ points: Array(300).fill([0.5, 0.5]) })), stroke()] }).ok, false);
+  assert.equal(wash({ strokes: Array.from({ length: 121 }, () => ({ aspect: 1, points: [[0, 0]] })) }).ok, false, 'a wash has the same bounds');
+});
+
+test('Graffiti: a point outside 0 to 1 is refused, and points are kept to a ten-thousandth', () => {
+  for (const p of [[1.0001, 0.5], [0.5, -0.0001], [0.5, 1.5], [NaN, 0.5]]) assert.equal(draw({ strokes: [stroke({ points: [p] })] }).ok, false, JSON.stringify(p));
+  assert.equal(draw({ strokes: [stroke({ points: [[0.5], [0.5, 0.5]] })] }).ok, false);
+  assert.equal(draw({ strokes: [stroke({ points: [] })] }).ok, false);
+  assert.equal(draw({ strokes: [stroke({ aspect: 0 })] }).ok, false);
+  assert.equal(draw({ strokes: [stroke({ aspect: 'wide' })] }).ok, false);
+  assert.deepEqual(strokesOf(draw({ strokes: [stroke({ points: [[0.123456, 1]] })] }))[0]!.points, [[0.1235, 1]]);
+});
+
+test('Graffiti: a stencil expands to strokes inside its spot, in the can named, at aspect 1', () => {
+  assert.deepEqual(Object.keys(STENCILS).sort(), [...STENCIL_KEYS].sort());
+  for (const key of STENCIL_KEYS) for (let spot = 0; spot < 9; spot++) {
+    const v = draw({ stencil: key, can: 'teal', spot });
+    assert.equal(v.ok, true, `${key} ${spot}`);
+    if (!v.ok) continue;
+    const [col, row] = [spot % 3, Math.floor(spot / 3)];
+    assert.ok(v.value.strokes.length >= 1 && v.value.strokes.length <= 120, `${key}: ${v.value.strokes.length} strokes`);
+    for (const s of v.value.strokes) {
+      assert.equal(s.aspect, 1);
+      for (const [x, y] of s.points) assert.ok(x >= col / 3 - 1e-4 && x <= (col + 1) / 3 + 1e-4 && y >= row / 3 - 1e-4 && y <= (row + 1) / 3 + 1e-4, `${key} ${spot}: ${x},${y}`);
+    }
+    const payload = v.value.payload as { stencil: string; can: string; spot: number; strokes: { can: string; cap: string }[] };
+    assert.deepEqual([payload.stencil, payload.can, payload.spot], [key, 'teal', spot]);
+    assert.ok(payload.strokes.every((s) => s.can === 'teal' && s.cap in CAPS));
+  }
+});
+
+test('Graffiti: stencil x at spot 4 covers the center cell, and each stencil at spot 4 covers under 12% of the grid', () => {
+  const x = draw({ stencil: 'x', can: 'black', spot: 4 });
+  assert.equal(covered(cellsOf(x.ok ? x.value.strokes : []), 50, 50), true);
+  assert.equal(covered(cellsOf(x.ok ? x.value.strokes : []), 5, 5), false);
+  for (const key of STENCIL_KEYS) {
+    const v = draw({ stencil: key, can: 'black', spot: 4 });
+    const n = count(cellsOf(v.ok ? v.value.strokes : []));
+    assert.ok(n > 30 && n < 1200, `${key} covers ${n} cells`);
+  }
+});
+
+test('Graffiti: a stencil draw is a stencil with a known key, a can and a spot 0 to 8, and not also strokes', () => {
+  for (const bad of [{ stencil: 'nope', can: 'red', spot: 0 }, { stencil: 'x', can: 'nope', spot: 0 }, { stencil: 'x', can: 'red', spot: 9 }, { stencil: 'x', can: 'red', spot: -1 }, { stencil: 'x', can: 'red', spot: 1.5 }, { stencil: 'x', can: 'red' }, { stencil: 'x', can: 'red', spot: 0, strokes: [stroke()] }, { stencil: 'toString', can: 'red', spot: 0 }, {}, null])
+    assert.equal(draw(bad).ok, false, JSON.stringify(bad));
+});
+
+test('Graffiti: a wash keeps {aspect, points}, drops a sent can or width, and has the sponge\'s width', () => {
+  const v = wash({ strokes: [{ can: 'red', cap: 'fat', width: 0.001, aspect: 2.34567, points: [[0.123456, 0.5]] }] });
+  assert.equal(v.ok, true);
+  if (!v.ok) return;
+  assert.deepEqual(v.value.payload, { strokes: [{ aspect: 2.35, points: [[0.1235, 0.5]] }] });
+  assert.deepEqual(v.value.strokes, [{ width: 0.06, aspect: 2.35, points: [[0.1235, 0.5]] }]);
+  assert.equal(wash({ strokes: [{ aspect: 1, points: [[2, 0]] }] }).ok, false);
+});
+
+test('Graffiti: the largest draw fits 64 KiB as Postgres writes it', () => {
+  const longest = (o: object) => Object.keys(o).reduce((a, b) => (b.length > a.length ? b : a));
+  const strokes = Array.from({ length: 120 }, () => ({ can: longest(CANS), cap: longest(CAPS), aspect: 0.00123456, points: Array(25).fill([0.12345678, 0.98765432]) }));
+  const v = draw({ strokes });
+  assert.equal(v.ok, true);
+  const asPostgres = JSON.stringify(v.ok && v.value.payload).replace(/([,:])/g, '$1 ');
+  assert.ok(Buffer.byteLength(asPostgres) < 65_536, `${Buffer.byteLength(asPostgres)} bytes`);
+  const washed = wash({ strokes: strokes.map(({ aspect, points }) => ({ aspect, points })) });
+  assert.ok(Buffer.byteLength(JSON.stringify(washed.ok && washed.value.payload).replace(/([,:])/g, '$1 ')) < 65_536);
+});
+
+test('Graffiti is a rare Pepperoni surface on a post, one a post, in the machine at 300, hidden', () => {
+  assert.deepEqual([graffiti.rarity, graffiti.alignment, graffiti.stack, surf.limitKey, surf.mostLive], ['rare', 'pepperoni', 1, 'graffiti.limit', 48]);
+  assert.deepEqual(instance.machine.at(-1), { item: { card: 'graffiti' }, availability: 'hidden', price: 300 });
+  assert.equal(instance.settings.cardSettings['graffiti.limit'], 40);
+  assert.deepEqual(instanceProblems(instance), []);
+  assert.deepEqual(instanceProblems({ ...instance, settings: withOverrides(settings, { cardSettings: { 'graffiti.limit': 101 } }) }).filter((p) => /graffiti/.test(p)).length > 0, true);
+});
+
+test('Graffiti: every staff config is a valid draw, and a Mod Bot\'s options are one too', () => {
+  const configs = graffiti.staffConfigs!;
+  assert.ok(configs.length >= 6);
+  assert.deepEqual(new Set(configs.map((c) => c.stencil)), new Set(STENCIL_KEYS), 'each stencil is offered');
+  for (const c of configs) { assert.equal(draw(c).ok, true, JSON.stringify(c)); assert.equal(graffiti.validateConfig(c).ok, true); }
+  assert.deepEqual(graffiti.validateConfig({ stencil: 'horns', can: 'red', spot: 4, junk: 1 }), { ok: true, value: { stencil: 'horns', can: 'red', spot: 4 } });
+  assert.equal(graffiti.validateConfig({ stencil: 'horns', can: 'nope', spot: 4 }).ok, false);
+  const schema = graffiti.staffOptions!.schema as { properties: Record<string, { enum: unknown[] }> };
+  assert.deepEqual(schema.properties.stencil!.enum, [...STENCIL_KEYS]);
+  assert.deepEqual(schema.properties.can!.enum, Object.keys(CANS));
+  for (const word of [...STENCIL_KEYS, ...Object.keys(CANS)]) assert.match(graffiti.staffOptions!.prompt, new RegExp(word));
+});
+
+test('Graffiti: a refusal names the stroke and the point that failed', () => {
+  const v = draw({ strokes: [stroke(), stroke(), stroke({ points: [[0.5, 0.5], [0.5, 2]] })] });
+  assert.equal(v.ok, false);
+  assert.match(!v.ok ? v.why : '', /^stroke 3, point 2: a point is across and down from 0 to 1/);
+  assert.match((draw({ strokes: [stroke({ can: 'nope' })] }) as { why: string }).why, /^stroke 1: the can is one of/);
+  assert.match((draw({ strokes: [stroke(), [1, 2]] }) as { why: string }).why, /^stroke 2: a stroke is an object with/);
+  assert.match((wash({ strokes: [{ aspect: 1, points: [[0, 0]] }, { aspect: 0, points: [[0, 0]] }] }) as { why: string }).why, /^stroke 2: /);
+});
+
+test('Graffiti: every stencil at the last spot fits 64 KiB as Postgres writes it, and a stencil lands in its own ninth', () => {
+  for (const key of STENCIL_KEYS_FOR_TEST) {
+    const v = draw({ stencil: key, can: 'orange', spot: 8 });
+    assert.equal(v.ok, true, key);
+    assert.ok(Buffer.byteLength(JSON.stringify(v.ok && v.value.payload).replace(/([,:])/g, '$1 ')) < 65_536, key);
+  }
+  const top = draw({ stencil: 'x', can: 'black', spot: 0 });
+  const cells = cellsOf(top.ok ? top.value.strokes : []);
+  let inTopLeft = false;
+  for (let y = 0; y < 34; y++) for (let x = 0; x < 34; x++) inTopLeft ||= covered(cells, x, y);
+  assert.equal(inTopLeft, true);
+  assert.equal(covered(cells, 50, 50), false);
 });
