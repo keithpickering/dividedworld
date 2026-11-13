@@ -33,12 +33,42 @@
   align-self: baseline;
 }
 
-.kb-who > .kb-mini {
+.kb-who > .kb-mini,
+.kb-who-link > .kb-mini {
   width: 1.27em;
   height: 1.27em;
   margin-right: 0;
   position: relative;
   top: var(--kb-who-lift);
+}
+
+/*
+ * A linked character: the avatar is inside the link, beside the name, with the same size, gap and lift as the unit's own avatar.
+ * The link's underline and color are the name's alone: a character with no picture draws its initial as text, which would
+ * otherwise take both.
+ */
+.kb-who > a.kb-who-link {
+  gap: 0.35em;
+  text-decoration: none;
+}
+
+.kb-who-link > .kb-who-name {
+  /* The link's baseline is the name's: a flex container takes its baseline from its first item that aligns to baseline, which without this is the avatar (the unit's baseline rule above). */
+  align-self: baseline;
+  /*
+   * An item aligned to the baseline sits at the top of the link's line, so the name is a 24px box of its own with its text centered in it, as
+   * the link's text was before the avatar moved in: the rows' baselines and heights are main's to the pixel. These three go together (the
+   * link keeps its own 24px target from `.kb-who > a`).
+   */
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.kb-who-link > .kb-mini {
+  color: var(--kb-fg);
 }
 
 .kb-mini img {

@@ -241,7 +241,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   }),
   spin: (r, { settings }) => ({
     rpc: 'spin',
-    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }), ...framing(r) },
+    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }), at_post: optionalId(r, 'at'), ...framing(r) },
   }),
   // A barred character's apology (supabase/migrations/0130_bars_apologies.sql): the spin of the move's Act that bars it, with words of its own that the judge reads.
   apologize: (r, { settings }) => ({

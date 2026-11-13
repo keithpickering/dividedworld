@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
-import { Ago, Byline, ago, useSignedIn, Who } from './mini.tsx';
+import { Ago, Byline, CharacterLink, ago, useSignedIn, Who } from './mini.tsx';
 import type { Character } from './data/api.ts';
 import { useKayfa } from './context.tsx';
 import { widthOf } from './test-width.ts';
@@ -141,4 +141,33 @@ test('a relative time is the same on a phone', () => {
   widthOf(390);
   render(<Ago at="2026-10-29T11:58:00Z" now={Date.parse('2026-10-29T12:00:00Z')} />);
   expect(screen.getByText('2 min ago')).toBeInTheDocument();
+});
+
+test('CharacterLink is one link to the profile whose accessible name is the name alone, the avatar inside it', () => {
+  const { container } = renderInWorld(<CharacterLink id="c1" character={ann} name="Ann" />);
+  const links = screen.getAllByRole('link');
+  expect(links).toHaveLength(1);
+  expect(screen.getByRole('link', { name: 'Ann' })).toHaveAttribute('href', '/c/c1');
+  expect(links[0]!.querySelector('.kb-mini img')).toHaveAttribute('src', '/ann.png');
+  expect(links[0]!.querySelector('.kb-mini')).toHaveAttribute('aria-hidden', 'true');
+  expect(container.querySelector('.kb-who')).toContainElement(links[0]!);
+});
+
+test('CharacterLink with avatar={false} draws the name link alone', () => {
+  const { container } = renderInWorld(<CharacterLink id="c1" character={ann} name="Ann" avatar={false} />);
+  expect(screen.getByRole('link', { name: 'Ann' })).toHaveAttribute('href', '/c/c1');
+  expect(container.querySelector('.kb-mini')).toBeNull();
+});
+
+test('Byline with link draws one link holding the avatar; with link={false} none; the staff none', () => {
+  const linked = renderInWorld(<Byline character={ann} id="c1" name="Ann" link />);
+  expect(screen.getAllByRole('link')).toHaveLength(1);
+  expect(screen.getByRole('link', { name: 'Ann' }).querySelector('.kb-mini')).not.toBeNull();
+  linked.unmount();
+  const plain = renderInWorld(<Byline character={ann} id="c1" name="Ann" link={false} />);
+  expect(screen.queryAllByRole('link')).toHaveLength(0);
+  expect(plain.container.querySelector('.kb-mini')).not.toBeNull();
+  plain.unmount();
+  renderInWorld(<Byline character={undefined} id={null} link />);
+  expect(screen.queryAllByRole('link')).toHaveLength(0);
 });

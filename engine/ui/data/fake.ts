@@ -274,9 +274,9 @@ export interface Seed {
   /**
    * A card played beyond a post (what `play_card` writes for a reach, 0055): on a character (from `post`, one of its posts), a thread or
    * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
-   * bound). Held and paid for nowhere. Returns the play's Act.
+   * bound). Held and paid for nowhere. With `unrecorded`, a play on a character is one from before its moment was snapshotted (0352). Returns the play's Act.
    */
-  reach(character: Id, reach: BeyondPost, target: Id, card: string, options?: { post?: Id; at?: number; ends?: number; message?: string; config?: Readonly<Record<string, unknown>>; live?: boolean }): Id;
+  reach(character: Id, reach: BeyondPost, target: Id, card: string, options?: { post?: Id; at?: number; ends?: number; message?: string; config?: Readonly<Record<string, unknown>>; live?: boolean; unrecorded?: boolean }): Id;
   /**
    * A card set face down by a character on a post of its own (what `set_card` writes): a set Act naming no card, and the setter's own
    * record of which card it is. Returns the set Act.
@@ -831,7 +831,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     : null;
 
   /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. A board is named as it is called now (0152), as boards_now names it. */
-  function originPlace(origin: ActRec): OriginPlace | null {
+  function originPlace(origin: ActRec, first: ActRec | undefined): OriginPlace | null {
     if (origin.kind === 'update') return placeOf(origin);
     if (origin.kind === 'card' || origin.kind === 'set' || origin.kind === 'spring') {
       const card = origin.kind === 'set' ? null : String(origin.payload['card']);
@@ -846,7 +846,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         // A play with no play_reach row is on a post (0079 joins the target post only then; every beyond-post play has a reach row).
         on = origin.target !== null ? placeOf(acts.get(origin.target)) : null;
       }
-      return { kind: 'play', card, on };
+      /* The cast-from post of a play on a character, and the post a spin was pressed on (0351): each a post place, else null. */
+      const postPlace = (a: ActRec | undefined): Extract<PlaceOn, { kind: 'post' }> | null => a && a.seq !== null ? { kind: 'post', thread: a.thread, title: threads.get(a.thread)!.title, seq: a.seq } : null;
+      const from = origin.kind === 'card' && origin.payload.reach === 'character' && origin.target !== null ? postPlace(acts.get(origin.target)) : null;
+      const pressed = first?.kind === 'spin' && typeof first.payload.at === 'string' ? postPlace(acts.get(first.payload.at)) : null;
+      return { kind: 'play', card, on, from, at: pressed };
     }
     return origin.seq !== null ? placeOf(origin) : null;
   }
@@ -864,7 +868,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       firstAct: first?.id ?? null, firstCharacter: first?.character ?? null, lastAct: last?.id ?? null, lastCharacter: last?.character ?? null,
       // Capped at the hotReplies threshold, as thread_list counts it: a screen only compares it with that.
       repliesThisWeek: Math.min(settings.hotReplies, all.filter((a) => a.kind === 'post' && a.seq! > 1 && a.at > week && a.at <= now()).length),
-      originThread: origin?.thread ?? null, origin: origin ? originPlace(origin) : null,
+      originThread: origin?.thread ?? null, origin: origin ? originPlace(origin, first) : null,
     };
   }
 
@@ -1229,7 +1233,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     };
     acts.set(rec.id, rec);
     if (rec.kind === 'card_end' && rec.target !== null) reversedPlays.add(rec.target);
-    if ((rec.kind === 'card' || rec.kind === 'set' || rec.kind === 'spring') && rec.target !== null && onPost(rec)) takeMoment(rec);
+    /* A play on a post's or on a character's (cast from a post, 0352) takes its moment; a thread's and a board's take none. */
+    if ((rec.kind === 'card' || rec.kind === 'set' || rec.kind === 'spring') && rec.target !== null && (onPost(rec) || rec.payload.reach === 'character')) takeMoment(rec);
+    if (rec.kind === 'spin' && typeof rec.payload.at === 'string') takeSpinMoment(rec);
     queueWrites(rec);
     return rec;
   }
@@ -1368,8 +1374,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
-  function spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Answer<{ thread: ThreadSummary; act: Act }> {
-    const bad = request({ action: 'spin', origin, character, title, body, ...(framing ? { framing } : {}) });
+  function spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[], at?: Id): Answer<{ thread: ThreadSummary; act: Act }> {
+    const bad = request({ action: 'spin', origin, character, title, body, ...(framing ? { framing } : {}), ...(at === undefined ? {} : { at }) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1377,10 +1383,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!from || from.kind === 'edit') return refuse('there is no such Act to spin from');
     const home = boards.find((b) => b.id === threads.get(from.thread)!.board)!;
     const board = home.isSystem ? playersBoard! : home;
+    /* spin_written (0351): a spin names a post only from a live character play, on a post of the character the play is on. Nothing here reads who owns either. */
+    if (at !== undefined) {
+      const reach = reachPlays.get(origin);
+      const post = acts.get(at);
+      const there = from.kind === 'card' && from.payload.caught === undefined && reach?.reach === 'character' && post?.kind === 'post' && post.character === reach.target
+        && reach.endsAt > now() && !reversedPlays.has(origin);
+      if (!there) return refuse('that card is not on that post');
+    }
     const stopped = stoppedQuote(null, null, body);
     if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, origin);
-    const written = write({ character, kind: 'spin', thread: t.id, target: origin, payload: { title, body } });
+    const written = write({ character, kind: 'spin', thread: t.id, target: origin, payload: { title, body, ...(at === undefined ? {} : { at }) } });
     sendThread(t);
     sendAct(written);
     writeFramed(body, framing, written);
@@ -1452,43 +1466,66 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const moments = new Map<Id, { version: Id; layers: readonly { layer: Id; saved: { state: unknown; at: number } | null }[] }>();
   function takeMoment(play: ActRec) {
     const post = acts.get(play.target!)!;
-    const layers = [...acts.values()].filter((a) => a.id !== play.id && a.target === post.id && (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && onPost(a))
-      .map((a) => ({ layer: a.id, saved: effects.has(a.id) ? { ...effects.get(a.id)! } : null }));
-    moments.set(play.id, { version: edits(post).at(-1)?.id ?? post.id, layers });
+    moments.set(play.id, { version: edits(post).at(-1)?.id ?? post.id, layers: layersOn(post, play.id) });
   }
-  /** play_moment (0072): the moment's version as the post shows it then, the play and its layers, and the plays above live then. */
+  /** The layers on a post as a snapshot keeps them: every card, set and spring on it, with what it had saved. */
+  const layersOn = (post: ActRec, but: Id) => [...acts.values()].filter((a) => a.id !== but && a.target === post.id && (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && onPost(a))
+    .map((a) => ({ layer: a.id, saved: effects.has(a.id) ? { ...effects.get(a.id)! } : null }));
+  /** take_spin_moment (0351): a spin that names a post keeps the post's version then and every layer on it then. */
+  const spinMoments = new Map<Id, { version: Id; layers: readonly { layer: Id; saved: { state: unknown; at: number } | null }[] }>();
+  function takeSpinMoment(spin: ActRec) {
+    const post = acts.get(spin.payload.at as Id)!;
+    spinMoments.set(spin.id, { version: edits(post).at(-1)?.id ?? post.id, layers: layersOn(post, spin.id) });
+  }
+  /**
+   * What play_moment and spin_moment answer from, once each has found its post and its snapshot: the version as the post shows it, the
+   * origin play first (a play's own, or the one a spin was pressed from) then the snapshot's layers and the ends at or before the time,
+   * and the plays above live at the time, the origin never one of them. `time` is the moment's own time.
+   */
+  function momentOf(first: ActRec, post: ActRec, version: ActRec, snapshot: readonly { layer: Id; saved: { state: unknown; at: number } | null }[], time: number, recorded: boolean): PlayMoment {
+    const edited = version.kind === 'edit' ? version : null;
+    const byLanding = (a: ActRec, b: ActRec) => a.at - b.at || a.order - b.order;
+    const board = threads.get(post.thread)!.board;
+    const wanted = new Set([first.id, ...snapshot.map((l) => l.layer)]);
+    /* A play an admin had ended by the moment (a card_end at or before it) was not live then; one ended later was. */
+    const endedBy = (p: Id) => [...acts.values()].some((a) => a.kind === 'card_end' && a.target === p && a.at <= time);
+    return {
+      version: {
+        ...publicAct(post), currentPayload: publicPayload(version.payload, hiddenVersions.has(version.id), version.id), editedAt: edited ? iso(edited.at) : null,
+        shownEditedAt: edited && edited.at > post.at + span(settings.editGrace) ? iso(edited.at) : null,
+      },
+      layers: [
+        { act: publicAct(first), state: null },
+        ...snapshot.map((l) => ({ rec: acts.get(l.layer)!, saved: l.saved })).sort((a, b) => byLanding(a.rec, b.rec))
+          .map(({ rec, saved }) => ({ act: publicAct(rec), state: saved ? { state: saved.state, savedAt: iso(saved.at) } : null })),
+        /* The card_end of the play or of one of its layers written at or before the moment (momentParts counts `<=` too), as 0092 gives. */
+        ...[...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target) && a.at <= time)
+          .sort(byLanding).map((a) => ({ act: publicAct(a), state: null })),
+      ],
+      above: [...reachPlays].filter(([p, r]) => p !== first.id && r.endsAt > time && !endedBy(p) && acts.get(p)!.at < time
+          && (r.reach === 'character' ? r.target === post.character : r.reach === 'thread' ? r.target === post.thread : r.target === board))
+        .sort(([a], [b]) => byLanding(acts.get(a)!, acts.get(b)!))
+        .map(([p, r]) => ({ play: p, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(p)!) })),
+      recorded,
+      at: iso(time),
+    };
+  }
+  /** play_moment (0072, 0352): the moment's version as the post shows it then, the play and its layers, and the plays above live then. A play on a character is on its cast-from post. */
   function playMoment(id: Id): PlayMoment | null {
     const play = acts.get(id);
-    if (!play || !(play.kind === 'card' || play.kind === 'set' || play.kind === 'spring') || play.target === null || !onPost(play)) return null;
+    if (!play || !(play.kind === 'card' || play.kind === 'set' || play.kind === 'spring') || play.target === null || !(onPost(play) || play.payload.reach === 'character')) return null;
     const post = acts.get(play.target);
     if (!post || post.kind !== 'post') return null;
     const m = moments.get(id);
     const version = m ? acts.get(m.version)! : edits(post).filter((e) => e.at <= play.at).at(-1) ?? post;
-    const edited = version.kind === 'edit' ? version : null;
-    const byLanding = (a: ActRec, b: ActRec) => a.at - b.at || a.order - b.order;
-    const board = threads.get(post.thread)!.board;
-    const wanted = new Set([id, ...(m?.layers ?? []).map((l) => l.layer)]);
-    /* A play an admin had ended by the moment (a card_end at or before it) was not live then; one ended later was. */
-    const endedBy = (p: Id) => [...acts.values()].some((a) => a.kind === 'card_end' && a.target === p && a.at <= play.at);
-    return {
-      version: {
-        ...publicAct(post), currentPayload: version.payload, editedAt: edited ? iso(edited.at) : null,
-        shownEditedAt: edited && edited.at > post.at + span(settings.editGrace) ? iso(edited.at) : null,
-      },
-      layers: [
-        { act: publicAct(play), state: null },
-        ...(m?.layers ?? []).map((l) => ({ rec: acts.get(l.layer)!, saved: l.saved })).sort((a, b) => byLanding(a.rec, b.rec))
-          .map(({ rec, saved }) => ({ act: publicAct(rec), state: saved ? { state: saved.state, savedAt: iso(saved.at) } : null })),
-        /* The card_end of the play or of one of its layers written at or before the moment (momentParts counts `<=` too), as 0092 gives. */
-        ...[...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target) && a.at <= play.at)
-          .sort(byLanding).map((a) => ({ act: publicAct(a), state: null })),
-      ],
-      above: [...reachPlays].filter(([p, r]) => r.endsAt > play.at && !endedBy(p) && acts.get(p)!.at < play.at
-          && (r.reach === 'character' ? r.target === post.character : r.reach === 'thread' ? r.target === post.thread : r.target === board))
-        .sort(([a], [b]) => byLanding(acts.get(a)!, acts.get(b)!))
-        .map(([p, r]) => ({ play: p, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(p)!) })),
-      recorded: m !== undefined,
-    };
+    return momentOf(play, post, version, m?.layers ?? [], play.at, m !== undefined);
+  }
+  /** spin_moment (0351): the post as it read when the spin was written; null for an id that is no spin, or a spin that names no post. */
+  function spinMoment(id: Id): PlayMoment | null {
+    const spin = acts.get(id);
+    const m = spinMoments.get(id);
+    if (!spin || spin.kind !== 'spin' || !m || spin.target === null) return null;
+    return momentOf(acts.get(spin.target)!, acts.get(spin.payload.at as Id)!, acts.get(m.version)!, m.layers, spin.at, true);
   }
   /** The plays an account has released itself from, as "account play". */
   const releases = new Map<string, number>();
@@ -3554,6 +3591,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }, before ?? null);
     },
     playMoment,
+    spinMoment,
     myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
     releaseEffect,
     saveEffect,
@@ -4986,6 +5024,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const endsAt = o?.ends ?? at + Math.min(rules?.lasts ? span(rules.lasts) : bound, bound);
       const written = asAt(ownerOf(character), at, () => write({ character, kind: 'card', thread, target: on, at, payload: { card, message: o?.message ?? '', config: o?.config ?? {}, reach, [reach]: target, ends: iso(endsAt) } }));
       reachPlays.set(written.id, { reach, target, endsAt });
+      if (o?.unrecorded) moments.delete(written.id);
       if (o?.live) { sendAct(written); sendReach(written); }
       return written.id;
     },
