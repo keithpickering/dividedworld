@@ -5,11 +5,13 @@ import {
   APPEAL_VERDICTS,
   FILING_LINE_MOST,
   FILING_RULE,
+  FILING_STANDS,
   MOD_MOVE_RULE,
   filingCompletion,
   filingPrompt,
   modPrompt,
   PATROL_RULE,
+  PREMISE_MEANING,
   patrolPrompt,
   repairPatrol,
   REPORT_RULE,
@@ -773,4 +775,13 @@ test('a patrol\'s findings are bounded by the rule, not the schema: no maxItems,
   assert.ok(!('maxItems' in s.properties['findings']), 'the provider refuses maxItems');
   const many = Array.from({ length: 5 }, () => finding(P1, { rule: 'premise', band: 'minor' }));
   assert.equal(repairPatrol({ findings: many }, { ...pctx, sample: [pctx.sample[0]!] }).findings.length, 1);
+});
+
+test('the patrol, report and filing prompts say what a premise charge is for, and a filing is told the charge stands', () => {
+  assert.ok(patrolPrompt(patrol()).system.includes(PREMISE_MEANING), 'patrol');
+  assert.ok(reportPrompt(report()).system.includes(PREMISE_MEANING), 'report');
+  assert.ok(filingPrompt(filing({ mode: 'line' })).system.includes(PREMISE_MEANING), 'filing, line');
+  assert.ok(filingPrompt(filing({ mode: 'line' })).system.includes(FILING_STANDS), 'filing, line, the charge stands');
+  assert.ok(!filingPrompt(filing({ mode: 'move' })).system.includes(FILING_STANDS), 'filing, move, no stands');
+  assert.match(PREMISE_MEANING, /nonsense on a board that asks for nonsense/);
 });

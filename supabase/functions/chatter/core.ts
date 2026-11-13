@@ -53,6 +53,7 @@ import type { Career } from '../../../engine/system/career.ts';
 import {
   POOL_PREMISE,
   CHATTER_RULE,
+  CHATTER_TOKENS,
   chatterCompletion,
   chatterPrompt,
   chatterSchema,
@@ -343,7 +344,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         });
         const out = await models.chat({
           duty: 'chatter', tier: DUTY_SPECS.chatter.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
-          schema: chatterSchema({ askedTitle: startsThread, offered }), rules: CHATTER_RULE, maxTokens: 1_500,
+          schema: chatterSchema({ askedTitle: startsThread, offered }), rules: CHATTER_RULE, maxTokens: CHATTER_TOKENS,
         });
         raw = out.value;
       }

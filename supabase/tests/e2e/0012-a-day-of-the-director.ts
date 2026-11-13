@@ -16,7 +16,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
-import { psqlDb, sql, scratchSeed } from './psql-db.ts';
+import { psqlDb, sql, scratchSeed, openSeasonAhead } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { runSettlement } from '../../functions/settle/core.ts';
 import { instance } from '../../functions/_shared/instance.ts';
@@ -28,11 +28,13 @@ const quiet: Instance = { ...instance, system: { ...instance.system, feeds: [] }
 const BOSS = instance.system.firstBoss;
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
 
-test('a rename is queued, lands, is met by three characters and ends, and the next meeting is told who met it', async () => {
+test('a rename is queued, lands, is met by three characters and ends, and the next meeting is told who met it', async (t) => {
   const db = psqlDb();
   await db.rpc('seed_instance', { payload: scratchSeed(instance) });
   sql(`update settings set value = 'true' where key = 'systemEnabled'`);
   sql(`update seasons set boss = '${BOSS}' where ends_at is null`);
+  // A move that would land after the season ends is dropped, so the season is one with its end ahead (an earlier file's seasons started long ago).
+  t.after(openSeasonAhead());
   sql(`insert into move_bank (staff, balance, as_of) values ('${BOSS}', 3, now()) on conflict (staff) do update set balance = 3, as_of = now()`);
   // Moves other files left in force would crowd the digest's capped list; they end here, before this day's move is made.
   sql(`select end_move(move_act, 'expired', 'e2e') from open_moves`);

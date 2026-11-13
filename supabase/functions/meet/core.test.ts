@@ -9,7 +9,7 @@ import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
 const dividedWorld: WorldInstance = placeholderWorld(realInstance);
 import { AnswerRejected, LedgerWriteFailed, SchemaRefused } from '../_shared/models/index.ts';
 import { TransportFailure } from '../_shared/models/transport.ts';
-import { MEETING_PARTS, partRule, partSchema, type MeetingPartKey } from '../../../engine/system/meeting.ts';
+import { MEETING_PARTS, movesAsk, partRule, partSchema, type MeetingPartKey } from '../../../engine/system/meeting.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
@@ -68,6 +68,8 @@ interface World {
   boss?: string;
   /** The keys meeting_context() lists as a nomination's candidates (default: the roster but the Boss). */
   successors?: string[];
+  /** The Boss's standing nomination as meeting_context() hands it over (0357); absent: none stands, or an older database that does not say. */
+  nomination?: { boss: string; at: number } | null;
   /** What staff_career returns for the Boss (default: it has led nothing). */
   career?: { led: unknown[]; offices: unknown[] };
   /** What staff_notes_recent returns for the Boss (default: none). */
@@ -110,7 +112,7 @@ function fakeDb(w: World = {}) {
           return { status: 'begun', meeting: state.meeting } as T;
         case 'fail_meeting': state.failed.push(args); state.closed = true; return { status: 'closed' } as T;
         case 'meeting_context':
-          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}), ...(w.arc ? { arc: w.arc } : {}), ...(w.handoffFacts !== undefined ? { handoffFacts: w.handoffFacts } : {}), ...(w.predecessor !== undefined ? { predecessor: w.predecessor } : {}) } as T;
+          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}), ...(w.arc ? { arc: w.arc } : {}), ...(w.handoffFacts !== undefined ? { handoffFacts: w.handoffFacts } : {}), ...(w.predecessor !== undefined ? { predecessor: w.predecessor } : {}), ...(w.nomination !== undefined ? { nomination: w.nomination } : {}) } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], boards: [{ id: HOT, name: 'Mario Fan Games', premise: 'Games by fans.', posts: 4 }], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }] } as T;
         case 'character_groups': return (args.ids as string[]).map((id) => ({ id, group: id === ANN ? 'Trial Members' : 'Members' })) as T;
@@ -412,6 +414,43 @@ test('a successor named before the meltdown\'s last week is dropped and recorded
     assert.equal(xo.successor, null, boss);
     assert.ok(xo.trims.some((t: any) => t.path === 'successor.boss'), boss);
   }
+});
+
+test('the first message ends with the ask for what this meeting offers, and is the same in all four calls', async () => {
+  const act = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const due = [{ act, kind: 'renameBoard', params: { board: BOARD, name: 'Pie Place', premise: 'Pie.' }, landedAt: '2026-10-20T09:00:00.000Z', expiresAt: null, by: 'The Old Boss', boardName: 'Mario Fan Games' }];
+  for (const [world, text] of [
+    [{ inheritanceDue: due }, 'Hold your meeting. This first turn is your moves: answer moves and inherited.'],
+    [{ endsIn: 3 * DAY }, 'Hold your meeting. This first turn is your moves: answer moves and successor.'],
+    [{ endsIn: 3 * DAY, inheritanceDue: due }, 'Hold your meeting. This first turn is your moves: answer moves, inherited and successor.'],
+  ] as const) {
+    const m = fakeModels(answer([]));
+    await run(fakeDb(world).db, m.models, quiet, SLOT, clock, noFeeds);
+    assert.equal(m.chats.length, 4);
+    assert.ok(m.chats[0]!.messages[0]!.content.endsWith(`\n${text}`), text);
+    for (const c of m.chats) assert.deepEqual(c.messages[0], m.chats[0]!.messages[0], 'the first message is the same in every call');
+  }
+});
+
+test('a standing nomination from the database is told in the prompt and, named again, is dropped as no new nominee; naming another stands', async () => {
+  const since = NOW - DAY;
+  const named = dividedWorld.system.roster.find((b) => b.key === OTHER_BOSS)!;
+  const day = new Date(since).toISOString().slice(0, 10);
+  const world = { endsIn: 3 * DAY, nomination: { boss: OTHER_BOSS, at: since } };
+  const again = fakeModels(answer([], { successor: { boss: OTHER_BOSS, why: 'Again.' } }));
+  const ao = await run(fakeDb(world).db, again.models, quiet, SLOT, clock, noFeeds);
+  assert.match(again.chats[0]!.system, new RegExp(`You named ${named.name.replace(/[.*+?^${'$'}{}()|[\]\\]/g, '\\$&')} on ${day}\\. That stands unless you name someone else`));
+  assert.ok(!again.chats[0]!.system.includes('If you want, name your successor'));
+  assert.equal(ao.successor, null);
+  assert.ok(ao.trims.some((t: any) => t.path === 'successor.boss' && t.predicate === 'newNominee'), JSON.stringify(ao.trims));
+  const other = dividedWorld.system.roster.find((b) => b.key !== BOSS && b.key !== OTHER_BOSS)!.key;
+  const so = await run(fakeDb(world).db, fakeModels(answer([], { successor: { boss: other, why: 'Changed my mind.' } })).models, quiet, SLOT, clock, noFeeds);
+  assert.deepEqual(so.successor, { boss: other, why: 'Changed my mind.' });
+  // A nomination naming a key the roster does not know is not told, and is not a reason to drop anything.
+  const unknown = fakeModels(answer([], { successor: { boss: OTHER_BOSS, why: 'x' } }));
+  const uo = await run(fakeDb({ endsIn: 3 * DAY, nomination: { boss: 'not-on-the-roster', at: since } }).db, unknown.models, quiet, SLOT, clock, noFeeds);
+  assert.ok(!unknown.chats[0]!.system.includes('You named'));
+  assert.deepEqual(uo.successor, { boss: OTHER_BOSS, why: 'x' });
 });
 
 test('who a successor may be is the database\'s list, not the roster minus the first staff', async () => {
@@ -1037,7 +1076,9 @@ test('a meeting is four chat calls in order, each with its part\'s schema, rule 
     assert.equal(c.system, m.chats[0]!.system);
     assert.deepEqual(c.messages[0], m.chats[0]!.messages[0]);
   }
-  assert.ok(m.chats[0]!.messages[0]!.content.endsWith(MEETING_PARTS[0].ask));
+  // No moves were inherited and no successor may be named, so the ask names only moves.
+  assert.ok(m.chats[0]!.messages[0]!.content.endsWith(movesAsk({ inherited: false, successor: false })));
+  assert.ok(m.chats[0]!.messages[0]!.content.endsWith('Hold your meeting. This first turn is your moves: answer moves.'));
   assert.equal(m.chats[0]!.messages.length, 1);
   // Each call is shown every earlier answer, then the ask for its own part.
   m.chats.forEach((c, i) => {
@@ -1150,4 +1191,22 @@ test('the error shown to the next call is clipped to 200 characters, the record 
   await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
   assert.equal(m.chats[1]!.messages[1]!.content, `(this part was not kept: ${'x'.repeat(200)})`);
   assert.equal(d.state.applied[0]!.payload.record.parts[0].error, long);
+});
+
+/* ---------------------------------------------------------------- a move that would land after the season ends ---- */
+
+test('in the farewell window the repair is given the season\'s end, so a structural move that would land after it is dropped and the prompt says so; outside the window nothing is dropped for it', async () => {
+  const d = fakeDb({ endsIn: 20 * H, handoffFacts: FACTS });
+  const m = fakeModels(answer([rename(0)]));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok');
+  assert.match(m.chats[0]!.system, /never lands/);
+  assert.equal(d.state.applied[0]!.payload.moves.length, 0, 'a structural move waits 24 hours and the season ends in 20');
+  assert.ok(out.trims.some((t: any) => t.path === 'moves[0]' && t.predicate === 'landsBeforeSeasonEnd'), JSON.stringify(out.trims));
+  // A database that handed over no facts leaves the meeting outside the window, whatever the clock says: no season end is given and the same move is kept.
+  const older = fakeDb({ endsIn: 20 * H });
+  const om = fakeModels(answer([rename(0)]));
+  await run(older.db, om.models, quiet, SLOT, clock, noFeeds);
+  assert.doesNotMatch(om.chats[0]!.system, /never lands/);
+  assert.equal(older.state.applied[0]!.payload.moves.length, 1);
 });

@@ -12,6 +12,7 @@ const corpus: RehearsalCorpus = {
   replies: ['Hey {name}, good point about {interest} on {board}.', 'Interesting.'],
   agreeing: ['Agreed, {name}.', 'Yes.'],
   disagreeing: ['No way, {name}.', 'Nope.'],
+  anyBoard: [{ title: 'First on {board}', body: 'Hello {board}.' }, { title: 'Is this {board}?', body: 'Asking.' }],
 };
 const scenario: Scenario = {
   key: 't', seed: 7, players: 4, charactersPerPlayer: { least: 2, most: 2 }, startThreads: 2, backstoryDays: 1, dayOfSeason: 3, days: 3,
@@ -27,6 +28,7 @@ const cast = castFor(scenario, corpus);
 const characters = cast.flatMap((p) => p.characters.map((c, i) => ({ id: `ch-${p.player}-${i}`, name: c.name, player: p.player, sketch: c.sketch })));
 const world: World = {
   dayStart: 1_000 * DAY, reactions, characters,
+  boards: [{ slug: 'general', name: 'General', open: true }, { slug: 'lounge', name: 'The Lounge', open: true }],
   threads: [{ id: 't1', board: 'general', title: 'Anyone like sprites?', open: true }, { id: 't2', board: 'general', title: 'topic3 thread', open: true }],
   posts: characters.slice(0, 6).map((c, i) => ({ act: `p${i}`, thread: i % 2 ? 't1' : 't2', character: c.id, at: 1_000 * DAY - (i + 1) * 3_600_000 })),
 };
@@ -150,18 +152,19 @@ test('a reply to a feud uses a disagreeing line; {interest} and {board} are fill
   assert.ok(mine.length > 0);
   const interests = corpus.sketches.find((s) => s.key === 's1')!.interests;
   for (const r of mine) {
-    const m = /^D (\w+) (\w+) lounge$/.exec(r.body!);
+    const m = /^D (\w+) (\w+) The Lounge$/.exec(r.body!);
     assert.ok(m, r.body);
     assert.equal(m[1], foe.name);
     assert.ok(interests.includes(m[2]!));
   }
 });
 
-test('an empty world gives only thread starts; a board without openers is skipped; one character is fine', () => {
+test('an empty world gives only thread starts; a board without openers and without anyBoard gets nothing; one character is fine', () => {
   const empty = requests({ ...world, threads: [], posts: [] });
   assert.ok(empty.length > 0 && empty.every((r) => r.action === 'startThread'));
-  const c2: RehearsalCorpus = { ...corpus, openers: { quiet: [], general: corpus.openers.general! } };
-  assert.ok(requests({ ...world, threads: [], posts: [] }, c2).every((r) => r.board === 'general'));
+  const c2: RehearsalCorpus = { ...corpus, openers: { quiet: [], general: corpus.openers.general! }, anyBoard: [] };
+  const got2 = requests({ ...world, threads: [], posts: [] }, c2);
+  assert.ok(got2.length > 0 && got2.every((r) => r.board === 'general'));
   const one: World = { ...world, characters: [characters[0]!], posts: [] };
   const got = requests(one);
   assert.ok(got.every((r) => r.action !== 'react'));
@@ -192,4 +195,23 @@ test('an interest that is a phrase weighs a thread whose title shares a signific
   const stop: World = { ...w2, threads: [{ id: 'plain', board: 'general', title: 'nothing here', open: true }, { id: 'stopwords', board: 'general', title: 'And the behind of that', open: true }] };
   const s = requests(stop, phrase, scenario, 60).filter((r) => r.action === 'post' && r.character === liking.id);
   assert.ok(s.filter((r) => r.thread === 'stopwords').length < s.length * 0.75, 'stopwords alone do not weigh a thread');
+});
+
+test('a board without openers is started on from anyBoard, with its name filled; a closed board never is', () => {
+  const w: World = { ...world, threads: [], posts: [], boards: [{ slug: 'general', name: 'General', open: true }, { slug: 'world-1', name: 'World -1', open: true }, { slug: 'shut', name: 'Shut Down', open: false }] };
+  const starts = requests(w, corpus, scenario, 60).filter((r) => r.action === 'startThread');
+  assert.ok(starts.length > 0);
+  const onNew = starts.filter((r) => r.board === 'world-1');
+  assert.ok(onNew.length > 0, 'no thread started on world-1');
+  for (const r of onNew) assert.ok(`${r.title} ${r.body}`.includes('World -1') && !`${r.title} ${r.body}`.includes('world-1'), `${r.title} / ${r.body}`);
+  assert.ok(starts.some((r) => r.board === 'general'));
+  assert.ok(starts.every((r) => r.board !== 'shut'));
+});
+
+test('a reply\'s {board} is the board\'s name, not its slug', () => {
+  const c2: RehearsalCorpus = { ...corpus, replies: ['R {board}'], agreeing: ['R {board}'], disagreeing: ['R {board}'] };
+  const w: World = { ...world, boards: [{ slug: 'world-1', name: 'World -1', open: true }], threads: [{ id: 'th', board: 'world-1', title: 'x', open: true }], posts: [] };
+  const posts = requests(w, c2, scenario, 40).filter((r) => r.action === 'post');
+  assert.ok(posts.length > 0);
+  assert.ok(posts.every((r) => r.body === 'R World -1'), posts[0]?.body);
 });

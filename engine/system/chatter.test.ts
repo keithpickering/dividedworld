@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { testSystem } from '../rules/test-system.ts';
-import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, CHATTER_RULE, type OfferedCard, type RepairFacts } from './chatter.ts';
+import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, CHATTER_RULE, CHATTER_WORDS_MOST, CHATTER_TOKENS, type OfferedCard, type RepairFacts } from './chatter.ts';
 import { personaPrompt } from './prompt.ts';
 import { noteMost } from './memory.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
@@ -423,4 +423,22 @@ test('every chatter schema is one the provider accepts: plain, a thread start wi
     ['a surface card with walls on offer', { askedTitle: false, offered: [CAST, TAGGED] }],
   ];
   for (const [name, c] of cases) assert.deepEqual(schemaProblems(chatterSchema(c)), [], name);
+});
+
+test('the prompt asks for at most CHATTER_WORDS_MOST characters, or postMaxLength where that is less', () => {
+  const big = chatterPrompt({ ...base, limits: { ...base.limits, postMaxLength: 20000 } });
+  assert.ok(big.system.includes(`at most ${CHATTER_WORDS_MOST} characters`), big.system);
+  assert.equal(CHATTER_WORDS_MOST, 2000);
+  assert.ok(!big.system.includes('20000'), 'the board\'s bound is not the ask');
+  const small = chatterPrompt({ ...base, limits: { ...base.limits, postMaxLength: 200 } });
+  assert.ok(small.system.includes('at most 200 characters'), small.system);
+});
+
+test('words over CHATTER_WORDS_MOST are cut at a sentence and the cut is recorded, and the token cap holds the stated length', () => {
+  const sentence = 'This is a sentence of exactly forty chars.'; // 42
+  const words = Array.from({ length: 60 }, () => sentence).join(' ');
+  const r = ok({ words }, { postMaxLength: 20000 });
+  assert.ok(r.answer.words.length <= CHATTER_WORDS_MOST && r.answer.words.length > CHATTER_WORDS_MOST - 100);
+  assert.deepEqual(r.trims, [{ path: 'words', predicate: `maxLength(${CHATTER_WORDS_MOST})`, before: words.length, after: r.answer.words.length }]);
+  assert.ok(CHATTER_TOKENS * 2 >= CHATTER_WORDS_MOST + noteMost + 400, 'the cap holds the words at two characters a token, the note, and the JSON around them');
 });

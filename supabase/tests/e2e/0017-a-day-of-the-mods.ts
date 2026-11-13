@@ -18,7 +18,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
 import { MEETING_PARTS } from '../../../engine/system/meeting.ts';
-import { psqlDb, sql, scratchSeed } from './psql-db.ts';
+import { psqlDb, sql, scratchSeed, openSeasonAhead } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { runFilings } from '../../functions/staff/core.ts';
 import { runPatrols } from '../../functions/staff/patrol.ts';
@@ -46,7 +46,7 @@ const json = <T = Record<string, any>>(text: string): T => JSON.parse(text) as T
 const row = (query: string) => json(sql(query));
 const rows = (query: string) => json<Record<string, any>[]>(sql(`select coalesce(jsonb_agg(to_jsonb(x)), '[]') from (${query}) x`));
 
-test('a meeting orders two Mods; visits are drawn, intercepted, reported and filed; a rule lands; a bar bans; appeals reduce; the allowance returns; a patrol runs once', async () => {
+test('a meeting orders two Mods; visits are drawn, intercepted, reported and filed; a rule lands; a bar bans; appeals reduce; the allowance returns; a patrol runs once', async (t) => {
   const db = psqlDb();
   await db.rpc('seed_instance', { payload: scratchSeed(instance) });
   sql(`update settings set value = 'true' where key = 'systemEnabled'`);
@@ -54,6 +54,8 @@ test('a meeting orders two Mods; visits are drawn, intercepted, reported and fil
 
   // ---- The staff as this day starts: BOSS is the open season's Boss, and MONITOR (a quiz) and HYPE (a bribe) are the Mods. ----
   sql(`update seasons set boss = '${BOSS}' where ends_at is null`);
+  // A move that would land after the season ends is dropped, so the season is one with its end ahead (an earlier file's seasons started long ago).
+  t.after(openSeasonAhead());
   sql(`update characters set debuted_at = coalesce(debuted_at, now() - interval '30 days') where staff in ('${BOSS}', '${MONITOR}', '${HYPE}')`);
   for (const mod of [MONITOR, HYPE]) {
     if (sql(`select office from staff_office_now where staff = '${mod}'`) !== 'mod') sql(`insert into staff_offices (staff, office, cause) values ('${mod}', 'mod', 'seed')`);

@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, HANDOFF_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
-import { noteMost } from './memory.ts';
+import { DEMAND_ID_ROLES, HANDOFF_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, movesAsk, PROFILE_MOST, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
+import { MEMORY_MOST, noteMost } from './memory.ts';
 import type { TrophyFacts } from './moves.ts';
 import { schemaProblems } from './schema.ts';
 import { repair, type Rule } from './validate.ts';
@@ -1368,6 +1368,38 @@ test('every field of the answer is in exactly one part, and MEETING_RULE is buil
   assert.ok(MEETING_PARTS[0]!.ask.includes('Hold your meeting.'));
 });
 
+test('the first turn asks only for what the meeting offers: moves always, inherited when moves were inherited, successor when one may be named', () => {
+  assert.equal(movesAsk({ inherited: false, successor: false }), 'Hold your meeting. This first turn is your moves: answer moves.');
+  assert.equal(movesAsk({ inherited: true, successor: false }), 'Hold your meeting. This first turn is your moves: answer moves and inherited.');
+  assert.equal(movesAsk({ inherited: false, successor: true }), 'Hold your meeting. This first turn is your moves: answer moves and successor.');
+  assert.equal(movesAsk({ inherited: true, successor: true }), 'Hold your meeting. This first turn is your moves: answer moves, inherited and successor.');
+});
+
+test('a standing nomination is told to the Boss in place of the invitation to name one; the roster line stays', () => {
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [{ key: 'quality-control', name: 'QC-1000', pronouns: PRONOUN_PRESETS.it }], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [] };
+  const since = Date.parse('2026-10-30T09:00:00Z');
+  const named = meetingSystemPrompt({ ...facts, nomination: { boss: 'quality-control', name: 'QC-1000', since } });
+  assert.ok(named.includes('You named QC-1000 on 2026-10-30. That stands unless you name someone else; naming QC-1000 again changes nothing.'), 'the standing nomination');
+  assert.ok(!named.includes('If you want, name your successor'), 'no invitation while one stands');
+  assert.ok(named.includes('quality-control (QC-1000, it/its)'), 'the roster line stays');
+  const none = meetingSystemPrompt(facts);
+  assert.ok(none.includes('If you want, name your successor'));
+  assert.ok(!none.includes('You named'));
+});
+
+test('a successor naming the Boss\'s standing nominee is dropped as no new nominee, and one naming another key stands', () => {
+  const c = { ...ctx(), successorAllowed: true, successors: new Set(['quality-control', 'other-boss']), nomination: { boss: 'quality-control', name: 'QC-1000', since: NOW - 24 * H } };
+  const same = repairAnswer({ ...answer(undefined), moves: [], successor: { boss: 'quality-control', why: 'Again.' } }, c);
+  assert.ok(same.ok, JSON.stringify(same));
+  assert.equal(same.successor, null);
+  assert.deepEqual(same.trims.filter((t: any) => t.path === 'successor.boss').map((t: any) => t.predicate), ['newNominee']);
+  const other = repairAnswer({ ...answer(undefined), moves: [], successor: { boss: 'other-boss', why: 'Changed my mind.' } }, c);
+  assert.ok(other.ok, JSON.stringify(other));
+  assert.deepEqual(other.successor, { boss: 'other-boss', why: 'Changed my mind.' });
+  const unnamed = repairAnswer({ ...answer(undefined), moves: [], successor: { boss: 'quality-control', why: 'First.' } }, { ...c, nomination: undefined });
+  assert.ok(unnamed.ok && unnamed.successor !== null, 'with none standing, naming it stands');
+});
+
 // The moves part is 40 of the provider's 40, the fangame split's three kinds and awardTrophy's trophy param included: properties: the fangame split's kinds added their params (into, fallback, a thread's board) to the loose object every move carries, so a field added to any kind's params now needs a part of its own.
 const DESIGN_PROPERTIES = { moves: 40, bundle: 37, staff: 23, self: 28 } as const;
 const OPTIONAL = { moves: 1, bundle: 1, staff: 7, self: 4 } as const;
@@ -1565,4 +1597,92 @@ test('each part\'s own rule accepts its own schema\'s shape: a rule with every f
     for (const f of p.fields) assert.equal(rule.fields[f]!.optional, true, `${p.key}.${f}`);
     assert.ok(repair({}, partRule(p.key)).ok, p.key);
   }
+});
+
+test('the system prompt states each bound the profile and memory are held to, with the number from the rules', () => {
+  const facts = {
+    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] },
+  };
+  const served = meetingSystemPrompt(facts);
+  assert.ok(served.includes(`a mood (a short phrase, at most ${PROFILE_MOST.mood} characters)`), served);
+  assert.ok(served.includes('a mood (a short phrase, at most 80 characters)'), 'the mood, as 80');
+  assert.ok(served.includes(`up to ${PROFILE_MOST.interests} interests of at most ${PROFILE_MOST.interest} characters each`), served);
+  assert.ok(served.includes(`A hobby's name is at most ${MEMORY_MOST.hobbyName} characters, and a mark at most ${MEMORY_MOST.mark}.`), served);
+});
+
+/* ---------------------------------------------------------------- a move that would land after the season ends ---- */
+// The rehearsal patch design, section 6: the handover withdraws the outgoing Boss's moves still waiting, so a farewell-window meeting does not queue a move that would only be withdrawn.
+
+const ENDS = NOW + 20 * H;
+const SEASON_MAKE = { name: 'Pirate Puns Palace', premise: 'Puns.', description: 'Arr.' };
+const seasonAnswer = () => ({
+  ...answer(null),
+  moves: [
+    lastingMove('mergeBoard', { board: BOARD, into: OTHER_BOARD }),
+    { ...lastingMove('moveThread', { thread: THREAD, board: OTHER_BOARD }), go_live_at: new Date(NOW + H).toISOString() },
+  ],
+  bundle: { name: 'Story', parts: [{ role: 'a', kind: 'createBoard', params: SEASON_MAKE, go_live_at: new Date(NOW).toISOString(), expires_in_hours: 0, why: 'Because.' }] },
+  successor: { boss: 'some-boss', why: 'Next.' },
+});
+const seasonRepair = (over: Partial<RepairContext>) => {
+  const r = repairAnswer(seasonAnswer(), { ...ctx(), bank: 50, boards: new Set([BOARD, OTHER_BOARD]), successorAllowed: true, ...over });
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+
+test('with the season ending in 20 hours and a 24 hour hold, a structural move, a composed bundle and a successor are dropped and recorded; a move that waits an hour is kept', () => {
+  const r = seasonRepair({ seasonEndsAt: ENDS });
+  assert.deepEqual(r.moves.map((m) => m.kind), ['moveThread'], JSON.stringify(r.moves));
+  assert.equal(r.moves[0]!.goLiveAt, NOW + H);
+  assert.equal(r.bundles.length, 0);
+  assert.equal(r.successor, null);
+  const gone = r.trims.filter((t) => t.predicate === 'landsBeforeSeasonEnd').map((t) => t.path).sort();
+  assert.deepEqual(gone, ['bundle', 'moves[0]', 'successor'], JSON.stringify(r.trims));
+});
+
+test('with no season end given, the structural move, the bundle, the successor and the other move are all kept', () => {
+  const r = seasonRepair({});
+  assert.deepEqual(r.moves.map((m) => m.kind), ['mergeBoard', 'moveThread']);
+  assert.equal(r.bundles.length, 1);
+  assert.deepEqual(r.successor, { boss: 'some-boss', why: 'Next.' });
+  assert.ok(!r.trims.some((t) => t.predicate === 'landsBeforeSeasonEnd'));
+});
+
+test('a move that lands before the season ends is kept in the farewell window', () => {
+  const r = seasonRepair({ seasonEndsAt: NOW + 40 * H });
+  assert.equal(r.moves.length, 2);
+  assert.equal(r.bundles.length, 1);
+  assert.notEqual(r.successor, null);
+});
+
+test('the farewell prompt says a move that would land after the season ends never lands, with the end date and the hold', () => {
+  const told = meetingSystemPrompt({ ...bossFacts, farewell: { postMaxLength: 777, seasonEndsAt: ENDS } });
+  assert.match(told, /never lands/);
+  assert.ok(told.includes('2026-11-02 08:00 UTC'), told);
+  assert.ok(told.includes(`lands ${settings.structuralHoldHours} hours after you make it`), told);
+});
+
+// The boundary is exact: a move that lands the very moment the season ends is withdrawn at the handover too, and one a millisecond earlier is not.
+test('a structural move, a composed bundle and a successor that land exactly when the season ends are dropped', () => {
+  const r = seasonRepair({ seasonEndsAt: NOW + settings.structuralHoldHours * H });
+  assert.deepEqual(r.moves.map((m) => m.kind), ['moveThread'], JSON.stringify(r.moves));
+  assert.equal(r.bundles.length, 0);
+  assert.equal(r.successor, null);
+  const gone = r.trims.filter((t) => t.predicate === 'landsBeforeSeasonEnd').map((t) => t.path).sort();
+  assert.deepEqual(gone, ['bundle', 'moves[0]', 'successor'], JSON.stringify(r.trims));
+});
+
+test('the same three, landing one millisecond before the season ends, are kept', () => {
+  const r = seasonRepair({ seasonEndsAt: NOW + settings.structuralHoldHours * H + 1 });
+  assert.deepEqual(r.moves.map((m) => m.kind), ['mergeBoard', 'moveThread']);
+  assert.equal(r.bundles.length, 1);
+  assert.deepEqual(r.successor, { boss: 'some-boss', why: 'Next.' });
+  assert.ok(!r.trims.some((t) => t.predicate === 'landsBeforeSeasonEnd'), JSON.stringify(r.trims));
+});
+
+test('a move that waits an hour is dropped when the season ends at that very moment and kept a millisecond before', () => {
+  const at = seasonRepair({ seasonEndsAt: NOW + H });
+  assert.ok(!at.moves.some((m) => m.kind === 'moveThread'), JSON.stringify(at.moves));
+  const before = seasonRepair({ seasonEndsAt: NOW + H + 1 });
+  assert.ok(before.moves.some((m) => m.kind === 'moveThread'), JSON.stringify(before.moves));
 });

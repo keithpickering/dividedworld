@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runChatter } from './core.ts';
+import { CHATTER_TOKENS } from '../../../engine/system/chatter.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
@@ -997,4 +998,12 @@ test('at most three walls are offered, and only those of the card offered', asyn
   await run(d, m);
   const offered = m.chats.find((c) => (c.schema as any).properties.card)!;
   assert.deepEqual((offered.schema as any).properties.card.properties.wall.enum, ids.slice(0, 3));
+});
+
+test('the structured chatter call is capped at CHATTER_TOKENS', async () => {
+  const d = fakeDb({ pool: { cardRarityMost: 'uncommon' } });
+  const m = fakeModels(normal);
+  await run(d, m);
+  assert.ok(m.chats.length > 0);
+  for (const c of m.chats) assert.equal(c.maxTokens, CHATTER_TOKENS);
 });
