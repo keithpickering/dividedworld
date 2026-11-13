@@ -72,6 +72,14 @@ describe('a folded thread row: counts on a line, the last post on the next (2.1)
   });
 });
 
+describe('a folded thread row\'s last post is one unit (#554)', () => {
+  test('in the container block the by-unit is a box of its own no wider than the row', () => {
+    const by = rules(fold, '.kb-thread-last-by').join(';');
+    expect(by).toMatch(/display:\s*(?:inline-)?(?:block|flex)/u);
+    expect(by).toMatch(/max-width:\s*100%/u);
+  });
+});
+
 describe('a folded board row: threads on a line, the last post on the next (2.1)', () => {
   test('in the phone block the threads and the last post are blocks, and the by-unit is one inline-block no wider than the row', () => {
     expect(rules(phone, '.kb-table.kb-board-list .kb-board-row > td.kb-board-threads').join(';')).toMatch(/display:\s*block/u);

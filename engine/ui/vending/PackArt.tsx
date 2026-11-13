@@ -10,17 +10,21 @@
  * `part="top"` is the other piece of the torn pack: the crimped top above the same tear line, cut along the line's other side. The engine gives the line, so any pack art tears the same
  * way; the reveal draws the two pieces one over the other (a whole pack) and rips the top away.
  *
+ * With `art.picture` the pack is a picture of the whole pack on a transparent ground instead (specs/card-art.md): its outline is the pack's, so the engine
+ * crimps and prints nothing but the count, and a relief, when given, lights it (`PackLight`). The torn parts cut that picture along the tear line alone.
+ *
  * Its size is `--kb-pack-w` (86px by default, a card slot's); every measure is a share of it, as a card's are of `--kb-pc-w`.
  */
 import type { CSSProperties } from 'react';
-import type { CardArt } from '../cards/types.ts';
+import type { PackArtLook } from '../cards/types.ts';
+import { PackLight } from './packLight.ts';
 import './pack.css';
 
 export interface PackArtProps {
   readonly name: string;
   /** How many cards it holds, said on the wrapper ("5 CARDS"). */
   readonly count: number;
-  readonly art?: Pick<CardArt, 'color' | 'ink'> & Partial<Pick<CardArt, 'canvas' | 'mark'>>;
+  readonly art?: Pick<PackArtLook, 'color' | 'ink'> & Partial<Pick<PackArtLook, 'canvas' | 'mark' | 'picture' | 'relief'>>;
   readonly part?: 'whole' | 'opened' | 'top';
   /** The pack's width in px; the wrapper is a half as tall again. */
   readonly width?: number;
@@ -35,6 +39,15 @@ export function PackArt({ name, count, art, part = 'whole', width = 86, classNam
     ...(art?.canvas ? { '--kb-pack-canvas': `url("${art.canvas}")` } : {}),
     ...style,
   } as CSSProperties;
+  if (art?.picture) {
+    return (
+      <span className={`kb-pack${className ? ` ${className}` : ''}`} data-part={part} data-kb-pictured="" aria-hidden="true" data-kb-art style={vars}>
+        <img className="kb-pack-picture" src={art.picture} alt="" draggable={false} decoding="async" />
+        <span className="kb-pack-count" data-kb-text={`${count} cards`} />
+        {art.relief ? <PackLight picture={art.picture} relief={art.relief} part={part} /> : null}
+      </span>
+    );
+  }
   return (
     <span className={`kb-pack${className ? ` ${className}` : ''}`} data-part={part} aria-hidden="true" data-kb-art style={vars}>
       <span className="kb-pack-seal kb-pack-seal-top" />

@@ -507,8 +507,8 @@ test.describe('the dock folds, on a phone', () => {
 });
 
 /*
- * Draw mode opens with the post clear of the dock, and no dock control is under the HUD's peek. The post's body is read a second after the press, when a smooth
- * scroll has long finished; the post starts low in the window, where the dock is about to cover it.
+ * Draw mode opens with the post clear of the dock, and no dock control is under the HUD's peek. The scroll is instant (bringClear), so a press right after
+ * opening lands on the post, not on where it was; the post starts low in the window, where the dock is about to cover it.
  */
 const body = (page: Page) => page.locator(`#post-${POST} .kb-act-main`);
 const clear = (page: Page) => page.evaluate((n) => {
@@ -517,7 +517,7 @@ const clear = (page: Page) => page.evaluate((n) => {
   const d = document.querySelector('.kb-graffiti-dock')!.getBoundingClientRect();
   return { top: b.top, bottom: b.bottom, clearTop: top, dockTop: d.top };
 }, POST);
-/** The post is clear and has stopped moving: two polls in a row read the same top, so a smooth scroll still on its way is not taken for its end. */
+/** The post is clear and has stopped moving: two polls in a row read the same top, so a scroll still on its way is not taken for its end. */
 async function settledClear(page: Page): Promise<void> {
   let last: number | null = null;
   await expect.poll(async () => {
@@ -535,24 +535,78 @@ function expectClear(r: { top: number; bottom: number; clearTop: number; dockTop
     expect(r.bottom, `${how}: body bottom above the dock`).toBeLessThanOrEqual(r.dockTop + 1);
   }
 }
-/** The post scrolled so its top lies at `share` of the window's height, below where the dock will be, then the card armed and the ghost pressed. */
-async function lowThenPress(page: Page, share: number, tile: boolean): Promise<void> {
+const AFTER_MOVE_FRAMES = 30;
+const NEVER_MOVED_SECONDS = 8;
+/**
+ * The body's top on every animation frame of the page itself from now: until it has changed by more than half a pixel, then AFTER_MOVE_FRAMES more. Started before
+ * the press, so the first frame of the scroll is not missed, and not on a frame budget, so a scroll that begins late is still seen; NEVER_MOVED_SECONDS of wall-clock
+ * time (not frames: a slow runner or a throttled rAF must not decide it) without a change ends it as "never moved", which the caller fails on. A post absent from the
+ * page ends it at once with a `missing` reason, which the caller reports.
+ */
+const startRecording = (page: Page) => page.evaluate(([n, after, capMs]) => {
+  const w = window as unknown as { __rec: { tops: number[]; moved: boolean; done: boolean; missing: string | null } };
+  const rec = { tops: [] as number[], moved: false, done: false, missing: null as string | null };
+  w.__rec = rec;
+  let left = after;
+  const started = performance.now();
+  const tick = () => {
+    const el = document.querySelector(`#post-${n} .kb-act-main`);
+    if (!el) {
+      rec.missing = 'the post is not in the page';
+      rec.done = true;
+      return;
+    }
+    const top = el.getBoundingClientRect().top;
+    const prev = rec.tops[rec.tops.length - 1];
+    rec.tops.push(top);
+    if (prev !== undefined && Math.abs(top - prev) > 0.5) rec.moved = true;
+    if (rec.moved) left--;
+    if (left <= 0 || performance.now() - started >= capMs) rec.done = true;
+    else requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}, [POST, AFTER_MOVE_FRAMES, NEVER_MOVED_SECONDS * 1000] as const);
+const recorded = async (page: Page) => {
+  await page.waitForFunction(() => (window as unknown as { __rec: { done: boolean } }).__rec.done);
+  return page.evaluate(() => (window as unknown as { __rec: { tops: number[]; moved: boolean; missing: string | null } }).__rec);
+};
+/** The post scrolled so its top lies at `share` of the window's height, below where the dock will be, then the card armed (the ghost) ready to press. */
+async function placeLow(page: Page, share: number, tile: boolean): Promise<void> {
   await world(page, tile ? SOME : null);
   await openThread(page);
   await page.evaluate(([n, s]) => {
     const r = document.querySelector(`#post-${n} .kb-act-main`)!.getBoundingClientRect();
     window.scrollBy({ top: r.top - window.innerHeight * s, behavior: 'instant' });
   }, [POST, share] as const);
+  if (!tile) await arm(page);
+}
+async function press(page: Page, tile: boolean): Promise<void> {
   if (tile) await post(page).getByRole('button', { name: 'Draw' }).click();
-  else {
-    await arm(page);
-    await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
-  }
+  else await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
   await expect(dock(page)).toBeVisible();
+}
+/** The post placed low, the press made, and the post waited for until it rests clear of the dock. */
+async function lowThenPress(page: Page, share: number, tile: boolean): Promise<void> {
+  await placeLow(page, share, tile);
+  await press(page, tile);
   await settledClear(page);
 }
+/** The post jumps clear and stays: it starts outside the clear area, so its top must change, and it changes (by more than half a pixel) exactly once, then rests clear of the dock. */
+async function expectJump(page: Page, share: number, tile: boolean, how: string): Promise<void> {
+  await placeLow(page, share, tile);
+  await startRecording(page);
+  await press(page, tile);
+  const { tops, moved, missing } = await recorded(page);
+  expect(missing, `${how}: the recording ended early: ${missing}`).toBeNull();
+  expect(moved, `${how}: the post never moved in ${NEVER_MOVED_SECONDS} seconds (${tops.length} frames seen)`).toBe(true);
+  let moves = 0;
+  for (let i = 1; i < tops.length; i++) if (Math.abs(tops[i]! - tops[i - 1]!) > 0.5) moves++;
+  expect(moves, `${how}: the body's top changed ${moves} times (once is a jump): ${tops.map(Math.round).join(', ')}`).toBe(1);
+  await settledClear(page);
+  expectClear(await clear(page), how);
+}
 
-for (const [name, reduced] of [['smooth', 'no-preference'], ['reduced motion', 'reduce']] as const) {
+for (const [name, reduced] of [['motion not reduced', 'no-preference'], ['reduced motion', 'reduce']] as const) {
   test.describe(`the post is brought clear of the dock, wide, ${name}`, () => {
     test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: reduced });
     test('pressing the ghost on a post low in the window', async ({ page }) => {
@@ -562,6 +616,21 @@ for (const [name, reduced] of [['smooth', 'no-preference'], ['reduced motion', '
     test('the Draw tile on a wall', async ({ page }) => {
       await lowThenPress(page, 0.75, true);
       expectClear(await clear(page), 'Draw tile');
+    });
+  });
+}
+
+/* Motion is not reduced, so a smooth scroll would show. The page must not glide to the post: a press made while it moves lands on whatever is under the pointer then. */
+for (const [where, viewport] of [['wide', { width: 1280, height: 800 }], ['on a phone', null]] as const) {
+  test.describe(`the post jumps clear of the dock at once, ${where}`, () => {
+    const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 7'];
+    test.use(viewport ? { viewport, reducedMotion: 'no-preference' } : { ...pixel, reducedMotion: 'no-preference' });
+    const share = viewport ? 0.75 : 0.7;
+    test('pressing the ghost on a post low in the window', async ({ page }) => {
+      await expectJump(page, share, false, 'ghost');
+    });
+    test('the Draw tile on a wall', async ({ page }) => {
+      await expectJump(page, share, true, 'Draw tile');
     });
   });
 }

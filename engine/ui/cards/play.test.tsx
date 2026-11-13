@@ -1277,14 +1277,14 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
       document.documentElement.style.removeProperty('scroll-padding-bottom');
     });
 
-    test('a post whose top is off screen is scrolled to, smoothly', async () => {
+    test('a post whose top is off screen is scrolled to, at once', async () => {
       const user = userEvent.setup();
       await onPost();
       const scroll = vi.fn();
       body(2).scrollIntoView = scroll;
       topAt(2, -400);
       await open(user);
-      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'instant' });
     });
 
     test('under reduced motion the scroll is instant', async () => {
@@ -1295,7 +1295,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
       body(2).scrollIntoView = scroll;
       topAt(2, -400);
       await open(user);
-      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'auto' });
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'instant' });
     });
 
     test('a post wholly inside the clear area is not scrolled', async () => {
@@ -1315,7 +1315,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
       body(2).scrollIntoView = scroll;
       boxAt(2, 300, 300);
       await open(user);
-      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'instant' });
     });
 
     test('a post taller than the clear area whose top is already at its top is not scrolled again', async () => {
@@ -1341,7 +1341,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
       document.documentElement.style.scrollPaddingBottom = '400px';
       await user.click(screen.getByRole('button', { name: 'Screen is up' }));
       await frame();
-      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'instant' });
       expect(scroll).toHaveBeenCalledTimes(1);
     });
 

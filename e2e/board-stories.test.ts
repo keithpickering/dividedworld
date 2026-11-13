@@ -56,6 +56,6 @@ test('the caption bar\'s stories are listed, short, long and held on the Main an
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['short', 'long', 'held'].flatMap((n) => [`boards-captions--${n}-main`, `boards-captions--${n}-phone`])));
 });
 
-test('Laugh Track\'s stories are listed, the thread on the Main and the Phone board, before and after a cue fires', () => {
-  expect(boardStoryIds()).toEqual(expect.arrayContaining(['main', 'phone', 'on-the-line-main', 'on-the-line-phone'].map((n) => `boards-21-laugh-track--${n}`)));
+test('Laugh Track\'s stories are listed, the thread on the Main and the Phone board, near a cue and after one is heard', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['main', 'phone', 'near-main', 'near-phone', 'heard-main', 'heard-phone'].map((n) => `boards-21-laugh-track--${n}`)));
 });
