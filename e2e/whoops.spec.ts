@@ -71,6 +71,18 @@ const solidInk = (page: Page, selector: string, from: number, to: number) => pag
   return best;
 }, [selector, from, to] as const);
 
+/**
+ * The post's field is built: a picture is held for each live layer in each band near the viewport (a washed-clean layer holds none). Until
+ * then a band's canvas is the flat stand-in, and the build changes its ink either way with no stroke made, so a test that reads ink as a
+ * baseline, or picks a press point from it, waits for this first (after any scroll that brings other bands near).
+ */
+const built = (page: Page, whoops = '#post-41 .kb-whoops') => expect.poll(() => page.evaluate((sel) => {
+  const el = document.querySelector(sel)!;
+  const bands = (el.getAttribute('data-kb-bands') ?? '').split(' ').filter(Boolean).length;
+  const live = (el.getAttribute('data-kb-layers') ?? '').split(' ').filter((l) => l === 'live').length;
+  return bands > 0 && Number(el.getAttribute('data-kb-pictures')) === live * bands;
+}, whoops), { timeout: 20_000 }).toBe(true);
+
 test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', async ({ page }) => {
   await page.goto('/?fixture=boards&moment=01-main');
   const canvas = page.locator('#post-41 .kb-whoops-ink');
@@ -180,6 +192,7 @@ test.describe('with a finger on a phone', () => {
     /* A point on the ink, in the viewport and above the reactions row, which the post's words fill. */
     await page.locator('#post-41 .kb-whoops-ink').evaluate((el) => el.scrollIntoView({ block: 'start' }));
     await page.evaluate(() => window.scrollBy(0, -300));
+    await built(page);
     const at = await solidInk(page, '#post-41 .kb-whoops-ink', 280, 700);
     expect(at.len).toBeGreaterThan(220);
     const cdp = await page.context().newCDPSession(page);
@@ -233,6 +246,7 @@ test('a press on ink beside the reactions row starts a stroke, and the row is as
   await page.goto('/?fixture=boards&moment=01-main');
   await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
   await expect.poll(() => inked(page)).toBeGreaterThan(1000);
+  await built(page);
   const read = await page.evaluate(() => {
     const row = document.querySelector('#post-41 [data-kb-over-ink]') as HTMLElement;
     const kids = [...row.children].map((c) => c.getBoundingClientRect());
@@ -278,6 +292,7 @@ test('with a mouse over ink the sponge is drawn and the body\'s cursor is none; 
   const plain = await cursor();
   expect(plain).not.toBe('none');
   await page.locator('.kb-whoops-ink').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await built(page, '.kb-whoops');
   const spot = await solidInk(page, '.kb-whoops-ink', 150, 900);
   expect(spot.len).toBeGreaterThan(100);
   await page.mouse.move(spot.x - 5, spot.y);
@@ -419,6 +434,7 @@ test('a mouse dab washes the ink where the pointer pressed, not offset by the fr
   await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
   await expect.poll(() => inked(page)).toBeGreaterThan(1000);
   await page.locator('#post-41 .kb-whoops-ink').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await built(page);
   const at = await solidInk(page, '#post-41 .kb-whoops-ink', 150, 900);
   expect(at.len).toBeGreaterThan(100);
   /* The ink's pixels before and after, and the press in the canvas's own CSS px. */
@@ -455,12 +471,6 @@ test('a mouse dab washes the ink where the pointer pressed, not offset by the fr
  */
 const SPOT = '#post-41 .kb-whoops-ink';
 const MARK = '#post-41 .kb-mark[data-kb-card="whoops"]:not(.kb-ghost-mark)';
-
-/** The post's field is built (its layers' pictures are held): until then the canvas is the flat stand-in, which a scrub only dims, and these tests read the field's look. */
-const built = (page: Page) => expect.poll(() => page.evaluate(() => {
-  const el = document.querySelector('#post-41 .kb-whoops')!;
-  return Number(el.getAttribute('data-kb-pictures')) === (el.getAttribute('data-kb-layers') ?? '').split(' ').length;
-}), { timeout: 20_000 }).toBe(true);
 
 /** The card's tip ("Got it") comes up some while after the post and covers part of the ink, so a stroke there is the tip's: it is put away first. */
 async function putAwayTip(page: Page): Promise<void> {
@@ -690,14 +700,7 @@ test('a tall post scrubs at its far end', async ({ page }) => {
   };
   const bandsOf = () => page.locator(canvases).evaluateAll((all) => [...new Set(all.map((c) => Number(c.getAttribute('data-kb-band'))))].sort((a, b) => a - b));
   await expect(page.locator(canvases).first()).toBeAttached();
-  /* A band's canvas is the flat stand-in until its picture is built, and the build changes the ink either way: the pictures held (a layer's for each band listed) are waited for before ink is read. */
-  const bandsBuilt = () => expect.poll(() => page.evaluate(() => {
-    const el = document.querySelector('#post-41 .kb-whoops')!;
-    const bands = (el.getAttribute('data-kb-bands') ?? '').split(' ').filter(Boolean).length;
-    const layers = (el.getAttribute('data-kb-layers') ?? '').split(' ').filter(Boolean).length;
-    return bands > 0 && Number(el.getAttribute('data-kb-pictures')) === layers * bands;
-  }), { timeout: 20_000 }).toBe(true);
-  await bandsBuilt();
+  await built(page);
   await expect.poll(() => inked(page, canvases)).toBeGreaterThan(1000);
   await counted();
   /* The post is tall: at least twenty bands of 512px. */
@@ -717,7 +720,7 @@ test('a tall post scrubs at its far end', async ({ page }) => {
   await expect.poll(() => bandsOf(), { timeout: 20_000 }).toContain(last);
   await counted();
   await expect.poll(async () => { const b = await bandsOf(); return b.length > 0 && Math.min(...b) > last - 6; }, { timeout: 20_000 }).toBe(true);
-  await bandsBuilt();
+  await built(page);
   await expect.poll(() => inked(page, canvases), { timeout: 20_000 }).toBeGreaterThan(1000);
   await counted();
   const bottom = await bandsOf();
