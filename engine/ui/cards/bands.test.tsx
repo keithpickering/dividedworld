@@ -109,6 +109,41 @@ describe('bands', () => {
     expect(seen).toEqual([]);
   });
 
+  test('update after stop places nothing and watches nothing', () => {
+    const host = document.createElement('div');
+    const w = watchBands(host, box(1500), 500, '0px', () => {});
+    w.stop();
+    w.update(box(2500));
+    expect(host.querySelectorAll('.kb-band')).toHaveLength(0);
+    expect(made[0]!.seen.size).toBe(0);
+  });
+
+  test('a band takes no pointer events', () => {
+    const host = document.createElement('div');
+    watchBands(host, box(1500), 500, '0px', () => {});
+    for (const el of host.querySelectorAll<HTMLElement>('.kb-band')) expect(el.style.pointerEvents).toBe('none');
+  });
+
+  test('nothing near is not reported at the start, and a near set that empties is reported as empty', () => {
+    const host = document.createElement('div');
+    const seen: number[][] = [];
+    const w = watchBands(host, box(1500), 500, '0px', (near) => seen.push(near));
+    flush();
+    expect(seen).toEqual([]);
+    const els = [...host.querySelectorAll('.kb-band')];
+    mark([els[2]!], true);
+    flush();
+    expect(seen).toEqual([[2]]);
+    w.update(box(1000));
+    flush();
+    expect(seen).toEqual([[2], []]);
+    mark([els[0]!], true);
+    flush();
+    mark([els[0]!], false);
+    flush();
+    expect(seen).toEqual([[2], [], [0], []]);
+  });
+
   test('with no IntersectionObserver every band is near', () => {
     vi.stubGlobal('IntersectionObserver', undefined);
     const host = document.createElement('div');

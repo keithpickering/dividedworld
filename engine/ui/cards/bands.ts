@@ -69,6 +69,8 @@ export function watchBands(host: HTMLElement, box: BodyBox, bandPx: number, marg
   const drop = (s: Slot) => { s.stop(); s.el.remove(); };
 
   const fit = (to: BodyBox) => {
+    /* A late resize after the watcher is let go would place elements nothing ever removes. */
+    if (stopped) return;
     box = to;
     const bands = bandsOf(box.h, bandPx);
     while (slots.length > bands.length) drop(slots.pop()!);
