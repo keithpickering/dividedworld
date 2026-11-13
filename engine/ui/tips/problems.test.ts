@@ -129,6 +129,16 @@ describe('instanceUiProblems', () => {
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
     assert.deepEqual(instanceUiProblems(withCards([{ key: 'feelin-fab', summary: 'Gives a post a rainbow. Up to three.' }]), rules), ['the card "feelin-fab" has no status, so its Lens heading would be a sentence']);
   });
+  test('refuses a card drawn by another that names no card with an Effect, has an Effect itself, or names a card that is itself drawn by another (CardUi.drawnBy)', () => {
+    const Effect = () => null;
+    const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
+    const lent = { key: 'glam', status: 'Lifting every post' };
+    assert.deepEqual(instanceUiProblems(withCards([{ key: 'fab', status: 'Rainbowed', Effect }, { ...lent, drawnBy: 'fab' }]), rules), [], 'a well-formed pair');
+    assert.deepEqual(instanceUiProblems(withCards([{ ...lent, drawnBy: 'ghost' }]), rules), ['the card "glam" is drawnBy "ghost", which has no CardUi']);
+    assert.deepEqual(instanceUiProblems(withCards([{ ...lent, drawnBy: 'whoops' }]), rules), ['the card "glam" is drawnBy "whoops", which has no Effect to draw it']);
+    assert.deepEqual(instanceUiProblems(withCards([{ key: 'fab', status: 'Rainbowed', Effect }, { ...lent, drawnBy: 'fab', Effect }]), rules), ['the card "glam" has both drawnBy and an Effect; a card is drawn by another or draws itself, never both']);
+    assert.deepEqual(instanceUiProblems(withCards([{ key: 'fab', status: 'Rainbowed', Effect }, { key: 'mid', status: 'Handing on', drawnBy: 'fab' }, { ...lent, drawnBy: 'mid' }]), rules), ['the card "glam" is drawnBy "mid", which is itself drawn by "fab"; a chain is refused']);
+  });
   test('refuses a function status that answers with a sentence, naming the card', () => {
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
     const problems = instanceUiProblems(withCards([{ key: 'feelin-fab', status: (p: readonly unknown[]) => `Stacked ${p.length}. Grander now.` }]), rules);

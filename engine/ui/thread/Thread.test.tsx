@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } fro
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testCutter, testInstance } from '../test-world.tsx';
 import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { pageOf, pageRange, threadHref } from './pages.ts';
@@ -23,6 +23,7 @@ import { tokensOf } from '../contrast.ts';
 import { POST_INK } from '../shine/band.ts';
 import { cling, landAll, loose, makeFlakes } from '../shine/flakes.ts';
 import { probe } from '../shine/landing.ts';
+import { axeViolations, describeViolations } from '../a11y.ts';
 
 /* The HUD's estimate is asked for through the player; this test file watches that call. */
 const landed = vi.hoisted(() => vi.fn());
@@ -133,6 +134,7 @@ function tap(fake: Fake) {
     onAct: (a) => (listener ? listener.onAct?.(a) : void waiting.push((l) => l.onAct?.(a))),
     onTally: (act, t) => (listener ? listener.onTally?.(act, t) : void waiting.push((l) => l.onTally?.(act, t))),
     onEffect: (p, at) => (listener ? listener.onEffect?.(p, at) : void waiting.push((l) => l.onEffect?.(p, at))),
+    onUnder: (parent, play, a) => (listener ? listener.onUnder?.(parent, play, a) : void waiting.push((l) => l.onUnder?.(parent, play, a))),
   };
   return () => proxy;
 }
@@ -2447,5 +2449,428 @@ describe('where glitter lands in a thread', () => {
     /* Over the body's own level, which the body takes so a moment's glow covers the actions (and the postbit's gear is under it). */
     const main = [...css.matchAll(/(?:^|\})\s*\.kb-act-main\s*\{([^}]*)\}/gu)].map((m) => /z-index:\s*(-?\d+)/u.exec(m[1]!)?.[1]).find((v) => v !== undefined);
     expect(Number(z![1])).toBeGreaterThan(Number(main ?? 0));
+  });
+});
+
+/* A reply a play in force draws under its post (Line Cutter, 0348): the reply keeps its own number, empty on its own page, and is drawn under the post it answers. */
+describe('a reply cut in under its post', () => {
+  const must = <T,>(a: { ok: true; value: T } | { ok: false; error: string }): T => {
+    if (!a.ok) throw new Error(`expected an answer, got a refusal: ${a.error}`);
+    return a.value;
+  };
+  const replying: Instance = { ...testInstance, cards: [...testInstance.cards, testCutter], settings: { ...testInstance.settings, postMaxLength: 50 } };
+  /** The thread of `acts` posts, `Pipewrench`'s cutter played on post 3 with the words given (none: not played yet), and an admin for ending it. */
+  async function cutWorld(acts = 45, played: string | null = 'Excuse me.', perPage?: number) {
+    const w = world(acts, undefined, replying);
+    const root = w.fake.seed.account('root');
+    w.fake.seed.admin(root);
+    w.fake.seed.cards(w.me, { cutter: 3 });
+    const cast = (parent: Id, body: string) => w.fake.playCard('cutter', w.pipe, parent, {}, '', undefined, undefined, undefined, { body });
+    const play = played === null ? null : must(await cast(w.ids[2]!, played));
+    return { ...w, root, cast, play, perPage, replyId: play ? (play.payload.reply as Id) : null };
+  }
+  const openCut = (w: { fake: Fake; thread: Id; perPage?: number | undefined }, hash = '', query = '') =>
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}${query}${hash}`, instance: replying, ...(w.perPage ? { settings: { postsPerPage: w.perPage } } : {}) });
+
+  test('the 45-post thread draws the reply under post 3 with its line and its heading, and not on page 3', async () => {
+    const w = await cutWorld();
+    const { unmount } = openCut(w);
+    const reply = await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    expect(reply).toBe(post(46));
+    expect(reply).toBe(post(3).nextElementSibling);
+    expect(reply).toHaveAttribute('data-kb-under', '');
+    expect(reply).not.toHaveAttribute('data-kb-seq');
+    expect(within(reply).getByText('Cut in line under post 3')).toBeInTheDocument();
+    expect(within(reply).getByText('Excuse me.')).toBeInTheDocument();
+    expect(within(reply).getByRole('link', { name: 'Permalink to post #46' })).toHaveAttribute('href', threadHref(w.thread, 1, 46));
+    /* The same postbit, controls and reactions as any post. */
+    expect(within(reply).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
+    expect(within(reply).getByRole('button', { name: 'Quote' })).toBeInTheDocument();
+    /* The post it answers draws none of it. */
+    expect(within(post(3)).queryByText(/Cut in line/u)).toBeNull();
+    unmount();
+    openCut(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 45 /u });
+    expect(document.getElementById('post-46')).toBeNull();
+    expect(post(41)).toBeInTheDocument();
+  });
+
+  test('a page whose every number is cut draws its pager and no post, without error', async () => {
+    const w = await cutWorld(3, null, 1);
+    must(await w.cast(w.ids[0]!, 'First!'));
+    must(await w.cast(w.ids[1]!, 'Second.'));
+    openCut(w, '', '?page=4');
+    await screen.findByRole('navigation', { name: 'Pages, top' });
+    expect(document.querySelectorAll('article.kb-act')).toHaveLength(0);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(document.querySelector('.kb-thread')).not.toHaveAttribute('aria-busy', 'true');
+  });
+
+  test('a reply cut in live nests under its post without ever appearing at the tail', async () => {
+    const w = await cutWorld(10, null);
+    openCut(w);
+    await screen.findByRole('article', { name: /^Post 10 /u });
+    const orderOf = () => [...document.querySelectorAll('.kb-acts > article.kb-act')].map((a) => a.id);
+    expect(orderOf()).toHaveLength(10);
+    const seen: string[][] = [];
+    const watch = new MutationObserver(() => seen.push(orderOf()));
+    watch.observe(document.querySelector('.kb-acts')!, { childList: true });
+    await act(async () => { must(await w.cast(w.ids[2]!, 'Cut in.')); });
+    const reply = await screen.findByRole('article', { name: 'Post 11 by Pipewrench, cut in under post 3' });
+    watch.disconnect();
+    expect(reply).toBe(post(3).nextElementSibling);
+    expect(orderOf()).toEqual(['post-1', 'post-2', 'post-3', 'post-11', 'post-4', 'post-5', 'post-6', 'post-7', 'post-8', 'post-9', 'post-10']);
+    /* Whenever it was in the table it was under post 3, never after post 10. */
+    for (const order of seen) if (order.includes('post-11')) expect(order[order.indexOf('post-11') - 1]).toBe('post-3');
+    expect(screen.queryByRole('button', { name: /new post/u })).toBeNull();
+  });
+
+  test('a tally on it and a card played on it reach it where it sits, and a card is a mark on it as on any post', async () => {
+    const w = await cutWorld();
+    const tapped = tap(w.fake);
+    openCut(w);
+    await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    deliver(() => tapped().onTally?.(w.replyId!, { fire: 2 }));
+    /* Its own author's post, so the reaction is a figure and not a button. */
+    await waitFor(() => expect(within(post(46)).getByText('Fire, 2')).toBeInTheDocument());
+    expect(within(post(3)).queryByText(/^Fire, /u)).toBeNull();
+    deliver(() => tapped().onAct?.(live(w.thread, null as unknown as number, w.pipe, { kind: 'card', seq: null, targetActId: w.replyId!, payload: { card: 'whoops', layer: 1, message: 'oops' }, currentPayload: { card: 'whoops', layer: 1, message: 'oops' }, createdAt: '2026-10-29T21:16:00Z' })));
+    expect(await within(post(46)).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
+    expect(within(post(3)).queryByRole('button', { name: /^Whoops!, / })).toBeNull();
+  });
+
+  test('the end of its play drops the reply to its number when that page is shown, and an edit of it reaches it where it sits', async () => {
+    const w = await cutWorld(45, 'Excuse me.', 50);
+    const heard = tap(w.fake)();
+    openCut(w);
+    await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    expect(post(45).nextElementSibling).toBeNull();
+    /* A live edit of the nested reply is the post again under its own id. */
+    const edited = { ...(await w.fake.act(w.replyId!))!, currentPayload: { body: 'Excuse me, please.' }, editedAt: '2026-10-29T13:00:00Z' };
+    deliver(() => heard.onAct!(edited));
+    expect(await within(post(46)).findByText('Excuse me, please.')).toBeInTheDocument();
+    expect(post(46)).toBe(post(3).nextElementSibling);
+    w.fake.signInAs(w.root);
+    await act(async () => { must(await w.fake.reverseCard(w.play!.id)); });
+    await waitFor(() => expect(post(46)).toBe(post(45).nextElementSibling));
+    expect(post(46)).not.toHaveAttribute('data-kb-under');
+    expect(post(46)).toHaveAttribute('data-kb-seq', '46');
+    expect(within(post(46)).queryByText(/Cut in line/u)).toBeNull();
+    expect(post(3).nextElementSibling).toBe(post(4));
+  });
+
+  test('the end of its play on a page that is not showing its number only takes it from under the post', async () => {
+    const w = await cutWorld();
+    openCut(w);
+    await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    w.fake.signInAs(w.root);
+    await act(async () => { must(await w.fake.reverseCard(w.play!.id)); });
+    await waitFor(() => expect(document.getElementById('post-46')).toBeNull());
+    expect(post(3).nextElementSibling).toBe(post(4));
+    /* The page holds its number again: a reload of page 3 shows it. */
+    cleanup();
+    openCut(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 46 /u });
+  });
+
+  test('a link to its number opens that number\'s page, then the page of the post it is under, at it, with it focused', async () => {
+    const w = await cutWorld();
+    openCut(w, '#post-46', '?page=3');
+    const reply = await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    await waitFor(() => expect(document.activeElement).toBe(reply));
+    expect(window.location.search + window.location.hash).toBe('?page=1#post-46');
+    expect(post(3)).toBeInTheDocument();
+    expect(document.getElementById('post-41')).toBeNull();
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    expect((Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.contexts.at(-1)).toBe(reply);
+  });
+
+  test('seeing it marks nothing read when the reader is behind it, and marks it when it is the next unread number', async () => {
+    const w = await cutWorld();
+    const spy = vi.spyOn(w.fake, 'markRead');
+    openCut(w);
+    await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    await watched(post(46));
+    clock();
+    see(post(46));
+    await debounced();
+    expect(spy).not.toHaveBeenCalled();
+    /* Posts 1 to 20 seen: the reader is at 20, and 46 is still forty-odd numbers away. */
+    see(post(20));
+    await debounced();
+    see(post(46));
+    await debounced();
+    expect(spy.mock.calls.map((c) => c[1])).toEqual([20]);
+    cleanup();
+    /* A reader who has read to 45: 46 is the next number, and seeing it reads it. */
+    await w.fake.markRead(w.thread, 45, null);
+    spy.mockClear();
+    openCut(w);
+    await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    await watched(post(46));
+    see(post(46));
+    await debounced();
+    expect(spy.mock.calls.map((c) => c[1])).toEqual([46]);
+  });
+
+  /** The thread's `under` events, kept as they come and held back from the screen while `hold`, and delivered by hand: the order of a play's events is the test's. */
+  function underTap(fake: Fake) {
+    let listener: ThreadListener | undefined;
+    let holding = false;
+    /* The tap is of the broadcast's own order: the answer's echo of the reply (the adapter's) would deliver it first. */
+    fake.broadcast.echoAnswers(false);
+    const kept: Parameters<NonNullable<ThreadListener['onUnder']>>[] = [];
+    const real = fake.subscribeThread.bind(fake);
+    fake.subscribeThread = (t, l) => {
+      listener = l;
+      return real(t, { ...l, onUnder: (...a) => { kept.push(a); if (!holding) l.onUnder?.(...a); } });
+    };
+    return { kept, hold: (on: boolean) => { holding = on; }, send: (a: Parameters<NonNullable<ThreadListener['onUnder']>>) => deliver(() => listener!.onUnder!(...a)) };
+  }
+  const order = () => [...document.querySelectorAll('.kb-acts > article.kb-act')].map((a) => a.id);
+
+  test('a reply the reader saw while behind it is read when they read on to the last ordinary post, and the thread is not left "1 unread"', async () => {
+    const w = await cutWorld(45, 'Excuse me.', 50);
+    const spy = vi.spyOn(w.fake, 'markRead');
+    openCut(w);
+    await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    await watched(post(46));
+    clock();
+    see(post(46));
+    await debounced();
+    expect(spy).not.toHaveBeenCalled();
+    see(post(45));
+    await debounced();
+    expect(spy.mock.calls.map((c) => c[1])).toEqual([46]);
+  });
+
+  test('a reply the reader never saw is not read by reading the last ordinary post', async () => {
+    const w = await cutWorld(45, 'Excuse me.', 50);
+    const spy = vi.spyOn(w.fake, 'markRead');
+    openCut(w);
+    await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    await watched(post(45));
+    clock();
+    see(post(45));
+    await debounced();
+    expect(spy.mock.calls.map((c) => c[1])).toEqual([45]);
+  });
+
+  test('a cut reply that was not seen is not stepped over by seeing the one after it', async () => {
+    const w = await cutWorld(45, null, 50);
+    must(await w.cast(w.ids[2]!, 'First.'));
+    must(await w.cast(w.ids[4]!, 'Second.'));
+    await w.fake.markRead(w.thread, 45, null);
+    const spy = vi.spyOn(w.fake, 'markRead');
+    openCut(w);
+    await screen.findByRole('article', { name: 'Post 47 by Pipewrench, cut in under post 5' });
+    await watched(post(47));
+    clock();
+    see(post(47));
+    await debounced();
+    expect(spy).not.toHaveBeenCalled();
+    /* Seen after it, the first is the next number, and both are read. */
+    see(post(46));
+    await debounced();
+    expect(spy.mock.calls.map((c) => c[1])).toEqual([47]);
+  });
+
+  test('a link to the first unread number, when that is a cut reply, goes through the hop to its parent\'s page and the reply', async () => {
+    const w = await cutWorld();
+    await w.fake.markRead(w.thread, 45, null);
+    /* What the board\'s "first unread" link holds for a thread read to 45: number 46, on its own number\'s page. */
+    openCut(w, '#post-46', `?page=${pageOf(46, 20)}`);
+    const reply = await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    await waitFor(() => expect(document.activeElement).toBe(reply));
+  });
+
+  test('"Jump to latest" leads to the last number that is not cut in under a post', async () => {
+    const w = await cutWorld(3, null, 1);
+    must(await w.cast(w.ids[0]!, 'First!'));
+    openCut(w);
+    await screen.findByRole('navigation', { name: 'Pages, top' });
+    expect(within(screen.getByRole('navigation', { name: 'Pages, top' })).getByRole('link', { name: 'Jump to latest' })).toHaveAttribute('href', threadHref(w.thread, 3, 3));
+  });
+
+  test('the last page, when every number on it is cut, draws its pager and no post', async () => {
+    const w = await cutWorld(3, null, 1);
+    must(await w.cast(w.ids[0]!, 'First!'));
+    openCut(w, '', '?page=4');
+    await screen.findByRole('navigation', { name: 'Pages, top' });
+    expect(document.querySelectorAll('article.kb-act')).toHaveLength(0);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(document.querySelector('.kb-thread')).not.toHaveAttribute('aria-busy', 'true');
+  });
+
+  test('a page read asked before a play and answered after its live reply leaves the reply nested, never at the tail', async () => {
+    const w = await cutWorld(10, null);
+    openCut(w);
+    await screen.findByRole('article', { name: /^Post 10 /u });
+    /* The first read after the rejoin is answered with the page as it stood then, after the play and its reply have been heard. */
+    const real = w.fake.threadPage.bind(w.fake);
+    let gate: (() => void) | undefined;
+    const asked = vi.fn();
+    w.fake.threadPage = async (...a: Parameters<Fake['threadPage']>) => {
+      /* No other read answers: what the stale one did is what stays. */
+      w.fake.threadPage = () => new Promise(() => {});
+      const snapshot = await real(...a);
+      asked();
+      await new Promise<void>((resolve) => { gate = resolve; });
+      return snapshot;
+    };
+    await act(async () => { w.fake.broadcast.rejoin(); });
+    await waitFor(() => expect(asked).toHaveBeenCalled());
+    await act(async () => { must(await w.cast(w.ids[2]!, 'Cut in.')); });
+    await screen.findByRole('article', { name: 'Post 11 by Pipewrench, cut in under post 3' });
+    await act(async () => { gate!(); await pause(50); });
+    expect(post(3).nextElementSibling).toBe(post(11));
+    expect(order()).toEqual(['post-1', 'post-2', 'post-3', 'post-11', 'post-4', 'post-5', 'post-6', 'post-7', 'post-8', 'post-9', 'post-10']);
+    expect(screen.queryByRole('button', { name: /new post/u })).toBeNull();
+  });
+
+  test('a "Continue" read asked while the play was in force and answered after its end draws the reply at its number, not missing', async () => {
+    const w = await cutWorld(45, 'Excuse me.');
+    /* The reader is the admin who ends the play, so the screen is not reloaded for another account. */
+    w.fake.signInAs(w.root);
+    openCut(w);
+    await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    await userEvent.click(screen.getAllByRole('link', { name: 'Continue to page 2' })[0]!);
+    await screen.findByRole('article', { name: /^Post 40 /u });
+    /* The read of page 3 is answered with the page as it stood while the play was in force: number 46 empty, the reply under post 3. */
+    const real = w.fake.threadPage.bind(w.fake);
+    let gate: (() => void) | undefined;
+    const asked = vi.fn();
+    w.fake.threadPage = async (...a: Parameters<Fake['threadPage']>) => {
+      /* Only this one read is held, and no other read answers: what it does is what stays. */
+      w.fake.threadPage = () => new Promise(() => {});
+      const snapshot = await real(...a);
+      asked();
+      await new Promise<void>((resolve) => { gate = resolve; });
+      return snapshot;
+    };
+    await userEvent.click(screen.getAllByRole('link', { name: 'Continue to page 3' })[0]!);
+    await waitFor(() => expect(asked).toHaveBeenCalled());
+    await act(async () => { must(await w.fake.reverseCard(w.play!.id)); await pause(20); });
+    await act(async () => { gate!(); await pause(50); });
+    await screen.findByRole('article', { name: /^Post 45 /u });
+    const reply = post(46);
+    expect(reply).not.toBeNull();
+    expect(reply).not.toHaveAttribute('data-kb-under');
+    expect(reply.previousElementSibling).toBe(post(45));
+  });
+
+  test('an under event heard before the post\'s page is loaded nests the reply once when that page is', async () => {
+    const w = await cutWorld(45, null);
+    const heard = underTap(w.fake);
+    openCut(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 45 /u });
+    await act(async () => { must(await w.cast(w.ids[2]!, 'Excuse me.')); });
+    expect(heard.kept).toHaveLength(1);
+    expect(document.getElementById('post-46')).toBeNull();
+    await userEvent.click(within(screen.getAllByRole('navigation', { name: 'Pages, top' })[0]!).getByRole('link', { name: 'Page 1' }));
+    await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    expect(document.querySelectorAll('#post-46')).toHaveLength(1);
+    expect(post(3).nextElementSibling).toBe(post(46));
+  });
+
+  test('the caster\'s own reply nests from the play\'s answer alone, with the broadcast held back: under its post, never at the tail', async () => {
+    const w = await cutWorld(10, null);
+    openCut(w);
+    await screen.findByRole('article', { name: /^Post 10 /u });
+    w.fake.broadcast.hold();
+    await act(async () => { must(await w.cast(w.ids[2]!, 'Cut in.')); await pause(20); });
+    await screen.findByRole('article', { name: 'Post 11 by Pipewrench, cut in under post 3' });
+    expect(post(3).nextElementSibling).toBe(post(11));
+    expect(order().at(-1)).toBe('post-10');
+    /* The held broadcast comes late and changes nothing. */
+    await act(async () => { w.fake.broadcast.flush(); await pause(20); });
+    expect(order().filter((id) => id === 'post-11')).toHaveLength(1);
+    expect(post(3).nextElementSibling).toBe(post(11));
+    expect(order().at(-1)).toBe('post-10');
+  });
+
+  test('an under event heard twice nests the reply once', async () => {
+    const w = await cutWorld(10, null);
+    const heard = underTap(w.fake);
+    openCut(w);
+    await screen.findByRole('article', { name: /^Post 10 /u });
+    await act(async () => { must(await w.cast(w.ids[2]!, 'Cut in.')); });
+    await screen.findByRole('article', { name: 'Post 11 by Pipewrench, cut in under post 3' });
+    heard.send(heard.kept[0]!);
+    heard.send(heard.kept[0]!);
+    await act(async () => { await pause(20); });
+    expect(document.querySelectorAll('#post-11')).toHaveLength(1);
+    expect(order()).toEqual(['post-1', 'post-2', 'post-3', 'post-11', 'post-4', 'post-5', 'post-6', 'post-7', 'post-8', 'post-9', 'post-10']);
+  });
+
+  test('the end of a play heard before its under event keeps the reply out from under its post: it is at its number', async () => {
+    const w = await cutWorld(10, null);
+    const heard = underTap(w.fake);
+    heard.hold(true);
+    openCut(w);
+    await screen.findByRole('article', { name: /^Post 10 /u });
+    const play = must(await w.cast(w.ids[2]!, 'Cut in.'));
+    w.fake.signInAs(w.root);
+    await act(async () => { must(await w.fake.reverseCard(play.id)); await pause(20); });
+    expect(heard.kept).toHaveLength(1);
+    heard.send(heard.kept[0]!);
+    await act(async () => { await pause(20); });
+    expect(post(11)).toBeNull();
+    /* The reply is an Act at its number: the page read says so. */
+    cleanup();
+    openCut(w);
+    await screen.findByRole('article', { name: /^Post 11 /u });
+    expect(post(11)).not.toHaveAttribute('data-kb-under');
+    expect(post(11).previousElementSibling).toBe(post(10));
+  });
+
+  test('a page\'s kept plays are taken into the plays store with the page\'s own: the mark is on the post', async () => {
+    const w = world(5);
+    const card = live(w.thread, null as unknown as number, w.pipe, { kind: 'card', seq: null, targetActId: w.ids[1]!, payload: { card: 'whoops', layer: 1, message: 'oops' }, currentPayload: { card: 'whoops', layer: 1, message: 'oops' }, createdAt: '2026-10-29T21:16:00Z' });
+    const real = w.fake.threadPage.bind(w.fake);
+    w.fake.threadPage = async (...a: Parameters<Fake['threadPage']>) => {
+      const page = await real(...a);
+      return page && { ...page, kept: [...page.kept, { play: card.id, reach: 'thread' as const, target: w.thread, endsAt: '2026-10-29T21:20:00Z', act: card }] };
+    };
+    open(w);
+    await screen.findByRole('article', { name: /^Post 5 /u });
+    expect(await within(post(2)).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
+  });
+
+  test('a selection inside the nested reply quotes that reply', async () => {
+    const w = await cutWorld();
+    openCut(w);
+    const reply = await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    const box = await screen.findByRole('textbox', { name: 'Your reply' });
+    const body = reply.querySelector('[data-kb-cell="words"] .kb-bb')!;
+    act(() => {
+      window.getSelection()!.setBaseAndExtent(body.firstChild!, 0, body.firstChild!, 6);
+      document.dispatchEvent(new Event('selectionchange'));
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Quote the selected text' }));
+    expect(box).toHaveValue(`[quote=${w.replyId}]Excuse[/quote]\n`);
+  });
+
+  test('the end of a play whose reply is numbered below the page shown only lets the number go: the reply is not put above the page\'s first post', async () => {
+    const w = await cutWorld(45, null);
+    const heard = tap(w.fake)();
+    openCut(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 45 /u });
+    /* A reply numbered 12 drawn under post 42 (a number this page never holds), heard and then ended. */
+    const reply = live(w.thread, 12, w.pipe);
+    deliver(() => heard.onUnder!(w.ids[41]!, 'play-below', reply));
+    await screen.findByRole('article', { name: 'Post 12 by Pipewrench, cut in under post 42' });
+    deliver(() => heard.onAct!(live(w.thread, null as unknown as number, null, { kind: 'card_end', seq: null, targetActId: 'play-below', payload: {}, currentPayload: {} })));
+    await waitFor(() => expect(document.getElementById('post-12')).toBeNull());
+    expect(document.querySelector('.kb-acts > article.kb-act')).toBe(post(41));
+  });
+
+  test('is axe clean, nested', async () => {
+    const w = await cutWorld();
+    openCut(w);
+    const reply = await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    const found = await axeViolations(reply);
+    expect(describeViolations(found)).toBe('');
+    expect(await axeViolations(post(3).parentElement!)).toEqual([]);
   });
 });

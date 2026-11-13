@@ -43,7 +43,9 @@ function bodyAt(node: Node): { readonly body: HTMLElement; readonly seq: number 
   const el = node.nodeType === 1 ? (node as Element) : node.parentElement;
   const body = el?.closest<HTMLElement>(BODY);
   if (!body || el?.closest('[data-kb-quotable="hidden"]') || body.closest('.kb-signature')) return null;
-  const seq = Number(body.closest('article.kb-act')?.getAttribute('data-kb-seq'));
+  /* A reply drawn under a post carries its own number as `data-kb-cut-seq`, and not `data-kb-seq` (which the read observer takes for a post on its own page). */
+  const article = body.closest('article.kb-act');
+  const seq = Number(article?.getAttribute('data-kb-seq') ?? article?.getAttribute('data-kb-cut-seq'));
   return Number.isInteger(seq) && seq > 0 ? { body, seq } : null;
 }
 

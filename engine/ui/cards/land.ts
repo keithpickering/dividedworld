@@ -17,9 +17,9 @@ export function lengthOf(post: Act): number {
   return typeof body === 'string' ? [...body].length : 0;
 }
 
-/** The post as a card's rules see it. */
-export function targetOf(post: Act): PostTarget {
-  return postTarget(post.id, post.kind as PostTarget['kind'], post.currentPayload.body);
+/** The post as a card's rules see it; `under` is the post it is drawn under, where it is a reply a play carries. */
+export function targetOf(post: Act, under?: string): PostTarget {
+  return postTarget(post.id, post.kind as PostTarget['kind'], post.currentPayload.body, undefined, under);
 }
 
 /** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0149), with a use card's gimmick and end; a card back naming no card, ended where it sprang, was taken back or its time passed. */
@@ -40,6 +40,8 @@ export interface LandingContext {
   readonly above?: EffectsAbove;
   /** Ask whether a Move can be set face down on the post, which is `decideSet`, instead of whether it can be cast. */
   readonly faceDown?: true;
+  /** The post the one asked about is drawn under, where it is a reply a play carries: a card that replies takes none under it. */
+  readonly under?: string;
 }
 
 /**
@@ -49,8 +51,8 @@ export interface LandingContext {
  * is the caller's to ask. With no context, it is the card's `canApply` alone.
  */
 export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>, post: Act, plays: readonly CardPlay[], context?: LandingContext): Verdict {
-  if (!context || !rules.key || !rules.rarity) return rules.canApply(targetOf(post), plays.filter((p) => !p.caught && !p.reversed && !p.untaken).map((p) => ({ card: p.card, act: p.id })));
-  return landingOn(rules as CardRules, targetOf(post), plays, context);
+  if (!context || !rules.key || !rules.rarity) return rules.canApply(targetOf(post, context?.under), plays.filter((p) => !p.caught && !p.reversed && !p.untaken).map((p) => ({ card: p.card, act: p.id })));
+  return landingOn(rules as CardRules, targetOf(post, context.under), plays, context);
 }
 
 /**
