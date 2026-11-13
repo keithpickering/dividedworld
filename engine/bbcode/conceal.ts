@@ -3,7 +3,8 @@
  * ("The System acts; it never destroys what a player wrote": the post's own words stay in the Act; what a player is shown is a layer over them).
  *
  * `concealQuotes(body, hidden)` reads the body with parse.ts, the one parser, so a quote is a quote of a hidden post exactly when the renderer would draw one:
- * a quote inside `[code]` or `[noparse]`, past the depth limit, or with a name that is no Act's id is the post's own words and stays. It empties exactly
+ * a quote inside `[code]` or `[noparse]`, or with a name that is no Act's id is the post's own words and stays. A real quote nested past the depth limit is one too: the parser
+ * cuts it (a `cut` node) and still reports its span, so its contents are emptied like any other, at any depth. It empties exactly
  * the contents of each such quote, between its opener (which keeps the id, so the renderer can say a hidden post was quoted) and its closer, and leaves every
  * other character as written: the parser reports where each quote's contents lie, and the body is cut there, never re-serialized from the tree.
  * A quote inside one already emptied is inside it. The function is pure and the cost is the parser's: one pass, linear in the body.
