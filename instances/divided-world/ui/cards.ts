@@ -308,7 +308,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'whodunnit',
     Effect: WhodunnitEffect,
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: whodunnitCanvas, mark: whodunnitMark, credit: whodunnitArt.credit, tagline: 'Who wrote this?' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: whodunnitCanvas, mark: whodunnitMark, credit: whodunnitArt.credit, tagline: 'Who wrote this?' },
     summary: 'Hides who wrote a post from everyone, for a while.',
     status: "Hiding this post's author",
     hint: 'Nobody can see who wrote this post until the card ends.',
@@ -319,7 +319,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'blind-study',
     Effect: BlindStudyEffect,
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: blindStudyCanvas, mark: blindStudyMark, credit: blindStudyArt.credit, tagline: 'React in the dark.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: blindStudyCanvas, mark: blindStudyMark, credit: blindStudyArt.credit, tagline: 'React in the dark.' },
     summary: "Hides a post's reaction totals from everyone but its author and you.",
     status: "Hiding this post's reaction totals",
     hint: 'You can still react. The totals show when the card ends.',
@@ -329,7 +329,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   {
     key: 'overreaction',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: overreactionCanvas, mark: overreactionMark, credit: overreactionArt.credit, tagline: 'Bring your own emoji.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: overreactionCanvas, mark: overreactionMark, credit: overreactionArt.credit, tagline: 'Bring your own emoji.' },
     summary: "Adds an emoji of your choosing to one post's reactions, scored the way you say.",
     status: (plays) => `${plays.length} of ${overreaction.stack} added`,
     hint: 'This post has an extra reaction. Its label says how it scores.',
@@ -348,7 +348,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
    */
   {
     key: 'laugh-track',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: laughTrackCanvas, mark: laughTrackMark, credit: laughTrackArt.credit, tagline: 'Give a post a studio audience.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: laughTrackCanvas, mark: laughTrackMark, credit: laughTrackArt.credit, tagline: 'Give a post a studio audience.' },
     summary: 'Cues a studio audience to laugh, cheer or boo at the words you choose, wherever they appear in a post.',
     status: 'A studio audience on cue',
     hint: 'A Laugh Track: the audience reacts when you reach certain words. Turn on Game sounds in Settings to hear it.',
@@ -430,7 +430,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   {
     key: 'class-clown',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: classClownCanvas, mark: classClownMark, credit: classClownArt.credit, tagline: 'Earn more from laughs and eye rolls.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: classClownCanvas, mark: classClownMark, credit: classClownArt.credit, tagline: 'Earn more from laughs and eye rolls.' },
     summary: `Used on your own character. For ${spanWords(classClown.lasts!)}, what it earns from 😂 and 🙄 is ${earnWords(classClown)}. A loss is never made worse.`,
     status: 'Earns more from laughs',
     describe: (settings: Settings) =>
@@ -452,7 +452,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
    */
   {
     key: 'autocorrect',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: autocorrectCanvas, mark: autocorrectMark, credit: autocorrectArt.credit, tagline: 'Tape over a word, everywhere.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: autocorrectCanvas, mark: autocorrectMark, credit: autocorrectArt.credit, tagline: 'Tape over a word, everywhere.' },
     summary: 'Covers a phrase everywhere it appears in a post with words of your choosing.',
     hint: 'Lift a strip by one end to read what is under it.',
     status: 'Words taped over',
@@ -483,7 +483,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
    */
   {
     key: 'you-were-saying',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: youWereSayingCanvas, mark: youWereSayingMark, credit: youWereSayingArt.credit, tagline: 'Let an old chatbot keep going.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: youWereSayingCanvas, mark: youWereSayingMark, credit: youWereSayingArt.credit, tagline: 'Let an old chatbot keep going.' },
     summary: 'Hands a post to a chatbot from 2021, which keeps writing after the author stops.',
     /* Up to the rules' `stack` chain on a post, each continuing the last. */
     status: (plays) => `Typing on, ${Math.min(plays.length, youWereSaying.stack!)} of ${youWereSaying.stack} chained`,
@@ -510,7 +510,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'glitter-bomb',
     Effect: GlitterBombEffect,
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: glitterBombCanvas, mark: glitterBombMark, credit: glitterBombArt.credit, tagline: 'Make a character sparkle.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: glitterBombCanvas, mark: glitterBombMark, credit: glitterBombArt.credit, tagline: 'Make a character sparkle.' },
     summary: `Cast on a character. Every post by that character sparkles for ${spanWords(glitterBomb.lasts!)}.`,
     status: 'Sparkling every post by that character',
     describe: (settings: Settings) =>
@@ -573,7 +573,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   {
     key: 'toll',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: tollCanvas, mark: tollMark, credit: tollArt.credit, tagline: 'Get paid when a Move lands here.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: tollCanvas, mark: tollMark, credit: tollArt.credit, tagline: 'Get paid when a Move lands here.' },
     summary: `Used on your post. For ${spanWords(toll.lasts!)}, every reaction to a Move another player casts there pays you too.`,
     status: 'Charging a toll on Moves',
     hint: 'A Toll pays this post\'s author when a Move cast here draws reactions.',
@@ -595,7 +595,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     logDraw: GRAFFITI_LOG_DRAW,
     logWash: GRAFFITI_LOG_WASH,
     beneath: true,
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: graffitiCanvas, mark: graffitiMark, credit: graffitiArt.credit, tagline: 'Turn a post into a wall.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: graffitiCanvas, mark: graffitiMark, credit: graffitiArt.credit, tagline: 'Turn a post into a wall.' },
     summary: 'Turn a post into a wall anyone can tag. The author can wash it off; anyone can tag it again.',
     status: 'A wall anyone can tag',
     hint: 'Press Draw to tag this wall. Scrub it away on your screen any time.',

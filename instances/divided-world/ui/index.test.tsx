@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
+import { ratio } from '../../../engine/ui/contrast.ts';
 import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
@@ -283,10 +284,30 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(whoops.describe(instance.settings)).toContain('0.25 more for every 500 characters');
     expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.perLength': 250 } })).toContain('2.50 more');
   });
+  /* postcard.css writes the play tag's words 8% toward white (color-mix in sRGB), which is rounded per channel here. */
+  const playTagInk = (hex: string) => `#${[1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.92 + 255 * 0.08).toString(16).padStart(2, '0')).join('')}`;
+  /* The small words on a face (the alignment tag in the card's ink on its color, the play's tag in its color on the card's ground) are 11px at the
+     fan's size, so each pair meets 4.5:1. A card armed and not yet played shows over the page with nothing masking it, and axe reads it there. */
+  test('every card face\'s tag and play tag meet 4.5:1 at the fan size', () => {
+    const grounds = Object.entries((instanceUi.glass as unknown as { keys: Record<string, Record<string, { value: string }>> }).keys)
+      .map(([key, tokens]) => [key, tokens['--kb-glass-card']?.value] as const);
+    expect(grounds.length).toBeGreaterThan(0);
+    const failures: string[] = [];
+    for (const c of instanceUi.cards) {
+      const inkOnColor = ratio(c.art.ink, c.art.color);
+      if (inkOnColor < 4.5) failures.push(`${c.key}: tag ink ${c.art.ink} on ${c.art.color} is ${inkOnColor.toFixed(2)}:1`);
+      for (const [key, ground] of grounds) {
+        if (!ground) { failures.push(`${key}: --kb-glass-card is not set`); continue; }
+        const colorOnGround = ratio(playTagInk(c.art.color), ground);
+        if (colorOnGround < 4.5) failures.push(`${c.key}: play tag ${c.art.color} on ${key}'s ${ground} is ${colorOnGround.toFixed(2)}:1`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
   test('Laugh Track has its face, its machine slot and its rules in words true to the card and the settings', () => {
     const ui = instanceUi.cards.find((c) => c.key === 'laugh-track')!;
     expect(ui.art.color).toBe('#d24a2c');
-    expect(ui.art.ink).toBe('#1a0602');
+    expect(ui.art.ink).toBe('#0d0301');
     expect(ui.art.tagline).toBe('Give a post a studio audience.');
     expect(ui.summary).toBe('Cues a studio audience to laugh, cheer or boo at the words you choose, wherever they appear in a post.');
     expect(ui.status).toBe('A studio audience on cue');
@@ -734,7 +755,7 @@ describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, T
 
   test('each wears Salty\'s pink or Pepperoni\'s color with its ink, and says what it does in a tagline and a summary', () => {
     for (const [key, color, ink, tagline] of [
-      ['mooch', '#ff3d7f', '#14030a', 'Ride a post\'s reactions.'], ['toll', '#d24a2c', '#1a0602', 'Get paid when a Move lands here.'],
+      ['mooch', '#ff3d7f', '#14030a', 'Ride a post\'s reactions.'], ['toll', '#d24a2c', '#0d0301', 'Get paid when a Move lands here.'],
       ['4d-chess', '#ff3d7f', '#14030a', 'Get paid for the Move you saw coming.'], ['off-day', '#ff3d7f', '#14030a', 'Give a character somebody else\'s day.'],
     ] as const) {
       expect([ui(key).art.color, ui(key).art.ink, ui(key).art.tagline], key).toEqual([color, ink, tagline]);
