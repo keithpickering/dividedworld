@@ -208,17 +208,25 @@ describe('the ways a card lands on a post', () => {
   const cards = [blot, spark, scribe, plea];
 
   test('a card that reaches a post lands both ways on one\'s own post, and only cast on another\'s', () => {
-    expect(waysOn(blot, post('hi'), [], { cards, own: true })).toEqual({ cast: true, set: true });
-    expect(waysOn(blot, post('hi'), [], { cards, own: false })).toEqual({ cast: true, set: false });
+    expect(waysOn(blot, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: true, set: true });
+    expect(waysOn(blot, post('hi'), [], { cards, own: false, now: 0 })).toEqual({ cast: true, set: false });
   });
 
   test('a card that reaches a character lands only set, on one\'s own post, and nowhere on another\'s', () => {
-    expect(waysOn(spark, post('hi'), [], { cards, own: true })).toEqual({ cast: false, set: true });
-    expect(waysOn(spark, post('hi'), [], { cards, own: false })).toEqual({ cast: false, set: false });
+    expect(waysOn(spark, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: false, set: true });
+    expect(waysOn(spark, post('hi'), [], { cards, own: false, now: 0 })).toEqual({ cast: false, set: false });
   });
 
   test('a card that is only cast face up lands only cast, even on one\'s own post', () => {
-    expect(waysOn(scribe, post('hi'), [], { cards, own: true })).toEqual({ cast: true, set: false });
-    expect(waysOn(plea, post('hi'), [], { cards, own: true })).toEqual({ cast: true, set: false });
+    expect(waysOn(scribe, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: true, set: false });
+  });
+
+  test('a card that needs a message lands only cast, though landing\'s lenient reading sets the message aside', () => {
+    expect(waysOn(plea, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: true, set: false });
+  });
+
+  test('a card that is drawn on lands only cast too, though landing\'s lenient reading would set it', () => {
+    const wall: CardRules = { ...base, key: 'wall', name: 'Wall', surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: () => ({ ok: false, why: 'unused' }), validateWash: () => ({ ok: false, why: 'unused' }) } };
+    expect(waysOn(wall, post('hi'), [], { cards: [wall], own: true, now: 0 })).toEqual({ cast: true, set: false });
   });
 });

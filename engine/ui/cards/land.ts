@@ -10,6 +10,7 @@ import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarg
 import type { Span } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
+import { livePlays } from './plays.ts';
 
 /** A post's length in characters, as its rules count it: of its current words (an edit counts), and nothing for a body that is not text. */
 export function lengthOf(post: Act): number {
@@ -54,14 +55,18 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
 }
 
 /**
- * Which ways a card can land on a post: cast now, and set face down. The one answer the postbit's mark (GhostMark) and the play form's
- * "How to play it" pair both read, so they cannot disagree. Asked without the form's settings (landing's own lenient reading), so the
- * answer never changes as the player types. A set is only ever the post author's own, so `own` says whether the reader's characters wrote the
- * post; a Move set face down is asked only of a card whose play is a cast, a set card being set by its own play, and never of one that is faceUpOnly (landing's lenient reading sets a needed message aside, so decideSet would not refuse it here).
+ * Which ways a card can land on a post: cast now, and set face down. The postbit's mark (GhostMark) and the play form's "How to play it"
+ * pair both read this one answer, so they cannot disagree. It takes the post's plays as the page holds them and keeps only the live ones
+ * itself, so no caller can pass it a different set. It is asked without the form's settings (landing's own lenient reading), so the answer
+ * never changes as the player types.
+ * A set is only ever the post author's own, so `own` says whether the reader's characters wrote the post. A Move is set face down only
+ * where its play is a cast, since a set card is set by its own play. A faceUpOnly card is never set: landing's lenient reading sets a
+ * needed message aside, so decideSet would not refuse it here.
  */
-export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean }): { readonly cast: boolean; readonly set: boolean } {
-  const cast = landing(rules, post, plays, context).ok;
-  const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, plays, { cards: context.cards, faceDown: true }).ok;
+export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number }): { readonly cast: boolean; readonly set: boolean } {
+  const live = livePlays(plays, context.now);
+  const cast = landing(rules, post, live, context).ok;
+  const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true }).ok;
   return { cast, set };
 }
 

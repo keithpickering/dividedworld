@@ -42,7 +42,7 @@ export function ghostName(card: string, play: Play, seq: number): string {
 export function GhostMark({ act }: { readonly act: Act }) {
   const play = usePlay();
   const { hudCharacter, actingCharacters } = usePlayer();
-  const { instance, settings, ui } = useKayfa();
+  const { api, instance, settings, ui } = useKayfa();
   const { plays } = useThread();
   const here = usePlays(plays, act.id);
   const target = useTarget(act);
@@ -57,7 +57,7 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const own = actingCharacters.some((c) => c.id === act.character);
   if ((how === 'set' || how === 'use') && !own) return null;
   /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. The play form reads the same answer (waysOn). */
-  const { cast: casts, set: sets } = waysOn(rules, act, here.plays, { cards: instance.cards, own });
+  const { cast: casts, set: sets } = waysOn(rules, act, here.plays, { cards: instance.cards, own, now: api.now() });
   if (!casts && !sets) return null;
   const down = sets && (play.faceDown || !casts);
   const cardUi = ui.cards.find((c) => c.key === rules.key);

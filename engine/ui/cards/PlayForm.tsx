@@ -68,7 +68,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const player = usePlayer();
   const id = useId();
   const [config, setConfig] = useState<Readonly<Record<string, unknown>> | undefined>(undefined);
-  /* A Move on one's own post is played now or set face down; a set card is set, and the choice is not asked. */
+  /* A Move on one's own post is played now or set face down; a set card is set, and nothing is asked. */
   const [down, setDown] = useState(faceDown);
   const [message, setMessage] = useState('');
   /**
@@ -130,9 +130,15 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const how = rules ? playOf(rules) : 'cast';
   /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. */
   const carried = livePlays(usePlays(target.plays, home).plays, api.now());
-  /* The post is one of the player's own characters'. Which ways a cast card lands there is `waysOn`, the answer the post's mark reads too, asked without the card's settings so the choice never comes or goes as the player types: both, and the pair is asked; only one, and that one is the play, with no choice (a card that reaches a character is only ever set on a post; one that is faceUpOnly (it writes, needs a message, draws or runs a drive) is only cast face up, by decideSet). A remembered Set face down never opens a card as a set that cannot be one, since `setting` follows `ways`; a set card is set there alone. */
+  /*
+   * The post is one of the player's own characters'. `waysOn` says which ways a cast card lands there, the same answer the post's mark
+   * reads. It is asked without the card's settings, so the choice never comes or goes as the player types.
+   * Both ways, and the pair is asked. Only one, and that one is the play, with no choice. A card that reaches a character is only ever set
+   * on a post. A faceUpOnly card (it writes, needs a message, draws or runs a drive) is only cast face up, by decideSet.
+   * A remembered Set face down never opens a card as a set that cannot be one, since `setting` follows `ways`. A set card is set there alone.
+   */
   const ownPost = !beyond && post !== null && player.actingCharacters.some((c) => c.id === post.character);
-  const ways = rules && post && !beyond && how === 'cast' ? waysOn(rules, post, carried, { cards: instance.cards, own: ownPost }) : { cast: !beyond, set: false };
+  const ways = rules && post && !beyond && how === 'cast' ? waysOn(rules, post, carried, { cards: instance.cards, own: ownPost, now: api.now() }) : { cast: false, set: false };
   const choosing = how === 'cast' && ownPost && ways.cast && ways.set;
   const setting = how === 'set' || (how === 'cast' && ownPost && ways.set && (!ways.cast || down));
   /* A Set is the post author's own: the character that wrote it sets it, which is the HUD's unless the post is another mask's. */
