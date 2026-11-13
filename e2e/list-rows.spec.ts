@@ -77,15 +77,18 @@ const byline = (page: Page) => page.evaluate(() => {
   const title = document.querySelector('.kb-board-last-title') as HTMLElement;
   const cell = by.closest('td')!.getBoundingClientRect();
   const partsOf = () => [by.querySelector('.kb-board-sep'), by.querySelector('.kb-who'), by.querySelector('a:not(.kb-who a)')].map((e) => e!.getBoundingClientRect());
+  /* The name may be wider than the row and wrap in its box: the "·" shares the line of the name's first line, whatever the name's box (its last line is where the date may stand). */
+  const nameFirstLine = () => { const range = document.createRange(); range.selectNodeContents(by.querySelector('.kb-who a')!); return range.getClientRects()[0]!; };
   /* The title is cut to the words that leave the unit's line no room for the whole of it, but room for its "·": the unit must move whole, where an inline one would break after the "·". */
   const unit = partsOf().reduce((sum, r) => sum + r.width, 0);
   title.textContent = 'w';
   for (let i = 0; i < 60 && cell.right - title.getBoundingClientRect().right > unit - 40; i++) title.textContent += ' word';
   const tr = [...title.getClientRects()];
   const parts = partsOf();
-  const middles = parts.map((r) => r.top + r.height / 2);
+  const first = nameFirstLine();
+  const middles = [parts[0]!, first].map((r) => r.top + r.height / 2);
   const list = document.querySelector('.kb-board-list')!;
-  return { parts: parts.length, room: cell.right - title.getBoundingClientRect().right, unit, spread: Math.max(...middles) - Math.min(...middles), firstTop: Math.min(...parts.map((r) => r.top)), titleBottom: tr[tr.length - 1]!.bottom, listScroll: list.scrollWidth - list.clientWidth, pageScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+  return { parts: parts.length, dateTop: parts[2]!.top, nameFirstTop: first.top, room: cell.right - title.getBoundingClientRect().right, unit, spread: Math.max(...middles) - Math.min(...middles), firstTop: Math.min(...parts.map((r) => r.top)), titleBottom: tr[tr.length - 1]!.bottom, listScroll: list.scrollWidth - list.clientWidth, pageScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth };
 });
 
 const DESK = { width: 1440, height: 1000 };
@@ -189,11 +192,12 @@ for (const size of [{ width: 390, height: 844 }, { width: 360, height: 800 }]) {
     });
   }
 
-  test(`7: a title that leaves the byline part of a line moves it whole to the next, and the list stays inside the window ${at}`, async ({ page }) => {
+  test(`7: a title that leaves the byline part of a line moves it whole to the next, its "·" with the name's first line, and the list stays inside the window ${at}`, async ({ page }) => {
     await open(page, LONG, '.kb-board-last-title', size);
     const m = await byline(page);
     expect(m.parts, 'the "·", the name and the date').toBe(3);
-    expect(m.spread, 'the "·", the name and the date on one line').toBeLessThanOrEqual(12);
+    expect(m.spread, 'the "·" and the first line of the name on one line').toBeLessThanOrEqual(12);
+    expect(m.dateTop, 'the date no higher than the name\'s first line').toBeGreaterThanOrEqual(m.nameFirstTop - 0.5);
     expect(m.firstTop, 'the unit starts under the title\'s last line').toBeGreaterThanOrEqual(m.titleBottom - 0.5);
     expect(m.listScroll).toBeLessThanOrEqual(0);
     expect(m.pageScroll).toBeLessThanOrEqual(0);
@@ -217,24 +221,32 @@ async function setTextSize(page: Page, size: string) {
 type Box = { top: number; bottom: number; left: number; right: number };
 type LastRow = { title: string; unit: Box; name: Box; sep: Box | null; date: Box; label: Box; sharesLine: boolean };
 
-/** Each thread row's last post: the unit (the cell, where a build has no unit), the name's box, the comma's last box, the date's link, and whether the name and the date share a line. */
-const lastPosts = (page: Page): Promise<LastRow[]> => page.evaluate(() => {
+/**
+ * The selectors of a list's last post, so the thread list's and the index's are read by one set of measures: a row, its title, the cell, the unit, the name's box, the comma and the date's link.
+ * `sep` may match more than one element (the index's cell has the "·" and the comma): the last one is the comma.
+ */
+type Last = { row: string; title: string; cell: string; unit: string; name: string; sep: string; date: string; label: string; list: string };
+const THREAD_LAST: Last = { row: '.kb-thread-row', title: '.kb-thread-title', cell: '.kb-thread-last', unit: '.kb-thread-last-by', name: '.kb-thread-last .kb-who', sep: '.kb-thread-last .kb-thread-sep', date: '.kb-thread-last-link', label: '.kb-thread-last-label', list: '.kb-thread-list' };
+const INDEX_LAST: Last = { row: '.kb-board-row:has(.kb-board-last-by)', title: '.kb-board-link', cell: '.kb-board-last', unit: '.kb-board-last-by', name: '.kb-board-last .kb-who', sep: '.kb-board-last .kb-board-sep', date: '.kb-board-last-when a', label: '.kb-board-last-label', list: '.kb-board-list' };
+
+/** Each row's last post: the unit (the cell, where a build has no unit), the name's box, the comma's last box, the date's link, and whether the name and the date share a line. */
+const lastPosts = (page: Page, l: Last = THREAD_LAST): Promise<LastRow[]> => page.evaluate((sel) => {
   const box = (e: Element | null | undefined) => { if (!e) return null; const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right }; };
-  return [...document.querySelectorAll('.kb-thread-row')].map((r) => {
-    const cell = r.querySelector('.kb-thread-last')!;
-    const sepRects = [...(r.querySelector('.kb-thread-last .kb-thread-sep')?.getClientRects() ?? [])];
+  return [...document.querySelectorAll(sel.row)].map((r) => {
+    const cell = r.querySelector(sel.cell)!;
+    const sepRects = [...([...r.querySelectorAll(sel.sep)].pop()?.getClientRects() ?? [])];
     const sep = sepRects.length ? sepRects[sepRects.length - 1]! : null;
-    const name = box(r.querySelector('.kb-thread-last .kb-who'))!;
-    const date = box(r.querySelector('.kb-thread-last-link'))!;
+    const name = box(r.querySelector(sel.name))!;
+    const date = box(r.querySelector(sel.date))!;
     return {
-      title: r.querySelector('.kb-thread-title')?.textContent ?? '',
-      unit: box(r.querySelector('.kb-thread-last-by') ?? cell)!,
-      name, date, label: box(r.querySelector('.kb-thread-last-label'))!,
+      title: r.querySelector(sel.title)?.textContent ?? '',
+      unit: box(r.querySelector(sel.unit) ?? cell)!,
+      name, date, label: box(r.querySelector(sel.label))!,
       sep: sep && { top: sep.top, bottom: sep.bottom, left: sep.left, right: sep.right },
       sharesLine: date.top < name.bottom - 2,
     };
   });
-});
+}, l);
 
 /** The ring's room (2px outline and 2px offset): the comma's box ends at least this far left of the date; the clip itself is at the box's own gap (0.5em, 6px at the least), clear of the ring. */
 const RING = 4;
@@ -255,26 +267,26 @@ const commaFaults = (rows: LastRow[]): string[] => rows.flatMap((r) => {
  * What is painted where the comma's box is, for the rows where the date has a line of its own: the strip the comma's last box occupies is screenshotted as it is and again with the
  * comma made invisible (layout unchanged); a comma that paints there makes the two differ. Whatever else legitimately paints in the strip (a cell's border) is in both.
  */
-const paintedCommas = async (page: Page): Promise<string[]> => {
-  const rows = await lastPosts(page);
+const paintedCommas = async (page: Page, l: Last = THREAD_LAST): Promise<string[]> => {
+  const rows = await lastPosts(page, l);
   const out: string[] = [];
   for (const [i, r] of rows.entries()) {
     if (r.sharesLine || r.sep === null) continue;
-    const row = page.locator('.kb-thread-row').nth(i);
-    await row.locator('.kb-thread-last-link').evaluate((e) => e.scrollIntoView({ block: 'center' }));
-    const strip = await row.evaluate((rowEl) => {
-      const rects = [...rowEl.querySelector('.kb-thread-last .kb-thread-sep')!.getClientRects()];
+    const row = page.locator(l.row).nth(i);
+    await row.locator(l.date).first().evaluate((e) => e.scrollIntoView({ block: 'center' }));
+    const strip = await row.evaluate((rowEl, sepSel) => {
+      const rects = [...[...rowEl.querySelectorAll(sepSel)].pop()!.getClientRects()];
       const b = rects[rects.length - 1]!;
       return { x: Math.floor(b.left), y: Math.floor(b.top), width: Math.ceil(b.right) - Math.floor(b.left), height: Math.ceil(b.bottom) - Math.floor(b.top) };
-    });
+    }, l.sep);
     const clip = { x: Math.max(0, strip.x), y: strip.y, width: strip.width + Math.min(0, strip.x), height: strip.height };
     /* A strip with no size, or below the window, would be shot the same twice and pass for the wrong reason. */
     const view = page.viewportSize()!;
     if (clip.width <= 0 || clip.height <= 0 || clip.y < 0 || clip.y + clip.height > view.height || clip.x + clip.width > view.width) { out.push(`${r.title}: the comma's strip is not in the window (${JSON.stringify(clip)})`); continue; }
     const shown = await page.screenshot({ clip });
-    await row.locator('.kb-thread-last .kb-thread-sep').evaluate((e) => { (e as HTMLElement).style.visibility = 'hidden'; });
+    await row.locator(l.sep).last().evaluate((e) => { (e as HTMLElement).style.visibility = 'hidden'; });
     const hidden = await page.screenshot({ clip });
-    await row.locator('.kb-thread-last .kb-thread-sep').evaluate((e) => { (e as HTMLElement).style.visibility = ''; });
+    await row.locator(l.sep).last().evaluate((e) => { (e as HTMLElement).style.visibility = ''; });
     if (!shown.equals(hidden)) out.push(`${r.title}: the comma paints left of the date, which starts a line`);
   }
   return out;
@@ -284,10 +296,10 @@ const paintedCommas = async (page: Page): Promise<string[]> => {
 const wholeFaults = (rows: LastRow[]): string[] => rows.flatMap((r) => (
   Math.abs((r.name.top + r.name.bottom) / 2 - (r.date.top + r.date.bottom) / 2) <= 12 ? [] : [`${r.title}: the date is not on the name's line`]));
 
-const scrolls = (page: Page) => page.evaluate(() => {
-  const list = document.querySelector('.kb-thread-list')!;
+const scrolls = (page: Page, l: Last = THREAD_LAST) => page.evaluate((listSel) => {
+  const list = document.querySelector(listSel)!;
   return { list: list.scrollWidth - list.clientWidth, page: document.documentElement.scrollWidth - document.documentElement.clientWidth };
-});
+}, l.list);
 
 for (const [story, label] of [[BOARD, 'the thread list'], [SPUN, 'the spun list']] as const) {
   for (const size of PHONES) {
@@ -366,6 +378,73 @@ for (const text of ['125', '200'] as const) {
   });
 }
 
+/**
+ * The index's last post (#550, docs/plans/2026-11-13-index-last-post-hung-separators-plan.md, Task 1): the same unit as a thread row's, with its "·" kept at the head of the name's first line.
+ * 8a: no visible "·" is alone, the first line of the name's link shares its line. 8b: the comma is painted between the name and the date where they share a line, and not painted where the
+ * date starts a line (the 6b measures, read with the index's selectors). 8c: the focus ring of the date where it starts a line, and of the name's link, is whole. The long-titled story's name
+ * is wider than the row ("Sir Reginald Featherstonehaugh-Wetherby the Third"), so the rule is held for a name that does not fit.
+ */
+const INDEX_STORIES = [[INDEX, '.kb-board-row', 'the index'], [LONG, '.kb-board-last-title', 'the long-titled index']] as const;
+
+/** Each visible "·" of a unit with the first line of the name's link: a "·" whose line the name's first line does not share is alone on its line. */
+const dotFaults = (page: Page): Promise<string[]> => page.evaluate(() => {
+  const out: string[] = [];
+  for (const unit of document.querySelectorAll('.kb-board-last-by')) {
+    const dot = unit.querySelector('.kb-board-last-who > .kb-board-sep');
+    const alone = unit.querySelector('.kb-board-sep');
+    const link = unit.querySelector('.kb-who a');
+    if (!alone || alone.textContent!.trim() !== '·' || alone.getClientRects().length === 0) continue;
+    const range = document.createRange();
+    range.selectNodeContents(link!);
+    const first = range.getClientRects()[0]!;
+    const d = alone.getClientRects()[0]!;
+    const name = link!.textContent;
+    if (!(d.top < first.bottom - 2 && d.bottom > first.top + 2)) out.push(`the "·" is alone on a line before "${name}"${dot ? '' : ' (outside the first item)'}`);
+  }
+  return out;
+});
+
+for (const [story, ready, label] of INDEX_STORIES) {
+  for (const size of PHONES) {
+    for (const text of SIZES) {
+      test(`8a: no "·" of ${label} is alone on a line, at ${size.width}, text ${text}%`, async ({ page }) => {
+        await open(page, story, ready, size);
+        await setTextSize(page, text);
+        expect(await page.locator('.kb-board-last-by .kb-board-sep').count()).toBeGreaterThan(0);
+        expect(await dotFaults(page)).toEqual([]);
+      });
+
+      test(`8b: no comma of ${label} ends or starts a line, and the list stays inside the window, at ${size.width}, text ${text}%`, async ({ page }) => {
+        await open(page, story, ready, size);
+        await setTextSize(page, text);
+        const rows = await lastPosts(page, INDEX_LAST);
+        expect(rows.length).toBeGreaterThan(0);
+        expect(commaFaults(rows)).toEqual([]);
+        expect(await paintedCommas(page, INDEX_LAST)).toEqual([]);
+        const s = await scrolls(page, INDEX_LAST);
+        expect(s.list).toBeLessThanOrEqual(0);
+        expect(s.page).toBeLessThanOrEqual(0);
+      });
+    }
+  }
+}
+
+for (const size of PHONES) {
+  test(`8c: the focus ring of the index's last-post links is whole on four sides, at ${size.width}, text 200%`, async ({ page }) => {
+    await open(page, LONG, '.kb-board-last-title', size);
+    await setTextSize(page, '200');
+    const rows = await lastPosts(page, INDEX_LAST);
+    expect(rows.some((r) => !r.sharesLine), 'a row whose date starts a line at 200%, tested').toBe(true);
+    for (const [i] of rows.entries()) {
+      const row = page.locator(INDEX_LAST.row).nth(i);
+      for (const [what, link] of [['the date', row.locator(INDEX_LAST.date)], ['the name', row.locator('.kb-board-last .kb-who a')]] as const) {
+        const sides = await ringSides(page, link);
+        expect(sides, `${what}'s ring in row ${i}`).toEqual({ left: true, right: true, top: true, bottom: true });
+      }
+    }
+  });
+}
+
 test('poison: top-aligned cells are named as off the title\'s baseline (case 1)', async ({ page }) => {
   await page.addInitScript(() => {
     document.addEventListener('DOMContentLoaded', () => {
@@ -383,7 +462,7 @@ test('poison: a byline that flows on after the title is named as breaking apart 
   await page.addInitScript(() => {
     document.addEventListener('DOMContentLoaded', () => {
       const style = document.createElement('style');
-      style.textContent = '.kb-board-last-by { display: inline !important }';
+      style.textContent = '.kb-board-last-by { display: inline !important } .kb-board-last-who { display: inline !important } .kb-board-last-who > .kb-board-sep { white-space: normal !important }';
       document.head.append(style);
     });
   });
@@ -431,4 +510,29 @@ test('poison: a unit with no clip is named as a comma painted left of the date (
   await open(page, SPUN, '.kb-thread-row', { width: 360, height: 800 });
   await setTextSize(page, '200');
   expect((await paintedCommas(page)).length).toBeGreaterThan(0);
+});
+
+test('poison: an index unit with no clip is named as a comma painted left of the date (case 8b)', async ({ page }) => {
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style');
+      style.textContent = '.kb-board-last-by { clip-path: none !important }';
+      document.head.append(style);
+    });
+  });
+  await open(page, LONG, '.kb-board-last-title', { width: 360, height: 800 });
+  await setTextSize(page, '200');
+  expect((await paintedCommas(page, INDEX_LAST)).length).toBeGreaterThan(0);
+});
+
+test('poison: an index unit back to the form on main (an inline-block, its first item inline, its "·" free to break) is named as a "·" alone on a line (case 8a)', async ({ page }) => {
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style');
+      style.textContent = '.kb-board-last-by { display: inline-block !important } .kb-board-last-who { display: inline !important } .kb-board-last-who > .kb-board-sep { white-space: normal !important }';
+      document.head.append(style);
+    });
+  });
+  await open(page, LONG, '.kb-board-last-title', { width: 390, height: 844 });
+  expect((await dotFaults(page)).length).toBeGreaterThan(0);
 });
