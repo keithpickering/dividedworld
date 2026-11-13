@@ -185,7 +185,7 @@ begin
 end $$;
 
 -- place_cast (0400_post_veils), raising what land_refusal says under land_refusal_code's SQLSTATE: 42501 for a veil's refusals as before, 22023 for a reaction card's configuration and 23505 for a key the post already holds.
--- That is the one change; everything else, the lock order included, as 0400 wrote it. Callable by no API role, as before.
+-- That is the one change; everything else, the lock order included (post, then visits_open, then character: 0400's header), as 0400 wrote it. Callable by no API role, as before.
 
 create or replace function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
 returns jsonb
@@ -320,15 +320,17 @@ begin
     -- The target's row is locked, so plays on one target are laid one at a time and each counts the last; two board cards on one
     -- board both wait here, and the second sees the first.
     if reach = 'character' then
+      -- The lock order is post, then visits_open, then character, everywhere (a visit's filing takes the post's row first and, in infract, its author's character after): the post the card is played from is held `for share`
+      -- before the target character's row, so a card on a character and a filing on that post never hold one each and wait on the other. (Before 0400 the character came first.)
+      perform 1 from acts a where a.id = from_post and a.kind = 'post' for share;
       perform 1 from characters c where c.id = target for no key update;
       if not found then raise exception 'there is no such character' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
       select c.name into target_name from characters c where c.id = target;
       -- The stand-in is shown in place of an author, so a card on it would be a card on whoever it stands for.
       if target is not distinct from stand_in() then raise exception 'no card is played on a stand-in' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
       -- The post it is played from is held `for share` before it is read: a veil cast on that post (which takes the row `for no key update`) checks for a card played from it after taking it, so the card and the veil
-      -- are laid one at a time, and whichever is second reads what the first left (a veiled post is not its character's, so the card is refused; a post a card was played from takes no veil). The character's row is held
-      -- already, and a veil cast holds the post's row and takes no character's row in a mode that conflicts with this one, so the order closes no cycle.
-      perform 1 from acts a where a.id = from_post and a.kind = 'post' for share;
+      -- are laid one at a time, and whichever is second reads what the first left (a veiled post is not its character's, so the card is refused; a post a card was played from takes no veil). The post's row is
+      -- held already (above, before the character's), and a veil cast holds the post's row and takes no character's row, so the order closes no cycle.
       select a.thread, a.character into in_thread, shown from acts_public a where a.id = from_post and a.kind = 'post';
       -- A post under a live author veil is shown under the stand-in to everyone, so a card on a character played from it is a card on the stand-in whoever the caster names, the post's author included: one refusal, in the
       -- words and the code a third player meets naming the stand-in itself, and the same whoever owns the post. (A post that is not veiled is refused as it was, for a character that is not its own.)

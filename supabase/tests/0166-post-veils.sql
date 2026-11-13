@@ -181,6 +181,15 @@ begin
   perform * from extensions.dblink('vv_h', format('select id from acts where id = %L for no key update', p4)) as x(r uuid);
   perform extensions.dblink_send_query('vv_v', format('select /* vv_d */ place_cast(%L, ''vvname'', %L, ''{}'', '''', ''character'', %L, %L, 0)', c, a2, p4, u2));
   seen := pg_temp.parked('vv_d', 'vv_v');
+  -- The lock order is post, then visits_open, then character (a visit's filing takes the post first and, in infract, the post's author's character after it): the card waits on the post BEFORE it holds the character's row, so a
+  -- third session takes that row at once, `nowait`, while the card waits. (Taking the character first would hold it here, and a filing on the post would meet it head on.)
+  perform extensions.dblink_connect('vv_x', url);
+  begin
+    perform * from extensions.dblink('vv_x', format('select id from characters where id = %L for no key update nowait', a2)) as x(r uuid);
+    got := null;
+  exception when others then got := sqlstate || ' ' || sqlerrm; end;
+  perform extensions.dblink_disconnect('vv_x');
+  if got is not null then raise exception 'a card played from a post that is held already holds its character''s row while it waits for the post: %', got; end if;
   perform extensions.dblink_exec('vv_h', 'commit');
   select (r ->> 'id')::uuid into named from extensions.dblink_get_result('vv_v') as x(r jsonb);
   perform * from extensions.dblink_get_result('vv_v') as x(r jsonb);

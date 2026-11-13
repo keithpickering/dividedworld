@@ -33,6 +33,9 @@
 -- is refused, end when the veil does, and the refusal says when. A cast refused (a staff post, a visited post) is refused before it is written; the caster keeps the card.
 --
 -- Each function below is copied from its latest definition, named in the comment above it, changing only what that comment names; lock order and `set search_path` are as written there.
+-- Lock order, for the post, the visits and the character: POST, THEN visits_open, THEN CHARACTER, in every function that takes more than one (a visit's filing takes the post's row, then visits_open, then in infract the post's author's
+-- character). place_cast's character branch is the one this migration moves to it: the post a card on a character is played from is taken `for share` before the target character's row, where it was taken after (0317), so a card cast
+-- from post P onto its author and a filing on P meet at the post and never hold one row each and wait on the other (supabase/tests/0166-post-veils.sql, section 13 (d), holds a third session getting the character's row while the card waits).
 
 
 -- ===================================================================================== 1. the catalog ====
@@ -1064,7 +1067,7 @@ revoke execute on function lay_sprung(uuid, text, jsonb, uuid, text, uuid, uuid)
 
 -- place_cast (0317_surfaces), with four additions. (a) At post reach a cast card meets land_refusal (a staff post, a post a Mod Bot has been to) before anything is written, in the same words for every caster.
 -- (b) A post play of a card with a time up writes `ends` whatever the card is, where a use card's and a skim's alone did. (c) A card that lands on a post calls land_rows after its Act (a veil's row), except a play a back caught.
--- (d) At character reach the stand-in is no target. Everything else, the lock order included, as 0317 wrote it. Callable by no API role, as before.
+-- (d) At character reach the stand-in is no target, and the post the card is played from is locked before the character's row (the header's lock order). Everything else, the lock order included, as 0317 wrote it. Callable by no API role, as before.
 
 create or replace function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
 returns jsonb
@@ -1199,15 +1202,17 @@ begin
     -- The target's row is locked, so plays on one target are laid one at a time and each counts the last; two board cards on one
     -- board both wait here, and the second sees the first.
     if reach = 'character' then
+      -- The lock order is post, then visits_open, then character, everywhere (a visit's filing takes the post's row first and, in infract, its author's character after): the post the card is played from is held `for share`
+      -- before the target character's row, so a card on a character and a filing on that post never hold one each and wait on the other. (Before 0400 the character came first.)
+      perform 1 from acts a where a.id = from_post and a.kind = 'post' for share;
       perform 1 from characters c where c.id = target for no key update;
       if not found then raise exception 'there is no such character' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
       select c.name into target_name from characters c where c.id = target;
       -- The stand-in is shown in place of an author, so a card on it would be a card on whoever it stands for.
       if target is not distinct from stand_in() then raise exception 'no card is played on a stand-in' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
       -- The post it is played from is held `for share` before it is read: a veil cast on that post (which takes the row `for no key update`) checks for a card played from it after taking it, so the card and the veil
-      -- are laid one at a time, and whichever is second reads what the first left (a veiled post is not its character's, so the card is refused; a post a card was played from takes no veil). The character's row is held
-      -- already, and a veil cast holds the post's row and takes no character's row in a mode that conflicts with this one, so the order closes no cycle.
-      perform 1 from acts a where a.id = from_post and a.kind = 'post' for share;
+      -- are laid one at a time, and whichever is second reads what the first left (a veiled post is not its character's, so the card is refused; a post a card was played from takes no veil). The post's row is
+      -- held already (above, before the character's), and a veil cast holds the post's row and takes no character's row, so the order closes no cycle.
       select a.thread, a.character into in_thread, shown from acts_public a where a.id = from_post and a.kind = 'post';
       -- A post under a live author veil is shown under the stand-in to everyone, so a card on a character played from it is a card on the stand-in whoever the caster names, the post's author included: one refusal, in the
       -- words and the code a third player meets naming the stand-in itself, and the same whoever owns the post. (A post that is not veiled is refused as it was, for a character that is not its own.)
