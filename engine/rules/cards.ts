@@ -40,6 +40,8 @@ export type CardTarget =
     readonly text: string;
     /** The stretches of `text` that are a bare address, in its offsets (engine/bbcode/visible.ts): a card that must not touch a link leaves them alone. */
     readonly links: readonly Stretch[];
+    /** The character that wrote the post, by id: a public fact the server reads with it (a card played on another character's post compares it with the caster); a screen's preview has none. */
+    readonly author?: string;
     /**
      * Which version of the post this is (card_target, 0070): its latest edit's id, or the post's own before any edit. The server
      * reads it with the post and hands it back to play_card, which refuses a play decided against an older one. A screen's
@@ -49,16 +51,22 @@ export type CardTarget =
     /** The post this one is drawn under, where it is a reply carried by a play in force (a card that replies); a screen's preview and an ordinary post have none. */
     readonly under?: string;
   }
-  | { readonly reach: 'character'; readonly character: string }
+  | {
+    readonly reach: 'character';
+    readonly character: string;
+    /** The character's live warn points, and when its running ban ends (null when it is not banned): public facts, both on every postbit, that the server reads with the target; a screen's preview has none. */
+    readonly warnPoints?: number;
+    readonly bannedUntil?: string | null;
+  }
   | { readonly reach: 'thread'; readonly thread: string }
   | { readonly reach: 'board'; readonly board: string };
 export type PostTarget = Extract<CardTarget, { reach: 'post' }>;
 
 /** A post as a card's rules see it, from its current body: its length in characters and its visible text, and its version where the server read one. */
-export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string, under?: string): PostTarget {
+export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string, under?: string, author?: string): PostTarget {
   const words = typeof body === 'string' ? body : '';
   const { text, links } = visibleWalk(parse(words));
-  return { reach: 'post', act, kind, length: [...words].length, text, links, ...(version ? { version } : {}), ...(under ? { under } : {}) };
+  return { reach: 'post', act, kind, length: [...words].length, text, links, ...(version ? { version } : {}), ...(under ? { under } : {}), ...(author ? { author } : {}) };
 }
 
 /**
@@ -100,6 +108,16 @@ export type GimmickEffect =
   | { readonly kind: 'noQuote' };
 export type WardEffect = Extract<GimmickEffect, { kind: 'ward' }>;
 export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote']);
+
+/** What a cast does to the staff's discipline of its target, one of a fixed list; each card picks one and sets its numbers. */
+export type DisciplineEffect =
+  | { readonly kind: 'relief'; readonly points: 'lightestBand' | 'all' }  // on a character: takes the oldest live points off its warn bar
+  | { readonly kind: 'unban' }                                             // on a character: ends its running bans
+  | { readonly kind: 'fall' }                                              // on another character's post: the next filing lands on the caster
+  | { readonly kind: 'watch'; readonly weight: number };                   // on a character: multiplies its weight in a patrol's draw while up
+export const DISCIPLINE_KINDS: readonly DisciplineEffect['kind'][] = Object.freeze(['relief', 'unban', 'fall', 'watch']);
+/** A play that is over when it lands: it leaves no effect, takes no place in a stack and has no time up. */
+export const instant = (rules: Pick<CardRules, 'discipline'>): boolean => rules.discipline?.kind === 'relief' || rules.discipline?.kind === 'unban';
 
 /** What a cast set card matches, besides a named card (`catches`): the printed flavors, and the rarity it takes up to. Pepperoni is its own flavor. */
 export interface Match {
@@ -271,6 +289,11 @@ export interface CardRules<Config = unknown> {
    * reach is a thread or a character, with a time up.
    */
   readonly keeps?: true;
+  /**
+   * What its cast does to the staff's discipline of its target (`DisciplineEffect`); a cast card, cast face up and never set face down, with no other effect (no writes, replies,
+   * keeps, skim, scoresAs, gimmick, draws, drive or needsMessage). A relief and an unban are over when they land; a fall waits on a post until a filing; a watch is up for its `lasts`.
+   */
+  readonly discipline?: DisciplineEffect;
   /** The economy numbers its rules read. */
   readonly reads?: readonly EconomyRead[];
   /** The numbers in `Settings.cardSettings` its screens read, so an instance missing one, or holding one out of its bounds, is refused. */
@@ -476,6 +499,8 @@ export interface PlayContext {
   readonly nameOf?: (key: string) => string;
   /** A surface card's first draw, as the caster made it (`CardRules.surface`); a surface card is refused without one. */
   readonly first?: unknown;
+  /** The character the play is made through, by id; a discipline card compares it with a post's author (`disciplineRefusal`). */
+  readonly caster?: string;
 }
 
 /**
@@ -495,11 +520,26 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   if (rules.replies === true && target.reach === 'post' && target.under !== undefined) return refuse('a reply drawn under a post takes no reply under it');
   const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
+  const staffed = disciplineRefusal(rules, target, context, now);
+  if (staffed) return staffed;
   const play = decided(rules, settings, target, effects, config, message, now, true);
   if (!play.ok || rules.surface === undefined) return play;
   const first = firstDraw(rules, settings, context.first);
   if (!first.ok) return first;
   return ok({ ...play.value, draw: first.value });
+}
+
+/**
+ * What a discipline card refuses before anything is written, from facts that are public (a warn bar and a ban are on every postbit; a post's author is its character):
+ * the same words for every caster, and never a question of who owns the caster or the target. A fact left undefined refuses nothing, and the server decides again.
+ */
+function disciplineRefusal(rules: CardRules, target: CardTarget, context: PlayContext, now: Date): Verdict<never> | null {
+  const d = rules.discipline;
+  if (d === undefined) return null;
+  if (d.kind === 'relief' && target.reach === 'character' && target.warnPoints === 0) return refuse("this character's warn bar is empty");
+  if (d.kind === 'unban' && target.reach === 'character' && target.bannedUntil !== undefined && (target.bannedUntil === null || !(Date.parse(target.bannedUntil) > now.getTime()))) return refuse('this character is not banned');
+  if (d.kind === 'fall' && target.reach === 'post' && target.author !== undefined && context.caster !== undefined && target.author === context.caster) return refuse(`${rules.name} is played on another character's post`);
+  return null;
 }
 
 /**
@@ -540,14 +580,14 @@ export interface SetConditions {
 const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
 
 /**
- * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, replies, needs a message, draws or runs a
+ * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, replies, acts on the staff's discipline, needs a message, draws or runs a
  * drive. Each of those is done at the cast, on the post the caster chose (the tail is bought, the message is said, the draw is made, the drive opens), and a
  * back that sprang later on a quote would land with none of it. A surface card is one too (docs/plans/2026-11-12-graffiti-face-up-design.md, section 1):
  * its first tag is drawn on the post the caster chose, and a back would carry it blind to a quoting post's box nobody drew for. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
  * server holds the same on face_down (supabase/migrations/0153_drives.sql, face_down_never_writes).
  */
-export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface' | 'replies'>): boolean =>
-  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined || rules.replies !== undefined;
+export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface' | 'replies' | 'discipline'>): boolean =>
+  rules.discipline !== undefined || rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined || rules.replies !== undefined;
 
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
@@ -557,6 +597,8 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
   // So is a card that replies: its reply is written with the play, under the post the caster chose.
   if (rules.replies !== undefined) return refuse(`${rules.name} carries a reply, so it is cast face up and never set face down`);
+  // So is a card that acts on the staff's discipline: it is refused or takes hold the moment it lands, on the target its caster chose.
+  if (rules.discipline !== undefined) return refuse(`${rules.name} acts the moment it lands, so it is cast face up and never set face down`);
   // So is one that needs a message, draws, runs a drive or is drawn on (a surface card): faceUpOnly says which, and one sentence covers them.
   if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
@@ -703,7 +745,9 @@ export const listed = (reaches: readonly Reach[]): string => {
 /**
  * Whether a card is drawn in a play's moment (docs/plans/2026-11-03-effect-history-design.md, section 3): when its effect can change
  * after it lands, because it saves state (`validateState`), stacks (`stack` above 1), or ends by time (`lasts`). Such a card is drawn
- * still, as it stood then; any other is named in words. Read from the card's rules, so a card sets nothing.
+ * still, as it stood then; any other is named in words. Read from the card's rules, so a card sets nothing. A discipline card needs no line of
+ * its own: a relief, an unban and a fall have none of the three and are named in words, and a watch, which ends by time, is drawn as
+ * any card with a time up is.
  */
 export function drawnInMoment(rules: Pick<CardRules, 'validateState' | 'stack' | 'lasts'>): boolean {
   return rules.validateState !== undefined || (rules.stack ?? 1) > 1 || rules.lasts !== undefined;
@@ -714,10 +758,12 @@ export function drawnInMoment(rules: Pick<CardRules, 'validateState' | 'stack' |
  * carries at most its stack of it (one unless the card says more) that are still up, each its own play, counting only the
  * effects on that same target, never those above it. A board carries one board card at a time, of any card, until it ends.
  */
-export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'> & { readonly surface?: unknown }, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
+export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches' | 'discipline'> & { readonly surface?: unknown }, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
   const reaches = reachesOf(rules);
   if (!reaches.includes(target.reach)) return refuse(`this card lands on ${listed(reaches)}`);
   if (target.reach === 'post' && target.kind !== 'post') return refuse('a card lands on a post');
+  // A play that is over when it lands leaves no effect to count: only the reach is checked.
+  if (instant(rules)) return ok(undefined);
   // An ended effect holds no place (play_card counts the same way).
   const here = effects.filter((e) => (e.reach ?? 'post') === target.reach && isLive(e, now));
   if (target.reach === 'board') {
@@ -786,6 +832,8 @@ export function staffOffers(card: CardRules): boolean {
   if (card.needsMessage !== undefined) return false;
   // A card that replies carries a post a persona's play does not write.
   if (card.replies === true) return false;
+  // A persona does not play on its own office's rulings, and `infract` refuses a staff character.
+  if (card.discipline !== undefined) return false;
   // A surface card is played with a first draw, which a persona names (`staffOptions`) or code picks (`staffDrawOf`); a persona never sets one.
   if (card.surface !== undefined) return playOf(card) === 'cast' && (staffDrawOf(card, () => 0) !== null || card.staffOptions !== undefined);
   return staffConfigOf(card, () => 0) !== null || card.staffOptions !== undefined;

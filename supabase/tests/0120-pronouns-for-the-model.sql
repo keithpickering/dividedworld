@@ -56,7 +56,7 @@ begin
   perform pg_temp.expect('the thread keeps the name', th #>> '{posts,0,name}', 'Pm Ann');
 
   -- 3. The patrol's sample.
-  got := patrol_sample(array[general], 10);
+  got := patrol_sample(array[general], 10, 10, 1);
   perform pg_temp.expect('the sample, newest first is Bo', got #>> '{0,name}', 'Pm Bo');
   if got #> '{0,pronouns}' is distinct from 'null'::jsonb then raise exception 'Bo has pronouns in the sample: %', got -> 0; end if;
   perform pg_temp.expect('the sample, Ann', got #>> '{1,pronouns,object}', 'her');

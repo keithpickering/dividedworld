@@ -396,8 +396,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(laughTrack.setPhrase!({ cues: [{ phrase: 'first one', sound: 'boo' }, { phrase: 'second', sound: 'cheer' }] })).toBe('first one');
     const at = instance.machine.findIndex((m) => 'card' in m.item && m.item.card === 'laugh-track');
     expect(instance.machine[at]).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
-    // Laugh Track was the last on-sale slot; card notes Part 3's Overreaction and Blind Study follow it, and nothing else on sale does.
-    expect(instance.machine.slice(at + 1).filter((m) => m.availability === 'onSale').map((m) => ('card' in m.item ? m.item.card : 'pack'))).toEqual(['overreaction', 'blind-study']);
+    // Laugh Track was the last on-sale slot; card notes Part 3's Overreaction and Blind Study follow it, then card notes Part 5's Happy Heart and Take the Fall, and nothing else on sale does.
+    expect(instance.machine.slice(at + 1).filter((m) => m.availability === 'onSale').map((m) => ('card' in m.item ? m.item.card : 'pack'))).toEqual(['overreaction', 'blind-study', 'happy-heart', 'take-the-fall']);
   });
   test('Whoops! draws its effect and its ink form, and each play\'s tag takes its own ink', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
@@ -488,7 +488,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'you-were-saying', config: { steps: 3 }, tokens: 175 } });
     const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [{ card: 'you-were-saying', kind: 'played', act: 'k1', price: 75, at }], packs: [], playsOnMine: [],
       writes: [{ play: 'k1', post: 'post1', version: 'post1', failed: false, opening: true, over: false, at }, { play: 'k1', post: 'post1', version: 'e1', failed: false, opening: false, over: false, at }, { play: 'k1', post: 'post1', version: 'e2', failed: true, opening: false, over: true, at }],
-      saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
+      saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], cosmetics: [], falls: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }, { ...{ id: 'them', name: 'Spritey' }, pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play].map((a) => [a.id, a])),
@@ -508,7 +508,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const post = act('post1', 'post', 'me', { seq: 1, payload: { body: 'Mario wins.' }, currentPayload: { body: 'Mario wins again.' }, editedAt: '2026-10-31T10:00:00.000Z' });
     const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'autocorrect', config: { phrase: 'Mario', replacement: 'Luigi' } } });
     const edit = act('e1', 'edit', 'me', { targetActId: 'post1', createdAt: '2026-10-31T10:00:00.000Z', payload: { body: 'Mario wins again.' } });
-    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
+    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], cosmetics: [], falls: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play, edit].map((a) => [a.id, a])),
@@ -637,7 +637,7 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
   const contents = ['whoops', 'glitter-bomb', 'feelin-fab', 'stick-around', 'card-collector'];
   const pulled = contents.map((card) => ({ card, kind: 'pulled' as const, act: null, pack: 'pk1', price: 0, at }));
   const lines = (over: Partial<Log>, wallet: Log['wallet']) => logRows({
-    log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null, ...over },
+    log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], falls: [], before: null, ...over },
     mine: [], estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map(), names: new Map(), titles: new Map(), states: new Map(),
   }, { instance, ui: instanceUi, postsPerPage: 20, economy: {}, now: Date.parse('2026-10-29T12:00:00.000Z') }, 600, null);
   const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
@@ -759,6 +759,95 @@ describe('Sugar Coat, Hype-Up and Last Word in plain words (card notes Part 4, T
     expect(sugarWords).not.toContain('It never stops a card set face down.');
     expect(ui('hype-up').logPlay!({}, {})).toBe('What that character earns from positive reactions is 20% higher until it ends.');
     expect(ui('last-word').logPlay!({}, {})).toBe('Nobody can quote that post until it ends.');
+  });
+});
+
+describe('the Happy Hearts, Take the Fall and Tattle-Tale in plain words (card notes Part 5, Task 9)', () => {
+  const KEYS = ['happy-heart', 'super-happy-heart', 'ultra-happy-heart', 'take-the-fall', 'tattle-tale'] as const;
+  const ui = (key: string) => instanceUi.cards.find((c) => c.key === key);
+  /* The rules are read from the instance, so a missing card fails on what it should say and not on an import. */
+  const rules = (key: string) => instance.cards.find((c) => c.key === key) ?? ({ rarity: 'missing' } as never as (typeof instance.cards)[number]);
+  const tattleTale = rules('tattle-tale');
+  const faces = () => facesOf(instance.cards, instanceUi.cards, instance.settings, instanceUi.copy.cardKinds);
+  /* A rule's number, retuned for one test and put back: the words are read from the rules and the settings, never restated. */
+  const retuned = <T,>(rules: object, key: string, value: unknown, run: () => T): T => {
+    const held = (rules as Record<string, unknown>)[key];
+    (rules as Record<string, unknown>)[key] = value;
+    try { return run(); } finally { (rules as Record<string, unknown>)[key] = held; }
+  };
+  const bands = (minor: number, moderate: number, severe: number) => ({ ...instance.settings, warnBar: { ...instance.settings.warnBar, bands: { minor, moderate, severe } } });
+  const cap = (punishments: number, days: number) => ({ ...instance.settings, modBots: { ...instance.settings.modBots, cap: { punishments, days } } });
+
+  test('each wears its flavor\'s color with its ink, a tagline, art that is a WebP and an SVG mark, and a hint', () => {
+    expect(KEYS.map((k) => [k, ui(k)?.art.color, ui(k)?.art.ink, ui(k)?.art.tagline, ui(k)?.hint])).toEqual([
+      ['happy-heart', '#2ee6ff', '#03141a', 'Take a notch off a warn bar.', "A Happy Heart took warn points off a character's bar."],
+      ['super-happy-heart', '#2ee6ff', '#03141a', 'Empty a warn bar.', "A Super Happy Heart emptied a character's warn bar."],
+      ['ultra-happy-heart', '#2ee6ff', '#03141a', 'End a ban on the spot.', "An Ultra Happy Heart ended a character's ban."],
+      ['take-the-fall', '#2ee6ff', '#03141a', 'Take the blame for a post.', 'Someone has offered to take the fall for this post.'],
+      ['tattle-tale', '#ff3d7f', '#14030a', 'Point the Mod Bots at someone.', "A Tattle-Tale: Mod Bot patrols weigh this character's posts double."],
+    ]);
+    for (const k of KEYS) {
+      expect(ui(k)?.art.canvas, k).toMatch(/\.webp$/u);
+      expect(ui(k)?.art.mark, k).toMatch(/\.svg$|^data:image\/svg\+xml/u);
+      expect(ui(k)?.art.credit?.length, k).toBeGreaterThan(0);
+      expect(ui(k)?.Effect, `${k} draws nothing of its own`).toBeUndefined();
+      expect(ui(k)?.ConfigForm, `${k} takes no configuration`).toBeUndefined();
+    }
+  });
+
+  test('each says what it does in a summary and a status, both within the Lens\'s word rules', () => {
+    expect(KEYS.map((k) => ui(k)?.summary)).toEqual([
+      "Cast on a character. Takes the oldest points off that character's warn bar.",
+      "Cast on a character. Empties that character's warn bar.",
+      'Cast on a banned character. Ends the ban at once.',
+      "Cast on another character's post. The next Mod Bot filing on it lands on your character instead.",
+      "Cast on a character. For a week, Mod Bot patrols weigh that character's posts double when picking what to look at.",
+    ]);
+    expect(['happy-heart', 'super-happy-heart', 'ultra-happy-heart', 'tattle-tale'].map((k) => ui(k)?.status)).toEqual(['Took points off a warn bar', 'Emptied a warn bar', 'Ended a ban', 'Told on to the Mod Bots']);
+    const fall = ui('take-the-fall')?.status;
+    expect(typeof fall === 'function' && [fall([{} as CardPlay]), fall([])]).toEqual(['Waiting to take the fall', 'Took the fall']);
+    for (const k of KEYS) {
+      const status = ui(k)!.status!;
+      for (const words of typeof status === 'string' ? [status] : [status([{} as CardPlay]), status([])]) expect(wordsProblems('status', words), k).toEqual([]);
+    }
+    expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
+  });
+
+  test('"double" is said only while the rules\' weight is 2', () => {
+    expect(tattleTale.discipline).toEqual({ kind: 'watch', weight: 2 });
+    expect(ui('tattle-tale')?.summary).toContain('weigh that character\'s posts double when picking');
+    expect(ui('tattle-tale')?.describe(instance.settings)).toContain("that character's posts count double in the draw, so they are more likely to be picked");
+    retuned(tattleTale, 'discipline', { kind: 'watch', weight: 3 }, () => {
+      expect(ui('tattle-tale')?.describe(instance.settings)).toContain("that character's posts count 3 times over in the draw, so they are more likely to be picked");
+      expect(ui('tattle-tale')?.describe(instance.settings)).not.toContain('double');
+      expect(ui('tattle-tale')?.describe(instance.settings)).not.toContain('as likely');
+    });
+  });
+
+  test('each rules\' words are the plan\'s, true at Divided World\'s settings, and read their numbers from the rules and the settings', () => {
+    const say = (k: string, s = instance.settings) => ui(k)!.describe(s);
+    expect(say('happy-heart')).toBe(`A Sweet card, ${rules('happy-heart').rarity}, cast from any post by the character it lands on. It takes the oldest 2 warn points off that character's warn bar at once, as many as the lightest breach lands, or as many as are left. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`);
+    expect(say('super-happy-heart')).toBe(`A Sweet card, ${rules('super-happy-heart').rarity}, cast from any post by the character it lands on. It takes every point off that character's warn bar at once. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`);
+    expect(say('ultra-happy-heart')).toBe(`A Sweet card, ${rules('ultra-happy-heart').rarity}, cast from any post by a banned character. It ends that character's ban at once: the character can post, react and play cards again from that moment. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar is not touched. If the character is not banned the play is refused and you keep the card. A banned character cannot play cards, so another character plays it: anyone's, one of your own included. It is always cast face up. It costs nothing more to play.`);
+    expect(say('take-the-fall')).toBe(`A Sweet card, ${rules('take-the-fall').rarity}, cast face up on a post by another character. The next time a Mod Bot's visit to that post files, its warn points land on the character that played this card instead of the post's author, and a ban they bring is that character's too. Only the points and the ban move: the post keeps its notice. One fits on a post. It waits until a visit files, the first filing uses it up, and it can be played while a visit is open. The character that took the fall can appeal the filing. It costs nothing more to play.`);
+    expect(say('tattle-tale')).toBe(`A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For a week, when a Mod Bot's patrol picks which recent posts to look at, that character's posts count double in the draw, so they are more likely to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules, and a patrol still drops a finding against a character staff has already punished 3 times in the last 7 days. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`);
+    // The lightest band is the least of the three, in whatever order the settings hold them; one point is "1 warn point".
+    expect(say('happy-heart', bands(5, 3, 9))).toContain('the oldest 3 warn points off');
+    expect(say('happy-heart', bands(1, 3, 9))).toContain('the oldest 1 warn point off');
+    expect(say('super-happy-heart', bands(5, 3, 9))).not.toMatch(/\d warn point/u);
+    // The targeting cap is the settings'.
+    expect(say('tattle-tale', cap(2, 14))).toContain('already punished 2 times in the last 14 days');
+    retuned(tattleTale, 'lasts', { unit: 'day', count: 3 }, () => expect(say('tattle-tale')).toContain('For 3 days, when a Mod Bot'));
+    for (const k of KEYS) {
+      expect(say(k), k).not.toMatch(/set it face down|You can also set/u);
+      expect(say(k), k).toMatch(/cast face up/iu);
+    }
+  });
+
+  test('every one of them has a face in the cards list, and none joins the Moves that can be set face down', () => {
+    const all = faces();
+    for (const k of KEYS) expect(all.find((f) => f.key === k)?.describe, k).not.toContain('You can also set it face down');
+    expect(all.filter((f) => KEYS.includes(f.key as never)).map((f) => f.kind)).toEqual(KEYS.map(() => 'Move'));
   });
 });
 

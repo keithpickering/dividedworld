@@ -253,7 +253,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     }
     /* The plays a thread-reach card keeps on this page's posts after its time came with it, as the plays above them do. */
     const played = [...page.plays, ...page.above.map((x) => x.act), ...page.kept.map((x) => x.act)];
-    hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces);
+    hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces, page.spent ?? []);
     /* A wall whose Acts are drawn and whose live list this page says has changed (a read again after a rejoin) reads them again. */
     void rereadSurfaces(api, plays, page.surfaces);
     /* A play leaves a page's `above` when an admin ended it, when its thread moved, or when its time ran out (the server drops a play past its

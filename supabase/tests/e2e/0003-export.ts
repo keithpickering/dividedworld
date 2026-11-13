@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'post_veil_cards', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'post_veil_cards', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts'];
 
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -454,7 +454,7 @@ test('an instance exported and imported into a fresh database is the same instan
       perform start_visit(pass_post, 'exp-bot', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol',
         'about_act', pass_post, 'predicate', 'noAllCaps', 'rule', 'Rule 1: no all-caps posts'));
       -- The Mod Bots' settings (so the filing run's job exists, 0106) and one judged call's record.
-      insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10}')
+      insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "patrolPool": 20, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10}')
         on conflict (key) do update set value = excluded.value;
       -- A patrol the Mod made (0110): its meeting, the posts it was shown, a finding dropped at the cap and what came of it, and the record of its call (keyed by the patrol,
       -- which has no Act), carried across with the rows that name them.
@@ -495,6 +495,20 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into wallet_events (account, kind, change, balance_after, ref) select ann, 'appeal', -50, 0, id from acts where kind = 'appeal' and character = a;
       insert into appeal_refunds (appeal_act, amount, why) select id, 50, 'overturned' from acts where kind = 'appeal' and character = a;
       insert into wallet_events (account, kind, change, balance_after, ref) select ann, 'refund', 50, 50, id from acts where kind = 'appeal' and character = a;
+      -- The discipline cards (0361): Bob's relief on Ann's mask takes points off a second infraction of hers, and Ann's Unban on Bob's mask lifts the ban a full bar laid on it, so a warn_reliefs row and a
+      -- ban_lifts row, each naming its play and the Act it acted on, are carried across with the Acts that name them (and the imported forum's bar and ban read the same).
+      declare relief_post uuid := tests.post(b, t, 'A post to be filed once.'); relief_post2 uuid := tests.post(b, t, 'A post to be filed twice.');
+      begin
+        insert into card_kinds (key, name, alignment, rarity, play, reaches, discipline) values
+          ('exprelief', 'Exported Relief', 'sweet', 'uncommon', 'cast', '{character}', '{"kind": "relief", "points": "all"}'),
+          ('expunban', 'Exported Unban', 'sweet', 'legendary', 'cast', '{character}', '{"kind": "unban"}');
+        insert into card_ledger (account, card, kind, price) values (bob, 'exprelief', 'bought', 0), (ann, 'expunban', 'bought', 0);
+        perform infract(a, 'moderate', p, 'exp-bot');
+        perform play_card(bob, 'exprelief', b, a, '{}', 0, '', 'character', p);
+        perform infract(b, 'severe', relief_post, 'exp-bot');
+        perform infract(b, 'moderate', relief_post2, 'exp-bot');
+        perform play_card(ann, 'expunban', a, b, '{}', 0, '', 'character', relief_post);
+      end;
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
       -- An earlier season's reveal thread, as the seasons before 0099 wrote them: the season points at its header and the thread is unlisted (0063).

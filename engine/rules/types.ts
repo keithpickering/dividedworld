@@ -88,6 +88,8 @@ export interface ModBotSettings {
   readonly patrolsPerDay: number;
   /** How many of a board's recent posts one patrol's judgment reads (a bounded read of public posts). */
   readonly patrolSample: number;
+  /** How many of the newest eligible posts on the Mod's beat one patrol draws its sample from, a whole number from `patrolSample` to 100. Each is equally likely unless a card (a watch) weights its author. */
+  readonly patrolPool: number;
   /** What a report costs the reporter: spent on every judged report, whatever the verdict, and refunded only when the judgment fails. */
   readonly reportPrice: Hundredths;
   /** The most reports one character may file in a day. */
