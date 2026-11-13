@@ -43,3 +43,20 @@ test('a transport failure is rethrown, never a 422: a fetch that never answered,
   await assert.rejects(runSeed(fake(() => { throw new DatabaseError('seed_instance: HTTP 500', '', 500); }).db, instance), DatabaseError);
   await assert.rejects(runSeed(fake(() => COUNTS, () => { throw new TransportError('instance_settings: no answer'); }).db, instance), TransportError);
 });
+
+test('a seed_instance refusal answers with its reason, never the details a constraint error carries', async () => {
+  const marker = 'Failing row contains (adminContact, "someone@example.test")';
+  const { db } = fake(() => { throw new DatabaseError(`seed_instance: violates a check. ${marker}`, '23514', 400, 'seed_instance: violates a check'); });
+  const r = await runSeed(db, instance);
+  assert.equal(r.status, 422);
+  assert.deepEqual(r.body, { error: 'seed_instance: violates a check' });
+  assert.ok(!JSON.stringify(r.body).includes('someone@example.test'));
+});
+
+test('408 and 429 are rethrown like a 5xx, so the release retries them, and the settings are never read', async () => {
+  for (const status of [408, 429]) {
+    const { db, calls } = fake(() => { throw new DatabaseError(`seed_instance: HTTP ${status}`, '', status); });
+    await assert.rejects(runSeed(db, instance), DatabaseError);
+    assert.deepEqual(calls, ['seed_instance']);
+  }
+});
