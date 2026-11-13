@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -847,7 +847,12 @@ describe('a thread spun from a card on a character', () => {
     if (!made.ok) throw new Error(made.error);
     return made.value.thread.id;
   }
-  const headText = (box: HTMLElement) => box.querySelector('.kb-origin-head')!.textContent!;
+  /* The head's words; an avatar with no picture draws its initial as text, which is no word of the head. */
+  const headText = (box: HTMLElement) => {
+    const head = box.querySelector('.kb-origin-head')!.cloneNode(true) as HTMLElement;
+    head.querySelectorAll('.kb-mini').forEach((el) => el.remove());
+    return head.textContent!;
+  };
   const href = (thread: string, seq: number) => threadHref(thread, pageOf(seq, 20), seq);
 
   test('pressing Spin thread on the mark on a postbit sends the post it was pressed on', async () => {
@@ -899,11 +904,13 @@ describe('a thread spun from a card on a character', () => {
     const first = await spun(w, w.pressed, 'Pressed');
     const second = await spun(w, undefined, 'Not pressed');
     const goes = async (thread: string) => {
-      document.body.innerHTML = '';
+      cleanup();
       open(w, thread);
       const box = await origin();
       await userEvent.click(await within(box).findByRole('button', { name: /^Glint, 1 play/u }));
-      return within(screen.getByRole('dialog')).findByRole('link', { name: 'Go to post' });
+      const lens = screen.getByRole('dialog');
+      await userEvent.click(within(lens).getByRole('button', { name: /^1 play · Spritey/u }));
+      return within(lens).findByRole('link', { name: 'Go to post' });
     };
     expect(await goes(first)).toHaveAttribute('href', href(w.shiny.thread, 2));
     expect(await goes(second)).toHaveAttribute('href', href(w.cast.thread, 1));
