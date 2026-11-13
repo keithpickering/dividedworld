@@ -1,4 +1,4 @@
--- What my_posts_written_on (supabase/migrations/0149_card_writes.sql, rewritten by 0343_writes_start_from_the_caller.sql) reads at a busy instance's
+-- What my_posts_written_on (supabase/migrations/0149_card_writes.sql, rewritten by 0344_writes_start_from_the_caller.sql) reads at a busy instance's
 -- scale, with the statistics of an instance that has no plays yet. This is a file of its own because that state cannot be built inside
 -- 0146-card-writes.sql: the cases there write a few plays before any analyze here could run, and a planner that has seen even a few plays no longer
 -- prices a scan of the plays' partial index (acts_card_created, `kind = 'card'`) as cheaper than a probe of acts_layers. The statistics here are those

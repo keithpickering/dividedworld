@@ -53,7 +53,7 @@ Considered and not taken: a fresh clone of a template database for each file (0.
 isolation, but 12 files pass only on rows an earlier file committed, so it cannot land before those are fixed (their
 own issue, below).
 
-Migrations are built as 0343 and 0344 (`main`'s top is 0339 and #428 holds 0340 to 0342); the merging session is told
+Migrations were built as 0343 and 0344 and took 0344 and 0345 when the PR was ready (`main`'s top was then 0343); the merging session is told
 "ready for its numbers" before any renumbering. Every task is test first, with its red run recorded. Tests run against
 Postgres on localhost only.
 
@@ -82,7 +82,7 @@ Files: `tools/test-sql.mjs`, `tools/test-sql-refusal.mjs`.
 
 Model: sonnet
 
-Files: `supabase/migrations/0343_writes_start_from_the_caller.sql` (new), `supabase/tests/0146-card-writes.sql`.
+Files: `supabase/migrations/0344_writes_start_from_the_caller.sql` (new), `supabase/tests/0146-card-writes.sql`.
 
 - **Test first.** A new block at the end of `0146-card-writes.sql`, "at a busy instance's scale": 400 accounts, 2,000
   characters (5 each), 40,000 posts (20 each, inserted with `alter table acts disable trigger user` as
@@ -113,10 +113,10 @@ Files: `supabase/migrations/0343_writes_start_from_the_caller.sql` (new), `supab
 
 Model: sonnet
 
-Files: `supabase/migrations/0344_visit_charge_lookup.sql` (new), `supabase/tests/0107-visits.sql`.
+Files: `supabase/migrations/0345_visit_charge_lookup.sql` (new), `supabase/tests/0107-visits.sql`.
 
 The investigation's patch (migration and test, validated in nine states with two poisons) is in the session's notes as
-`inv0107/proposal.patch`; it names its migration 0340, which becomes 0344.
+`inv0107/proposal.patch`; it names its migration 0340, which became 0345.
 
 - **Test first.** Section 17 moves to the end of the file (its fixture is written with triggers off): 60,000 posts,
   22,000 visits, 16,500 ends; `analyze acts`; then 13,200 joins. It plans the function's body with the planner left
