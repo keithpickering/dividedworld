@@ -183,9 +183,9 @@ red('netlify.toml gives deploy previews their own command', {
 
 /* ---- R8: the e2e shards are one list, and the command takes its total from it ---- */
 const E2E_RUN = 'npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}';
+const list = (v) => (Array.isArray(v) ? v : []);
 const e2eJob = (d) => Object.values(d.jobs).find((j) => list(j.steps).some((s) => /npm run test:e2e/.test(String(s.run ?? ''))));
 const e2eStep = (d) => e2eJob(d).steps.find((s) => /npm run test:e2e/.test(String(s.run ?? '')));
-const list = (v) => (Array.isArray(v) ? v : []);
 /** web.yml with the e2e job made conforming, then broken by `fn` (the real file is checked on its own, last). */
 const shards = (fn) => edit(WEB, (d) => {
   e2eStep(d).run = E2E_RUN;
@@ -200,6 +200,12 @@ red('the matrix has a second key', shards((d) => { e2eJob(d).strategy.matrix.os 
 red('the matrix has an include', shards((d) => { e2eJob(d).strategy.matrix.include = [{ shard: 4 }]; }), /R8.*only key/);
 red('the command has a literal total', shards((d) => { e2eStep(d).run = 'npm run test:e2e -- --shard=${{ matrix.shard }}/3'; }), /R8.*command/);
 red('the command has no --shard', shards((d) => { e2eStep(d).run = 'npm run test:e2e'; }), /R8.*command/);
+red('the total has a suffix, so the shards run a sixtieth each', shards((d) => { e2eStep(d).run = `${E2E_RUN}0`; }), /R8.*command/);
+red('the shard flag is only in a shell comment', shards((d) => { e2eStep(d).run = `npm run test:e2e # ${E2E_RUN}`; }), /R8.*command/);
+red('the shard flag is given twice', shards((d) => { e2eStep(d).run = `${E2E_RUN} --shard=1/1`; }), /R8.*command/);
+red('the shard list is empty', shards((d) => { e2eJob(d).strategy.matrix.shard = []; }), /R8.*shard list/);
+red('the shard list is one number, not a list', shards((d) => { e2eJob(d).strategy.matrix.shard = 3; }), /R8.*shard list/);
+red('the job has no matrix', shards((d) => { delete e2eJob(d).strategy.matrix; }), /R8.*only key.*no matrix/);
 red('no job runs the e2e suite', shards((d) => { e2eStep(d).run = 'echo skipped'; }), /R8.*no job runs/);
 
 /* ---- a file that does not parse ---- */

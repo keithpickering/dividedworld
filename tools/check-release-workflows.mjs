@@ -204,8 +204,10 @@ export function problems(files) {
         bad8.push(`the shard list must be the integers 1 to n in order, with no gap or repeat (it is ${JSON.stringify(shard)})`);
       }
       for (const step of list(job.steps).filter(isE2e)) {
-        if (!String(step.run).includes('--shard=${{ matrix.shard }}/${{ strategy.job-total }}')) {
-          bad8.push('the command must pass --shard=${{ matrix.shard }}/${{ strategy.job-total }}');
+        // The whole command, not a part of it: a digit after the total, a second --shard, or the
+        // flag behind a `#` would each run fewer tests and stay green.
+        if (String(step.run).trim() !== 'npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}') {
+          bad8.push('the command must be exactly npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}');
         }
       }
       if (bad8.length) out.push(`${path}: R8 the e2e job: ${bad8.join('; ')}`);
