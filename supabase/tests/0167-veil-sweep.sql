@@ -123,6 +123,7 @@ select 'relation', n, m, w from (values
   ('play_moment_layers', 'no author', 'the layers of a play''s moment: play ids and saved states'),
   ('play_moments', 'no author', 'the version of a post a play was made on: ids'),
   ('play_reach', 'no author', 'a play beyond a post: its target character, thread or board, which is public; a card on a character is played from one of its posts, so its Act points at that post and names its author: land_refusal refuses a veil on such a post, and none is played from a veiled one (the stand-in is no target), both held below and in 0166-post-veils.sql'),
+  ('post_under', 'no author', 'a reply a Line Cutter cut in under a post (0348): the play, the parent, the reply and the thread, all ids of public Acts. The reply is its caster''s post, and the record names it (the card Act), so a veil is refused on a reply and on a post its own author cut in under (0166-post-veils.sql, section 16)'),
   ('post_search', 'swept', 'granted every column but `character`; the search reads it through the projection'),
   ('reaction_kinds', 'no author', 'the instance''s reactions'),
   ('post_reaction_kinds', 'no author', 'a post-local reaction (0402): the post, the key, the emoji, the quadrant and the card''s play, which a card Act states in public; the post''s author is on neither'),

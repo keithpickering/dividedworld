@@ -155,3 +155,74 @@ describe('when a veil\'s play arrives and ends (card notes, Part 3)', () => {
     expect(endsVeil(plays, ['a'], veils, act(0, { kind: 'post', seq: 1, targetActId: 'p1' }))).toBe(false);
   });
 });
+
+describe('a number whose Act is drawn under a post elsewhere', () => {
+  /* The run reaches 799 of an 800-post thread's page; 800 is a reply a play drew under an earlier post. */
+  const tail = (...more: FeedAction[]) => reduce(loaded({ acts: run(781, 799), last: 800, page: 40 }), ...more);
+  it('does not hold back the post after it: a held 801 is released past a cut 800, and the end of the run steps over it', () => {
+    const f = tail({ type: 'cut', seq: 800 }, { type: 'live', act: act(801) });
+    expect(shownEnd(f)).toBe(800);
+    expect(seqs(feedReducer(f, { type: 'release', slide: false, force: false }).shown)).toEqual([...run(781, 799).map((a) => a.seq), 801]);
+  });
+  it('steps over several cut numbers in a row, and a cut number that is not next to the run changes nothing', () => {
+    const f = tail({ type: 'cut', seq: 800 }, { type: 'cut', seq: 801 }, { type: 'cut', seq: 900 }, { type: 'live', act: act(802) });
+    expect(shownEnd(f)).toBe(801);
+    expect(seqs(feedReducer(f, { type: 'release', slide: false, force: false }).shown)).toContain(802);
+  });
+  it('is the same whether the number was cut before the Acts around it came or after: the read says it, or a broadcast does', () => {
+    const before = reduce({ ...loaded({ acts: run(781, 799), last: 800, page: 40 }), cut: [800] } as FeedAction, { type: 'live', act: act(801) });
+    const after = tail({ type: 'live', act: act(801) }, { type: 'cut', seq: 800 });
+    for (const f of [before, after]) {
+      expect(f.cut.has(800)).toBe(true);
+      expect(seqs(feedReducer(f, { type: 'release', slide: false, force: false }).shown)).toContain(801);
+    }
+    /* A later page takes its own cut numbers in too, and keeps the ones held. */
+    const more = feedReducer(tail({ type: 'cut', seq: 790 }), { type: 'more', page: 41, acts: run(801, 819), tailLoaded: false, cut: [820] });
+    expect([...more.cut].sort()).toEqual([790, 820]);
+  });
+  it('is never counted by the bar: not in the posts waiting, and not as the first or last of them', () => {
+    const f = reduce(loaded({ acts: run(1, 20), last: 47, page: 1, full: true, back: { shown: 20, known: 45 } }), { type: 'cut', seq: 46 });
+    expect(waitingPosts(f)).toEqual({ count: 1, first: 47, last: 47 });
+    const tailCut = reduce(loaded({ acts: run(1, 20), last: 47, page: 1, full: true, back: { shown: 20, known: 45 } }), { type: 'cut', seq: 47 });
+    expect(waitingPosts(tailCut)).toEqual({ count: 1, first: 46, last: 46 });
+    const none = reduce(loaded({ acts: run(1, 20), last: 46, page: 1, full: true, back: { shown: 20, known: 45 } }), { type: 'cut', seq: 46 });
+    expect(waitingPosts(none)).toBeNull();
+  });
+  it('is read again with its Act when the play ends inside the run: the Act takes its place in order', () => {
+    const f = reduce(loaded({ acts: run(781, 799), last: 800, page: 40 }), { type: 'cut', seq: 800 });
+    const un = feedReducer(f, { type: 'uncut', act: act(800) });
+    expect(un.cut.has(800)).toBe(false);
+    expect(seqs(un.shown)).toEqual(run(781, 800).map((a) => a.seq));
+    /* Twice is once. */
+    expect(feedReducer(un, { type: 'uncut', act: act(800) })).toEqual(un);
+  });
+  it('takes a middle number back the same way: shown between its neighbors', () => {
+    const f = reduce({ ...loaded({ acts: [...run(1, 4), ...run(6, 20)], last: 20, page: 1 }), cut: [5] } as FeedAction);
+    expect(seqs(f.shown)).not.toContain(5);
+    expect(seqs(feedReducer(f, { type: 'uncut', act: act(5) }).shown)).toEqual(run(1, 20).map((a) => a.seq));
+  });
+  it('takes the Act off its number when a read made before the play had it there', () => {
+    const f = reduce(loaded({ acts: run(781, 800), last: 800, page: 40 }), { type: 'cut', seq: 800 });
+    expect(seqs(f.shown)).toEqual(run(781, 799).map((a) => a.seq));
+    expect(f.cut.has(800)).toBe(true);
+  });
+  it('outside the run, only the number is let go: the Act is read with its page', () => {
+    const f = reduce(loaded({ acts: run(1, 20), last: 45, page: 1, full: true }), { type: 'cut', seq: 41 });
+    const un = feedReducer(f, { type: 'uncut', act: act(41) });
+    expect(un.cut.has(41)).toBe(false);
+    expect(seqs(un.shown)).toEqual(run(1, 20).map((a) => a.seq));
+    expect(un.held.size).toBe(0);
+  });
+  it('on a later page, a lower number is another page\'s: only the number is let go, the run keeps its own', () => {
+    /* The reader is on page 3 of a 45-post thread (41 to 45); reply 12, cut under post 3, has its play end. */
+    const f = reduce(loaded({ acts: run(41, 45), last: 45, page: 3 }), { type: 'cut', seq: 12 });
+    const un = feedReducer(f, { type: 'uncut', act: act(12) });
+    expect(un.cut.has(12)).toBe(false);
+    expect(seqs(un.shown)).toEqual(run(41, 45).map((a) => a.seq));
+    expect(un.held.size).toBe(0);
+  });
+  it('a number the page starts with and leaves empty is inside the run: the Act takes it', () => {
+    const f = reduce({ ...loaded({ acts: run(42, 45), last: 45, page: 3 }), start: 41, cut: [41] } as FeedAction);
+    expect(seqs(feedReducer(f, { type: 'uncut', act: act(41) }).shown)).toEqual(run(41, 45).map((a) => a.seq));
+  });
+});

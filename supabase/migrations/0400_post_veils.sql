@@ -234,8 +234,8 @@ language sql stable set search_path = public, pg_temp as $$
   ) p where why is not null
 $$;
 
--- seed_instance (0332_arcs), writing each card's `veil` and whether it adds a reaction (both the code's, so a re-seed that drops one clears it), and making the anonymous poster once, as it makes the developer.
--- Everything else as 0332 wrote it.
+-- seed_instance (0348_post_under, which is 0332_arcs with the card kinds' `replies` and `keeps` written), writing each card's `veil` and whether it adds a reaction (both the code's, so a re-seed that drops one clears it), and making the anonymous poster once, as it makes the developer.
+-- Everything else as 0348 wrote it.
 
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -297,12 +297,13 @@ begin
   select nullif(concat_ws('; ', card_kinds_problem(payload -> 'cards'), card_reach_problem(payload -> 'cards')), '') into unknown;
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
   -- A card's stack, whether it is seeded and the economy numbers its rules read are the code's, as its name is; so
-  -- are its rarity, its play, its trap (with its match), its gimmick, how long a Use of it is up, where it reaches, whether it pins, whether it writes, its skim, whether it scores as a class, what it draws, its drive and the words it refuses a blank message with.
-  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, lasts, reaches, pins, writes, skim, scores_as, draws, drive, needs_message, veil, adds_reaction, surface)
+  -- are its rarity, its play, its trap (with its match), its gimmick, how long a Use of it is up, where it reaches, whether it pins, whether it writes, whether it replies, whether it keeps, its skim, whether it scores as a class, what it draws, its drive and the words it refuses a blank message with.
+  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, lasts, reaches, pins, writes, replies, keeps, skim, scores_as, draws, drive, needs_message, veil, adds_reaction, surface)
   select e ->> 'key', e ->> 'name', e ->> 'alignment', coalesce((e ->> 'stack')::integer, 1), coalesce((e ->> 'seeded')::boolean, false),
     coalesce(array(select jsonb_array_elements_text(e -> 'reads')), '{}'),
     e ->> 'rarity', coalesce(e ->> 'play', 'cast'), nullif(e -> 'trap', 'null'), nullif(e -> 'gimmick', 'null'), span_interval(e -> 'lasts'),
     case when e ? 'reaches' then array(select jsonb_array_elements_text(e -> 'reaches')) else '{post}' end, coalesce((e ->> 'pins')::boolean, false), coalesce((e ->> 'writes')::boolean, false),
+    coalesce((e ->> 'replies')::boolean, false), coalesce((e ->> 'keeps')::boolean, false),
     nullif(e -> 'skim', 'null'), coalesce((e ->> 'scoresAs')::boolean, false),
     case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null'), nullif(e ->> 'needsMessage', ''),
     nullif(e ->> 'veil', ''), coalesce((e ->> 'addsReaction')::boolean, false), coalesce((e ->> 'surface')::boolean, false)
@@ -310,7 +311,7 @@ begin
   on conflict (key) do update set name = excluded.name, alignment = excluded.alignment,
     stack = excluded.stack, seeded = excluded.seeded, reads = excluded.reads,
     rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, lasts = excluded.lasts,
-    reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, skim = excluded.skim, scores_as = excluded.scores_as,
+    reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, replies = excluded.replies, keeps = excluded.keeps, skim = excluded.skim, scores_as = excluded.scores_as,
     draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface;
   -- The packs the instance sells (replaced each seed: their pulls are its code), then the slots it names that the database does not hold yet,
   -- at the end of the grid in the instance's order. A slot already holding the item is never touched: its place, availability and price are an
@@ -749,6 +750,8 @@ grant select on my_veiled_posts to authenticated;
 --   quote, so the record already names the quote's author, and a veil cast on it afterwards would hide a name that is on the record ("a card that sprang on this post names its author"). One probe of acts_spring_by
 --   (0151: the spring Acts, found by `by`, a post a quote's few springs), filtered for a `for`, the same for every caster and read whatever the card is; a landed author veil's own spring omits `for` (spring_traps) and
 --   leaves nothing to refuse.
+--   A reply cut in under another post (a Line Cutter's, 0348) is the second: the play's Act names it and its caster, so a veil is refused on it ("a card cut this post in under another"), and on a post whose own author cut one in under it.
+--   The other way round, a card that replies is refused on a veiled post, for every caster ("this post's author is hidden until ..."): see the body.
 --   TASK 5 adds a reaction card's refusals here (its configuration, an emoji the forum already has, a key the post already holds), after these.
 create function land_refusal(kind_of card_kinds, post uuid, config jsonb) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -757,6 +760,8 @@ declare
   visited boolean;
   played boolean;
   named boolean;
+  cut boolean;
+  cut_own boolean;
   stood uuid;
 begin
   select c.staff is not null into by_staff from acts a join characters c on c.id = a.character where a.id = land_refusal.post;
@@ -766,12 +771,24 @@ begin
   played := exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = land_refusal.post and k.payload ->> 'reach' = 'character');
   -- A spring Act that carries the quoter (`for`) and names this post as the quote it sprang on (`by`): one probe of acts_spring_by.
   named := exists (select 1 from acts s where s.kind = 'spring' and s.payload ->> 'by' = land_refusal.post::text and s.payload ? 'for');
+  -- A reply a Line Cutter play cut in under a post (post_under, 0348): its card Act is the caster's (`character`), on the parent (its target, so no derived veil reaches it), and its payload names the reply, so the record says
+  -- whose reply it is: a public Act that names the author of the post it names. One probe of the unique index on `reply`; a row stays when the play ends, as the Act does.
+  cut := exists (select 1 from post_under u where u.reply = land_refusal.post);
+  -- The same record for the parent: where its own author cut a reply in under it, the derived veil would show that card Act under the stand-in and the reply (a post, which the derived veil never covers) under its true
+  -- author, and say they are one. One probe of post_under_parent, the post's few replies, and the authors of the two posts (public, as the posts are).
+  cut_own := exists (select 1 from post_under u join acts r on r.id = u.reply join acts q on q.id = u.parent where u.parent = land_refusal.post and r.character = q.character);
   stood := stand_in();
+  if kind_of.replies and author_veiled(land_refusal.post) then
+    -- The other half of it, for every caster alike: a post whose author is hidden takes no reply cut in under it (the author's own would be the leak above, and a refusal that told the author from anyone else would be one too).
+    return 'this post''s author is hidden until ' || refusal_time(author_veil_ends(land_refusal.post)) || '; no reply is cut in under it before then';
+  end if;
   if kind_of.veil = 'author' then
     if by_staff then return 'a post by the staff keeps its name'; end if;
     if visited then return 'a Mod Bot has been to this post, so its author is on the record'; end if;
     if played then return 'a card played from this post names its author, so the author is on the record'; end if;
     if named then return 'a card that sprang on this post names its author, so the author is on the record'; end if;
+    if cut then return 'a card cut this post in under another, so its author is on the record'; end if;
+    if cut_own then return 'its author cut a reply in under this post, so the author is on the record'; end if;
     if stood is null then return 'this forum has no one to stand in for an author'; end if;
   end if;
   return null;
@@ -1923,7 +1940,7 @@ end $$;
 revoke execute on function open_report(uuid, uuid, text) from public, anon;
 grant execute on function open_report(uuid, uuid, text) to authenticated, service_role;
 
--- thread_page (0340_conduct, which made 0317's text again so that `a.*` of acts_public holds `hidden` and the rest), also answering `veiled`: the caller's own veiled posts among the page's (my_veiled_posts), beside `faces`. Everything else as 0340 wrote it.
+-- thread_page (0349_thread_page_under, which is 0340_conduct's text with the nested replies, `under`, `cut` and `kept`), also answering `veiled`: the caller's own veiled posts among the page's, its nested replies included (my_veiled_posts), beside `faces`. Everything else as 0349 wrote it.
 
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
@@ -1949,11 +1966,38 @@ begin atomic
   rng as materialized (
     select pg.*, (pg.page - 1) * (select pp.n from pp) + 1 as first_seq, pg.page * (select pp.n from pp) as end_seq from pg
   ),
-  page_acts as materialized (
+  -- The range's numbers, read through acts_public once: the page's Acts and the numbers drawn elsewhere both come from this one pass (a screen function may read no relation below the
+  -- public projections, tools/check-web-reads.mjs).
+  range_acts as materialized (
     select a.* from acts_public a, rng
     where a.thread = rng.id and a.seq between rng.first_seq and rng.end_seq and a.kind not in ('edit', 'card')
   ),
-  posts as materialized (select a.id, a.character from page_acts a where a.kind = 'post'),
+  -- A range number whose Act is the reply of a post_under row in force: drawn under its parent, not at its number. A lateral probe of the unique index on `reply`, one for each
+  -- number of the range and so no more than 100: the planner cannot turn it into a hash over the whole table. `not card_ended` is the one in-force rule, here and in `nested`.
+  drawn as materialized (
+    select r.id, r.seq, r.kind, u.play, u.parent
+    from range_acts r cross join lateral (select x.play, x.parent from post_under x where x.reply = r.id) u
+    where not card_ended(u.play)
+  ),
+  page_acts as materialized (
+    select r.* from range_acts r
+    where not exists (select 1 from drawn d where d.id = r.id)
+  ),
+  page_posts as materialized (select a.id, a.character, a.created_at from page_acts a where a.kind = 'post'),
+  -- The replies drawn under the page's posts (post_under_parent), each read through acts_public as the page's own Acts are, so the conduct layer's concealment holds for a nested
+  -- reply as for any post. A reply takes none under it, so one level, and at most one under each post (stack 1). `act` is the Act as `acts` holds one.
+  nested as materialized (
+    select u.play, p.id as parent, a.id, a.character, a.created_at, to_jsonb(a) as act
+    from page_posts p
+    cross join lateral (select x.play, x.reply from post_under x where x.parent = p.id and not card_ended(x.play)) u
+    join acts_public a on a.id = u.reply
+  ),
+  -- What the plays, visits, tallies, people and spun threads are read for: the page's posts and the replies drawn under them.
+  posts as materialized (
+    select p.id, p.character, p.created_at from page_posts p
+    union all
+    select n.id, n.character, n.created_at from nested n
+  ),
   -- At most PLAYS_PER_POST layers a post, oldest first.
   on_posts as materialized (
     select l.* from (
@@ -1970,22 +2014,48 @@ begin atomic
     select x.play, x.reach, x.target, x.ends_at, x.act
     from effects_above(array(select distinct p.character from posts p where p.character is not null), (select rng.id from rng), (select rng.board from rng)) x
   ),
+  -- The plays of a kind that keeps, at thread reach on this thread, that wore off by time (not one an admin ended), whose window (the play's date to its end) holds the date of one of
+  -- the page's posts: they still count on those posts, so the page carries them beside `above`, in its shape. The range of play_reach_thread (ended, and ended after the
+  -- page's earliest post), the Act by primary key through acts_public (dated no later than the page's latest post, then the window), and only for what survives that the kind (`keeps`). At most 100, oldest first.
+  kept_span as materialized (select min(p.created_at) as lo, max(p.created_at) as hi from posts p),
+  -- The reach-specific part, and the one place a later reach adds to: a character reach's rows (play_reach_character) join here with a `union all` of a second select of this shape;
+  -- everything below reads whatever rows it gives.
+  kept_reach as materialized (
+    select x.play, x.reach, coalesce(x.character, x.thread, x.board) as target, x.ends_at
+    from play_reach x, kept_span s
+    where x.thread = (select rng.id from rng) and x.ends_at <= now() and x.ends_at > s.lo
+  ),
+  kept_window as materialized (
+    select r.play, r.reach, r.target, r.ends_at, a.created_at as started, to_jsonb(a) as act, a.payload ->> 'card' as card
+    from kept_reach r join acts_public a on a.id = r.play, kept_span s
+    where a.created_at <= s.hi
+      and exists (select 1 from posts p where a.created_at <= p.created_at and p.created_at < r.ends_at)
+  ),
+  kept as materialized (
+    select w.play, w.reach, w.target, w.ends_at, w.act
+    from kept_window w
+    join card_kinds ck on ck.key = w.card and ck.keeps
+    where not card_ended(w.play)
+    order by w.started, w.play limit 100
+  ),
   -- Every play the page draws, on a post or above: by id, with its caster.
   played as materialized (
     select o.id, o.kind, o.character, o.payload ->> 'card' as card from on_posts o
     union
     select (x.act ->> 'id')::uuid, x.act ->> 'kind', (x.act ->> 'character')::uuid, x.act -> 'payload' ->> 'card' from above x
+    union
+    select (x.act ->> 'id')::uuid, x.act ->> 'kind', (x.act ->> 'character')::uuid, x.act -> 'payload' ->> 'card' from kept x
   ),
   -- Each of the page's posts' latest visit (0105), by acts_visits_by_post: its Mod, when it ends, its charges (the start's and every join's, in order) and its
   -- challenge, whitelisted to the kind and the number, never an answer; and its end if it has one.
   vis as materialized (
     select distinct on (v.target_act_id) v.id, v.target_act_id as post, v.character, v.created_at, v.payload
-    from acts_public v where v.kind = 'visit' and v.target_act_id in (select a.id from page_acts a where a.kind in ('post', 'spin'))
+    from acts_public v where v.kind = 'visit' and v.target_act_id in (select a.id from page_acts a where a.kind in ('post', 'spin') union all select n.id from nested n)
     order by v.target_act_id, v.created_at desc, v.id desc
   ),
-  ids as materialized (select a.id from page_acts a union select p.id from played p),
+  ids as materialized (select a.id from page_acts a union select n.id from nested n union select p.id from played p),
   who as materialized (
-    select c from (select a.character as c from page_acts a union select p.character from played p union select v.character from vis v) w where c is not null
+    select c from (select a.character as c from page_acts a union select n.character from nested n union select p.character from played p union select v.character from vis v) w where c is not null
   ),
   wanted_plays as materialized (select p.id from played p where p.card = any (coalesce(thread_page.effect_cards, '{}'))),
   spun as materialized (
@@ -2019,6 +2089,11 @@ begin atomic
               ) x),
     'above', (select coalesce(jsonb_agg(jsonb_build_object('play', x.play, 'reach', x.reach, 'target', x.target, 'ends_at', x.ends_at, 'act', x.act)
                 order by (x.act ->> 'created_at')::timestamptz, x.play), '[]'::jsonb) from above x),
+    'kept', (select coalesce(jsonb_agg(jsonb_build_object('play', x.play, 'reach', x.reach, 'target', x.target, 'ends_at', x.ends_at, 'act', x.act)
+                order by (x.act ->> 'created_at')::timestamptz, x.play), '[]'::jsonb) from kept x),
+    -- The replies drawn under the page's posts, and the numbers of this page's range whose Act is drawn under a post elsewhere. Public projections: the same for every caller.
+    'under', (select coalesce(jsonb_agg(jsonb_build_object('parent', n.parent, 'play', n.play, 'act', n.act) order by (n.act ->> 'seq')::integer, n.id), '[]'::jsonb) from nested n),
+    'cut', (select coalesce(jsonb_agg(jsonb_build_object('seq', d.seq, 'parent_seq', (select pa.seq from acts_public pa where pa.id = d.parent)) order by d.seq), '[]'::jsonb) from drawn d where d.kind = 'post'),
     'visits', (select coalesce(jsonb_agg(jsonb_build_object(
         'visit', v.id, 'post', v.post, 'mod', v.character, 'at', v.created_at, 'ends_at', v.payload -> 'ends_at', 'line', v.payload -> 'line',
         'charges', (v.payload -> 'charges') || coalesce((select jsonb_agg(j.payload -> 'charge' order by j.created_at, j.id) from acts_public j where j.kind = 'visit_join' and j.target_act_id = v.id), '[]'::jsonb),

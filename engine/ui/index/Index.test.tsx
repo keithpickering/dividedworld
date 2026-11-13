@@ -203,8 +203,9 @@ describe('the index rows\' units and last post (list-rows plan, Task 1)', () => 
     expect(cell.textContent!.startsWith(`last: ${title.textContent} · `)).toBe(true);
     /* The "·" leads the by-unit, so it moves with the unit and no line ends on it. */
     const by = cell.querySelector('.kb-board-last-by')!;
-    expect(by.firstElementChild!.className).toBe('kb-board-sep');
-    expect(by.firstElementChild!.textContent).toBe('· ');
+    const whoItem = by.querySelector(':scope > .kb-board-last-who')!;
+    expect(whoItem.firstElementChild!.className).toBe('kb-board-sep');
+    expect(whoItem.firstElementChild!.textContent).toBe('· ');
     expect(cell.querySelectorAll('.kb-board-sep')).toHaveLength(2);
     expect(title.nextElementSibling!.tagName).toBe('BR');
     /* The date's form (absolute or "N days ago") follows the clock, so only the name and the comma are pinned. */
@@ -218,6 +219,45 @@ describe('the index rows\' units and last post (list-rows plan, Task 1)', () => 
     expect(within(by as HTMLElement).getByRole('link', { name: /latest post in General/u })).toBeInTheDocument();
     expect(by.querySelector('.kb-board-last-title')).toBeNull();
     expect(by.contains(row.querySelector('.kb-board-last-title'))).toBe(false);
+  });
+
+  test('the unit is two items: .kb-board-last-who holds the "· " and the name\'s link, .kb-board-last-when the comma and the date\'s link', async () => {
+    const row = await lastCell(1);
+    const by = row.querySelector('.kb-board-last-by')!;
+    const whos = by.querySelectorAll('.kb-board-last-who');
+    const whens = by.querySelectorAll('.kb-board-last-when');
+    expect(whos).toHaveLength(1);
+    expect(whens).toHaveLength(1);
+    expect(whos[0]!.parentElement).toBe(by);
+    expect(whens[0]!.parentElement).toBe(by);
+    expect(whos[0]!.firstElementChild!.textContent).toBe('· ');
+    expect(whos[0]!.querySelector('.kb-who a')).not.toBeNull();
+    expect(whos[0]!.querySelector('.kb-board-last-when')).toBeNull();
+    const sep = whens[0]!.querySelector('.kb-board-sep')!;
+    expect(sep.textContent).toBe(', ');
+    expect(sep.getAttribute('aria-hidden')).toBe('true');
+    expect(whens[0]!.querySelector('a')!.textContent).toMatch(/latest post in General/u);
+    expect(whens[0]!.querySelector('.kb-who')).toBeNull();
+  });
+
+  test('a board whose last post has no thread: no "·", the name alone in the first item, and the date\'s span inside the second', async () => {
+    const fake = buildWorld();
+    const spritey = fake.seed.character(fake.seed.account('other'), 'Spritey', 'face', { at: T0 });
+    fake.seed.thread('general', spritey, 'One', 'x', { at: T0 });
+    fake.signInAs(fake.seed.account('me'));
+    const boot = await fake.boot();
+    const doc = await fake.indexPage();
+    const bare = { ...doc, boards: doc.boards.map((b) => (b.lastAt === null ? b : { ...b, lastThread: null, lastTitle: null })) };
+    renderIn(fake, <IndexScreen doc={bare} />, { boot });
+    const row = screen.getByRole('link', { name: 'General' }).closest('tr')!;
+    const by = row.querySelector('.kb-board-last-by')!;
+    const who = by.querySelector('.kb-board-last-who')!;
+    expect(who.querySelector('.kb-board-sep')).toBeNull();
+    expect(who.firstElementChild).toBe(by.querySelector('.kb-who'));
+    const when = by.querySelector('.kb-board-last-when')!;
+    expect(when.querySelector('a')).toBeNull();
+    expect(when.querySelector(':scope > span.kb-muted')).not.toBeNull();
+    expect(when.querySelector('.kb-board-sep')!.textContent).toBe(', ');
   });
 
   test('a board with no posts reads "last: None yet"', async () => {

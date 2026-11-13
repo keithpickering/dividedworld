@@ -27,6 +27,13 @@ export type Band = { readonly lo: number; readonly hi: number; readonly board: '
 export type Rgb = [number, number, number];
 export type Light = { readonly x: number; readonly y: number };
 
+/**
+ * How far past a surface's edge a light of 1 stands: a surface that is lit at a `Light` multiplies it by this (the relief's pixels run -1..1,
+ * so its light stands at `light * LIGHT_SCALE`), and the page's near light divides it out to put a light at the pointer's place. The band
+ * itself uses no scale: it samples colors at the lights of `LIGHT_GRID` as they are, in -1.5..1.5.
+ */
+export const LIGHT_SCALE = 1.3;
+
 /** Rounding a color to 8 bits can move its luminance a little; each bound is moved inward by this much so it cannot cross. */
 const MARGIN = 0.004;
 

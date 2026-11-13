@@ -44,6 +44,24 @@ test('each action is decided into the SQL function that writes it, with that fun
     { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'x-1f480' } });
 });
 
+test('a card that carries a reply sends the reply and its framing with the play; any other card sends neither', () => {
+  const cutter = { ...splat, key: 'cutter', name: 'Cutter', replies: true as const };
+  const where: Instance = { ...instance, cards: [...instance.cards, cutter] };
+  const play = (card: string, more: object = {}) => ({ action: 'playCard', card, character: id, target: other, ...more });
+  assert.deepEqual(decide(play('cutter', { body: 'Cutting in.', framing: [other, other, id] }), where),
+    { ok: true, rpc: 'play_card', args: { card: 'cutter', through: id, target: other, config: {}, message: '', reply: 'Cutting in.', framing: [other, id] }, asService: true, needsTarget: true, play: 'cast' });
+  assert.deepEqual((decide(play('cutter', { body: 'Cutting in.' }), where) as unknown as { args: object }).args,
+    { card: 'cutter', through: id, target: other, config: {}, message: '', reply: 'Cutting in.' }, 'no framing is no argument');
+  // A missing or blank reply is refused in the card's own plain words (the owner's answer on #594, 2026-11-13), the ones play_card says of one with no letter or digit.
+  assert.equal(refusal2(play('cutter'), where), 'body: write the reply this card carries');
+  assert.equal(refusal2(play('cutter', { body: '   ' }), where), 'body: write the reply this card carries');
+  assert.equal(refusal2(play('cutter', { body: 7 }), where), 'body: write the reply this card carries');
+  assert.equal(refusal2(play('cutter', { body: 'x'.repeat(51) }), where), 'body: is longer than 50 characters');
+  const other2 = decide(play('splat', { body: 'Ignored.', framing: [id] }), where) as unknown as { args: object };
+  assert.deepEqual(other2.args, { card: 'splat', through: id, target: other, config: {}, message: '' }, 'a card without the flag sends neither');
+  assert.equal(refusal2(play('splat', { body: 'x'.repeat(500) }), where), '', 'and does not read the body');
+});
+
 test('framing passes through on a post, a thread start, a spin and an apology: the first five distinct ids, and nothing when there are none', () => {
   const six = [id, other, '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444', '55555555-5555-4555-8555-555555555555', '66666666-6666-4666-8666-666666666666'];
   assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'R.', framing: [other, other, id] }, instance),

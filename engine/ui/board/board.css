@@ -395,6 +395,39 @@
   .kb-thread-last .kb-thread-last-link {
     white-space: nowrap;
   }
+
+  /*
+   * The last post is one unit, "[avatar] name, date" (the index's .kb-board-last-by is the same idea): one box no wider than the row, which moves whole to the line
+   * after "last:" when it does not fit beside it. Its two items wrap as flex items do: the name (which may wrap inside its own box) and the date with its comma.
+   * When both do not fit one line the date takes a line of its own, and the comma is hung (the next rules) so that no line ends on a comma or starts with one.
+   */
+  .kb-thread-last-by {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    max-width: 100%;
+    vertical-align: top;
+    /* The clip is on the left edge only, at the comma's gap: the comma's box lies left of it where the date starts a line. Every other side is clear of the box by more than the focus ring's 4px (2px and its 2px offset). */
+    clip-path: inset(-0.5em -0.5em -0.5em calc(-1 * var(--kb-comma-gap)));
+  }
+
+  .kb-thread-last-by > .kb-who {
+    min-width: 0;
+    /* The room the comma takes after the name, so that the date's pull to the left below leaves its fit on the name's line unchanged. */
+    margin-inline-end: calc(var(--kb-comma) + var(--kb-comma-gap));
+  }
+
+  /* The comma is at the head of this item in a box of a set width and a set gap before the date, and the item is pulled left by both: beside the name the comma sits against the name, and at the start of a line it lies left of the unit's edge, under the clip. */
+  .kb-thread-last-when {
+    margin-inline-start: calc(-1 * (var(--kb-comma) + var(--kb-comma-gap)));
+    white-space: nowrap;
+  }
+
+  .kb-thread-last-when > .kb-thread-sep {
+    display: inline-block;
+    width: var(--kb-comma);
+    margin-inline-end: var(--kb-comma-gap);
+  }
 }
 
 /* Focus lands on the heading after a page turn; it is a place to start reading, not a control. */

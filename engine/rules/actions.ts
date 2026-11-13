@@ -124,12 +124,25 @@ const reached = (r: Fields, instance: Instance, key: string, play: Exclude<Play,
   return { reach, ...(reach === 'character' ? { from_post: id(r, 'post') } : {}) };
 };
 
+/** The words a play of a card that replies is refused in when it carries no reply; play_card says the same of a reply with no letter or digit. */
+export const NO_REPLY = 'write the reply this card carries';
+
+/** The reply a card that replies carries: a post's body, bounded as one, with a missing or blank one refused in the card's own plain words, never the form's. */
+const replyText = (r: Fields, most: number): string => {
+  const v = r.body;
+  if (typeof v !== 'string' || BLANK.test(v)) throw new Refused('body', NO_REPLY);
+  return text(r, 'body', most);
+};
+
 /** A Cast's or a Use's arguments: the card, the character, the target, its configuration and message, and where it goes. */
 const played = (r: Fields, instance: Instance, play: 'cast' | 'use'): Fields => {
   const key = card(r, instance);
   const through = id(r, 'character');
   const target = id(r, 'target');
-  return { card: key, through, target, config: r.config ?? {}, message: r.message ?? '', ...reached(r, instance, key, play), ...firstDraw(r, instance, key) };
+  // A card that replies carries a post of the caster's, bounded as the post action bounds one; a Use and any other card carry none.
+  const replies = play === 'cast' && instance.cards.find((c) => c.key === key)?.replies === true;
+  const reply = replies ? { reply: replyText(r, instance.settings.postMaxLength), ...framing(r) } : {};
+  return { card: key, through, target, config: r.config ?? {}, message: r.message ?? '', ...reached(r, instance, key, play), ...firstDraw(r, instance, key), ...reply };
 };
 
 /**

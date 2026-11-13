@@ -8,7 +8,7 @@ import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
 import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, markedPlays, playOf, shownPlays } from './plays.ts';
+import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, markedPlays, playOf, playsFallingOn, shownPlays } from './plays.ts';
 import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -654,5 +654,50 @@ describe('a surface, in the store', () => {
   test('a draw or a wash is no card effect and no line of a thread', () => {
     expect(holdsEffects('draw')).toBe(false);
     expect(holdsEffects('wash')).toBe(false);
+  });
+});
+
+/* A card that keeps (Feelin' Glam): its ended thread play is kept by the marks, for the pages that hold a post it falls on. */
+describe('a play of a card that keeps, once its time is up', () => {
+  const ENDS = '2026-11-08T12:00:00.000Z';
+  const AFTER = Date.parse('2026-11-09T12:00:00.000Z');
+  const thread = (id: string, card: string, over: Record<string, unknown> = {}) => playOf(act(id, 'card', { card, reach: 'thread', thread: 'th', ends: ENDS, ...over }, 'p1'))!;
+  const keeps = new Set(['keeper']);
+  const act = (id: string, kind: Act['kind'], payload: Record<string, unknown>, target: string | null = 'p1'): Act =>
+    ({ id, kind, character: 'c1', thread: 't', targetActId: target, seq: null, createdAt: '2026-11-01T12:00:00.000Z', payload, currentPayload: payload, editedAt: null, shownEditedAt: null });
+
+  test('markedPlays keeps an ended keeping play and drops an ended plain one; a reversed keeping play goes, and a live play of either stays', () => {
+    const kept = thread('k1', 'keeper');
+    const plain = thread('k2', 'sparkly');
+    expect(markedPlays([kept, plain], AFTER, keeps).map((p) => p.id)).toEqual(['k1']);
+    expect(markedPlays([kept, plain], AFTER).map((p) => p.id), 'no keeping card named: both go, as before').toEqual([]);
+    expect(markedPlays([{ ...kept, reversed: true as const }], AFTER, keeps)).toEqual([]);
+    expect(markedPlays([kept, plain], Date.parse('2026-11-02T00:00:00.000Z'), keeps).map((p) => p.id)).toEqual(['k1', 'k2']);
+  });
+
+  test('playsFallingOn: a live play falls on every post, an ended keeping play only on a post written inside its window, a reversed or untaken play on none', () => {
+    const kept = { ...thread('k1', 'keeper'), playedAt: '2026-11-01T12:00:00.000Z' };
+    const plain = { ...thread('k2', 'sparkly'), playedAt: '2026-11-01T12:00:00.000Z' };
+    const inside = { createdAt: '2026-11-03T00:00:00.000Z' };
+    const before = { createdAt: '2026-10-31T00:00:00.000Z' };
+    const late = { createdAt: '2026-11-08T12:00:01.000Z' };
+    const ids = (post: { createdAt: string }, plays: typeof kept[], now: number) => playsFallingOn(plays, post, keeps, now).map((p) => p.id);
+    const live = Date.parse('2026-11-05T00:00:00.000Z');
+    expect(ids(before, [kept, plain], live)).toEqual(['k1', 'k2']);
+    expect(ids(inside, [kept, plain], AFTER)).toEqual(['k1']);
+    expect(ids(before, [kept], AFTER)).toEqual([]);
+    expect(ids(late, [kept], AFTER)).toEqual([]);
+    expect(ids(inside, [{ ...kept, reversed: true as const }, { ...plain, untaken: true as const }], live)).toEqual([]);
+    /* An admin's end of a worn-off keeping play takes its level off the post written inside its window at once. */
+    expect(ids(inside, [kept], AFTER)).toEqual(['k1']);
+    expect(ids(inside, [{ ...kept, reversed: true as const }], AFTER)).toEqual([]);
+  });
+
+  test('the Lens says how an ended keeping play ends, in the words of a live one\'s end', () => {
+    const live = defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS).ends!;
+    expect(live).toMatch(/^Ends /u);
+    expect(defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS, [], AFTER).ends).toBe(`${live.replace(/^Ends /u, 'Ended ')}. Posts written while it was up keep it.`);
+    expect(defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS, [], Date.parse('2026-11-02T00:00:00.000Z')).ends, 'still up: the live words').toBe(live);
+    expect(defaultView({ name: 'Plain' }, undefined, undefined, ENDS, [], AFTER).ends, 'a card that does not keep says no such thing').toBe(live);
   });
 });

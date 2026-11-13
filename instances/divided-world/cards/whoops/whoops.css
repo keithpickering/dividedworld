@@ -22,10 +22,12 @@
 }
 
 /*
- * The ink and the suds canvases are placed and sized by the effect, to the body's box (inline left, top, width and height), and
+ * The ink is one canvas for each band near the viewport of each layer that is not gone (`data-kb-band`, `data-kb-layer`), placed and
+ * sized by the effect over its band of the body's box (inline left, top, width and height); the suds are one canvas over the box. All
  * mark themselves `data-kb-effect-ink`: the thread's sheet (thread/thread.css) puts them above the words and below what the engine
  * lifts (`data-kb-over-ink`: the reactions row, the spun line), so those stay in front, visible and usable, even when another card's
- * effect wraps this one. The suds canvas comes after the ink in order, at the same level, so it is drawn over it.
+ * effect wraps this one. The layers are stacked in order at the same level, each over the one before, and the suds canvas comes after
+ * them, so it is drawn over them all.
  */
 .kb-whoops-ink,
 .kb-whoops-suds {

@@ -115,6 +115,8 @@ declare
   visited boolean;
   played boolean;
   named boolean;
+  cut boolean;
+  cut_own boolean;
   stood uuid;
   e text := local_emoji(land_refusal.config);
   lkey text;
@@ -128,16 +130,28 @@ begin
   played := exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = land_refusal.post and k.payload ->> 'reach' = 'character');
   -- A spring Act that carries the quoter (`for`) and names this post as the quote it sprang on (`by`): one probe of acts_spring_by.
   named := exists (select 1 from acts s where s.kind = 'spring' and s.payload ->> 'by' = land_refusal.post::text and s.payload ? 'for');
+  -- A reply a Line Cutter play cut in under a post (post_under, 0348): its card Act is the caster's (`character`), on the parent (its target, so no derived veil reaches it), and its payload names the reply, so the record says
+  -- whose reply it is: a public Act that names the author of the post it names. One probe of the unique index on `reply`; a row stays when the play ends, as the Act does.
+  cut := exists (select 1 from post_under u where u.reply = land_refusal.post);
+  -- The same record for the parent: where its own author cut a reply in under it, the derived veil would show that card Act under the stand-in and the reply (a post, which the derived veil never covers) under its true
+  -- author, and say they are one. One probe of post_under_parent, the post's few replies, and the authors of the two posts (public, as the posts are).
+  cut_own := exists (select 1 from post_under u join acts r on r.id = u.reply join acts q on q.id = u.parent where u.parent = land_refusal.post and r.character = q.character);
   stood := stand_in();
   -- A reaction card's reads, whatever the card is: whether an instance kind has this emoji (by its base), and whether the post holds this key.
   lkey := local_reaction_key(e);
   instance_has := exists (select 1 from reaction_kinds k where emoji_base(k.emoji) = emoji_base(e));
   post_has := exists (select 1 from post_reaction_kinds p where p.post = land_refusal.post and p.key = lkey);
+  if kind_of.replies and author_veiled(land_refusal.post) then
+    -- For every caster alike: a post whose author is hidden takes no reply cut in under it (the author's own would be the leak above, and a refusal that told the author from anyone else would be one too).
+    return 'this post''s author is hidden until ' || refusal_time(author_veil_ends(land_refusal.post)) || '; no reply is cut in under it before then';
+  end if;
   if kind_of.veil = 'author' then
     if by_staff then return 'a post by the staff keeps its name'; end if;
     if visited then return 'a Mod Bot has been to this post, so its author is on the record'; end if;
     if played then return 'a card played from this post names its author, so the author is on the record'; end if;
     if named then return 'a card that sprang on this post names its author, so the author is on the record'; end if;
+    if cut then return 'a card cut this post in under another, so its author is on the record'; end if;
+    if cut_own then return 'its author cut a reply in under this post, so the author is on the record'; end if;
     if stood is null then return 'this forum has no one to stand in for an author'; end if;
   end if;
   if kind_of.adds_reaction then

@@ -44,6 +44,8 @@ export type CardTarget =
      * preview has none.
      */
     readonly version?: string;
+    /** The post this one is drawn under, where it is a reply carried by a play in force (a card that replies); a screen's preview and an ordinary post have none. */
+    readonly under?: string;
   }
   | { readonly reach: 'character'; readonly character: string }
   | { readonly reach: 'thread'; readonly thread: string }
@@ -51,9 +53,9 @@ export type CardTarget =
 export type PostTarget = Extract<CardTarget, { reach: 'post' }>;
 
 /** A post as a card's rules see it, from its current body: its length in characters and its visible text, and its version where the server read one. */
-export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string): PostTarget {
+export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string, under?: string): PostTarget {
   const words = typeof body === 'string' ? body : '';
-  return { reach: 'post', act, kind, length: [...words].length, text: visibleText(parse(words)), ...(version ? { version } : {}) };
+  return { reach: 'post', act, kind, length: [...words].length, text: visibleText(parse(words)), ...(version ? { version } : {}), ...(under ? { under } : {}) };
 }
 
 /**
@@ -252,6 +254,13 @@ export interface CardRules<Config = unknown> {
   readonly pins?: true;
   /** Generated text its effect holds (a card that writes); a cast card, cast face up on a post alone and never set face down, withheld where `Settings.oldVoice` is false. */
   readonly writes?: Writes<Config>;
+  /**
+   * Its cast carries a post of the caster's, written with the play and drawn under the target while the play is in force; a cast card that reaches a post
+   * alone, stack 1, cast face up and never set face down, never offered to a staff persona.
+   */
+  readonly replies?: true;
+  /** A thread play of it stays on every post written in the thread while it was up, after its time (`fallsOn`); only a cast card whose one reach is a thread, with a time up. */
+  readonly keeps?: true;
   /** The economy numbers its rules read. */
   readonly reads?: readonly EconomyRead[];
   /** The numbers in `Settings.cardSettings` its screens read, so an instance missing one, or holding one out of its bounds, is refused. */
@@ -456,6 +465,8 @@ export interface PlayContext {
 export function decidePlay(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: PlayContext = {}): Verdict<Decided> {
   if (playOf(rules) !== 'cast') return wrongPlay(rules);
   const now = context.now ?? new Date();
+  // A reply drawn under a post is a post of its own, and takes none under it: one reply under a post, never a chain.
+  if (rules.replies === true && target.reach === 'post' && target.under !== undefined) return refuse('a reply drawn under a post takes no reply under it');
   const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
   const play = decided(rules, settings, target, effects, config, message, now, true);
@@ -503,14 +514,14 @@ export interface SetConditions {
 const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
 
 /**
- * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, needs a message, draws or runs a
+ * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, replies, needs a message, draws or runs a
  * drive. Each of those is done at the cast, on the post the caster chose (the tail is bought, the message is said, the draw is made, the drive opens), and a
  * back that sprang later on a quote would land with none of it. A surface card is one too (docs/plans/2026-11-12-graffiti-face-up-design.md, section 1):
  * its first tag is drawn on the post the caster chose, and a back would carry it blind to a quoting post's box nobody drew for. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
  * server holds the same on face_down (supabase/migrations/0153_drives.sql, face_down_never_writes).
  */
-export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface'>): boolean =>
-  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined;
+export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface' | 'replies'>): boolean =>
+  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined || rules.replies !== undefined;
 
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
@@ -518,6 +529,8 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // A card that writes is cast face up and never set face down: its tail is bought at the cast, on the post the caster chose.
   if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
+  // So is a card that replies: its reply is written with the play, under the post the caster chose.
+  if (rules.replies !== undefined) return refuse(`${rules.name} carries a reply, so it is cast face up and never set face down`);
   // So is one that needs a message, draws, runs a drive or is drawn on (a surface card): faceUpOnly says which, and one sentence covers them.
   if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
@@ -613,6 +626,20 @@ export function giftSplit(amount: Hundredths, overheadPercent: number): { readon
 
 /** The reaches a card lists, a post unless it says. */
 export const reachesOf = (rules: Pick<CardRules, 'reaches'>): readonly Reach[] => rules.reaches ?? ['post'];
+
+/**
+ * Whether a play beyond a post falls on a post: it is up now, or its card keeps and the post was written while it was up. Dates only: nothing is read from
+ * the post but when it was written, and a date that is no time reads as not kept (an end that is no time is neither up nor kept).
+ */
+export function fallsOn(play: { readonly at: string; readonly ends?: string }, post: { readonly at: string }, keeps: boolean, now: Date = new Date()): boolean {
+  if (play.ends === undefined) return true;
+  const to = Date.parse(play.ends);
+  if (to > now.getTime()) return true;
+  if (!keeps) return false;
+  const from = Date.parse(play.at);
+  const written = Date.parse(post.at);
+  return from <= written && written < to;
+}
 
 /** Whether a card is cast on a post: the cards a cast trap may name, since a caught card is one a caster played there. */
 export const castOnPost = (rules: Pick<CardRules, 'play' | 'reaches'>): boolean => playOf(rules) === 'cast' && reachesOf(rules).includes('post');
@@ -731,6 +758,8 @@ export function staffOffers(card: CardRules): boolean {
   if (card.gimmick !== undefined && (card.play ?? 'cast') === 'cast') return false;
   // A persona plays a card with no caster message, so a card that needs one could never land.
   if (card.needsMessage !== undefined) return false;
+  // A card that replies carries a post a persona's play does not write.
+  if (card.replies === true) return false;
   // A surface card is played with a first draw, which a persona names (`staffOptions`) or code picks (`staffDrawOf`); a persona never sets one.
   if (card.surface !== undefined) return playOf(card) === 'cast' && (staffDrawOf(card, () => 0) !== null || card.staffOptions !== undefined);
   return staffConfigOf(card, () => 0) !== null || card.staffOptions !== undefined;

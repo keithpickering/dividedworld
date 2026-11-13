@@ -8,7 +8,7 @@
  * A post is memoized on its Act, its person and its layout, and its reactions read their own tally
  * from the tallies store, so a reaction re-renders the post it is on and nothing else.
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { MoveTag } from '../board/MoveNotice.tsx';
 import { PostEffects } from '../cards/Effects.tsx';
@@ -34,7 +34,7 @@ import { Reactions } from '../reactions/Reactions.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { lowerFirst } from '../copy-words.ts';
 import { useKayfa } from '../context.tsx';
-import { ThreadCtx, useOwnerOf, useThread, type ThreadContext } from './context.ts';
+import { ThreadCtx, useOwnerOf, useThread, type ThreadContext, type Under } from './context.ts';
 import { moveOffice } from '../board/move-words.ts';
 import { GroupMoveLine, RulingTag, rulingOf } from './GroupMove.tsx';
 import { ConcealingNote, HiddenNote, HiddenOwn, useMyHidden } from '../conduct/Hidden.tsx';
@@ -49,6 +49,9 @@ interface Props {
   readonly layout: PostbitLayout;
   readonly slid: boolean;
 }
+
+/** What makes a post the reply a play in force draws under another: the post it is under (its id and number) and the play that put it there. */
+interface Cut { readonly parent: Id; readonly seq: number; readonly play: Id }
 
 /** A post's name for a reader and a screen reader: the character's, the staff's (`UiCopy.staffWord`, for an Act with no character), or "A character" where it cannot be shown. */
 const nameOf = (act: Act, person: PostbitPerson | undefined, staff: string) => (act.character === null ? staff : person?.character.name ?? 'A character');
@@ -201,12 +204,33 @@ function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin,
   );
 }
 
-export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
+/**
+ * A post, and the reply a play in force draws under it (`nested`, a card that replies): a second article right after the post's, built by the same
+ * component, so everything a post is and does (its postbit, marks, reactions, controls, the conduct layer, the plays on it) it is and does there. No
+ * wrapper holds the two, so the post is the same element before and after a reply arrives live and keeps an open editor, form and focus.
+ */
+export const ActArticle = memo(function ActArticle({ act, person, layout, slid, nested, nestedPerson }: Props & { readonly nested?: Under | undefined; readonly nestedPerson?: PostbitPerson | undefined }) {
+  const play = nested?.play;
+  const cut = useMemo<Cut | undefined>(() => (play === undefined ? undefined : { parent: act.id, seq: act.seq!, play }), [play, act.id, act.seq]);
+  return (
+    <>
+      <PostArticle act={act} person={person} layout={layout} slid={slid} />
+      {nested && <PostArticle act={nested.act} person={nestedPerson} layout={layout} slid={false} cut={cut} />}
+    </>
+  );
+});
+
+const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }: Props & { readonly cut?: Cut | undefined }) {
   const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, faceOf, pronounsOf, summary, know, visits } = useThread();
-  const { api, ui } = useKayfa();
+  const { api, ui, instance } = useKayfa();
   const ref = useRef<HTMLElement>(null);
   const narrow = useNarrow();
   const seq = act.seq!;
+  /* A reply drawn under a post is linked by its own number on the page of the post it is under, since its own number's page leaves it empty. */
+  const href = threadHref(thread, pageOf(cut?.seq ?? seq, perPage), seq);
+  /* The rail down its edge is its card's flavor, from the instance's rules for the card the play is of, and the board's muted ink where that is not known. */
+  const parentPlays = usePlays(plays, cut?.parent ?? '').plays;
+  const flavor = cut ? instance.cards.find((c) => c.key === parentPlays.find((p) => p.id === cut.play)?.card)?.alignment : undefined;
   useEffect(() => {
     const el = ref.current;
     if (!observer || !el) return;
@@ -248,7 +272,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   /* The strip is drawn on the date row, and again by a card that lifts the post out of its thread (Stick Around): the same node, each with its own Lens owner. */
   const marks = act.kind === 'post'
     ? <PostMarks
-        post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
+        post={act.id} ghost={act} plays={plays} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
         visit={visit} modPronouns={visit ? pronounsOf(visit.mod) : undefined} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
         {...(reportTo ? { reportTo } : {})}
       />
@@ -260,8 +284,8 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const shown = useReachShown(plays, act.kind === 'post' && !standIn ? act.character : null, 'character');
   const characterMarks = useMemo(() => (shown && act.kind === 'post' && act.character !== null
     ? <PostMarks
-        post={act.character} plays={plays} compare={false} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
-        reachAt={{ reach: 'character', target: act.character, name, ...(person ? { pronouns: person.character.pronouns } : {}), fromPost: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
+        post={act.character} plays={plays} compare={false} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
+        reachAt={{ reach: 'character', target: act.character, name, ...(person ? { pronouns: person.character.pronouns } : {}), fromPost: act, thread, board: summary.board, title: summary.title, to: href, plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
         onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
       />
     : null), [shown, act, plays, thread, seq, perPage, casterName, faceOf, tallies, mine, name, person?.character.pronouns, summary.board, summary.title, know]);
@@ -273,14 +297,16 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       tabIndex={-1}
       className="kb-act"
       aria-labelledby={`post-${seq}-title`}
-      data-kb-seq={seq}
+      {...(cut ? { 'data-kb-under': '', 'data-kb-cut-seq': seq } : { 'data-kb-seq': seq })}
+      style={flavor ? ({ '--kb-rail': `var(--kb-${flavor})` } as CSSProperties) : undefined}
       data-kb-parity={seq % 2 === 0 ? 'even' : 'odd'}
       data-kb-kind={act.kind}
       data-kb-ruling={rulingOf(act) ?? undefined}
       data-kb-postbit={layout}
       data-kb-arrived={slid ? 'slide' : undefined}
     >
-      <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {spoken}</h2>
+      <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {spoken}{cut && `, cut in under post ${cut.seq}`}</h2>
+      {cut && <p className="kb-act-cutline kb-small">Cut in line under post {cut.seq}</p>}
       {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
       {!plain && (person
         ? <Postbit person={person} layout={layout} marks={characterMarks} />
@@ -288,7 +314,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       <header className="kb-act-meta" data-kb-cell="line">
         <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt, narrow, api.now())}</time>
         {marks}
-        <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
+        <Link className="kb-act-number" to={href} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>
       <div className="kb-act-main" data-kb-cell="words">
         <Body act={act} name={name} spoken={spoken} person={person} editing={editing} own={own} onEdit={() => setEditing(true)} onDone={() => setEditing(false)} marks={marks} visit={visit} />

@@ -965,7 +965,13 @@ begin
   reset enable_seqscan;
   touched := pg_temp.buffers_of(format('select character, posts, spins, cards from character_post_counts where character = %L', a));
   raise notice 'a count read touches % buffers', touched;
-  if touched > 60 then raise exception 'a count read touches % buffers', touched; end if;
+  -- The bound is 100 (it was 60). Measured: 40 buffers when this file runs alone, 42 after the suite as it stood before card notes Part 2, and 62 to 71 in the full suite on main's 0344 to 0349 (68 on GitHub's merge). What moved is state the earlier
+  -- files leave, and the heap's layout under this file's own 3,000 posts (which update the author's stored count row 3,000 times in this transaction, so the key's read walks the row's versions): the files main changed before this one add to
+  -- it, each alone (0135 7 buffers, 0107 4, 0059 1, the rest none; 12 together), and none of them is on the read's path. With that state the planner also reads post_veils_live's `not exists (acts_one_card_end)` as a merge anti join over the
+  -- whole index (10 buffers with the 9 ends this file has made) where it probes each live veil's play with fewer; `offset 0` on the two probes was tried and takes it off the count read (71 to 63) but turns the reads of acts_public above into
+  -- per-row subplans (a page by thread and seq 165 to 287), so the view is left as it is. The guard is the shape above (the stored row's key, the live veils' index, no scan of the count table) and an order of magnitude: a read of the author's
+  -- 3,000 posts pins thousands of buffers. 100 is a margin of about 30 over the 71 the worst state measured, as the bounds of the reads above are over theirs.
+  if touched > 100 then raise exception 'a count read touches % buffers', touched; end if;
   touched := pg_temp.buffers_of(format('select character, posts from character_post_counts where character in (%L, %L)', a, stand));
   raise notice 'two counts read touch % buffers', touched;
   /* Two counts are two reads of the stored rows' heap and of the live veils, plus the one walk of the veils both share. This file's own writes leave many versions of a counted row in the heap (nothing vacuums inside a
@@ -1345,4 +1351,116 @@ begin
   got := claim_card_writes(5, p);
   perform tests.unbecome();
   if got -> 0 ->> 'author' is distinct from 'Vx Ann' then raise exception 'claim_card_writes does not name the author again once the veil has ended: %', got; end if;
+end $$;
+
+-- ---- 16. A card that replies (Line Cutter, 0348) and a thread-reach play (Feelin' Glam, 0349) beside a veil ----
+-- A cut-in reply is a post of the caster's, drawn under its parent while the play is in force. What names whom: the play's card Act is the caster's (its `character`), on the parent (its target), and its payload names the reply
+-- (`reply`); post_under holds play, parent, reply and thread; the reply is a post of the caster's. So:
+--   (a) a veil on the PARENT, whoever cut in: nothing about the reply names the parent's author, unless the author cut in themselves (c).
+--   (b) a veil on the REPLY: the card Act (target: the parent, so no derived veil reaches it) says whose reply it is, as a card played from a post at character reach does: the veil is refused, ended play or not.
+--   (c) the parent's own author cuts in under their veiled post: the derived veil would show the card Act under the stand-in and the reply (a post, which the derived veil never covers) under its true author, which says the
+--       author is the stand-in; so a Line Cutter is refused on a veiled post, for every caster alike, and a veil is refused on a post its own author cut a reply in under.
+--   (d) a thread-reach play (a Feelin' Glam) names a thread and its caster; what it draws on a post is keyed on the thread, never on the post's author, so a veiled post takes it as any post does and nothing names the author.
+select tests.unbecome();
+insert into card_kinds (key, name, alignment, rarity, play, stack, reaches, replies, keeps, lasts, veil) values
+  ('vcucut', 'Vcu Cut', 'pepperoni', 'rare', 'cast', 3, '{post}', true, false, null, null),
+  ('vcuglam', 'Vcu Glam', 'sweet', 'rare', 'cast', 2, '{thread}', false, true, interval '7 days', null);
+do $$
+declare
+  ann uuid := tests.account('vcu-ann'); bob uuid := tests.account('vcu-bob'); cy uuid := tests.account('vcu-cy'); ray uuid := tests.account('vcu-ray');
+  a uuid := tests.character(ann, 'Vcu Ann'); b uuid := tests.character(bob, 'Vcu Bob'); c uuid := tests.character(cy, 'Vcu Cy'); r uuid := tests.character(ray, 'Vcu Ray');
+  stand uuid := pg_temp.stand();
+  t uuid := tests.thread('Vcu cut'); p1 uuid := tests.post(a, t, 'Veiled before the cut-in.'); p2 uuid := tests.post(a, t, 'Cut in under first, veiled after.'); p3 uuid := tests.post(a, t, 'Own cut-in, veiled after.');
+  p4 uuid := tests.post(a, t, 'Veiled first, then someone cuts in.'); other uuid := tests.post(r, t, 'A plain post.');
+  t2 uuid; v5 uuid; got text; played jsonb; k2 uuid; r2 uuid; k3 uuid; r3 uuid; doc jsonb; row jsonb; words text;
+  hit text := 'Vcu Ann';
+begin
+  perform pg_temp.cards();
+  insert into wallets (account, balance) values (ann, 100), (bob, 100), (cy, 100) on conflict do nothing;
+  perform pg_temp.hand(bob, 'vcucut', 'vcucut', 'vcuglam'); perform pg_temp.hand(ann, 'vcucut', 'vcucut', 'vcuglam'); perform pg_temp.hand(cy, 'vlauthor', 'vlauthor', 'vlauthor', 'vlauthor', 'vlauthor');
+  perform tests.become_service();
+  -- Bob cuts a reply in under p2 and under p3; Ann cuts one in under p3, her own post, before any veil.
+  played := play_card(bob, 'vcucut', b, p2, '{}', 0, '', reply => 'Bob cuts in under p2.'); k2 := (played ->> 'id')::uuid; r2 := (played #>> '{under,act,id}')::uuid;
+  played := play_card(ann, 'vcucut', a, p3, '{}', 0, '', reply => 'Ann cuts in under her own p3.'); k3 := (played ->> 'id')::uuid; r3 := (played #>> '{under,act,id}')::uuid;
+  perform tests.unbecome();
+
+  -- (a) A veil on the parent of Bob's cut-in: the page, the Acts and every read of the reply name Bob and the post's id, and nothing names Ann.
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, p2, '{}', ''));
+  perform tests.unbecome();
+  if got is not null then raise exception '(a) a veil on a post another character cut in under: %', got; end if;
+  perform tests.become(ray);
+  doc := thread_page(t, 1, null, 20, '{vcucut}');
+  perform tests.unbecome();
+  if doc #>> '{under,0,parent}' is null or not exists (select 1 from jsonb_array_elements(doc -> 'under') u where u ->> 'parent' = p2::text and u #>> '{act,character}' = b::text) then
+    raise exception '(a) the page draws Bob''s reply under the veiled post: %', doc -> 'under'; end if;
+  -- Ann's id and name are nowhere in the rows that describe p2's cut-in: under, the card Act, the reply, the people, the page's plays.
+  if (select jsonb_agg(u) from jsonb_array_elements(doc -> 'under') u where u ->> 'parent' = p2::text)::text like '%' || a::text || '%' or (select jsonb_agg(u) from jsonb_array_elements(doc -> 'under') u where u ->> 'parent' = p2::text)::text like '%' || hit || '%' then
+    raise exception '(a) under names the veiled post''s author: %', doc -> 'under'; end if;
+  if (select jsonb_agg(to_jsonb(x)) from acts_public x where x.id in (k2, r2))::text like '%' || a::text || '%' or (select jsonb_agg(to_jsonb(x)) from post_under x where x.reply = r2)::text like '%' || a::text || '%'
+     or (select jsonb_agg(to_jsonb(x)) from play_reach x where x.play = k2)::text like '%' || a::text || '%' then
+    raise exception '(a) a row of the cut-in names the veiled post''s author'; end if;
+  if (select x.character from acts_public x where x.id = p2) is distinct from stand then raise exception '(a) the veiled post shows the stand-in'; end if;
+
+  -- (b) A veil on the reply itself is refused: the card Act names the reply and its caster. Refused in the words every caster meets, nothing written; an ended play changes nothing.
+  words := '42501 a card cut this post in under another, so its author is on the record';
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, r2, '{}', ''));
+  perform tests.unbecome();
+  if got is distinct from words then raise exception '(b) a veil on a cut-in reply: %', got; end if;
+  if exists (select 1 from post_veils v where v.post = r2) then raise exception '(b) a refused veil wrote a row'; end if;
+  if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), r2, '{}') is distinct from substr(words, 7) or land_refusal((select k from card_kinds k where k.key = 'vltotals'), r2, '{}') is not null then
+    raise exception '(b) land_refusal for a cut-in reply: a totals veil names no one, and an author veil is refused'; end if;
+  insert into admins (account) values (ray) on conflict do nothing;
+  perform tests.become(ray); perform reverse_card(k2); perform tests.unbecome();
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, r2, '{}', ''));
+  perform tests.unbecome();
+  if got is distinct from words then raise exception '(b) an ended Line Cutter still names the reply''s author: %', got; end if;
+
+  -- (c) Ann's own cut-in under her own post p3: a veil on p3 is refused (the card Act would show the stand-in, and the reply its true author).
+  words := '42501 its author cut a reply in under this post, so the author is on the record';
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, p3, '{}', ''));
+  perform tests.unbecome();
+  if got is distinct from words then raise exception '(c) a veil on a post its own author cut in under: %', got; end if;
+  if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), p3, '{}') is distinct from substr(words, 7) then raise exception '(c) land_refusal for a post its author cut in under'; end if;
+  -- And a Line Cutter on a post that is veiled: refused for the author and for anyone else, in the same words, nothing written, the card kept.
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, p4, '{}', ''));
+  perform tests.unbecome();
+  if got is not null then raise exception '(c) the veil on p4: %', got; end if;
+  words := '42501 this post''s author is hidden until ' || refusal_time(author_veil_ends(p4)) || '; no reply is cut in under it before then';
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L, %L, %L, %L)', ann, 'vcucut', a, p4, '{}', '', 'post', null, null, null, 'The author cuts in.'));
+  if got is distinct from words then raise exception '(c) the author''s Line Cutter on their veiled post: %', got; end if;
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L, %L, %L, %L)', bob, 'vcucut', b, p4, '{}', '', 'post', null, null, null, 'A stranger cuts in.'));
+  if got is distinct from words then raise exception '(c) a stranger''s Line Cutter on a veiled post: %', got; end if;
+  perform tests.unbecome();
+  if exists (select 1 from post_under u where u.parent = p4) or exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = p4 and k.payload ->> 'card' = 'vcucut') then raise exception '(c) a refused Line Cutter wrote something'; end if;
+  if card_held(ann, 'vcucut') is distinct from 1 then raise exception '(c) the refused play kept its card'; end if;
+
+  -- (d) Feelin' Glam from a plain post, on a thread whose only post by Ann is veiled: the play's Act names its caster and the page draws it for every post of the thread; no row names Ann.
+  t2 := tests.thread('Vcu glam'); v5 := tests.post(a, t2, 'The veiled post of the glam thread.'); other := tests.post(r, t2, 'A plain post.');
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, v5, '{}', ''));
+  played := play_card(bob, 'vcuglam', b, t2, '{}', 0, '', 'thread', other);
+  perform tests.unbecome();
+  if got is not null then raise exception '(d) the veil on the glam thread''s post: %', got; end if;
+  perform tests.become(ray);
+  doc := thread_page(t2, 1, null, 20, '{vcuglam}');
+  perform tests.unbecome();
+  if not exists (select 1 from jsonb_array_elements(doc -> 'above') x where x #>> '{act,id}' = played ->> 'id') then raise exception '(d) the page carries the thread play above its posts: %', doc -> 'above'; end if;
+  if doc::text like '%' || hit || '%' or doc::text like '%' || a::text || '%' then raise exception '(d) the page of a thread with a veiled post and a thread play names the post''s author: %', doc; end if;
+  if (select jsonb_agg(to_jsonb(x)) from acts_public x where x.id = (played ->> 'id')::uuid)::text like '%' || a::text || '%' or (select jsonb_agg(to_jsonb(x)) from play_reach x where x.play = (played ->> 'id')::uuid)::text like '%' || a::text || '%' then
+    raise exception '(d) a thread-reach play names the author of a veiled post in its thread'; end if;
+  -- Played from the veiled post by its own author: the card Act is one of the author's Acts on it (the derived veil: the stand-in), and the page still names no one.
+  perform tests.become_service();
+  played := play_card(ann, 'vcuglam', a, t2, '{}', 0, '', 'thread', v5);
+  perform tests.unbecome();
+  if (select x.character from acts_public x where x.id = (played ->> 'id')::uuid) is distinct from stand then raise exception '(d) the author''s thread play from the veiled post shows the stand-in'; end if;
+  perform tests.become(ray);
+  doc := thread_page(t2, 1, null, 20, '{vcuglam}');
+  perform tests.unbecome();
+  if doc::text like '%' || hit || '%' or doc::text like '%' || a::text || '%' then raise exception '(d) the page names the author of the veiled post after the author''s own thread play: %', doc; end if;
 end $$;
