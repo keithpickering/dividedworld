@@ -473,9 +473,9 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     art: { color: '#d24a2c', ink: '#1a0602', canvas: glitterBombCanvas, mark: glitterBombMark, credit: glitterBombArt.credit, tagline: 'Make a character sparkle.' },
     summary: 'Cast on a character. Every post by that character sparkles for a week, and posts written in that time keep it.',
     status: 'Sparkling every post by that character',
-    logPlay: () => 'Posts that character writes before it ends keep their sparkle for good.',
+    logPlay: () => 'Posts that character writes before it ends keep their sparkle after it ends.',
     describe: (settings: Settings) =>
-      `A Pepperoni card, ${glitterBomb.rarity}, cast from any post by the character it lands on. For ${spanWords(glitterBomb.lasts!)}, every one of that character's posts sparkles, wherever it is. When the week is up, the posts written during it keep their sparkle for good, settled where it landed; every other post stops. It falls on that mask alone. ${setMoveWords("the quoting post's character")} It costs nothing more to play.`,
+      `A Pepperoni card, ${glitterBomb.rarity}, cast from any post by the character it lands on. For ${spanWords(glitterBomb.lasts!)}, every one of that character's posts sparkles, wherever it is. When the week is up, the posts written during it keep their sparkle after it ends, settled; every other post stops. It falls on that mask alone. ${setMoveWords("the quoting post's character")} It costs nothing more to play.`,
   },
   {
     key: 'main-event',
