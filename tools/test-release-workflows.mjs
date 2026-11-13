@@ -280,6 +280,8 @@ red('a backend job traces its shell with set -euxo', edit(RELEASE, (d) => {
 const shellStep = (d, job, fn) => { const st = d.jobs[job].steps.find((x) => /curl|supabase/.test(x.run ?? '')); fn(st); return st; };
 red('a backend step sets its shell to bash -x', edit(RELEASE, (d) => { shellStep(d, 'functions', (st) => { st.shell = 'bash -x {0}'; }); }), /R12.*traces/);
 red('a backend job defaults its shell to bash -x', edit(RELEASE, (d) => { d.jobs.seed.defaults = { run: { shell: 'bash -ex {0}' } }; }), /R12.*traces/);
+red('a backend step traces through a later flag group', edit(RELEASE, (d) => { shellStep(d, 'schema', (st) => { st.shell = 'bash --noprofile --norc -e -x {0}'; }); }), /R12.*traces/);
+red('a backend step traces with sh -x', edit(RELEASE, (d) => { shellStep(d, 'seed', (st) => { st.shell = 'sh -x {0}'; }); }), /R12.*traces/);
 red('the workflow defaults its shell to bash -x', edit(RELEASE, (d) => { d.defaults = { run: { shell: 'bash -x {0}' } }; }), /R12.*traces/);
 red('a backend job runs db push --debug', edit(RELEASE, (d) => {
   schemaRun(d, (r) => r.replace(/db push/, 'db push --debug'));

@@ -84,6 +84,9 @@ const shellLines = (step) =>
     .filter((l) => !/^\s*#/.test(l));
 
 /** @param {Record<string,string>} files @returns {string[]} */
+// A shell named with an x among its single-dash flags, in any flag group: `bash -x {0}`, `bash --noprofile -e -x {0}`, `sh -eux {0}`.
+const TRACING_SHELL = /\b(ba)?sh\b(\s+\S+)*?\s+-[a-z]*x[a-z]*(\s|$)/;
+
 export function problems(files) {
   const out = [];
   const docs = {};
@@ -310,7 +313,7 @@ export function problems(files) {
       if (isBackend) {
         // A shell named with the x flag traces every command, whether a step, the job or the workflow names it.
         const shells = [doc.defaults?.run?.shell, job?.defaults?.run?.shell, ...list(job?.steps).map((st) => st?.shell)];
-        for (const sh of shells) if (typeof sh === 'string' && /\bbash\s+-[a-z]*x/.test(sh)) bad12.add(`job ${jobName} traces its shell, which would print a secret (shell: ${sh})`);
+        for (const sh of shells) if (typeof sh === 'string' && TRACING_SHELL.test(sh)) bad12.add(`job ${jobName} traces its shell, which would print a secret (shell: ${sh})`);
       }
       for (const step of list(job?.steps)) {
         for (const l of shellLines(step)) {
