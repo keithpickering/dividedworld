@@ -224,13 +224,32 @@ describe('the row', () => {
     const w = world(fake, { threads: 1 });
     const target = fake.seed.post(w.ids[0]!, w.spritey, 'a line to play on', { at: T0 + 2 * DAY });
     expect((await fake.spin(fake.seed.card(w.spritey, target, 'whoops'), w.mine!, 'From a play', 'x')).ok).toBe(true);
-    withOrigin(fake, 'From a play', { kind: 'play', card: 'whoops', on: null });
+    withOrigin(fake, 'From a play', { kind: 'play', card: 'whoops', on: null, from: null, at: null });
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'From a play' });
     const row = rowOf('From a play');
     const spun = row.querySelector('.kb-thread-spun') as HTMLElement;
     expect(spun).toHaveTextContent(/spun from Whoops!$/u);
     expect(within(spun).queryByRole('link')).toBeNull();
+  });
+
+  test('a row spun from a character play with a pressed post has a link to the profile and a link to the post, and no avatar in the phrase', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 1 });
+    const target = fake.seed.post(w.ids[0]!, w.spritey, 'a line to play on', { at: T0 + 2 * DAY });
+    expect((await fake.spin(fake.seed.card(w.spritey, target, 'whoops'), w.mine!, 'From a character play', 'x')).ok).toBe(true);
+    const at = { kind: 'post', thread: w.ids[0]!, title: 'Thread 001', seq: 2 } as const;
+    withOrigin(fake, 'From a character play', { kind: 'play', card: 'whoops', on: { kind: 'character', id: w.spritey, name: 'Spritey' }, from: null, at });
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'From a character play' });
+    const spun = rowOf('From a character play').querySelector('.kb-thread-spun') as HTMLElement;
+    expect(spun).toHaveTextContent('spun from Whoops! on Spritey, at #2 in Thread 001');
+    const links = within(spun).getAllByRole('link');
+    expect(links.map((l) => [l.textContent, l.getAttribute('href')])).toEqual([
+      ['Spritey', `/c/${w.spritey}`],
+      ['#2 in Thread 001', `/t/${w.ids[0]}?page=1#post-2`],
+    ]);
+    expect(spun.querySelector('.kb-mini')).toBeNull();
   });
 
   test('a row with an origin Act but no place reads "spun from an Act"', async () => {

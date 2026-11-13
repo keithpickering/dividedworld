@@ -163,6 +163,80 @@ export function useCallout(kind: string, hint: string | undefined, el: RefObject
   return mine ? `${id}-hint` : null;
 }
 
+/** marks.css's `@media (max-width: 40em)` is this same breakpoint; change the two together. */
+const PHONE_QUERY = '(max-width: 40em)';
+
+/**
+ * On a phone (marks.css's `max-width: 40em`, the post's own stacked layout) a callout on a post's date row takes its own room between that row
+ * and the words, and one on a postbit's mark takes it between the postbit and the date row, so it covers none of what a card makes tappable
+ * and the engine learns nothing of any card. It stays where it is in the DOM, after its mark, so reading and focus order do not change; what
+ * moves is its box. Here it is only measured, and only while the window is that narrow (`PHONE_QUERY`; above it nothing is observed or set,
+ * and what was set is removed): the row's width and the callout's place from its strip (`--kb-callout-left`, `--kb-callout-top`,
+ * `--kb-callout-width` on the callout) and the height the row gives up under itself (`--kb-callout-room` on the row, marked
+ * `data-kb-callout-row`), which marks.css uses below the breakpoint alone. The body moves down by the callout's height when it appears and
+ * back up when it goes, once per card kind per account; scroll anchoring covers only content above the window.
+ * A callout on any other strip (a thread's head, a board's banner) is not measured and keeps its hung place.
+ */
+function useRoomOnAPhone(box: RefObject<HTMLElement | null>): void {
+  useLayoutEffect(() => {
+    const el = box.current;
+    const strip = el?.parentElement;
+    const anchor = strip?.closest('.kb-marks-anchor');
+    const cell = anchor?.parentElement;
+    /* The line a post's strip hangs from (a `header`), or the postbit a character's strip is laid over the corner of. */
+    const row = cell?.classList.contains('kb-postbit-marks')
+      ? cell.closest<HTMLElement>('.kb-postbit')
+      : cell?.tagName === 'HEADER' ? cell : null;
+    if (!el || !strip || !row) return;
+    const set = (to: HTMLElement, name: string, px: number) => {
+      const v = `${Math.round(px * 100) / 100}px`;
+      if (to.style.getPropertyValue(name) !== v) to.style.setProperty(name, v);
+    };
+    const fit = () => {
+      const at = strip.getBoundingClientRect();
+      const r = row.getBoundingClientRect();
+      set(el, '--kb-callout-left', r.left - at.left);
+      set(el, '--kb-callout-top', r.bottom - at.top + 4);
+      set(el, '--kb-callout-width', r.width);
+      set(row, '--kb-callout-room', el.offsetHeight + 8);
+    };
+    let stop: (() => void) | null = null;
+    const start = () => {
+      el.dataset.kbCalloutFlow = '';
+      row.dataset.kbCalloutRow = '';
+      fit();
+      const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
+      watch?.observe(el);
+      watch?.observe(row);
+      /* A mark gained or lost moves the strip's left without resizing the callout or the row, so the strip itself is watched. */
+      watch?.observe(strip);
+      window.addEventListener('resize', fit);
+      stop = () => {
+        watch?.disconnect();
+        window.removeEventListener('resize', fit);
+        for (const name of ['--kb-callout-left', '--kb-callout-top', '--kb-callout-width']) el.style.removeProperty(name);
+        row.style.removeProperty('--kb-callout-room');
+        delete el.dataset.kbCalloutFlow;
+        delete row.dataset.kbCalloutRow;
+        stop = null;
+      };
+    };
+    /* No media queries (a test's bare DOM): nothing is measured, as with no ResizeObserver. */
+    if (typeof window.matchMedia !== 'function') return;
+    const phone = window.matchMedia(PHONE_QUERY);
+    const follow = () => {
+      if (phone.matches && !stop) start();
+      else if (!phone.matches) stop?.();
+    };
+    follow();
+    phone.addEventListener('change', follow);
+    return () => {
+      phone.removeEventListener('change', follow);
+      stop?.();
+    };
+  }, [box]);
+}
+
 /**
  * The bubble: out of the page's flow, a sibling of the mark and never inside its button. `id` is the hint's, which the mark
  * is described by. Its outer box carries the glow, since a clip-path would cut it off the chamfered panel inside.
@@ -176,6 +250,7 @@ export function Callout({ id, kind, name, hint }: { readonly id: string; readonl
   useEffect(() => { if (first) tips.note('first-card'); }, [first, tips]);
   const extra = first ? ui.onboarding.tips['first-card'].line : null;
   const box = useRef<HTMLDivElement>(null);
+  useRoomOnAPhone(box);
   const got = () => {
     /* The bubble goes with the press, so focus goes back to the mark it hung from (the sibling before it). */
     const mark = box.current?.previousElementSibling;

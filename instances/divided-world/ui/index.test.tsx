@@ -341,7 +341,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const said = ui.describe(instance.settings);
     expect(said).toBe(`A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience stirs as a reader gets close and the phrase's underline fades in. Pointing at the phrase, tapping it, or pressing Enter on it plays the reaction. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`);
     // True to the rules, each claim in the words tied to the rule that makes it so.
-    const post = (text: string) => ({ reach: 'post', act: 'p1', kind: 'post', length: text.length, text } as never);
+    const post = (text: string) => ({ reach: 'post', act: 'p1', kind: 'post', length: text.length, text, links: [] } as never);
     const cueOf = (phrase: string, sound: string) => ({ phrase, sound });
     expect(CUES.most).toBe(5);
     expect(said).toContain('up to five phrases');
@@ -1063,7 +1063,7 @@ function ringFaults(root: string): string[] {
    play (You Were Saying?'s length) once threw on every post it was offered on. Each of the instance's cards is asked as the screens ask it. */
 describe('where each card lands, as the screens ask it', () => {
   test('every card is asked on a post, face up and face down, without reading settings the screens do not hold', () => {
-    const target = { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi' } as const;
+    const target = { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] } as const;
     for (const rules of instance.cards) {
       expect(() => landingOn(rules, target, [], { cards: instance.cards }), rules.key).not.toThrow();
       expect(() => landingOn(rules, target, [], { cards: instance.cards, faceDown: true }), rules.key).not.toThrow();

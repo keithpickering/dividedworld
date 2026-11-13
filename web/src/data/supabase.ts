@@ -31,7 +31,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { SignedIn } from '../../../engine/ui/data/api.ts';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -46,7 +46,7 @@ import type {
   SurfaceAct, SurfaceNow, SurfaceWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PlayMoment, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -303,12 +303,19 @@ function toPlaceOn(raw: unknown): PlaceOn | null {
   }
 }
 
+/** A post place, or null for anything else, missing or malformed. */
+function toPostPlace(raw: unknown): Extract<PlaceOn, { kind: 'post' }> | null {
+  const place = toPlaceOn(raw);
+  return place !== null && place.kind === 'post' ? place : null;
+}
+
 /** A spun thread's origin_place (thread_open and thread_list, 0079): null for no place, a malformed one or an unknown kind; a play whose `on` is malformed keeps `on: null`. */
 function toPlace(raw: unknown): OriginPlace | null {
   if (!isObject(raw)) return null;
   if (raw['kind'] === 'play') {
     if (!(raw['card'] === null || isText(raw['card']))) return null;
-    return { kind: 'play', card: raw['card'], on: toPlaceOn(raw['on']) };
+    /* `from` and `at` (0351) are each a post place, else null: a row from before the migration has neither key. */
+    return { kind: 'play', card: raw['card'], on: toPlaceOn(raw['on']), from: toPostPlace(raw[PLAY_FROM]), at: toPostPlace(raw['at']) };
   }
   const place = toPlaceOn(raw);
   return place !== null && (place.kind === 'post' || place.kind === 'update') ? place : null;
@@ -754,6 +761,25 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /* ------------------------------------------------------------- the request layer ---- */
 
   const transport = (r: Res) => r.error !== null && (r.status === 0 || r.status >= 500);
+
+  /** A moment (play_moment, spin_moment): one read, a refusal in words read as null. */
+  async function momentOf(run: () => PromiseLike<unknown>): Promise<PlayMoment | null> {
+    const r = await read(async () => {
+      const x = (await run()) as Res;
+      return x.error?.hint === 'kayfabb.refusal' ? { data: null, error: null, status: 200 } : x;
+    });
+    const m = r.data as Row | null;
+    if (!m) return null;
+    const layers = (m['layers'] as Row[]).map((l) => ({ act: toAct(l['act']), state: l['savedAt'] == null ? null : { state: l['state'], savedAt: l['savedAt'] } }));
+    return {
+      version: toAct(m['version']),
+      layers,
+      above: (m['above'] as Row[]).map(toPlayAbove),
+      recorded: m['recorded'] === true,
+      /* A server from before 0352 answers a play's moment without `at`: a play's moment is at its play's time, the first layer's. */
+      at: isText(m['at']) ? m['at'] : layers[0]?.act.createdAt ?? '',
+    };
+  }
 
   /**
    * A read whose arguments the server may refuse (the search reads, through screen_refusal): a refusal carrying the hint is thrown in the
@@ -1507,18 +1533,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async playMoment(play) {
       /* One read of the moment (play_moment, 0072); an id that is no play on a post is refused in words, which is null here. */
       if (!idOk(play)) return null;
-      const r = await read(async () => {
-        const x = (await client.rpc('play_moment', { play })) as Res;
-        return x.error?.hint === 'kayfabb.refusal' ? { data: null, error: null, status: 200 } : x;
-      });
-      const m = r.data as Row | null;
-      if (!m) return null;
-      return {
-        version: toAct(m['version']),
-        layers: (m['layers'] as Row[]).map((l) => ({ act: toAct(l['act']), state: l['savedAt'] == null ? null : { state: l['state'], savedAt: l['savedAt'] } })),
-        above: (m['above'] as Row[]).map(toPlayAbove),
-        recorded: m['recorded'] === true,
-      };
+      return momentOf(() => client.rpc('play_moment', { play }));
+    },
+    async spinMoment(spin) {
+      /* One read of the moment (spin_moment, 0351); a spin that names no post is refused in words, which is null here. */
+      if (!idOk(spin)) return null;
+      return momentOf(() => client.rpc('spin_moment', { spin }));
     },
     async myReleases(plays) {
       const wanted = [...new Set(plays)].filter(idOk);
@@ -2195,7 +2215,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     startThread: (board, character, title, body, framing) => act({ action: 'startThread', board, character, title, body, ...framed(framing) }, (r) => ({ thread: toNewThread(r['thread'], toAct(r['act'])), act: toAct(r['act']) })),
     post: (thread, character, body, quote, framing) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}), ...framed(framing) }, toAct),
     edit: (post, character, body) => act({ action: 'edit', post, character, body }, toAct),
-    spin: (origin, character, title, body, framing) => act({ action: 'spin', origin, character, title, body, ...framed(framing) }, withThread),
+    spin: (origin, character, title, body, framing, at) => act({ action: 'spin', origin, character, title, body, ...framed(framing), ...(at ? { at } : {}) }, withThread),
     apologize: (move, character, title, body, framing) => act({ action: 'apologize', move, character, title, body, ...framed(framing) }, withThread),
     react: (target, character, kind) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: (r['tally'] ?? {}) as Tally })),
     turn: (character, to, loudness, showFrom, showTo) =>

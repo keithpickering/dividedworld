@@ -77,7 +77,7 @@ begin
   if exists (select 1 from play_moments where play in (p, q)) then raise exception 'a post takes no moment'; end if;
 end $$;
 
--- ---- A Set, a spring, a caught play and a Move landed from a back each take a moment; plays beyond a post take none ----
+-- ---- A Set, a spring, a caught play and a Move landed from a back each take a moment, and so does a play on a character; a thread's and a board's take none ----
 do $$
 declare
   ann uuid := tests.account('pm2-ann'); bob uuid := tests.account('pm2-bob');
@@ -87,7 +87,7 @@ declare
   p_reply uuid := tests.post(a, t, 'Reply to me.');
   set_cast uuid; set_reply uuid; caught jsonb; spring uuid; reply jsonb; struck uuid;
   on_char uuid; on_thread uuid; on_board uuid; brd uuid;
-  before_moments bigint; before_layers bigint;
+  before_moments bigint;
 begin
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'snare', 'hook');
@@ -123,15 +123,16 @@ begin
   if (select post_version from play_moments where play = (reply -> 'sprung' ->> 'id')::uuid) is distinct from p_reply then raise exception 'the Move''s spring takes a moment'; end if;
   if exists (select 1 from play_moment_layers l where l::text like '%snare%' or l::text like '%hook%') then raise exception 'the snapshot names a card behind a back'; end if;
 
-  -- A character, a thread and a board play take none.
+  -- A character play takes a moment of its cast-from post (0352), itself no layer of it; a thread and a board play take none.
   insert into boards (slug, name) values ('pm-board', 'Moments Board') returning id into brd;
   before_moments := (select count(*) from play_moments);
-  before_layers := (select count(*) from play_moment_layers);
   on_char := (play_card(bob, 'glint', b, a, '{}', 0, '', 'character', p_cast) ->> 'id')::uuid;
   on_thread := (play_card(bob, 'marquee', b, t, '{}', 0, '', 'thread') ->> 'id')::uuid;
   on_board := (play_card(bob, 'quake', b, brd, '{}', 0, '', 'board') ->> 'id')::uuid;
-  if (select count(*) from play_moments) is distinct from before_moments or (select count(*) from play_moment_layers) is distinct from before_layers then
-    raise exception 'a play beyond a post took a moment, or was copied as a layer';
+  if (select post_version from play_moments where play = on_char) is distinct from p_cast then raise exception 'a play on a character takes a moment of its cast-from post'; end if;
+  if exists (select 1 from play_moment_layers where layer in (on_char, on_thread, on_board)) then raise exception 'a play beyond a post is copied as a layer'; end if;
+  if (select count(*) from play_moments) is distinct from before_moments + 1 or exists (select 1 from play_moments where play in (on_thread, on_board)) then
+    raise exception 'a play on a thread or a board took a moment';
   end if;
   -- And a later cast on the post the character and thread plays sit on (the thread's first post, and the character play's postbit's)
   -- does not count them as layers: its layers are the post's own, the back and the spring and the caught play.
@@ -269,9 +270,9 @@ begin
      is distinct from jsonb_build_object('play', live_char, 'reach', 'character', 'target', b, 'ends_at', now() + interval '1 day', 'act', act_projection(live_char)) then
     raise exception 'each play above as effects_above gives it: %', got -> 'above';
   end if;
-  -- A play beyond a post is no play on a post: its read is refused, as a post's and an edit's are, in words.
+  -- A thread's or a board's play is no play on a post (a character's is, since 0352): its read is refused, as a post's and an edit's are, in words.
   foreach why in array array[pg_temp.refusal(format('select play_moment(%L)', p)), pg_temp.refusal(format('select play_moment(%L)', ed)),
-                             pg_temp.refusal(format('select play_moment(%L)', live_char)), pg_temp.refusal(format('select play_moment(%L)', gen_random_uuid()))] loop
+                             pg_temp.refusal(format('select play_moment(%L)', live_thread)), pg_temp.refusal(format('select play_moment(%L)', live_board)), pg_temp.refusal(format('select play_moment(%L)', gen_random_uuid()))] loop
     if why is distinct from 'that is no play on a post' then raise exception 'a read of something else is refused in words: %', why; end if;
   end loop;
 end $$;

@@ -305,11 +305,24 @@ export type PlaceOn =
   | { readonly kind: 'thread'; readonly id: Id; readonly title: string }
   | { readonly kind: 'board'; readonly slug: string; readonly name: string };
 
+/** A post's place: its thread, the thread's title and its place number. */
+export type PostPlace = Extract<PlaceOn, { kind: 'post' }>;
+
+/**
+ * The key of a play place's cast-from post, named once so that no read of it is a property spelled `.from`, which tools/check-web-reads.mjs
+ * takes for a database client's: read it as `place[PLAY_FROM]`.
+ */
+export const PLAY_FROM = 'from' as const;
+
 /** Where a spun thread's origin can be found: an Act with a place number, an update, or a play and where it landed. */
 export type OriginPlace =
   | Extract<PlaceOn, { kind: 'post' | 'update' }>
-  /* `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. */
-  | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null };
+  /*
+   * `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. `from` is the post a play on a
+   * character was cast from, and `at` the post the spin was pressed on (0351); each is null where the thread has none (a play on a post, a
+   * thread or a board; a spin that named no post; a row from before the migration).
+   */
+  | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null; readonly from: PostPlace | null; readonly at: PostPlace | null };
 
 export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'take_back' | 'spring' | 'update' | 'card_end' | 'announce'
   /* The Mod Bots' Acts (supabase/migrations/0104 to 0109): meta acts like a card play, none a place in the thread (`seq` null). */
@@ -2094,17 +2107,20 @@ export interface PlayAbove {
 }
 
 /**
- * A play's moment (play_moment, 0072_play_moments.sql): the post as it read when a play landed on it, with every play on it then, as
+ * A moment is a play's (play_moment, 0072_play_moments.sql) or a spin's (spin_moment, 0351_spin_at_post.sql): the post as it read when a play landed on it, with every play on it then, as
  * each stood. `version` is the post with that version's words as its current payload; `layers` is the play itself first, as it landed
  * (no state), then each layer that was on the post, with what it had saved then or null where it had saved none; `above` is each play
  * beyond a post live then on the post's author, its thread or its board. `recorded` is false for a play from before the snapshot,
- * which holds itself alone. The same answer for every reader: a card back is a back in it, for its setter as for anyone.
+ * which holds itself alone. The same answer for every reader: a card back is a back in it, for its setter as for anyone. A spin's moment is
+ * the post as it read when the spin was written: its `layers` hold the play the spin was pressed from first, and its `above` leaves that play out.
  */
 export interface PlayMoment {
   readonly version: Act;
   readonly layers: readonly { readonly act: Act; readonly state: EffectState | null }[];
   readonly above: readonly PlayAbove[];
   readonly recorded: boolean;
+  /** The moment's time: the play's, or the spin's. */
+  readonly at: string;
 }
 
 /* ------------------------------------------------------------- one call per screen ---- */
@@ -2594,6 +2610,8 @@ export interface KayfaApi {
   tails(posts: readonly Id[]): Promise<readonly Tail[]>;
   /** A play's moment (`PlayMoment`), read once when asked for; null for an id that is no play on a post. Any signed-in reader may read it. */
   playMoment(play: Id): Promise<PlayMoment | null>;
+  /** A spin's moment (`PlayMoment`, 0351), read once when asked for; null for an id that is no spin, or a spin that names no post. Any signed-in reader may read it. */
+  spinMoment(spin: Id): Promise<PlayMoment | null>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */
   characters(ids: readonly Id[]): Promise<readonly Character[]>;
   characterCounts(id: Id): Promise<CharacterCounts>;
@@ -2838,7 +2856,7 @@ export interface KayfaApi {
   startThread(board: string, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Promise<Answer<Act>>;
   edit(post: Id, character: Id, body: string): Promise<Answer<Act>>;
-  spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[], at?: Id): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
    * A barred character's apology (`apologize`, 0130): the spin of the move that bars it, onto the board it bars, with the bar the one thing skipped, and a waiting
    * apology the move's staff member rules on. Refused while the character is banned, on a move that is not this character's or has ended, while one waits, and

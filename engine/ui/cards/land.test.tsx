@@ -8,7 +8,7 @@ import { economyOf, landsOn, quadrantFree, type CardRules } from '../../rules/ca
 import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import { livePlays, stackPlays } from './plays.ts';
-import { effectsOf, landing, landingOn, lengthOf, targetOf } from './land.ts';
+import { effectsOf, landing, landingOn, lengthOf, targetOf, waysOn } from './land.ts';
 import type { CardPlay } from './types.ts';
 
 const rules = (key: string, stack?: number): Pick<CardRules, 'key' | 'stack' | 'canApply'> => {
@@ -56,6 +56,13 @@ describe('a post whose fall a filing spent', () => {
   test('an admin-ended fall or an instant play holds no place', () => {
     expect(landing(cards[0]!, post('hi'), stackPlays([{ ...spent, reversed: true }], now), { cards }).ok).toBe(true);
     expect(landing(cards[0]!, post('hi'), stackPlays([{ ...play('fall', 1), instant: true }], now), { cards }).ok).toBe(true);
+  });
+
+  /* waysOn is the one answer the post's mark and the play form read: given the post's plays raw, or already as the stack holds them, it says no second fall. */
+  test('waysOn offers no second fall, whether it is handed the raw plays or the stack', () => {
+    expect(waysOn(cards[0]!, post('hi'), [spent], { cards, own: false, now })).toEqual({ cast: false, set: false });
+    expect(waysOn(cards[0]!, post('hi'), stackPlays([spent], now), { cards, own: false, now })).toEqual({ cast: false, set: false });
+    expect(waysOn(cards[0]!, post('hi'), [{ ...spent, reversed: true }], { cards, own: false, now }).cast).toBe(true);
   });
 });
 
@@ -106,13 +113,13 @@ describe('wards, backs and catches, as a screen offers a card', () => {
   test('a card that writes lands on a post, as a screen offers it: the screens hold no settings, so the old voice does not withhold it', () => {
     const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
     expect(landing(writer, post('hi'), [], { cards: [...cards, writer] }).ok).toBe(true);
-    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi' }, [], { cards: [...cards, writer] }).ok).toBe(true);
+    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] }, [], { cards: [...cards, writer] }).ok).toBe(true);
   });
 
   test('a card whose length is read from the economy lands on a post too: the screens hold no settings, so where it lands never asks what it buys', () => {
     const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { tokens: (_config, settings) => economyOf(settings, 'writer.tokens'), frame: () => ({ prompt: '', stop: [] }) } };
     expect(landing(writer, post('hi'), [], { cards: [...cards, writer] }).ok).toBe(true);
-    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi' }, [], { cards: [...cards, writer] }).ok).toBe(true);
+    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] }, [], { cards: [...cards, writer] }).ok).toBe(true);
   });
 
   test('a caught play holds no place in its card\'s stack', () => {
@@ -215,6 +222,48 @@ describe('a play an admin ended, as the rules see the post', () => {
     const three = [play('whoops', 1), play('whoops', 2), ended(3)];
     expect(landing(rules('whoops', 3), post('hi'), three).ok).toBe(true);
     expect(landing(rules('whoops', 3), post('hi'), [...three.slice(0, 2), play('whoops', 3)]).ok).toBe(false);
+  });
+});
+
+/* Which ways a card lands on a post, the one answer the mark and the play form's "How to play it" pair share. */
+describe('the ways a card lands on a post', () => {
+  const base: CardRules = { key: 'base', name: 'Base', alignment: 'salty', rarity: 'common', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key: 'base' }, t, e, now) };
+  const blot: CardRules = { ...base, key: 'blot', name: 'Blot' };
+  const spark: CardRules = { ...base, key: 'spark', name: 'Spark', reaches: ['character'], canApply: (t, e, _config, now) => landsOn({ key: 'spark', reaches: ['character'] }, t, e, now) };
+  const scribe: CardRules = { ...base, key: 'scribe', name: 'Scribe', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
+  const plea: CardRules = { ...base, key: 'plea', name: 'Plea', needsMessage: 'say why' };
+  const cards = [blot, spark, scribe, plea];
+
+  test('a card that reaches a post lands both ways on one\'s own post, and only cast on another\'s', () => {
+    expect(waysOn(blot, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: true, set: true });
+    expect(waysOn(blot, post('hi'), [], { cards, own: false, now: 0 })).toEqual({ cast: true, set: false });
+  });
+
+  test('a card that reaches a character lands only set, on one\'s own post, and nowhere on another\'s', () => {
+    expect(waysOn(spark, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: false, set: true });
+    expect(waysOn(spark, post('hi'), [], { cards, own: false, now: 0 })).toEqual({ cast: false, set: false });
+  });
+
+  test('a card that is only cast face up lands only cast, even on one\'s own post', () => {
+    expect(waysOn(scribe, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: true, set: false });
+  });
+
+  test('a card that needs a message lands only cast, though landing\'s lenient reading sets the message aside', () => {
+    expect(waysOn(plea, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: true, set: false });
+  });
+
+  test('a card that is drawn on lands only cast too, though landing\'s lenient reading would set it', () => {
+    const wall: CardRules = { ...base, key: 'wall', name: 'Wall', surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: () => ({ ok: false, why: 'unused' }), validateWash: () => ({ ok: false, why: 'unused' }) } };
+    expect(waysOn(wall, post('hi'), [], { cards: [wall], own: true, now: 0 })).toEqual({ cast: true, set: false });
+  });
+
+  test('a play beyond a post whose end has passed holds no place: waysOn keeps only the live plays', () => {
+    const once: CardRules = { ...base, key: 'once', name: 'Once', stack: 1, canApply: (t, e, _config, now) => landsOn({ key: 'once', stack: 1 }, t, e, now) };
+    const beyond = (ends: string): CardPlay => ({ ...play('once', 1), reach: 'character', ends });
+    const ways = (ends: string, now: Date) => waysOn(once, post('hi'), [beyond(ends)], { cards: [once], own: true, now: now.getTime() });
+    /* It ends at 2999-01-01: before that it holds the card's one place, at it and after that it does not. */
+    expect(ways('2999-01-01T00:00:00.000Z', new Date('2998-12-31T00:00:00.000Z'))).toEqual({ cast: false, set: false });
+    expect(ways('2999-01-01T00:00:00.000Z', new Date('2999-01-01T00:00:00.000Z'))).toEqual({ cast: true, set: true });
   });
 });
 
