@@ -241,8 +241,8 @@ language sql stable set search_path = public, pg_temp as $$
   ) p where why is not null
 $$;
 
--- seed_instance (0348_post_under, which is 0332_arcs with the card kinds' `replies` and `keeps` written), writing each card's `veil` and whether it adds a reaction (both the code's, so a re-seed that drops one clears it), and making the anonymous poster once, as it makes the developer.
--- Everything else as 0348 wrote it.
+-- seed_instance (0355_settings_tuned, which is 0348_post_under's with every settings write through seed_setting and the seeding flag set for its transaction), writing each card's `veil` and whether it adds a reaction (both the code's, so a re-seed that drops one clears it), and making the anonymous poster once, as it makes the developer.
+-- Everything else as 0355 wrote it.
 
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -252,16 +252,18 @@ declare
   unknown text;
   sys uuid;
   opened uuid;
+  was text := current_setting('kayfabb.seeding', true);
 begin
   -- Two seeds at once would each find no office row and both write one into the append-only office log. An advisory
   -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
   perform pg_advisory_xact_lock(hashtext('kayfabb.seed_instance'));
+  -- The settings trigger (settings_tuned) marks a row tuned for any write but a seed's: this transaction is the seed's, so its writes leave no mark.
+  perform set_config('kayfabb.seeding', 'on', true);
   select count(*), min(e ->> 'slug') into flags, flagged
   from jsonb_array_elements(coalesce(payload -> 'boards', '[]')) e where coalesce((e ->> 'system')::boolean, false);
   if flags > 1 then raise exception 'a seed flags one board as The System''s, not %', flags using errcode = '22023'; end if;
   -- The economy is merged, number by number: a card kind is never removed, so the numbers its rules read stay in the row with it.
-  insert into settings (key, value) select key, value from jsonb_each(payload -> 'settings')
-  on conflict (key) do update set value = case when settings.key = 'economy' then settings.value || excluded.value else excluded.value end;
+  perform seed_setting(e.key, e.value) from jsonb_each(payload -> 'settings') e;
   insert into class_kinds (key, name) select e ->> 'key', e ->> 'name' from jsonb_array_elements(payload -> 'classes') e
   on conflict (key) do update set name = excluded.name;
   -- Reaction kinds are the one vocabulary a seed removes. Classes and cards never are: a card must outlive its slot and its pulls
@@ -484,11 +486,10 @@ begin
   from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e;
   -- The roster's order (0051): the seed's personas, in the order it lists them, so the rotation has one to follow. A seed with no
   -- persona leaves the setting as it was.
-  insert into settings (key, value)
-  select 'bossRoster', jsonb_agg(e.value ->> 'key' order by e.ord)
-  from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) with ordinality e(value, ord)
-  having count(*) > 0
-  on conflict (key) do update set value = excluded.value;
+  perform seed_setting('bossRoster', r.roster)
+  from (select jsonb_agg(e.value ->> 'key' order by e.ord) as roster
+        from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) with ordinality e(value, ord)
+        having count(*) > 0) r;
   if not exists (select 1 from seasons) then insert into seasons (number, starts_at) values (1, now()); end if;
   -- The open season's Boss (0043's seasons.boss) is the seed's firstBoss when it has none: a season opened before a Boss
   -- existed, or by this seed. A season that already has a Boss keeps it.
@@ -502,11 +503,8 @@ begin
   -- so no seed writes it over.
   if nullif(payload -> 'system' ->> 'announcementsTitle', '') is not null
      and not exists (select 1 from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements') then
-    with made as (
-      insert into threads (board, title) values (system_board(), payload -> 'system' ->> 'announcementsTitle') returning id
-    )
-    insert into settings (key, value) select 'systemAnnouncements', to_jsonb(made.id::text) from made
-    on conflict (key) do update set value = excluded.value;
+    insert into threads (board, title) values (system_board(), payload -> 'system' ->> 'announcementsTitle') returning id into opened;
+    perform seed_setting('systemAnnouncements', to_jsonb(opened::text));
   end if;
   -- The developer persona and its thread (0062): a seed with a `developer` entry ({ name, title, avatar }) makes the one developer, once,
   -- as it makes a persona: debuted at seed time, with the tagline as its profile title, cut to what a profile holds. What an admin wrote is
@@ -531,13 +529,12 @@ begin
     from characters c
     where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'developer' -> 'pronouns');
     if nullif(payload -> 'developer' ->> 'avatar', '') is not null then
-      insert into settings (key, value) values ('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'))
-      on conflict (key) do update set value = excluded.value;
+      perform seed_setting('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'));
     end if;
     if not exists (select 1 from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'updatesThread') then
       sys := system_board();
       insert into threads (board, title) values (sys, 'Updates') returning id into opened;
-      insert into settings (key, value) values ('updatesThread', to_jsonb(opened::text)) on conflict (key) do update set value = excluded.value;
+      perform seed_setting('updatesThread', to_jsonb(opened::text));
       update board_thread_counts set threads = threads - 1
        where board = sys and shard = coalesce((select c.shard from board_thread_counts c where c.board = sys order by c.shard for update skip locked limit 1), 0);
     end if;
@@ -559,10 +556,12 @@ begin
     from characters c
     where payload -> 'anonymous' ? 'pronouns' and c.staff = 'anonymous' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'anonymous' -> 'pronouns');
     if nullif(payload -> 'anonymous' ->> 'avatar', '') is not null then
-      insert into settings (key, value) values ('anonymousAvatar', to_jsonb(payload -> 'anonymous' ->> 'avatar'))
-      on conflict (key) do update set value = excluded.value;
+      perform seed_setting('anonymousAvatar', to_jsonb(payload -> 'anonymous' ->> 'avatar'));
     end if;
   end if;
+  -- Seeding ends here: a write later in a transaction that called this (a test file's, one session's) is not the seed's. The flag goes back to the value this found. A custom
+  -- setting cannot be truly unset inside a transaction, so one that was unset (null) or empty goes back to 'off', which the trigger reads the same.
+  perform set_config('kayfabb.seeding', coalesce(nullif(was, ''), 'off'), true);
   return jsonb_build_object('settings', (select count(*) from settings), 'classes', (select count(*) from class_kinds),
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
 end $$;

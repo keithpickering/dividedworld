@@ -6,6 +6,9 @@
 -- impersonates a caller with tests.become(); a helper called while impersonating fails on the
 -- privileges the caller lacks, which is the point.
 
+-- The instance below is the code's, as a seed writes it, so its settings rows are not marked tuned (0355's trigger marks every write but a seed's, which
+-- sets this for its transaction). This is the fixtures' own session, which ends with the file. A test that needs a tuned row writes one.
+select set_config('kayfabb.seeding', 'on', false);
 insert into settings (key, value) values
   ('charactersPerPlayer', '6'),
   ('reactionCap', '3'),

@@ -31,6 +31,11 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 /** The shape of a migration's file name; the first group is its version. */
 export const MIGRATION_NAME = /^(\d{4})_[a-z0-9_]+\.sql$/;
 
+/** The version a migration's file name carries (its four digits), or null when the name is not a migration's; tools/check-deployed-migrations.mjs reads versions through this, so the shape is parsed once. */
+export function migrationVersion(name) {
+  return MIGRATION_NAME.exec(name)?.[1] ?? null;
+}
+
 /** The faults in a folder's file names, each naming the file; only `.sql` files are read. */
 export function migrationFaults(names) {
   const faults = [];
