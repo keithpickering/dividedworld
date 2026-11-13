@@ -21,7 +21,8 @@
  *  - The reactions and the Whoops! mark and its ink are game pieces drawn for place; 01-main.ts and the reaction and Whoops! specs hold them.
  *  - The HUD is drawn for place only and is 01-main's.
  *  - The group bar (docs/plans/2026-11-06-member-groups-design.md, the look the owner approved in docs/research/2026-11-06-member-groups/01-bars.html,
- *    option A) stands under every character's name, which the board, drawn before it, does not: the rank under it stands GROUP_BAR lower.
+ *    option A) stands under every character's name, which the board, drawn before it, does not. Since the owner's word of 2026-11-13 (PR #660) the
+ *    group bar sits under the avatar, not above the rank, so the rank stands where the board puts it.
  */
 import type { BoardManifest, Landmark } from '../../board-match.ts';
 
@@ -32,8 +33,6 @@ const TITLE_SIZE = 22.5;
 const LINE_SIZE = 12.5;
 /** A small Chrome button's type: --kb-size-fine (12.5px), the board-look plan's Task 4, where the board draws it at 11.25px. */
 const BUTTON_SIZE = 12.5;
-/** The group bar's room in the postbit at 1440, in px: its 18px bar and the gaps over and under it. */
-const GROUP_BAR = 26.5;
 
 /**
  * A post's parts, each measured from the post's author link (the board's posts are table rows, not articles, so the build's article is
@@ -49,7 +48,7 @@ function post(n: number, index: number, author: string, rank: string): Landmark[
   });
   return [
     { id: `${id}-author`, role: 'link', name: author, box: 'none', buildSize: POST_SIZE },
-    { id: `${id}-rank`, role: 'text', name: rank, origin: `${id}-author`, box: 'position', buildSize: POST_SIZE, buildShift: { y: GROUP_BAR } },
+    { id: `${id}-rank`, role: 'text', name: rank, origin: `${id}-author`, box: 'position', buildSize: SMALL_SIZE, buildShift: { y: 0 } },
     { id: `${id}-when`, role: 'text', name: at, origin: `${id}-author`, box: 'position', buildSize: LINE_SIZE, buildShift: { x: -8.7 } },
     { id: `${id}-permalink`, role: 'link', name: `#${n}`, buildName: `Permalink to post #${n}`, origin: `${id}-author`, box: 'height', buildSize: LINE_SIZE },
     button('Quote', 'quote'),
