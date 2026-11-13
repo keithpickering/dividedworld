@@ -461,21 +461,65 @@ test('Stick Around\'s Break free, a chamfered button, shows its focus ring insid
   expect(await ringShows(page, page.getByRole('button', { name: /^Break free/u }))).toBe(true);
 });
 
-/* The hand on a phone holds every card in reach at the narrowest width the brief names (320), with four faces in it. */
+/*
+ * The phone's hand is a swiped row of one card per kind: every card can be brought into the window at the narrowest width the brief names (320), by the ends'
+ * keys, and the middle card is never cut by the window's edge. The moment's hand holds two kinds, which never need the row to scroll, so the check first
+ * widens the hand the way a player does: through the page's own Vending Machine, buying the four kinds the moment's wallet (4.62 orbs) pays for, which makes six.
+ * There is no fixture option for a larger hand; this is the real purchase path on the in-memory backend, and it needs nothing outside the page.
+ */
 for (const width of [320, 390]) {
-  test(`the hand on a phone ${width} wide keeps every card in reach, four faces included`, async ({ page }) => {
+  test(`the hand on a phone ${width} wide, six kinds: every card can be brought into the window, and the middle card is never cut by its edge`, async ({ page }) => {
     await page.setViewportSize({ width, height: 700 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/?fixture=boards&moment=02-phone');
-    const hand = page.getByRole('region', { name: 'Your hand' });
-    if (!(await hand.isVisible())) await page.getByRole('button', { name: /^Hand, \d+ postcards?$/u }).click();
+    const hand = page.getByRole('dialog', { name: 'Your hand' });
+    const button = page.getByRole('button', { name: /^Hand, \d+ postcards?/u });
+    if (!(await hand.isVisible())) await button.click();
+    await page.getByRole('link', { name: 'Vending Machine' }).click();
+    await expect(page).toHaveURL(/vending/u);
+    for (const kind of ['Feelin. Fab', 'Autocorrect', 'You Were Saying.', 'Below the Fold']) {
+      /* The kind's name as a pattern: the apostrophe and question mark of two of them are left to a dot. */
+      await page.getByRole('button', { name: new RegExp(`^Buy ${kind}, `, 'u') }).click();
+      await page.locator('.kb-vending-buy').click();
+      /* The machine says the card is in the hand once the purchase has landed. */
+      await expect(page.getByText(new RegExp(`^${kind} is in your hand`, 'u'))).toBeAttached();
+    }
+    await page.goBack();
+    if (!(await hand.isVisible())) await button.click();
     await expect(hand).toBeVisible();
-    /* A fourth face, as a hand of two kinds, two of each, draws. */
-    await page.locator('.kb-hand-cards > li').first().evaluate((li) => li.parentElement!.append(li.cloneNode(true)));
-    const cut = await page.locator('.kb-hand-cards > li').evaluateAll((items) => items.map((li) => {
-      const r = li.getBoundingClientRect();
-      return r.left < 0 || r.right > window.innerWidth ? `${r.left.toFixed(0)}..${r.right.toFixed(0)}` : null;
-    }).filter(Boolean));
-    expect(cut, 'cards cut off at the screen\'s edge').toEqual([]);
+    const row = page.locator('ul.kb-hand-cards');
+    const cards = page.locator('.kb-hand-cards > li');
+    await expect(cards).toHaveCount(6);
+    const boxes = () => row.evaluate((ul) => {
+      const w = ul.getBoundingClientRect();
+      return {
+        scrollWidth: ul.scrollWidth, clientWidth: ul.clientWidth, scrollLeft: ul.scrollLeft, window: { left: w.left, right: w.right },
+        cards: [...ul.children].map((li) => { const r = li.getBoundingClientRect(); return { left: r.left, right: r.right, middle: li.hasAttribute('data-kb-middle') }; }),
+      };
+    });
+    const insideWindow = (c: { left: number; right: number }, w: { left: number; right: number }) => c.left >= w.left - 0.5 && c.right <= w.right + 0.5;
+    /* The row is wider than its window, so it really scrolls: with fewer cards every check below would pass if scrolling were broken. */
+    const start = await boxes();
+    expect(start.scrollWidth, 'the row is wider than its window').toBeGreaterThan(start.clientWidth);
+    await expect(cards.first().locator('button')).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(cards.last().locator('button')).toBeFocused();
+    await expect.poll(async () => (await boxes()).cards[5]!.middle).toBe(true);
+    await expect.poll(async () => (await boxes()).scrollLeft).toBeGreaterThan(0);
+    let at = await boxes();
+    expect(insideWindow(at.cards[5]!, at.window), `the last card (${JSON.stringify(at.cards[5])}) is inside the window ${JSON.stringify(at.window)}`).toBe(true);
+    await page.keyboard.press('Home');
+    await expect(cards.first().locator('button')).toBeFocused();
+    await expect.poll(async () => (await boxes()).cards[0]!.middle).toBe(true);
+    await expect.poll(async () => (await boxes()).scrollLeft).toBe(0);
+    at = await boxes();
+    expect(insideWindow(at.cards[0]!, at.window), `the first card (${JSON.stringify(at.cards[0])}) is inside the window`).toBe(true);
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await expect(cards.nth(2).locator('button')).toBeFocused();
+    await expect.poll(async () => (await boxes()).cards[2]!.middle).toBe(true);
+    at = await boxes();
+    expect(insideWindow(at.cards[2]!, at.window), `the middle card (${JSON.stringify(at.cards[2])}) is inside the window`).toBe(true);
   });
 }
 

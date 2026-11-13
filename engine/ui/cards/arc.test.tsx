@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { ARC_FLOOR, ARC_SPAN, CARD_WIDTH, GROUP_GAP, TURN_FROM, TURN_TO, arcSlots, handOrder } from './arc.ts';
+import { ARC_FLOOR, ARC_SPAN, CARD_WIDTH, GROUP_GAP, TURN_FROM, TURN_TO, arcSlots, handOrder, swipeMiddle, swipePose } from './arc.ts';
 import type { CardFace } from './faces.ts';
 
 const face = (key: string, play: CardFace['play'], unknown = false): CardFace => ({
@@ -109,5 +109,49 @@ describe('the slots of an arc', () => {
     expect(s[0]!.row).toBe(0);
     expect(s.at(-1)!.row).toBe(3);
     expect(s.at(-1)!.y).toBeLessThan(s[0]!.y);
+  });
+});
+
+describe('the swipe pose', () => {
+  /** Each field to nine digits, so a -0 and a 0 for `deg` are the same pose. */
+  const expectPose = (d: number, want: { y: number; deg: number; scale: number }) => {
+    const got = swipePose(d);
+    expect(got.y).toBeCloseTo(want.y, 9);
+    expect(got.deg).toBeCloseTo(want.deg, 9);
+    expect(got.scale).toBeCloseTo(want.scale, 9);
+  };
+
+  test('the middle card stands 14px up, upright and 1.18 times its size', () => {
+    expectPose(0, { y: -14, deg: 0, scale: 1.18 });
+  });
+
+  test('a card one step from the middle turns 6 degrees and drops 5px, at its own size', () => {
+    expectPose(1, { y: 5, deg: 6, scale: 1 });
+  });
+
+  test('a card two steps to the left turns -12 degrees and drops 20px', () => {
+    expectPose(-2, { y: 20, deg: -12, scale: 1 });
+  });
+
+  test('a card five steps out turns at most 18 degrees and drops at most 40px', () => {
+    expectPose(5, { y: 40, deg: 18, scale: 1 });
+  });
+
+  test('half a step out is lifted half way, and turns and drops in between', () => {
+    expectPose(0.5, { y: 0.625 - 7, deg: 3, scale: 1.09 });
+  });
+});
+
+describe('the middle of a swiped row', () => {
+  test('the card whose center is nearest the middle is the one there', () => {
+    expect(swipeMiddle([10, 76, 142], 80)).toBe(1);
+  });
+
+  test('a tie goes to the lower index', () => {
+    expect(swipeMiddle([10, 76], 43)).toBe(0);
+  });
+
+  test('a row with no cards has no middle', () => {
+    expect(swipeMiddle([], 0)).toBe(-1);
   });
 });
