@@ -10,10 +10,9 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
-import type { Act, ThreadListener } from '../data/api.ts';
-import type { Fake } from '../data/fake.ts';
+import type { Act } from '../data/api.ts';
 import { LoadedThread } from '../loaded.tsx';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, renderIn, tapThread } from '../test-world.tsx';
 import { MAX_DEPTH } from '../../bbcode/parse.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { RouterProvider } from '../router.tsx';
@@ -43,14 +42,6 @@ type World = ReturnType<typeof world>;
 const open = (w: World) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}` });
 const article = (seq: number) => screen.findByRole('article', { name: new RegExp(`^Post ${seq} `, 'u') });
 
-/** Capture the thread's live listener so a test can deliver an Act as the server would. */
-function tap(fake: Fake) {
-  let listener: ThreadListener | undefined;
-  const real = fake.subscribeThread.bind(fake);
-  fake.subscribeThread = (t, l) => { listener = l; return real(t, l); };
-  return () => listener!;
-}
-
 describe('a hidden post', () => {
   test('shows the note in place of the words, and keeps the postbit, the author, the date and the footer', async () => {
     const w = world();
@@ -77,10 +68,9 @@ describe('a hidden post', () => {
 
   test('POISON: a hidden Act that still carries its words never draws them for a non-author', async () => {
     const w = world();
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await article(2);
-    await waitFor(() => expect(tapped()).toBeDefined());
     const original = (await w.fake.acts(w.thread, 2, 2))[0]!;
     const leaked: Act = { ...original, hidden: true, payload: { body: WORDS }, currentPayload: { body: WORDS } };
     act(() => { tapped().onAct?.(leaked); });
@@ -231,10 +221,9 @@ describe('a post that quotes a hidden post, before the conceal job has written i
 
   test('POISON: a withheld Act that still carries a body never draws it', async () => {
     const w = world();
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await article(2);
-    await waitFor(() => expect(tapped()).toBeDefined());
     const original = (await w.fake.acts(w.thread, 2, 2))[0]!;
     const leaked: Act = { ...original, concealing: true, payload: { body: WORDS }, currentPayload: { body: WORDS } };
     act(() => { tapped().onAct?.(leaked); });
