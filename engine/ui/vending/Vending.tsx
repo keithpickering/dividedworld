@@ -48,7 +48,7 @@ import { motionReduced } from '../appearance.ts';
 import { Postcard, PostcardBack, cardLabel } from '../cards/Postcard.tsx';
 import { facesOf, orbs, plainRefusal, withCardEconomy, type CardFace } from '../cards/faces.ts';
 import { useMachine } from '../cards/machine.ts';
-import type { CardArt } from '../cards/types.ts';
+import type { PackArtLook } from '../cards/types.ts';
 import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
 import type { InstanceUi } from '../types.ts';
@@ -86,7 +86,7 @@ const codeOf = (i: number) => `${String.fromCharCode(65 + Math.floor(i / 2))}${(
 const orbWord = (hundredths: number) => (hundredths === 100 ? 'orb' : 'orbs');
 
 /** What the instance gives a pack to draw itself with (`InstanceUi.packs`). */
-interface PackLook { readonly name: string; readonly art?: CardArt }
+interface PackLook { readonly name: string; readonly art?: PackArtLook }
 
 /** One slot of the machine as the screen draws it: a card or a pack, on sale or sold out, with the price it shows now. */
 interface Item {
@@ -195,7 +195,7 @@ function Flying({ face, feel, hand, onLanded }: { readonly face: CardFace; reado
 interface Opening {
   readonly slot: Id;
   readonly name: string;
-  readonly art: CardArt | undefined;
+  readonly art: PackArtLook | undefined;
   readonly cards: readonly string[];
   readonly note: string | null;
 }

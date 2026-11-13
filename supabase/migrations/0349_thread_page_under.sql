@@ -1,5 +1,5 @@
 -- The thread's page draws a reply under its post, and a kept play's end (docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 3; the design is
--- docs/plans/2026-11-11-card-notes-design.md, section 2). It follows 0410, which made `post_under` (a reply a play of a card that replies carried, drawn under its parent while the
+-- docs/plans/2026-11-11-card-notes-design.md, section 2). It follows 0348, which made `post_under` (a reply a play of a card that replies carried, drawn under its parent while the
 -- play is in force) and `card_kinds.keeps` (a thread play of the kind still counts on the posts it was up over after its time). Two functions are written again whole, each as its
 -- latest text left it (thread_page as 0340 wrote it, reverse_card as 0149 did), with the changes below and nothing else.
 --

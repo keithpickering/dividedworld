@@ -328,7 +328,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ui.art.tagline).toBe('Give a post a studio audience.');
     expect(ui.summary).toBe('Cues a studio audience to laugh, cheer or boo at the words you choose, wherever they appear in a post.');
     expect(ui.status).toBe('A studio audience on cue');
-    expect(ui.hint).toBe('A Laugh Track: the audience reacts when you reach certain words. Turn on Game sounds in Settings to hear it.');
+    expect(ui.hint).toBe('A Laugh Track: the audience stirs as you get close to certain words. Point at one, or tap it, to hear them react. Turn on Game sounds in Settings to hear it.');
     expect(ui.Effect).toBeDefined();
     expect(ui.ConfigForm).toBeDefined();
     expect(ui.logPlay!({}, {} as never)).toBe('It gave the post a studio audience.');
@@ -339,7 +339,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(surcharge({ ...instance.settings, economy: { ...instance.settings.economy, 'laughTrack.perPlace': 10 } })).toBe('Many places, +0.10 per place past 5');
     expect(surcharge({ ...instance.settings, economy: { ...instance.settings.economy, 'laughTrack.freePlaces': undefined as never } })).toBe('Many places, +0.05 per place past 0');
     const said = ui.describe(instance.settings);
-    expect(said).toBe(`A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience reacts as a reader reaches it, and builds up as they get close. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`);
+    expect(said).toBe(`A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience stirs as a reader gets close and the phrase's underline fades in. Pointing at the phrase, tapping it, or pressing Enter on it plays the reaction. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`);
     // True to the rules, each claim in the words tied to the rule that makes it so.
     const post = (text: string) => ({ reach: 'post', act: 'p1', kind: 'post', length: text.length, text } as never);
     const cueOf = (phrase: string, sound: string) => ({ phrase, sound });

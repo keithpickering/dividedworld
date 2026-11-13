@@ -4311,7 +4311,7 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
   });
 });
 
-describe('a card that replies, and a play that keeps (0410_post_under.sql and the thread page after it)', () => {
+describe('a card that replies, and a play that keeps (0348_post_under.sql and the thread page after it)', () => {
   const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
   const cutter: CardRules = { ...base, key: 'line-cutter', name: 'Line Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, canApply: (t, e, _c, now) => landsOn(cutter, t, e, now) };
   const glam: CardRules = { ...base, key: 'feelin-glam', name: "Feelin' Glam", alignment: 'sweet', rarity: 'rare', reaches: ['thread'], lasts: { unit: 'day', count: 7 }, keeps: true, canApply: (t, e, _c, now) => landsOn(glam, t, e, now) };

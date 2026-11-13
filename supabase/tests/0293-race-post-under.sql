@@ -1,4 +1,4 @@
--- The concurrent cases of a card that replies (supabase/migrations/0410_post_under.sql, its header's lock order): two plays on one parent at once write one reply between them; a play
+-- The concurrent cases of a card that replies (supabase/migrations/0348_post_under.sql, its header's lock order): two plays on one parent at once write one reply between them; a play
 -- racing a quote of its parent, an edit of it and the spring of a Move set on it each finish, and a play whose card insert would hold the caster's count row before the thread's row
 -- (the order a post() of the same character takes the other way round) is the one deadlock this migration could have made, held here deterministically. The rows are committed
 -- (tests.commit), since a racer is a session of its own; every name is this file's (par...), so no other file reads them.

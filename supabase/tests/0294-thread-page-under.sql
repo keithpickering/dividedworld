@@ -1,5 +1,5 @@
--- The thread's page draws a reply under its post, and a kept play's end (supabase/migrations/0411_thread_page_under.sql;
--- docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 3). A reply a play of a card that replies carried (post_under, 0410) is a post with a number of its own, drawn under
+-- The thread's page draws a reply under its post, and a kept play's end (supabase/migrations/0349_thread_page_under.sql;
+-- docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 3). A reply a play of a card that replies carried (post_under, 0348) is a post with a number of its own, drawn under
 -- its parent while the play is in force: the page's range of numbers leaves it out, and the document says where it is (`under`) and which numbers it left (`cut`). A play of a
 -- kind that `keeps` is read after its week (`kept`) by the posts whose date falls inside it. The document is a public projection, the same for every caller.
 -- The cards are this file's own (tu...), never an instance's.

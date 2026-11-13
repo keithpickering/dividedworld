@@ -198,7 +198,7 @@ describe('a play an admin ended, as the rules see the post', () => {
   });
 });
 
-/* A reply drawn under a post (a card that replies, 0410) takes no card that replies under it, so the screen offers none there. */
+/* A reply drawn under a post (a card that replies, 0348) takes no card that replies under it, so the screen offers none there. */
 describe('a card that replies, on a reply drawn under a post', () => {
   const cutter: CardRules = { key: 'cutter', name: 'Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _c, now) => landsOn(cutter, t, e, now) };
   const cards = [cutter, { ...cutter, key: 'plain', name: 'Plain', replies: undefined, alignment: 'salty' } as CardRules];

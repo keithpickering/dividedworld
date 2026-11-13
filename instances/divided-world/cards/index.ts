@@ -10,7 +10,7 @@
  * Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md): Mooch, Toll and 4D Chess pay a share of a vote, and Off Day scores a character as a class.
  * Part 4 (docs/plans/2026-11-11-card-notes-part-4-plan.md): Sugar Coat turns away Salty and Pepperoni cards, Hype-Up is Publicity Tour's push on another's mask, and Last Word stops quotes of a post.
  * Jimmy Wails, the first card with a drive: an appeal cast on a post that anyone may give to (docs/plans/2026-11-03-jimmy-wails-design.md).
- * Laugh Track, an audience that laughs, cheers or boos at the cued words of a post as a reader reaches them (docs/plans/2026-11-11-laugh-track-design.md).
+ * Laugh Track, an audience that laughs, cheers or boos at the cued words of a post as a reader points at or taps them (docs/plans/2026-11-11-laugh-track-design.md).
  * Graffiti, the first surface: a wall on a post any character may draw on (docs/plans/2026-11-11-graffiti-design.md).
  * Part 2 (docs/plans/2026-11-11-card-notes-part-2-plan.md): Line Cutter posts a reply right under a post, and Feelin' Glam gives a thread's posts one more Feelin' Fab level for a week.
  */

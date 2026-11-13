@@ -2191,7 +2191,7 @@ export interface ThreadPage {
   /** Each surface play among them: the cells it covers and its live Acts' ids, never a stroke (`surfaces` in thread_page, 0317). */
   readonly surfaces: Readonly<Record<Id, SurfaceNow>>;
   readonly above: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
-  /** Each reply a play in force draws under one of the page's posts (`post_under`, 0410): the parent, the play and the reply as an Act. One for each post at most, one level deep. */
+  /** Each reply a play in force draws under one of the page's posts (`post_under`, 0348): the parent, the play and the reply as an Act. One for each post at most, one level deep. */
   readonly under: readonly { readonly parent: Id; readonly play: Id; readonly act: Act }[];
   /** Each number in the page's range whose Act is drawn under a post elsewhere (its parent's number): the page leaves it empty, and a screen following that number goes to the parent. */
   readonly cut: readonly { readonly seq: number; readonly parentSeq: number }[];

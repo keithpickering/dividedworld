@@ -35,7 +35,7 @@ test('the seed carries every setting, class, reaction, card and board of the ins
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
     rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, replies: false, keeps: false, draws: undefined, drive: undefined, needsMessage: undefined, surface: false,
   }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
-  // A card that replies and a card that keeps (0410): the SQL knows only these two flags, never which card. A card of each the instance may not hold is seeded here too.
+  // A card that replies and a card that keeps (0348): the SQL knows only these two flags, never which card. A card of each the instance may not hold is seeded here too.
   assert.deepEqual(seed.cards.filter((c) => c.replies).map((c) => c.key), instance.cards.filter((c) => c.replies === true).map((c) => c.key), 'the SQL knows which cards carry a reply by this flag alone');
   assert.deepEqual(seed.cards.filter((c) => c.keeps).map((c) => c.key), instance.cards.filter((c) => c.keeps === true).map((c) => c.key), 'the SQL knows which cards keep by this flag alone');
   const flagged = instanceSeed({ ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'replying', replies: true }, { ...instance.cards[0]!, key: 'keeping', keeps: true }] }, conduct).cards;

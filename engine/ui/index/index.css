@@ -30,7 +30,7 @@
 }
 
 .kb-board-last-title,
-.kb-board-last-by > a {
+.kb-board-last-when a {
   /* A target of 24px at the least (WCAG 2.2, 2.5.8) that sits below the name's link without reaching into it: a box of its own, in a line of its own, not padding pulled up by a negative margin. */
   display: inline-flex;
   align-items: center;
@@ -134,16 +134,49 @@
   }
 
   /*
-   * The name, the comma and the date are one unit: it moves to the next line whole when the thread's title leaves no room for it, and
-   * breaks inside itself only when it is wider than the row (a very long name). The time's link never breaks.
+   * The last post is one unit, "· name, date" (the thread row's .kb-thread-last-by in board.css is the same idea): one box no wider than the row, which moves whole to the line after the
+   * title when it does not fit beside it. Its two items wrap as flex items do: the "·" with the name (which may wrap inside its own box, the "·" staying at the head of its first line) and
+   * the date with its comma. When both do not fit one line the date takes a line of its own, and the comma is hung (the next rules) so that no line ends on a comma or starts with one.
+   * The comma's measures, --kb-comma and --kb-comma-gap, are the thread row's too (tokens.css). The time's link never breaks.
    */
   .kb-board-last-by {
-    display: inline-block;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
     max-width: 100%;
+    vertical-align: top;
+    /* The clip is on the left edge only, at the comma's gap: the comma's box lies left of it where the date starts a line. Every other side is clear of the box by more than the focus ring's 4px (2px and its 2px offset). */
+    clip-path: inset(-0.5em -0.5em -0.5em calc(-1 * var(--kb-comma-gap)));
   }
 
-  .kb-board-last-by > a {
+  .kb-board-last-who {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+    /* The room the comma takes after the name, so that the date's pull to the left below leaves its fit on the name's line unchanged. */
+    margin-inline-end: calc(var(--kb-comma) + var(--kb-comma-gap));
+  }
+
+  /* The "·" holds its place at the head of the name's first line; the name wraps inside its own box beside it. */
+  .kb-board-last-who > .kb-board-sep {
+    flex: none;
+    white-space: pre;
+  }
+
+  .kb-board-last-who > .kb-who {
+    min-width: 0;
+  }
+
+  /* The comma is at the head of this item in a box of a set width and a set gap before the date, and the item is pulled left by both: beside the name the comma sits against the name, and at the start of a line it lies left of the unit's edge, under the clip. */
+  .kb-board-last-when {
+    margin-inline-start: calc(-1 * (var(--kb-comma) + var(--kb-comma-gap)));
     white-space: nowrap;
+  }
+
+  .kb-board-last-when > .kb-board-sep {
+    display: inline-block;
+    width: var(--kb-comma);
+    margin-inline-end: var(--kb-comma-gap);
   }
 
   /* A thread's title may be long and has no one place to break it, so on the phone it wraps and sits ahead of the byline. */

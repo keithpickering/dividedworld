@@ -33,7 +33,7 @@
 -- held), the card's insert, write_reply (4 and 5 again, held), wallet_spend (6). That is post()'s order for a quote of the parent, so a play and a quote of the parent, a spring,
 -- an edit of the parent (which takes 2 and no later lock) and a second cutter (who waits at 2 and then at the stack's count) never hold one lock each and wait on the other. The
 -- reply is written after the card's insert in the transaction but its locks were taken before it: taking the thread's row after the count row place_cast's insert may hold would
--- cross post()'s 4-then-5, which is why the locks come first. supabase/tests/0911-race-post-under.sql holds it.
+-- cross post()'s 4-then-5, which is why the locks come first. supabase/tests/0293-race-post-under.sql holds it.
 --
 -- Ways out. A reply drawn under a post stays there until an admin ends the play (reverse_card, 0149), which drops it back to its own number; the parent then takes another play and
 -- the old reply takes one. A refused play is refused before anything is written, the caster keeps the card, the money and the words in the editor. A caught cast is a finished Act.

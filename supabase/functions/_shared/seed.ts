@@ -88,7 +88,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       reaches: c.reaches ?? ['post'], pins: c.pins === true,
       // Whether its text is generated after it lands (0149): the SQL knows only this flag, never which card.
       writes: c.writes !== undefined,
-      // Whether its play carries a reply that is written with it, and whether its thread play still counts on a post after its time is up (0410): the SQL knows only these two flags, never which card.
+      // Whether its play carries a reply that is written with it, and whether its thread play still counts on a post after its time is up (0348): the SQL knows only these two flags, never which card.
       replies: c.replies === true, keeps: c.keeps === true,
       // What the server draws one of at each play and the drive its plays share (0153), and the words a blank message is refused with (0153): data the SQL holds, never which card.
       draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,

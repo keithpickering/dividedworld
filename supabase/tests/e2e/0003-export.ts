@@ -215,7 +215,7 @@ test('an instance exported and imported into a fresh database is the same instan
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
       end;
-      -- A card that replies (0410): its play writes the reply, a post of its own, and the row that draws it under its parent, which the export carries with the Acts it names.
+      -- A card that replies (0348): its play writes the reply, a post of its own, and the row that draws it under its parent, which the export carries with the Acts it names.
       insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, replies) values ('expcut', 'Exported Cut', 'pepperoni', 'rare', 'cast', '{post}', 1, true);
       insert into card_ledger (account, card, kind, price) values (ann, 'expcut', 'bought', 0);
       perform play_card(ann, 'expcut', a, tests.post(a, t, 'Cut under, and carried across.'), '{}', 0, '', reply => 'The reply, carried across.');

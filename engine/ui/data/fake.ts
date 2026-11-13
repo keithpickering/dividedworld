@@ -1498,7 +1498,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const untakenPlays = new Set<Id>();
   /** card_ended (0149): ended by an admin, or over because it did not take. Every reader of "in force" asks this. */
   const over = (play: Id): boolean => reversedPlays.has(play) || untakenPlays.has(play);
-  /** post_under (0410): the reply each play of a card that replies carried, by the play: the post it was played on and the reply, a post of the thread with a number of its own. Never edited; the end is the play's own. */
+  /** post_under (0348): the reply each play of a card that replies carried, by the play: the post it was played on and the reply, a post of the thread with a number of its own. Never edited; the end is the play's own. */
   const underPlays = new Map<Id, { parent: Id; reply: Id }>();
   /** A reply in force: the play that draws it under its parent, or undefined where the Act is no reply or its play is over. */
   const drawnBy = (reply: Id): { play: Id; parent: Id } | undefined => {
@@ -1855,7 +1855,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
-    /* A card that replies carries its reply; its words and their length are the act function's, above, and the rest of the reply's refusals are play_card's, below (0410). */
+    /* A card that replies carries its reply; its words and their length are the act function's, above, and the rest of the reply's refusals are play_card's, below (0348). */
     const carries = rules.replies === true;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
@@ -3259,7 +3259,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!p || p.kind !== 'card') return refuse('that is not a card play');
       if (p.payload.caught !== undefined) return refuse('that card was caught by a trap, so it never landed');
       const ends = reachPlays.get(play)?.endsAt ?? (typeof p.payload.ends === 'string' ? Date.parse(p.payload.ends) : null);
-      /* A play of a card that keeps can be ended after its time too: its level still counts on the posts it was up over, and an admin takes it off (reverse_card, 0410's page). */
+      /* A play of a card that keeps can be ended after its time too: its level still counts on the posts it was up over, and an admin takes it off (reverse_card, 0348's page). */
       if (ends !== null && ends <= now() && instance.cards.find((c) => c.key === p.payload.card)?.keeps !== true) return refuse('that card has already worn off');
       if (reversedPlays.has(play)) return refuse('an admin has already ended that card');
       if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);

@@ -2452,7 +2452,7 @@ describe('where glitter lands in a thread', () => {
   });
 });
 
-/* A reply a play in force draws under its post (Line Cutter, 0410): the reply keeps its own number, empty on its own page, and is drawn under the post it answers. */
+/* A reply a play in force draws under its post (Line Cutter, 0348): the reply keeps its own number, empty on its own page, and is drawn under the post it answers. */
 describe('a reply cut in under its post', () => {
   const must = <T,>(a: { ok: true; value: T } | { ok: false; error: string }): T => {
     if (!a.ok) throw new Error(`expected an answer, got a refusal: ${a.error}`);

@@ -61,7 +61,7 @@ export const ALLOWED_READS = Object.freeze([
   'boards', 'boards_now', 'moves_log', 'staff_profile_now', 'threads', 'thread_list', 'thread_open', 'acts_public', 'characters_public', 'character_profiles', 'gear_worn', 'class_kinds', 'reaction_kinds', 'card_kinds', 'machine_now',
   // A surface's derived row (0317): the covered cells, the owners and the live list of a play whose layer any character may add to, all public facts of public Acts. The web reads it only through thread_page and surface_acts.
   'surfaces',
-  // The reply a play carried and where a play beyond a post reaches (0410, 0055): ids and dates of public Acts, every column public. The web reads them only through thread_page (0411: `under`, `cut`, `kept`).
+  // The reply a play carried and where a play beyond a post reaches (0348, 0055): ids and dates of public Acts, every column public. The web reads them only through thread_page (0349: `under`, `cut`, `kept`).
   'post_under', 'play_reach',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'settlements',
   'class_reveals', 'turns_announced', 'post_search', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',

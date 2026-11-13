@@ -20,7 +20,8 @@ const post = (key: string): CardRules => ({
   key, name: key, alignment: 'sweet', rarity: 'common', reaches: ['post'], stack: 3, playPrice: () => 0, validateConfig: (c: unknown) => ok(c),
   canApply: (t, e, _config, now) => landsOn({ key, reaches: ['post'] }, t, e, now),
 });
-const instance: Instance = { ...testInstance, cards: [post('fab'), testKeeper] };
+const WRITES: CardRules['writes'] = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) };
+const instance: Instance = { ...testInstance, cards: [post('fab'), testKeeper, post('one'), { ...post('scribe'), writes: WRITES }] };
 const DAY = 24 * 60 * 60 * 1000;
 /** The play's time, the fake backend's first (`START`), and its end a week on. */
 const PLAYED = '2026-10-29T12:00:00.000Z';
@@ -151,5 +152,19 @@ describe('a card drawn by another', () => {
     const late = setup(cards(), [keeperPlay(), fabPlay('f1', 'before', 1)], [BEFORE], 8 * DAY);
     /* The post's own play still draws; the lent one, ended before this post was written, is not handed over. */
     expect(late.container.querySelector('[data-kb-wrap="fab"]')!.getAttribute('data-plays')).toBe('f1');
+  });
+
+  test('a card that writes is still innermost with a lent play, as one effect of the named card; a card without it wraps it', () => {
+    const tail = ({ plays, children }: EffectProps): ReactNode => <>{children}<span data-kb-tail="scribe" data-plays={plays.map((p) => p.id).join(',')} /></>;
+    const cards = [look('scribe', { Effect: tail }), look('one', { Effect: wrap('one') }), look('top', { Effect: wrap('top'), takeover: true }), look('keeper', { drawnBy: 'scribe' })];
+    const w = setup(cards, [keeperPlay(), { ...keeperPlay('one-1'), payload: { ...keeperPlay().payload, card: 'one' } }], [INSIDE]);
+    const words = w.container.querySelector('span:not([data-kb-tail])')!;
+    const tails = w.container.querySelectorAll('[data-kb-tail]');
+    expect(tails).toHaveLength(1);
+    expect(tails[0]!.getAttribute('data-plays')).toBe('glam');
+    /* The words' next sibling is the writer's tail, and the plain card wraps both. */
+    expect(words.nextElementSibling).toBe(tails[0]);
+    expect(words.closest('[data-kb-wrap="one"]')).not.toBeNull();
+    expect(tails[0]!.closest('[data-kb-wrap="one"]')).not.toBeNull();
   });
 });

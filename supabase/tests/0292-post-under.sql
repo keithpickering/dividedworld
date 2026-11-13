@@ -1,4 +1,4 @@
--- A card that replies: the catalog, post_under and the write (supabase/migrations/0410_post_under.sql; docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 2).
+-- A card that replies: the catalog, post_under and the write (supabase/migrations/0348_post_under.sql; docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 2).
 -- A play of a card whose kind `replies` writes two Acts in one transaction: the card Act on the parent post, and the reply, an ordinary post in the parent's thread that takes
 -- its own number. One post_under row says the reply is drawn under the parent for as long as the play is in force. Every refusal leaves the whole play unwritten and unspent.
 -- The cards are this file's own (pa...), never an instance's.
