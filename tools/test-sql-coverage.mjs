@@ -52,6 +52,12 @@ check('and runs the coverage step', coverageAt >= 0);
 check('after the end-to-end loop', e2eLoopAt >= 0 && coverageAt > e2eLoopAt, `loop at ${e2eLoopAt}, coverage at ${coverageAt}`);
 check('and forces the statistics flush first', /pg_stat_force_next_flush\(\)/.test(code));
 
+check('the suite sets kayfabb.client_rpcs from ALLOWED_RPCS on the scratch database', /set kayfabb\.client_rpcs to '\$\{ALLOWED_RPCS\.join\(','\)\}'/.test(code) && /clientRpcsSql\(scratch\)/.test(code));
+if (typeof runner.clientRpcsSql === 'function') {
+  const sql = runner.clientRpcsSql('d');
+  check('and the setting holds every client read, comma-joined', sql.includes(`'${ALLOWED_RPCS.join(',')}'`) && sql.startsWith('alter database d set kayfabb.client_rpcs'), sql.slice(0, 80));
+}
+
 const exempt = runner.UNCOUNTABLE_READS ?? {};
 check('every uncountable read is a client read, with its reason', Object.entries(exempt).every(([n, why]) => ALLOWED_RPCS.includes(n) && typeof why === 'string' && why.length > 20), JSON.stringify(exempt));
 check('and the suite takes them out before it compares', /filter\(\(n\) => !\(n in UNCOUNTABLE_READS\)\)/.test(code));

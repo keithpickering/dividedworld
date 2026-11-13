@@ -204,6 +204,12 @@ export const boundsSql = (db) => Object.entries(SESSION_BOUNDS).map(([k, v]) => 
 export const trackSql = (db) => `alter database ${db} set track_functions to 'all';`;
 
 /**
+ * The client reads as a setting of the scratch database, `kayfabb.client_rpcs` (names joined by commas), so an assertion file reads the list
+ * with `current_setting('kayfabb.client_rpcs')` and holds no copy (supabase/tests/0318-client-reads-plan-once.sql).
+ */
+export const clientRpcsSql = (db) => `alter database ${db} set kayfabb.client_rpcs to '${ALLOWED_RPCS.join(',')}';`;
+
+/**
  * The stable functions in `public` among the client reads, each with the calls the statistics hold (summed over overloads).
  * Run on a connection of its own after every other has ended; the flush is forced anyway.
  */
@@ -271,7 +277,7 @@ function main() {
      where that is; the URL is this machine's and the database is dropped with it. */
   if (!step('scratch_url', psql(url, `alter database ${scratch} set kayfabb.scratch_url to '${target.replaceAll("'", "''")}';`))) process.exit(1);
   /* Before any connection to it, so the shim, every migration, every file and every dblink session start bounded. */
-  if (!step('bounds', psql(url, boundsSql(scratch) + '\n' + trackSql(scratch)))) process.exit(1);
+  if (!step('bounds', psql(url, boundsSql(scratch) + '\n' + trackSql(scratch) + '\n' + clientRpcsSql(scratch)))) process.exit(1);
   try {
     const [shimFile, ...migrationPaths] = migrationFiles();
     if (!step('setup/auth-shim.sql', psql(target, fs.readFileSync(shimFile, 'utf8')))) return 1;
