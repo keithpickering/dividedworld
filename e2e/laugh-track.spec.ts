@@ -183,14 +183,22 @@ for (const [size, name] of [[MAIN, 'the main window'], [PHONE, 'a phone']] as co
     await say(page);
     await expect(page.locator('.kb-captions-bar')).toBeVisible();
     await page.addStyleTag({ content: '.kb-captions-bar { pointer-events: auto !important; }' });
-    /* The dialog's entrance and the bar's measuring settle together: the bar's place is read once it stops moving. */
-    await expect.poll(async () => {
+    /* The dialog's entrance is an animation, so its rect is read only once it and the bar have each stood still across two reads a frame apart; the bar's place is from the dialog's laid-out box, so it is where it will stay from the first frame. */
+    const boxes = async () => {
       const [bar, dialog] = [await page.locator('.kb-captions-bar').boundingBox(), await picker.boundingBox()];
-      if (!bar || !dialog) return false;
-      return bar.y >= dialog.y + dialog.height || bar.y + bar.height <= dialog.y || bar.x >= dialog.x + dialog.width || bar.x + bar.width <= dialog.x;
-    }, { message: 'the bar stands clear of the dialog\'s box' }).toBe(true);
-    const bar = await page.locator('.kb-captions-bar').boundingBox();
-    if (!bar) throw new Error('no box');
+      if (!bar || !dialog) throw new Error('no box');
+      return { bar, dialog };
+    };
+    let last = JSON.stringify(await boxes());
+    await expect.poll(async () => {
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+      const now = JSON.stringify(await boxes());
+      const stood = now === last;
+      last = now;
+      return stood;
+    }, { message: 'the dialog and the bar have stopped moving' }).toBe(true);
+    const { bar, dialog } = await boxes();
+    expect(bar.y >= dialog.y + dialog.height || bar.y + bar.height <= dialog.y || bar.x >= dialog.x + dialog.width || bar.x + bar.width <= dialog.x, 'the bar stands clear of the dialog\'s box').toBe(true);
     expect(bar.y).toBeGreaterThanOrEqual(0);
     expect(bar.y + bar.height).toBeLessThanOrEqual(size.height);
     const stack = await page.evaluate(({ x, y }) => {

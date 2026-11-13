@@ -56,8 +56,8 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
 
 /**
  * Which ways a card can land on a post: cast now, and set face down. The postbit's mark (GhostMark) and the play form's "How to play it"
- * pair both read this one answer, so they cannot disagree. It takes the post's plays as the page holds them and keeps only the live ones
- * itself, so no caller can pass it a different set. It is asked without the form's settings (landing's own lenient reading), so the answer
+ * pair both read this one answer, so they cannot disagree. It keeps only the live ones of the plays it is given, and filtering is idempotent, so a caller that
+ * has already filtered (the play form) and one that has not (the mark) end with the same set. It is asked without the form's settings (landing's own lenient reading), so the answer
  * never changes as the player types.
  * A set is only ever the post author's own, so `own` says whether the reader's characters wrote the post. A Move is set face down only
  * where its play is a cast, since a set card is set by its own play. A faceUpOnly card is never set: landing's lenient reading sets a

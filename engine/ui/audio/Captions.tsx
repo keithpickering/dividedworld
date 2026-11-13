@@ -19,7 +19,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { motionReduced } from '../appearance.ts';
-import { placeOver } from './place-over.ts';
+import { placeOver, type Rect } from './place-over.ts';
 import { captions, type Caption, type Captions as Store } from './captions.ts';
 import './captions.css';
 
@@ -35,6 +35,22 @@ class ResizeObserverOf {
     this.seen = new Set(boxes);
   }
   stop() { this.observer?.disconnect(); this.seen.clear(); }
+}
+
+/**
+ * A dialog's box as it is laid out, and the top of the overlay it stands in, both in the window's coordinates. A box enters with a scale and a translate,
+ * which move and shrink its `getBoundingClientRect` for as long as the animation plays; its offsets in its overlay are the layout's and no transform
+ * touches them, so the read is the same at the first frame as at the last, and nothing waits for the animation. Every dialog's box is the overlay's own
+ * child, positioned or not: a centered one is a grid item of the fixed overlay, an anchored one or a phone's sheet is absolute in it (Overlay.tsx's
+ * `place()` sets its top, left or bottom, and the offsets are what those landed on). The overlay is fixed and has no transform of its own (its dim is a fade),
+ * so its rect is its layout; its own scroll is taken off.
+ */
+function laidOut(box: HTMLElement): { readonly box: Rect; readonly top: number } {
+  const parent = box.offsetParent;
+  const o = parent ? parent.getBoundingClientRect() : { left: 0, top: 0 };
+  const left = o.left + (parent ? parent.clientLeft - parent.scrollLeft : 0) + box.offsetLeft;
+  const top = o.top + (parent ? parent.clientTop - parent.scrollTop : 0) + box.offsetTop;
+  return { box: { left, top, right: left + box.offsetWidth, bottom: top + box.offsetHeight }, top: o.top };
 }
 
 /** The fade, and how long an announcement stays in the live region. */
@@ -83,40 +99,39 @@ export function Captions({ store = captions }: { readonly store?: Store }) {
     const measure = () => root.style.setProperty('--kb-captions-measured', `${Math.ceil(el.getBoundingClientRect().height) + GAP}px`);
     measure();
 
-    /* Over a dialog: measured from the bar's resting place (what the lift moved it from is added back), against every open dialog's box. */
+    /* Over a dialog: measured from the bar's resting place (what the lift moved it from is added back), against every open dialog's laid-out box. */
     let lift = 0;
-    let frames: number | null = null;
     const boxes = () => [...document.querySelectorAll<HTMLElement>('.kb-glass-overlay .kb-glass-dialog[role="dialog"]')];
     const sees = new ResizeObserverOf(() => place());
     const place = () => {
       const open = boxes();
       const r = el.getBoundingClientRect();
       const rest = { left: r.left, right: r.right, top: r.top + lift, bottom: r.bottom + lift };
-      const over = placeOver(rest, open.map((b) => b.getBoundingClientRect()), { width: window.innerWidth, height: window.innerHeight });
+      const laid = open.map(laidOut);
+      const over = placeOver(rest, laid.map((l) => l.box), { top: Math.max(0, ...laid.map((l) => l.top)) });
       lift = over?.lift ?? 0;
       if (over) { el.setAttribute('data-over-scrim', 'true'); el.style.setProperty('--kb-captions-lift', `${over.lift}px`); }
       else { el.removeAttribute('data-over-scrim'); el.style.removeProperty('--kb-captions-lift'); }
       sees.watch(open);
     };
-    /* A dialog's box grows into place (it animates open), so after any change the box is read again each frame for a little under a second. */
-    const settle = () => {
+    /* A dialog opening or closing (a change to the body's children), or the window changing size, is read now and once more a frame on: the overlay places an anchored box after it mounts. The read needs no waiting for the open animation, for it is of the laid-out box (laidOut). */
+    let after: number | null = null;
+    const changed = () => {
       place();
-      let left = 45;
-      if (frames !== null) cancelAnimationFrame(frames);
-      const step = () => { place(); frames = --left > 0 ? requestAnimationFrame(step) : null; };
-      frames = requestAnimationFrame(step);
+      if (after !== null) cancelAnimationFrame(after);
+      after = requestAnimationFrame(() => { after = null; place(); });
     };
-    settle();
-    const mutations = typeof MutationObserver === 'undefined' ? null : new MutationObserver(settle);
+    changed();
+    const mutations = typeof MutationObserver === 'undefined' ? null : new MutationObserver(changed);
     mutations?.observe(document.body, { childList: true });
-    window.addEventListener('resize', settle);
+    window.addEventListener('resize', changed);
 
     const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { measure(); place(); });
     watch?.observe(el);
     return () => {
       watch?.disconnect(); mutations?.disconnect(); sees.stop();
-      window.removeEventListener('resize', settle);
-      if (frames !== null) cancelAnimationFrame(frames);
+      window.removeEventListener('resize', changed);
+      if (after !== null) cancelAnimationFrame(after);
       root.style.removeProperty('--kb-captions-measured');
     };
   }, [shown !== null]);

@@ -229,4 +229,13 @@ describe('the ways a card lands on a post', () => {
     const wall: CardRules = { ...base, key: 'wall', name: 'Wall', surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: () => ({ ok: false, why: 'unused' }), validateWash: () => ({ ok: false, why: 'unused' }) } };
     expect(waysOn(wall, post('hi'), [], { cards: [wall], own: true, now: 0 })).toEqual({ cast: true, set: false });
   });
+
+  test('a play beyond a post whose end has passed holds no place: waysOn keeps only the live plays', () => {
+    const once: CardRules = { ...base, key: 'once', name: 'Once', stack: 1, canApply: (t, e, _config, now) => landsOn({ key: 'once', stack: 1 }, t, e, now) };
+    const beyond = (ends: string): CardPlay => ({ ...play('once', 1), reach: 'character', ends });
+    const ways = (ends: string, now: Date) => waysOn(once, post('hi'), [beyond(ends)], { cards: [once], own: true, now: now.getTime() });
+    /* It ends at 2999-01-01: before that it holds the card's one place, at it and after that it does not. */
+    expect(ways('2999-01-01T00:00:00.000Z', new Date('2998-12-31T00:00:00.000Z'))).toEqual({ cast: false, set: false });
+    expect(ways('2999-01-01T00:00:00.000Z', new Date('2999-01-01T00:00:00.000Z'))).toEqual({ cast: true, set: true });
+  });
 });
