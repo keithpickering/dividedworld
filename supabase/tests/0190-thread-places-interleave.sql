@@ -336,6 +336,8 @@ begin
       select max(id), 'il-boss', 'moveThread', '{"thread": "7ace0000-0190-4000-8000-000000000d01", "board": "7ace0000-0190-4000-8000-0000000000c3"}', 'because', now() - interval '3 minutes', false from meetings;
     do $d$ begin perform system_tick(); end $d$;
     create function public.il_gate() returns trigger language plpgsql as $f$ begin perform pg_advisory_xact_lock(hashtext('il.gate')); return new; end $f$;
+    -- A trigger's function needs no grant, and this one outlives the file (it cannot be dropped here, below): no API role may run it, so the suite's later files meet no function a player could call.
+    revoke execute on function public.il_gate() from public, anon, authenticated;
     create trigger zz_il_gate before insert on acts for each row when (new.kind = 'move' and new.payload ->> 'kind' = 'ilWait') execute function public.il_gate();
     -- Due now, in this order: the move that is not lasting, then the merge.
     insert into queued_moves (meeting, staff, kind, params, why, go_live_at, structural)
