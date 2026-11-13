@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { system } from './index.ts';
 import { fangame } from './personas/fangame.ts';
+import { ontopic } from './personas/ontopic.ts';
+import { qualityControl } from './personas/quality-control.ts';
 import { placeholderBosses } from './fixtures/index.ts';
 import { BOSS_PREMISE, MOD_BOT_PREMISE, MEMBER_PREMISE, BOSS_ANSWER_RULES, MOD_BOT_ANSWER_RULES, MEMBER_ANSWER_RULES, persona, offices } from './persona.ts';
 import { personaPrompt } from '../../../engine/system/prompt.ts';
@@ -149,21 +151,23 @@ test('every persona\'s pet rules are known predicates, and its visit hours sit i
   assert.ok(bot.petRules.length >= 2, 'the Mod Bot lobbies for something');
 });
 
-test('the Mod Bot\'s quiz has five questions, every answer is one of its choices, and no position holds a third of the answers', () => {
-  const bot = system.roster.find((p) => system.firstStaff.includes(p.key))!;
-  assert.equal(bot.weakness.kind, 'quiz');
-  if (bot.weakness.kind !== 'quiz') return;
-  const qs = bot.weakness.questions;
-  assert.ok(qs.length >= 5);
-  for (const q of qs) {
-    assert.ok(q.choices.includes(q.answer), q.question);
-    assert.ok(q.choices.length >= 2 && q.choices.length <= 8, q.question);
-    assert.equal(new Set(q.choices).size, q.choices.length, q.question);
-    assert.ok(q.choices.every((c) => c === c.trim()), q.question);
+test('every Mod Bot\'s quiz has at least five questions, every answer is one of its choices, and no position holds more than a third of the answers', () => {
+  const bots = [...system.roster.filter((p) => system.firstStaff.includes(p.key)), ontopic, qualityControl];
+  for (const bot of bots) {
+    assert.equal(bot.weakness.kind, 'quiz', bot.key);
+    if (bot.weakness.kind !== 'quiz') continue;
+    const qs = bot.weakness.questions;
+    assert.ok(qs.length >= 5, `${bot.key}: at least five questions`);
+    for (const q of qs) {
+      assert.ok(q.choices.includes(q.answer), `${bot.key}: ${q.question}`);
+      assert.ok(q.choices.length >= 2 && q.choices.length <= 8, `${bot.key}: ${q.question}`);
+      assert.equal(new Set(q.choices).size, q.choices.length, `${bot.key}: ${q.question}`);
+      assert.ok(q.choices.every((c) => c === c.trim()), `${bot.key}: ${q.question}`);
+    }
+    const at = qs.map((q) => q.choices.indexOf(q.answer));
+    const most = Math.max(...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => at.filter((a) => a === i).length));
+    assert.ok(most <= Math.ceil(qs.length / 3), `${bot.key}: no position holds more than a third of the answers (positions ${at.join(',')})`);
   }
-  const at = qs.map((q) => q.choices.indexOf(q.answer));
-  const most = Math.max(...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => at.filter((a) => a === i).length));
-  assert.ok(most <= Math.ceil(qs.length / 3), `no position holds more than a third of the answers (positions ${at.join(',')})`);
 });
 
 test('every persona\'s weakness is a quiz, a bribe or a distraction the engine accepts', () => {
@@ -217,7 +221,7 @@ test('every persona\'s bands are keys of the warn bar\'s bands', async () => {
 });
 
 test('no persona\'s startingHobby, persuadedBy or temperament refers to the persona as it, its or itself, so its pronouns can change without a sweep', () => {
-  for (const p of system.roster) {
+  for (const p of [...system.roster, ontopic, qualityControl]) {
     for (const field of ['startingHobby', 'persuadedBy', 'temperament'] as const) {
       assert.doesNotMatch(p[field], /\b(it|its|itself)\b/i, `${p.key}.${field}`);
     }
@@ -272,4 +276,39 @@ test('the Boss premise says most moves end and a few stay, and no longer says ev
 
 test('the instance passes instanceProblems with the arc in', () => {
   assert.deepEqual(instanceProblems(instance), []);
+});
+
+// The launch's Task 1 adds these boards; until then they are not in `instance.boards`. The launch's Task 4's beat test
+// then holds every beat to `instance.boards`, and the launch's build removes this constant.
+const LAUNCH_SLUGS = ['video-games', 'arts-crafts', 'pointless-post-palace'];
+
+for (const [label, bot] of [['QC-1000', qualityControl], ['ONTOPIC 5.0', ontopic]] as const) {
+  test(`${label}'s key, title, signature, pet rules, quiz answers and beats fit the engine`, async () => {
+    const { predicate } = await import('../../../engine/rules/predicates.ts');
+    assert.equal(bot.key, label === 'QC-1000' ? 'quality-control' : 'ontopic');
+    assert.ok(bot.title.length <= 40);
+    assert.ok(bot.signature.length <= 500);
+    for (const k of bot.petRules) assert.ok(predicate(k) !== undefined, `${bot.key}: ${k}`);
+    assert.equal(bot.weakness.kind, 'quiz');
+    if (bot.weakness.kind === 'quiz') for (const q of bot.weakness.questions) assert.ok(q.choices.includes(q.answer), q.question);
+    const slugs = [...instance.boards.map((b) => b.slug), ...LAUNCH_SLUGS];
+    for (const b of bot.beats) assert.ok(slugs.includes(b), `${bot.key}: beat ${b}`);
+  });
+}
+
+test('ONTOPIC 5.0\'s pronouns are she/her and she has a boss, a mod and a member office line', () => {
+  assert.deepEqual(ontopic.pronouns, PRONOUN_PRESETS.she);
+  for (const o of ['boss', 'mod', 'member'] as const) assert.ok((ontopic.officeLines?.[o] ?? '').length > 0, o);
+});
+
+test('ONTOPIC 5.0 may give five stars', () => {
+  const prompt = personaPrompt(system, ontopic, 'mod');
+  assert.match(prompt, /whole scale/);
+  assert.match(prompt, /five stars/);
+  assert.match(prompt, /never charge a post on the Pointless Post Palace for being pointless/);
+});
+
+test('QC-1000\'s habits are occasional', () => {
+  assert.match(qualityControl.selfPrompt ?? '', /one or two of these habits/);
+  assert.doesNotMatch(qualityControl.selfPrompt ?? '', /You open a visit with/);
 });
