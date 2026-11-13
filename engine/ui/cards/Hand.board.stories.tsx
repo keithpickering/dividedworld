@@ -28,7 +28,7 @@ import { CalmRegion } from '../glass/Calm.tsx';
 /** Where the board stands each card, by its place in the hand: its left, its top and how far it turns; the sealed slot stands after the last. */
 const PLACES = [{ left: 64, top: 204, turn: -4 }, { left: 372, top: 178, turn: 2 }, { left: 668, top: 204, turn: 5 }] as const;
 
-function HandSheet() {
+function HandSheet({ playing = false }: { readonly playing?: boolean }) {
   const { instance, ui } = useKayfa();
   const { cards } = usePlayer();
   const calm = useSurfaceStyle('hand');
@@ -56,7 +56,7 @@ function HandSheet() {
         const says = `kb-hand-board-says-${face.key}`;
         return (
           <div key={face.key} className="kb-hand-board-card" style={{ left: at.left, top: at.top, transform: `rotate(${at.turn}deg)` }}>
-            <Postcard as="article" face={face} size="sheet" armed={isArmed} aria-label={`${face.name}, a ${face.tag} postcard${isArmed ? ', armed' : ''}`} aria-describedby={says} />
+            <Postcard as="article" face={face} size="sheet" armed={isArmed} aria-label={`${face.name}, a ${face.tag} postcard${isArmed ? (playing ? ', playing on post 41' : ', armed') : ''}`} aria-describedby={says} />
             <span id={says} className="kb-visually-hidden">{face.describe}{face.art.credit ? ` Art by ${face.art.credit}.` : ''}</span>
           </div>
         );
@@ -70,7 +70,7 @@ function HandSheet() {
 
       <CalmRegion className="kb-hand-board-chips">
         <span className="kb-hand-board-chip" data-kb-chip="held">In hand</span>
-        <span className="kb-hand-board-chip" data-kb-chip="armed">Armed · pick a post</span>
+        <span className="kb-hand-board-chip" data-kb-chip="armed">{playing ? 'Playing · post #41' : 'Armed · pick a post'}</span>
         <span className="kb-hand-board-chip" data-kb-chip="later">Coming later</span>
       </CalmRegion>
 
@@ -109,3 +109,6 @@ type Story = StoryObj<typeof HandSheet>;
 
 /** The hand sheet at the board's size: 1440 by 1080. */
 export const Sheet: Story = {};
+
+/** The same hand while the armed card is being played on a post: the chip and the card's name say where (cards/Hand.tsx). */
+export const Playing: Story = { args: { playing: true } };
