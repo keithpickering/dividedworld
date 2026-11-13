@@ -146,10 +146,10 @@ begin
   if doc -> 'sources' -> 'ended' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select card_end, play, card, at, side, reach, target_name, post_author_name, caster_name, character from my_cards_ended order by at desc, card_end limit 200) r)) then raise exception 'ended: %', doc -> 'sources' -> 'ended'; end if;
   if doc -> 'sources' -> 'infractions' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select infraction, character, at, band, points, rule_number, rule, mod_name, post, post_seq, thread, expires_at, relief, emptied_at from my_infractions order by at desc, infraction limit 200) r))
+       select infraction, character, at, band, points, rule_number, rule, mod_name, post, post_seq, thread, expires_at, relief, emptied_at, card_relief, fall_play from my_infractions order by at desc, infraction limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'infractions') is distinct from 1 then raise exception 'infractions: %', doc -> 'sources' -> 'infractions'; end if;
   if doc -> 'sources' -> 'bans' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select ban, character, at, days, until, infraction, rule, thread, ruling, own_until from my_bans order by at desc, ban limit 200) r))
+       select ban, character, at, days, until, infraction, rule, thread, ruling, own_until, lifted_at, lifted_card from my_bans order by at desc, ban limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'bans') is distinct from 1 then raise exception 'bans: %', doc -> 'sources' -> 'bans'; end if;
   if doc -> 'sources' -> 'reports' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select report, character, at, post, post_seq, thread, verdict, verdict_at, mod_name, refund from my_reports order by at desc, report limit 200) r)) then raise exception 'reports: %', doc -> 'sources' -> 'reports'; end if;
