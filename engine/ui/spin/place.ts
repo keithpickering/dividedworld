@@ -5,7 +5,7 @@
  * first address from it. The engine names no card: a key becomes
  * a name through `cardName`, which the instance's card list answers.
  */
-import type { OriginPlace, PlaceOn, PostPlace } from '../data/api.ts';
+import { PLAY_FROM, type OriginPlace, type PlaceOn, type PostPlace } from '../data/api.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 
 const onWords = (on: PlaceOn): string => {
@@ -50,7 +50,9 @@ export function placeParts(place: OriginPlace, cardName: (key: string) => string
     { words: `${card} on `, href: null },
     { words: onWords(who), href: onHref(who, perPage), character: who.id },
   ];
-  const [lead, post] = place.at !== null ? [', at ', place.at] as const : place.from !== null ? [', cast from ', place.from] as const : [null, null];
+  const at = place.at;
+  const castFrom = place[PLAY_FROM];
+  const [lead, post] = at !== null ? [', at ', at] as const : castFrom !== null ? [', cast from ', castFrom] as const : [null, null];
   if (lead !== null) parts.push({ words: lead, href: null }, { words: postWords(post), href: onHref(post, perPage) });
   return parts;
 }

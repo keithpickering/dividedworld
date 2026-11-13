@@ -2165,6 +2165,17 @@ describe('reads by many ids', () => {
     expect(h.to('rpc/spin_moment')).toHaveLength(2);
   });
 
+  it('a moment answered without `at` (a server from before 0431) reads `at` as its first layer\'s time; one with `at` reads it as given', async () => {
+    const moment = (extra: Record<string, unknown>) => ({
+      version: { ...ACT_ROW, current_payload: { body: 'then' } },
+      layers: [{ act: { ...ACT_ROW, id: A, kind: 'card', created_at: '2026-10-01T08:00:00+00:00' }, state: null, savedAt: null }],
+      above: [], recorded: true, ...extra,
+    });
+    const h = harness((r) => (r.url.pathname === `${REST}/rpc/play_moment` ? json(moment({})) : r.url.pathname === `${REST}/rpc/spin_moment` ? json(moment({ at: '2026-10-01T09:30:00+00:00' })) : undefined));
+    expect((await h.api.playMoment(A))?.at).toBe('2026-10-01T08:00:00+00:00');
+    expect((await h.api.spinMoment(A))?.at).toBe('2026-10-01T09:30:00+00:00');
+  });
+
   it('pinnedThreads asks pinned_threads once for the board, and reads each row\'s thread, play and end', async () => {
     const h = harness((r) => (r.url.pathname === `${REST}/rpc/pinned_threads` ? json([{ thread: THREAD_ROW, play: A, ends_at: '2099-01-01T00:00:00+00:00', act: { ...ACT_ROW, kind: 'card' } }]) : undefined));
     const pins = await h.api.pinnedThreads(C);

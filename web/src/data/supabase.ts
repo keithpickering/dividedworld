@@ -31,7 +31,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { SignedIn } from '../../../engine/ui/data/api.ts';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -302,9 +302,6 @@ function toPlaceOn(raw: unknown): PlaceOn | null {
       return null;
   }
 }
-
-/** The key of a play's cast-from post, named once so no read of it is a property called `from` (tools/check-web-reads.mjs reads that as a client's). */
-const PLAY_FROM = 'from';
 
 /** A post place, or null for anything else, missing or malformed. */
 function toPostPlace(raw: unknown): Extract<PlaceOn, { kind: 'post' }> | null {
@@ -761,10 +758,6 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   const transport = (r: Res) => r.error !== null && (r.status === 0 || r.status >= 500);
 
-  /**
-   * A read whose arguments the server may refuse (the search reads, through screen_refusal): a refusal carrying the hint is thrown in the
-   * server's own words, so a screen can tell a refused search from one that never reached the server (a `ReadFailure`); anything else is `read`'s.
-   */
   /** A moment (play_moment, spin_moment): one read, a refusal in words read as null. */
   async function momentOf(run: () => PromiseLike<unknown>): Promise<PlayMoment | null> {
     const r = await read(async () => {
@@ -773,15 +766,21 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     });
     const m = r.data as Row | null;
     if (!m) return null;
+    const layers = (m['layers'] as Row[]).map((l) => ({ act: toAct(l['act']), state: l['savedAt'] == null ? null : { state: l['state'], savedAt: l['savedAt'] } }));
     return {
       version: toAct(m['version']),
-      layers: (m['layers'] as Row[]).map((l) => ({ act: toAct(l['act']), state: l['savedAt'] == null ? null : { state: l['state'], savedAt: l['savedAt'] } })),
+      layers,
       above: (m['above'] as Row[]).map(toPlayAbove),
       recorded: m['recorded'] === true,
-      at: m['at'],
+      /* A server from before 0431 answers a play's moment without `at`: a play's moment is at its play's time, the first layer's. */
+      at: isText(m['at']) ? m['at'] : layers[0]?.act.createdAt ?? '',
     };
   }
 
+  /**
+   * A read whose arguments the server may refuse (the search reads, through screen_refusal): a refusal carrying the hint is thrown in the
+   * server's own words, so a screen can tell a refused search from one that never reached the server (a `ReadFailure`); anything else is `read`'s.
+   */
   async function refusableRead(run: () => PromiseLike<unknown>): Promise<Res> {
     let refused = null as string | null;
     const r = await read(async () => {

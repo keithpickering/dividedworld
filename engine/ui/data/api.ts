@@ -308,6 +308,12 @@ export type PlaceOn =
 /** A post's place: its thread, the thread's title and its place number. */
 export type PostPlace = Extract<PlaceOn, { kind: 'post' }>;
 
+/**
+ * The key of a play place's cast-from post, named once so that no read of it is a property spelled `.from`, which tools/check-web-reads.mjs
+ * takes for a database client's: read it as `place[PLAY_FROM]`.
+ */
+export const PLAY_FROM = 'from' as const;
+
 /** Where a spun thread's origin can be found: an Act with a place number, an update, or a play and where it landed. */
 export type OriginPlace =
   | Extract<PlaceOn, { kind: 'post' | 'update' }>
