@@ -223,7 +223,7 @@ describe('the row', () => {
     const w = world(fake, { threads: 1 });
     const target = fake.seed.post(w.ids[0]!, w.spritey, 'a line to play on', { at: T0 + 2 * DAY });
     expect((await fake.spin(fake.seed.card(w.spritey, target, 'whoops'), w.mine!, 'From a play', 'x')).ok).toBe(true);
-    withOrigin(fake, 'From a play', { kind: 'play', card: 'whoops', on: null });
+    withOrigin(fake, 'From a play', { kind: 'play', card: 'whoops', on: null, from: null, at: null });
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'From a play' });
     const row = rowOf('From a play');

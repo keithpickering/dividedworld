@@ -49,7 +49,7 @@ const act = (id: string, kind: Act['kind'], payload: Record<string, unknown>, mi
 });
 const card = (id: string, key: string, minutes: number, payload: Record<string, unknown> = {}) => act(id, 'card', { card: key, message: '', config: {}, layer: 1, ...payload }, minutes);
 const version: Act = { id: 'p1', character: 'c-author', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: at(0), payload: { body: 'then' }, currentPayload: { body: 'then' }, editedAt: null, shownEditedAt: null };
-const moment = (layers: PlayMoment['layers'], above: PlayMoment['above'] = []): PlayMoment => ({ version, layers, above, recorded: true });
+const moment = (layers: PlayMoment['layers'], above: PlayMoment['above'] = []): PlayMoment => ({ version, layers, above, recorded: true, at: at(0) });
 
 function draw(m: PlayMoment, onWords = vi.fn()) {
   const api = buildWorld({}, instance);

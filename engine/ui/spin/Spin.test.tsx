@@ -263,7 +263,7 @@ describe('the ORIGIN box', () => {
     const real = w.fake.threadPage.bind(w.fake);
     vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
       const got = await real(id, ...rest);
-      return id === spun && got ? { ...got, thread: { ...got.thread, origin: { kind: 'play', card: 'whoops', on: null } } } : got;
+      return id === spun && got ? { ...got, thread: { ...got.thread, origin: { kind: 'play', card: 'whoops', on: null, from: null, at: null } } } : got;
     });
     openSpun(w, spun);
     const box = await origin();
