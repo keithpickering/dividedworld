@@ -44,7 +44,8 @@ export function useReactionSend({ act, as, tallies, mine }: Args): { send(kind: 
         return { refusal: answer.error };
       }
       mine.add({ act, kind, character: as.id });
-      tallies.merge(act, answer.value.tally);
+      /* A blind post answers no tally to anyone: the screen holds none of its totals. */
+      if (answer.value.tally !== null) tallies.merge(act, answer.value.tally);
       player.reactionLanded();
       return 'sent';
     } catch {

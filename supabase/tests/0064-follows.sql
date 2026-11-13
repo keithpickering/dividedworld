@@ -55,7 +55,7 @@ begin
   select * into got from my_followed_threads where thread = mine;
   if got.thread is null then raise exception 'a started thread with new posts by others is a row'; end if;
   if got.new_posts is distinct from 2 then raise exception 'two posts by others, none by one''s own masks, are counted: %', got.new_posts; end if;
-  if got.newest_at is distinct from (select created_at from acts where thread = mine and character = c1) then
+  if got.newest_at is distinct from (select created_at from acts_public where thread = mine and character = c1) then
     raise exception 'the newest such post''s time is the last by another player, not one''s own mask''s';
   end if;
   if (select count(*) from my_followed_threads) is distinct from 1 then raise exception 'one thread is followed with new posts'; end if;
@@ -238,7 +238,7 @@ begin
   perform tests.become(fay);
   select array_agg(thread order by newest_at desc) into got from my_followed_threads;
   if got is distinct from array[other_last, own_last] then raise exception 'ranked by the newest post by another, not one''s own: %', got; end if;
-  if (select newest_at from my_followed_threads where thread = own_last) is distinct from (select created_at from acts where thread = own_last and character = g1) then
+  if (select newest_at from my_followed_threads where thread = own_last) is distinct from (select created_at from acts_public where thread = own_last and character = g1) then
     raise exception 'newest_at is the newest post by another';
   end if;
   perform tests.unbecome();

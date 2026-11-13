@@ -9,11 +9,13 @@
  * (`readPlays`), never one per post ("Weigh a design at the scale of a busy instance"), and a play
  * that arrives live is added to the post it names whichever page that post is on.
  */
-import { useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { Act, ActKind, EffectState, Id, KayfaApi, SurfaceAct, SurfaceNow } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
+import { useKayfa } from '../context.tsx';
 import { BEYOND_POST, fallsOn, type BeyondPost, type CardRules } from '../../rules/cards.ts';
-import type { Settings, Span } from '../../rules/types.ts';
+import { localKey, singleEmoji } from '../../rules/emoji.ts';
+import { QUADRANTS, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, KitControl } from './types.ts';
 import { endsWords, keptEndedWords } from './marks.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
@@ -124,6 +126,68 @@ export function playsFallingOn(plays: readonly CardPlay[], post: { readonly crea
   const at = new Date(now);
   const falling = plays.filter((p) => !p.reversed && !p.untaken && fallsOn({ at: p.playedAt, ...(p.ends !== undefined ? { ends: p.ends } : {}) }, { at: post.createdAt }, keeps.has(p.card), at));
   return falling.length === plays.length ? plays : falling;
+}
+
+/** A timer's delay is held under 2^31 ms; a later end is waited for in steps, each re-arming at the time it wakes to. */
+export const TIMER_MOST = 2 ** 31 - 1;
+
+/**
+ * The time, redrawn when the soonest of these ends (epochs) passes, so something that ends on its own (a drive, a veil's line) is drawn as ended without a
+ * read. Nothing is scheduled while none is ahead.
+ */
+export function useAt(ends: readonly number[]): number {
+  const { api } = useKayfa();
+  const [now, setNow] = useState(() => api.now());
+  const ahead = ends.filter((e) => e > now);
+  const next = ahead.length === 0 ? null : Math.min(...ahead);
+  useEffect(() => {
+    if (next === null) return;
+    const timer = setTimeout(() => setNow(api.now()), Math.min(TIMER_MOST, Math.max(0, next - api.now()) + 1));
+    return () => clearTimeout(timer);
+  }, [api, next, now]);
+  return now;
+}
+
+/** The plays a card of the rules reaches nothing beyond a post with, still in force on their post: not caught, not a card back, not reversed by an admin, not one that did not take. */
+const standing = (p: CardPlay): boolean => !p.caught && !p.faceDown && !p.untaken && !p.reach;
+
+/** A reaction a card added to one post (a `reaction` card's play, card notes Part 3): the key it is tallied under, its emoji and the quadrant it scores in. */
+export interface LocalKind {
+  /** `x-` and the emoji's code points (`localKey`): what a tally and `react` carry. */
+  readonly key: string;
+  readonly emoji: string;
+  readonly quadrant: Quadrant;
+  readonly play: Id;
+  /** An admin ended its play: the kind is no longer offered, and what it earned stays counted. */
+  readonly ended: boolean;
+}
+
+/**
+ * The post-local reaction kinds a post's plays of a `reaction` card add, in play order, each once: a play that was caught, did not take or holds a
+ * configuration the rules would not take adds none. Read from the plays as they are on this screen, so a kind is offered the moment its play lands.
+ */
+export function localKindsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'reaction'>[]): readonly LocalKind[] {
+  const out: LocalKind[] = [];
+  for (const p of plays) {
+    if (!standing(p) || !cards.some((c) => c.key === p.card && c.reaction === true)) continue;
+    const emoji = singleEmoji(p.config.emoji);
+    const quadrant = QUADRANTS.find((q) => q === p.config.quadrant);
+    if (emoji === null || quadrant === undefined) continue;
+    const key = localKey(emoji);
+    if (out.some((k) => k.key === key)) continue;
+    out.push({ key, emoji, quadrant, play: p.id, ended: p.reversed === true });
+  }
+  return out;
+}
+
+/** A live play of a `veil: 'totals'` card on a post: who cast it, and when its totals show again. */
+export interface BlindPlay { readonly play: Id; readonly caster: Id | null; readonly ends: string }
+
+/** The plays on a post that hide its reaction totals now: a `totals` veil, in force, whose end is still ahead. */
+export function blindPlaysOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'veil'>[], now: number): readonly BlindPlay[] {
+  return plays
+    .filter((p) => standing(p) && !p.reversed && p.ends !== undefined && Date.parse(p.ends) > now && cards.some((c) => c.key === p.card && c.veil === 'totals'))
+    .map((p) => ({ play: p.id, caster: p.caster, ends: p.ends! }));
 }
 
 /** The soonest end still ahead among plays beyond a post, as an epoch, or null: when what is drawn changes next by itself. */

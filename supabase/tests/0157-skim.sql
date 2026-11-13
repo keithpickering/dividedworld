@@ -216,14 +216,16 @@ declare
       'card "pre" scores as a class, and a card that does reaches a character alone'),
     jsonb_build_array('{"key": "prf", "rarity": "uncommon", "play": "cast", "reaches": ["character"], "lasts": {"unit": "day", "count": 2}, "scoresAs": false}',
       'card "prf" has scoresAs false; scoresAs is true or left out'),
-    jsonb_build_array('{"key": "prg", "rarity": "uncommon", "play": "cast", "reaches": ["post"], "lasts": {"unit": "day", "count": 1}}',
-      'card "prg" has a time up (lasts), and only a Use card or a card reaching beyond a post does')
+    -- A cast on a post may end since 0357 (a skim, a veil), so a cast with a time up is no longer refused; a set card with one, on a post alone, still is.
+    jsonb_build_array('{"key": "prg", "rarity": "uncommon", "play": "set", "reaches": ["post"], "lasts": {"unit": "day", "count": 1}, "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}}}',
+      'card "prg" has a time up (lasts), and only a use card, a cast card or a card reaching beyond a post does')
   );
   good constant jsonb := jsonb_build_array(
     '{"key": "ok1", "rarity": "uncommon", "play": "cast", "reaches": ["post"], "lasts": {"unit": "week", "count": 1}, "skim": {"share": 0.1}}',
     '{"key": "ok2", "rarity": "legendary", "play": "cast", "reaches": ["character"], "lasts": {"unit": "day", "count": 2}, "scoresAs": true}',
     '{"key": "ok3", "rarity": "uncommon", "play": "use", "reaches": ["post"], "lasts": {"unit": "week", "count": 1}, "gimmick": {"kind": "ride", "share": 0.5}}',
-    '{"key": "ok4", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "outcome": {"kind": "ride", "share": 1}}}'
+    '{"key": "ok4", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "outcome": {"kind": "ride", "share": 1}}}',
+    '{"key": "ok5", "rarity": "uncommon", "play": "cast", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}}'
   );
   p jsonb; got text; g jsonb;
 begin

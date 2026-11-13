@@ -626,7 +626,9 @@ begin
   plan := pg_temp.plan('select * from my_posts_written_on');
   reset enable_seqscan;
   perform tests.unbecome();
-  if plan ~ 'Seq Scan on (acts|card_texts|characters)' or plan not like '%characters_owner%' or plan not like '%card_texts_play_version_key%' then raise exception 'the read is not index-led: %', plan; end if;
+  -- The caller's characters are found through an index of characters, owner's or primary key's: which the planner takes follows the table's size on the day (by this point in a run of the suite characters holds
+  -- rolled-back rows from the tests before it, or has been vacuumed of them), and both lead the read from the caller's own characters and never scan one.
+  if plan ~ 'Seq Scan on (acts|card_texts|characters)' or plan !~ 'characters_(owner|pkey)' or plan not like '%card_texts_play_version_key%' then raise exception 'the read is not index-led: %', plan; end if;
 
   -- log_page's `writes` is the view's rows newest first, bounded by the cursor; the plays and posts they name are among its Acts.
   perform tests.become(ann);

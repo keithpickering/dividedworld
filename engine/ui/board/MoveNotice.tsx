@@ -27,7 +27,8 @@ import type { BoardName, Character, Id, MoveNotice as Notice, Office } from '../
 import { Layers } from '../glass/layer.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { shortDate } from '../postbit/dates.ts';
-import { readable } from '../reactions/Reactions.tsx';
+import { emojiOfKey } from '../../rules/emoji.ts';
+import { localName, readable } from '../reactions/Reactions.tsx';
 import { Link } from '../router.tsx';
 import { moveBoardNames, moveLabel, officeRole, wayOut } from './move-words.ts';
 import { useMovedThread } from './moved-thread.ts';
@@ -86,7 +87,9 @@ export function MoveNotice({ act }: { readonly act: Id }) {
   if (loaded === 'failed') return <p className="kb-notice" data-kb-tone="refusal">The notice about this board could not be loaded. Reload the page to try again.</p>;
   const { notice, boss } = loaded;
   const name = boss?.name ?? ui.copy.roleWord;
-  const emoji = (kind: string) => instance.reactions.find((r) => r.key === kind)?.emoji ?? readable(kind);
+  /* A reaction a card added to the post has no entry in the instance's set: its key is its emoji (the row's lookup). */
+  const emoji = (kind: string) => instance.reactions.find((r) => r.key === kind)?.emoji ?? emojiOfKey(kind) ?? readable(kind);
+  const said = (kind: string) => (instance.reactions.some((r) => r.key === kind) || emojiOfKey(kind) === null ? readable(kind) : localName(emojiOfKey(kind)!, null));
   return (
     <>
       <div className="kb-move-notice">
@@ -113,7 +116,7 @@ export function MoveNotice({ act }: { readonly act: Id }) {
                   <ul className="kb-chips kb-move-reactions" aria-label="Reactions">
                     {notice.reactions.map((r) => (
                       <li key={r.kind} className="kb-chip" data-kb-reaction={r.kind}>
-                        <span className="kb-visually-hidden">{readable(r.kind)}, {r.count}</span>
+                        <span className="kb-visually-hidden">{said(r.kind)}, {r.count}</span>
                         <span className="kb-move-tile" aria-hidden="true"><span className="kb-move-emoji">{emoji(r.kind)}</span> <b>{r.count}</b></span>
                       </li>
                     ))}

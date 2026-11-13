@@ -8,6 +8,12 @@
   margin: 0.6em 0 0;
 }
 
+/* The one plain line a card puts under a row (who can see the totals, and until when): the board's own small text, on a line of its own. */
+.kb-reactions-line {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
 .kb-chips {
   display: flex;
   flex-wrap: wrap;
