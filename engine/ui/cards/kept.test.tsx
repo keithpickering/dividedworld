@@ -141,6 +141,13 @@ describe('a character play of a card that keeps', () => {
     expect(keptOf(w, 'c1-inside')).toBe('true');
   });
 
+  test('after its end a post dated exactly at the play\'s date is wrapped with `kept`, and one dated exactly at its end is not', () => {
+    const edges = [by('c1-at-play', 'c1', PLAYED), by('c1-at-end', 'c1', ENDS)];
+    const w = setup([look('keepermask', { Effect: asks })], [maskPlay()], edges, 8 * DAY);
+    expect(w.wrapped('keepermask')).toEqual(['c1-at-play']);
+    expect(keptOf(w, 'c1-at-play')).toBe('true');
+  });
+
   test('a play an admin ended wraps none, up or over', () => {
     expect(setup(cards(), [maskPlay(), ended('mask')], mine).wrapped('keepermask')).toEqual([]);
     expect(setup(cards(), [maskPlay(), ended('mask')], mine, 8 * DAY).wrapped('keepermask')).toEqual([]);
@@ -250,5 +257,48 @@ describe('the Lens on a character\'s postbit', () => {
   test('lists the ended kept play too on a post written while it was up', async () => {
     const { tabs } = await tabsAt('2026-11-01T12:00:00.000Z');
     expect(tabs).toEqual(['Keeper Mask', 'glow']);
+  });
+
+  /* The play's own date is inside its window and its end is outside (`fallsOn`'s `from <= written < to`), as `markedPlays` reads it. */
+  test('a post dated exactly at the play\'s date is inside', async () => {
+    expect((await tabsAt(PLAYED)).tabs).toEqual(['Keeper Mask', 'glow']);
+  });
+
+  test('a post dated exactly at the play\'s end is outside', async () => {
+    expect((await tabsAt(ENDS)).tabs).toEqual(['glow']);
+  });
+
+  /* A kind with an ended keeping play (dropped for a post outside its window) and a live play of the same kind: the Lens's words are the live play's alone. */
+  test('the state words of a kind describe only the plays this post is marked with', async () => {
+    const live: Act = { ...maskPlay, id: 'live', createdAt: '2026-10-29T12:00:01.000Z', payload: { ...maskPlay.payload, ends: '2026-12-01T12:00:00.000Z' } };
+    const fake = buildWorld({}, instance);
+    fake.clock.advance(8 * DAY);
+    const store = createPlays();
+    store.add([maskPlay, live]);
+    const reachAt = { reach: 'character', target: 'c1', name: 'C1', fromPost: BEFORE, thread: THREAD, board: 'general', title: 'T', to: '/t', plays: store, know: async () => {}, focusBack: () => null } as unknown as ReachAt;
+    const status = (plays: readonly { readonly id: string }[]) => `plays:${plays.map((p) => p.id).join('+')}`;
+    renderIn(fake, <PostMarks post="c1" postAt="2026-11-06T12:00:00.000Z" plays={store} compare={false} to="/t" nameOf={() => 'x'} faceOf={() => null} tallies={createTallies()} mine={createMine()} reachAt={reachAt} onSpin={() => {}} />, { instance, cards: [look('keepermask', { status }), look('glow')] });
+    await userEvent.click(await screen.findByRole('button', { name: /^Keeper Mask/u }));
+    const lens = await screen.findByRole('dialog', { name: 'Cards on this character' });
+    expect(lens.textContent).toContain('plays:live');
+    expect(lens.textContent).not.toContain('plays:live+');
+    expect(lens.textContent).not.toContain('plays:mask');
+  });
+
+  /* The same kind, read from the mark itself: its accessible name carries the state words of the plays the post is marked with, not the dropped ended play's. */
+  test('the mark\'s own name describes only the plays this post is marked with', async () => {
+    const live: Act = { ...maskPlay, id: 'live', createdAt: '2026-10-29T12:00:01.000Z', payload: { ...maskPlay.payload, ends: '2026-12-01T12:00:00.000Z' } };
+    const fake = buildWorld({}, instance);
+    fake.clock.advance(8 * DAY);
+    const store = createPlays();
+    store.add([maskPlay, live]);
+    const reachAt = { reach: 'character', target: 'c1', name: 'C1', fromPost: BEFORE, thread: THREAD, board: 'general', title: 'T', to: '/t', plays: store, know: async () => {}, focusBack: () => null } as unknown as ReachAt;
+    const status = (plays: readonly { readonly id: string }[]) => `plays:${plays.map((p) => p.id).join('+')}`;
+    renderIn(fake, <PostMarks post="c1" postAt="2026-11-06T12:00:00.000Z" plays={store} compare={false} to="/t" nameOf={() => 'x'} faceOf={() => null} tallies={createTallies()} mine={createMine()} reachAt={reachAt} onSpin={() => {}} />, { instance, cards: [look('keepermask', { status }), look('glow')] });
+    const mark = await screen.findByRole('button', { name: /^Keeper Mask/u });
+    const name = mark.getAttribute('aria-label') ?? '';
+    expect(name).toContain('plays:live');
+    expect(name).not.toContain('plays:live+');
+    expect(name).not.toContain('plays:mask');
   });
 });

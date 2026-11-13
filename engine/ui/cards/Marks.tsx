@@ -85,9 +85,11 @@ interface MarkProps {
   readonly nameOf?: (character: Id | null) => string;
   /** What the marks are on, as a screen reader hears it: a post, or a character, a thread or a board. */
   readonly where: string;
+  /** When the post was written, where it is a character's postbit: the mark's view reads only the plays that fall on that post (as the strip's `postAt`). */
+  readonly postAt?: string;
 }
 
-const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf, where }: MarkProps) {
+const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf, where, postAt }: MarkProps) {
   const { instance, ui } = useKayfa();
   const back = isBack(kind);
   /* A card back that sprang shows the card it was, in its place: no mark moves (the card mechanic's design, section 4). */
@@ -95,7 +97,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const shownKind = revealed ?? kind;
   const rules = instance.cards.find((c) => c.key === shownKind);
   const cardUi = ui.cards.find((c) => c.key === shownKind);
-  const view = useResolvedView(store, post, kind, nameOf);
+  const view = useResolvedView(store, post, kind, nameOf, postAt);
   const more = useOutdrawing(tallies, plays, postTotal, compare);
   const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
@@ -244,7 +246,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
     <span className="kb-marks" ref={strip}>
       {visit && <VisitMark visit={visit.visit} mod={visit.mod} pronouns={visit.pronouns} expanded={open === VISIT_KIND} onOpen={press} />}
       {shown.map((kind) => (
-        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} where={where} />
+        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} where={where} postAt={postAt} />
       ))}
       {hidden.length > 0 && <More hidden={hidden.length} first={hidden[0]!} expanded={open !== null && hidden.includes(open)} onOpen={press} />}
       {ghost && !hosted && <GhostMark act={ghost} />}
