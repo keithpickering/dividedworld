@@ -1,4 +1,4 @@
--- A thread named by a setting is found by its key (migration 0480; issue #648). `systemAnnouncements` and `updatesThread` name a thread by its id, written as a JSON string, and the four
+-- A thread named by a setting is found by its key (migration 0360; issue #648). `systemAnnouncements` and `updatesThread` name a thread by its id, written as a JSON string, and the four
 -- functions that find one (spring_facts, place_cast, lay_sprung, seed_instance) ask setting_thread. It answers the thread the setting names, or null, by one probe of threads_pkey: a value
 -- that is not a uuid's canonical text finds no thread and never raises, and what it reads of `threads` does not move with the threads an instance holds.
 

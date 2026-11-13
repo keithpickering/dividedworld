@@ -1,4 +1,4 @@
--- A thread named by a setting is found by its key (docs/plans/2026-11-13-setting-thread-plan.md; issue #648). The numbers 0480 are placeholders: the build renames this file to the next free number.
+-- A thread named by a setting is found by its key (docs/plans/2026-11-13-setting-thread-plan.md; issue #648).
 --
 -- `systemAnnouncements` and `updatesThread` name a thread by its id, written as a JSON string, and five statements in four functions found that thread with
 -- `settings s join threads t on t.id::text = s.value #>> '{}'`. A comparison on the id written as text cannot use threads_pkey, so each read a whole index of `threads`: the count of

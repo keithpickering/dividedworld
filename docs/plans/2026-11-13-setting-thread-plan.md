@@ -3,7 +3,7 @@ Record, written 2026-11-13.
 # A thread named by a setting is found by its key: plan
 
 Issue #648. No design session preceded this; the plan is the build session's, and what it decided for the owner to
-confirm is under "Decisions". One task. One migration and one SQL test, on placeholder numbers (0480).
+confirm is under "Decisions". One task. One migration and one SQL test, on placeholder numbers (0480), given 0360 and 0308 when it landed.
 
 ## What the code is now
 
@@ -49,7 +49,7 @@ Model: sonnet
 1. `supabase/tests/0135-face-down-moves.sql`, after the "reads were not counted" assertion: `threads` (the seventh
    relation in name order in `pg_temp.reads()`) is read at most 8 entries in a quote's facts and a cast's facts.
    Message: `a back's decision reads % and % entries of threads, a whole index and not a key`.
-2. New `supabase/tests/0480-setting-thread.sql`:
+2. New `supabase/tests/0308-setting-thread.sql`:
    - `setting_thread` returns the thread for a setting that names one; null for a key with no setting, a value that is
      not a uuid (`"nope"`, a number, an uppercase uuid), and a uuid no thread has. None raises.
    - `anon` and `authenticated` cannot execute it.
@@ -61,14 +61,14 @@ Model: sonnet
    - Each of the four functions still finds the announcements thread (a board card played and one sprung land in it;
      `seed_instance` run again makes no second announcements or updates thread).
 
-**Then** `supabase/migrations/0480_setting_thread.sql`: `setting_thread`, then the four functions written whole from the
+**Then** `supabase/migrations/0360_setting_thread.sql`: `setting_thread`, then the four functions written whole from the
 definitions in the table, each with only its lookup statement changed. `create or replace` keeps owner and grants.
 
 **Proof the bodies are otherwise unchanged:** `pg_get_functiondef` of each of the four before and after the migration,
 diffed; the diff holds the five statements and nothing else. Its output goes in the PR.
 
 **Poison:** with the migration applied, put the text join back in `setting_thread` alone; 0135's new assertion and
-0480's scale assertions go red. Recorded in the PR.
+0308's scale assertions go red. Recorded in the PR.
 
 ## Decisions
 
