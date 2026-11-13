@@ -896,8 +896,6 @@ describe('a thread spun from a card on a character', () => {
   test('an edit made to the pressed post afterwards leaves the box as it was', async () => {
     const w = world();
     const thread = await spun(w, w.pressed);
-    /* The fake is on the wall clock: an edit in the spin's own millisecond is no later than the spin. */
-    await new Promise((r) => setTimeout(r, 15));
     const edited = await w.fake.edit(w.pressed, w.zed, 'Changed words.');
     expect(edited.ok).toBe(true);
     open(w, thread);
