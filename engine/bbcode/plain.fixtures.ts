@@ -295,12 +295,12 @@ export const PLAIN_FIXTURES: readonly PlainFixture[] = [
   },
   {
     "name": "a tag past the nesting cap is text",
-    "body": "[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b]core[/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b]",
+    "body": "[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b]core[/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b]",
     "plain": "[b][b]core[/b][/b]"
   },
   {
     "name": "a tag past the nesting cap with words between",
-    "body": "[i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i]a[b]b[/b]c[/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i]",
+    "body": "[i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i][i]a[b]b[/b]c[/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i][/i]",
     "plain": "[i]a[b]b[/b]c[/i]"
   },
   {
@@ -1429,18 +1429,18 @@ export const PLAIN_FIXTURES: readonly PlainFixture[] = [
     "plain": "after"
   },
   {
-    "name": "thirty-three centers: the last opener is text",
-    "body": "[center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center]x[/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center]",
+    "name": "seventeen centers: the last opener is text",
+    "body": "[center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center][center]x[/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center][/center]",
     "plain": "[center]x[/center]"
   },
   {
-    "name": "thirty-three spoilers: the last opener is text",
-    "body": "[spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler]x[/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler]",
+    "name": "seventeen spoilers: the last opener is text",
+    "body": "[spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler][spoiler]x[/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler][/spoiler]",
     "plain": "[spoiler]x[/spoiler]"
   },
   {
-    "name": "thirty-three counterfeits: the last opener is text",
-    "body": "[quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a]x[/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote]",
+    "name": "seventeen counterfeits: the last opener is text",
+    "body": "[quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a]x[/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote]",
     "plain": "[quote=a]x[/quote]"
   },
   {
@@ -1861,14 +1861,66 @@ export const PLAIN_FIXTURES: readonly PlainFixture[] = [
   },
   {
     "name": "quotes: a real quote past MAX_DEPTH",
-    "body": "[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]q[/quote][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b]",
-    "plain": "[b][b][b][b][b][b][b][b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]q[/quote][/b][/b][/b][/b][/b][/b][/b][/b]",
-    "quotes": []
+    "body": "[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]q[/quote][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b]",
+    "plain": "[b][b][b][b] [/b][/b][/b][/b]",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
   },
   {
     "name": "quotes: a body with none",
     "body": "just words",
     "plain": "just words",
     "quotes": []
+  },
+  {
+    "name": "quotes: a pyramid of real quotes past MAX_DEPTH",
+    "body": "before [quote=00000000-0000-4000-8000-000000000000][quote=00000000-0000-4000-8000-000000000001][quote=00000000-0000-4000-8000-000000000002][quote=00000000-0000-4000-8000-000000000003][quote=00000000-0000-4000-8000-000000000004][quote=00000000-0000-4000-8000-000000000005][quote=00000000-0000-4000-8000-000000000006][quote=00000000-0000-4000-8000-000000000007][quote=00000000-0000-4000-8000-000000000008][quote=00000000-0000-4000-8000-000000000009][quote=00000000-0000-4000-8000-000000000010][quote=00000000-0000-4000-8000-000000000011][quote=00000000-0000-4000-8000-000000000012][quote=00000000-0000-4000-8000-000000000013][quote=00000000-0000-4000-8000-000000000014][quote=00000000-0000-4000-8000-000000000015][quote=00000000-0000-4000-8000-000000000016][quote=00000000-0000-4000-8000-000000000017][quote=00000000-0000-4000-8000-000000000018]deep words[/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote] after",
+    "plain": "before after",
+    "quotes": ["00000000-0000-4000-8000-000000000000", "00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002", "00000000-0000-4000-8000-000000000003", "00000000-0000-4000-8000-000000000004", "00000000-0000-4000-8000-000000000005", "00000000-0000-4000-8000-000000000006", "00000000-0000-4000-8000-000000000007", "00000000-0000-4000-8000-000000000008", "00000000-0000-4000-8000-000000000009", "00000000-0000-4000-8000-000000000010", "00000000-0000-4000-8000-000000000011", "00000000-0000-4000-8000-000000000012", "00000000-0000-4000-8000-000000000013", "00000000-0000-4000-8000-000000000014", "00000000-0000-4000-8000-000000000015", "00000000-0000-4000-8000-000000000016", "00000000-0000-4000-8000-000000000017", "00000000-0000-4000-8000-000000000018"]
+  },
+  {
+    "name": "quotes: a pyramid of real quotes past MAX_DEPTH inside formatting",
+    "body": "[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][quote=00000000-0000-4000-8000-000000000000][quote=00000000-0000-4000-8000-000000000001][quote=00000000-0000-4000-8000-000000000002][quote=00000000-0000-4000-8000-000000000003]deep words[/quote][/quote][/quote][/quote][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b]",
+    "plain": "",
+    "quotes": ["00000000-0000-4000-8000-000000000000", "00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002", "00000000-0000-4000-8000-000000000003"]
+  },
+  {
+    "name": "quotes: a real quote inside a counterfeit past MAX_DEPTH",
+    "body": "[quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=a][quote=0f8fad5b-d9cb-469f-a165-70867728950e]deep words[/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote]",
+    "plain": "[quote=a] [/quote]",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: nested real quotes inside a cut",
+    "body": "[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]one[quote=1a2b3c4d-1111-4222-8333-444455556666]two[quote=0f8fad5b-d9cb-469f-a165-70867728950e]three[/quote][quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8]four[/quote][/quote][/quote][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b]",
+    "plain": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e", "1a2b3c4d-1111-4222-8333-444455556666", "6ba7b810-9dad-41d1-80b4-00c04fd430c8"]
+  },
+  {
+    "name": "quotes: code and noparse inside a cut hold a quote opener",
+    "body": "[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][quote=0f8fad5b-d9cb-469f-a165-70867728950e][code][quote=1a2b3c4d-1111-4222-8333-444455556666]x[/code][noparse][quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8][/noparse]y[/quote][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b]",
+    "plain": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: an unclosed cut",
+    "body": "[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]left open [quote=1a2b3c4d-1111-4222-8333-444455556666]deeper",
+    "plain": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e", "1a2b3c4d-1111-4222-8333-444455556666"]
+  },
+  {
+    "name": "excerpt: an Act quoted only past MAX_DEPTH has none",
+    "body": "x[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]deep words[/quote][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b]",
+    "plain": "x",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "excerpt: an Act quoted past MAX_DEPTH and shown has only the shown words",
+    "body": "[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]deep words[/quote][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]shown words[/quote]",
+    "plain": "",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "shown words",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
   }
 ];
