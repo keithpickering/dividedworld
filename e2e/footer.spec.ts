@@ -52,8 +52,9 @@ async function faults(page: Page): Promise<string[]> {
       const r = ratio(parse(s.color), bg);
       if (r < 4.5) out.push(`reaction tile "${el.textContent}": ${r.toFixed(2)}:1 on its own ground, under 4.5:1`);
     }
-    /* The bars are never inked: nothing of the splat's canvas reaches into either bar. */
-    const ink = post.querySelector('.kb-whoops-ink')?.getBoundingClientRect();
+    /* The bars are never inked: nothing of the splat's canvases (one a band of the body a layer) reaches into either bar. */
+    const inks = [...post.querySelectorAll('.kb-whoops-ink')].map((c) => c.getBoundingClientRect());
+    const ink = inks.length === 0 ? null : { top: Math.min(...inks.map((r) => r.top)), bottom: Math.max(...inks.map((r) => r.bottom)) };
     if (!ink) out.push('#41 is not splatted');
     else {
       const [head, foot] = [post.querySelector('header.kb-act-meta')!.getBoundingClientRect(), bar.getBoundingClientRect()];
@@ -73,7 +74,7 @@ for (const [width, height, label] of [[1440, 1120, '1440'], [390, 844, '390']] a
 
       test('the footer bar is opaque, its controls and the reaction tiles read at 4.5:1 on their own grounds', async ({ page }) => {
         await page.goto(`/?fixture=boards&story=${id}`);
-        await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+        await expect(page.locator('#post-41 .kb-whoops-ink').first()).toBeVisible();
         /* The extra layer is heard live: it is on the post once its tag says so. */
         await expect(page.locator('#post-41 .kb-whoops')).toHaveAttribute('data-kb-layers', /^live live$/u);
         expect(await faults(page)).toEqual([]);
@@ -81,7 +82,7 @@ for (const [width, height, label] of [[1440, 1120, '1440'], [390, 844, '390']] a
 
       test('poison: with the bar made transparent the check names it', async ({ page }) => {
         await page.goto(`/?fixture=boards&story=${id}`);
-        await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+        await expect(page.locator('#post-41 .kb-whoops-ink').first()).toBeVisible();
         await page.addStyleTag({ content: 'footer.kb-act-foot { background: transparent !important; }' });
         expect((await faults(page)).join('\n')).toContain("the footer bar's ground is not opaque");
       });
@@ -92,7 +93,7 @@ for (const [width, height, label] of [[1440, 1120, '1440'], [390, 844, '390']] a
 test('the footer bar is on every post, splatted or not, and a splat does not move the layout', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1120 });
   await page.goto('/?fixture=boards&moment=01-main');
-  await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+  await expect(page.locator('#post-41 .kb-whoops-ink').first()).toBeVisible();
   const read = await page.evaluate(() => {
     const posts = [...document.querySelectorAll('article.kb-act')];
     const head = (p: Element) => getComputedStyle(p.querySelector('header.kb-act-meta')!);
