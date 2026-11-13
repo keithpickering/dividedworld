@@ -321,15 +321,18 @@ describe('the hand on the Main board opens calmly (the phone-hand design, sectio
     await waitFor(() => expect(drawer).not.toHaveAttribute('data-kb-dealing'));
   });
 
-  test('a deal that is stopped by a close does not leave the drawer dealing once the gather ends', async () => {
+  test('a deal that is stopped leaves no mark: the stop itself clears data-kb-dealing, with no play having ended', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
     setup();
     const hand = await handButton();
     const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
     await userEvent.click(hand);
-    await userEvent.click(hand);
-    await act(async () => { for (const r of runs) r.settle(); });
-    await waitFor(() => expect(drawer).not.toHaveAttribute('data-kb-dealing'));
+    expect(runs).toHaveLength(2);
+    expect(drawer).toHaveAttribute('data-kb-dealing');
+    /* Unmount mid-deal: the drawer's run is stopped, and no fake play has ended, so no card's landing can have cleared the mark. */
+    cleanup();
+    for (const r of runs) expect(r.stop).toHaveBeenCalledTimes(1);
+    expect(drawer).not.toHaveAttribute('data-kb-dealing');
   });
 
   test('under Off the drawer never carries data-kb-dealing', async () => {
