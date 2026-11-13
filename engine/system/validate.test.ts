@@ -158,5 +158,5 @@ test('a string over its bound is cut at the last space within it, where that kee
   const nl = repair('first line\nsecond line goes on', { type: 'string', maxLength: 16 });
   assert.ok(nl.ok && nl.value === 'first line', `a newline is a place to cut: ${JSON.stringify(nl)}`);
   const punct = repair('-- - ----', { type: 'string', maxLength: 4 });
-  assert.ok(punct.ok && punct.value.length > 0, `a cut that leaves only punctuation is never empty: ${JSON.stringify(punct)}`);
+  assert.ok(punct.ok && String(punct.value).length > 0, `a cut that leaves only punctuation is never empty: ${JSON.stringify(punct)}`);
 });
