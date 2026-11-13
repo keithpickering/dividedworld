@@ -62,7 +62,7 @@ import { DROPS_MOST, beginLine, strokesInto, unionRect, type Grid, type Line, ty
 import { gridOf, layerKey, type Built } from './build.ts';
 import { buildClient } from './buildClient.ts';
 import {
-  BRUSH_PX, LayerInk, type LiveLine, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
+  BRUSH_PX, LayerInk, type LiveLine, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, SWEEP_PX_S, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
   type Drops, type Pt, type Stroke, type Sweep, type TextLine,
 } from './scrub.ts';
 import { decodePoints, packStroke } from './points.ts';
@@ -1276,7 +1276,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         }
         return lo <= hi ? [lo, hi] : null;
       };
-      const step = sweepStep(rows, run.sweep, dt, span);
+      const step = sweepStep(rows, run.sweep, dt, SWEEP_PX_S / b.w, span);
       if (step.idle) {
         stopSweep();
         return;

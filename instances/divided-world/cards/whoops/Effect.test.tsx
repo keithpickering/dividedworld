@@ -42,13 +42,14 @@ vi.mock('./buildClient.ts', async (importOriginal) => {
 });
 
 /* Every ink grid the component builds is counted, so a test can tell a rebuild from a kept grid. Tests that count do not build their own. */
-const built = vi.hoisted(() => ({ grids: 0 }));
+const built = vi.hoisted(() => ({ grids: 0, made: [] as unknown[] }));
 vi.mock('./scrub.ts', async (importOriginal) => {
   const real = await importOriginal<typeof import('./scrub.ts')>();
   class Counted extends real.LayerInk {
     constructor(...args: ConstructorParameters<typeof real.LayerInk>) {
       super(...args);
       built.grids++;
+      built.made.push(this);
     }
   }
   return { ...real, LayerInk: Counted };
@@ -711,12 +712,33 @@ describe('the keyboard path', () => {
     hold(button);
     frames(8000);
     expect(states(root)).toEqual(['live']);
-    /* Every pass takes `WASH_TAKES` of the ink and a core takes several, so it is about 86 seconds at the sweep's pace (it was a minute while one pass cleared): a hand's time, never a moment and never none. */
-    /* It measures the sweep's own time to clean one layer in fake time: 86 seconds. The upper bound is 1.25 times that, so a sweep that slows by a quarter is caught. */
+    /* Every pass takes `WASH_TAKES` of the ink and a core takes several, so at a hand's 400px a second it is about 114 seconds of fake time on this 988px box (it was 86 seconds at 0.55 of the width a second): a hand's time, never a moment and never none. */
+    /* SWEEP_MS is the sweep's own time to clean one layer here, measured (114 seconds). The upper bound is 1.25 times that, so a sweep that slows by a quarter is caught, and the lower is 0.8 times, so one that quickens is. */
+    const SWEEP_MS = 114_000;
     let t = 8000;
-    while (states(root)[0] === 'live' && t < 108_000) { frames(1000); t += 1000; }
+    while (states(root)[0] === 'live' && t < SWEEP_MS * 1.25) { frames(1000); t += 1000; }
     expect(states(root)).toEqual(['clean']);
-    expect(t).toBeGreaterThan(30_000);
+    expect(t).toBeGreaterThan(10_000);
+    expect(t).toBeGreaterThan(SWEEP_MS * 0.8);
+  }, 60_000);
+
+  test('a line read through thinned ink is said', () => {
+    clock();
+    const from = built.made.length;
+    const { root } = mount({ layers: 1 });
+    const ink = built.made.slice(from).at(-1) as LayerInk;
+    const region = root.querySelector<HTMLElement>('[data-kb-uncovered]')!;
+    const button = screen.getByRole('button', { name: 'Hold to scrub' });
+    hold(button);
+    for (let k = 0; k < 120 && region.textContent === ''; k++) frames(500);
+    release(button);
+    const said = /L(\d\d) alpha beta gamma/u.exec(region.textContent ?? '');
+    expect(said).not.toBeNull();
+    /* Said while the layer is live, and while ink still lies over most of the line: the eye reads through what is thin. */
+    expect(states(root)).toEqual(['live']);
+    const y = ((Number(said![1]) + 0.5) * LINE_PX) / boxNow().h;
+    const inked = Array.from({ length: 51 }, (_, k) => ink.has(k / 50, y)).filter(Boolean).length;
+    expect(inked).toBeGreaterThanOrEqual(26);
   }, 60_000);
 
   test('a line it uncovers is said, in the polite region on the page from the start', () => {
@@ -736,11 +758,11 @@ describe('the keyboard path', () => {
     const { root } = mount({ layers: 2 });
     const button = screen.getByRole('button', { name: 'Hold to scrub' });
     hold(button);
-    /* Each layer takes a hand's time, as one does alone (about 86 seconds each at the sweep's pace). */
+    /* Each layer takes a hand's time, as one does alone (measured at the sweep's pace: the top one is clean at about 162 seconds and both at about 205, the bounds 1.25 times those). */
     let t = 0;
-    while (states(root)[1] === 'live' && t < 150_000) { frames(1000); t += 1000; }
+    while (states(root)[1] === 'live' && t < 202_500) { frames(1000); t += 1000; }
     expect(states(root)[1]).toBe('clean');
-    while (states(root)[0] === 'live' && t < 300_000) { frames(1000); t += 1000; }
+    while (states(root)[0] === 'live' && t < 256_000) { frames(1000); t += 1000; }
     expect(states(root)).toEqual(['clean', 'clean']);
   }, 60_000);
 });
