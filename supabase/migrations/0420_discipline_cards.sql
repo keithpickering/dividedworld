@@ -1114,18 +1114,19 @@ create or replace view my_bans as
   ) l on true
   where c.owner = auth.uid();
 
--- Task 4 (section 3): my_falls_taken, the author's log row for a fall taken for one of its posts: an infraction that names a `fall_play` and is about a post by one of the caller's characters. `character` is the
--- author, and the character the infraction landed on is named only by its public name (the play is a public Act). A caller's own caster's infraction is in my_infractions and not here. Nothing here is computed from an
--- owner but the caller's own: `c.owner = auth.uid()` is the author's. Cost: led by acts_fall_spent (the infractions that took a fall, which is one for each filing that met a fall), each with a primary-key probe of its post and its
--- author; a page of the log reads at most 200 of them, newest first.
+-- Task 4 (section 3): my_falls_taken, the author's log row for a fall taken for one of its posts: an infraction that names a `fall_play` and, as `fall_for`, a character of the caller's (the author of the post it is about,
+-- which infract writes and the guard holds to the post). `character` is the author, and the character the infraction landed on is named only by its public name (the play is a public Act). A caller's own caster's
+-- infraction is in my_infractions and not here. Nothing here is computed from an owner but the caller's own: `c.owner = auth.uid()` is the author's. Cost: led by the caller's characters (characters_owner), each a probe
+-- of acts_fall_for for the falls taken for it, then a primary-key probe of the post, so it is bounded by the caller's characters and the falls taken for them, never by the instance's falls; a page of the log
+-- reads the newest 200 of those.
 create view my_falls_taken as
   select i.id as infraction, c.id as character, i.created_at as at, p.id as post, p.seq as post_seq, i.thread, punishment_words(i.id) as rule,
          (i.payload ->> 'points')::integer as points, (select m.name from characters m where m.staff = i.payload ->> 'staff') as mod_name,
          (select k.name from characters k where k.id = (i.payload ->> 'character')::uuid) as taker_name
-  from acts i
+  from characters c
+  join acts i on i.kind = 'infraction' and i.payload ? 'fall_for' and i.payload ->> 'fall_for' = c.id::text
   join acts p on p.id = (i.payload ->> 'about_act')::uuid
-  join characters c on c.id = p.character and c.owner = auth.uid()
-  where i.kind = 'infraction' and i.payload ? 'fall_play';
+  where c.owner = auth.uid();
 revoke all on my_falls_taken from public, anon, authenticated;
 grant select on my_falls_taken to authenticated;
 
@@ -1320,11 +1321,12 @@ end;
 
 -- ===================================================================================================== Section 3 (Task 4) ====
 -- Taking the fall: a card of kind `fall`, cast on another character's post, waits there; the first filing of a visit to the post lands its infraction on the character that cast it.
---   1. acts_infraction_payload   allows a `fall_play` key (a uuid); acts_fall_spent finds the infractions that name a play, for file_visit's "no infraction names it" and the page's `spent`.
+--   1. acts_infraction_payload   allows `fall_play` (the play, a uuid) and `fall_for` (the post's author character, a uuid), each only with the other. acts_fall_spent finds the infractions that name a play, for file_visit's
+--                                "no infraction names it" and the page's `spent` (fall_spent); acts_fall_for finds the falls taken for a character, for my_falls_taken.
 --   2. infract, acts_warn_guard  an infraction may be about a post that is not `who`'s when it names `who`'s own fall play on that post. The lock on `who`, the points, the ban and its ladder are `who`'s.
 --   3. file_visit                after the end, the oldest live unspent fall on the post (not caught, not ended by an admin) gives its caster the filing; with none, or one infract would refuse, as before. It takes the post's row
 --                                first, as place_cast does, so a cast racing a filing either takes it or stays unspent, never both. Lock order, everywhere: the post's row, the visit's open row, the character infract locks.
---   4. close_appeal              an `increased` verdict names the punished infraction's fall_play, so the increase lands on the same character. open_appeal already reads the infraction's own character:
+--   4. close_appeal              an `increased` verdict names the punished infraction's fall_play, so the increase lands on the same character (infract writes `fall_for` again from the post). open_appeal already reads the infraction's own character:
 --                                only the caster may appeal it, and the author is told it is no punishment of theirs.
 --   5. place_cast                (section 1, marked Task 4) a fall on a staff character's post and a fall on one's own character's post are refused, in plain words, before anything is spent.
 --   6. card_target               names the post's `author`. thread_page names `spent`. my_falls_taken and log_page's `falls` tell the author's player (section 2, marked Task 4).
@@ -1332,12 +1334,12 @@ end;
 -- they drop off by themselves, the ban ends by itself, the caster may appeal, an admin may end it.
 -- Privacy: nothing here reads who owns a character. The filing reads the post's plays (public Acts) and a staff flag (public); the refusals compare characters; the page's `spent` and card_target's `author` are public
 -- projections; my_falls_taken is the author's own and names the caster by its public name.
--- Cost: file_visit gains one read of the post's plays (acts_layers, 0072) and, for a fall play found, one probe of acts_fall_spent; thread_page one probe of the visit's infractions for each fall play on the page.
+-- Cost: file_visit gains one read of the post's plays (acts_layers, 0072) and, for a fall play found, one probe of acts_fall_spent; thread_page one probe of acts_fall_spent (fall_spent) for each fall play on the page; my_falls_taken one probe of acts_fall_for for each of the caller's characters.
 
 -- acts_infraction_payload (0104's), with a `fall_play` key. A relaxation, so the rows already there pass it: added not valid, then validated (a lock that does not stop writes).
 alter table acts drop constraint acts_infraction_payload;
 alter table acts add constraint acts_infraction_payload check (kind <> 'infraction' or (
-  payload - 'character' - 'band' - 'points' - 'rule_number' - 'board' - 'about_act' - 'visit_act' - 'staff' - 'expires_at' - 'fall_play' = '{}'::jsonb
+  payload - 'character' - 'band' - 'points' - 'rule_number' - 'board' - 'about_act' - 'visit_act' - 'staff' - 'expires_at' - 'fall_play' - 'fall_for' = '{}'::jsonb
   and jsonb_typeof(payload -> 'character') = 'string' and payload ->> 'character' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   and payload ->> 'band' in ('minor', 'moderate', 'severe')
   and jsonb_typeof(payload -> 'points') = 'number' and payload ->> 'points' ~ '^[1-9][0-9]{0,8}$'
@@ -1347,9 +1349,23 @@ alter table acts add constraint acts_infraction_payload check (kind <> 'infracti
   and (jsonb_typeof(payload -> 'visit_act') = 'null' or (jsonb_typeof(payload -> 'visit_act') = 'string' and payload ->> 'visit_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
   and jsonb_typeof(payload -> 'staff') = 'string' and payload ->> 'staff' <> ''
   and jsonb_typeof(payload -> 'expires_at') = 'string'
-  and (not payload ? 'fall_play' or (jsonb_typeof(payload -> 'fall_play') = 'string' and payload ->> 'fall_play' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))) is true) not valid;
+  and (not payload ? 'fall_play' or (jsonb_typeof(payload -> 'fall_play') = 'string' and payload ->> 'fall_play' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
+  and (not payload ? 'fall_for' or (payload ? 'fall_play' and jsonb_typeof(payload -> 'fall_for') = 'string' and payload ->> 'fall_for' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
+  and (not payload ? 'fall_play' or payload ? 'fall_for')) is true) not valid;
 alter table acts validate constraint acts_infraction_payload;
 create index acts_fall_spent on acts ((payload ->> 'fall_play')) where kind = 'infraction' and payload ? 'fall_play';
+-- The author's side: a fall infraction by the author character of the post it is about (`fall_for`, written by infract from the post and held to it by the guard), so that the author's log starts from the author's
+-- characters, which are few, and never from the instance's falls, which grow without bound.
+create index acts_fall_for on acts ((payload ->> 'fall_for')) where kind = 'infraction' and payload ? 'fall_for';
+
+-- Whether a filing has spent a fall play: an infraction names it. Infractions are public Acts and the play is a public id, so this is the same for every caller. One probe of acts_fall_spent. A function because a screen
+-- reads acts through acts_public alone, whose concealing layer hides `payload ->> 'fall_play'` from that index; the answer is the same as the projection's.
+create function public.fall_spent(play uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (select 1 from acts i where i.kind = 'infraction' and i.payload ? 'fall_play' and i.payload ->> 'fall_play' = play::text)
+$$;
+revoke execute on function public.fall_spent(uuid) from public, anon;
+grant execute on function public.fall_spent(uuid) to authenticated, service_role;
 
 -- infract (0109's), with a last argument `fall_play`: with it the post need not be `who`'s, and the infraction names the play. A new signature, so the old is dropped; its callers (file_visit, close_appeal) are
 -- written again below. Everything else (the lock on `who`, the points, the ban and its ladder, which are `who`'s) as 0109 wrote it. A banned `who` is warned all the same, with or without a fall: infract has
@@ -1376,6 +1392,7 @@ declare
   days integer;
   ends timestamptz;
   ban_at timestamptz;
+  author uuid;
 begin
   if band is null or band not in ('minor', 'moderate', 'severe') then raise exception 'there is no band "%"; a breach is minor, moderate or severe', coalesce(band, '') using errcode = '22023'; end if;
   if staff is null or staff = '' then raise exception 'an infraction names the Mod that filed it' using errcode = '22023'; end if;
@@ -1387,7 +1404,7 @@ begin
   else
     -- A fall (card notes, Part 5): the post is another's, and the play is this character's own card Act of a fall kind on that very post, on the post's reach. Only who and where are held to the play: whether
     -- an admin has ended it since, or a filing spent it, is for the caller to decide (file_visit takes a live one; an appeal's `increased` names the one the first infraction named).
-    select a.thread, t.board into in_thread, on_board from acts a join threads t on t.id = a.thread
+    select a.thread, t.board, a.character into in_thread, on_board, author from acts a join threads t on t.id = a.thread
     where a.id = about_act and a.kind in ('post', 'spin')
       and exists (select 1 from acts k join card_kinds ck on ck.key = k.payload ->> 'card'
                   where k.id = fall_play and k.kind = 'card' and k.character = who and k.target_act_id = a.id and coalesce(k.payload ->> 'reach', 'post') = 'post' and ck.discipline ->> 'kind' = 'fall');
@@ -1403,7 +1420,7 @@ begin
   values (null, 'infraction', in_thread,
     jsonb_build_object('character', who, 'band', band, 'points', pts, 'rule_number', rule_number, 'board', on_board, 'about_act', about_act, 'visit_act', visit_act,
                        'staff', staff, 'expires_at', at + span_interval(bar -> 'decay'))
-      || case when fall_play is not null then jsonb_build_object('fall_play', fall_play) else '{}'::jsonb end, at)
+      || case when fall_play is not null then jsonb_build_object('fall_play', fall_play, 'fall_for', author) else '{}'::jsonb end, at)
   returning id into inf;
   total := warn_points(who);
   if total >= (bar ->> 'size')::integer then
@@ -1428,7 +1445,7 @@ end $function$;
 revoke execute on function public.infract(uuid, text, uuid, text, integer, uuid, uuid) from public, anon, authenticated;
 grant execute on function public.infract(uuid, text, uuid, text, integer, uuid, uuid) to service_role;
 
--- acts_warn_guard (0104's), an infraction about a post of its character's or naming a `fall_play` that is that character's own play on the post; everything else as 0104 wrote it.
+-- acts_warn_guard (0104's), an infraction about a post of its character's, or naming a `fall_play` (and the author, `fall_for`) that is that character's own play on another's post; everything else as 0104 wrote it.
 CREATE OR REPLACE FUNCTION public.acts_warn_guard()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -1444,12 +1461,15 @@ begin
   end if;
   if new.kind = 'infraction' then
     perform (new.payload ->> 'expires_at')::timestamptz;
-    -- A post of the character's, or one whose fall the character took: the play it names is its own card Act of a fall kind on that post (the same test infract makes).
+    -- Either a post of the character's with no fall on it, or a post of another's whose fall the character took: the infraction then names the play (the character's own card Act of a fall kind on that post, the same
+    -- test infract makes) and the post's author (`fall_for`). The key is checked whenever it is present, so a fall_play on an infraction about the character's own post, where a fall is never cast, is refused.
     if not exists (select 1 from acts p where p.id = (new.payload ->> 'about_act')::uuid and p.kind in ('post', 'spin') and p.thread = new.thread
-                   and (p.character = (new.payload ->> 'character')::uuid
-                        or (new.payload ? 'fall_play' and exists (select 1 from acts k join card_kinds ck on ck.key = k.payload ->> 'card'
-                                                                    where k.id = (new.payload ->> 'fall_play')::uuid and k.kind = 'card' and k.character = (new.payload ->> 'character')::uuid
-                                                                      and k.target_act_id = p.id and coalesce(k.payload ->> 'reach', 'post') = 'post' and ck.discipline ->> 'kind' = 'fall')))) then
+                   and (case when new.payload ? 'fall_play' or new.payload ? 'fall_for'
+                        then new.payload ->> 'fall_for' = p.character::text and p.character is distinct from (new.payload ->> 'character')::uuid
+                             and exists (select 1 from acts k join card_kinds ck on ck.key = k.payload ->> 'card'
+                                         where k.id = (new.payload ->> 'fall_play')::uuid and k.kind = 'card' and k.character = (new.payload ->> 'character')::uuid
+                                           and k.target_act_id = p.id and coalesce(k.payload ->> 'reach', 'post') = 'post' and ck.discipline ->> 'kind' = 'fall')
+                        else p.character = (new.payload ->> 'character')::uuid end)) then
       raise exception 'an infraction is about a post of that character''s, or one whose fall it took, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
     end if;
     if jsonb_typeof(new.payload -> 'visit_act') = 'string' and not exists (select 1 from acts v where v.id = (new.payload ->> 'visit_act')::uuid) then
@@ -1487,11 +1507,12 @@ declare
 begin
   select * into v from acts a where a.id = file_visit.visit_act and a.kind = 'visit';
   if not found then raise exception 'there is no such visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
-  -- The lock order, here and in every writer a fall meets: the post's row (place_cast takes it to lay a play on the post, so a fall cast and a filing are laid one after the other, and the one that goes second
-  -- sees the first), then the visit's open row (the row end_visit takes: the end and the infraction are one decision, and the one that waits finds the visit ended), then the row of the character the
-  -- infraction lands on (infract). A play on a character takes that character's row alone, and nothing here waits on a row it already holds in another order. `for no key update` is place_cast's own mode, so the two
-  -- conflict; it does not conflict with a key share (a foreign key) or a read, and a writer that takes the post's row for share (a visit's start) waits for this one to finish and is waited for in turn, never both
-  -- holding one and wanting the other, as long as it takes the post's row before the open row, as this does.
+  -- The lock order this file keeps, here and in every writer a fall meets: the post's row (place_cast takes it to lay a play on a post, so a fall cast and a filing are laid one after the other, and the one that goes
+  -- second sees the first), then the visit's open row (the row end_visit takes: the end and the infraction are one decision, and the one that waits finds the visit ended), then, inside infract, the row of the
+  -- character the infraction lands on. place_cast at post reach takes the post's row; at character reach it takes the character's row alone. start_visit takes advisory locks (visit:<post>, cap:<author>) and then
+  -- the open row, and no post row today. `for no key update` is place_cast's own mode, so the two conflict; it does not conflict with a key share (a foreign key) or a read.
+  -- The rule for a later change: post first everywhere. Any path that takes both a post row and a character row takes the post's first (so a path that plays from a post on a character takes the post it is cast from
+  -- before the character), and a path that takes the open row takes the post's before it. Then no two writers hold one and want the other.
   perform 1 from acts p where p.id = v.target_act_id for no key update;
   perform 1 from visits_open o where o.visit_act = v.id for update;
   charges := visit_charges(v.id);
@@ -1863,12 +1884,11 @@ begin atomic
     'states', (select coalesce(jsonb_agg(jsonb_build_object('play', e.play, 'state', e.state, 'saved_at', e.saved_at)), '[]'::jsonb)
                from effect_state e where e.play in (select w.id from wanted_plays w)),
     'releases', (select coalesce(jsonb_agg(r.play), '[]'::jsonb) from effect_releases r where r.play in (select w.id from wanted_plays w)),
-    -- The plays of a fall card among the page's plays on posts that a filing has spent: the ones an infraction names as its `fall_play` (card notes, Part 5). A public projection, read through acts_public as the
-    -- visits above are: the same for every caller. The probe is made for a fall play alone (card_kinds says which), from the post's visits (acts_visits_by_post) to their infractions.
+    -- The plays of a fall card among the page's plays on posts that a filing has spent: the ones an infraction names as its `fall_play` (card notes, Part 5). The same for every caller (infractions are public Acts and
+    -- the play's id is public). One probe of acts_fall_spent (fall_spent) for each fall play on the page, which card_kinds says; not a read through acts_public, whose concealing layer hides the key from that index.
     'spent', (select coalesce(jsonb_agg(o.id order by o.created_at, o.id), '[]'::jsonb)
               from on_posts o join card_kinds ck on ck.key = o.payload ->> 'card' and ck.discipline ->> 'kind' = 'fall'
-              where o.kind = 'card' and exists (select 1 from acts_public v join acts_public i on i.kind = 'infraction' and i.payload ->> 'visit_act' = v.id::text
-                                                where v.kind = 'visit' and v.target_act_id = o.target_act_id and i.payload ->> 'fall_play' = o.id::text)),
+              where o.kind = 'card' and fall_spent(o.id)),
     'surfaces', (select coalesce(jsonb_object_agg(sf.play::text, jsonb_build_object('covered', bit_count(sf.cover), 'live', to_jsonb(sf.live))), '{}'::jsonb)
                  from surfaces sf where sf.play in (select o.id from on_posts o where o.kind = 'card')),
     'tallies', (select coalesce(jsonb_agg(jsonb_build_object('act', t.act, 'kind', t.kind, 'count', t.count)), '[]'::jsonb)

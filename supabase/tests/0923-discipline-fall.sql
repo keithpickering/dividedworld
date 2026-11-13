@@ -516,7 +516,11 @@ begin
   perform pg_temp.fall(gone, q);
   update characters set owner = null, staff = 'df-gone', staff_kind = 'persona' where id = gone;
   v := pg_temp.visit(q, 'moderate');
-  hit := file_visit(v, 'Filed.');
+  begin
+    hit := file_visit(v, 'Filed.');
+  exception when others then
+    raise exception 'a taker who is staff now must not fail the filing: %: %', sqlstate, sqlerrm;
+  end;
   if (hit ->> 'filed')::boolean is distinct from true or (pg_temp.filed(v)).payload ->> 'character' is distinct from author::text or (pg_temp.filed(v)).payload ? 'fall_play' or pg_temp.bar(author) is distinct from 4 then
     raise exception 'a taker who is staff now changes nothing: the filing lands on the author: %', hit;
   end if;
@@ -529,7 +533,7 @@ declare
   t uuid := tests.thread('Df guard');
   author uuid := pg_temp.player('f9-author'); taker uuid := pg_temp.player('f9-taker'); other uuid := pg_temp.player('f9-other');
   p uuid := pg_temp.say(author, t, 'A post.'); q uuid := pg_temp.say(author, t, 'Another post.');
-  play uuid; why text; board uuid := (select board from threads where id = t);
+  play uuid; why text; board uuid := (select board from threads where id = t); own uuid := pg_temp.say(taker, t, 'The taker''s own post.');
 begin
   perform pg_temp.hand(taker, 't-fall', 1);
   play := (pg_temp.fall(taker, p) ->> 'id')::uuid;
@@ -547,22 +551,30 @@ begin
   if why is null or why not like 'P0002:%' then raise exception 'a post is no play: %', why; end if;
   -- The guard holds the same for a writer that skips infract.
   perform set_config('kayfabb.warn_writer', 'on', true);
-  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid))$s$, t, other, board, p, play));
+  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid, 'fall_for', %L::uuid))$s$, t, other, board, p, play, author));
   if why is null or why not like '23514:%' then raise exception 'the guard refuses a fall that is not the character''s play: %', why; end if;
   why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day'))$s$, t, taker, board, p));
   if why is null or why not like '23514:%' then raise exception 'the guard refuses another character''s post with no play: %', why; end if;
-  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid))$s$, t, taker, board, p, play));
+  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid, 'fall_for', %L::uuid))$s$, t, taker, board, p, play, author));
   if why is not null then raise exception 'the guard takes the caster''s own play on its post: %', why; end if;
+  -- An infraction about the character's own post carries no fall: the key is checked whenever it is present, so a forged play (the taker's own, which is spent nowhere yet) is refused.
+  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid, 'fall_for', %L::uuid))$s$, t, taker, board, own, play, taker));
+  if why is null or why not like '23514:%' then raise exception 'the guard refuses a fall_play on an infraction about the character''s own post: %', why; end if;
+  -- The author named is the post's author, whatever the play.
+  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid, 'fall_for', %L::uuid))$s$, t, taker, board, p, play, other));
+  if why is null or why not like '23514:%' then raise exception 'the guard refuses a fall_for that is not the post''s author: %', why; end if;
+  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid))$s$, t, taker, board, p, play));
+  if why is null or why not like '23514:%' then raise exception 'a fall_play names the author with it: %', why; end if;
   perform set_config('kayfabb.warn_writer', '', true);
   -- fall_play is a uuid and nothing else: the constraint says so (triggers off, so the guard does not answer first), and so does the guard.
   perform set_config('session_replication_role', 'replica', true);
-  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', 'not a uuid'))$s$, t, taker, board, p));
+  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', 'not a uuid', 'fall_for', %L::uuid))$s$, t, taker, board, p, author));
   if why is null or why not like '23514:%acts_infraction_payload%' then raise exception 'fall_play is a uuid, said %', why; end if;
-  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid, 'extra', 1))$s$, t, taker, board, p, play));
+  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid, 'fall_for', %L::uuid, 'extra', 1))$s$, t, taker, board, p, play, author));
   if why is null or why not like '23514:%acts_infraction_payload%' then raise exception 'an infraction holds no other key, said %', why; end if;
   perform set_config('session_replication_role', 'origin', true);
   perform set_config('kayfabb.warn_writer', 'on', true);
-  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', 'not a uuid'))$s$, t, taker, board, p));
+  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', 'not a uuid', 'fall_for', %L::uuid))$s$, t, taker, board, p, author));
   if why is null then raise exception 'the guard refuses a fall_play that is no uuid'; end if;
   perform set_config('kayfabb.warn_writer', '', true);
 end $$;
