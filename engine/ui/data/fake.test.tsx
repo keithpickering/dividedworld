@@ -1396,6 +1396,75 @@ describe('what a list row shows', () => {
     });
   });
 
+  describe('a moment shows a version hidden after it as the public projection shows it, and the plays ended by then', () => {
+    /** A post by Ana (an original and an edit to hide), a play on her from it, then the spin at each. */
+    async function hidden() {
+      const { fake, anaFace, boFace, thread } = world();
+      const original = must(await fake.post(thread, anaFace, 'Words to be hidden.', null));
+      const edited = must(await fake.post(thread, anaFace, 'Fine words.', null));
+      fake.clock.advance(1000);
+      const edit = must(await fake.edit(edited.id, anaFace, 'Edited words to be hidden.'));
+      fake.clock.advance(1000);
+      const k1 = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: original.id });
+      const k2 = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: edited.id });
+      fake.clock.advance(1000);
+      const s1 = must(await fake.spin(k1, anaFace, 'One', 'b', undefined, original.id)).act.id;
+      const s2 = must(await fake.spin(k2, anaFace, 'Two', 'b', undefined, edited.id)).act.id;
+      return { fake, original, edit, k1, k2, s1, s2 };
+    }
+    test('a spin\'s moment: a hidden original and a hidden edit leave the moment, as the public projection shows them', async () => {
+      const { fake, original, edit, s1, s2 } = await hidden();
+      expect((await fake.spinMoment(s1))!.version.currentPayload).toEqual({ body: 'Words to be hidden.' });
+      fake.seed.hide(original.id, 'hide');
+      fake.seed.hide(edit.id, 'hide');
+      const a = (await fake.spinMoment(s1))!.version.currentPayload;
+      expect(a).toEqual((await fake.act(original.id))!.payload);
+      expect(a.body).not.toBe('Words to be hidden.');
+      const b = (await fake.spinMoment(s2))!.version.currentPayload;
+      expect(b.body).not.toBe('Edited words to be hidden.');
+      expect(b).toEqual((await fake.history(edit.targetActId!)).find((v) => v.id === edit.id)!.payload);
+    });
+    test('a character play\'s moment: the same', async () => {
+      const { fake, original, edit, k1, k2 } = await hidden();
+      expect((await fake.playMoment(k1))!.version.currentPayload).toEqual({ body: 'Words to be hidden.' });
+      fake.seed.hide(original.id, 'hide');
+      fake.seed.hide(edit.id, 'hide');
+      const a = (await fake.playMoment(k1))!.version.currentPayload;
+      expect(a).toEqual((await fake.act(original.id))!.payload);
+      expect(a.body).not.toBe('Words to be hidden.');
+      expect((await fake.playMoment(k2))!.version.currentPayload.body).not.toBe('Edited words to be hidden.');
+    });
+    test('a spin\'s moment holds the end of a layer at or before the spin and not a later one, and lists no play above that ended before it', async () => {
+      const { fake, anaFace, boFace, thread } = world();
+      const boss = fake.seed.account('boss', { admin: true });
+      const ana = (await fake.session()).account!.id;
+      const mine = must(await fake.post(thread, anaFace, 'The post pressed.', null));
+      const early = fake.seed.card(boFace, mine.id, 'whoops', { layer: 1 });
+      const late = fake.seed.card(boFace, mine.id, 'whoops', { layer: 2 });
+      const endedAbove = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine.id });
+      const liveAbove = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine.id });
+      fake.clock.advance(1000);
+      const origin = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine.id });
+      fake.clock.advance(1000);
+      fake.signInAs(boss);
+      const endEarly = must(await fake.reverseCard(early));
+      must(await fake.reverseCard(endedAbove));
+      fake.clock.advance(1000);
+      fake.signInAs(ana);
+      const s = must(await fake.spin(origin, anaFace, 'Spun', 'b', undefined, mine.id)).act.id;
+      fake.clock.advance(1000);
+      fake.signInAs(boss);
+      const endLate = must(await fake.reverseCard(late));
+      must(await fake.reverseCard(liveAbove));
+      const moment = (await fake.spinMoment(s))!;
+      const ids = moment.layers.map((l) => l.act.id);
+      expect(ids[0]).toBe(origin);
+      expect(ids).toContain(endEarly.act);
+      expect(ids).not.toContain(endLate.act);
+      expect(moment.above.map((a) => a.play)).toEqual([liveAbove]);
+    });
+  });
+
   describe('a play on a character has a moment (0431_character_play_moment.sql)', () => {
     test('it is the cast-from post as it read then, the play itself first and not above, recorded, at the play\'s time; a play on a post answers `at` too', async () => {
       const { fake, anaFace, boFace, thread } = world();
