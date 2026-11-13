@@ -467,3 +467,41 @@ begin
   end;
   perform tests.unbecome();
 end $$;
+
+-- ---- A spin's moment is the same bytes for the post's owner, the play's caster and a stranger; its refusal is one sentence whoever owns either character ----
+-- (supabase/migrations/0430_spin_at_post.sql, spin_moment and spin_written; docs/plans/2026-11-12-spin-at-post-design.md, section 5.)
+do $$
+declare
+  caster uuid := tests.account('sm-caster'); owner uuid := tests.account('sm-owner'); stranger uuid := tests.account('sm-stranger'); other uuid := tests.account('sm-other');
+  cc uuid := tests.character(caster, 'Spin Caster'); oc uuid := tests.character(owner, 'Spin Owner'); sc uuid := tests.character(stranger, 'Spin Stranger'); xc uuid := tests.character(other, 'Spin Other');
+  t uuid := tests.thread('Spin masks'); p uuid := tests.post(oc, t, 'A post by the target.'); q uuid := tests.post(xc, t, 'A post by someone else.');
+  k uuid; s uuid; as_owner text; as_caster text; as_stranger text; refused text[];
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values ('smglint', 'Spin Glint', 'pepperoni', 'common', 'cast', null, '{character}', interval '7 days');
+  insert into card_ledger (account, card, kind, price) values (caster, 'smglint', 'bought', 0);
+  k := (play_card(caster, 'smglint', cc, oc, '{}', 0, '', 'character', p) ->> 'id')::uuid;
+  perform tests.become(stranger);
+  s := (spin(origin => k, through => sc, title => 'Masked spin', body => '', at_post => p) -> 'act' ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform tests.become(owner);   as_owner := spin_moment(s)::text;   perform tests.unbecome();
+  perform tests.become(caster);  as_caster := spin_moment(s)::text;  perform tests.unbecome();
+  perform tests.become(stranger); as_stranger := spin_moment(s)::text; perform tests.unbecome();
+  if as_owner is distinct from as_caster or as_caster is distinct from as_stranger then raise exception 'a spin''s moment differs by reader: % / % / %', as_owner, as_caster, as_stranger; end if;
+  -- The refusal for a post by another character: whoever the spinner is (the play's caster, the target's owner, the post's owner or a stranger), and whoever owns the play's character.
+  refused := array[]::text[];
+  declare who uuid; ch uuid;
+  begin
+    for who, ch in select * from (values (caster, cc), (owner, oc), (stranger, sc), (other, xc)) v loop
+      perform tests.become(who);
+      begin
+        perform spin(origin => k, through => ch, title => 'Refused', body => '', at_post => q);
+        raise exception 'a spin at another character''s post was taken';
+      exception when sqlstate 'P0002' then refused := refused || (sqlerrm || '|' || sqlstate);
+      end;
+      perform tests.unbecome();
+    end loop;
+  end;
+  if (select count(distinct r) from unnest(refused) r) is distinct from 1 or refused[1] is distinct from 'that card is not on that post|P0002' then
+    raise exception 'the refusal differs with who asks: %', refused;
+  end if;
+end $$;
