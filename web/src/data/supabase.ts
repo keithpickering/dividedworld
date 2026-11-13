@@ -1514,6 +1514,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         recorded: m['recorded'] === true,
       };
     },
+    async spinMoment(_spin) { return null; },
     async myReleases(plays) {
       const wanted = [...new Set(plays)].filter(idOk);
       if (wanted.length === 0) return [];

@@ -1482,6 +1482,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       recorded: m !== undefined,
     };
   }
+  function spinMoment(_id: Id): PlayMoment | null { return null; }
   /** The plays an account has released itself from, as "account play". */
   const releases = new Map<string, number>();
   /** The card plays an admin has ended (a `card_end` beside each, 0092): not in force, though the play and its layer stay. */
@@ -3513,6 +3514,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }, before ?? null);
     },
     playMoment,
+    spinMoment,
     myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
     releaseEffect,
     saveEffect,
