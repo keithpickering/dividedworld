@@ -1,4 +1,4 @@
--- A character play's moment (supabase/migrations/0431_character_play_moment.sql; docs/plans/2026-11-12-spin-at-post-plan.md, Task 3):
+-- A character play's moment (supabase/migrations/0352_character_play_moment.sql; docs/plans/2026-11-12-spin-at-post-plan.md, Task 3):
 -- a play on a character takes a moment as a play on a post does (0072), of its cast-from post (its target_act_id), and play_moment answers it
 -- with itself first, itself not above, and the play's time as `at`. A thread's play and a board's play are refused as before. The cards are the
 -- engine's test set, never an instance's: Glint reaches a character, Marquee a thread, Blot a post.

@@ -86,7 +86,7 @@ declare
                            'season_news(timestampwithtimezone,integer)',
                            -- A play's moment (0072): what was on a post when a play landed.
                            'play_moment(uuid)',
-                           -- A spin's moment (0430): what was on the post a spin was pressed at, the same bytes for every reader.
+                           -- A spin's moment (0351): what was on the post a spin was pressed at, the same bytes for every reader.
                            'spin_moment(uuid)',
                            -- A persona's career (0083): public facts about staff.
                            'staff_career(text)',

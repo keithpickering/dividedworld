@@ -469,7 +469,7 @@ begin
 end $$;
 
 -- ---- A spin's moment is the same bytes for the post's owner, the play's caster and a stranger; its refusal is one sentence whoever owns either character ----
--- (supabase/migrations/0430_spin_at_post.sql, spin_moment and spin_written; docs/plans/2026-11-12-spin-at-post-design.md, section 5.)
+-- (supabase/migrations/0351_spin_at_post.sql, spin_moment and spin_written; docs/plans/2026-11-12-spin-at-post-design.md, section 5.)
 do $$
 declare
   caster uuid := tests.account('sm-caster'); owner uuid := tests.account('sm-owner'); stranger uuid := tests.account('sm-stranger'); other uuid := tests.account('sm-other');

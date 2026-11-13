@@ -1278,7 +1278,7 @@ describe('what a list row shows', () => {
     expect((await fake.playMoment(under))!.recorded).toBe(true);
   });
 
-  describe('a spin from a card on a character names the post it was pressed on (0430_spin_at_post.sql)', () => {
+  describe('a spin from a card on a character names the post it was pressed on (0351_spin_at_post.sql)', () => {
     const NOT_THERE = 'that card is not on that post';
     test('a spin at the cast-from post writes `at` on its Act and one moment; the version is the edit as of the spin, and stays so after a later edit', async () => {
       const { fake, anaFace, boFace, thread } = world();
@@ -1465,7 +1465,7 @@ describe('what a list row shows', () => {
     });
   });
 
-  describe('a play on a character has a moment (0431_character_play_moment.sql)', () => {
+  describe('a play on a character has a moment (0352_character_play_moment.sql)', () => {
     test('it is the cast-from post as it read then, the play itself first and not above, recorded, at the play\'s time; a play on a post answers `at` too', async () => {
       const { fake, anaFace, boFace, thread } = world();
       const mine = must(await fake.post(thread, anaFace, 'Words then.', null));

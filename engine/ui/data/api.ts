@@ -319,7 +319,7 @@ export type OriginPlace =
   | Extract<PlaceOn, { kind: 'post' | 'update' }>
   /*
    * `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. `from` is the post a play on a
-   * character was cast from, and `at` the post the spin was pressed on (0430); each is null where the thread has none (a play on a post, a
+   * character was cast from, and `at` the post the spin was pressed on (0351); each is null where the thread has none (a play on a post, a
    * thread or a board; a spin that named no post; a row from before the migration).
    */
   | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null; readonly from: PostPlace | null; readonly at: PostPlace | null };
@@ -2075,7 +2075,7 @@ export interface PlayAbove {
 }
 
 /**
- * A moment is a play's (play_moment, 0072_play_moments.sql) or a spin's (spin_moment, 0430_spin_at_post.sql): the post as it read when a play landed on it, with every play on it then, as
+ * A moment is a play's (play_moment, 0072_play_moments.sql) or a spin's (spin_moment, 0351_spin_at_post.sql): the post as it read when a play landed on it, with every play on it then, as
  * each stood. `version` is the post with that version's words as its current payload; `layers` is the play itself first, as it landed
  * (no state), then each layer that was on the post, with what it had saved then or null where it had saved none; `above` is each play
  * beyond a post live then on the post's author, its thread or its board. `recorded` is false for a play from before the snapshot,
@@ -2576,7 +2576,7 @@ export interface KayfaApi {
   tails(posts: readonly Id[]): Promise<readonly Tail[]>;
   /** A play's moment (`PlayMoment`), read once when asked for; null for an id that is no play on a post. Any signed-in reader may read it. */
   playMoment(play: Id): Promise<PlayMoment | null>;
-  /** A spin's moment (`PlayMoment`, 0430), read once when asked for; null for an id that is no spin, or a spin that names no post. Any signed-in reader may read it. */
+  /** A spin's moment (`PlayMoment`, 0351), read once when asked for; null for an id that is no spin, or a spin that names no post. Any signed-in reader may read it. */
   spinMoment(spin: Id): Promise<PlayMoment | null>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */
   characters(ids: readonly Id[]): Promise<readonly Character[]>;

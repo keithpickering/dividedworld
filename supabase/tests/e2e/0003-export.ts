@@ -215,7 +215,7 @@ test('an instance exported and imported into a fresh database is the same instan
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
       end;
-      -- A spin pressed at a post (0430): a play on Bob's character cast from one post, a layer on another post by him, and Ann's spin from the play naming that post. The spin's at,
+      -- A spin pressed at a post (0351): a play on Bob's character cast from one post, a layer on another post by him, and Ann's spin from the play naming that post. The spin's at,
       -- its moment and the layer it holds are carried as written; the import, a replica's write, takes none of its own.
       insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts) values ('expspinat', 'Exported Spin At', 'pepperoni', 'common', 'cast', '{character}', interval '7 days');
       insert into card_ledger (account, card, kind, price) values (ann, 'expspinat', 'bought', 0);
@@ -791,7 +791,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const moments = (url: string) => psqlOn(url, 'select (select count(*) from play_moments) || \'/\' || (select count(*) from play_moment_layers) || \'/\' || (select count(*) from spin_moments) || \'/\' || (select count(*) from spin_moment_layers)');
     assert.equal(moments(fresh.toString()), moments(from));
     assert.match(moments(from), /^[1-9]\d*\/[1-9]\d*\/[1-9]\d*\/[1-9]\d*$/, 'the export carried a play\'s moment and a layer, and a spin\'s moment and a layer');
-    // A spin's moment names the same post version and holds the same layers and states in the imported instance (0430).
+    // A spin's moment names the same post version and holds the same layers and states in the imported instance (0351).
     const spinMoment = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
       select to_jsonb(m)::text x from spin_moments m union all select to_jsonb(l)::text from spin_moment_layers l
       union all select a.payload::text from acts a where a.kind = 'spin' and a.payload ? 'at') q`);

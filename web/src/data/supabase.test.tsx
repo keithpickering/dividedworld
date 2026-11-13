@@ -277,7 +277,7 @@ describe('reads and their rows', () => {
       [{ kind: 'play', card: 'glint', on: { kind: 'thread', id: T, title: 'T' } }, { kind: 'play', card: 'glint', on: { kind: 'thread', id: T, title: 'T' }, from: null, at: null }],
       [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' } }, { kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' }, from: null, at: null }],
       [{ kind: 'play', card: 'glint', on: null }, { kind: 'play', card: 'glint', on: null, from: null, at: null }],
-      /* The cast-from post and the pressed post (0430), each a post place; a row from before it has neither key. */
+      /* The cast-from post and the pressed post (0351), each a post place; a row from before it has neither key. */
       [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: { kind: 'post', thread: T, title: 'U', seq: 5 } },
         { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: { kind: 'post', thread: T, title: 'U', seq: 5 } }],
       [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: null },
@@ -2229,7 +2229,7 @@ describe('reads by many ids', () => {
     expect(h.to('rpc/spin_moment')).toHaveLength(2);
   });
 
-  it('a moment answered without `at` (a server from before 0431) reads `at` as its first layer\'s time; one with `at` reads it as given', async () => {
+  it('a moment answered without `at` (a server from before 0352) reads `at` as its first layer\'s time; one with `at` reads it as given', async () => {
     const moment = (extra: Record<string, unknown>) => ({
       version: { ...ACT_ROW, current_payload: { body: 'then' } },
       layers: [{ act: { ...ACT_ROW, id: A, kind: 'card', created_at: '2026-10-01T08:00:00+00:00' }, state: null, savedAt: null }],

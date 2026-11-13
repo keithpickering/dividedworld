@@ -1,4 +1,4 @@
--- A spin from a card on a character names the post it was pressed on (supabase/migrations/0430_spin_at_post.sql;
+-- A spin from a card on a character names the post it was pressed on (supabase/migrations/0351_spin_at_post.sql;
 -- docs/plans/2026-11-12-spin-at-post-plan.md, Task 2; docs/plans/2026-11-12-spin-at-post-design.md). The cards are the engine's test set,
 -- never an instance's: Glint reaches a character, Marquee a thread, Blot a post.
 

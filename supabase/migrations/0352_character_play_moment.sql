@@ -7,7 +7,7 @@
 --                           for a character play `new.target_act_id` is the cast-from post, and its layers query reads only layers whose reach is a post's (0072's
 --                           acts_layers predicate), so the play is no layer of its own moment and a character play on the post is no layer of anyone's.
 --   play_moment             written again whole from 0340 with two changes: a play whose reach is `character` is read, its post being its target_act_id, and the answer
---                           gains `at`, the play's `created_at` (spin_moment, 0430, answers the same key for a spin's time). The play is first among `layers` as before and
+--                           gains `at`, the play's `created_at` (spin_moment, 0351, answers the same key for a spin's time). The play is first among `layers` as before and
 --                           is not among `above`: a play listed above is one that began before this one (`a.created_at < k.created_at`), and a play does not begin before
 --                           itself. A thread's play and a board's play are refused as before, in the same words.
 -- A character play made before this migration has no snapshot, so it is answered as a post's play from before 0072 is: the version current at its time from the post's

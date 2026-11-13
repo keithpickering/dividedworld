@@ -123,7 +123,7 @@ begin
   if (select post_version from play_moments where play = (reply -> 'sprung' ->> 'id')::uuid) is distinct from p_reply then raise exception 'the Move''s spring takes a moment'; end if;
   if exists (select 1 from play_moment_layers l where l::text like '%snare%' or l::text like '%hook%') then raise exception 'the snapshot names a card behind a back'; end if;
 
-  -- A character play takes a moment of its cast-from post (0431), itself no layer of it; a thread and a board play take none.
+  -- A character play takes a moment of its cast-from post (0352), itself no layer of it; a thread and a board play take none.
   insert into boards (slug, name) values ('pm-board', 'Moments Board') returning id into brd;
   before_moments := (select count(*) from play_moments);
   on_char := (play_card(bob, 'glint', b, a, '{}', 0, '', 'character', p_cast) ->> 'id')::uuid;
@@ -270,7 +270,7 @@ begin
      is distinct from jsonb_build_object('play', live_char, 'reach', 'character', 'target', b, 'ends_at', now() + interval '1 day', 'act', act_projection(live_char)) then
     raise exception 'each play above as effects_above gives it: %', got -> 'above';
   end if;
-  -- A thread's or a board's play is no play on a post (a character's is, since 0431): its read is refused, as a post's and an edit's are, in words.
+  -- A thread's or a board's play is no play on a post (a character's is, since 0352): its read is refused, as a post's and an edit's are, in words.
   foreach why in array array[pg_temp.refusal(format('select play_moment(%L)', p)), pg_temp.refusal(format('select play_moment(%L)', ed)),
                              pg_temp.refusal(format('select play_moment(%L)', live_thread)), pg_temp.refusal(format('select play_moment(%L)', live_board)), pg_temp.refusal(format('select play_moment(%L)', gen_random_uuid()))] loop
     if why is distinct from 'that is no play on a post' then raise exception 'a read of something else is refused in words: %', why; end if;

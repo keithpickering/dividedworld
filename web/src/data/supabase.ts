@@ -314,7 +314,7 @@ function toPlace(raw: unknown): OriginPlace | null {
   if (!isObject(raw)) return null;
   if (raw['kind'] === 'play') {
     if (!(raw['card'] === null || isText(raw['card']))) return null;
-    /* `from` and `at` (0430) are each a post place, else null: a row from before the migration has neither key. */
+    /* `from` and `at` (0351) are each a post place, else null: a row from before the migration has neither key. */
     return { kind: 'play', card: raw['card'], on: toPlaceOn(raw['on']), from: toPostPlace(raw[PLAY_FROM]), at: toPostPlace(raw['at']) };
   }
   const place = toPlaceOn(raw);
@@ -772,7 +772,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       layers,
       above: (m['above'] as Row[]).map(toPlayAbove),
       recorded: m['recorded'] === true,
-      /* A server from before 0431 answers a play's moment without `at`: a play's moment is at its play's time, the first layer's. */
+      /* A server from before 0352 answers a play's moment without `at`: a play's moment is at its play's time, the first layer's. */
       at: isText(m['at']) ? m['at'] : layers[0]?.act.createdAt ?? '',
     };
   }
@@ -1530,7 +1530,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return momentOf(() => client.rpc('play_moment', { play }));
     },
     async spinMoment(spin) {
-      /* One read of the moment (spin_moment, 0430); a spin that names no post is refused in words, which is null here. */
+      /* One read of the moment (spin_moment, 0351); a spin that names no post is refused in words, which is null here. */
       if (!idOk(spin)) return null;
       return momentOf(() => client.rpc('spin_moment', { spin }));
     },

@@ -44,7 +44,7 @@
 --   after, at 450,000 Acts and 55,000 threads (the same 5,000 spun threads among them): 36 to 41 ms, the planner then probing acts_pkey and threads_pkey for the
 --                           joined rows (an Index Scan on acts_pkey for the cast-from post and one on threads_pkey for its thread, and the pair for the pressed post, probed only
 --                           by a row whose first Act is a spin that names one), so the page does not grow with the instance.
--- It grows with the offset, as the page already does, and not with players, Acts or boards. supabase/tests/0430-spin-at-post.sql keeps a ratio guard of the same page against a
+-- It grows with the offset, as the page already does, and not with players, Acts or boards. supabase/tests/0298-spin-at-post.sql keeps a ratio guard of the same page against a
 -- board of plain spins, in one transaction (where the plan is slower than an instance's, so its absolute times are not the figures above).
 
 -- ---------------------------------------------------------------------------------------------------- the tables ----

@@ -19,7 +19,7 @@ import { expectOrigin, spunLoader } from './spun.ts';
 import './spin.css';
 
 /**
- * The server's refusal of a spin whose pressed post is not under the card (spin_written, 0430_spin_at_post.sql; the fake words it the same). The same words
+ * The server's refusal of a spin whose pressed post is not under the card (spin_written, 0351_spin_at_post.sql; the fake words it the same). The same words
  * whichever check failed, so a refusal in them with `at` sent means the card is no longer on that post.
  */
 export const CARD_NOT_ON_POST = 'that card is not on that post';
