@@ -897,7 +897,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const liveInfractions = (id: Id): ActRec[] => {
     const bans = [...acts.values()].filter((a) => a.kind === 'ban' && a.payload.character === id).map((a) => a.at);
     const last = bans.length === 0 ? -Infinity : Math.max(...bans);
-    return [...acts.values()].filter((a) => a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > now() && a.at >= last)
+    return [...acts.values()].filter((a) => a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > now() && a.at > last)
       .sort((x, y) => x.at - y.at || x.order - y.order);
   };
   /** The fall plays an infraction names as its `fall_play`: spent (`acts_fall_spent`, 0420). */
