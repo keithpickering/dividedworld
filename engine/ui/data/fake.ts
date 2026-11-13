@@ -3699,7 +3699,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
               cardEnd: e.id, play: play.id, card: String(play.payload.card), at: iso(e.at), side: cast ? 'cast' as const : 'onMine' as const, reach,
               targetName: reach === 'board' ? boards.find((b) => b.id === play.payload.board)?.name ?? null : targetName(play),
               postAuthorName: targetAuthor == null ? null : charOf(targetAuthor)?.name ?? null,
-              casterName: characters.get(play.character ?? '')?.name ?? null,
+              /* The caller's own play keeps its own character; one on the caller's post is named as acts_public shows it (the stand-in for a card a veiled post's own back laid, while the veil is up). */
+              casterName: cast ? characters.get(play.character ?? '')?.name ?? null : charOf(shownAuthor(play) ?? '')?.name ?? null,
               character: (cast ? play.character : targetCharacter(play)) as Id,
             } }];
           })).map(({ e }) => e),

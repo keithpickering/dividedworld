@@ -4677,6 +4677,24 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect((await w.fake.act(third.act))!.character).toBe(stand);
   });
 
+  /* my_cards_ended (0400): the caster of a card that landed on the caller's post is named as acts_public shows the play. The fake lays no Move from a quote, so the card is seeded (`seed.card` with `spring`, after `seed.spring`), the nearest case. */
+  test('an admin\'s end of the card a veiled post\'s back laid on a quote names the stand-in as the caster to the quote\'s owner, and the true name returns with the veil', async () => {
+    const w = veilWorld();
+    const back = w.fake.seed.set(w.boFace, w.post, 'glow');
+    const stand = await veil(w);
+    const quote = w.fake.seed.post(w.thread, w.cyFace, 'Quoting the veiled post.');
+    const spring = w.fake.seed.spring(back, { by: quote, trigger: 'quote' });
+    const laid = w.fake.seed.card(w.boFace, quote, 'overreaction', { spring });
+    w.fake.signInAs(w.fake.seed.account('boss', { admin: true }));
+    must(await w.fake.reverseCard(laid));
+    w.fake.signInAs(w.cy);
+    const rows = async () => (await w.fake.log()).ended.filter((e) => e.play === laid);
+    expect(await rows()).toMatchObject([{ side: 'onMine', character: w.cyFace, casterName: 'Nobody' }]);
+    expect(JSON.stringify(await w.fake.log())).not.toContain('Bo Face');
+    w.fake.clock.advance(3 * DAY + MINUTE);
+    expect(await rows()).toMatchObject([{ side: 'onMine', casterName: 'Bo Face' }]);
+  });
+
   test('a profile\'s list leaves a veiled post out of its author\'s and puts it in the stand-in\'s, and the counts follow', async () => {
     const w = veilWorld();
     const before = await w.fake.profilePage(w.boFace);
