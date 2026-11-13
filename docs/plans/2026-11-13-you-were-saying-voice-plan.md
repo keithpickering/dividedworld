@@ -51,7 +51,7 @@ Model: sonnet
 
 **Files:** `engine/rules/types.ts` (`Settings`), `engine/rules/instance.ts` (`SETTINGS`), `engine/rules/test-system.ts`,
 `instances/divided-world/settings.ts`, every settings fixture the type check names, a new migration
-`supabase/migrations/0470_card_write_top_ups.sql` (a placeholder until it is given its number). Tests: `engine/rules/instance.test.ts`,
+`supabase/migrations/0363_card_write_top_ups.sql`. Tests: `engine/rules/instance.test.ts`,
 `instances/divided-world/settings.test.ts`, `supabase/tests/0079-settings-held.sql`,
 `supabase/tests/0300-old-voice-window.sql`.
 
@@ -65,7 +65,7 @@ code's value). Its header comment says this, its ways out and its masks, in the 
 
 **Tests first:** the instance test's bad values for both new names (and the old names no longer named); the settings
 test's two defaults; the SQL tests' poisons and goods moved to the new names; a test in `0300-old-voice-window.sql` (or
-a new `supabase/tests/0470-card-write-top-ups.sql`) that a `cardWriteRerolls` row with `tuned_at` set survives the
+a new `supabase/tests/0315-card-write-top-ups.sql`) that a `cardWriteRerolls` row with `tuned_at` set survives the
 migration's statements as a `cardWriteTopUps` row with both kept, and a `cardWriteShortShare` row is gone.
 
 ## Task 3. The card's sampling, its top-up input and its pattern (engine interface)
