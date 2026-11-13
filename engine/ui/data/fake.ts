@@ -23,7 +23,7 @@ import type { Instance, Quadrant, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
-import { fallsOn, RARITIES, type Rarity } from '../../rules/cards.ts';
+import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
 import { atOrBelow, giftSplit, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
@@ -54,7 +54,7 @@ import type {
   SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
-  AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Donated, DriveGift, DriveGifts, Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -295,11 +295,15 @@ export interface Seed {
   report(character: Id, post: Id, reason: string, options?: { at?: number }): Id;
   /** A Mod's verdict on a report (`close_report`): the visit it sent, where it sent one. */
   verdict(report: Id, mod: Id, verdict: 'visit' | 'dismissed' | 'backfire', options?: { line?: string; visit?: Id; at?: number }): Id;
-  /** The infraction a visit's filing wrote (`infract`) against its post's author, dropping off at `expiresAt` (default two weeks on, from `at`, which defaults to the visit's own date). */
+  /** The infraction a visit's filing wrote (`infract`) against its post's author, dropping off at `expiresAt` (default two weeks on, from `at`, which defaults to the visit's own date). A live Take the Fall play on the post that no infraction yet names takes it instead: the filing lands on the play's caster and names it (`fall_play`), which spends it. */
   infraction(visit: Id, options?: { points?: number; band?: VisitBand; ruleNumber?: number | null; expiresAt?: number; at?: number }): Id;
   /** A character's appeal of an infraction or of a group move on it (`open_appeal`), and the staff member's ruling on it (`until`: the end a ruling sets, as on a ban). */
   appeal(character: Id, infraction: Id, plea: string, options?: { at?: number }): Id;
   ruling(appeal: Id, mod: Id, verdict: 'overturned' | 'upheld' | 'reduced' | 'increased', options?: { line?: string; at?: number; until?: number }): Id;
+  /** The points a heart's play took off an infraction (`warn_reliefs`, 0420): the play is a `card` Act the seed has written. Counted while that play is not ended. */
+  relief(play: Id, infraction: Id, points: number): void;
+  /** A ban a heart's play lifted (`ban_lifts`, 0420): the ban ends at the play's time while that play is not ended. */
+  lift(play: Id, ban: Id): void;
   /** The ban a full bar writes (`infract`): the character is banned until `until` (an Act of no character, as the server writes it), and its bar is emptied. */
   ban(character: Id, until: number, options?: { days?: number; infraction?: Id; at?: number }): Id;
   /** What the next report or appeal is answered with (the Mod's judgment, which the fake does not make): a report's verdict, an appeal's ruling. The defaults are `dismissed` and `upheld`. */
@@ -877,15 +881,45 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   const takesEffectAt = () => (nextSettlement === null ? null : iso(nextSettlement));
 
-  /** The points of a character's infractions that have not dropped off (the seeds write no ban, so none resets the bar). */
-  const warnOf = (id: Id): number => [...acts.values()].reduce((n, a) => (a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > now() ? n + (a.payload.points as number) : n), 0);
-  /** When a character's latest running ban ends, or null (banned_until, 0109): a ban's end, an appeal's ruling on it read in its place. */
+  /** What the hearts took off an infraction and the bans they lifted (`warn_reliefs`, `ban_lifts`, 0420): rows of their own beside the Acts, each counting only while its play is not ended (`card_ended`). */
+  const warnReliefs: { readonly play: Id; readonly infraction: Id; readonly points: number }[] = [];
+  const banLifts: { readonly play: Id; readonly ban: Id }[] = [];
+  /** The points an appeal's ruling took off an infraction (`infraction_relief`): the negative `points_delta` of the ruling on an appeal of it. */
+  const appealRelief = (inf: Id): number => {
+    const ruling = [...acts.values()].find((r) => r.kind === 'appeal_ruling' && acts.get(r.target ?? '')?.kind === 'appeal' && acts.get(r.target ?? '')?.target === inf);
+    return Math.max(0, -Number(ruling?.payload.points_delta ?? 0));
+  };
+  /** The points the hearts took off an infraction, those whose play is still on (`card_relief`). */
+  const cardRelief = (inf: Id): number => warnReliefs.reduce((n, r) => (r.infraction === inf && !over(r.play) ? n + r.points : n), 0);
+  /** The points an infraction still counts: what it was, less an appeal's and the hearts' relief, never below nothing. */
+  const pointsLeft = (a: ActRec): number => Math.max(0, (a.payload.points as number) - appealRelief(a.id) - cardRelief(a.id));
+  /** A character's infractions that count toward its bar: not dropped off, and after its last ban (a ban empties the bar), oldest first by time then by order (the relief walk's order). */
+  const liveInfractions = (id: Id): ActRec[] => {
+    const bans = [...acts.values()].filter((a) => a.kind === 'ban' && a.payload.character === id).map((a) => a.at);
+    const last = bans.length === 0 ? -Infinity : Math.max(...bans);
+    return [...acts.values()].filter((a) => a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > now() && a.at >= last)
+      .sort((x, y) => x.at - y.at || x.order - y.order);
+  };
+  /** The fall plays an infraction names as its `fall_play`: spent (`acts_fall_spent`, 0420). */
+  const spentPlays = (): Set<Id> => new Set([...acts.values()].flatMap((a) => (a.kind === 'infraction' && typeof a.payload.fall_play === 'string' ? [a.payload.fall_play] : [])));
+  /** The points of a character's infractions that have not dropped off or been taken off (`warn_points`, 0420). */
+  const warnOf = (id: Id): number => liveInfractions(id).reduce((n, a) => n + pointsLeft(a), 0);
+  /** When a ban ends by its own Act or its appeal's ruling, before any heart lifts it (`ban_ends` without `ban_lifts`, 0109). */
+  const banEndWithoutLift = (a: ActRec): number => {
+    const ruling = [...acts.values()].find((r) => r.kind === 'appeal_ruling' && typeof r.payload.until === 'string' && acts.get(r.target ?? '')?.target === a.id);
+    return Date.parse((ruling?.payload.until ?? a.payload.until) as string);
+  };
+  /** When a ban ends now (`ban_ends`, 0420): the least of its end and the earliest lift of it whose play is still on. */
+  const banEnd = (a: ActRec): number => {
+    const lifted = banLifts.filter((l) => l.ban === a.id && !over(l.play)).map((l) => acts.get(l.play)!.at);
+    return Math.min(banEndWithoutLift(a), ...lifted);
+  };
+  /** When a character's latest running ban ends, or null (banned_until, 0109): a ban's end, an appeal's ruling on it read in its place, a heart's lift read in place of both. */
   const bannedUntilOf = (id: Id): number | null => {
     let latest: number | null = null;
     for (const a of acts.values()) {
       if (a.kind !== 'ban' || a.payload.character !== id) continue;
-      const ruling = [...acts.values()].find((r) => r.kind === 'appeal_ruling' && typeof r.payload.until === 'string' && acts.get(r.target ?? '')?.target === a.id);
-      const until = Date.parse((ruling?.payload.until ?? a.payload.until) as string);
+      const until = banEnd(a);
       if (until > now() && (latest === null || until > latest)) latest = until;
     }
     return latest;
@@ -1860,7 +1894,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first });
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, on.character ?? undefined), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first, caster: character });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
     if (decided.value.draw) {
@@ -1869,6 +1903,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     const c = acting(character);
     if (isRefusal(c)) return c;
+    /* A fall is played on a player's post, never a staff character's (place_cast, 0420); a banned caster plays no discipline card (not_banned). */
+    if (rules.discipline !== undefined) {
+      if (on.character !== null && characters.get(on.character)?.staff) return refuse(`${rules.name} is played on a player's post`);
+      const banned = bannedUntilOf(character);
+      if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
+    }
     /* play_card's order: the character is the player's, then not banned (every play meets not_banned there; the fake holds it for a card that replies), then a reply with a letter or a digit in it, and any other card is given none. */
     if (carries) {
       const banned = bannedUntilOf(character);
@@ -2061,6 +2101,40 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     });
   const boardOf = (thread: Id): Id => threads.get(thread)!.board;
   /**
+   * A relief or unban play, as `place_cast` writes it (0420): the Act, then the rows that do the work. A relief walks the target's live infractions oldest first and takes
+   * `least(what is left, what is still wanted)` from each; an unban lifts every running ban. Neither leaves a time up or a `play_reach` row.
+   */
+  function landInstant(rules: CardRules, account: AccountRec, price: number, message: string, config: unknown, character: Id, target: Id, from: ActRec, at: number): Answer<Act> {
+    const effect = rules.discipline!;
+    const targetName = characters.get(target)?.name ?? null;
+    const id = uuid();
+    /* What the walk will take, or the bans it will lift, is known before the Act is written: the Act carries it. */
+    const total = warnOf(target);
+    const wanted = effect.kind === 'relief' && effect.points === 'lightestBand' ? Math.min(settings.warnBar.bands.minor, settings.warnBar.bands.moderate, settings.warnBar.bands.severe) : total;
+    const took = Math.min(wanted, total);
+    const running = [...acts.values()].filter((a) => a.kind === 'ban' && a.payload.character === target && banEnd(a) > at);
+    const base = { card: rules.key, message, config, reach: 'character', character: target, targetName, instant: true };
+    const written = write({ id, character, kind: 'card', thread: from.thread, target: from.id, at, payload: effect.kind === 'relief' ? { ...base, took } : { ...base, lifted: running.map((b) => ({ ban: b.id, until: iso(banEnd(b)) })) } });
+    if (effect.kind === 'relief') {
+      let want = took;
+      for (const inf of liveInfractions(target)) {
+        if (want <= 0) break;
+        const take = Math.min(pointsLeft(inf), want);
+        if (take <= 0) continue;
+        warnReliefs.push({ play: id, infraction: inf.id, points: take });
+        want -= take;
+      }
+    } else {
+      for (const b of running) banLifts.push({ play: id, ban: b.id });
+    }
+    spend(account, price, 'play', written.id);
+    recordCard(account.id, written.at, { card: rules.key, kind: 'played', act: written.id, price });
+    sendAct(written);
+    sendReach(written);
+    return ok(publicAct(written));
+  }
+
+  /**
    * `play_card` beyond a post (0055): the target is the character (played from one of its posts), the thread or the board; its rules
    * see its own live plays and the ones above it; the Act sits in the post's thread, the thread, or The System's announcements thread,
    * and its play_reach row ends at least(the card's lasts, reachLasts).
@@ -2070,11 +2144,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     let thread: Id;
     let on: Id | null;
     let above: EffectsAbove;
+    let from: ActRec | undefined;
     /* A use card never goes on a board, before the board is looked for (place_cast, 0148). */
     if (play === 'use' && reach === 'board') return refuse(`${rules.name} is never used on a board`);
     if (reach === 'character') {
       if (!characters.has(target)) return refuse('there is no such character', 'target');
-      const from = fromPost ? acts.get(fromPost) : undefined;
+      from = fromPost ? acts.get(fromPost) : undefined;
       if (!from || from.kind !== 'post' || from.character !== target) return refuse('a card on a character is played from one of its posts');
       thread = from.thread;
       on = from.id;
@@ -2094,14 +2169,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       above = {};
     }
     const at = stamp ?? now();
-    const goal = { reach, [reach]: target } as unknown as CardTarget;
+    /* A character's warn points and running ban are public (the postbit shows both), so the target carries them to a discipline card's rules (card_target_reach, 0420). */
+    const warned = reach === 'character' && rules.discipline !== undefined ? { warnPoints: warnOf(target), bannedUntil: ((u) => (u === null ? null : iso(u)))(bannedUntilOf(target)) } : {};
+    const goal = { reach, [reach]: target, ...warned } as unknown as CardTarget;
     const effects = effectsOnTarget(goal, reachEffects(reach, target), above, new Date(at));
     const nameOf = (k: string) => instance.cards.find((c) => c.key === k)?.name ?? k;
-    const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at), nameOf });
+    const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at), nameOf, caster: character });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
     if (play === 'use' && reach === 'character' && target !== character) return refuse(`${rules.name} is used on your own character`);
+    if (rules.discipline !== undefined && reach === 'character') {
+      /* place_cast's order: a staff target, then not banned (play_card), then the card's own refusal, which the rules above already said from the public facts. */
+      if (characters.get(target)?.staff) return refuse(`${rules.name} lands on a player's character`);
+      const banned = bannedUntilOf(character);
+      if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
+    }
     const account = me()!;
     settleBacks(account);
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
@@ -2119,6 +2202,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       window = w;
     }
     account.cards[card]! -= 1;
+    /* A heart does its work the moment it lands: no time up, no `play_reach` row, and the Act says what it did (place_cast, 0420). */
+    if (instant(rules) && reach === 'character') return landInstant(rules, account, decided.value.price, decided.value.message, decided.value.config, character, target, from!, at);
     const bound = span(settings.reachLasts[reach]);
     /* A scored-as play lasts until its window closes, not a time from now, and names where the window starts. */
     const endsAt = window ? window.closes : at + Math.min(rules.lasts ? span(rules.lasts) : bound, bound);
@@ -2699,7 +2784,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     account: Id | undefined,
     newest: <T extends { readonly ms: number; readonly order: number }>(rows: T[]) => T[],
     fits: (ms: number) => boolean,
-  ): { infractions: LogInfraction[]; bans: LogBan[]; groupMoves: LogGroupMove[]; reports: LogReport[]; appeals: LogAppeal[] } {
+  ): { infractions: LogInfraction[]; bans: LogBan[]; falls: LogFall[]; groupMoves: LogGroupMove[]; reports: LogReport[]; appeals: LogAppeal[] } {
     const owned = (id: unknown): boolean => typeof id === 'string' && account !== undefined && characters.get(id)?.owner === account;
     const all = [...acts.values()];
     const seqOf = (post: unknown): number | null => (typeof post === 'string' ? acts.get(post)?.seq ?? null : null);
@@ -2713,13 +2798,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           ruleNumber: (i.payload.rule_number as number | null) ?? null, rule: ruleWords(i),
           mod: named([...characters.values()].find((c) => c.staff?.key === i.payload.staff)?.id ?? null), post: i.payload.about_act as Id, postSeq: seqOf(i.payload.about_act), thread: i.thread,
           expiresAt: i.payload.expires_at as string, relief: Math.max(0, -(Number(rulingOn(i.id)?.payload.points_delta ?? 0))),
+          cardRelief: cardRelief(i.id), fallPlay: typeof i.payload.fall_play === 'string' ? i.payload.fall_play : null,
           emptiedAt: ((b) => (b ? iso(b.at) : null))(all.filter((b) => b.kind === 'ban' && b.payload.character === i.payload.character && b.at > i.at).sort((x, y) => x.at - y.at)[0]),
         })),
       bans: newest(all.filter((b) => b.kind === 'ban' && owned(b.payload.character) && fits(b.at)).map((b) => ({ ms: b.at, order: b.order, b })))
         .map(({ b }): LogBan => ({
-          ban: b.id, character: b.payload.character as Id, at: iso(b.at), days: b.payload.days as number, until: (rulingOn(b.id)?.payload.until ?? b.payload.until) as string,
+          ban: b.id, character: b.payload.character as Id, at: iso(b.at), days: b.payload.days as number, until: iso(banEnd(b)),
           infraction: b.payload.infraction_act as Id, rule: ((i) => (i ? ruleWords(i) : null))(acts.get(String(b.payload.infraction_act))), thread: b.thread,
           ruling: (rulingOn(b.id)?.payload.verdict as AppealVerdict | undefined) ?? null, ownUntil: b.payload.until as string,
+          ...((l) => (l ? { liftedAt: iso(acts.get(l.play)!.at), liftedCard: String(acts.get(l.play)!.payload.card) } : { liftedAt: null, liftedCard: null }))(
+            banLifts.filter((x) => x.ban === b.id && !over(x.play)).sort((x, y) => acts.get(x.play)!.at - acts.get(y.play)!.at)[0]),
+        })),
+      /* my_falls_taken (0420): a filing that landed on a character that took the fall for a post of the account's own; the taker is named by its public name. */
+      falls: newest(all.filter((i) => i.kind === 'infraction' && typeof i.payload.fall_play === 'string' && fits(i.at) && owned(acts.get(String(i.payload.about_act))?.character)).map((i) => ({ ms: i.at, order: i.order, i })))
+        .map(({ i }): LogFall => ({
+          infraction: i.id, character: acts.get(String(i.payload.about_act))!.character!, at: iso(i.at), post: i.payload.about_act as Id, postSeq: seqOf(i.payload.about_act), thread: i.thread,
+          rule: ruleWords(i), points: i.payload.points as number, mod: named([...characters.values()].find((c) => c.staff?.key === i.payload.staff)?.id ?? null), takerName: named(i.payload.character as Id),
         })),
       /* my_group_moves (0134): the conferGroup moves on the account's own characters, each with its end and the ruling of the appeal on it; the end is read through the ruling's `until`. */
       groupMoves: newest(all.filter((m) => m.kind === 'move' && m.payload['kind'] === 'conferGroup' && owned((m.payload['params'] as Record<string, unknown> | undefined)?.['character']) && fits(m.at)).map((m) => ({ ms: m.at, order: m.order, m })))
@@ -3922,7 +4016,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           character, posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
         })),
-        plays, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        plays, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted), spent: plays.filter((a) => spentPlays().has(a.id)).map((a) => a.id),
         visits,
         tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
         board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(),
@@ -5052,9 +5146,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!v || v.kind !== 'visit' || !post) throw new Error(`no such visit ${visit}`);
       /* Filed by its visit, so dated by the visit's own clock: a visit seeded on any clock keeps its infraction's two weeks on that same clock. */
       const at = o?.at ?? v.at;
+      /* file_visit (0420): the oldest live fall on the post, not caught or ended, that no infraction names yet; the filing is the fall caster's. */
+      const fall = [...acts.values()].filter((a) => a.kind === 'card' && a.target === post.id && a.payload.caught === undefined && onPost(a) && !over(a.id)
+        && instance.cards.find((c) => c.key === a.payload.card)?.discipline?.kind === 'fall' && !spentPlays().has(a.id)).sort((x, y) => x.at - y.at || x.order - y.order)[0];
       return write({
         character: null, kind: 'infraction', thread: v.thread, at,
-        payload: { character: post.character, band: o?.band ?? 'minor', points: o?.points ?? 2, rule_number: o?.ruleNumber === undefined ? 2 : o.ruleNumber, about_act: post.id, visit_act: visit, staff: (v.character ? characters.get(v.character)?.staff?.key : undefined) ?? 'seed', expires_at: iso(o?.expiresAt ?? at + 14 * 86_400_000) },
+        payload: { character: fall ? fall.character : post.character, ...(fall ? { fall_play: fall.id } : {}), band: o?.band ?? 'minor', points: o?.points ?? 2, rule_number: o?.ruleNumber === undefined ? 2 : o.ruleNumber, about_act: post.id, visit_act: visit, staff: (v.character ? characters.get(v.character)?.staff?.key : undefined) ?? 'seed', expires_at: iso(o?.expiresAt ?? at + 14 * 86_400_000) },
       }).id;
     },
     appeal(character, infraction, plea, o) {
@@ -5066,6 +5163,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const a = acts.get(appeal);
       if (!a || a.kind !== 'appeal') throw new Error(`no such appeal ${appeal}`);
       return write({ character: mod, kind: 'appeal_ruling', thread: a.thread, target: appeal, at: o?.at, payload: { appeal_act: appeal, verdict, line: o?.line ?? '', ...(o?.until !== undefined ? { until: iso(o.until) } : {}) } }).id;
+    },
+    relief(play, infraction, points) {
+      if (acts.get(play)?.kind !== 'card') throw new Error(`no such card play ${play}`);
+      if (acts.get(infraction)?.kind !== 'infraction') throw new Error(`no such infraction ${infraction}`);
+      if (!Number.isInteger(points) || points < 1) throw new Error('a relief takes at least one point');
+      warnReliefs.push({ play, infraction, points });
+    },
+    lift(play, ban) {
+      if (acts.get(play)?.kind !== 'card') throw new Error(`no such card play ${play}`);
+      if (acts.get(ban)?.kind !== 'ban') throw new Error(`no such ban ${ban}`);
+      banLifts.push({ play, ban });
     },
     ban(character, until, o) {
       const inf = o?.infraction ? acts.get(o.infraction) : [...acts.values()].filter((a) => a.kind === 'infraction' && a.payload.character === character).sort((x, y) => y.at - x.at)[0];

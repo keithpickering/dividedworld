@@ -49,7 +49,7 @@ import type {
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
-  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -622,7 +622,7 @@ const COSMETIC_OUTCOMES = ['line', 'gear', 'card'] as const;
 const COSMETIC_BYS = ['season', 'boss', 'demand', 'admin'] as const;
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'falls' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
@@ -668,13 +668,9 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     infractions: src['infractions'].map((r): LogInfraction => ({
       infraction: r['infraction'], character: r['character'], at: r['at'], band: BANDS.find((b) => b === r['band']) ?? 'minor', points: num(r['points']),
       ruleNumber: typeof r['rule_number'] === 'number' ? r['rule_number'] : null, rule: str(r['rule']), mod: str(r['mod_name']), post: r['post'],
-      postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], expiresAt: r['expires_at'], relief: num(r['relief']), emptiedAt: str(r['emptied_at']), cardRelief: num(r['card_relief']), fallPlay: str(r['fall_play']),
+      postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], expiresAt: r['expires_at'], relief: num(r['relief']), emptiedAt: str(r['emptied_at']),
     })),
-    bans: src['bans'].map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'], ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ownUntil: r['own_until'] ?? r['until'], liftedAt: str(r['lifted_at']), liftedCard: str(r['lifted_card']) })),
-    falls: src['falls'].map((r): LogFall => ({
-      infraction: r['infraction'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
-      rule: str(r['rule']), points: num(r['points']), mod: str(r['mod_name']), takerName: str(r['taker_name']),
-    })),
+    bans: src['bans'].map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'], ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ownUntil: r['own_until'] ?? r['until'] })),
     groupMoves: src['groupMoves'].map((r): LogGroupMove => ({
       move: r['move'], character: r['character'], at: r['at'], thread: r['thread'], seq: typeof r['seq'] === 'number' ? r['seq'] : null, group: String(r['group'] ?? ''),
       board: str(r['board']), boardName: str(r['board_name']), expiresAt: str(r['expires_at']), landedUntil: str(r['landed_until']), checkAt: str(r['check_at']), demand: str(r['demand']),
@@ -1138,7 +1134,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
       return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
     };
-    const [ledgerRows, walletRows, cardRows, packRows, playRows, writeRows, drawRows, wallRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, fallRows, groupMoveRows, reportRows, appealRows, cosmeticRows] = await Promise.all([
+    const [ledgerRows, walletRows, cardRows, packRows, playRows, writeRows, drawRows, wallRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows, cosmeticRows] = await Promise.all([
       rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
         (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
       rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -1158,10 +1154,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       /* The card plays an admin ended that the player cast or that landed on theirs (0092); a third party's reversal is in no one's view but its own. */
       rows(() => client.from('my_cards_ended').select('card_end,play,card,at,side,reach,target_name,post_author_name,caster_name,character'), 'at', (q) => q, ['card_end']),
       /* The Mod Bots' lines (0111): the warn points, bans, reports and appeals of the player's own characters; each view answers from the caller's own rows alone. */
-      rows(() => client.from('my_infractions').select('infraction,character,at,band,points,rule_number,rule,mod_name,post,post_seq,thread,expires_at,relief,emptied_at,card_relief,fall_play'), 'at', (q) => q, ['infraction']),
-      rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread,ruling,own_until,lifted_at,lifted_card'), 'at', (q) => q, ['ban']),
-      /* The filings that landed on a character that took the fall for a post of the player's (0420): the author's own rows, and the taker's public name. */
-      rows(() => client.from('my_falls_taken').select('infraction,character,at,post,post_seq,thread,rule,points,mod_name,taker_name'), 'at', (q) => q, ['infraction']),
+      rows(() => client.from('my_infractions').select('infraction,character,at,band,points,rule_number,rule,mod_name,post,post_seq,thread,expires_at,relief,emptied_at'), 'at', (q) => q, ['infraction']),
+      rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread,ruling,own_until'), 'at', (q) => q, ['ban']),
       /* The staff moves of the player's characters into groups (0134): each with how it ended and the appeal's ruling on it. */
       rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until,ruled_office'), 'at', (q) => q, ['move']),
       rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
@@ -1178,7 +1172,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,card,act,quadrant,amount').in('settlement', part)
       .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('card', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
       .range(start, end)));
-    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, draws: drawRows, wallsDrawn: wallRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, falls: fallRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows, cosmetics: cosmeticRows }, shareRows, await readBacks(cardRows));
+    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, draws: drawRows, wallsDrawn: wallRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows, cosmetics: cosmeticRows }, shareRows, await readBacks(cardRows));
   };
 
   const api: KayfaApi = {
@@ -1815,8 +1809,6 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         plays, above, under, cut, kept, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])), states: toStates(rowsOf(d['states'])),
         surfaces: toSurfaces(d['surfaces']),
         releases: (Array.isArray(d['releases']) ? d['releases'] : []).filter((x): x is Id => typeof x === 'string'),
-        /* The Take the Fall plays a filing has spent; a document without them reads as none. */
-        spent: (Array.isArray(d['spent']) ? d['spent'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
         board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
         presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']),
@@ -2152,7 +2144,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const first = toLogRead({
         ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), draws: rowsOf(sources['draws']), wallsDrawn: rowsOf(sources['wallsDrawn']), saves: rowsOf(sources['saves']),
         setEnds: rowsOf(sources['setEnds']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
-        infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), falls: rowsOf(sources['falls']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']), cosmetics: rowsOf(sources['cosmetics']),
+        infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']), cosmetics: rowsOf(sources['cosmetics']),
       }, rowsOf(d['shares']), await readBacks(rowsOf(sources['cards'])));
       /* The scored-as rows (`my_scored_as`) ride beside the sources, newest first; the column is `named_class` (a readable view column may not be `class_key`), and an older payload has none. */
       const firstRead: LogRead = Array.isArray(d['scoredAs'])

@@ -1821,7 +1821,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
-  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], draws: [], wallsDrawn: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
+  const empty = { infractions: [], bans: [], falls: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], draws: [], wallsDrawn: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -4616,5 +4616,130 @@ describe('a card that replies, and a play that keeps (0348_post_under.sql and th
       expect(kept).toHaveLength(100);
       expect(kept[0]!.play).toBe(w.play);
     });
+  });
+});
+
+/* The discipline cards (card notes, part 5): the three refusals, the relief, the lift and the fall, as the SQL does them (migration 0420). */
+describe('discipline cards: hearts, the Unban and Take the Fall', () => {
+  const mk = (key: string, name: string, reaches: ('post' | 'character')[], discipline: NonNullable<CardRules['discipline']>): CardRules => ({
+    key, name, alignment: 'sweet', rarity: 'uncommon', reaches, discipline,
+    playPrice: () => 0, validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
+    canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key, reaches, discipline }, t, e, now),
+  });
+  const heart = mk('t-heart', 'T Heart', ['character'], { kind: 'relief', points: 'lightestBand' });
+  const super_ = mk('t-super', 'T Super', ['character'], { kind: 'relief', points: 'all' });
+  const ultra = mk('t-ultra', 'T Ultra', ['character'], { kind: 'unban' });
+  const fall = mk('t-fall', 'T Fall', ['post'], { kind: 'fall' });
+  const shop: Instance = { ...instance, cards: [heart, super_, ultra, fall], machine: [], settings: { ...settings, economy: {} } };
+  function world() {
+    const fake = createFake({ instance: shop });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const anaOther = fake.seed.character(ana, 'Ana Other', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const mod = fake.seed.staff('mod', 'Mod Bot', 'mod');
+    const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    const { act: hers } = fake.seed.thread('general', anaFace, 'Hers', 'Her post');
+    fake.seed.wallet(ana, 500);
+    fake.seed.cards(ana, { 't-heart': 4, 't-super': 4, 't-ultra': 4, 't-fall': 4 });
+    fake.signInAs(ana);
+    const now = fake.clock.now();
+    /* A filing on bo's post `ago` ago, `points` strong. */
+    const file = (points: number, ago: number, post = opener) => fake.seed.infraction(fake.seed.visit(mod, post, { at: now - ago }), { points, at: now - ago });
+    const warn = async (id: string) => (await fake.characters([id]))[0]!.warnPoints ?? 0;
+    const bannedUntil = async (id: string) => (await fake.characters([id]))[0]!.bannedUntil ?? null;
+    return { fake, ana, bo, anaFace, anaOther, boFace, mod, thread, opener, hers, file, warn, bannedUntil, now };
+  }
+
+  test('a heart on an empty bar, an Ultra on a character that is not banned and a fall on one\'s own post are refused in the engine\'s words, and nothing is spent', async () => {
+    const { fake, anaFace, boFace, opener, hers } = world();
+    const held = async () => (await fake.myCards()).map((c) => c.held).reduce((a, b) => a + b, 0);
+    const before = await held();
+    expect(await fake.playCard('t-heart', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused("this character's warn bar is empty", 'config'));
+    expect(await fake.playCard('t-super', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused("this character's warn bar is empty", 'config'));
+    expect(await fake.playCard('t-ultra', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('this character is not banned', 'config'));
+    expect(await fake.playCard('t-fall', anaFace, hers, {}, '')).toEqual(refused("T Fall is played on another character's post", 'config'));
+    expect(await held()).toBe(before);
+  });
+
+  test('a staff character\'s post takes no fall, and a staff character no heart', async () => {
+    const { fake, anaFace, mod, thread } = world();
+    const theirs = fake.seed.staffPost(mod, thread, 'The rules.');
+    expect(await fake.playCard('t-fall', anaFace, theirs, {}, '')).toEqual(refused("T Fall is played on a player's post"));
+    /* A staff character has no bar and no ban, so the engine's words refuse a heart there before the server's own staff refusal could. */
+    expect(await fake.playCard('t-heart', anaFace, mod, {}, '', 'character', theirs)).toEqual(refused("this character's warn bar is empty", 'config'));
+  });
+
+  test('a heart takes the oldest live points first, least(what is left, what is wanted), and its play is over at once', async () => {
+    const { fake, bo, anaFace, boFace, opener, file, warn } = world();
+    const four = file(4, 2 * DAY);
+    file(2, DAY);
+    expect(await warn(boFace)).toBe(6);
+    const played = must(await fake.playCard('t-heart', anaFace, boFace, {}, '', 'character', opener));
+    expect(played.payload).toMatchObject({ reach: 'character', character: boFace, instant: true, took: 2 });
+    expect(played.payload.ends).toBeUndefined();
+    expect(await warn(boFace)).toBe(4);
+    must(await fake.playCard('t-heart', anaFace, boFace, {}, '', 'character', opener));
+    expect(await warn(boFace)).toBe(2);
+    must(await fake.playCard('t-heart', anaFace, boFace, {}, '', 'character', opener));
+    expect(await warn(boFace)).toBe(0);
+    expect(await fake.playCard('t-heart', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused("this character's warn bar is empty", 'config'));
+    fake.signInAs(bo);
+    expect((await fake.log()).infractions.find((i) => i.infraction === four)).toMatchObject({ points: 4, cardRelief: 4, fallPlay: null });
+  });
+
+  test('a Super Happy Heart empties the bar, and an admin ending the play puts the points back', async () => {
+    const { fake, anaFace, boFace, opener, file, warn } = world();
+    file(4, 2 * DAY);
+    file(2, DAY);
+    file(3, DAY / 2);
+    const played = must(await fake.playCard('t-super', anaFace, boFace, {}, '', 'character', opener));
+    expect(played.payload.took).toBe(9);
+    expect(await warn(boFace)).toBe(0);
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    must(await fake.reverseCard(played.id));
+    expect(await warn(boFace)).toBe(9);
+  });
+
+  test('an Ultra Happy Heart lifts every running ban at once; the log says when and by which card', async () => {
+    const { fake, bo, anaFace, boFace, opener, file, bannedUntil, now } = world();
+    const inf = file(7, DAY);
+    fake.seed.ban(boFace, now + 3 * DAY, { infraction: inf, days: 3 });
+    expect(await bannedUntil(boFace)).toBe(new Date(now + 3 * DAY).toISOString());
+    const played = must(await fake.playCard('t-ultra', anaFace, boFace, {}, '', 'character', opener));
+    expect(played.payload).toMatchObject({ instant: true, lifted: [{ until: new Date(now + 3 * DAY).toISOString() }] });
+    expect(played.payload.ends).toBeUndefined();
+    expect(await bannedUntil(boFace)).toBeNull();
+    expect(await fake.playCard('t-ultra', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('this character is not banned', 'config'));
+    fake.signInAs(bo);
+    expect((await fake.log()).bans[0]).toMatchObject({ liftedCard: 't-ultra', liftedAt: played.createdAt, until: played.createdAt });
+  });
+
+  test('a banned caster plays no discipline card', async () => {
+    const { fake, anaFace, boFace, opener, file, now } = world();
+    const inf = file(7, DAY);
+    fake.seed.ban(boFace, now + DAY, { infraction: inf });
+    fake.seed.ban(anaFace, now + DAY, { infraction: inf });
+    expect(await fake.playCard('t-ultra', anaFace, boFace, {}, '', 'character', opener)).toMatchObject({ ok: false, error: expect.stringMatching(/is banned until/) });
+  });
+
+  test('a filing on a post with a live fall lands on the fall\'s caster and spends it; the next lands on the author', async () => {
+    const { fake, ana, bo, thread, anaFace, boFace, opener, mod, file, warn, now } = world();
+    const played = must(await fake.playCard('t-fall', anaFace, opener, {}, ''));
+    expect(await fake.playCard('t-fall', anaFace, opener, {}, '')).toMatchObject({ ok: false });
+    const page = async () => (await fake.threadPage(thread, { page: 1 }, 20, []))!;
+    expect((await page()).spent ?? []).toEqual([]);
+    const first = fake.seed.infraction(fake.seed.visit(mod, opener, { at: now - 1000 }), { points: 2, at: now - 1000 });
+    expect(await warn(anaFace)).toBe(2);
+    expect(await warn(boFace)).toBe(0);
+    expect((await page()).spent).toEqual([played.id]);
+    expect(await fake.log()).toMatchObject({ infractions: [{ infraction: first, character: anaFace, fallPlay: played.id }] });
+    fake.signInAs(bo);
+    expect((await fake.log()).falls).toMatchObject([{ infraction: first, character: boFace, post: opener, points: 2, takerName: 'Ana Face' }]);
+    expect((await fake.log()).infractions).toEqual([]);
+    file(4, 500);
+    expect(await warn(boFace)).toBe(4);
+    expect(ana).not.toBe(bo);
   });
 });

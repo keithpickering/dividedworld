@@ -776,7 +776,7 @@ end $function$;
 
 -- ------------------------------------------------------------------------------------------------------- place_cast ----
 
--- place_cast (0317's), with the discipline cards: see the header, section 1. A staff caster is refused in plain words (no refusal hint, 42501) as a staff caster of an earn is; a staff target, an empty bar and a character
+-- place_cast (0317's), with the discipline cards: see the header, sections 1 and 3 (the fall's refusals, marked Task 4). A staff caster is refused in plain words (no refusal hint, 42501) as a staff caster of an earn is; a staff target, an empty bar and a character
 -- not banned are refused with the refusal hint; a relief or an unban skips the stack, `ends` and the play_reach row. The ward test is unchanged and runs first. Everything else as 0317 wrote it.
 create or replace function public.place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb DEFAULT '{}'::jsonb)
  RETURNS jsonb
@@ -858,6 +858,16 @@ begin
     if target_kind is distinct from 'post' then raise exception 'a card lands on a post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
     if kind_of.play = 'use' and author is distinct from caster then
       raise exception '% is used on your own post' , kind_of.name using hint = 'kayfabb.refusal', errcode = '42501';
+    end if;
+    -- Task 4 (section 3), taking the fall: a fall is played on a player's post, and on another character's. Both read public facts of the post's author (a staff flag, a character: who wrote a post is public),
+    -- and compare characters, never accounts, so a second mask of the author's account may take the fall and no refusal differs with who owns the caster or the author. The stack count below is as for any card.
+    if kind_of.discipline ->> 'kind' = 'fall' then
+      if exists (select 1 from characters c where c.id = author and c.staff is not null) then
+        raise exception '% is played on a player''s post', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+      end if;
+      if author is not distinct from caster then
+        raise exception '% is played on another character''s post', kind_of.name using hint = 'kayfabb.refusal', errcode = '42501';
+      end if;
     end if;
     -- A card that stops quotes is not laid on a post that holds a card face down: a back springs on a quote, and the two would pull against each other. A back is live by the predicate place_set uses (public, since
     -- the back is); the post's row is locked above and place_set takes the same row first, so the two are laid one at a time.
@@ -1068,7 +1078,7 @@ end $function$;
 --   my_infractions   gains, as its last columns, card_relief (the points the cards took off it: card_relief(i.id), 0 where none) and fall_play (the play that took the fall, read from the infraction's payload key
 --                    `fall_play`; null where no card did, and until section 3 writes one).
 --   my_bans          gains lifted_at and lifted_card: when the first lift of it whose play an admin has not ended landed, and the key of that card; null where no card acted (the same play ban_ends reads).
---   log_page         carries the four, whole from 0340 (its inf and bn reads list their columns, so the new ones are named); nothing else in it changes.
+--   log_page         carries the four and (section 3) `falls`, whole from 0340 (its inf and bn reads list their columns, so the new ones are named); nothing else in it changes.
 -- Both views stay the caller's own characters' (c.owner = auth.uid()): the rows add nothing about anyone else, and the card's key and time are on its public play. The grants stay as they were.
 -- Ways out: reads only, nothing to leave. Cost: the lift lateral in my_bans runs once for each ban the caller owns, before the sort and the limit (a player's bans are few), each one probe of ban_lifts by ban; card_relief's
 -- one probe of warn_reliefs runs once for each infraction the caller owns, likewise (a bar holds a handful, and a player's infractions across seasons are few).
@@ -1103,6 +1113,21 @@ create or replace view my_bans as
     where x.ban = b.id and not card_ended(k.id) order by k.created_at, k.id limit 1
   ) l on true
   where c.owner = auth.uid();
+
+-- Task 4 (section 3): my_falls_taken, the author's log row for a fall taken for one of its posts: an infraction that names a `fall_play` and is about a post by one of the caller's characters. `character` is the
+-- author, and the character the infraction landed on is named only by its public name (the play is a public Act). A caller's own caster's infraction is in my_infractions and not here. Nothing here is computed from an
+-- owner but the caller's own: `c.owner = auth.uid()` is the author's. Cost: led by acts_fall_spent (the infractions that took a fall, which is one for each filing that met a fall), each with a primary-key probe of its post and its
+-- author; a page of the log reads at most 200 of them, newest first.
+create view my_falls_taken as
+  select i.id as infraction, c.id as character, i.created_at as at, p.id as post, p.seq as post_seq, i.thread, punishment_words(i.id) as rule,
+         (i.payload ->> 'points')::integer as points, (select m.name from characters m where m.staff = i.payload ->> 'staff') as mod_name,
+         (select k.name from characters k where k.id = (i.payload ->> 'character')::uuid) as taker_name
+  from acts i
+  join acts p on p.id = (i.payload ->> 'about_act')::uuid
+  join characters c on c.id = p.character and c.owner = auth.uid()
+  where i.kind = 'infraction' and i.payload ? 'fall_play';
+revoke all on my_falls_taken from public, anon, authenticated;
+grant select on my_falls_taken to authenticated;
 
 -- log_page (0340), whole, with the four columns named in its inf and bn reads.
 create or replace function log_page(in_before timestamptz) returns jsonb
@@ -1171,6 +1196,10 @@ begin atomic
     select b.ban, b.character, b.at, b.days, b.until, b.infraction, b.rule, b.thread, b.ruling, b.own_until, b.lifted_at, b.lifted_card
     from my_bans b where in_before is null or b.at <= in_before
     order by b.at desc, b.ban limit 200
+  ), fl as materialized (
+    select f.infraction, f.character, f.at, f.post, f.post_seq, f.thread, f.rule, f.points, f.mod_name, f.taker_name
+    from my_falls_taken f where in_before is null or f.at <= in_before
+    order by f.at desc, f.infraction limit 200
   ), gm as materialized (
     select g.move, g.character, g.at, g.thread, g.seq, g."group", g.board, g.board_name, g.expires_at, g.landed_until, g.check_at, g.demand, g.office,
            g.ended_why, g.ended_by, g.ended_at, g.ruling, g.ruled_at, g.ruled_until, g.ruled_office
@@ -1261,6 +1290,7 @@ begin atomic
       'ended', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.card_end) from en x), '[]'::jsonb),
       'infractions', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.infraction) from inf x), '[]'::jsonb),
       'bans', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.ban) from bn x), '[]'::jsonb),
+      'falls', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.infraction) from fl x), '[]'::jsonb),
       'groupMoves', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.move) from gm x), '[]'::jsonb),
       'reports', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.report) from rp x), '[]'::jsonb),
       'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb),
@@ -1288,3 +1318,569 @@ begin atomic
   );
 end;
 
+-- ===================================================================================================== Section 3 (Task 4) ====
+-- Taking the fall: a card of kind `fall`, cast on another character's post, waits there; the first filing of a visit to the post lands its infraction on the character that cast it.
+--   1. acts_infraction_payload   allows a `fall_play` key (a uuid); acts_fall_spent finds the infractions that name a play, for file_visit's "no infraction names it" and the page's `spent`.
+--   2. infract, acts_warn_guard  an infraction may be about a post that is not `who`'s when it names `who`'s own fall play on that post. The lock on `who`, the points, the ban and its ladder are `who`'s.
+--   3. file_visit                after the end, the oldest live unspent fall on the post (not caught, not ended by an admin) gives its caster the filing; with none, or one infract would refuse, as before. It takes the post's row
+--                                first, as place_cast does, so a cast racing a filing either takes it or stays unspent, never both. Lock order, everywhere: the post's row, the visit's open row, the character infract locks.
+--   4. close_appeal              an `increased` verdict names the punished infraction's fall_play, so the increase lands on the same character. open_appeal already reads the infraction's own character:
+--                                only the caster may appeal it, and the author is told it is no punishment of theirs.
+--   5. place_cast                (section 1, marked Task 4) a fall on a staff character's post and a fall on one's own character's post are refused, in plain words, before anything is spent.
+--   6. card_target               names the post's `author`. thread_page names `spent`. my_falls_taken and log_page's `falls` tell the author's player (section 2, marked Task 4).
+-- Ways out: a fall waits on a post until a filing spends it or an admin ends it (reverse_card); it holds nobody: the author and the caster post as before. The caster's points and ban are any infraction's:
+-- they drop off by themselves, the ban ends by itself, the caster may appeal, an admin may end it.
+-- Privacy: nothing here reads who owns a character. The filing reads the post's plays (public Acts) and a staff flag (public); the refusals compare characters; the page's `spent` and card_target's `author` are public
+-- projections; my_falls_taken is the author's own and names the caster by its public name.
+-- Cost: file_visit gains one read of the post's plays (acts_layers, 0072) and, for a fall play found, one probe of acts_fall_spent; thread_page one probe of the visit's infractions for each fall play on the page.
+
+-- acts_infraction_payload (0104's), with a `fall_play` key. A relaxation, so the rows already there pass it: added not valid, then validated (a lock that does not stop writes).
+alter table acts drop constraint acts_infraction_payload;
+alter table acts add constraint acts_infraction_payload check (kind <> 'infraction' or (
+  payload - 'character' - 'band' - 'points' - 'rule_number' - 'board' - 'about_act' - 'visit_act' - 'staff' - 'expires_at' - 'fall_play' = '{}'::jsonb
+  and jsonb_typeof(payload -> 'character') = 'string' and payload ->> 'character' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  and payload ->> 'band' in ('minor', 'moderate', 'severe')
+  and jsonb_typeof(payload -> 'points') = 'number' and payload ->> 'points' ~ '^[1-9][0-9]{0,8}$'
+  and (jsonb_typeof(payload -> 'rule_number') = 'null' or (jsonb_typeof(payload -> 'rule_number') = 'number' and payload ->> 'rule_number' ~ '^[0-9]{1,9}$'))
+  and jsonb_typeof(payload -> 'board') = 'string' and payload ->> 'board' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  and jsonb_typeof(payload -> 'about_act') = 'string' and payload ->> 'about_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  and (jsonb_typeof(payload -> 'visit_act') = 'null' or (jsonb_typeof(payload -> 'visit_act') = 'string' and payload ->> 'visit_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
+  and jsonb_typeof(payload -> 'staff') = 'string' and payload ->> 'staff' <> ''
+  and jsonb_typeof(payload -> 'expires_at') = 'string'
+  and (not payload ? 'fall_play' or (jsonb_typeof(payload -> 'fall_play') = 'string' and payload ->> 'fall_play' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))) is true) not valid;
+alter table acts validate constraint acts_infraction_payload;
+create index acts_fall_spent on acts ((payload ->> 'fall_play')) where kind = 'infraction' and payload ? 'fall_play';
+
+-- infract (0109's), with a last argument `fall_play`: with it the post need not be `who`'s, and the infraction names the play. A new signature, so the old is dropped; its callers (file_visit, close_appeal) are
+-- written again below. Everything else (the lock on `who`, the points, the ban and its ladder, which are `who`'s) as 0109 wrote it. A banned `who` is warned all the same, with or without a fall: infract has
+-- never refused a banned character.
+drop function public.infract(uuid, text, uuid, text, integer, uuid);
+create function public.infract(who uuid, band text, about_act uuid, staff text, rule_number integer DEFAULT NULL::integer, visit_act uuid DEFAULT NULL::uuid, fall_play uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  bar jsonb;
+  pts integer;
+  in_thread uuid;
+  on_board uuid;
+  at timestamptz;
+  inf uuid;
+  total integer;
+  made uuid;
+  season_no integer;
+  prior integer;
+  steps jsonb;
+  days integer;
+  ends timestamptz;
+  ban_at timestamptz;
+begin
+  if band is null or band not in ('minor', 'moderate', 'severe') then raise exception 'there is no band "%"; a breach is minor, moderate or severe', coalesce(band, '') using errcode = '22023'; end if;
+  if staff is null or staff = '' then raise exception 'an infraction names the Mod that filed it' using errcode = '22023'; end if;
+  perform 1 from characters c where c.id = who and c.staff is null for no key update;
+  if not found then raise exception 'there is no player character to warn' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if fall_play is null then
+    select a.thread, t.board into in_thread, on_board from acts a join threads t on t.id = a.thread where a.id = about_act and a.kind in ('post', 'spin') and a.character = who;
+    if in_thread is null then raise exception 'an infraction is for a post this character wrote' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  else
+    -- A fall (card notes, Part 5): the post is another's, and the play is this character's own card Act of a fall kind on that very post, on the post's reach. Only who and where are held to the play: whether
+    -- an admin has ended it since, or a filing spent it, is for the caller to decide (file_visit takes a live one; an appeal's `increased` names the one the first infraction named).
+    select a.thread, t.board into in_thread, on_board from acts a join threads t on t.id = a.thread
+    where a.id = about_act and a.kind in ('post', 'spin')
+      and exists (select 1 from acts k join card_kinds ck on ck.key = k.payload ->> 'card'
+                  where k.id = fall_play and k.kind = 'card' and k.character = who and k.target_act_id = a.id and coalesce(k.payload ->> 'reach', 'post') = 'post' and ck.discipline ->> 'kind' = 'fall');
+    if in_thread is null then raise exception 'a fall is the play of a fall card by this character, on the post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  end if;
+  if visit_act is not null and not exists (select 1 from acts v where v.id = visit_act) then raise exception 'there is no such visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The time and the bar are taken with the row held: a filing that waited for another's ban lands after it, and sees its bar.
+  at := clock_timestamp();
+  bar := setting('warnBar');
+  pts := (bar -> 'bands' ->> band)::integer;
+  perform set_config('kayfabb.warn_writer', 'on', true);
+  insert into acts (character, kind, thread, payload, created_at)
+  values (null, 'infraction', in_thread,
+    jsonb_build_object('character', who, 'band', band, 'points', pts, 'rule_number', rule_number, 'board', on_board, 'about_act', about_act, 'visit_act', visit_act,
+                       'staff', staff, 'expires_at', at + span_interval(bar -> 'decay'))
+      || case when fall_play is not null then jsonb_build_object('fall_play', fall_play) else '{}'::jsonb end, at)
+  returning id into inf;
+  total := warn_points(who);
+  if total >= (bar ->> 'size')::integer then
+    -- This season's bans of this character, this one counting: a new season has none, so the ladder starts again. A ban an appeal overturned is not counted.
+    -- With no season open (between one and the next) it is the latest season's; 0 only where no season was ever made.
+    season_no := coalesce((select max(s.number) from seasons s), 0);
+    select count(*) into prior from acts b where b.kind = 'ban' and b.payload ->> 'character' = who::text and (b.payload ->> 'season')::integer = season_no
+      and not exists (select 1 from acts ap join acts r on r.kind = 'appeal_ruling' and r.target_act_id = ap.id
+                      where ap.kind = 'appeal' and ap.target_act_id = b.id and r.payload ->> 'verdict' = 'overturned');
+    steps := bar -> 'banDays';
+    days := (steps ->> least(prior, jsonb_array_length(steps) - 1))::integer;
+    ban_at := greatest(clock_timestamp(), at + interval '1 microsecond');
+    ends := ban_at + make_interval(days => days);
+    insert into acts (character, kind, thread, payload, created_at)
+    values (null, 'ban', in_thread, jsonb_build_object('character', who, 'days', days, 'until', ends, 'infraction_act', inf, 'season', season_no), ban_at)
+    returning id into made;
+    total := 0;
+  end if;
+  perform set_config('kayfabb.warn_writer', '', true);
+  return jsonb_build_object('infraction', inf, 'points', pts, 'warn_points', total, 'ban', made, 'until', ends);
+end $function$;
+revoke execute on function public.infract(uuid, text, uuid, text, integer, uuid, uuid) from public, anon, authenticated;
+grant execute on function public.infract(uuid, text, uuid, text, integer, uuid, uuid) to service_role;
+
+-- acts_warn_guard (0104's), an infraction about a post of its character's or naming a `fall_play` that is that character's own play on the post; everything else as 0104 wrote it.
+CREATE OR REPLACE FUNCTION public.acts_warn_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+begin
+  if coalesce(current_setting('kayfabb.warn_writer', true), '') <> 'on' then
+    raise exception 'an infraction or a ban is written only through infract' using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if not exists (select 1 from characters c where c.id = (new.payload ->> 'character')::uuid and c.staff is null) then
+    raise exception 'an infraction or a ban is against a player''s character' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind = 'infraction' then
+    perform (new.payload ->> 'expires_at')::timestamptz;
+    -- A post of the character's, or one whose fall the character took: the play it names is its own card Act of a fall kind on that post (the same test infract makes).
+    if not exists (select 1 from acts p where p.id = (new.payload ->> 'about_act')::uuid and p.kind in ('post', 'spin') and p.thread = new.thread
+                   and (p.character = (new.payload ->> 'character')::uuid
+                        or (new.payload ? 'fall_play' and exists (select 1 from acts k join card_kinds ck on ck.key = k.payload ->> 'card'
+                                                                    where k.id = (new.payload ->> 'fall_play')::uuid and k.kind = 'card' and k.character = (new.payload ->> 'character')::uuid
+                                                                      and k.target_act_id = p.id and coalesce(k.payload ->> 'reach', 'post') = 'post' and ck.discipline ->> 'kind' = 'fall')))) then
+      raise exception 'an infraction is about a post of that character''s, or one whose fall it took, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+    end if;
+    if jsonb_typeof(new.payload -> 'visit_act') = 'string' and not exists (select 1 from acts v where v.id = (new.payload ->> 'visit_act')::uuid) then
+      raise exception 'an infraction names a visit that is an Act' using hint = 'kayfabb.refusal', errcode = '23514';
+    end if;
+  else
+    perform (new.payload ->> 'until')::timestamptz;
+    if not exists (select 1 from acts i where i.id = (new.payload ->> 'infraction_act')::uuid and i.kind = 'infraction'
+                   and i.payload ->> 'character' = new.payload ->> 'character' and i.thread = new.thread) then
+      raise exception 'a ban follows an infraction of the same character, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+    end if;
+  end if;
+  return new;
+end $function$;
+
+-- file_visit (0105's), after the end, giving a live fall's caster the infraction (Task 4); everything else as 0105 wrote it, and the lock order said inside.
+CREATE OR REPLACE FUNCTION public.file_visit(visit_act uuid, line text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v acts%rowtype;
+  charges jsonb;
+  top jsonb;
+  who uuid;
+  mod_key text;
+  said text;
+  ended jsonb;
+  hit jsonb;
+  author uuid;
+  fall uuid;
+  taker uuid;
+begin
+  select * into v from acts a where a.id = file_visit.visit_act and a.kind = 'visit';
+  if not found then raise exception 'there is no such visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The lock order, here and in every writer a fall meets: the post's row (place_cast takes it to lay a play on the post, so a fall cast and a filing are laid one after the other, and the one that goes second
+  -- sees the first), then the visit's open row (the row end_visit takes: the end and the infraction are one decision, and the one that waits finds the visit ended), then the row of the character the
+  -- infraction lands on (infract). A play on a character takes that character's row alone, and nothing here waits on a row it already holds in another order. `for no key update` is place_cast's own mode, so the two
+  -- conflict; it does not conflict with a key share (a foreign key) or a read, and a writer that takes the post's row for share (a visit's start) waits for this one to finish and is waited for in turn, never both
+  -- holding one and wanting the other, as long as it takes the post's row before the open row, as this does.
+  perform 1 from acts p where p.id = v.target_act_id for no key update;
+  perform 1 from visits_open o where o.visit_act = v.id for update;
+  charges := visit_charges(v.id);
+  top := (select c from jsonb_array_elements(charges) with ordinality e(c, n)
+          order by case c ->> 'band' when 'severe' then 3 when 'moderate' then 2 else 1 end desc, n limit 1);
+  mod_key := (select c.staff from characters c where c.id = v.character);
+  said := coalesce(nullif(btrim(coalesce(line, '')), ''), visit_line('visitFiled', mod_key, charges));
+  ended := end_visit(v.id, 'filed', null, said);
+  if not (ended ->> 'ended')::boolean then
+    return jsonb_build_object('filed', false, 'end_act', ended -> 'end_act', 'outcome', ended ->> 'outcome');
+  end if;
+  author := (select a.character from acts a where a.id = v.target_act_id);
+  who := author;
+  -- Task 4 (section 3), taking the fall: the oldest live play of a fall card on the post's own reach that no infraction names, not caught (a caught play holds no place) and not ended by an admin; its caster takes
+  -- the filing in the author's place. The play is a public Act, so nothing here reads an owner. A caster infract would refuse where it would not refuse the author (a staff character now: infract warns a player
+  -- character alone; a character that is gone cannot be, an Act's character being a foreign key) takes no fall: the filing lands on the author as if there were none, and the play stays unspent. A caster who is
+  -- banned now takes it, as infract warns a banned character today. The post's row is held (above), so nothing spends this play or lays another between this read and the infraction.
+  select k.id, k.character into fall, taker
+  from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.discipline ->> 'kind' = 'fall'
+  where k.kind = 'card' and k.target_act_id = v.target_act_id and coalesce(k.payload ->> 'reach', 'post') = 'post' and not (k.payload ? 'caught') and not card_ended(k.id)
+    and not exists (select 1 from acts i where i.kind = 'infraction' and i.payload ? 'fall_play' and i.payload ->> 'fall_play' = k.id::text)
+  order by k.created_at, k.id limit 1;
+  if fall is not null and taker is distinct from author and exists (select 1 from characters c where c.id = taker and c.staff is null) then
+    who := taker;
+  else
+    fall := null;
+  end if;
+  hit := infract(who, top ->> 'band', v.target_act_id, mod_key, nullif(top ->> 'rule_number', '')::integer, v.id, fall);
+  return jsonb_build_object('filed', true, 'end_act', ended -> 'end_act') || hit;
+end $function$;
+
+-- close_appeal (0135's), its `increased` verdict naming the punished infraction's fall_play to infract; everything else as 0135 wrote it.
+CREATE OR REPLACE FUNCTION public.close_appeal(appeal_act uuid, verdict text, line text DEFAULT NULL::text, staff text DEFAULT NULL::text, most_days integer DEFAULT NULL::integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  ap acts%rowtype;
+  pun acts%rowtype;
+  ruling acts%rowtype;
+  mod_key text;
+  who uuid;
+  appellant text;
+  said text := left(btrim(coalesce(close_appeal.line, '')), 280);
+  v text := close_appeal.verdict;
+  pts integer;
+  delta integer := 0;
+  payload jsonb;
+  hit jsonb;
+  new_until timestamptz;
+  days integer;
+  paid record;
+  amount integer := 0;
+  written uuid;
+  key text;
+  own_end timestamptz;
+  length interval;
+  most_all numeric;
+  most numeric;
+  ended boolean := false;
+begin
+  select * into ap from acts a where a.id = close_appeal.appeal_act and a.kind = 'appeal';
+  if not found then raise exception 'there is no such appeal' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The appeal's own lock: closing and refunding it are one decision, so it is closed once, or refunded once, never both.
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.appeal.' || ap.id::text, 0));
+  select * into ruling from acts a where a.kind = 'appeal_ruling' and a.target_act_id = ap.id;
+  if found then
+    -- The ruling's own numbers, so a retry after a lost answer reports the true outcome.
+    return jsonb_build_object('closed', false, 'existing', true, 'ruling_act', ruling.id, 'verdict', ruling.payload ->> 'verdict', 'line', ruling.payload ->> 'line',
+      'points_delta', (ruling.payload ->> 'points_delta')::integer,
+      'refunded_amount', coalesce((select f.amount from appeal_refunds f where f.appeal_act = ap.id and f.why = 'overturned'), 0))
+      || case when ruling.payload ? 'until' then jsonb_build_object('until', ruling.payload ->> 'until') else '{}'::jsonb end;
+  end if;
+  if exists (select 1 from appeal_refunds f where f.appeal_act = ap.id) then
+    return jsonb_build_object('closed', false, 'refunded', true);
+  end if;
+  if v is null or v not in ('overturned', 'upheld', 'reduced', 'increased') then
+    raise exception 'an appeal is answered with overturned, upheld, reduced or increased, not %', coalesce(v, 'nothing') using errcode = '22023';
+  end if;
+  select * into pun from acts a where a.id = ap.target_act_id;
+  -- A move ends under its own lock (end_move's): the ruling, the tick and an apology's end are then one after another, and a move one of them ended is seen as ended here.
+  if pun.kind = 'move' then perform pg_advisory_xact_lock(hashtext('kayfabb.end_move'), hashtext(pun.id::text)); end if;
+  -- The punishment ran out while the appeal waited: nothing is left to rule on, and an increase must not revive it. No ruling; the price comes back (the appeal stays used).
+  if not punishment_running(pun.id) then
+    perform refund_appeal(ap.id, 'expired');
+    return jsonb_build_object('closed', false, 'refunded', true, 'expired', true, 'reason', 'that punishment had already run out before the appeal was heard, so nothing was ruled and your Aura is back');
+  end if;
+  mod_key := appeal_hearer(pun.id);
+  if mod_key is null then raise exception 'no one is on staff to hear an appeal' using errcode = '55000'; end if;
+  if close_appeal.staff is not null and close_appeal.staff <> mod_key then
+    raise exception 'this appeal is heard by someone else now' using errcode = '55000';
+  end if;
+  who := ap.character;
+  appellant := (select c.name from characters c where c.id = who);
+
+  if pun.kind = 'move' then
+    own_end := (pun.payload ->> 'expires_at')::timestamptz;
+    -- A move that ends only by an apology or an admin has no length to halve or add to: the model's other verdicts are written as upheld, in the stock line.
+    if own_end is null and v in ('reduced', 'increased') then v := 'upheld'; said := ''; end if;
+  end if;
+  payload := jsonb_build_object('appeal_act', ap.id, 'verdict', v);
+
+  if pun.kind = 'infraction' then
+    pts := (pun.payload ->> 'points')::integer;
+    if v = 'overturned' then delta := -pts;
+    elsif v = 'reduced' then delta := -least(pts, greatest(1, (pts + 1) / 2));
+    elsif v = 'increased' then
+      -- One more infraction of the same band for the same post: at most one band's points, and a full bar bans. A fall's infraction names its play again, so the increase lands on the same character, the one who appealed (Task 4).
+      hit := infract(who, pun.payload ->> 'band', (pun.payload ->> 'about_act')::uuid, mod_key, nullif(pun.payload ->> 'rule_number', '')::integer, nullif(pun.payload ->> 'visit_act', '')::uuid, nullif(pun.payload ->> 'fall_play', '')::uuid);
+      delta := (hit ->> 'points')::integer;
+      payload := payload || jsonb_build_object('infraction_act', hit ->> 'infraction');
+    end if;
+  elsif pun.kind = 'move' then
+    -- Its length is from its landing to its own end. A reduction ends it at landing plus half the length (the end may be behind us); an increase adds half the length, but
+    -- never past the phase's most days from landing (the smaller of the phase's number and the instance's own).
+    length := own_end - pun.created_at;
+    if v = 'overturned' then new_until := now();
+    elsif v = 'reduced' then new_until := pun.created_at + length / 2;
+    elsif v = 'increased' then
+      -- The instance's setting is the outer limit (setting() raises where it is missing); the phase's number, where the call has one, can only lower it.
+      most_all := (setting('moveExpiryMostDays') #>> '{}')::numeric;
+      most := greatest(1, least(coalesce(close_appeal.most_days, most_all), most_all));
+      new_until := own_end + least(length / 2, greatest(interval '0', most * interval '1 day' - length));
+    end if;
+    if new_until is not null then payload := payload || jsonb_build_object('until', new_until); end if;
+  else
+    -- A ban: its length is its days; a reduction counts half of them from the ban's start, an increase runs half of them past its end.
+    days := (pun.payload ->> 'days')::integer;
+    if v = 'overturned' then new_until := now();
+    elsif v = 'reduced' then new_until := pun.created_at + days * interval '12 hours';
+    elsif v = 'increased' then new_until := (pun.payload ->> 'until')::timestamptz + days * interval '12 hours';
+    end if;
+    if new_until is not null then payload := payload || jsonb_build_object('until', new_until); end if;
+  end if;
+
+  key := 'appeal' || initcap(v);
+  said := coalesce(nullif(said, ''), appeal_line(key, mod_key, appellant));
+  payload := payload || jsonb_build_object('points_delta', delta, 'line', said);
+  written := (write_staff_act(mod_key, 'appeal_ruling', ap.thread, ap.id, payload) ->> 'id')::uuid;
+
+  -- A move's effect: overturned ends it at once; a reduction that has already run its course ends it now. Each is end_move's, so a move something else just ended is not ended twice.
+  if pun.kind = 'move' then
+    if v = 'overturned' then
+      ended := (end_move(pun.id, 'overturned', 'appeal') ->> 'ended')::boolean;
+      if ended then perform say_move_end(pun.id, 'overturned'); end if;
+    elsif v = 'reduced' and new_until <= now() then
+      ended := (end_move(pun.id, 'expired', 'appeal') ->> 'ended')::boolean;
+      if ended then perform say_move_end(pun.id, 'expired'); end if;
+    end if;
+  end if;
+
+  -- An overturned appeal gets its price back.
+  if v = 'overturned' then
+    select w.account, -w.change as price into paid from wallet_events w where w.kind = 'appeal' and w.ref = ap.id;
+    amount := coalesce(paid.price, 0);
+    insert into appeal_refunds (appeal_act, amount, why) values (ap.id, amount, 'overturned');
+    if amount > 0 then perform wallet_move(paid.account, amount, 'refund', null, ap.id); end if;
+  end if;
+  return jsonb_build_object('closed', true, 'ruling_act', written, 'verdict', v, 'staff', mod_key, 'line', said, 'points_delta', delta, 'refunded_amount', amount)
+    || case when new_until is not null then jsonb_build_object('until', new_until) else '{}'::jsonb end
+    || case when ended then jsonb_build_object('ended', true) else '{}'::jsonb end
+    || case when hit is not null then jsonb_build_object('infraction', hit ->> 'infraction', 'ban', hit -> 'ban') else '{}'::jsonb end;
+end $function$;
+
+-- card_target (0348's), also naming the post's author: who wrote a post is a public fact of the Act, and the engine compares it with the caster (a character, never an account) before it sends a fall. Everything else as 0348 wrote it.
+CREATE OR REPLACE FUNCTION public.card_target(target uuid)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select jsonb_build_object('reach', 'post', 'act', a.id, 'kind', a.kind, 'author', a.character,
+    'length', char_length(coalesce(a.current_payload ->> 'body', '')),
+    'body', coalesce(a.current_payload ->> 'body', ''),
+    'version', post_version(a.id),
+    'effects', coalesce((select jsonb_agg(e.effect order by e.at, e.id) from (
+        select k.created_at as at, k.id, jsonb_strip_nulls(jsonb_build_object('card', k.payload ->> 'card', 'act', k.id,
+          'gimmick', ck.gimmick, 'ends', k.payload ->> 'ends', 'drive', dp.drive,
+          'covered', case when ck.surface then (select bit_count(sf.cover) from surfaces sf where sf.play = k.id) end, 'closes', to_jsonb(dp.closes),
+          'quadrant', case when ck.skim is not null then k.payload #>> '{config,quadrant}' end)) as effect
+        from acts k left join card_kinds ck on ck.key = k.payload ->> 'card'
+        -- One grouped read of the post's drive plays: each play's drive, and that drive's close (its latest play plus the card's `lasts`).
+        left join (select d.id, d.drive, max(d.created_at) over (partition by d.card, d.drive) + span_interval(dk.drive -> 'lasts') as closes
+                   from drive_plays(a.id) d join card_kinds dk on dk.key = d.card) dp on dp.id = k.id
+        where k.kind = 'card' and k.target_act_id = a.id and not (k.payload ? 'caught') and not card_ended(k.id) and coalesce(k.payload ->> 'reach', 'post') = 'post'
+        union all
+        select s.created_at, s.id, jsonb_build_object('card', null, 'act', s.id, 'faceDown', true,
+          'ends', to_jsonb(coalesce(least(sp.created_at, tb.created_at, f.ends_at), f.ends_at)))
+        from acts s join face_down f on f.play = s.id
+        left join acts sp on sp.kind = 'spring' and (sp.payload ->> 'set') = s.id::text
+        left join acts tb on tb.kind = 'take_back' and (tb.payload ->> 'set') = s.id::text
+        where s.kind = 'set' and s.target_act_id = a.id
+      ) e), '[]'))
+    -- Where the target is a reply a play in force draws under its parent (post_under): the parent, and no key for any other post.
+    || coalesce((select jsonb_build_object('under', u.parent) from post_under u where u.reply = a.id and not card_ended(u.play)), '{}'::jsonb)
+  from acts_public a where a.id = target
+$function$;
+
+-- thread_page (0349's, whole), carrying `spent`: the page's fall plays a filing took. Everything else as 0349 wrote it.
+create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  -- The refusal, before anything is read.
+  select case when coalesce(thread_page.per_page, (select (x.settings ->> 'postsPerPage')::integer from screen_settings x limit 1)) is null
+                or coalesce(thread_page.per_page, (select (x.settings ->> 'postsPerPage')::integer from screen_settings x limit 1)) not between 1 and 100
+              then screen_refusal('a page holds 1 to 100 posts') end;
+
+  with pp as materialized (
+    select coalesce(thread_page.per_page, (select (x.settings ->> 'postsPerPage')::integer from screen_settings x limit 1)) as n
+  ),
+  s as materialized (
+    select o.*, greatest(1, ceil(o.last_seq::numeric / (select pp.n from pp)))::integer as last_page
+    from thread_open o where o.id = thread_page.in_thread
+  ),
+  pg as materialized (
+    select s.*,
+           least(s.last_page, greatest(1, coalesce(case when thread_page.in_seq is not null then greatest(1, ceil(thread_page.in_seq::numeric / (select pp.n from pp)))::integer end,
+                                                   thread_page.in_page, 1))) as page
+    from s
+  ),
+  rng as materialized (
+    select pg.*, (pg.page - 1) * (select pp.n from pp) + 1 as first_seq, pg.page * (select pp.n from pp) as end_seq from pg
+  ),
+  -- The range's numbers, read through acts_public once: the page's Acts and the numbers drawn elsewhere both come from this one pass (a screen function may read no relation below the
+  -- public projections, tools/check-web-reads.mjs).
+  range_acts as materialized (
+    select a.* from acts_public a, rng
+    where a.thread = rng.id and a.seq between rng.first_seq and rng.end_seq and a.kind not in ('edit', 'card')
+  ),
+  -- A range number whose Act is the reply of a post_under row in force: drawn under its parent, not at its number. A lateral probe of the unique index on `reply`, one for each
+  -- number of the range and so no more than 100: the planner cannot turn it into a hash over the whole table. `not card_ended` is the one in-force rule, here and in `nested`.
+  drawn as materialized (
+    select r.id, r.seq, r.kind, u.play, u.parent
+    from range_acts r cross join lateral (select x.play, x.parent from post_under x where x.reply = r.id) u
+    where not card_ended(u.play)
+  ),
+  page_acts as materialized (
+    select r.* from range_acts r
+    where not exists (select 1 from drawn d where d.id = r.id)
+  ),
+  page_posts as materialized (select a.id, a.character, a.created_at from page_acts a where a.kind = 'post'),
+  -- The replies drawn under the page's posts (post_under_parent), each read through acts_public as the page's own Acts are, so the conduct layer's concealment holds for a nested
+  -- reply as for any post. A reply takes none under it, so one level, and at most one under each post (stack 1). `act` is the Act as `acts` holds one.
+  nested as materialized (
+    select u.play, p.id as parent, a.id, a.character, a.created_at, to_jsonb(a) as act
+    from page_posts p
+    cross join lateral (select x.play, x.reply from post_under x where x.parent = p.id and not card_ended(x.play)) u
+    join acts_public a on a.id = u.reply
+  ),
+  -- What the plays, visits, tallies, people and spun threads are read for: the page's posts and the replies drawn under them.
+  posts as materialized (
+    select p.id, p.character, p.created_at from page_posts p
+    union all
+    select n.id, n.character, n.created_at from nested n
+  ),
+  -- At most PLAYS_PER_POST layers a post, oldest first.
+  on_posts as materialized (
+    select l.* from (
+      select a.*, row_number() over (partition by a.target_act_id order by a.created_at, a.id) as n
+      from acts_public a where a.kind in ('card', 'set', 'spring') and a.target_act_id in (select p.id from posts p)
+    ) l where l.n <= 8
+  ),
+  -- An admin's end of each of those plays (0092), as cardsOnMany answers it beside them: the client marks a play reversed only from
+  -- its card_end (engine/ui/cards/plays.ts), so a page without it would draw an ended effect over its post. One per play at most.
+  ends_on_posts as materialized (
+    select a.* from acts_public a where a.kind = 'card_end' and a.target_act_id in (select o.id from on_posts o)
+  ),
+  above as materialized (
+    select x.play, x.reach, x.target, x.ends_at, x.act
+    from effects_above(array(select distinct p.character from posts p where p.character is not null), (select rng.id from rng), (select rng.board from rng)) x
+  ),
+  -- The plays of a kind that keeps, at thread reach on this thread, that wore off by time (not one an admin ended), whose window (the play's date to its end) holds the date of one of
+  -- the page's posts: they still count on those posts, so the page carries them beside `above`, in its shape. The range of play_reach_thread (ended, and ended after the
+  -- page's earliest post), the Act by primary key through acts_public (dated no later than the page's latest post, then the window), and only for what survives that the kind (`keeps`). At most 100, oldest first.
+  kept_span as materialized (select min(p.created_at) as lo, max(p.created_at) as hi from posts p),
+  -- The reach-specific part, and the one place a later reach adds to: a character reach's rows (play_reach_character) join here with a `union all` of a second select of this shape;
+  -- everything below reads whatever rows it gives.
+  kept_reach as materialized (
+    select x.play, x.reach, coalesce(x.character, x.thread, x.board) as target, x.ends_at
+    from play_reach x, kept_span s
+    where x.thread = (select rng.id from rng) and x.ends_at <= now() and x.ends_at > s.lo
+  ),
+  kept_window as materialized (
+    select r.play, r.reach, r.target, r.ends_at, a.created_at as started, to_jsonb(a) as act, a.payload ->> 'card' as card
+    from kept_reach r join acts_public a on a.id = r.play, kept_span s
+    where a.created_at <= s.hi
+      and exists (select 1 from posts p where a.created_at <= p.created_at and p.created_at < r.ends_at)
+  ),
+  kept as materialized (
+    select w.play, w.reach, w.target, w.ends_at, w.act
+    from kept_window w
+    join card_kinds ck on ck.key = w.card and ck.keeps
+    where not card_ended(w.play)
+    order by w.started, w.play limit 100
+  ),
+  -- Every play the page draws, on a post or above: by id, with its caster.
+  played as materialized (
+    select o.id, o.kind, o.character, o.payload ->> 'card' as card from on_posts o
+    union
+    select (x.act ->> 'id')::uuid, x.act ->> 'kind', (x.act ->> 'character')::uuid, x.act -> 'payload' ->> 'card' from above x
+    union
+    select (x.act ->> 'id')::uuid, x.act ->> 'kind', (x.act ->> 'character')::uuid, x.act -> 'payload' ->> 'card' from kept x
+  ),
+  -- Each of the page's posts' latest visit (0105), by acts_visits_by_post: its Mod, when it ends, its charges (the start's and every join's, in order) and its
+  -- challenge, whitelisted to the kind and the number, never an answer; and its end if it has one.
+  vis as materialized (
+    select distinct on (v.target_act_id) v.id, v.target_act_id as post, v.character, v.created_at, v.payload
+    from acts_public v where v.kind = 'visit' and v.target_act_id in (select a.id from page_acts a where a.kind in ('post', 'spin') union all select n.id from nested n)
+    order by v.target_act_id, v.created_at desc, v.id desc
+  ),
+  ids as materialized (select a.id from page_acts a union select n.id from nested n union select p.id from played p),
+  who as materialized (
+    select c from (select a.character as c from page_acts a union select n.character from nested n union select p.character from played p union select v.character from vis v) w where c is not null
+  ),
+  wanted_plays as materialized (select p.id from played p where p.card = any (coalesce(thread_page.effect_cards, '{}'))),
+  spun as materialized (
+    select l.* from (
+      select t.*, row_number() over (partition by t.origin_act_id order by t.created_at, t.id) as n
+      from thread_list t where t.origin_act_id in (select i.id from ids i)
+    ) l where l.n <= 200
+  )
+  select case when not exists (select 1 from rng) then null else jsonb_build_object(
+    'summary', (select to_jsonb(s) - 'last_page' from s),
+    'page', (select rng.page from rng),
+    'acts', (select coalesce(jsonb_agg(to_jsonb(a) order by a.seq), '[]'::jsonb) from page_acts a),
+    'people', (select coalesce(jsonb_agg(jsonb_build_object(
+        'character', jsonb_build_object('id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office,
+          'warn_points', c.warn_points, 'banned_until', c.banned_until, 'group', c."group"),
+        'profile', (select jsonb_build_object('character', p.character, 'title', p.title, 'signature', p.signature, 'avatar_square', p.avatar_square,
+                      'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns) || profile_cosmetics(p.character)
+                    from character_profiles p where p.character = c.id),
+        'posts', coalesce((select n.posts from character_post_counts n where n.character = c.id), 0),
+        'standing', coalesce((select st.standing from current_standings st where st.character = c.id), 0),
+        'reveals', (select coalesce(jsonb_agg(jsonb_build_object('act', r.act, 'character', r.character, 'class', r.class, 'at', r.at, 'via', r.via, 'thread', r.thread)
+                      order by r.at, r.act), '[]'::jsonb) from class_reveals r where r.character = c.id),
+        'turns', (select coalesce(jsonb_agg(jsonb_build_object('act', u.act, 'character', u.character, 'at', u.at, 'was', u.was) order by u.at, u.act), '[]'::jsonb)
+                  from turns_announced u where u.character = c.id)
+      ) order by c.id), '[]'::jsonb)
+      from characters_public c where c.id in (select w.c from who w)),
+    'plays', (select coalesce(jsonb_agg(x.j order by x.created_at, x.id), '[]'::jsonb) from (
+                select to_jsonb(o) - 'n' as j, o.created_at, o.id from on_posts o
+                union all
+                select to_jsonb(e), e.created_at, e.id from ends_on_posts e
+              ) x),
+    'above', (select coalesce(jsonb_agg(jsonb_build_object('play', x.play, 'reach', x.reach, 'target', x.target, 'ends_at', x.ends_at, 'act', x.act)
+                order by (x.act ->> 'created_at')::timestamptz, x.play), '[]'::jsonb) from above x),
+    'kept', (select coalesce(jsonb_agg(jsonb_build_object('play', x.play, 'reach', x.reach, 'target', x.target, 'ends_at', x.ends_at, 'act', x.act)
+                order by (x.act ->> 'created_at')::timestamptz, x.play), '[]'::jsonb) from kept x),
+    -- The replies drawn under the page's posts, and the numbers of this page's range whose Act is drawn under a post elsewhere. Public projections: the same for every caller.
+    'under', (select coalesce(jsonb_agg(jsonb_build_object('parent', n.parent, 'play', n.play, 'act', n.act) order by (n.act ->> 'seq')::integer, n.id), '[]'::jsonb) from nested n),
+    'cut', (select coalesce(jsonb_agg(jsonb_build_object('seq', d.seq, 'parent_seq', (select pa.seq from acts_public pa where pa.id = d.parent)) order by d.seq), '[]'::jsonb) from drawn d where d.kind = 'post'),
+    'visits', (select coalesce(jsonb_agg(jsonb_build_object(
+        'visit', v.id, 'post', v.post, 'mod', v.character, 'at', v.created_at, 'ends_at', v.payload -> 'ends_at', 'line', v.payload -> 'line',
+        'charges', (v.payload -> 'charges') || coalesce((select jsonb_agg(j.payload -> 'charge' order by j.created_at, j.id) from acts_public j where j.kind = 'visit_join' and j.target_act_id = v.id), '[]'::jsonb),
+        'challenge', jsonb_strip_nulls(jsonb_build_object('kind', v.payload #>> '{challenge,kind}', 'question_index', v.payload #> '{challenge,question_index}', 'price', v.payload #> '{challenge,price}'))
+          || coalesce(visit_quiz(v.id), '{}'::jsonb),
+        'end', (select jsonb_build_object('act', e.id, 'at', e.created_at, 'outcome', e.payload ->> 'outcome', 'by_act', e.payload -> 'by_act', 'line', e.payload -> 'line')
+                from acts_public e where e.kind = 'visit_end' and e.target_act_id = v.id limit 1),
+        -- Read through acts_public as the rest of the page is (e2e/0016 holds a screen to the public projections).
+        'ruling', (select r.payload ->> 'verdict' from acts_public i
+                   join acts_public ap on ap.kind = 'appeal' and ap.target_act_id = i.id
+                   join acts_public r on r.kind = 'appeal_ruling' and r.target_act_id = ap.id
+                   where i.kind = 'infraction' and i.payload ->> 'visit_act' = v.id::text limit 1)
+      ) order by v.created_at, v.id), '[]'::jsonb) from vis v),
+    'faces', (select coalesce(jsonb_agg(jsonb_build_object('play', f.play, 'card', f.card)), '[]'::jsonb)
+              from my_face_down f where f.play in (select p.id from played p where p.kind = 'set')),
+    'states', (select coalesce(jsonb_agg(jsonb_build_object('play', e.play, 'state', e.state, 'saved_at', e.saved_at)), '[]'::jsonb)
+               from effect_state e where e.play in (select w.id from wanted_plays w)),
+    'releases', (select coalesce(jsonb_agg(r.play), '[]'::jsonb) from effect_releases r where r.play in (select w.id from wanted_plays w)),
+    -- The plays of a fall card among the page's plays on posts that a filing has spent: the ones an infraction names as its `fall_play` (card notes, Part 5). A public projection, read through acts_public as the
+    -- visits above are: the same for every caller. The probe is made for a fall play alone (card_kinds says which), from the post's visits (acts_visits_by_post) to their infractions.
+    'spent', (select coalesce(jsonb_agg(o.id order by o.created_at, o.id), '[]'::jsonb)
+              from on_posts o join card_kinds ck on ck.key = o.payload ->> 'card' and ck.discipline ->> 'kind' = 'fall'
+              where o.kind = 'card' and exists (select 1 from acts_public v join acts_public i on i.kind = 'infraction' and i.payload ->> 'visit_act' = v.id::text
+                                                where v.kind = 'visit' and v.target_act_id = o.target_act_id and i.payload ->> 'fall_play' = o.id::text)),
+    'surfaces', (select coalesce(jsonb_object_agg(sf.play::text, jsonb_build_object('covered', bit_count(sf.cover), 'live', to_jsonb(sf.live))), '{}'::jsonb)
+                 from surfaces sf where sf.play in (select o.id from on_posts o where o.kind = 'card')),
+    'tallies', (select coalesce(jsonb_agg(jsonb_build_object('act', t.act, 'kind', t.kind, 'count', t.count)), '[]'::jsonb)
+                from reaction_tallies t where t.act in (select i.id from ids i)),
+    'mine', (select coalesce(jsonb_agg(jsonb_build_object('act', m.act, 'kind', m.kind, 'character', m.character)), '[]'::jsonb)
+             from my_reactions m where m.act in (select i.id from ids i)),
+    'spun', (select coalesce(jsonb_agg(to_jsonb(l) - 'n' order by l.created_at, l.id), '[]'::jsonb) from spun l),
+    'reading', (select r.furthest_seq from reading r where r.thread = thread_page.in_thread limit 1),
+    'board', (select jsonb_build_object('id', b.id, 'slug', b.slug, 'name', b.name, 'description', b.description, 'is_system', b.is_system, 'move_act', b.move_act)
+              from boards_now b where b.id = (select rng.board from rng)),
+    'following', following_thread(thread_page.in_thread),
+    'presence', presence_box('thread', thread_page.in_thread),
+    'unread', my_alerts_unread()
+  ) end;
+end;
