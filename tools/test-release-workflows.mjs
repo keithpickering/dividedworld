@@ -192,6 +192,7 @@ red('rehearsal.yml names a different digest than sql.yml', edit(REHEARSAL, (d) =
 }), /R8/);
 red('a postgres image with a tag and no digest', edit(SQL, (d) => pgImage(d, 'postgres:17.11')), /R8/);
 red('a registry-prefixed postgres image is held to the rule too', edit(SQL, (d) => pgImage(d, 'docker.io/library/postgres:17')), /R8/);
+quiet('another publisher\'s image named postgres is not the official one, and is not held to R8', edit(SQL, (d) => pgImage(d, 'supabase/postgres:15.1.0.147')));
 quiet('a service that is not a postgres image is not held to R8', edit(SQL, (d) => {
   for (const job of Object.values(d.jobs)) if (job.services) job.services.cache = { image: 'redis:7' };
 }));

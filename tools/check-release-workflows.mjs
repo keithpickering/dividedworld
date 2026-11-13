@@ -40,9 +40,9 @@ const REF = '${{ inputs.ref }}';
 const GIT_PUSH = /\bgit(?:\s+(?:-[Cc]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+push\b/;
 
 /** A Postgres image: repository name `postgres` under any registry or namespace. */
-const POSTGRES_IMAGE = /^(?:[^/\s]+\/)*postgres(?:[:@]|$)/;
+const POSTGRES_IMAGE = /^(?:(?:docker\.io\/)?library\/)?postgres(?:[:@]|$)/;
 /** The one accepted spelling: a version tag and the digest Docker actually pulls by. */
-const PINNED_POSTGRES = /^(?:[^/\s]+\/)*postgres:[0-9][\w.-]*@sha256:[0-9a-f]{64}$/;
+const PINNED_POSTGRES = /^(?:(?:docker\.io\/)?library\/)?postgres:[0-9][\w.-]*@sha256:[0-9a-f]{64}$/;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const list = (v) => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
@@ -193,9 +193,9 @@ export function problems(files) {
   }
 
   // R8: every Postgres service image is `postgres:<version>@sha256:<digest>`, one string in all.
-  // A Postgres image is any whose repository name is `postgres`, with or without a registry or
-  // namespace in front (`postgres`, `library/postgres`, `docker.io/library/postgres`), and with
-  // any tag or digest after it. Other images (redis, supabase/postgres) are not held to it.
+  // A Postgres image is Docker's official one under any of its names (`postgres`,
+  // `library/postgres`, `docker.io/library/postgres`), with any tag or digest after it. Other
+  // images (redis, another publisher's such as supabase/postgres) are not held to it.
   const pinned = new Map();
   for (const [path, doc] of Object.entries(docs)) {
     for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
