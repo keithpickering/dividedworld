@@ -559,7 +559,7 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
   // So is a card that replies: its reply is written with the play, under the post the caster chose.
   if (rules.replies !== undefined) return refuse(`${rules.name} carries a reply, so it is cast face up and never set face down`);
-  // So is a card that acts on the staff's discipline: it acts the moment it lands, or waits on the post or character it was cast on.
+  // So is a card that acts on the staff's discipline: it is refused or takes hold the moment it lands, on the target its caster chose.
   if (rules.discipline !== undefined) return refuse(`${rules.name} acts the moment it lands, so it is cast face up and never set face down`);
   // So is one that needs a message, draws, runs a drive or is drawn on (a surface card): faceUpOnly says which, and one sentence covers them.
   if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
@@ -707,8 +707,9 @@ export const listed = (reaches: readonly Reach[]): string => {
 /**
  * Whether a card is drawn in a play's moment (docs/plans/2026-11-03-effect-history-design.md, section 3): when its effect can change
  * after it lands, because it saves state (`validateState`), stacks (`stack` above 1), or ends by time (`lasts`). Such a card is drawn
- * still, as it stood then; any other is named in words. Read from the card's rules, so a card sets nothing. A discipline card draws nothing in a moment: a relief and an unban are
- * over when they land, and a fall and a watch change only by a filing or a time the Lens reads.
+ * still, as it stood then; any other is named in words. Read from the card's rules, so a card sets nothing. A discipline card needs no line of
+ * its own: a relief, an unban and a fall have none of the three and are named in words, and a watch, which ends by time, is drawn as
+ * any card with a time up is.
  */
 export function drawnInMoment(rules: Pick<CardRules, 'validateState' | 'stack' | 'lasts'>): boolean {
   return rules.validateState !== undefined || (rules.stack ?? 1) > 1 || rules.lasts !== undefined;

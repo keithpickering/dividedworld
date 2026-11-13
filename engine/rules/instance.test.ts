@@ -1393,6 +1393,7 @@ test('a discipline is one of four kinds on a cast card, held apart from the effe
   const held: [string, Record<string, unknown>][] = [
     ['writes', { writes }], ['replies', { replies: true }], ['keeps', { keeps: true, reaches: ['thread'], lasts: day }], ['a skim', { skim: { share: 0.1 }, lasts: week }],
     ['scoresAs', { scoresAs: true }], ['a gimmick', { gimmick: { kind: 'earn', by: 1.2 } }], ['draws', { draws: ['a'] }], ['a message', { needsMessage: 'say why' }],
+    ['a drive', { drive: {} }], ['a surface', { surface: {} }],
   ];
-  for (const [what, over] of held) assert.match(bad({ discipline: { kind: 'fall' }, ...over }), /card "splat" has a fall and (writes|replies|keeps|a skim|scoresAs|a gimmick|draws|needsMessage); a card with a discipline has no other effect/, what);
+  for (const [what, over] of held) assert.match(bad({ discipline: { kind: 'fall' }, ...over }), /card "splat" has a fall and (writes|replies|keeps|a skim|scoresAs|a gimmick|draws|needsMessage|a drive|a surface); a card with a discipline has no other effect/, what);
 });
