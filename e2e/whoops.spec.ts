@@ -690,6 +690,14 @@ test('a tall post scrubs at its far end', async ({ page }) => {
   };
   const bandsOf = () => page.locator(canvases).evaluateAll((all) => [...new Set(all.map((c) => Number(c.getAttribute('data-kb-band'))))].sort((a, b) => a - b));
   await expect(page.locator(canvases).first()).toBeAttached();
+  /* A band's canvas is the flat stand-in until its picture is built, and the build changes the ink either way: the pictures held (a layer's for each band listed) are waited for before ink is read. */
+  const bandsBuilt = () => expect.poll(() => page.evaluate(() => {
+    const el = document.querySelector('#post-41 .kb-whoops')!;
+    const bands = (el.getAttribute('data-kb-bands') ?? '').split(' ').filter(Boolean).length;
+    const layers = (el.getAttribute('data-kb-layers') ?? '').split(' ').filter(Boolean).length;
+    return bands > 0 && Number(el.getAttribute('data-kb-pictures')) === layers * bands;
+  }), { timeout: 20_000 }).toBe(true);
+  await bandsBuilt();
   await expect.poll(() => inked(page, canvases)).toBeGreaterThan(1000);
   await counted();
   /* The post is tall: at least twenty bands of 512px. */
@@ -708,14 +716,16 @@ test('a tall post scrubs at its far end', async ({ page }) => {
   });
   await expect.poll(() => bandsOf(), { timeout: 20_000 }).toContain(last);
   await counted();
-  await expect.poll(async () => Math.min(...await bandsOf()), { timeout: 20_000 }).toBeGreaterThan(last - 6);
+  await expect.poll(async () => { const b = await bandsOf(); return b.length > 0 && Math.min(...b) > last - 6; }, { timeout: 20_000 }).toBe(true);
+  await bandsBuilt();
   await expect.poll(() => inked(page, canvases), { timeout: 20_000 }).toBeGreaterThan(1000);
   await counted();
   const bottom = await bandsOf();
-  expect(Math.min(...bottom), `bands at the far end: ${bottom.join(' ')}`).toBeGreaterThan(farthest);
+  expect(bottom.length, `bands at the far end: ${bottom.join(' ')}`).toBeGreaterThan(0);
+  expect(Math.min(...bottom), `bands at the far end: ${bottom.join(' ')}`).toBeGreaterThan(last - 6);
   /* A scrub there lowers the ink: back and forth over a stripe of solid ink in view. */
   const at = await solidInk(page, canvases, 150, 900);
-  expect(at.len).toBeGreaterThan(100);
+  expect(at.len).toBeGreaterThan(140);
   const before = await inked(page, canvases);
   await page.mouse.move(at.x - 60, at.y);
   await page.mouse.down();

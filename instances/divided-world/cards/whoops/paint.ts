@@ -28,7 +28,7 @@ import { THIN_FLOOR, THIN_SPAN, denseGrid, splatInto, type Grid, type Rect } fro
 /** The pixel density a splat is drawn at: past two the extra pixels show nothing on soft ink and cost a quarter more memory each step. */
 export const MAX_DPR = 2;
 
-/** The most pixels one canvas sized to a whole box may have (the config preview's splat, `paintSplat`, and the suds canvas over the near bands): past it iOS fails silently. The ink is not held to it: a post's ink is in bands of at most `BAND_PX` rows, never sized to the post. */
+/** The most pixels one canvas may have: past it iOS fails silently. It holds the config preview's splat (`paintSplat`, sized to its whole box) and the suds canvas over the span of the near bands, whose density is lowered to stay within it. The wet sheen's canvas is sized to the whole box and keeps to its own cap of the same size, `WET_PX` in suds.ts. The ink is not held to it: a post's ink is in bands of at most `BAND_PX` rows, never sized to the post. */
 export const MAX_CANVAS_PX = 4_000_000;
 
 /** What `shadeField` writes into: ImageData's shape, so a worker with no DOM can use it. */
