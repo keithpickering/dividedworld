@@ -79,7 +79,7 @@ export const ALLOWED_READS = Object.freeze([
   'account_preferences', 'effect_releases',
   // The player's own cards set face down and plays a trap caught (0054_card_plays.sql), and the card plays an admin ended (0092_card_end.sql): each filtered to the caller's own characters on the server.
   'my_face_down', 'my_caught', 'my_cards_ended',
-  // The player's own veiled posts (0400_post_veils.sql): the live author veils on posts of the caller's own characters, filtered on the server; thread_page reads it for its `veiled`, and the author's player learns a post is theirs from it alone.
+  // The player's own veiled posts (0357_post_veils.sql): the live author veils on posts of the caller's own characters, filtered on the server; thread_page reads it for its `veiled`, and the author's player learns a post is theirs from it alone.
   'my_veiled_posts',
   // The player's own punishments, reports and appeals for the log (0111_mod_screens.sql): each filtered to the caller's own characters on the server.
   'my_infractions', 'my_bans', 'my_group_moves', 'my_cosmetic_log', 'my_reports', 'my_appeals', 'my_reports_left',

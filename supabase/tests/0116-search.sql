@@ -897,7 +897,7 @@ begin
 end
 $test$;
 
--- 14c. A post under a live author veil (supabase/migrations/0400_post_veils.sql, section on search): the search finds it under the stand-in and not under its author, a word in it finds it
+-- 14c. A post under a live author veil (supabase/migrations/0357_post_veils.sql, section on search): the search finds it under the stand-in and not under its author, a word in it finds it
 --      shown as the stand-in's, and post_search.character is no column a signed-in player reads. The veil is left in the table, live, for the scale test below: every bound there holds with it.
 do $test$
 declare

@@ -1,4 +1,4 @@
--- A post-local reaction (supabase/migrations/0402_post_reactions.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 5; engine/rules/emoji.ts). A cast card with `adds_reaction` puts one emoji and the quadrant it
+-- A post-local reaction (supabase/migrations/0359_post_reactions.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 5; engine/rules/emoji.ts). A cast card with `adds_reaction` puts one emoji and the quadrant it
 -- scores in on the one post it is cast on, for every player to give: its key is `x-` and the emoji's code points in lower-case hex, kept apart from the instance's own set. The cards are this file's own (pr...).
 --
 --  1. The catalog of keys: an instance kind may not start with `x-`; post_reaction_kinds is insert-only and readable by a signed-in player; the helpers are for no API role; the key and the base are the engine's.
@@ -78,7 +78,7 @@ begin
   return n;
 end $$;
 
--- A staff Boss, The System's Announcements thread and a move written as the tick writes it (as 0051-moves.sql and 0168-blind-totals.sql do), for demand_progress and demand_contributors.
+-- A staff Boss, The System's Announcements thread and a move written as the tick writes it (as 0051-moves.sql and 0306-blind-totals.sql do), for demand_progress and demand_contributors.
 create function pg_temp.boss() returns uuid language plpgsql as $$
 declare made uuid;
 begin
@@ -123,7 +123,7 @@ begin
   if to_regclass('post_reaction_kinds') is null then raise exception 'post_reaction_kinds exists'; end if;
 end $$;
 
--- ---- 6. Two Overreactions of the same emoji at once leave one (first in the file: the committed rows must not meet this file's own locks, as 0166-post-veils.sql's races do) ----
+-- ---- 6. Two Overreactions of the same emoji at once leave one (first in the file: the committed rows must not meet this file's own locks, as 0304-post-veils.sql's races do) ----
 -- Two casts of the same emoji on one post at once (two sessions, each its own transaction): place_cast takes the post's row first, so they are laid one at a time and the second reads what the first left and is refused
 -- in the words of a key the post already holds; the post's primary key is the backstop that holds a key even if one skipped that lock. The rows the racers read are committed (tests.commit), under keys of their own.
 select tests.unbecome();
@@ -189,7 +189,7 @@ begin
      or land_refusal_code('choose the quadrant it scores in') is distinct from '22023' or land_refusal_code('that is more than one emoji') is distinct from '22023' or land_refusal_code('a post by the staff keeps its name') is distinct from '42501' then
     raise exception 'land_refusal_code';
   end if;
-  -- The table is insert-only, and no API role may run the helpers (the sweep's list is 0167's).
+  -- The table is insert-only, and no API role may run the helpers (the sweep's list is 0305's).
   for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace
             and p.proname in ('local_emoji', 'local_reaction_key', 'emoji_base', 'reaction_quadrant', 'land_refusal_code', 'reaction_kind_known', 'post_reaction_kinds_append_only')
             and (has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('service_role', p.oid, 'execute')) loop

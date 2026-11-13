@@ -564,7 +564,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const uncounted = new Set<Id>();
   const threads = new Map<Id, ThreadRec>();
   const reactions: { act: Id; account: Id; character: Id; kind: string }[] = [];
-  /** post_veils (0400): a veil card's play, the post it is on, the post's own character (which never changes), the caster's account and when it ends. Insert-only. */
+  /** post_veils (0357): a veil card's play, the post it is on, the post's own character (which never changes), the caster's account and when it ends. Insert-only. */
   const veils = new Map<Id, { readonly post: Id; readonly veil: 'author' | 'totals'; readonly author: Id | null; readonly casterAccount: Id | null; readonly endsAt: number }>();
   /** post_reaction_kinds (Task 5): the reaction kinds a post holds from a reaction card's play, by post and key. Insert-only; an ended play's kind stays, no longer offered. */
   const postKinds = new Map<string, { readonly post: Id; readonly key: string; readonly emoji: string; readonly quadrant: Quadrant; readonly play: Id }>();
@@ -749,7 +749,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* ---------------------------------------------------------------- projections ---- */
   const edits = (post: ActRec) => [...acts.values()].filter((a) => a.kind === 'edit' && a.target === post.id).sort((a, b) => a.at - b.at || a.order - b.order);
 
-  /** The anonymous poster's character, made when it is first needed (seed_instance, 0400): the instance's persona, else the engine's plain one. It is no map entry: no roster of staff holds it. */
+  /** The anonymous poster's character, made when it is first needed (seed_instance, 0357): the instance's persona, else the engine's plain one. It is no map entry: no roster of staff holds it. */
   let standInRec: CharRec | null = null;
   function standIn(): CharRec {
     if (standInRec !== null) return standInRec;
@@ -769,7 +769,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const veilLive = (play: Id, v: { readonly endsAt: number }): boolean => v.endsAt > now() && !over(play);
   const liveVeils = (post: Id, kind: 'author' | 'totals') => [...veils].filter(([play, v]) => v.post === post && v.veil === kind && veilLive(play, v)).map(([, v]) => v);
   /**
-   * The character an Act is shown under (acts_public, 0400): the stand-in while an author veil is live on the post, and on what its own author did to it that is no content of its own (`deep`: an edit, a set,
+   * The character an Act is shown under (acts_public, 0357): the stand-in while an author veil is live on the post, and on what its own author did to it that is no content of its own (`deep`: an edit, a set,
    * a card, a take-back, a spring), never on the author's own post or spin that targets it (a quote of it, a spin from it: a veil cast on one of those hides that one); `shown_author` (the thread list, the
    * search) reads the post itself alone.
    */
@@ -780,7 +780,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A draw or a wash on a wall (0317): its target is the card's play and the play's the post, so the wash, which is the post's own character's alone, names the author too (acts_public's fifth select). */
     const wall = deep && (a.kind === 'draw' || a.kind === 'wash') && a.target !== null ? acts.get(a.target) : undefined;
     const walled = wall !== undefined && wall.kind === 'card' && wall.target !== null && liveVeils(wall.target, 'author').some((v) => v.author === a.character);
-    /* The card a back of the post's own author laid on a quote (lay_sprung, 0400): the card is the setter's and its payload names the spring, which targets the post the back was set on, so while an author veil is live on that
+    /* The card a back of the post's own author laid on a quote (lay_sprung, 0357): the card is the setter's and its payload names the spring, which targets the post the back was set on, so while an author veil is live on that
        post it is shown under the stand-in as the spring is (post_veil_cards). The fake does not play a Move from a quote, so such a card is seeded (`seed.card` with `spring`, after `seed.spring`). */
     const sprung = deep && a.kind === 'card' && typeof a.payload.spring === 'string' && (() => {
       const spring = acts.get(a.payload.spring as string);
@@ -788,10 +788,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     })();
     return veiled || walled || sprung ? standIn().id : a.character;
   }
-  /** my_veiled_posts (0400): the caller's own live author veils among these posts, by post, for the player of the post's own character alone. */
+  /** my_veiled_posts (0357): the caller's own live author veils among these posts, by post, for the player of the post's own character alone. */
   const myVeiled = (posts: readonly Id[]) => [...veils].filter(([play, v]) => v.veil === 'author' && v.author !== null && posts.includes(v.post) && veilLive(play, v) && characters.get(v.author)?.owner === me()?.id)
     .sort(([, x], [, y]) => (x.post < y.post ? -1 : x.post > y.post ? 1 : 0)).map(([play, v]) => ({ post: v.post, character: v.author!, play, endsAt: iso(v.endsAt) }));
-  /** totals_withheld (0400): a live totals veil is on the Act and the account neither owns its author nor cast a live totals veil on it. */
+  /** totals_withheld (0357): a live totals veil is on the Act and the account neither owns its author nor cast a live totals veil on it. */
   function totalsWithheld(act: Id, account: Id | undefined): boolean {
     const live = liveVeils(act, 'totals');
     if (live.length === 0) return false;
@@ -959,9 +959,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       group: groupOf(c),
     });
   }
-  /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's), from the posts as the projection shows them, as the count a player reads is (group_now, 0400). */
+  /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's), from the posts as the projection shows them, as the count a player reads is (group_now, 0357). */
   function groupOf(c: CharRec): string {
-    /* The stand-in a veil shows is no scored character and holds no rung, and is no Mod Bot either: no group (group_now answers it null, 0400), so no screen draws a bar or a staff badge for it. */
+    /* The stand-in a veil shows is no scored character and holds no rung, and is no Mod Bot either: no group (group_now answers it null, 0357), so no screen draws a bar or a staff badge for it. */
     if (c.staff?.office === 'anonymous') return '';
     const posts = [...acts.values()].filter((a) => a.kind === 'post' && shownAuthor(a) === c.id).length;
     return earnedGroup(instance.groups.ladder, { posts, seasons: 0, staff: c.staff !== undefined && c.staff !== null });
@@ -1033,7 +1033,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const demand = toDemand(move.payload['demand']);
     if (!demand) return { done: 0, of: 0, met: false };
     const p = demand.params;
-    /* By the character a post is shown under, as demand_progress reads acts_public: a post under a live author veil is the stand-in's, which holds the anonymous staff office, so it drops out of the count while the veil is up (0402). */
+    /* By the character a post is shown under, as demand_progress reads acts_public: a post under a live author veil is the stand-in's, which holds the anonymous staff office, so it drops out of the count while the veil is up (0359). */
     const after = [...acts.values()].filter((a) => {
       const shown = a.kind === 'post' && a.at > move.at ? shownAuthor(a, false) : null;
       return shown !== null && shown !== standInRec?.id && !characters.get(shown)?.staff;
@@ -1443,7 +1443,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!from || from.kind === 'edit') return refuse('there is no such Act to spin from');
     const home = boards.find((b) => b.id === threads.get(from.thread)!.board)!;
     const board = home.isSystem ? playersBoard! : home;
-    /* spin_written (0351, 0400): a spin names a post only from a live character play, on a post of the character the play is on as the post shows its author (a veiled post is the stand-in's). Nothing here reads who owns either. */
+    /* spin_written (0351, 0357): a spin names a post only from a live character play, on a post of the character the play is on as the post shows its author (a veiled post is the stand-in's). Nothing here reads who owns either. */
     if (at !== undefined) {
       const reach = reachPlays.get(origin);
       const post = acts.get(at);
@@ -1483,7 +1483,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (mine.some((r) => r.kind === kind)) return refuse('you have already left that reaction here');
     if (mine.length >= settings.reactionCap) return refuse(`you have left ${settings.reactionCap} reactions here, the most there are`);
     reactions.push({ act, account: account.id, character, kind });
-    /* A blind post answers no tally to anyone, and none is broadcast: a broadcast is the same for the whole channel (react, 0400). */
+    /* A blind post answers no tally to anyone, and none is broadcast: a broadcast is the same for the whole channel (react, 0357). */
     if (liveVeils(act, 'totals').length > 0) return ok({ act, tally: null });
     const tally = tallyOf(act);
     send(`thread:${target.thread}`, 'tally', () => { for (const l of [...(threadListeners.get(target.thread) ?? [])]) l.onTally?.(act, tally); });
@@ -1734,7 +1734,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    */
   function surfaceLog(account: Id): { readonly draws: { ms: number; order: number; r: SurfaceLogRow }[]; readonly walls: { ms: number; order: number; r: SurfaceLogRow }[] } {
     const owns = (character: Id | null): boolean => character !== null && characters.get(character)?.owner === account;
-    /* A cut row's `character` is the washer as the post shows its author (my_draws, 0400): the stand-in while an author veil is up on the wall's post. */
+    /* A cut row's `character` is the washer as the post shows its author (my_draws, 0357): the stand-in while an author veil is up on the wall's post. */
     const row = (a: ActRec, kind: SurfaceLogRow['kind'], play: Id, mine: Id, cells: number) => ({ ms: a.at, order: a.order, r: { act: a.id, kind, play, post: playOf(play)!.target!, character: (kind === 'cut' ? shownAuthor(a) : null) ?? a.character!, mine, at: iso(a.at), cells } satisfies SurfaceLogRow });
     const onSurface = (a: ActRec): boolean => (a.kind === 'draw' || a.kind === 'wash') && a.target !== null && a.character !== null && surfaceRecs.has(a.target) && playOf(a.target) !== undefined;
     const draws: { ms: number; order: number; r: SurfaceLogRow }[] = [];
@@ -1951,18 +1951,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ pack: made, contents, balance: left });
   }
 
-  /** land_refusal (0400): what a card's landing on a post refuses, in plain words, or null; the same reads whatever the card is. */
+  /** land_refusal (0357): what a card's landing on a post refuses, in plain words, or null; the same reads whatever the card is. */
   function landRefusal(rules: CardRules, on: ActRec, config: unknown): Refusal | null {
     const byStaff = on.character === null || characters.get(on.character)?.staff !== undefined;
     const visited = [...acts.values()].some((v) => v.kind === 'visit' && v.target === on.id);
-    /* A reply a card that replies cut in under a post is named by that play's Act, which says whose it is; and where the post's own author cut one in under it, the derived veil would tell the author from the rest (0400). */
+    /* A reply a card that replies cut in under a post is named by that play's Act, which says whose it is; and where the post's own author cut one in under it, the derived veil would tell the author from the rest (0357). */
     const cutIn = [...underPlays.values()].some((u) => u.reply === on.id);
     const cutOwn = [...underPlays.values()].some((u) => u.parent === on.id && acts.get(u.reply)?.character === on.character);
-    /* A card at character reach is stored with its Act on the post it was played from, and its payload names that post's author: a public Act that names the author (land_refusal's `played`, 0400). */
+    /* A card at character reach is stored with its Act on the post it was played from, and its payload names that post's author: a public Act that names the author (land_refusal's `played`, 0357). */
     const played = [...acts.values()].some((k) => k.kind === 'card' && k.target === on.id && k.payload.reach === 'character');
-    /* A back of the post's own author that sprang on a quote laid a card of the author's there, which names the spring (land_refusal, 0400): a spring that landed a card, on this post. */
+    /* A back of the post's own author that sprang on a quote laid a card of the author's there, which names the spring (land_refusal, 0357): a spring that landed a card, on this post. */
     const sprungBack = [...acts.values()].some((s) => s.kind === 'spring' && s.target === on.id && s.payload.did === 'landed');
-    /* A spin pressed at the post (0351's `at`): its thread shows the play's character and the post, which spin_written let through only for a post of that character (0400). */
+    /* A spin pressed at the post (0351's `at`): its thread shows the play's character and the post, which spin_written let through only for a post of that character (0357). */
     const pressed = [...acts.values()].some((s) => s.kind === 'spin' && s.payload.at === on.id);
     if (rules.replies === true) {
       const hidden = liveVeils(on.id, 'author');
@@ -1984,7 +1984,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return null;
   }
-  /** land_rows (0400): a veil card's post_veils row, a reaction card's post_reaction_kinds row. */
+  /** land_rows (0357): a veil card's post_veils row, a reaction card's post_reaction_kinds row. */
   function landRows(rules: CardRules, play: ActRec, on: ActRec, config: unknown, caster: Id, at: number) {
     if (rules.veil !== undefined && rules.lasts) veils.set(play.id, { post: on.id, veil: rules.veil, author: on.character, casterAccount: caster, endsAt: at + span(rules.lasts) });
     if (rules.reaction === true) {
@@ -2018,7 +2018,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     const c = acting(character);
     if (isRefusal(c)) return c;
-    /* What the card's landing refuses on this post (land_refusal, 0400): public facts alone, the same for every caster, before anything is paid or written. */
+    /* What the card's landing refuses on this post (land_refusal, 0357): public facts alone, the same for every caster, before anything is paid or written. */
     const landing = landRefusal(rules, on, decided.value.config);
     if (landing) return landing;
     /* play_card's order: the character is the player's, then not banned (every play meets not_banned there; the fake holds it for a card that replies), then a reply with a letter or a digit in it, and any other card is given none. */
@@ -2062,7 +2062,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A caught play joins no drive; a play a ride back let land is a play like any other (drive_plays leaves a caught play out, 0153). */
     const drive = catches && !rides ? undefined : driveOf(rules, target, playId);
     const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
-    /* What a landed play on a post writes beside its Act (land_rows, 0400): not for a caught one. */
+    /* What a landed play on a post writes beside its Act (land_rows, 0357): not for a caught one. */
     if (!(catches && !rides)) landRows(rules, written, on, decided.value.config, account.id, at);
     /* A cast that landed (a ride lets it) writes its reply, a post of the thread with a number of its own, and remembers it under its parent; a caught one writes none, and the id its Act names is no post's. */
     const replied = replyId !== undefined && reply !== undefined && !(catches && !rides)
@@ -2227,11 +2227,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A use card never goes on a board, before the board is looked for (place_cast, 0148). */
     if (play === 'use' && reach === 'board') return refuse(`${rules.name} is never used on a board`);
     if (reach === 'character') {
-      /* The stand-in is shown in place of an author, so a card on it would be a card on whoever it stands for (place_cast, 0400). */
+      /* The stand-in is shown in place of an author, so a card on it would be a card on whoever it stands for (place_cast, 0357). */
       if (standInRec !== null && target === standInRec.id) return refuse('no card is played on a stand-in');
       if (!characters.has(target)) return refuse('there is no such character', 'target');
       const from = fromPost ? acts.get(fromPost) : undefined;
-      /* The post is read as it is shown (acts_public): a post under a live author veil is the stand-in's, so a card on its real author is a card on the stand-in, in the same words (place_cast, 0402). */
+      /* The post is read as it is shown (acts_public): a post under a live author veil is the stand-in's, so a card on its real author is a card on the stand-in, in the same words (place_cast, 0359). */
       const shown = from?.kind === 'post' ? shownAuthor(from, false) : null;
       if (standInRec !== null && shown === standInRec.id) return refuse('no card is played on a stand-in');
       if (!from || from.kind !== 'post' || shown !== target) return refuse('a card on a character is played from one of its posts');
@@ -3487,7 +3487,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (characters.get(p.character ?? '')?.staff) return refuse('a post by the staff is not reported');
       const mod = [...characters.values()].find((c) => c.staff?.office === 'mod' && c.debutedAt !== null && c.retiredAt === null);
       if (!mod) return refuse('there is no one on duty to hear a report right now');
-      /* A report asks a Mod Bot to visit, which names the author: refused while the author is hidden, before anything is paid (open_report, 0400). */
+      /* A report asks a Mod Bot to visit, which names the author: refused while the author is hidden, before anything is paid (open_report, 0357). */
       const hidden = liveVeils(post, 'author');
       if (hidden.length > 0) return refuse(`this post's author is hidden until ${refusalTime(iso(Math.max(...hidden.map((v) => v.endsAt))))}; report it after`);
       if (reportsLeftNow(through) <= 0) return refuse(`this character has made its ${settings.modBots.reportsPerDay} reports for today`);
@@ -3855,7 +3855,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const index = resultOrder(results.get(season)?.rows ?? []).findIndex((r) => r.character === character);
       return index < 0 ? null : index;
     },
-    /* A blind post's totals are its author's player's and its caster's alone (reaction_tallies' policy, 0400). */
+    /* A blind post's totals are its author's player's and its caster's alone (reaction_tallies' policy, 0357). */
     tallies: (ids) => Object.fromEntries(ids.map((id) => [id, totalsWithheld(id, me()?.id) ? {} : tallyOf(id)])),
     viewCounts: (ids) => Object.fromEntries(ids.map((id) => [id, views.get(id) ?? 0])),
     /* The open season, else the one that started last: standings_season()'s rule, never the highest number. */

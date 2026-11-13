@@ -1,17 +1,17 @@
--- A post-local reaction (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 5; supabase/tests/0169-post-reactions.sql; engine/rules/emoji.ts). A cast card that adds a reaction (card_kinds.adds_reaction, 0400) puts one emoji
+-- A post-local reaction (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 5; supabase/tests/0307-post-reactions.sql; engine/rules/emoji.ts). A cast card that adds a reaction (card_kinds.adds_reaction, 0357) puts one emoji
 -- and the quadrant it scores in on the one post it is cast on, for every player to give. The sections:
 --     1. post_reaction_kinds   a row per play: the post, the key, the emoji, the quadrant and the play. Insert-only (its own append-only pair), readable by signed-in players (it is the play's public configuration again).
 --     2. the keys              reaction_kinds.key may not start with `x-`; reactions.kind and reaction_tallies.kind lose their foreign keys to reaction_kinds, and a trigger on each holds what the key held: the kind is one of
 --                              reaction_kinds, or one of post_reaction_kinds for that Act (every writer of either table passes it: react is the only one).
 --     3. reaction_quadrant     the instance kind's quadrant, else the post-local kind's on that Act.
---     4. the landing           land_refusal and land_rows (0400) extended for a reaction card, and place_cast raising what land_refusal says under the SQLSTATE land_refusal_code gives it (23505 for a key the post already holds).
+--     4. the landing           land_refusal and land_rows (0357) extended for a reaction card, and place_cast raising what land_refusal says under the SQLSTATE land_refusal_code gives it (23505 for a key the post already holds).
 --     5. react                 takes a post-local kind whose play is not ended; an ended one is refused in words that say so.
 --     6. by quadrant           settlement_input and estimate_input send `quadrant` on a reaction whose kind starts with `x-`; act_window_counts, demand_progress, demand_contributors and system_digest read reaction_quadrant
 --                              where they joined reaction_kinds.
 --
 -- Masks ("A response never proves a private fact"): nothing here reads who reacted or who owns a character. A post-local kind is public as its play is (the post, the emoji and the quadrant are on the card's own Act),
 -- every refusal is read from public facts (the instance's emoji, the post's kinds) and is the same for every caster, and a tally of a post-local kind obeys the policy of every other tally (a blind post's is withheld,
--- 0401). The key is built in SQL as engine/rules/emoji.ts's localKey builds it, and the base compared is emojiBase's. SQL cannot tell an emoji from other text: that is the Edge Function's validateConfig (localReaction),
+-- 0358). The key is built in SQL as engine/rules/emoji.ts's localKey builds it, and the base compared is emojiBase's. SQL cannot tell an emoji from other text: that is the Edge Function's validateConfig (localReaction),
 -- and the table's checks hold what a key and a row may be.
 -- An emoji once added to a post cannot be added to it again, even after an admin's end, so reactions already given never change quadrant: the key is the post's primary key whether or not its play is over.
 
@@ -104,10 +104,10 @@ language sql immutable set search_path = public, pg_temp as $$
 $$;
 revoke execute on function land_refusal_code(text) from public, anon, authenticated, service_role;
 
--- land_refusal (0400_post_veils), refusing a reaction card's landing in the engine's words (localReaction): no emoji (or none that is one word of no whitespace and at most 16 characters, the table's own check, so a play never
+-- land_refusal (0357_post_veils), refusing a reaction card's landing in the engine's words (localReaction): no emoji (or none that is one word of no whitespace and at most 16 characters, the table's own check, so a play never
 -- fails on it after its Act is written: "choose one emoji"), an emoji whose base an instance kind's emoji has ("this forum already has that reaction"), a quadrant that is none ("choose the quadrant it scores in"), then a key
 -- the post already holds, live or ended ("this post already has that reaction"). SQL cannot segment graphemes or test RGI emoji: "that is more than one emoji" and the rest of the emoji's own test are validateConfig's.
--- The reads are made for every card whatever it is (the instance's emoji, the post's keys), so a back that is a veil, a reaction card or any other Move does the same reads in the same order. Everything else as 0400 wrote it.
+-- The reads are made for every card whatever it is (the instance's emoji, the post's keys), so a back that is a veil, a reaction card or any other Move does the same reads in the same order. Everything else as 0357 wrote it.
 create or replace function land_refusal(kind_of card_kinds, post uuid, config jsonb) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -174,7 +174,7 @@ begin
   return null;
 end $$;
 
--- land_rows (0400_post_veils), also writing a reaction card's post_reaction_kinds row: the key built from the emoji, the emoji, the quadrant and the play. Written once for a play (a retry of the same play writes no second
+-- land_rows (0357_post_veils), also writing a reaction card's post_reaction_kinds row: the key built from the emoji, the emoji, the quadrant and the play. Written once for a play (a retry of the same play writes no second
 -- row); a key another play holds is the primary key's 23505, which land_refusal has already refused before anything is written (the post's row is held, so the two are laid one at a time).
 create or replace function land_rows(play uuid, kind_of card_kinds, post uuid, config jsonb, caster uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -195,8 +195,8 @@ begin
   end if;
 end $$;
 
--- place_cast (0400_post_veils), raising what land_refusal says under land_refusal_code's SQLSTATE: 42501 for a veil's refusals as before, 22023 for a reaction card's configuration and 23505 for a key the post already holds.
--- That is the one change; everything else, the lock order included (post, then visits_open, then character: 0400's header), as 0400 wrote it. Callable by no API role, as before.
+-- place_cast (0357_post_veils), raising what land_refusal says under land_refusal_code's SQLSTATE: 42501 for a veil's refusals as before, 22023 for a reaction card's configuration and 23505 for a key the post already holds.
+-- That is the one change; everything else, the lock order included (post, then visits_open, then character: 0357's header), as 0357 wrote it. Callable by no API role, as before.
 
 create or replace function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
 returns jsonb
@@ -332,7 +332,7 @@ begin
     -- board both wait here, and the second sees the first.
     if reach = 'character' then
       -- The lock order is post, then visits_open, then character, everywhere (a visit's filing takes the post's row first and, in infract, its author's character after): the post the card is played from is held `for share`
-      -- before the target character's row, so a card on a character and a filing on that post never hold one each and wait on the other. (Before 0400 the character came first.)
+      -- before the target character's row, so a card on a character and a filing on that post never hold one each and wait on the other. (Before 0357 the character came first.)
       perform 1 from acts a where a.id = from_post and a.kind = 'post' for share;
       perform 1 from characters c where c.id = target for no key update;
       if not found then raise exception 'there is no such character' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
@@ -452,9 +452,9 @@ begin
 end $$;
 
 -- ===================================================================================================== 5. react ====
--- react (0401_blind_totals), taking a kind that is one of the Act's post-local kinds whose play is not over, and refusing an ended one ("that reaction is no longer offered on this post", 22023). A post-local kind's key
+-- react (0358_blind_totals), taking a kind that is one of the Act's post-local kinds whose play is not over, and refusing an ended one ("that reaction is no longer offered on this post", 22023). A post-local kind's key
 -- starts with `x-`, so an instance kind costs no read beyond the one it paid. The kind of another post, or none, is "there is no reaction" as before. Reactions already given stay, with their tally and their scoring.
--- Everything else as 0401 wrote it, its lock order included.
+-- Everything else as 0358 wrote it, its lock order included.
 CREATE OR REPLACE FUNCTION public.react(target uuid, through uuid, reaction text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -530,7 +530,7 @@ begin
 end $function$;
 
 -- ===================================================================================== 6. by quadrant ====
--- settlement_input (0316_card_notes_part_4) and estimate_input (0401_blind_totals) send `quadrant` on a reaction whose kind starts with `x-` (the engine reads quadrantOf.get(kind) ?? quadrant, settle.ts); an instance kind sends
+-- settlement_input (0316_card_notes_part_4) and estimate_input (0358_blind_totals) send `quadrant` on a reaction whose kind starts with `x-` (the engine reads quadrantOf.get(kind) ?? quadrant, settle.ts); an instance kind sends
 -- none, as before. Everything else as written.
 create or replace function settlement_input(window_start timestamptz, window_end timestamptz) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -848,8 +848,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
   from (select reaction_quadrant(r.act, r.kind) as quadrant from reactions r where r.act = about and r.created_at >= since) k
 $$;
 
--- demand_progress, demand_contributors (0401_blind_totals) and system_digest (0401_blind_totals): where a board's quadrant demand and the digest's reactions joined reaction_kinds they read reaction_quadrant of the tally's own
--- Act and kind, so a post-local kind counts in its quadrant as an instance kind does (and the tally is still the open one: a blind post's moves nothing). Everything else as 0401 wrote it; owners and grants are kept.
+-- demand_progress, demand_contributors (0358_blind_totals) and system_digest (0358_blind_totals): where a board's quadrant demand and the digest's reactions joined reaction_kinds they read reaction_quadrant of the tally's own
+-- Act and kind, so a post-local kind counts in its quadrant as an instance kind does (and the tally is still the open one: a blind post's moves nothing). Everything else as 0358 wrote it; owners and grants are kept.
 create or replace function demand_progress(move_act uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare

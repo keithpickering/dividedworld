@@ -1,4 +1,4 @@
--- The author's veil, swept (supabase/migrations/0400_post_veils.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 2, "veil-sweep"): the guard that the list of reads a veil changes is whole.
+-- The author's veil, swept (supabase/migrations/0357_post_veils.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 2, "veil-sweep"): the guard that the list of reads a veil changes is whole.
 --
 -- A fixture: author A's post P opens a thread, with an edit, a use card of A's on it, another character's quote of it, a spin from it, a follower, an alert about it to a third player R, a card R played on it that an
 -- admin ended, and a card R played on A's character from a post of A's elsewhere, and another from a second post of A's (P4), which names A and points at P4: a veil on P4 is refused, and P, which nothing was played from, is veiled.
@@ -62,7 +62,7 @@ create temp table listed (kind text not null, name text not null, mark text not 
 insert into listed (kind, name, mark, why)
 select 'relation', n, m, w from (values
   -- tables and views
-  ('acts', 'no author', 'every column but `character` is granted (0400) and `select character from acts` is refused (0166-post-veils.sql); no other column names an author'),
+  ('acts', 'no author', 'every column but `character` is granted (0357) and `select character from acts` is refused (0304-post-veils.sql); no other column names an author'),
   ('acts_public', 'swept', 'the projection: by id, by thread, by character and by the stand-in'),
   ('account_preferences', 'no author', 'the caller''s own preferences (row security)'),
   ('accounts', 'no author', 'the caller''s own account (row security)'),
@@ -87,7 +87,7 @@ select 'relation', n, m, w from (values
   ('current_season', 'no author', 'the open season'),
   ('current_standings', 'no author', 'a character''s standing: public, never tied to a post'),
   ('effect_releases', 'no author', 'the caller''s own releases of effects'),
-  ('effect_state', 'no author', 'play, state and saved_at, the three columns granted (0400): `saved_by`, the character that saved the state and so the post''s author, is not granted to a player, and the check by column below holds it so'),
+  ('effect_state', 'no author', 'play, state and saved_at, the three columns granted (0357): `saved_by`, the character that saved the state and so the post''s author, is not granted to a player, and the check by column below holds it so'),
   ('face_down', 'no author', 'the caller''s own face-down cards (row security)'),
   ('ledger', 'no author', 'the caller''s own ledger (row security)'),
   ('machine_now', 'no author', 'the machine''s grid'),
@@ -113,7 +113,7 @@ select 'relation', n, m, w from (values
   ('my_reports', 'no author', 'the caller''s own reports'),
   ('my_reports_left', 'no author', 'how many reports the caller''s own characters have left'),
   ('my_scored_as', 'no author', 'the caller''s own scored-as plays'),
-  ('my_veiled_posts', 'no author', 'the caller''s own rows by design: a live author veil on a post of a character the caller owns (0166-post-veils.sql: nobody else''s)'),
+  ('my_veiled_posts', 'no author', 'the caller''s own rows by design: a live author veil on a post of a character the caller owns (0304-post-veils.sql: nobody else''s)'),
   ('my_wallet', 'no author', 'the caller''s own wallet'),
   ('my_wallet_events', 'no author', 'the caller''s own wallet events'),
   ('pack_kinds', 'no author', 'the instance''s packs'),
@@ -124,11 +124,11 @@ select 'relation', n, m, w from (values
   ('play_moments', 'no author', 'the version of a post a play was made on: ids'),
   ('spin_moment_layers', 'no author', 'the layers on the post a spin was pressed at (0351): play ids and saved states, as play_moment_layers'),
   ('spin_moments', 'no author', 'the version of the post a spin was pressed at (0351): ids'),
-  ('play_reach', 'no author', 'a play beyond a post: its target character, thread or board, which is public; a card on a character is played from one of its posts, so its Act points at that post and names its author: land_refusal refuses a veil on such a post, and none is played from a veiled one (the stand-in is no target), both held below and in 0166-post-veils.sql'),
-  ('post_under', 'no author', 'a reply a Line Cutter cut in under a post (0348): the play, the parent, the reply and the thread, all ids of public Acts. The reply is its caster''s post, and the record names it (the card Act), so a veil is refused on a reply and on a post its own author cut in under (0166-post-veils.sql, section 16)'),
+  ('play_reach', 'no author', 'a play beyond a post: its target character, thread or board, which is public; a card on a character is played from one of its posts, so its Act points at that post and names its author: land_refusal refuses a veil on such a post, and none is played from a veiled one (the stand-in is no target), both held below and in 0304-post-veils.sql'),
+  ('post_under', 'no author', 'a reply a Line Cutter cut in under a post (0348): the play, the parent, the reply and the thread, all ids of public Acts. The reply is its caster''s post, and the record names it (the card Act), so a veil is refused on a reply and on a post its own author cut in under (0304-post-veils.sql, section 16)'),
   ('post_search', 'swept', 'granted every column but `character`; the search reads it through the projection'),
   ('reaction_kinds', 'no author', 'the instance''s reactions'),
-  ('post_reaction_kinds', 'no author', 'a post-local reaction (0402): the post, the key, the emoji, the quadrant and the card''s play, which a card Act states in public; the post''s author is on neither'),
+  ('post_reaction_kinds', 'no author', 'a post-local reaction (0359): the post, the key, the emoji, the quadrant and the card''s play, which a card Act states in public; the post''s author is on neither'),
   ('reaction_tallies', 'no author', 'counts of reactions to an Act: no character'),
   ('reading', 'no author', 'the caller''s own reading places (row security)'),
   ('screen_settings', 'no author', 'public settings'),
@@ -239,7 +239,7 @@ select 'function', n, m, w from (values
   ('my_apologies', 'no author', 'the caller''s own apologies'),
   ('my_characters_page', 'no author', 'the caller''s own characters'),
   ('my_settlement_moved', 'no author', 'the caller''s own settlement'),
-  ('my_totals_withheld', 'no author', 'whether a post''s totals are withheld from the caller''s own account (a totals veil, 0401): a boolean about the totals, never a character; the reaction_tallies policy calls it'),
+  ('my_totals_withheld', 'no author', 'whether a post''s totals are withheld from the caller''s own account (a totals veil, 0358): a boolean about the totals, never a character; the reaction_tallies policy calls it'),
   ('next_settlement_at', 'no author', 'a time'),
   ('open_account', 'no author', 'a write: the caller''s own account'),
   ('open_appeal', 'no author', 'a write: the caller''s own appeal'),
@@ -251,7 +251,7 @@ select 'function', n, m, w from (values
   ('phrase_word_class', 'no author', 'a constant'),
   ('pinned_threads', 'no author', 'a board''s pinned threads: ids'),
   ('play_moment', 'swept', 'a play''s moment: the post as the projection shows it'),
-  ('spin_moment', 'no author', 'a spin''s moment (0351) is of the post it was pressed at, which is never veiled: a spin is refused at a veiled post (spin_written reads the shown author) and a veil is refused on a post a spin was pressed at (land_refusal), both in 0166-post-veils.sql, section 9b; it reads its version and the plays as play_moment does, through the projection'),
+  ('spin_moment', 'no author', 'a spin''s moment (0351) is of the post it was pressed at, which is never veiled: a spin is refused at a veiled post (spin_written reads the shown author) and a veil is refused on a post a spin was pressed at (land_refusal), both in 0304-post-veils.sql, section 9b; it reads its version and the plays as play_moment does, through the projection'),
   ('post', 'no author', 'a write: answers the Act it wrote through the projection, to its author'),
   ('post_tails', 'swept', 'the words written on posts: no character'),
   ('post_update', 'no author', 'an admin''s write'),
@@ -363,7 +363,7 @@ insert into listed_columns (rel, col, mark, why) values
   ('moves_log', 'kept_by', 'no author', 'text: the staff key that kept a move: staff, public'),
   ('my_appeals', 'character', 'no author', 'the caller''s own appeals (the view filters by auth.uid())'),
   ('my_bans', 'character', 'no author', 'the caller''s own bans (the view filters by auth.uid())'),
-  ('my_cards_ended', 'character', 'no author', 'the caller''s own plays, found through the caller''s own characters (owner rights, filtered by auth.uid(), 0400): the caller is the caster'),
+  ('my_cards_ended', 'character', 'no author', 'the caller''s own plays, found through the caller''s own characters (owner rights, filtered by auth.uid(), 0357): the caller is the caster'),
   ('my_cards_ended', 'post_author_name', 'swept', 'the name of the post''s author as the projection shows it (shown_author): the stand-in while a veil is up'),
   ('my_cosmetic_log', 'by', 'no author', 'text: the Boss that gave an award, staff'),
   ('my_cosmetic_log', 'character', 'no author', 'the caller''s own characters'' gear and trophies (cosmetic_log_rows reads by auth.uid())'),
@@ -379,10 +379,10 @@ insert into listed_columns (rel, col, mark, why) values
   ('my_reports', 'character', 'no author', 'the reporter: the caller''s own character; the reported post is named by its id and its author is not read'),
   ('my_reports_left', 'character', 'no author', 'how many reports each of the caller''s own characters has left'),
   ('my_scored_as', 'character', 'no author', 'the caller''s own character a scored-as play was named for (owner = auth.uid())'),
-  ('my_veiled_posts', 'character', 'no author', 'the caller''s own rows by design: a live author veil on a post of a character the caller owns (0166-post-veils.sql: nobody else''s)'),
+  ('my_veiled_posts', 'character', 'no author', 'the caller''s own rows by design: a live author veil on a post of a character the caller owns (0304-post-veils.sql: nobody else''s)'),
   ('my_walls_drawn_on', 'character', 'no author', 'the drawer or washer of a mark on a wall on the caller''s own post: a draw is a public Act of any character, a wash is the post''s own character''s, the caller''s'),
   ('pending_turns', 'character', 'no author', 'the caller''s own pending Turns (policy: the character''s owner is auth.uid())'),
-  ('play_reach', 'character', 'no author', 'the TARGET of a card at character reach, public as the play is; the post it was played from is the target''s own and names it, so a veil is refused there and none is played from a veiled post (0166-post-veils.sql, section 9)'),
+  ('play_reach', 'character', 'no author', 'the TARGET of a card at character reach, public as the play is; the post it was played from is the target''s own and names it, so a veil is refused there and none is played from a veiled post (0304-post-veils.sql, section 9)'),
   ('random_events', 'character', 'no author', 'the caller''s own random events (policy `account = auth.uid()`)'),
   ('reading', 'first_character', 'no author', 'the caller''s own character at their first read of a thread (policy `account = auth.uid()`; mark_read refuses one the caller does not play)'),
   ('season_results', 'character', 'no author', 'a season''s result per character: public, never tied to a post'),
@@ -513,7 +513,7 @@ begin
   got := pg_temp.stale();
   if got <> '' then raise exception 'the sweep''s list holds what is no longer granted: %', got; end if;
   -- The three helpers that build and run a search's text call stand_in() and shown_author(), which no API role may execute, so a call of theirs by a player could only fail; the two definers that run them own the right
-  -- to (0400 revokes it), and the list above holds none of them.
+  -- to (0357 revokes it), and the list above holds none of them.
   got := (select string_agg(p.oid::regprocedure::text, ', ' order by p.proname) from pg_proc p
           where p.pronamespace = 'public'::regnamespace and p.proname in ('search_match_conds', 'search_matches_sql', 'search_walk_sql')
             and (has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute')));

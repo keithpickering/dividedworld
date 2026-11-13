@@ -1,4 +1,4 @@
--- Blind totals (supabase/migrations/0401_blind_totals.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 4; engine/rules/cards.ts, CardRules.veil = 'totals').
+-- Blind totals (supabase/migrations/0358_blind_totals.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 4; engine/rules/cards.ts, CardRules.veil = 'totals').
 -- A cast card with `veil = 'totals'` on a post withholds the post's reaction totals while it is up: a third player reads no tally row of it, in the table or in a page, and the author's player and the caster's player
 -- read their own. What differs between readers keys on the reader's own account alone: it owns the veil's `author` character, or it is the veil's `caster_account`. The cards are this file's own (bt...).
 --

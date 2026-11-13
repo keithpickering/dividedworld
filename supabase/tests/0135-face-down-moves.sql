@@ -68,9 +68,9 @@ begin
 end $$;
 
 -- A back cannot appear while a quote waits for the character and board rows. lock_for_quote sees one live back on the quoted post and takes the post `for share` before it waits for the poster's
--- character row (step 2b; 0400_post_veils: post, then face_down, then characters, so a veil cast on the post and a back springing on it are laid one at a time). The back it saw may still spring
+-- character row (step 2b; 0357_post_veils: post, then face_down, then characters, so a veil cast on the post and a back springing on it are laid one at a time). The back it saw may still spring
 -- meanwhile (another quote's spring takes the back's face_down row, which this quote has not reached yet), but a second back set on the post (set_card takes the post's row first) waits for the quote:
--- the quote finds no live back at step 3 and holds none, and the second back is set once it is done. Before 0400 the second back could be set in that window, and the quote found it at step 3 with no 2b
+-- the quote finds no live back at step 3 and holds none, and the second back is set once it is done. Before 0357 the second back could be set in that window, and the quote found it at step 3 with no 2b
 -- locks taken and left it set; that window is now closed.
 do $$
 declare

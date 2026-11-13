@@ -4420,7 +4420,7 @@ describe('a surface, as the server keeps it', () => {
     expect(all.live).toEqual([]);
   });
 
-  /* Whodunnit? on a post with a wall (0400's acts_public, fifth select; my_draws' cut rows): a wash is the post's own character's alone, so it would name the author wherever it is read. */
+  /* Whodunnit? on a post with a wall (0357's acts_public, fifth select; my_draws' cut rows): a wash is the post's own character's alone, so it would name the author wherever it is read. */
   test('a wash on a post under an author veil is the stand-in\'s, in the wall\'s Acts and in the drawer\'s log; the author\'s own line keeps the name', async () => {
     const who = {
       key: 'whodunnit', name: 'Whodunnit?', alignment: 'pepperoni' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 3 }, veil: 'author' as const,
@@ -4649,7 +4649,7 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect((await w.fake.act(w.post))!.character).toBe(w.boFace);
   });
 
-  /* A Move landing from a quote is not modeled by the fake (a quote springs nothing); the card a back laid, which names its spring, is seeded as the server writes it (0400's lay_sprung). */
+  /* A Move landing from a quote is not modeled by the fake (a quote springs nothing); the card a back laid, which names its spring, is seeded as the server writes it (0357's lay_sprung). */
   test('the card a back of the author\'s laid on a quote is the stand-in\'s while the veil is up, and returns with it; a veil is refused on a post one of whose backs has sprung', async () => {
     const w = veilWorld();
     const back = w.fake.seed.set(w.boFace, w.post, 'glow');
@@ -4677,7 +4677,7 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect((await w.fake.act(third.act))!.character).toBe(stand);
   });
 
-  /* my_cards_ended (0400): the caster of a card that landed on the caller's post is named as acts_public shows the play. The fake lays no Move from a quote, so the card is seeded (`seed.card` with `spring`, after `seed.spring`), the nearest case. */
+  /* my_cards_ended (0357): the caster of a card that landed on the caller's post is named as acts_public shows the play. The fake lays no Move from a quote, so the card is seeded (`seed.card` with `spring`, after `seed.spring`), the nearest case. */
   test('an admin\'s end of the card a veiled post\'s back laid on a quote names the stand-in as the caster to the quote\'s owner, and the true name returns with the veil', async () => {
     const w = veilWorld();
     const back = w.fake.seed.set(w.boFace, w.post, 'glow');
@@ -4831,7 +4831,7 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect(await w.fake.myCards().then((h) => h.find((c) => c.card === 'glow')?.held)).toBe(2);
   });
 
-  test('a card played from a post names its author: no veil on that post (land_refusal), and no card on the author\'s character is played from a veiled one, which the stand-in is shown for (place_cast, 0402)', async () => {
+  test('a card played from a post names its author: no veil on that post (land_refusal), and no card on the author\'s character is played from a veiled one, which the stand-in is shown for (place_cast, 0359)', async () => {
     const w = veilWorld();
     const played = w.fake.seed.thread('general', w.boFace, 'Played from', 'A post a card is played from.').act;
     must(await w.fake.playCard('glow', w.anaFace, w.boFace, {}, '', 'character', played));
@@ -4845,7 +4845,7 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect((await w.fake.myCards()).find((c) => c.card === 'glow')?.held).toBe(glows);
   });
 
-  test('a board\'s demand counts a veiled post under the stand-in, a staff character, so it drops out while the veil is up and counts again at its end (demand_progress, 0402)', async () => {
+  test('a board\'s demand counts a veiled post under the stand-in, a staff character, so it drops out while the veil is up and counts again at its end (demand_progress, 0359)', async () => {
     const w = veilWorld();
     w.fake.seed.staff('director', 'The Director', 'boss');
     const move = w.fake.seed.move('director', { board: 'general', name: 'Counted Hall', demand: { kind: 'postsOnBoard', params: { board: 'general', count: 5 } } });
@@ -4860,7 +4860,7 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect(await done()).toBe(2);
   });
 
-  test('a spin pressed at a post names its author: no veil on that post, and no spin pressed at a veiled one, in the words any other post gets (0400, land_refusal and spin_written)', async () => {
+  test('a spin pressed at a post names its author: no veil on that post, and no spin pressed at a veiled one, in the words any other post gets (0357, land_refusal and spin_written)', async () => {
     const w = veilWorld();
     const glint = w.fake.seed.reach(w.cyFace, 'character', w.boFace, 'glint', { post: w.post });
     const pressed = w.fake.seed.post(w.thread, w.boFace, 'A spin is pressed at this');
@@ -4877,7 +4877,7 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect(await w.fake.spin(glint, w.cyFace, 'Spun at', 'b', undefined, other)).toEqual(refused('that card is not on that post'));
   });
 
-  test('a reply cut in by a card that replies names its author and its post: no veil on the reply, none on a post its own author cut in under, and no Line Cutter on a veiled post (0400, land_refusal)', async () => {
+  test('a reply cut in by a card that replies names its author and its post: no veil on the reply, none on a post its own author cut in under, and no Line Cutter on a veiled post (0357, land_refusal)', async () => {
     const cutter = { ...base, key: 'line-cutter', name: 'Line Cutter', alignment: 'pepperoni' as const, rarity: 'rare' as const, replies: true as const, canApply: lands({ key: 'line-cutter', reaches: ['post'] }) };
     const w = veilWorld({ ...veils, cards: [...cards, cutter] });
     w.fake.seed.cards(w.bo, { 'line-cutter': 2 });

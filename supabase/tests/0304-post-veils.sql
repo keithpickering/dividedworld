@@ -1,4 +1,4 @@
--- The author's veil (supabase/migrations/0400_post_veils.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 2; engine/rules/cards.ts, CardRules.veil).
+-- The author's veil (supabase/migrations/0357_post_veils.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 2; engine/rules/cards.ts, CardRules.veil).
 -- A cast card with `veil = 'author'` on a post withholds its author from every read while it is up: acts_public answers the one stand-in character for the post and for every Act its own author
 -- made on it, to every reader alike, and the author's own screens learn it is theirs only from my_veiled_posts. The cards are this file's own (vl...).
 --
@@ -1261,7 +1261,7 @@ begin
   perform tests.unbecome();
   analyze acts;
   analyze post_veils;
-  -- post_veils_live (0400) anti-joins the live veils with the card_end Acts and with card_write_refunds, and every read of acts_public runs it. Nothing analyzes card_write_refunds in a test database, so the planner
+  -- post_veils_live (0357) anti-joins the live veils with the card_end Acts and with card_write_refunds, and every read of acts_public runs it. Nothing analyzes card_write_refunds in a test database, so the planner
   -- estimates it from its pages, and after the suite's earlier files those hold the dead rows they rolled back: the plan then reads the relation whole (a hash anti join over a sequential scan of it) where, told it holds
   -- nothing, it probes its key once per veil. That is why the stand-in's read below counted 87 to 95 buffers on a fresh database and 107 to 132 in full-suite runs: replaying every file before this one into a database and
   -- running this file on a copy of it read 133 without the analyze below and 111 with it (the heap's other leftovers, dead entries in acts_one_card_end and its not-all-visible heap fetches, move it a little more).
@@ -1618,7 +1618,7 @@ begin
 end $$;
 
 -- ---- 14. Main's concealment (0340_conduct) and the veil compose: a veiled post an admin hides, and one that quotes a hidden post ----
--- acts_public is concealment over a union that changes `character` alone (0400, section 4), so for every row the concealment is acts_base's, and nothing the concealment answers names the author: a hidden veiled post is hidden under
+-- acts_public is concealment over a union that changes `character` alone (0357, section 4), so for every row the concealment is acts_base's, and nothing the concealment answers names the author: a hidden veiled post is hidden under
 -- the stand-in, its edit's words are withheld as any edit's are, and a veiled post that quotes a hidden one is served as its layer, never its words, as any quoter is.
 select tests.unbecome();
 do $$
@@ -1672,15 +1672,15 @@ end $$;
 -- The words a model writes are posted, so a model handed a veiled post's true author can write that name into them ("The model reads the stand-in too, since its words are posted", the plan's decisions). claim_card_writes (0149, 0340)
 -- handed the model `'author', ch.name` of the post's own character; it hands the name acts_public shows now (shown_author), and nothing else about the author (a job carries a name and no id, pronouns, class or group).
 -- THE ROADS A MODEL READS A POST'S AUTHOR BY (every function a model's role may run, or an Edge Function feeds to a prompt, read at its latest definition; settlement and the other code-only scoring read the truth and are not here):
---   claim_card_writes (write)         HANDED THE TRUE AUTHOR ('author', ch.name) before 0400; now shown_author's character, probed below. Its `before` posts read acts_public and characters_public: the stand-in, probed below.
+--   claim_card_writes (write)         HANDED THE TRUE AUTHOR ('author', ch.name) before 0357; now shown_author's character, probed below. Its `before` posts read acts_public and characters_public: the stand-in, probed below.
 --   pool_thread (chatter, staff: the visit, report and appeal judges, the thread a Mod Bot answers)
 --                                     reads acts_public joined to characters_public: the stand-in; probed below.
 --   patrol_sample (the patrol)        reads acts_public and keeps `characters_public.staff is null`: the stand-in is staff, so a veiled post is never sampled; probed below.
 --   system_digest (the meeting)       every read is acts_public / characters_public / thread_list: the stand-in (section 10 probes its `characters`, and below its excerpts).
 --   pool_signals, pool_named          acts_public and thread_open (first and last poster by shown author): the stand-in, and the stand-in is not staff (section 10).
---   card_target, card_target_reach    the post's words through acts_public (no author), the effects above it on shown_author's character (0400).
+--   card_target, card_target_reach    the post's words through acts_public (no author), the effects above it on shown_author's character (0357).
 --   start_visit, file_visit, filings_due, open_report
---                                     a post under a live author veil is never visited and never reported (0400, section 4 of this file), so nothing about it reaches a judge.
+--                                     a post under a live author veil is never visited and never reported (0357, section 4 of this file), so nothing about it reaches a judge.
 --   open_appeal, close_appeal         the appellant is the caller's own character, appealing a punishment (an infraction or a ban, written only through a visit; a visited post takes no veil, section 4; or a move on a character).
 --   pending_apologies                 an apology is the punished character's own spin, no veiled post.
 --   conceal_due                       the engine's parser, no model: the words of an Act, no author.

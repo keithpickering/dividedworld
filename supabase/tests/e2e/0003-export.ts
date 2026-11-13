@@ -215,10 +215,10 @@ test('an instance exported and imported into a fresh database is the same instan
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
       end;
-      -- The stand-in (0400) is made as the seed makes it, before a veil can land: one staff character of its own kind, no owner, with a profile and the avatar setting.
+      -- The stand-in (0357) is made as the seed makes it, before a veil can land: one staff character of its own kind, no owner, with a profile and the avatar setting.
       perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
         'anonymous', jsonb_build_object('name', 'Exported Anonymous', 'title', 'Nobody in particular.', 'avatar', 'exp-anon')));
-      -- Part 3's cards (0400, 0402): a card kind with each flag (a veil of the author, a veil of the totals, a reaction), a live veil of each kind played, an ended one of each (a time passed; the Act as place_cast
+      -- Part 3's cards (0357, 0359): a card kind with each flag (a veil of the author, a veil of the totals, a reaction), a live veil of each kind played, an ended one of each (a time passed; the Act as place_cast
       -- writes it, with its veil row), and an Overreaction played with a reaction given of its kind, and the tally of it.
       insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack, adds_reaction) values
         ('expveil', 'Exported Whodunnit', 'pepperoni', 'rare', 'cast', '{post}', interval '3 days', 'author', 1, false),
@@ -239,7 +239,7 @@ test('an instance exported and imported into a fresh database is the same instan
         old_blind := tests.post(a, t, 'Blind, and the veil wore off.');
         insert into acts (character, kind, thread, target_act_id, payload) values (b, 'card', t, old_veil, jsonb_build_object('card', 'expveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', to_char(now() - interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into old_ended;
         insert into post_veils (play, post, veil, author, caster_account, ends_at) values (old_ended, old_veil, 'author', a, bob, now() - interval '1 day');
-        -- The card a veiled post's own back laid on a quote (0400's post_veil_cards): the row names the card, the post whose author set the back and that author; the fixture needs one to carry.
+        -- The card a veiled post's own back laid on a quote (0357's post_veil_cards): the row names the card, the post whose author set the back and that author; the fixture needs one to carry.
         insert into post_veil_cards (card, post, author) values (old_ended, old_veil, a);
         insert into acts (character, kind, thread, target_act_id, payload) values (b, 'card', t, old_blind, jsonb_build_object('card', 'expblind', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', to_char(now() - interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into old_ended;
         insert into post_veils (play, post, veil, author, caster_account, ends_at) values (old_ended, old_blind, 'totals', a, bob, now() - interval '1 day');
@@ -549,7 +549,7 @@ test('an instance exported and imported into a fresh database is the same instan
     (select count(*) from (select * from surface_cuts except select c.* from surfaces s cross join lateral surface_cuts_of(s.play) c) x) || '|' ||
     (select count(*) from (select c.* from surfaces s cross join lateral surface_cuts_of(s.play) c except select * from surface_cuts) x)`);
   assert.equal(narrowRows(from), '2|1|0|0|0|0', 'the fixture\'s wall holds a mark for its draw and its wash and a cut for the one draw the wash took from, and the rows equal those the Acts give');
-  // Part 3's rows (0400, 0402), each asserted by what it holds, not by being there: a veil of each kind live and ended (the fixture's own posts, since the end-to-end files before this one leave rows in the same database), a card kind with each flag, the stand-in, and a post-local reaction with a reaction and a tally of its kind.
+  // Part 3's rows (0357, 0359), each asserted by what it holds, not by being there: a veil of each kind live and ended (the fixture's own posts, since the end-to-end files before this one leave rows in the same database), a card kind with each flag, the stand-in, and a post-local reaction with a reaction and a tally of its kind.
   const part3 = (url: string) => psqlOn(url, `select
     (select string_agg(v.veil || ':' || (v.ends_at > now())::text, ',' order by v.veil, v.ends_at > now()) from post_veils v join acts a on a.id = v.post and (a.payload ->> 'body' like 'Veiled, %' or a.payload ->> 'body' like 'Blind, %')) || '|' ||
     (select string_agg(key || ':' || coalesce(veil, '-') || ':' || adds_reaction::text, ',' order by key) from card_kinds where key in ('expveil', 'expblind', 'expreact')) || '|' ||
@@ -743,7 +743,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.match((await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /names no release of the name folds/);
     fs.copyFileSync(path.join(dir, 'manifest.json'), path.join(short, 'manifest.json'));
     fs.writeFileSync(path.join(short, 'public.characters.jsonl'), characters.join('\n') + '\n');
-    // A reaction or a tally of a kind that is neither the instance's nor one a card added to that post (0402 dropped the foreign key that held it) is refused, each of the three ways it can be wrong: a kind that is nowhere,
+    // A reaction or a tally of a kind that is neither the instance's nor one a card added to that post (0359 dropped the foreign key that held it) is refused, each of the three ways it can be wrong: a kind that is nowhere,
     // and a post-local kind carried onto a post that never had it.
     const kindRows = (file: string) => fs.readFileSync(path.join(dir, file), 'utf8').split('\n').filter(Boolean);
     const local = (rows: string[]) => rows.findIndex((r) => JSON.parse(r).kind === 'x-1f480');

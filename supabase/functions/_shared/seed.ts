@@ -93,7 +93,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       replies: c.replies === true, keeps: c.keeps === true,
       // What the server draws one of at each play and the drive its plays share (0153), and the words a blank message is refused with (0153): data the SQL holds, never which card.
       draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,
-      // What a cast card on a post withholds while it is up, and whether its play adds a reaction to that one post (0400): the SQL knows only these flags, never which card.
+      // What a cast card on a post withholds while it is up, and whether its play adds a reaction to that one post (0357): the SQL knows only these flags, never which card.
       veil: c.veil, addsReaction: c.reaction === true,
       // Whether its play is a surface any character may add to (0317): the SQL knows only this flag, never which card.
       surface: c.surface !== undefined,
@@ -115,7 +115,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
     // The developer persona (0062): the instance's, else the engine's plain one. It is not in `system`, which a model reads, and its tagline is its
     // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
     developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}), ...(dev.pronouns !== undefined ? { pronouns: dev.pronouns } : {}) },
-    // The anonymous poster (0400): the character shown in place of a veiled post's author, the instance's or the engine's plain one, made like the developer. It is not in `system`, which a model reads.
+    // The anonymous poster (0357): the character shown in place of a veiled post's author, the instance's or the engine's plain one, made like the developer. It is not in `system`, which a model reads.
     anonymous: { name: anon.name, title: anon.tagline, ...(anon.avatar !== undefined ? { avatar: anon.avatar } : {}), ...(anon.pronouns !== undefined ? { pronouns: anon.pronouns } : {}) },
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
     // The member groups (0128): the ladder, lowest first with each rung's index, then the groups a move confers with their tone. `condition` is the kind

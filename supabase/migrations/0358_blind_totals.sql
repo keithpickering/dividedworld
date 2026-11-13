@@ -1,4 +1,4 @@
--- Blind totals (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 4; supabase/tests/0168-blind-totals.sql). A cast card with `veil = 'totals'` on a post (0400's post_veils) withholds the post's reaction totals while it is up.
+-- Blind totals (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 4; supabase/tests/0306-blind-totals.sql). A cast card with `veil = 'totals'` on a post (0357's post_veils) withholds the post's reaction totals while it is up.
 --
 --     1. totals_withheld(act, account)    a live totals veil is on the Act and the account neither owns the veil's author nor cast it: the one fact every reader below keys on.
 --     2. reaction_tallies' policy         a signed-in player reads the table as themselves, so thread_page, board_page and updates_page (security invoker) and the client's own selects follow.
@@ -11,7 +11,7 @@
 -- What differs between readers keys on the reader's own account owning the veil's author or being its caster: never on who reacted.
 
 -- ============================================================================================ 1. totals_withheld ====
--- A veil is live as post_veils_live says (0400). The two reads are one probe of post_veils_post each, then the owner of the veil's author (characters' key) and the veil's caster. Granted to no API role: it
+-- A veil is live as post_veils_live says (0357). The two reads are one probe of post_veils_post each, then the owner of the veil's author (characters' key) and the veil's caster. Granted to no API role: it
 -- takes the account as an argument, so a client allowed to call it could ask whether another account owns a character or cast a card. The policy below calls my_totals_withheld, which asks it of the caller's own account.
 create function totals_withheld(act uuid, account uuid) returns boolean
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -122,7 +122,7 @@ end $function$;
 -- ================================================================================================ 5. the machine's reads ====
 -- The four definer functions of the digest role whose answers reach a screen or a model read the tallies through reaction_tallies_open, so no live totals veil's post moves them: a board's demand progress (and who it
 -- credits, which a trophy shows), the pool's signals and the digest a model reads. Each is copied from its latest definition with the one word changed: demand_progress (0129_group_moves), demand_contributors
--- (0206_trophies), pool_signals and system_digest (0400_post_veils). A replaced function keeps its owner and its grants. The staff cannot carry a veil (0400 refuses one on a staff post), so pool_signals' staff
+-- (0206_trophies), pool_signals and system_digest (0357_post_veils). A replaced function keeps its owner and its grants. The staff cannot carry a veil (0357 refuses one on a staff post), so pool_signals' staff
 -- reads are the same either way today; it reads the view so that no definer function of the role reads the table.
 create or replace function demand_progress(move_act uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -814,6 +814,6 @@ end $$;
 
 -- ========================================================================================= the digest role's reads ====
 -- Every function the digest role owns that read the tallies now reads reaction_tallies_open, so the role's right to read the table, and the policy that gave it, go: a function it owns added later that reads the
--- table would be refused here, and a reviewer sees the view in its place (0168-blind-totals.sql holds the pair).
+-- table would be refused here, and a reviewer sees the view in its place (0306-blind-totals.sql holds the pair).
 revoke select on reaction_tallies from kayfabb_digest;
 drop policy digest_reads on reaction_tallies;

@@ -216,7 +216,7 @@ declare
       'card "pre" scores as a class, and a card that does reaches a character alone'),
     jsonb_build_array('{"key": "prf", "rarity": "uncommon", "play": "cast", "reaches": ["character"], "lasts": {"unit": "day", "count": 2}, "scoresAs": false}',
       'card "prf" has scoresAs false; scoresAs is true or left out'),
-    -- A cast on a post may end since 0400 (a skim, a veil), so a cast with a time up is no longer refused; a set card with one, on a post alone, still is.
+    -- A cast on a post may end since 0357 (a skim, a veil), so a cast with a time up is no longer refused; a set card with one, on a post alone, still is.
     jsonb_build_array('{"key": "prg", "rarity": "uncommon", "play": "set", "reaches": ["post"], "lasts": {"unit": "day", "count": 1}, "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}}}',
       'card "prg" has a time up (lasts), and only a use card, a cast card or a card reaching beyond a post does')
   );

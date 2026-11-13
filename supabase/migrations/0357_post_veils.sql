@@ -37,7 +37,7 @@
 -- Each function below is copied from its latest definition, named in the comment above it, changing only what that comment names; lock order and `set search_path` are as written there.
 -- Lock order, for the post, the visits and the character: POST, THEN visits_open, THEN CHARACTER, in every function that takes more than one (a visit's filing takes the post's row, then visits_open, then in infract the post's author's
 -- character). place_cast's character branch is the one this migration moves to it: the post a card on a character is played from is taken `for share` before the target character's row, where it was taken after (0317), so a card cast
--- from post P onto its author and a filing on P meet at the post and never hold one row each and wait on the other (supabase/tests/0166-post-veils.sql, section 13 (d), holds a third session getting the character's row while the card waits).
+-- from post P onto its author and a filing on P meet at the post and never hold one row each and wait on the other (supabase/tests/0304-post-veils.sql, section 13 (d), holds a third session getting the character's row while the card waits).
 -- spin is the second: the post a spin is pressed at is taken `for share` before not_banned takes the spinner's character (section 13 (e) and (g)). lock_for_quote is the third: a quote that meets a live back takes the
 -- quoted post `for share` before its face-down rows and the characters (post, then face_down, as place_set takes them), so a back springing on it and a veil cast on it are laid one at a time (section 13 (f)).
 
@@ -539,7 +539,7 @@ begin
        where board = sys and shard = coalesce((select c.shard from board_thread_counts c where c.board = sys order by c.shard for update skip locked limit 1), 0);
     end if;
   end if;
-  -- The anonymous poster (0400): a seed with an `anonymous` entry ({ name, title, avatar, pronouns }) makes the one stand-in, once, as it makes the developer: debuted at seed time, the tagline its profile title, the pronouns
+  -- The anonymous poster (0357): a seed with an `anonymous` entry ({ name, title, avatar, pronouns }) makes the one stand-in, once, as it makes the developer: debuted at seed time, the tagline its profile title, the pronouns
   -- rewritten on every seed when the seed names them, the avatar's asset key the instance's to change. What an admin wrote is never written over. A seed with none makes none, and stand_in() is then null (land_refusal
   -- refuses a veil until one exists); seed.ts always sends one, the engine's own when the instance names none.
   if jsonb_typeof(payload -> 'anonymous') = 'object' then
@@ -669,7 +669,7 @@ $$;
 -- author veil is live) the one WHERE outside the union asks. Postgres reads a union of selects that are each one table with no WHERE as one appendrel: the outer WHERE is carried into each select as a qual, a join that asks
 -- acts_public for an id is an index probe into each, and an ordered read with a limit is a merge of each select's own index order. The concealment is main's own lateral joins, once, over the union (as main reads them over
 -- `acts`): they are joins to the appendrel, not inside a select, so the appendrel is still one. A select with a WHERE of its own, or a join inside it, is read whole when it is joined or ordered, and an earlier version of this view
--- (two selects, the veiled ones driven from the veils outward) turned a profile's newest five Acts into every Act of that character and a page's reads into scans of the thread, as supabase/tests/0166-post-veils.sql (section 8) and
+-- (two selects, the veiled ones driven from the veils outward) turned a profile's newest five Acts into every Act of that character and a page's reads into scans of the thread, as supabase/tests/0304-post-veils.sql (section 8) and
 -- 0075-play-moments.sql hold. A later one (five selects, one for each kind of veiled row) read right and planned wrong once the concealment was over it: each probe by id is one index scan a select, five where main's has one, and
 -- a join of a page's ids to acts_public (log_page's walk, in supabase/tests/0166-surface-log.sql) was costed past a hash join of the whole union, which pays the concealment's probes for every Act of the instance in every pass of the
 -- walk. The veiled rows are one select, the kinds of veiled row its arms. What the view does cost is planning (it names `acts` in each select and in each edit's subquery, so a statement that reads it opens more of acts'
@@ -1259,7 +1259,7 @@ begin
     -- board both wait here, and the second sees the first.
     if reach = 'character' then
       -- The lock order is post, then visits_open, then character, everywhere (a visit's filing takes the post's row first and, in infract, its author's character after): the post the card is played from is held `for share`
-      -- before the target character's row, so a card on a character and a filing on that post never hold one each and wait on the other. (Before 0400 the character came first.)
+      -- before the target character's row, so a card on a character and a filing on that post never hold one each and wait on the other. (Before 0357 the character came first.)
       perform 1 from acts a where a.id = from_post and a.kind = 'post' for share;
       perform 1 from characters c where c.id = target for no key update;
       if not found then raise exception 'there is no such character' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
@@ -1471,7 +1471,7 @@ begin
   if cardinality(seen) > 0 then
     -- The quoted post first, `for share`, when a live back may spring on it (the lock order: post, then face_down, as place_set takes them; then the characters): a veil cast on the post takes its row `for no key update`
     -- and then asks land_refusal whether a back of it has sprung, and lay_sprung asks whether the post is veiled when it lays the back's card. Held here, the two are laid one at a time, and whichever is second sees the
-    -- first: the cast is refused for the spring, or the card is shown under the stand-in (post_veil_cards). 0166-post-veils.sql, race 13 (f).
+    -- first: the cast is refused for the spring, or the card is shown under the stand-in (post_veil_cards). 0304-post-veils.sql, race 13 (f).
     perform 1 from acts a where a.id = quoting for share;
     select t.board into on_board from threads t where t.id = in_thread;
     perform 1 from characters c where c.id = poster for no key update;
@@ -2138,7 +2138,7 @@ end $$;
 revoke execute on function open_report(uuid, uuid, text) from public, anon;
 grant execute on function open_report(uuid, uuid, text) to authenticated, service_role;
 
--- thread_page (0356_kept_character, which is 0349_thread_page_under's with `kept` holding a character-reach play by its window; 0349 is 0340_conduct's text with the nested replies, `under`, `cut` and `kept`), also answering `veiled`: the caller's own veiled posts among the page's, its nested replies included (my_veiled_posts), beside `faces`. Everything else as 0349 wrote it.
+-- thread_page (0356_kept_character, which is 0349_thread_page_under's with `kept` holding a character-reach play by its window; 0349 is 0340_conduct's text with the nested replies, `under`, `cut` and `kept`), also answering `veiled`: the caller's own veiled posts among the page's, its nested replies included (my_veiled_posts), beside `faces`. Everything else as 0356 wrote it.
 
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
@@ -2952,7 +2952,7 @@ $$;
 -- The model is handed the author's name for the post a writing card lands on, and what it writes is posted, so a model handed a veiled post's true author could write that name into words everyone reads ("The model reads the stand-in too,
 -- since its words are posted", the plan's decisions). The job carries a name and nothing else of the author (no id, pronouns, class, group or owner), and the posts shown before it come from acts_public and characters_public, which
 -- already name the stand-in. The inner join is safe: a veil is only ever cast while the stand-in exists (land_refusal). Everything else as 0340 wrote it; its grants (service role alone, 0149) are kept by the replacement.
--- Every other road a model reads a post's author by was read at its latest definition and says so in supabase/tests/0166-post-veils.sql, section 15: pool_thread, patrol_sample, system_digest, pool_signals and card_target_reach read
+-- Every other road a model reads a post's author by was read at its latest definition and says so in supabase/tests/0304-post-veils.sql, section 15: pool_thread, patrol_sample, system_digest, pool_signals and card_target_reach read
 -- acts_public (the stand-in), a veiled post is never visited, reported or sampled, and the rest name characters and no post's author.
 
 create or replace function claim_card_writes(most integer, only_post uuid default null) returns jsonb

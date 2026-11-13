@@ -174,7 +174,7 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.ok(!('developer' in instanceSeed(instance, conduct).system), 'nothing under `system`, which is all the Director reads, names the developer');
 });
 
-test('a card\'s veil and its reaction flag travel in the seed (0400), and an absent veil is absent in the JSON', () => {
+test('a card\'s veil and its reaction flag travel in the seed (0357), and an absent veil is absent in the JSON', () => {
   const veil = { ...instance.cards[0]!, key: 'test-veil', veil: 'author' as const, lasts: { unit: 'day' as const, count: 3 } };
   const react = { ...instance.cards[0]!, key: 'test-react', reaction: true as const };
   const sent = JSON.parse(JSON.stringify(instanceSeed({ ...instance, cards: [veil, react] }, conduct).cards));

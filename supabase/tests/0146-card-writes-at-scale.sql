@@ -85,7 +85,7 @@ begin
 
   -- The owner of characters 1, 401, 801, 1201 and 1601: 100 posts, each with a play, so 100 rows.
   me := (select id from so where g = 1);
-  -- The caller's own posts are counted as the table's owner: `acts.character` is not granted to a player (0400), and the view under test answers with owner rights.
+  -- The caller's own posts are counted as the table's owner: `acts.character` is not granted to a player (0357), and the view under test answers with owner rights.
   own := (select count(*) from acts p join characters c on c.id = p.character where c.owner = me and p.kind = 'post');
   perform tests.become(me);
   perform pg_temp.check_scale_plan('stale', (select count(*) from my_posts_written_on), own);
