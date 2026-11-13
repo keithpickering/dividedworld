@@ -1423,7 +1423,7 @@ describe('what a list row shows', () => {
       expect(a.body).not.toBe('Words to be hidden.');
       const b = (await fake.spinMoment(s2))!.version.currentPayload;
       expect(b.body).not.toBe('Edited words to be hidden.');
-      expect(b).toEqual(edit.payload);
+      expect(b).toEqual((await fake.history(edit.targetActId ?? edit.id)).at(-1)!.payload);
     });
     test('a character play\'s moment: the same', async () => {
       const { fake, original, edit, k1, k2 } = await hidden();

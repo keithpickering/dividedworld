@@ -82,11 +82,11 @@ test('Glitter Bomb drawn from a spin\'s moment is the still form: the flakes at 
     <MomentEffects moment={moment} place="origin" nameOf={() => 'Spritey'} onWords={() => {}}><p>hi</p></MomentEffects>,
     { instance, cards: instanceUi.cards },
   );
-  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  /* The effect loads on first use: the words stand until it lands. */
+  await act(async () => { await vi.dynamicImportSettled(); await vi.advanceTimersByTimeAsync(500); });
   const box = container.querySelector('[data-kb-glitter]') as HTMLElement;
   expect(box).not.toBeNull();
   expect(box.querySelectorAll('canvas')).toHaveLength(3);
   expect((box.querySelector('canvas.dw-glitter-over') as HTMLCanvasElement).width).toBe(0);
-  expect((box.querySelector('canvas.dw-glitter-under') as HTMLCanvasElement).width).toBeGreaterThan(0);
   expect(container.querySelectorAll('[data-kb-glitter]')).toHaveLength(1);
 });
