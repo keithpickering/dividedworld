@@ -522,13 +522,13 @@ describe('Laugh Track: no cue is drawn inside a link (#602)', () => {
 
   test('the other place is a button that plays on a click and Enter, and the Lens counts one', () => {
     const m = mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
-    expect(lastView(m).state).toBe('0 of 1 cues heard');
+    expect(lastView(m).state).toBe('0 of 1 places heard');
     expect(buttons()).toHaveLength(1);
     expect(buttons()[0]!).toHaveAttribute('tabindex', '0');
     vi.useFakeTimers({ toFake: ['Date'] });
     fireEvent.click(buttons()[0]!);
     expect(heard.play).toHaveBeenCalledTimes(1);
-    expect(lastView(m).state).toBe('1 of 1 cues heard');
+    expect(lastView(m).state).toBe('1 of 1 places heard');
     vi.setSystemTime(Date.now() + 1000);
     fireEvent.keyDown(buttons()[0]!, { key: 'Enter' });
     expect(heard.play).toHaveBeenCalledTimes(2);
@@ -637,18 +637,18 @@ describe('Laugh Track: the Lens', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const m = mount();
     const v0 = lastView(m);
-    expect(v0).toMatchObject({ state: '0 of 5 cues heard', progress: 0, yours: false, notes: {} });
+    expect(v0).toMatchObject({ state: '0 of 5 places heard', progress: 0, yours: false, notes: {} });
     expect(v0).not.toHaveProperty('ends');
     expect(v0.controls).toHaveLength(1);
     expect(v0.controls[0]).toMatchObject({ kind: 'toggle', label: 'Game sounds', on: false });
     fireEvent.click(pieces()[0]!); fireEvent.click(pieces()[1]!);
-    expect(lastView(m)).toMatchObject({ state: '2 of 5 cues heard', progress: 0.4 });
+    expect(lastView(m)).toMatchObject({ state: '2 of 5 places heard', progress: 0.4 });
     for (const v of m.views.filter(Boolean)) expect(viewProblems(v!, { holds: false, covers: false })).toEqual([]);
   });
 
-  test('one cue at one place is "0 of 1 cues heard" and a view is cleared when the post goes', () => {
+  test('one cue at one place is "0 of 1 places heard" and a view is cleared when the post goes', () => {
     const m = mount({ plays: [playOf([{ phrase: 'Mario is', sound: 'laugh' }])] });
-    expect(lastView(m).state).toBe('0 of 1 cues heard');
+    expect(lastView(m).state).toBe('0 of 1 places heard');
     m.unmount();
     expect(m.views.at(-1)).toBeNull();
   });
@@ -672,7 +672,7 @@ describe('Laugh Track: the Lens', () => {
 });
 
 describe('Laugh Track: a play\'s moment (still)', () => {
-  test('nothing registers, plays or binds, no piece is focusable, and the Lens says how many cues with no controls', () => {
+  test('nothing registers, plays or binds, no piece is focusable, and the Lens says how many places with no controls', () => {
     const m = mount({ still: true });
     expect(hub.specs).toHaveLength(0);
     expect(hub.offs).toHaveLength(0);
@@ -686,14 +686,14 @@ describe('Laugh Track: a play\'s moment (still)', () => {
     expect(heard.loop).not.toHaveBeenCalled();
     expect(hub.quiets).toHaveLength(0);
     expect(m.met).not.toHaveBeenCalled();
-    expect(lastView(m)).toMatchObject({ state: '3 cues', controls: [], yours: false, notes: {} });
+    expect(lastView(m)).toMatchObject({ state: '5 places', controls: [], yours: false, notes: {} });
     expect(lastView(m).progress).toBeNull();
     expect(viewProblems(lastView(m), { holds: false, covers: false })).toEqual([]);
   });
 
-  test('a moment with one cue says "1 cue"', () => {
+  test('a moment with one place says "1 place"', () => {
     const m = mount({ still: true, plays: [playOf([{ phrase: 'Mario is', sound: 'laugh' }])] });
-    expect(lastView(m).state).toBe('1 cue');
+    expect(lastView(m).state).toBe('1 place');
   });
 
   test('the ORIGIN box behaves as the thread does', () => {

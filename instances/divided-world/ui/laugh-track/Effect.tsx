@@ -111,9 +111,8 @@ const pieceOf = (spot: Spot, key: string, text: string, extra?: Record<string, u
 function Moment({ post, plays, show, children }: EffectProps) {
   const spots = useSpots(post, plays);
   const runs = useMemo<TextRun[]>(() => spots.map((s) => ({ start: s.start, end: s.end, key: `lt:${s.key}`, z: Z, mode: 'wrap', render: ({ text, key }) => pieceOf(s, key, text) })), [spots]);
-  /* The cues the play holds, whatever the version of the post shown finds: a moment says what was played. */
-  const held = plays.reduce((n, p) => { const { cues } = p.config as { cues?: unknown }; return n + (!p.caught && Array.isArray(cues) ? cues.filter(isCue).length : 0); }, 0);
-  const view: CardView = { progress: null, state: `${held} ${held === 1 ? 'cue' : 'cues'}`, yours: false, controls: [], notes: {} };
+  /* The places, counted as the live Lens counts them: the uncaught plays' cues where they are in this version's words, outside links. */
+  const view: CardView = { progress: null, state: spots.length ? `${spots.length} ${spots.length === 1 ? 'place' : 'places'}` : 'No cues in this version', yours: false, controls: [], notes: {} };
   const viewKey = JSON.stringify(view);
   const now = useRef(view);
   now.current = view;
@@ -305,11 +304,11 @@ function Live({ post, plays, show, met, children }: EffectProps) {
     };
   }), [spots, fired, first, stopKey, fire, goTo]);
 
-  /* The Lens's words: how many cues have been heard on this visit, and the toggle for Game sounds. */
+  /* The Lens's words: how many places have been heard on this visit, and the toggle for Game sounds. */
   const heard = spots.filter((s) => fired.has(s.key)).length;
   const view: CardView = {
     progress: spots.length ? Math.round((heard / spots.length) * 1000) / 1000 : null,
-    state: spots.length ? `${heard} of ${spots.length} cues heard` : 'No cues in this version',
+    state: spots.length ? `${heard} of ${spots.length} places heard` : 'No cues in this version',
     yours: false,
     controls: [{ kind: 'toggle', label: 'Game sounds', on: gameSound.on, set: gameSound.set }],
     notes: {},

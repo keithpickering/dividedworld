@@ -228,8 +228,8 @@ async function openReader(page: Page, size: { width: number; height: number }, p
   await page.evaluate(() => document.fonts.ready);
 }
 
-/** The Lens's line, as the post's mark names it (the Lens itself is closed): "Laugh Track, 1 play, N of M cues heard. Opens the cards on this post." */
-const lens = (page: Page, heard: number) => page.getByRole('button', { name: new RegExp(`, ${heard} of ${READER_PLACES} cues heard`, 'u') });
+/** The Lens's line, as the post's mark names it (the Lens itself is closed): "Laugh Track, 1 play, N of M places heard. Opens the cards on this post." */
+const lens = (page: Page, heard: number) => page.getByRole('button', { name: new RegExp(`, ${heard} of ${READER_PLACES} places heard`, 'u') });
 const heardPlaces = (page: Page) => page.evaluate(() => Array.from(new Set(Array.from(document.querySelectorAll('.dw-lt-fired')).map((e) => e.getAttribute('data-lt-place')))));
 /** A cue's first piece's center in the window, by its index among the page's cued places (the order of the text). The piece is brought a quarter of the way down the
     window: the toasts stand over the window's foot and would take a press made there. */
@@ -395,6 +395,6 @@ test.describe('a reader', () => {
     expect(await label()).toBe(NAME_UNHEARD('fan game'));
     await page.keyboard.press('Enter');
     expect(await heardPlaces(page)).toHaveLength(2);
-    await expect(page.getByRole('button', { name: /, 2 of 2 cues heard/u })).toBeVisible();
+    await expect(page.getByRole('button', { name: /, 2 of 2 places heard/u })).toBeVisible();
   });
 });
