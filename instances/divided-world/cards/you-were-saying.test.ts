@@ -5,12 +5,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { youWereSaying } from './you-were-saying.ts';
 import { cutCompletion } from '../../../engine/system/validate.ts';
-import { HEADER, STOPS } from './you-were-saying/frame.ts';
+import { BAN, HEADER, HEADER_IN_LINE, STOPS } from './you-were-saying/frame.ts';
 import { defaults as settings } from '../settings.ts';
 import { instance } from '../index.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { postTarget, WRITE_TOKENS_MOST, writeTokensMost, type CardTarget } from '../../../engine/rules/cards.ts';
-import { tokenCounter } from '../../../engine/system/tokens.ts';
+import { tokenCounter, tokenId } from '../../../engine/system/tokens.ts';
 import { mostSteps } from './you-were-saying.ts';
 
 const rules = youWereSaying;
@@ -20,23 +20,23 @@ const frame = (over: Partial<Parameters<typeof writes.frame>[0]> = {}) =>
   writes.frame({ post: { name: 'Mario', text: 'I was going to say' }, before: [], title: 'Best level', tails: [], settings, budget: 100_000, count: (t) => t.length, sofar: '', ...over });
 
 test('its length and its price follow its steps', () => {
-  assert.equal(writes.tokens({ steps: 0 }, settings), 25);
-  assert.equal(writes.tokens({ steps: 7 }, settings), 200);
+  assert.equal(writes.tokens({ steps: 0 }, settings), 50);
+  assert.equal(writes.tokens({ steps: 7 }, settings), 300, 'past the most, the most');
   assert.equal(rules.playPrice(settings, target('hello'), { steps: 0 }), 0);
-  assert.equal(rules.playPrice(settings, target('hello'), { steps: 7 }), 175);
-  assert.equal(rules.playPrice(settings, target('hello'), undefined as never), 175, 'a face asks the most');
+  assert.equal(rules.playPrice(settings, target('hello'), { steps: 7 }), 125);
+  assert.equal(rules.playPrice(settings, target('hello'), undefined as never), 125, 'a face asks the most');
 });
 
 test('an override that lowers the most is never exceeded', () => {
-  const low = withOverrides(settings, { economy: { 'youWereSaying.mostTokens': 75 } });
-  assert.equal(writes.tokens({ steps: 7 }, low), 75);
+  const low = withOverrides(settings, { economy: { 'youWereSaying.mostTokens': 150 } });
+  assert.equal(writes.tokens({ steps: 7 }, low), 150);
   assert.equal(rules.playPrice(low, target('hello'), { steps: 7 }), 50);
 });
 
 test('a step is a whole number from 0 to the most', () => {
   assert.deepEqual(rules.validateConfig({ steps: 3 }), { ok: true, value: { steps: 3 } });
-  assert.deepEqual(rules.validateConfig({ steps: 7 }), { ok: true, value: { steps: 7 } });
-  for (const steps of [8, -1, 1.5, '2', null, NaN, Infinity]) assert.equal(rules.validateConfig({ steps }).ok, false, String(steps));
+  assert.deepEqual(rules.validateConfig({ steps: 5 }), { ok: true, value: { steps: 5 } });
+  for (const steps of [6, -1, 1.5, '2', null, NaN, Infinity]) assert.equal(rules.validateConfig({ steps }).ok, false, String(steps));
   assert.equal(rules.validateConfig({}).ok, false);
   assert.equal(rules.validateConfig(null).ok, false);
   assert.deepEqual(rules.staffConfigs, [{ steps: 0 }]);
@@ -326,17 +326,55 @@ test('fitting: it clips with a bisection, a dozen counts a clip, not a thousand'
 });
 
 test('mostSteps follows the window less the floor', () => {
-  assert.equal(mostSteps(settings), 7);
-  assert.equal(mostSteps({ ...settings, oldVoiceWindow: 400, oldVoicePromptFloor: 256 }), 4);
+  assert.equal(mostSteps(settings), 5);
+  assert.equal(mostSteps({ ...settings, oldVoiceWindow: 400, oldVoicePromptFloor: 256 }), 1);
 });
 
 test('with a narrowed window, the price and the tokens are those of the last step that fits', () => {
   const narrow = { ...settings, oldVoiceWindow: 400, oldVoicePromptFloor: 256 };
-  assert.equal(mostSteps(narrow), 4);
+  assert.equal(mostSteps(narrow), 1);
   const past = { steps: 7 };
-  assert.equal(writes.tokens(past, narrow), writes.tokens({ steps: 4 }, narrow));
-  assert.equal(writes.tokens(past, narrow), 125);
-  assert.equal(rules.playPrice(narrow, target('hello'), past), rules.playPrice(narrow, target('hello'), { steps: 4 }));
-  assert.equal(rules.playPrice(narrow, target('hello'), past), 100);
-  assert.equal(rules.playPrice(narrow, target('hello'), undefined as never), 100, 'a face asks the most that fits');
+  assert.equal(writes.tokens(past, narrow), writes.tokens({ steps: 1 }, narrow));
+  assert.equal(writes.tokens(past, narrow), 100);
+  assert.equal(rules.playPrice(narrow, target('hello'), past), rules.playPrice(narrow, target('hello'), { steps: 1 }));
+  assert.equal(rules.playPrice(narrow, target('hello'), past), 25);
+  assert.equal(rules.playPrice(narrow, target('hello'), undefined as never), 25, 'a face asks the most that fits');
+});
+
+// The rambler, the ban and the pattern (docs/plans/2026-11-13-you-were-saying-voice-design.md, sections 0 to 4).
+test('the ban is 37 distinct strings, each one GPT-2 token', () => {
+  assert.equal(BAN.length, 37);
+  assert.equal(new Set(BAN).size, 37);
+  for (const s of BAN) assert.notEqual(tokenId('gpt2', s), null, JSON.stringify(s));
+});
+
+test('the card samples as measured', () => {
+  assert.deepEqual(writes.sampling, { temperature: 0.9, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.6, repeatLastN: 64, ban: BAN });
+});
+
+test('the economy buys 300 tokens in five steps for 125', () => {
+  assert.equal(mostSteps(settings), 5);
+  assert.equal(writes.tokens({ steps: 5 }, settings), 300);
+  assert.equal(rules.playPrice(settings, target('hello'), { steps: 5 }), 125);
+});
+
+test('sofar follows the tails and a break the frame writes follows it', () => {
+  const base = frame({ tails: [' and then I'] }).prompt;
+  assert.equal(frame({ tails: [' and then I'], sofar: '' }).prompt, base);
+  assert.equal(frame({ tails: [' and then I'], sofar: ' and\nthen' }).prompt, `${base} and then\n\n`);
+});
+
+test('a squeezed budget keeps the end of sofar and the break', () => {
+  const sofar = ` ${'word '.repeat(200)}end`;
+  const { prompt } = frame({ budget: 120, count: bytes, tails: [' tail'], sofar });
+  assert.ok(prompt.endsWith('word end\n\n'), prompt.slice(-30));
+  assert.ok(bytes(prompt) <= 120, String(bytes(prompt)));
+});
+
+test('the pattern finds a header run in a line and not ordinary words', () => {
+  assert.match('a --- Posted by A:', HEADER_IN_LINE);
+  assert.match('x -- Posted by B:', HEADER_IN_LINE);
+  assert.doesNotMatch('posted by my friend', HEADER_IN_LINE);
+  assert.doesNotMatch('Posted by my friend', HEADER_IN_LINE);
+  assert.equal(frame().stopPattern, HEADER_IN_LINE);
 });

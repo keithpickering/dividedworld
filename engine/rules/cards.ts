@@ -215,7 +215,7 @@ export interface WriteSampling {
   readonly minP?: number;
   readonly repeatPenalty?: number;
   readonly repeatLastN?: number;
-  /** Texts the voice may never produce, each one token of the instance's tokenizer (design section 1); the engine maps them to token ids. */
+  /** Texts the voice may never produce, each one token of the instance's tokenizer (section 3); the engine maps them to token ids. */
   readonly ban?: readonly string[];
 }
 

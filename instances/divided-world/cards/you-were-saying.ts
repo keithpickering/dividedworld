@@ -1,5 +1,5 @@
 /**
- * You Were Saying? (Pepperoni, common): the old voice finishes the post's sentence after the author stops, in a tail that types itself in
+ * You Were Saying? (Pepperoni, common): the old voice rambles on from where the post ends, a short paragraph to a rant, in a tail that types itself in
  * after the body (docs/plans/2026-11-07-you-were-saying-design.md). It is a cast Move that reaches a post alone, and the only card that
  * writes (`writes`): the engine owns the queue, the call, the scrubber and the refund; this file owns what a play buys and the page the
  * model continues (you-were-saying/frame.ts).
@@ -12,7 +12,7 @@
  */
 import { economyOf, landsOn, ok, refuse, WRITE_TOKENS_MOST, writeTokensMost, type CardRules } from '../../../engine/rules/cards.ts';
 import { defaults } from '../settings.ts';
-import { youWereSayingFrame } from './you-were-saying/frame.ts';
+import { BAN, youWereSayingFrame } from './you-were-saying/frame.ts';
 
 export type YouWereSayingConfig = { readonly steps: number };
 
@@ -46,7 +46,10 @@ export const youWereSaying: CardRules<YouWereSayingConfig> = {
     { key: 'youWereSaying.typeCps', min: 5, max: 400 },
   ],
   writes: {
-    sampling: { temperature: 0.9, topP: 0.95 },
+    // Measured against the deployed voice (docs/plans/2026-11-13-you-were-saying-voice-design.md, sections 0 and 1): this sampling rambles on in the
+    // post's own register, the repeat penalty over the last 64 tokens breaks its loops, and the ban closes the dash runs and header words it
+    // opens a fake post with (BAN, one GPT-2 token each).
+    sampling: { temperature: 0.9, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.6, repeatLastN: 64, ban: BAN },
     // Never above the most, even where an override or the window puts the most below the base (the most is at least 1, so a play is never empty).
     tokens: (config, settings) =>
       Math.min(

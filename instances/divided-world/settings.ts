@@ -242,10 +242,10 @@ export const defaults: Settings = deepFreeze<Settings>({
     'laughTrack.freePlaces': 5,
     'laughTrack.mostAdded': 100,
     /** You Were Saying?: a play writes 25 tokens and 25 more for each step, at most 200, and each step costs 0.25 on top of its price at the machine. */
-    'youWereSaying.baseTokens': 25,
-    'youWereSaying.stepTokens': 25,
+    'youWereSaying.baseTokens': 50,
+    'youWereSaying.stepTokens': 50,
     'youWereSaying.stepPrice': 25,
-    'youWereSaying.mostTokens': 200,
+    'youWereSaying.mostTokens': 300,
     /** Jimmy Wails's drive: the four amounts a gift may be, in hundredths (0.10, 0.25, 0.50 and 1.00). */
     'jimmyWails.gift1': 10,
     'jimmyWails.gift2': 25,
