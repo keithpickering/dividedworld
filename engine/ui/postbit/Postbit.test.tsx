@@ -609,9 +609,9 @@ describe('the side by side postbit, in the stylesheet: rank under the avatar, th
   };
   const avatar = orderIn(css, '.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar');
 
-  test('the rank sits directly under the avatar, then the group directly under the rank', () => {
+  test('the rank sits above the avatar, and the group stays directly under the avatar', () => {
     expect(avatar).toBe(1);
-    expect(orderIn(wide, '.kb-postbit[data-kb-postbit="side"] .kb-postbit-rank')).toBe(avatar + 1);
+    expect(orderIn(wide, '.kb-postbit[data-kb-postbit="side"] .kb-postbit-rank')).toBe(0);
     expect(orderIn(wide, '.kb-postbit[data-kb-postbit="side"] .kb-postbit-group')).toBe(avatar + 2);
   });
 

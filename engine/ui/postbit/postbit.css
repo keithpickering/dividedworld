@@ -187,11 +187,11 @@
  */
 @media not all and (max-width: 40em) {
   /*
-   * Side by side, the rank sits directly under the avatar and the group under the rank; the warn meter, counts and revealed class follow
-   * them (order 4, above). Wide windows only: a phone keeps its own order.
+   * Side by side, the rank sits above the avatar (order 0, ahead of it), the group directly under the avatar, and the warn meter, counts
+   * and revealed class follow the group (order 4, above). Wide windows only: a phone keeps its own order.
    */
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-rank {
-    order: 2;
+    order: 0;
   }
 
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-group {
