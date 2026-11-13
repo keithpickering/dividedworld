@@ -81,7 +81,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       reads: (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)),
       // How it is played and how rare it is, and a Set card's trap, a Use card's gimmick and time up (0054, 0148), which seed_instance
       // checks as instanceProblems does. A trap (with its match), a gimmick or a time up left out travels as none.
-      rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts,
+      rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, discipline: c.discipline, lasts: c.lasts,
       // What a cast card's play pays its caster for votes on its post, and whether it names a class its target is scored as
       // for a window (0151); a trap's outcome travels inside the trap. One left out travels as none.
       skim: c.skim, scoresAs: c.scoresAs,

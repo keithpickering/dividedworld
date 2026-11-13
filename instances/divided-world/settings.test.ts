@@ -102,7 +102,7 @@ test('the system settings are the plan\'s numbers, and the System ships switched
   assert.equal(defaults.boardNameMaxLength, 60);
   assert.equal(defaults.demandCheckMinutes, 5);
   assert.equal(defaults.demandChecksPerTick, 40);
-  assert.deepEqual(defaults.modBots, { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 });
+  assert.deepEqual(defaults.modBots, { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 });
   assert.deepEqual(defaults.warnBar, { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] });
   assert.deepEqual(defaults.apology, { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 });
   assert.deepEqual(defaults.modelTiers, { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' });

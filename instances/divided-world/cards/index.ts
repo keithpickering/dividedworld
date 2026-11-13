@@ -14,6 +14,7 @@
  * Laugh Track, an audience that laughs, cheers or boos at the cued words of a post as a reader points at or taps them (docs/plans/2026-11-11-laugh-track-design.md).
  * Graffiti, the first surface: a wall on a post any character may draw on (docs/plans/2026-11-11-graffiti-design.md).
  * Part 2 (docs/plans/2026-11-11-card-notes-part-2-plan.md): Line Cutter posts a reply right under a post, and Feelin' Glam gives a thread's posts one more Feelin' Fab level for a week.
+ * Part 5 (docs/plans/2026-11-11-card-notes-part-5-plan.md): the three Happy Hearts take points off a warn bar or end a ban, Take the Fall moves a filing to the caster, and Tattle-Tale makes a Mod Bot patrol likelier to look at a character.
  */
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { atOrBelow, castOnPost, type CardRules } from '../../../engine/rules/cards.ts';
@@ -29,6 +30,7 @@ import { forceField } from './force-field.ts';
 import { glitterBomb } from './glitter-bomb.ts';
 import { graffiti } from './graffiti.ts';
 import { goodVibes } from './good-vibes.ts';
+import { happyHeart } from './happy-heart.ts';
 import { hallPass } from './hall-pass.ts';
 import { heatMagnet } from './heat-magnet.ts';
 import { hypeUp } from './hype-up.ts';
@@ -44,11 +46,15 @@ import { publicityTour } from './publicity-tour.ts';
 import { toll } from './toll.ts';
 import { stickAround } from './stick-around.ts';
 import { sugarCoat } from './sugar-coat.ts';
+import { superHappyHeart } from './super-happy-heart.ts';
+import { takeTheFall } from './take-the-fall.ts';
+import { tattleTale } from './tattle-tale.ts';
+import { ultraHappyHeart } from './ultra-happy-heart.ts';
 import { whodunnit } from './whodunnit.ts';
 import { whoops } from './whoops.ts';
 import { youWereSaying } from './you-were-saying.ts';
 
-const listed: readonly CardRules[] = [stickAround as CardRules, whoops as CardRules, cardCollectorBase as CardRules, hallPass as CardRules, forceField as CardRules, publicityTour as CardRules, heatMagnet as CardRules, classClown as CardRules, goodVibes as CardRules, glitterBomb as CardRules, mainEvent as CardRules, feelinFab as CardRules, autocorrect as CardRules, youWereSaying as CardRules, belowTheFold as CardRules, mooch as CardRules, toll as CardRules, fourDChessBase as CardRules, offDay as CardRules, jimmyWails as CardRules, sugarCoat as CardRules, hypeUp as CardRules, lastWord as CardRules, laughTrack as CardRules, graffiti as CardRules, lineCutter as CardRules, feelinGlam as CardRules, whodunnit as CardRules, blindStudy as CardRules, overreaction as CardRules];
+const listed: readonly CardRules[] = [stickAround as CardRules, whoops as CardRules, cardCollectorBase as CardRules, hallPass as CardRules, forceField as CardRules, publicityTour as CardRules, heatMagnet as CardRules, classClown as CardRules, goodVibes as CardRules, glitterBomb as CardRules, mainEvent as CardRules, feelinFab as CardRules, autocorrect as CardRules, youWereSaying as CardRules, belowTheFold as CardRules, mooch as CardRules, toll as CardRules, fourDChessBase as CardRules, offDay as CardRules, jimmyWails as CardRules, sugarCoat as CardRules, hypeUp as CardRules, lastWord as CardRules, laughTrack as CardRules, graffiti as CardRules, lineCutter as CardRules, feelinGlam as CardRules, whodunnit as CardRules, blindStudy as CardRules, overreaction as CardRules, happyHeart as CardRules, superHappyHeart as CardRules, ultraHappyHeart as CardRules, takeTheFall as CardRules, tattleTale as CardRules];
 
 /**
  * Card Collector, with the card a persona may name as an enum of the instance's cards cast on a post at or below its own rarity (the only

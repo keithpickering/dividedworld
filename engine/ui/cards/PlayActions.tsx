@@ -22,7 +22,7 @@ import { landingOn, waysOn } from './land.ts';
 import { playOf, reachesOf, type BeyondPost, type CardRules, type CardTarget, type Play } from '../../rules/cards.ts';
 import { useRest } from '../glass/prepared.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
-import { livePlays, usePlays, type Plays } from './plays.ts';
+import { livePlays, stackPlays, usePlays, type Plays } from './plays.ts';
 import type { Id } from '../data/api.ts';
 import { lowerFirst } from '../copy-words.ts';
 
@@ -156,7 +156,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
     ...(at.board ? { board: livePlays(onBoard.plays, api.now()).filter((p) => p.reach === 'board').map(effect) } : {}),
   };
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
-  if (!landingOn(rules, goal, livePlays(here.plays, api.now()), { cards: instance.cards, above }).ok) return null;
+  if (!landingOn(rules, goal, stackPlays(here.plays, api.now()), { cards: instance.cards, above }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
   const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, ...(at.pronouns ? { pronouns: at.pronouns } : {}), above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (

@@ -68,7 +68,7 @@ const settings: Settings = {
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
   pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, chatterCron: '37 17 * * *' },
-  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
+  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   conduct: { openReportsMost: 3, adminAddress: null },
@@ -1421,4 +1421,51 @@ test('a card that replies is a cast card that reaches a post alone, stack 1, and
   assert.match(bad({ keeps: true, reaches: ['character'] }), /card "splat" keeps, and only a cast card that reaches one thread or one character, with a time up, does/, 'a character with no time up');
   assert.match(bad({ keeps: true, reaches: ['thread'] }), /card "splat" keeps, and only a cast card that reaches one thread or one character, with a time up, does/, 'no time up');
   assert.match(bad({ keeps: true, reaches: ['thread'], lasts: day, play: 'use', gimmick: { kind: 'ward', flavors: ['salty'] } }), /card "splat" keeps, and only a cast card that reaches one thread or one character, with a time up, does/, 'a use card');
+});
+
+test('a discipline is one of four kinds on a cast card, held apart from the effects that write, reply, keep, skim, score, ride on a gimmick, draw, run a drive or need a message', () => {
+  const day = { unit: 'day', count: 1 };
+  const week = { unit: 'week', count: 1 };
+  const writes = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) };
+  const bad = (over: Record<string, unknown>) => instanceProblems(withCards({ rarity: 'rare', ...over })).join('\n');
+  const relief = { discipline: { kind: 'relief', points: 'lightestBand' }, reaches: ['character'] };
+  assert.equal(bad(relief), '', 'a well-formed relief: no time up asked, since it is over when it lands');
+  assert.equal(bad({ discipline: { kind: 'relief', points: 'all' }, reaches: ['character'] }), '');
+  assert.equal(bad({ discipline: { kind: 'unban' }, reaches: ['character'] }), '', 'a well-formed unban');
+  assert.equal(bad({ discipline: { kind: 'fall' }, reaches: ['post'] }), '', 'a well-formed fall');
+  assert.equal(bad({ discipline: { kind: 'fall' }, stack: 1 }), '', 'a fall reaches a post by default');
+  assert.equal(bad({ discipline: { kind: 'watch', weight: 2 }, reaches: ['character'], lasts: week }), '', 'a well-formed watch');
+  assert.match(bad({ discipline: 'relief', reaches: ['character'] }), /card "splat" has a discipline that is not an object with a kind/);
+  assert.match(bad({ discipline: { kind: 'smite' }, reaches: ['character'] }), /card "splat" has the discipline kind "smite"; a discipline is relief, unban, fall or watch/);
+  assert.match(bad({ ...relief, play: 'use', gimmick: { kind: 'ward', flavors: ['salty'] }, lasts: day }), /card "splat" has a discipline, and only a cast card does/);
+  assert.match(bad({ ...relief, play: 'set', trap: { trigger: { on: 'cast' } }, catches: () => 'a' }), /card "splat" has a discipline, and only a cast card does/);
+  assert.match(bad({ discipline: { kind: 'relief', points: 'some' }, reaches: ['character'] }), /card "splat" has a relief of "some"; relief takes the lightestBand or all/);
+  for (const d of [{ kind: 'relief', points: 'all' }, { kind: 'unban' }]) {
+    const name = d.kind; const an = name === 'unban' ? 'an unban' : 'a relief';
+    assert.match(bad({ discipline: d, reaches: ['post'] }), new RegExp(`card "splat" has ${an}, and ${an} reaches a character alone`));
+    assert.match(bad({ discipline: d, reaches: ['character', 'thread'], lasts: day }), new RegExp(`${an} reaches a character alone`));
+    assert.match(bad({ discipline: d }), new RegExp(`${an} reaches a character alone`), 'no reaches means a post');
+    assert.match(bad({ discipline: d, reaches: ['character'], lasts: day }), new RegExp(`card "splat" has ${an} and a time up; ${an} is over when it lands and has none`));
+    assert.match(bad({ discipline: d, reaches: ['character'], stack: 2 }), new RegExp(`card "splat" has ${an} and a stack; ${an} is over when it lands and has none`));
+    assert.match(bad({ discipline: d, reaches: ['character'], stack: 1 }), new RegExp(`has ${an} and a stack`), 'any stack, even 1');
+    assert.match(bad({ discipline: d, reaches: ['character'], pins: true }), new RegExp(`card "splat" has ${an} and pins`));
+  }
+  assert.doesNotMatch(bad(relief), /reaches beyond a post with no time up/, 'an instant card needs no time up');
+  assert.match(bad({ discipline: { kind: 'watch', weight: 2 }, reaches: ['character'] }), /reaches beyond a post with no time up/, 'a watch is not instant');
+  assert.match(bad({ discipline: { kind: 'fall' }, reaches: ['post', 'character'], lasts: day }), /card "splat" has a fall, and a fall reaches a post alone/);
+  assert.match(bad({ discipline: { kind: 'fall' }, reaches: ['thread'], lasts: day }), /a fall reaches a post alone/);
+  assert.match(bad({ discipline: { kind: 'fall' }, stack: 2 }), /card "splat" has a fall, and a fall has a stack of 1/);
+  assert.match(bad({ discipline: { kind: 'fall' }, lasts: day }), /card "splat" has a fall and a time up; a fall lasts until a filing spends it/);
+  assert.match(bad({ discipline: { kind: 'watch', weight: 2 }, reaches: ['post'], lasts: day }), /card "splat" has a watch, and a watch reaches a character alone/);
+  assert.match(bad({ discipline: { kind: 'watch', weight: 2 }, reaches: ['character'] }), /card "splat" has a watch with no time up \(lasts\); a watch ends at its time/);
+  for (const weight of [1, 0.5, 11, Infinity, NaN, '2', undefined]) {
+    assert.match(bad({ discipline: { kind: 'watch', weight }, reaches: ['character'], lasts: week }), /card "splat" has a watch of weight .*; weight is a number above 1 and at most 10/, String(weight));
+  }
+  assert.equal(bad({ discipline: { kind: 'watch', weight: 10 }, reaches: ['character'], lasts: week }), '', 'ten is the most');
+  const held: [string, Record<string, unknown>][] = [
+    ['writes', { writes }], ['replies', { replies: true }], ['keeps', { keeps: true, reaches: ['thread'], lasts: day }], ['a skim', { skim: { share: 0.1 }, lasts: week }],
+    ['scoresAs', { scoresAs: true }], ['a gimmick', { gimmick: { kind: 'earn', by: 1.2 } }], ['draws', { draws: ['a'] }], ['a message', { needsMessage: 'say why' }],
+    ['a drive', { drive: {} }], ['a surface', { surface: {} }],
+  ];
+  for (const [what, over] of held) assert.match(bad({ discipline: { kind: 'fall' }, ...over }), /card "splat" has a fall and (writes|replies|keeps|a skim|scoresAs|a gimmick|draws|needsMessage|a drive|a surface); a card with a discipline has no other effect/, what);
 });

@@ -29,7 +29,7 @@ declare
                            'post_under',
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
-                           'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
+                           'my_infractions', 'my_bans', 'my_falls_taken', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
                            -- The log of the cosmetics (0213): the caller's own characters' rows, drawn by a function no API role may call.
                            'my_cosmetic_log',
                            -- The search index (0117): one row per post or spin, readable as the Acts are; the table is no client's to write.
@@ -113,6 +113,8 @@ declare
                            'open_appeal(uuid,uuid,text)',
                            -- The screens' reads (0111): the report's judge, and the two functions the log's views call, each a public fact about any id (a view's functions run as its reader).
                            'beat_mod_name(uuid)', 'punishment_words(uuid)', 'infraction_relief(uuid)',
+                           -- What the discipline cards took off an infraction and when a ban ends (0361): the log's views and the bar call them (a view's functions run as its reader); public facts about any id.
+                           'card_relief(uuid)', 'ban_ends(uuid)', 'fall_spent(uuid)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
                            -- The search index's words (0117): the folded text an index of names and titles is written with, the stemming language and the words of a text, each reading nothing but a

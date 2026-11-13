@@ -7,6 +7,7 @@ import { describe, expect, test } from 'vitest';
 import { economyOf, landsOn, quadrantFree, type CardRules } from '../../rules/cards.ts';
 import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
+import { livePlays, stackPlays } from './plays.ts';
 import { effectsOf, landing, landingOn, lengthOf, targetOf, waysOn } from './land.ts';
 import type { CardPlay } from './types.ts';
 
@@ -36,6 +37,32 @@ describe('which posts a card lands on', () => {
   test('another card\'s plays do not count against it', () => {
     expect(landing(rules('whoops', 3), post('hi'), [play('stick-around', 1), play('stick-around', 2), play('stick-around', 3)]).ok).toBe(true);
     expect(landing(rules('stick-around'), post('hi'), [play('stick-around', 1)]).ok).toBe(false);
+  });
+});
+
+/* A fall a filing spent holds its place in the stack for good unless an admin ended it, as the server counts it (place_cast, 0361); the form is given `stackPlays`, never `livePlays`, which draws no spent fall. */
+describe('a post whose fall a filing spent', () => {
+  const fall = { ...rules('fall', 1), discipline: { kind: 'fall' as const }, reaches: ['post' as const], key: 'fall' };
+  const cards = [{ ...fall, name: 'Fall', rarity: 'uncommon' } as unknown as CardRules];
+  const spent: CardPlay = { ...play('fall', 1), spent: true };
+  const now = Date.parse('2026-10-30T00:00:00Z');
+
+  test('takes no second fall, and says why in the stack\'s words', () => {
+    expect(landing(cards[0]!, post('hi'), stackPlays([spent], now), { cards })).toEqual({ ok: false, why: 'this post already carries that card' });
+    /* The live plays leave it out, which is what draws it: not what counts it. */
+    expect(landing(cards[0]!, post('hi'), livePlays([spent], now), { cards }).ok).toBe(true);
+  });
+
+  test('an admin-ended fall or an instant play holds no place', () => {
+    expect(landing(cards[0]!, post('hi'), stackPlays([{ ...spent, reversed: true }], now), { cards }).ok).toBe(true);
+    expect(landing(cards[0]!, post('hi'), stackPlays([{ ...play('fall', 1), instant: true }], now), { cards }).ok).toBe(true);
+  });
+
+  /* waysOn is the one answer the post's mark and the play form read: given the post's plays raw, or already as the stack holds them, it says no second fall. */
+  test('waysOn offers no second fall, whether it is handed the raw plays or the stack', () => {
+    expect(waysOn(cards[0]!, post('hi'), [spent], { cards, own: false, now })).toEqual({ cast: false, set: false });
+    expect(waysOn(cards[0]!, post('hi'), stackPlays([spent], now), { cards, own: false, now })).toEqual({ cast: false, set: false });
+    expect(waysOn(cards[0]!, post('hi'), [{ ...spent, reversed: true }], { cards, own: false, now }).cast).toBe(true);
   });
 });
 

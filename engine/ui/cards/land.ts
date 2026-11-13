@@ -10,7 +10,7 @@ import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarg
 import type { Span } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
-import { livePlays } from './plays.ts';
+import { stackPlays } from './plays.ts';
 
 /** A post's length in characters, as its rules count it: of its current words (an edit counts), and nothing for a body that is not text. */
 export function lengthOf(post: Act): number {
@@ -58,7 +58,7 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
 
 /**
  * Which ways a card can land on a post: cast now, and set face down. The postbit's mark (GhostMark) and the play form's "How to play it"
- * pair both read this one answer, so they cannot disagree. It keeps only the live ones of the plays it is given, and filtering is idempotent, so a caller that
+ * pair both read this one answer, so they cannot disagree. It keeps only the plays that hold a place in the stack (`stackPlays`: the live ones and a fall a filing spent, as the server counts them), and filtering is idempotent, so a caller that
  * has already filtered (the play form) and one that has not (the mark) end with the same set. It is asked without the form's settings (landing's own lenient reading), so the answer
  * never changes as the player types.
  * A set is only ever the post author's own, so `own` says whether the reader's characters wrote the post. A Move is set face down only
@@ -66,7 +66,7 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
  * needed message aside, so decideSet would not refuse it here.
  */
 export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string }): { readonly cast: boolean; readonly set: boolean } {
-  const live = livePlays(plays, context.now);
+  const live = stackPlays(plays, context.now);
   const cast = landing(rules, post, live, context).ok;
   const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
   return { cast, set };

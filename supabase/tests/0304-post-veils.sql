@@ -1734,7 +1734,7 @@ begin
     raise exception 'pool_thread names the true author of a veiled post: %', read; end if;
   -- patrol_sample: a veiled post is not sampled (the stand-in is staff), and nothing names its author.
   perform tests.become_service();
-  sample := patrol_sample(array[bd], 20);
+  sample := patrol_sample(array[bd], 20, 100, 1);
   perform tests.unbecome();
   if sample::text like '%Vx Ann%' or exists (select 1 from jsonb_array_elements(sample) x where x ->> 'act' = veiled_before::text) then raise exception 'patrol_sample reaches a veiled post: %', sample; end if;
   if not exists (select 1 from jsonb_array_elements(sample) x where x ->> 'act' = before_post::text) then raise exception 'patrol_sample reads nothing of the thread, so the test proves nothing: %', sample; end if;

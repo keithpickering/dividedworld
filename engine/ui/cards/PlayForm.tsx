@@ -41,7 +41,7 @@ import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
 import { caughtWords } from './marks.ts';
 import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf, waysOn } from './land.ts';
 import type { CardPlay } from './types.ts';
-import { effectCards, livePlays, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
+import { effectCards, livePlays, PLAYS_PER_POST, readEffects, stackPlays, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
 import { conditionWords, countOf, fieldOfRefusal, noConditions, SetConditions, whenOf, type ConditionsDraft, type Field, type Problems } from './SetConditions.tsx';
 import './play.css';
@@ -140,8 +140,8 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const cardUi = ui.cards.find((c) => c.key === card);
   /* How the card is played (the card mechanic's design, section 1; the face-down Moves design, section 8). */
   const how = rules ? playOf(rules) : 'cast';
-  /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. */
-  const carried = livePlays(usePlays(target.plays, home).plays, api.now());
+  /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. The plays that hold a place in the stack, as the server counts it: a spent fall holds its place, though it draws no layer. */
+  const carried = stackPlays(usePlays(target.plays, home).plays, api.now());
   /*
    * The post is one of the player's own characters'. `waysOn` says which ways a cast card lands there, the same answer the post's mark
    * reads. It is asked without the card's settings, so the choice never comes or goes as the player types.
