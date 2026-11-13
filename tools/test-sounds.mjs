@@ -5,13 +5,15 @@
  *
  * The guard fails an instance's ui/sounds/ folder that holds an .mp3 with no manifest entry, an entry
  * with no file, an entry with a blank or missing source, license or maker, two entries for one file, a
- * file over 300 KB, or a file that is not an MP3 (docs/plans/2026-11-11-laugh-track-plan.md, Task 6).
+ * file over 300 KB, or a file that is not an MP3 (docs/plans/2026-11-11-laugh-track-plan.md, Task 6), and
+ * an entry whose lufs, peak or sha256 is missing, mistyped or not the file's (docs/plans/2026-11-12-laugh-track-band-plan.md, Task 2).
  * This reads no file in the repository: each case writes a repository-shaped scratch folder in
  * os.tmpdir() and runs the check's function over it, and once the command, whose exit code is what
  * the build reads.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,7 +36,18 @@ function check(name, condition, detail = '') {
 
 const ID3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(13)]);
 const SYNC = Buffer.concat([Buffer.from([0xff, 0xfb]), Buffer.alloc(14)]);
-const entry = (file, over = {}) => ({ file, source: 'https://example.org/' + file, license: 'CC0', maker: 'A Maker', ...over });
+const sha = (data) => crypto.createHash('sha256').update(data).digest('hex');
+/** A manifest entry whose measurement is true to `data`, the bytes the file holds (ID3 unless said). */
+const entry = (file, over = {}, data = ID3) => ({
+  file,
+  source: 'https://example.org/' + file,
+  license: 'CC0',
+  maker: 'A Maker',
+  lufs: -20.5,
+  peak: -3.2,
+  sha256: sha(data),
+  ...over,
+});
 
 /** A scratch repository with one instance whose sounds folder holds `files` and whose manifest is `manifest`. */
 function scratch(files, manifest) {
@@ -76,6 +89,12 @@ function green(name, root) {
   }
 }
 
+red('an entry with no lufs', scratch({ 'a.mp3': ID3 }, [(() => { const e = entry('a.mp3'); delete e.lufs; return e; })()]), /a\.mp3.*lufs is not a finite number/);
+red('an entry whose peak is a string', scratch({ 'a.mp3': ID3 }, [entry('a.mp3', { peak: '-3.2' })]), /a\.mp3.*peak is not a finite number/);
+red('an entry whose lufs is above 0', scratch({ 'a.mp3': ID3 }, [entry('a.mp3', { lufs: 0.5 })]), /a\.mp3.*lufs is above 0/);
+red('an entry whose lufs is not finite', scratch({ 'a.mp3': ID3 }, [entry('a.mp3', { lufs: null })]), /a\.mp3.*lufs is not a finite number/);
+red('an entry whose sha256 is another file\'s', scratch({ 'a.mp3': SYNC }, [entry('a.mp3')]), /a\.mp3.*sha256 is not the file's.*node tools\/measure-sounds\.mjs/);
+red('an entry with no sha256', scratch({ 'a.mp3': ID3 }, [(() => { const e = entry('a.mp3'); delete e.sha256; return e; })()]), /a\.mp3.*sha256 is missing.*node tools\/measure-sounds\.mjs/);
 red('an mp3 with no manifest entry', scratch({ 'a.mp3': ID3 }, []), /a\.mp3.*has no manifest entry/);
 red('an mp3 with no manifest at all', scratch({ 'a.mp3': ID3 }), /a\.mp3.*has no manifest entry/);
 red('an entry with no file', scratch({}, [entry('gone.mp3')]), /gone\.mp3.*names no file in the folder/);
@@ -105,10 +124,10 @@ red('an entry with no file name', scratch({}, [{ source: 's', license: 'l', make
   check('--root with no value: exits 1 with a usage line', run.status === 1 && /usage/i.test(run.stderr) && !/\n\s+at /.test(run.stderr), 'exit ' + run.status + ' ' + run.stderr.split('\n')[0]);
 }
 
-green('a file of exactly 300 KB', scratch({ 'a.mp3': Buffer.concat([ID3, Buffer.alloc(300 * 1024 - ID3.length)]) }, [entry('a.mp3')]));
+green('a file of exactly 300 KB', scratch({ 'a.mp3': Buffer.concat([ID3, Buffer.alloc(300 * 1024 - ID3.length)]) }, [entry('a.mp3', {}, Buffer.concat([ID3, Buffer.alloc(300 * 1024 - ID3.length)]))]));
 green('an empty manifest in an empty folder', scratch({}, []));
 green('a folder with one valid ID3 file', scratch({ 'a.mp3': ID3 }, [entry('a.mp3')]));
-green('a folder with one valid frame-sync file', scratch({ 'a.mp3': SYNC }, [entry('a.mp3')]));
+green('a folder with one valid frame-sync file', scratch({ 'a.mp3': SYNC }, [entry('a.mp3', {}, SYNC)]));
 green('a repository with no instance', fs.mkdtempSync(path.join(os.tmpdir(), 'sounds-')));
 
 console.log(`\n  sounds: ${pass} passed, ${failures.length} failed`);

@@ -65,6 +65,8 @@ export interface Refusal {
   readonly uncertain?: true;
   /** Set when nothing left the device, or the server never ran the write: sending again cannot duplicate. */
   readonly notSent?: true;
+  /** Set when the refusal is because the account is barred (a sign-in Auth refused as banned): the screen shows the bar's words, not this error. */
+  readonly barred?: true;
 }
 
 /** The words of a write that never left the device. */
@@ -374,6 +376,9 @@ export interface Donated {
   readonly balance: number;
 }
 
+/** The `field` of the refusal `reportPost` answers at the account's open-report limit (errcode 53400). */
+export const REPORT_LIMIT = 'limit';
+
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
   readonly id: Id;
@@ -394,6 +399,26 @@ export interface Act {
   /** Set only by an edit made after the grace period: what "Last edited" says. */
   readonly shownEditedAt: string | null;
   /**
+   * Whether the version this Act shows now (a post's current one, an edit's own) is hidden by an admin (`acts_public.hidden`, 0340): its words are
+   * then null in `payload` and `currentPayload`, and the screen draws the hidden note in their place. Absent reads as not hidden. A post's own row
+   * says whether its *current* version is hidden; to read whether one version in its History is, the version's `payload.body` is null.
+   */
+  readonly hidden?: boolean;
+  /** Whether any version of this post is hidden (`acts_public.any_hidden`, 0340): the predicate that empties a quote of it, so what a quote's hidden note stands on. Absent reads as no. */
+  readonly anyHidden?: boolean;
+  /**
+   * Whether this post's current version quotes a post an admin hid and has no concealed body yet (`acts_public.concealing`, 0340): its words are null in `payload` and `currentPayload`
+   * until the conceal job has written the layer that empties those quotes, a minute or so, and the screen says so plainly in their place. Absent reads as no.
+   */
+  readonly concealing?: boolean;
+  /**
+   * What the version this row's own `payload` is says, which History reads: a post's row is its original and an edit's row is the edit, and `hidden` and `concealing` above are about a post's
+   * *current* version (`acts_public.payload_hidden`, `payload_concealing`, 0340). `payloadHidden`: an admin hid this version. `payloadConcealing`: this version quotes a post an admin hid and
+   * its layer is not written yet. Neither is read from the words, which are null for both and for a body that is simply absent. Absent reads as no.
+   */
+  readonly payloadHidden?: boolean;
+  readonly payloadConcealing?: boolean;
+  /**
    * Set only on a card play whose first generation failed, which is then refunded and over (`acts_public.untaken`, 0149): public, the
    * same for every reader, and nothing of the refund rides with it. A play carrying it is not in force, as one with a `card_end` is not.
    */
@@ -405,6 +430,15 @@ export interface Act {
    */
   readonly endsAt?: string;
 }
+
+/**
+ * The author's own view of their hidden post (`my_hidden_version`, 0342): `hiddenUntilEdited` carries their own words, which only they can read, so they can edit them; `waiting`
+ * is an edit that follows a second hide until edited, which an admin looks at before it shows again; it carries the edit's words too, so Edit can start from them. Null for anyone else and for a version that is not hidden
+ * until edited.
+ */
+export type MyHiddenVersion =
+  | { readonly status: 'hiddenUntilEdited'; readonly version: Id; readonly words: string }
+  | { readonly status: 'waiting'; readonly version: Id; readonly words: string };
 
 /* ------------------------------------------------------------------------------ a visit (the Mod Bots design, sections 6 and 7) ---- */
 
@@ -991,6 +1025,19 @@ export interface MoveInForce {
   readonly bundleName: string | null;
 }
 
+/**
+ * What an admin did to a post of the player's own, under the code of conduct (`my_conduct_log`, 0340): the decision, its outcome, the version (an Act) and the post it was about,
+ * its thread and when. Never the admin, never the note (that is in the mail), never who reported, and never another player's.
+ */
+export interface ConductLogRow {
+  readonly decision: number;
+  readonly outcome: 'hide' | 'hideUntilEdited' | 'unhide' | 'approve';
+  readonly versionAct: Id;
+  readonly post: Id;
+  readonly thread: Id;
+  readonly at: string;
+}
+
 /** A move that ended, or was held or refused and never landed, in the last 30 days (admin_queue). */
 export interface MoveEnded {
   readonly how: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned' | 'held' | 'refused';
@@ -1076,10 +1123,24 @@ export interface AdminQueue {
 
 /* ---------------------------------------------------------- the player's own ---- */
 
+/** What a successful code or link comes to: whether an account is open and, if not, why; or that Auth refused the sign-in because the login is barred (suspended or banned): nothing is signed in, and the screen says so plainly. `until` is the end of a suspension, null for a ban, undefined when the end is not known. */
+export interface SignedIn {
+  readonly account: boolean;
+  readonly why?: string;
+  readonly barred?: { readonly until: string | null | undefined };
+}
+
 export interface Session {
   readonly signedIn: boolean;
   /** The account, once one is open; null while signed in with none (an invite is needed). */
   readonly account: Id | null;
+  /**
+   * The account's own bar (my_bar): null when it has none; `until` is the end of a suspension, null for a ban. Read for a signed-in account
+   * only, so signed out it is null. A screen treats a suspension whose `until` has passed as no bar, since the server ends it by itself.
+   */
+  readonly bar: { readonly until: string | null; /** Set for a bar read while signed out (Auth refused a refresh as banned): its end is not known, so `until` is not said. */ readonly unknown?: true } | null;
+  /** Whether the account has accepted the current code of conduct (conduct_accepted); true while signed out, where nothing is asked. */
+  readonly conductAccepted: boolean;
 }
 
 /** One of the player's own characters (my_characters): seen by its player alone. */
@@ -2242,6 +2303,72 @@ export interface UpdatesPage {
   readonly queue?: Awaited<ReturnType<KayfaApi['adminQueue']>>;
 }
 
+/** The outcomes an admin gives a report (`decide_report`, 0340): none and close end it with no word to the author, the others tell the author what happened. */
+export const REPORT_OUTCOMES = ['none', 'nudge', 'hide', 'hideUntilEdited', 'suspend', 'ban', 'close'] as const;
+export type ReportOutcomeKey = (typeof REPORT_OUTCOMES)[number];
+/** What `decide` takes besides a report's outcomes: bring a version back, lift a bar, approve an edit. */
+export type DecideOutcome = ReportOutcomeKey | 'unhide' | 'lift' | 'approve';
+/** One outcome of a decision: `until` (an ISO time) only for a suspension, `note` the words that go into the author's mail. */
+export interface ReportOutcome {
+  readonly outcome: ReportOutcomeKey;
+  readonly until?: string;
+  readonly note?: string;
+}
+/** An account's decision before this one, as the admin screen shows it. */
+export interface PastDecision {
+  readonly outcome: string;
+  readonly until: string | null;
+  readonly at: string;
+  readonly note: string;
+}
+/** An open report (`admin_reports`, 0342): the reported version's words, the section and note the reporter gave, and the author's account (null for a staff post) with its past decisions. The reporter is not shown. */
+export interface AdminReport {
+  readonly id: number;
+  readonly versionAct: Id;
+  readonly post: Id;
+  readonly thread: Id | null;
+  readonly section: string;
+  readonly note: string | null;
+  readonly at: string;
+  readonly author: Id | null;
+  readonly words: string;
+  readonly past: readonly PastDecision[];
+}
+/** A post hidden until its author edited it, edited since and not yet decided again: the admin's re-review list (`reviews_due`). */
+export interface AdminReview {
+  readonly decision: number;
+  readonly post: Id;
+  readonly versionAct: Id;
+  readonly thread: Id | null;
+  readonly editedAt: string;
+  readonly author: Id | null;
+  readonly words: string;
+}
+/** A mail whose latest attempt failed (it will be tried again) or was refused (it never will be). */
+export interface FailedMail {
+  readonly id: number;
+  readonly template: string;
+  readonly account: Id;
+  readonly kind: 'failed' | 'refused';
+  readonly error: string;
+  readonly at: string;
+}
+/** The reports screen's page (`admin_reports` and `admin_failed_mail`); null for a caller who is not an admin. */
+export interface ReportsPage {
+  /** At most 50, newest first; `moreReports` says more are open than these. */
+  readonly reports: readonly AdminReport[];
+  readonly moreReports: boolean;
+  /** At most 50, oldest first (the ones waiting longest); `moreReviews` says more wait. */
+  readonly reviews: readonly AdminReview[];
+  readonly moreReviews: boolean;
+  /** At most 200, newest first; `moreFailed` says more failed. */
+  readonly failed: readonly FailedMail[];
+  readonly moreFailed: boolean;
+  /** Mail waiting to go with no admin reply-to address set (Settings.conduct.adminAddress), which is why it waits; 0 once one is set. */
+  readonly waiting: number;
+  readonly addressSet: boolean;
+}
+
 /** The admin queue page (queue_page, 0121); null for a caller who is not an admin. */
 export interface QueuePage {
   readonly queue: Awaited<ReturnType<KayfaApi['adminQueue']>>;
@@ -2280,13 +2407,15 @@ export interface KayfaApi {
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
   onSession(listener: (s: Session) => void): () => void;
-  /** `next` is the path the player came from, which the emailed link carries back; the server drops one that is not a path on the site. */
-  requestCode(email: string, invite: string | null, next: string | null): Promise<Answer<{ readonly message: string; readonly invite?: string }>>;
-  verifyCode(email: string, code: string): Promise<Answer<{ readonly account: boolean; readonly why?: string }>>;
-  /** The link in the same email as the code: `tokenHash` is the `token_hash` the link carries, and a good one signs in exactly as the code does (the same `account`, the same `why`); a link that does not work is refused with field `link`. */
-  verifyLink(tokenHash: string): Promise<Answer<{ readonly account: boolean; readonly why?: string }>>;
+  /** `next` is the path the player came from, which the emailed link carries back; the server drops one that is not a path on the site. `conduct` is the version of the code of conduct the register form's box agreed to; it rides with the login and the account records it when it opens. */
+  requestCode(email: string, invite: string | null, next: string | null, conduct?: number | null): Promise<Answer<{ readonly message: string; readonly invite?: string }>>;
+  verifyCode(email: string, code: string): Promise<Answer<SignedIn>>;
+  /** The link in the same email as the code: `tokenHash` is the `token_hash` the link carries, and a good one signs in exactly as the code does (the same `account`, the same `why`, the same `barred`); a link that does not work is refused with field `link`. */
+  verifyLink(tokenHash: string): Promise<Answer<SignedIn>>;
   openAccount(invite: string | null): Promise<Answer<{ readonly opened: boolean }>>;
   signOut(): Promise<void>;
+  /** The signed-in account accepts the code of conduct at this version (accept_conduct). */
+  acceptConduct(version: number): Promise<Answer<Record<string, never>>>;
   /** The address the session signed in with, the player's own, for Settings › Account; null signed out. */
   signInAddress(): Promise<string | null>;
   isAdmin(): Promise<boolean>;
@@ -2535,6 +2664,15 @@ export interface KayfaApi {
   fileAppeal(through: Id, punishment: Id, plea: string): Promise<Answer<AppealResult>>;
   /** How many reports this character may still make today (UTC). Shown only to the player of that character; null where it could not be read. */
   reportsLeft(character: Id): Promise<number | null>;
+  /**
+   * Reports a version (a post, or one of its edits) to admins (`report_post`): the account's own report, never a character's. Refused in the server's words; the refusal for the
+   * open-report limit has `field: REPORT_LIMIT`, and the form then asks `myOpenReports` for the account's own count. `note` is at most 1000 characters.
+   */
+  reportPost(version: Id, section: string, note: string): Promise<Answer<null>>;
+  /** How many reports to admins the signed-in account holds open and the most it may (`my_open_reports`): the caller's own count, shown only to them; null where it could not be read. */
+  myOpenReports(): Promise<{ readonly open: number; readonly most: number } | null>;
+  /** The author's own words of a post hidden until they edit it, or where it waits for an admin (`my_hidden_version`); null for anyone else's post or a post that is not so hidden. */
+  myHiddenVersion(post: Id): Promise<MyHiddenVersion | null>;
   /** The public name of the Mod on a board's beat, who judges its reports, and the board's name; null where no Mod is on staff. */
   beatMod(board: Id): Promise<{ readonly mod: string; readonly pronouns: PronounSet; readonly board: string } | null>;
   /** The ban now running on one of the player's characters (`my_bans`), for the appeal to the Boss; null where it is not banned. */
@@ -2549,8 +2687,16 @@ export interface KayfaApi {
   updatesPage(update: Id | null, before: string | null, handoverSeason: number | null): Promise<UpdatesPage>;
   /** The admin queue page in one read; null for a caller who is not an admin. */
   queuePage(): Promise<QueuePage | null>;
+  /** The reports screen in one read; null for a caller who is not an admin. */
+  reportsPage(): Promise<ReportsPage | null>;
+  /** An admin decides an open report with one to six outcomes (`decide_report`); each tells the author what it says, the reporter is told the same whatever was decided. */
+  decideReport(report: number, outcomes: readonly ReportOutcome[]): Promise<Answer<{ readonly decisions: readonly number[] }>>;
+  /** An admin acts with no report (`decide`): approve or unhide a version, hide it again, or act on an account. */
+  decide(on: { readonly account?: Id; readonly version?: Id }, outcome: DecideOutcome, until?: string, note?: string): Promise<Answer<null>>;
   /** The log in one read, the rows at or before `before`. */
   logPage(before: string | null): Promise<LogPage>;
+  /** What admins did to the player's own posts, newest first (`my_conduct_log`): the log says each in plain words. Empty where signed out. */
+  conductLog(): Promise<readonly ConductLogRow[]>;
   /** A character's profile page in one read; null where the character is not shown. */
   profilePage(character: Id): Promise<ProfilePage | null>;
   /** A page of a character's record in one read; null where the character is not shown. */

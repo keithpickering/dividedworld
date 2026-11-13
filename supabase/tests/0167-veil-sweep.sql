@@ -74,6 +74,7 @@ select 'relation', n, m, w from (values
   ('card_kinds', 'no author', 'the instance''s catalog'),
   ('card_ledger', 'no author', 'the caller''s own ledger (row security)'),
   ('my_draws', 'swept', 'the caller''s own drawings and the washes that cut them: the washer of a drawing on a veiled post is its author, so the row shows the stand-in for it (shown_author)'),
+  ('reviews_due', 'no author', 'an admin''s list of edits awaiting a second look (0340_conduct): a decision, a post, a version, a time and a thread by id, and no character, name or account; empty for a player'),
   ('my_walls_drawn_on', 'no author', 'the walls on the caller''s own posts, read by their author: the post''s character is the caller''s own, and the rows name who drew or washed, public Acts'),
   ('surfaces', 'no author', 'a wall''s cover, the ids of its live Acts and its limit: no character'),
   ('character_post_counts', 'swept', 'a view over the stored counts (character_post_counts_base, granted to no one) that counts a veiled post, and the cards its author made on it (never a post or a spin of the author''s own that targets it, which acts_public leaves with them), for the stand-in and not for its author while the veil is live: A''s count equals what the profile can list, the stand-in''s includes P, and A''s is whole again at the end'),
@@ -155,6 +156,23 @@ select 'relation', n, m, w from (values
 insert into listed (kind, name, mark, why)
 select 'function', n, m, w from (values
   ('admin_contact', 'no author', 'one setting, the same for every caller'),
+  ('accept_conduct', 'no author', 'a write: the caller''s own acceptance of the code of conduct'),
+  ('admin_failed_mail', 'no author', 'an admin''s read of the mail that failed: the account it was for and the template, never a post or a character; refused to a player'),
+  ('admin_reports', 'swept', 'an admin''s open reports and edits awaiting a look: real moderation speaks plainly and names the author''s ACCOUNT (never the character, its name or the stand-in) beside the words, as admin_queue names its true author by design; it is probed as an admin against a reported veiled post, and refused to a player'),
+  ('admin_version', 'no author', 'an admin''s read of one version''s words: text, no character'),
+  ('back_closed', 'no author', 'whether a face-down play has sprung or been taken back: a boolean'),
+  ('conceal_layer', 'no author', 'whether a version''s quote layer is made, and its words (null for a hidden version): no character; the concealment keys on the Act, never on who asks'),
+  ('conduct_accepted', 'no author', 'whether the caller''s own account has accepted the current code'),
+  ('decide', 'no author', 'an admin''s write: answers the decision id it wrote'),
+  ('decide_report', 'no author', 'an admin''s write: answers the decision ids it wrote'),
+  ('my_bar', 'no author', 'the caller''s own account''s suspension or ban'),
+  ('my_conduct_log', 'no author', 'the caller''s own decisions on the caller''s own posts, by id: no character'),
+  ('my_hidden_version', 'swept', 'a hidden post''s words and state, to its own player alone (the answer takes as long for anyone and is null for another player); probed as a third player against a veiled post'),
+  ('my_open_reports', 'no author', 'how many reports the caller''s own account has open'),
+  ('quote_hidden', 'no author', 'whether any version of a post is hidden: a boolean'),
+  ('report_post', 'no author', 'a write: answers the report id it wrote, whoever owns the post (it reads no character)'),
+  ('shown_payload', 'no author', 'a pure function of its arguments'),
+  ('version_hidden', 'no author', 'whether a version is hidden: a boolean'),
   ('admin_machine', 'no author', 'an admin''s screen of the machine'),
   ('admin_queue', 'no author', 'an admin''s queue: real moderation speaks plainly and admins see the true author by design (decided in planning); refused to a player'),
   ('alerts_page', 'swept', 'the caller''s alerts and the Acts they lead to'),
@@ -435,13 +453,16 @@ begin
   wash := (wash_surface(ann, a, wall, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}', (repeat('1', 100) || repeat('0', 9900))::bit(10000)) ->> 'id')::uuid;
   perform tests.unbecome();
 
+  -- A report on P by R (real moderation: the filer's account and the version, never a character): an admin reads it with the author's account, and no probe below may find the character in it.
+  perform tests.become(ray); perform report_post(p, 'mask', 'Whose words are these?'); perform tests.unbecome();
+
   perform set_config('sweep.wall', wall::text, true);
   perform set_config('sweep.a', a::text, true); perform set_config('sweep.stand', stand::text, true); perform set_config('sweep.t', t::text, true);
   perform set_config('sweep.p', p::text, true); perform set_config('sweep.used', used::text, true); perform set_config('sweep.general', general::text, true);
 
   -- The probes, as R reads them. kind: `id` leaks if A's id or name is in the answer; `absent` if any veiled Act's id is; `absent_row` if one is a row of the answer (an object with that id); `present` if the stand-in's answer lacks P; `standname` if the stand-in is named.
   -- fires: whether the detector can go red on the unveiled fixture. pending: still leaks after the cast, and is another task's to close.
-  create temp table probes (name text primary key, kind text not null, stmt text not null, fires boolean not null default true, pending boolean not null default false);
+  create temp table probes (name text primary key, kind text not null, stmt text not null, fires boolean not null default true, pending boolean not null default false, as_admin boolean not null default false);
   insert into probes (name, kind, stmt, fires, pending) values
     ('thread_page', 'id', 'select thread_page(current_setting(''sweep.t'')::uuid, 1, null, null, null)::text', true, false),
     ('acts_public by id', 'id', 'select coalesce(jsonb_agg(to_jsonb(x)), ''[]'')::text from acts_public x where x.id = current_setting(''sweep.p'')::uuid', true, false),
@@ -476,7 +497,11 @@ begin
     ('search_walk', 'id', 'select coalesce(jsonb_agg(to_jsonb(w)), ''[]'')::text from search_walk(''pie'', null, null, null, null, false, true, null, null, 20, 100) w', true, false),
     ('search_thread_matches', 'id', 'select search_thread_matches(current_setting(''sweep.t'')::uuid, websearch_to_tsquery(''english'', ''pie''), current_setting(''sweep.a'')::uuid, null, null, false)::text', false, false),
     ('post_search', 'id', 'select coalesce(jsonb_agg(to_jsonb(x)), ''[]'')::text from (select act, thread, board, first, created_at, words from post_search) x', false, false),
-    ('search_suggest', 'id', 'select search_suggest(''Sw sweep'', array[''threads''], null, true, 10)::text', false, false);
+    ('search_suggest', 'id', 'select search_suggest(''Sw sweep'', array[''threads''], null, true, 10)::text', false, false),
+    ('my_hidden_version', 'id', 'select my_hidden_version(current_setting(''sweep.p'')::uuid)::text', false, false);
+  -- The conduct work's admin read, as an admin (a player is refused it, below): the open report on P names the author's account and the words, and no character.
+  insert into probes (name, kind, stmt, fires, pending, as_admin) values
+    ('admin_reports', 'id', 'select admin_reports()::text', false, false, true);
 
   -- Whether a probe's answer holds what it looks for.
   create function pg_temp.leaks(kind text, res text) returns boolean language plpgsql as $f$
@@ -514,7 +539,7 @@ begin
 
   -- ---- 1. The detector's poison: before the cast, every probe that can fire does, as R ----
   for probe in select * from probes order by name loop
-    res := pg_temp.read_as(ray, probe.stmt);
+    res := pg_temp.read_as(case when probe.as_admin then adm else ray end, probe.stmt);
     if res like 'refused %' then raise exception 'probe % was refused: %', probe.name, res; end if;
     leaks := pg_temp.leaks(probe.kind, res);
     if probe.fires and not leaks then missed := missed || (probe.name || ' answered ' || left(res, 160)); end if;
@@ -532,7 +557,7 @@ begin
   -- ---- 2. After the cast, as R, no probe leaks (the pending ones still do, until Task 3) ----
   found := '{}';
   for probe in select * from probes order by name loop
-    res := pg_temp.read_as(ray, probe.stmt);
+    res := pg_temp.read_as(case when probe.as_admin then adm else ray end, probe.stmt);
     if res like 'refused %' then raise exception 'probe % was refused: %', probe.name, res; end if;
     leaks := pg_temp.leaks(probe.kind, res);
     if leaks and not probe.pending then found := found || (probe.name || ' => ' || left(res, 300)); end if;
@@ -563,13 +588,18 @@ begin
   if (select x.character from acts_public x where x.id = qa) is distinct from a or qa = any (veiled) then raise exception 'the author''s own quote of the veiled post is veiled with it'; end if;
 
   -- The author's own player reads the same: the projection is one for everybody (their own fact comes from my_veiled_posts alone).
-  for probe in select * from probes where not pending and kind in ('id', 'present') and name not in ('profile_page(stand-in)', 'record_page(stand-in)', 'alerts_page', 'log_page', 'my_followed_threads', 'my_cards_ended') order by name loop
+  for probe in select * from probes where not pending and not as_admin and kind in ('id', 'present') and name not in ('profile_page(stand-in)', 'record_page(stand-in)', 'alerts_page', 'log_page', 'my_followed_threads', 'my_cards_ended') order by name loop
     res := pg_temp.read_as(ann, probe.stmt);
     -- The author's name may appear only where the page lists the caller's own masks: boot's `characters` and `faces` (every character the account owns, veiled post or not). Nowhere else, thread_page included: its `veiled`
     -- rows carry the author's own character by id, from my_veiled_posts, and no name.
     if probe.kind = 'id' and (case when probe.name = 'boot' then (res::jsonb - 'characters' - 'faces')::text else res end) like '%Sw Ann%' then raise exception 'the author reads their own name in % after the cast: %', probe.name, left(res, 300); end if;
     if probe.kind = 'present' and pg_temp.leaks('present', res) then raise exception 'the author does not read the stand-in''s answer in %', probe.name; end if;
   end loop;
+
+  -- An admin's read is refused to a player, whoever they are.
+  res := pg_temp.read_as(ray, 'select admin_reports()::text');
+  if res not like 'refused %' then raise exception 'a player read the admin''s reports: %', left(res, 200); end if;
+  if pg_temp.read_as(adm, 'select admin_reports()::text') not like '%Whose words are these?%' then raise exception 'the admin''s reports do not hold the report on the veiled post, so its probe proves nothing'; end if;
 
   -- Every name the list marks `swept` has a probe, by the name its probe carries (a function by its name, a read of a thread or a page by the read).
   if exists (select 1 from listed l where l.mark = 'swept' and l.name not in ('acts_public', 'thread_open', 'thread_list', 'my_cards_ended', 'my_followed_threads')

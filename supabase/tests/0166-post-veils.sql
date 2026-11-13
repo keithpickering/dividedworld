@@ -421,11 +421,11 @@ begin
   if (author_veiled(p) is not true) or author_veiled(reply) is not false or author_veiled(quoted) is not false then raise exception 'author_veiled says %, %, %', author_veiled(p), author_veiled(reply), author_veiled(quoted); end if;
   if shown_author(p, a) is distinct from stand or shown_author(reply, a) is distinct from a then raise exception 'shown_author is wrong'; end if;
 
-  -- acts_public is acts_base with the stand-in in place of the true character on the veiled rows and nothing else: every other column is the same on every row.
-  if exists (select id, kind, thread, target_act_id, seq, created_at, payload, current_payload, edited_at, shown_edited_at, untaken, ends_at from acts_base where thread = t
-            except select id, kind, thread, target_act_id, seq, created_at, payload, current_payload, edited_at, shown_edited_at, untaken, ends_at from acts_public where thread = t)
-     or exists (select id, kind, thread, target_act_id, seq, created_at, payload, current_payload, edited_at, shown_edited_at, untaken, ends_at from acts_public where thread = t
-            except select id, kind, thread, target_act_id, seq, created_at, payload, current_payload, edited_at, shown_edited_at, untaken, ends_at from acts_base where thread = t) then
+  -- acts_public is acts_base (main's acts_public, 0340_conduct: concealment and all, the true character) with the stand-in in place of the true character on the veiled rows and nothing else: every other column, the concealment's five included, is the same on every row.
+  if exists (select id, kind, thread, target_act_id, seq, created_at, payload, current_payload, edited_at, shown_edited_at, untaken, ends_at, hidden, any_hidden, concealing, payload_hidden, payload_concealing from acts_base where thread = t
+            except select id, kind, thread, target_act_id, seq, created_at, payload, current_payload, edited_at, shown_edited_at, untaken, ends_at, hidden, any_hidden, concealing, payload_hidden, payload_concealing from acts_public where thread = t)
+     or exists (select id, kind, thread, target_act_id, seq, created_at, payload, current_payload, edited_at, shown_edited_at, untaken, ends_at, hidden, any_hidden, concealing, payload_hidden, payload_concealing from acts_public where thread = t
+            except select id, kind, thread, target_act_id, seq, created_at, payload, current_payload, edited_at, shown_edited_at, untaken, ends_at, hidden, any_hidden, concealing, payload_hidden, payload_concealing from acts_base where thread = t) then
     raise exception 'acts_public differs from acts_base in a column other than character';
   end if;
   if (select count(*) from acts_base b join acts_public x on x.id = b.id where b.thread = t and x.character is distinct from b.character) is distinct from 4 then raise exception 'the veiled rows are not the four whose character differs'; end if;
@@ -825,8 +825,11 @@ begin
   got := pg_temp.coded('select * from acts limit 1');
   if got is null or got not like '42501%' then raise exception 'select * read acts.character: %', coalesce(got, 'no refusal'); end if;
   -- The other columns are as readable as ever.
-  got := pg_temp.coded('select id, kind, thread, target_act_id, seq, created_at, payload from acts limit 1');
+  got := pg_temp.coded('select id, kind, thread, target_act_id, seq, created_at from acts limit 1');
   if got is not null then raise exception 'a column other than character was refused: %', got; end if;
+  -- `payload` is not granted either, and stays so (0340_conduct took it: the words are read through acts_public, which empties a hidden version's); this migration does not give it back.
+  got := pg_temp.coded('select payload from acts limit 1');
+  if got is null or got not like '42501%' then raise exception 'a signed-in player read acts.payload: %', coalesce(got, 'no refusal'); end if;
   perform tests.unbecome();
 
   -- The caster's log of an ended play still lists the caster's own, and names the post's author as the read shows it.
@@ -933,18 +936,20 @@ begin
   -- their ids and a page by thread and seq are each a few probes and never the author's or the thread's rows. (A union that is read whole when it is ordered or joined passes the plans above and fails here.)
   touched := pg_temp.buffers_of(format('select * from acts_public where character = %L and kind in (''post'', ''spin'', ''card'') order by created_at desc limit 5', a));
   raise notice 'a profile''s newest five touch % buffers', touched;
-  if touched > 120 then raise exception 'a profile''s newest five touch % buffers with 3,000 posts by the author', touched; end if;
+  -- Main's concealment (0340_conduct) is in every read of acts_public: per row, the probes of conduct_decisions and quote_refs that acts_base pays too (127 buffers for this same read of acts_base, 429 for the twenty by id below and
+  -- 380 for the page by thread and seq, measured in this file's state). The bounds are those plus what the veil adds (the second select's probes of the live veils, six of them up here), and stay an order of magnitude under a read of the rows.
+  if touched > 200 then raise exception 'a profile''s newest five touch % buffers with 3,000 posts by the author', touched; end if;
   touched := pg_temp.buffers_of(format('select * from acts_public where character = %L and kind in (''post'', ''spin'', ''card'') order by created_at desc limit 5', stand));
   raise notice 'the stand-in''s newest five touch % buffers', touched;
   -- 200 is the margin over the 132 the full suite has measured, for the heap's state; the guard is the shape (the plan checks above: no sequential scan of acts, the veils' index probed) and this bound's order of
   -- magnitude: a read of the union whole, or of the author's 3,000 posts to find the stand-in's, pins a buffer per row, in the thousands.
-  if touched > 200 then raise exception 'the stand-in''s newest five touch % buffers', touched; end if;
+  if touched > 300 then raise exception 'the stand-in''s newest five touch % buffers', touched; end if;
   touched := pg_temp.buffers_of(format('select to_jsonb(x) from (select id from acts where thread = %L and seq between 100 and 119) r join acts_public x on x.id = r.id', t));
   raise notice 'twenty Acts joined by id touch % buffers', touched;
-  if touched > 800 then raise exception 'twenty Acts joined to acts_public by id touch % buffers', touched; end if;
+  if touched > 1000 then raise exception 'twenty Acts joined to acts_public by id touch % buffers', touched; end if;
   touched := pg_temp.buffers_of(format('select * from acts_public where thread = %L and seq between 100 and 119 and kind not in (''edit'', ''card'')', t));
   raise notice 'a page by thread and seq touches % buffers', touched;
-  if touched > 300 then raise exception 'a page by thread and seq touches % buffers', touched; end if;
+  if touched > 600 then raise exception 'a page by thread and seq touches % buffers', touched; end if;
   set local enable_seqscan = off;
   -- The veils the second branch walks are the live ones, by their index, never a scan of acts.
   plan := pg_temp.plan_of('select * from acts_public where false or id = ''00000000-0000-0000-0000-000000000000''');
@@ -1201,4 +1206,55 @@ begin
   if (select posts from character_post_counts where character = z) is distinct from 2 or group_now(z) is distinct from 'vgHigh' or (select cp."group" from characters_public cp where cp.id = z) is distinct from 'vgHigh' then
     raise exception 'after the veil the count and the group are not back together: % and %', (select posts from character_post_counts where character = z), group_now(z);
   end if;
+end $$;
+
+-- ---- 14. Main's concealment (0340_conduct) and the veil compose: a veiled post an admin hides, and one that quotes a hidden post ----
+-- acts_public is concealment over a union that changes `character` alone (0400, section 4), so for every row the concealment is acts_base's, and nothing the concealment answers names the author: a hidden veiled post is hidden under
+-- the stand-in, its edit's words are withheld as any edit's are, and a veiled post that quotes a hidden one is served as its layer, never its words, as any quoter is.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('vk-ann'); bob uuid := tests.account('vk-bob'); adm uuid := tests.account('vk-admin'); rdr uuid := tests.account('vk-rdr');
+  a uuid := tests.character(ann, 'Vk Ann'); b uuid := tests.character(bob, 'Vk Bob'); r uuid := tests.character(rdr, 'Vk Rdr');
+  t uuid := tests.thread('Vk conduct');
+  stand uuid := pg_temp.stand();
+  p uuid := tests.post(a, t, 'A veiled post an admin hides, zebrafish.'); e uuid; hid uuid := tests.post(r, t, 'Hidden words, quokka.');
+  q uuid := tests.post(a, t, format('[quote=%s]Hidden words, quokka.[/quote] and mine, a veiled quoter.', hid));
+  veil uuid; got record; n integer;
+begin
+  perform pg_temp.cards();
+  insert into admins (account) values (adm);
+  perform pg_temp.hand(bob, 'vlauthor', 'vlauthor');
+  perform tests.become_service();
+  veil := (play_card(bob, 'vlauthor', b, p, '{}', 0, '') ->> 'id')::uuid;
+  perform play_card(bob, 'vlauthor', b, q, '{}', 0, '');
+  perform tests.unbecome();
+  perform tests.become(adm);
+  perform decide(null, p, 'hide', null, 'a veiled post');
+  perform decide(null, hid, 'hide', null, 'the quoted one');
+  perform tests.unbecome();
+  e := tests.act(a, 'edit', t, jsonb_build_object('body', 'The veiled post, reworded, zebrafish.'), p, now() + interval '1 hour');
+  perform tests.become(rdr);
+  -- The hidden veiled post: the stand-in, hidden, no words; its edit shows the stand-in too and its words are the hidden post's (the post is hidden outright, so its edit is withheld until an admin approves).
+  select x.character, x.hidden, x.payload_hidden, x.current_payload ->> 'body' as cur, x.payload::text as raw into got from acts_public x where x.id = p;
+  if got.character is distinct from stand or got.hidden is not true or got.payload_hidden is not true or got.cur is not null or got.raw like '%zebrafish%' then
+    raise exception 'a hidden veiled post is not hidden under the stand-in: %', got; end if;
+  select x.character, x.hidden, x.payload_hidden, x.payload::text as raw into got from acts_public x where x.id = e;
+  if got.character is distinct from stand or got.hidden is not true or got.payload_hidden is not true or got.raw like '%zebrafish%' then
+    raise exception 'the edit of a hidden veiled post is not hidden under the stand-in: %', got; end if;
+  -- The veiled quoter of a hidden post: the stand-in, and the words are the layer's or nothing (concealing), never the hidden words.
+  select x.character, x.current_payload::text as cur, x.concealing, x.payload_concealing into got from acts_public x where x.id = q;
+  if got.character is distinct from stand or got.cur like '%quokka%' then raise exception 'a veiled quoter of a hidden post: %', got; end if;
+  perform tests.unbecome();
+  -- Every row, with the concealment's own columns, is acts_base's but for the character, and the character differs on the veiled rows alone: the post, its edit and the quoter, and no other Act of the thread.
+  if exists (select id, kind, thread, target_act_id, seq, created_at, payload, current_payload, edited_at, shown_edited_at, untaken, ends_at, hidden, any_hidden, concealing, payload_hidden, payload_concealing from acts_base where thread = t
+             except select id, kind, thread, target_act_id, seq, created_at, payload, current_payload, edited_at, shown_edited_at, untaken, ends_at, hidden, any_hidden, concealing, payload_hidden, payload_concealing from acts_public where thread = t) then
+    raise exception 'acts_public differs from acts_base in a column other than character with a hidden veiled post'; end if;
+  select count(*) into n from acts_base b join acts_public x on x.id = b.id where b.thread = t and x.character is distinct from b.character;
+  -- The stand-in has no group, a staff one included: it is no Mod Bot and holds no rung, so no read draws a bar or a Group row for it (the profile page's and the postbit's character carry null).
+  perform tests.become(rdr);
+  if group_now(stand) is not null or (select cp."group" from characters_public cp where cp.id = stand) is not null or (profile_page(stand) -> 'character' ->> 'group') is not null then
+    raise exception 'the stand-in has a group: %, %', group_now(stand), (profile_page(stand) -> 'character' ->> 'group'); end if;
+  perform tests.unbecome();
+  if n is distinct from 3 then raise exception 'the rows whose character differs are % and should be the three: the post, its edit and the quoter (the veil cards are Bob''s, whose character no veil changes)', n; end if;
 end $$;

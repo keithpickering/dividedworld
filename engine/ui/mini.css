@@ -29,6 +29,8 @@
   display: inline-flex;
   align-items: center;
   min-height: 1.5rem;
+  /* The unit's baseline is the name's, not the avatar's (docs/plans/2026-11-12-list-rows-design.md, section 2.3): a row's cells stand on the title's baseline, and the name is the first line's text. The avatar stays centered on the unit. */
+  align-self: baseline;
 }
 
 .kb-who > .kb-mini {

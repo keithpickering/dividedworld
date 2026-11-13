@@ -11,16 +11,16 @@
 --                          says 'anonymous'; stand_in() is its id. The staff lists that would take it for a Mod Bot's persona (the presence box, the pool's signals, the digest's `staff` flag) leave it out.
 --     3. post_veils        the table (insert-only, by its own append-only pair, read by no API role), post_veils_live (a veil is live while its time has not passed and no admin has ended its play), author_veiled,
 --                          author_veil_ends and shown_author.
---     4. acts_public       five selects over `acts` in one appendrel (the rows that are not veiled as they are, then the veiled rows each with the stand-in as `character`), with an ungranted view `acts_base` that is
+--     4. acts_public       two selects over `acts` in one appendrel (the rows that are not veiled as they are, then the veiled rows each with the stand-in as `character`), under main's concealment, with an ungranted view `acts_base` that is
 --                          today's acts_public (the true character) to compare it with. No select asks who is reading: the projection is the same for every reader. `acts.character` is no longer granted to
---                          `authenticated` (every other column is), so no read goes around the view; the readers the revoke broke are moved below.
+--                          `authenticated` (and `payload`, as 0340_conduct left it; every other column is granted), so no read goes around the view; the readers the revoke broke are moved below.
 --     5. landing           land_refusal (what a card's landing refuses on a post, read for every back a quote meets, whatever the card) and land_rows (what a landed post play writes beside its Act), called by place_cast
 --                          for a cast and by lay_sprung for a Move landing on a quote. spring_facts reads land_refusal, spring_traps lands a Move only when it has nothing to say. TASK 5 EXTENDS THESE TWO in a later
 --                          migration (the reaction card's configuration and its row); the places are marked `Task 5` below.
 --     5b. the counts       character_post_counts is a view that counts a veiled post (and its author's cards on it, nothing else of kind post or spin) for the stand-in and not for its author while the veil is live, for every reader; the stored
 --                          table is character_post_counts_base, written by the trigger as before and read by no API role. group_now (the groups' posts rung, display only) reads the same figure (character_counts_shown), so a group and a count agree;
 --                          profile_page, record_page and my_characters_page are made again over the view.
---     6. the reads         thread_open, my_cards_ended (now the caller's own rows, as my_reactions is), play_moment, card_target_reach, start_visit, open_report, thread_page (`veiled`),
+--     6. the reads         thread_open, my_cards_ended (now the caller's own rows, as my_reactions is), play_moment, group_now (the stand-in has no group), card_target_reach, start_visit, open_report, thread_page (`veiled`),
 --                          my_veiled_posts (the author's own rows), my_group_moves (a security-invoker view that read `acts.character`, which the revoke broke), presence_listed, pool_named, pool_signals,
 --                          my_draws (0317; the washer of a drawing on a veiled post, who is its author, shown as the stand-in) and system_digest (the staff lists that would take the stand-in for a persona).
 --
@@ -613,119 +613,117 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 
 -- ===================================================================================== 4. acts_public ====
--- acts_base is acts_public as 0156_back_ends wrote it, the true character: no API role reads it. acts_public is then five selects over `acts`, its columns, names and order as they were (so a function whose
--- `begin atomic` body holds it is not written again for it):
+-- acts_public is two layers, each the other's own rules and neither reading who is asking:
+--   * CONCEALMENT, main's (0340_conduct, which the conduct work made acts_public say): for every row, a hidden version's body is null, a body that quotes a hidden post is served as its layer (or null with `concealing` until the layer
+--     exists), and `hidden`, `any_hidden`, `concealing`, `payload_hidden` and `payload_concealing` say so. It keys on the Act's own id alone (the admin decisions on its post, conduct_decisions; the quote layer of its words), never on the
+--     reader: version_hidden, quote_hidden, conceal_layer and shown_payload take an Act or a payload and answer the same for every caller. A bar on an account (suspend, ban) changes no row of this view.
+--   * THE VEIL, this plan's: the `character` column. Where an author veil is live, the stand-in instead of the true character (below).
+-- acts_base is acts_public as 0340_conduct wrote it: concealment as it does it, the true character, one select, and no API role reads it. It is what the veil's tests compare acts_public against, column for column, row for row (every
+-- column but `character` is acts_base's on every row). acts_public is then the concealment over a union of two selects over `acts` that carry the `character` alone (and the booleans `g` and `ok` that say which select a row
+-- belongs to):
 --   1. every row that is not veiled: no live author veil is on the row itself, and the row is not one of the Acts the veil derives (below).
---   2. 3. 4. the veiled rows, each with the stand-in as `character`: the post itself (by its key), and the Acts its author made on it (a target in the live veils' posts, and that post's author behind it), any but an edit and
---      an edit apart so that each has the index of its own (acts_target, acts_edits).
+--   2. the veiled rows, each with the stand-in as `character`: the post itself (by its key), and the Acts its author made on it (a target in the live veils' posts, and that post's author behind it), any but an edit and an edit
+--      apart (so that each arm has the index of its own: acts_target is partial, without edits, and acts_edits holds them), and the draws and washes by that author on a wall (0317) on that post. A wash is the post's own
+--      character's alone, so it names the author wherever it is read (surface_acts, a broadcast, my_draws' cut rows); a draw is any character's, and the author's own is hidden with the rest of what the author made on the post.
+--      The wall's play is the Act the draw targets and its target the post: found through the cards on the live veils' posts (an index read of acts_target), so a read pays for it only while an author veil is up.
 -- WHAT A VEIL ON A POST COVERS. The post itself, and what its author did to it that is no content of its own: an edit, a set, a take-back, a use card, its spring (the derived Acts, which every read of an Act agrees on). It never
 -- covers an Act of kind `post` or `spin` that targets the post (the author's own quote of it, a spin from it): those are posts and threads of their own, listed as such by thread_open's first and last poster, indexed by
 -- post_search and counted by character_post_counts as posts and spins, and each of those reads probes the veil on the Act itself alone. They are the author's own replies elsewhere in kind (who quoted what is the game's
 -- clue, and anyone may quote the post, so a quote proves nothing), and are veiled by a veil cast on them directly and by nothing else. So an Act is in exactly one of the selects, whatever veils a post and its quotes hold: the
--- post's own (a veil on `a.id`, which only a post can carry) and the derived (`kind` not a post or a spin) never meet, and the checks are `exists`, so two veils on one post do not repeat it.
---   5. the veiled rows of a wall (0317): a draw or a wash on a surface play that is on a veiled post, by the post's own author. A wash is the post's own character's alone, so it names the author wherever it is read (surface_acts, a
---      broadcast, my_draws' cut rows); a draw is any character's, and the author's own is hidden with the rest of what the author made on the post. The play is the Act the draw targets, and its target the post: found through the
---      cards on the live veils' posts (an index read of acts_target), so a read pays for it only while an author veil is up.
--- Nothing here asks who is reading: the projection is the same for every reader, so an Act broadcast from act_projection in the author's own session carries the stand-in too. The stand-in is read by a subquery and not
--- by stand_in(): the functions a view calls are run as its reader.
+-- first select's `ok` is the second's negated, and the checks are `exists`, so two veils on one post do not repeat it.
+-- A veiled post's concealment is the post's own: its row, its edits and the rest of what is derived from it are concealed (or not) as the same Act is in acts_base, because the concealment is computed from the row's true id, whichever
+-- select the row came out of; the stand-in is only ever the `character`, in a hidden version as in a shown one. Nothing here asks who is reading: the projection is the same for every reader, so an Act broadcast from act_projection in
+-- the author's own session carries the stand-in too. The stand-in is read by a subquery and not by stand_in(): the functions a view calls are run as its reader.
 --
--- THE SHAPE IS THE POINT. Each select reads `acts` alone, with no WHERE and no join: the edit it shows is a scalar subquery, and what makes a row its select's is a boolean (`ok`, and for the veiled three `g`, whether any
--- author veil is live) the one WHERE outside the union asks. Postgres reads a union of selects that are each one table with no WHERE as one appendrel: the outer WHERE is carried into each select as a qual, a join that
--- asks acts_public for an id is an index probe into each, and an ordered read with a limit is a merge of each select's own index order. A select with a WHERE of its own is read whole when it is joined or ordered, and
--- an earlier version of this view (two selects, the veiled ones driven from the veils outward) turned a profile's newest five Acts into every Act of that character and a page's reads into scans of the thread, as
--- supabase/tests/0166-post-veils.sql (section 8) and 0075-play-moments.sql hold. So read: a veiled select asks `g` (an uncorrelated EXISTS, one probe at the start of the read, so it costs nothing while no author veil is
--- live) and then whether the Act is one of the veiled (`id = any (array of the live veils' posts)`, an index condition on acts_pkey); the unveiled select asks `ok` of each row it reads, which is a probe of a hashed list of the
--- live veils, built once. A read pays nothing per row beyond that probe, and a read that wants no edit pays for none; what the view does cost is planning (it names `acts` in each select and in each edit's subquery, so a
--- statement that reads it opens more of acts' indexes to plan than it did), which supabase/tests/0075-play-moments.sql and 0065-alerts-read.sql count.
+-- THE SHAPE IS THE POINT. Each select reads `acts` alone, with no WHERE and no join, and carries no more than the columns it needs: what makes a row its select's is a boolean (`ok`, and for the veiled select `g`, whether any
+-- author veil is live) the one WHERE outside the union asks. Postgres reads a union of selects that are each one table with no WHERE as one appendrel: the outer WHERE is carried into each select as a qual, a join that asks
+-- acts_public for an id is an index probe into each, and an ordered read with a limit is a merge of each select's own index order. The concealment is main's own lateral joins, once, over the union (as main reads them over
+-- `acts`): they are joins to the appendrel, not inside a select, so the appendrel is still one. A select with a WHERE of its own, or a join inside it, is read whole when it is joined or ordered, and an earlier version of this view
+-- (two selects, the veiled ones driven from the veils outward) turned a profile's newest five Acts into every Act of that character and a page's reads into scans of the thread, as supabase/tests/0166-post-veils.sql (section 8) and
+-- 0075-play-moments.sql hold. A later one (five selects, one for each kind of veiled row) read right and planned wrong once the concealment was over it: each probe by id is one index scan a select, five where main's has one, and
+-- a join of a page's ids to acts_public (log_page's walk, in supabase/tests/0166-surface-log.sql) was costed past a hash join of the whole union, which pays the concealment's probes for every Act of the instance in every pass of the
+-- walk. The veiled rows are one select, the kinds of veiled row its arms. What the view does cost is planning (it names `acts` in each select and in each edit's subquery, so a statement that reads it opens more of acts'
+-- indexes to plan than it did), which supabase/tests/0075-play-moments.sql and 0065-alerts-read.sql count.
 create view acts_base as
   select a.id, a.character, a.kind, a.thread, a.target_act_id, a.seq, a.created_at,
-         a.payload,
-         coalesce(e.payload, a.payload) as current_payload,
+         shown_payload(a.payload, h.own, co.refs, co.ready, co.body) as payload,
+         shown_payload(coalesce(e.payload, a.payload), h.cur, coalesce(cc.refs, co.refs), coalesce(cc.ready, co.ready), coalesce(cc.body, co.body)) as current_payload,
          e.created_at as edited_at,
          case when e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')
            then e.created_at end as shown_edited_at,
          case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
-         case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at
+         case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
+         h.cur as hidden,
+         a.kind = 'post' and quote_hidden(a.id) as any_hidden,
+         not h.cur and coalesce(cc.refs, co.refs) and not coalesce(cc.ready, co.ready) as concealing,
+         h.own as payload_hidden,
+         not h.own and co.refs and not co.ready as payload_concealing
   from acts a
   left join lateral (
-    select x.payload, x.created_at from acts x
+    select x.id, x.payload, x.created_at from acts x
     where x.kind = 'edit' and x.target_act_id = a.id
     order by x.created_at desc, x.id desc limit 1
-  ) e on a.kind = 'post';
+  ) e on a.kind = 'post'
+  cross join lateral (
+    select o.own, case when e.id is null then o.own else version_hidden(e.id, a.id) end as cur
+    from (select a.kind in ('post', 'edit') and version_hidden(a.id, case when a.kind = 'edit' then a.target_act_id else a.id end) as own) o
+  ) h
+  cross join lateral conceal_layer(a.id) co
+  left join lateral conceal_layer(e.id) cc on e.id is not null;
 revoke all on acts_base from public, anon, authenticated, service_role;
 
 create or replace view acts_public as
-  select u.id, u.character, u.kind, u.thread, u.target_act_id, u.seq, u.created_at, u.payload, u.current_payload, u.edited_at, u.shown_edited_at, u.untaken, u.ends_at
+  select u.id, u."character", u.kind, u.thread, u.target_act_id, u.seq, u.created_at,
+         shown_payload(u.payload, h.own, co.refs, co.ready, co.body) as payload,
+         shown_payload(coalesce(e.payload, u.payload), h.cur, coalesce(cc.refs, co.refs), coalesce(cc.ready, co.ready), coalesce(cc.body, co.body)) as current_payload,
+         e.created_at as edited_at,
+         case when e.created_at > u.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')
+           then e.created_at end as shown_edited_at,
+         case when u.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = u.id) end as untaken,
+         case when u.kind = 'set' then (select f.ends_at from face_down f where f.play = u.id) end as ends_at,
+         h.cur as hidden,
+         u.kind = 'post' and quote_hidden(u.id) as any_hidden,
+         not h.cur and coalesce(cc.refs, co.refs) and not coalesce(cc.ready, co.ready) as concealing,
+         h.own as payload_hidden,
+         not h.own and co.refs and not co.ready as payload_concealing
   from (
     select a.id, a."character" as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
-           coalesce((select e.payload from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1), a.payload) as current_payload,
-           (select e.created_at from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1) as edited_at,
-           (select max(e.created_at) from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post'
-              and e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')) as shown_edited_at,
-           case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
-           case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
-           true as g,
-           not exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.id)
+           true as g, not exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.id)
              and not (a.kind not in ('post', 'spin') and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character))
              and not (a.kind in ('draw', 'wash') and a.target_act_id = any (array(select c.id from acts c where c.kind = 'card' and c.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author'))))
                       and exists (select 1 from acts c join post_veils_live v on v.veil = 'author' and v.post = c.target_act_id and v.author = a.character where c.id = a.target_act_id)) as ok
     from acts a
     union all
     select a.id, (select k.id from characters k where k.staff_kind = 'anonymous') as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
-           coalesce((select e.payload from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1), a.payload) as current_payload,
-           (select e.created_at from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1) as edited_at,
-           (select max(e.created_at) from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post'
-              and e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')) as shown_edited_at,
-           case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
-           case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
-           exists (select 1 from post_veils_live v where v.veil = 'author') as g,
-           a.id = any (array(select v.post from post_veils_live v where v.veil = 'author')) as ok
-    from acts a
-    union all
-    select a.id, (select k.id from characters k where k.staff_kind = 'anonymous') as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
-           coalesce((select e.payload from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1), a.payload) as current_payload,
-           (select e.created_at from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1) as edited_at,
-           (select max(e.created_at) from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post'
-              and e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')) as shown_edited_at,
-           case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
-           case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
-           exists (select 1 from post_veils_live v where v.veil = 'author') as g,
-           a.kind not in ('post', 'spin', 'edit') and a.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author')) and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character) as ok
-    from acts a
-    union all
-    select a.id, (select k.id from characters k where k.staff_kind = 'anonymous') as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
-           coalesce((select e.payload from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1), a.payload) as current_payload,
-           (select e.created_at from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1) as edited_at,
-           (select max(e.created_at) from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post'
-              and e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')) as shown_edited_at,
-           case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
-           case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
-           exists (select 1 from post_veils_live v where v.veil = 'author') as g,
-           a.kind = 'edit' and a.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author')) and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character) as ok
-    from acts a
-    union all
-    select a.id, (select k.id from characters k where k.staff_kind = 'anonymous') as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
-           coalesce((select e.payload from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1), a.payload) as current_payload,
-           (select e.created_at from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1) as edited_at,
-           (select max(e.created_at) from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post'
-              and e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')) as shown_edited_at,
-           case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
-           case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
-           exists (select 1 from post_veils_live v where v.veil = 'author') as g,
-           a.kind in ('draw', 'wash') and a.target_act_id = any (array(select c.id from acts c where c.kind = 'card' and c.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author'))))
-             and exists (select 1 from acts c join post_veils_live v on v.veil = 'author' and v.post = c.target_act_id and v.author = a.character where c.id = a.target_act_id) as ok
+           exists (select 1 from post_veils_live v where v.veil = 'author') as g, a.id = any (array(select v.post from post_veils_live v where v.veil = 'author'))
+             or (a.kind not in ('post', 'spin', 'edit') and a.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author')) and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character))
+             or (a.kind = 'edit' and a.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author')) and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character))
+             or (a.kind in ('draw', 'wash') and a.target_act_id = any (array(select c.id from acts c where c.kind = 'card' and c.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author'))))
+                 and exists (select 1 from acts c join post_veils_live v on v.veil = 'author' and v.post = c.target_act_id and v.author = a.character where c.id = a.target_act_id)) as ok
     from acts a
   ) u
+  left join lateral (
+    select x.id, x.payload, x.created_at from acts x
+    where x.kind = 'edit' and x.target_act_id = u.id
+    order by x.created_at desc, x.id desc limit 1
+  ) e on u.kind = 'post'
+  cross join lateral (
+    select o.own, case when e.id is null then o.own else version_hidden(e.id, u.id) end as cur
+    from (select u.kind in ('post', 'edit') and version_hidden(u.id, case when u.kind = 'edit' then u.target_act_id else u.id end) as own) o
+  ) h
+  cross join lateral conceal_layer(u.id) co
+  left join lateral conceal_layer(e.id) cc on e.id is not null
   where u.g and u.ok;
 
--- `acts` was granted to `authenticated` whole (0001, policy `read using (true)`), so its `character` could be read around any view. Every column but that one is granted now; the policy stays. A security-invoker reader of
+-- `acts` was granted to `authenticated` whole (0001, policy `read using (true)`), so its `character` could be read around any view; 0340_conduct took `payload` from that grant (the words are read through acts_public, which empties a hidden
+-- version's and the quotes of it). Every column but those two is granted now; the policy stays, and this migration does not hand `payload` back (the grant is the columns the table has less the two). A security-invoker reader of
 -- `acts.character` fails loudly (my_cards_ended was one, below); a column added to acts later is granted by the migration that adds it, as every public column is.
 revoke select on acts from authenticated;
 do $$
 declare cols text;
 begin
   select string_agg(quote_ident(a.attname), ', ' order by a.attnum) into cols
-  from pg_attribute a where a.attrelid = 'public.acts'::regclass and a.attnum > 0 and not a.attisdropped and a.attname <> 'character';
+  from pg_attribute a where a.attrelid = 'public.acts'::regclass and a.attnum > 0 and not a.attisdropped and a.attname not in ('character', 'payload');
   execute format('grant select (%s) on acts to authenticated', cols);
 end $$;
 
@@ -797,7 +795,8 @@ revoke execute on function land_refusal(card_kinds, uuid, jsonb), land_rows(uuid
 alter type spring_facts add attribute land_why text;
 alter type spring_facts add attribute kind_veil text;
 
--- spring_facts (0151_card_payouts), reading what the landing would refuse (`land_why`, from land_refusal) for every back whatever it holds, and the card's `kind_veil` from the row it already reads. Everything else as 0151 wrote it.
+-- spring_facts (0340_conduct), reading what the landing would refuse (`land_why`, from land_refusal) for every back whatever it holds, and the card's `kind_veil` from the row it already reads. Everything else as 0340 wrote it (its
+-- hidden-version reads: the Act's own words with every quote cut out, and a hidden version's body read as null).
 
 create or replace function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -809,6 +808,7 @@ declare
   in_thread integer;
   in_board integer;
   walked_plain text;
+  raw_body text;
   walked_excerpt text;
   ic card_kinds%rowtype;
   m jsonb;
@@ -828,7 +828,7 @@ begin
   f.reach := coalesce(k.reaches[1], 'post');
   -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
   -- or a visit by_act is not a post, or not yet written, and these find what they find.
-  select a.kind, a.character, a.thread, a.payload ->> 'body', t.board into f.by_kind, f.by_character, f.by_thread, f.by_body, f.by_board
+  select a.kind, a.character, a.thread, case when coalesce(version_hidden(a.id), false) then null else a.payload ->> 'body' end, t.board into f.by_kind, f.by_character, f.by_thread, raw_body, f.by_board
   from acts a left join threads t on t.id = a.thread where a.id = by_act;
   select a.id into f.first_post from acts a where a.thread = f.by_thread and a.seq = 1 and a.kind = 'post';
   select t.id into f.announce_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
@@ -874,7 +874,10 @@ begin
   f.caught := (fd.catches is not null and fd.catches = incoming_card and named is not null) or coalesce(matched, false);
   -- 7. ONE walk of the Act's words for every back: its own visible words, and the excerpt of the quotes of the back's post (null for a cast or a visit, whose by_act holds no words). A function in a FROM
   -- clause runs once however many columns are taken from it, and both are taken here, so the walk costs the same whatever the back holds.
-  select w.plain, w.excerpt into walked_plain, walked_excerpt from bbcode_walk(f.by_body, fd.post) w;
+  select w.plain, w.excerpt, w.unquoted into walked_plain, walked_excerpt, f.by_body from bbcode_walk(raw_body, fd.post) w;
+  -- A quote of a post an admin hid carries its words, so the Quotes condition does not read them (the Act's own words, with every quote cut out, are all `by_body` and Says read).
+  if coalesce(quote_hidden(fd.post), false) then walked_excerpt := ''; end if;
+  if raw_body is null then f.by_body := null; end if;
   -- 8. Both probes, for every back, whatever it holds: phrase_probe folds the text and compiles and runs a pattern of one shape (a back with no such condition has a pattern built around its own id, which
   -- cannot match), the Says over the Act's own words and the Quotes, on a token of its own, over the excerpt. And the Who check, against an empty list for Anyone.
   f.phrase_hit := coalesce(phrase_probe(walked_plain, fd.phrase, fd.play::text), false);
@@ -1408,7 +1411,7 @@ revoke execute on function lock_for_quote(uuid, uuid, uuid) from public, anon, a
 
 -- group_now (0138_group_reads), reading the count as the projection shows it (character_counts_shown, the figure character_post_counts is made of), so the group every read shows (characters_public."group", the thread page's
 -- people, the presence box) and the count a player reads agree at every moment: a character whose count sits exactly on a rung's threshold drops a rung while one of its posts is veiled and returns at the veil's end, the
--- same clue the profile's list already gives (a group that held while the count above it dropped would be a mismatch anyone could read, computed from the post's veil). A group is display only: it is read, never written (nothing
+-- same clue the profile's list already gives (a group that held while the count above it dropped would be a mismatch anyone could read, computed from the post's veil). The stand-in itself has none (null). A group is display only: it is read, never written (nothing
 -- stored moves with it; no Act, alert or ledger row is written for it; it pays or costs nothing and gates nothing), so following the count changes what is shown and nothing else. The posts rung is the one place the groups
 -- read a count. Everything else as 0138 wrote it.
 
@@ -1420,6 +1423,8 @@ declare
   holds boolean;
   open_group text;
 begin
+  -- The stand-in a veil shows is no scored character, holds no rung and is no Mod Bot: no group, so no screen draws a bar (the postbit's) or a Group row (the profile's) for it, and none can say it is staff.
+  if exists (select 1 from characters c where c.id = in_character and c.staff_kind = 'anonymous') then return null; end if;
   -- A group a move confers wins while the move is open (open_moves: the moves in force). Found by the character's own index (acts_group_moves, 0129) and joined to open_moves
   -- by its primary key, so the cost is the character's moves and not the instance's.
   select a.payload #>> '{params,group}' into open_group
@@ -1445,7 +1450,7 @@ begin
   return null;
 end $$;
 
--- profile_page, record_page and my_characters_page (each 0210_screen_cosmetics), written again whole and unchanged: each reads the counts in a `begin atomic` body, which holds the relation it was made over, so the three are made again to
+-- profile_page, record_page and my_characters_page (profile_page and record_page: 0340_conduct, which made 0210's text again so that `a.*` of acts_public holds `hidden` and the rest; my_characters_page: 0210_screen_cosmetics), written again whole and unchanged: each reads the counts in a `begin atomic` body, which holds the relation it was made over, so the three are made again to
 -- hold the view that now has the name.
 create or replace function profile_page(in_character uuid) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
@@ -1569,8 +1574,8 @@ end;
 -- ===================================================================================== 6. the reads ====
 -- Each is copied from its latest definition, named above it, changing only what is named there.
 
--- my_cards_ended (0092_card_end) was a security-invoker view reading `acts.character` as the caller, which the revoke above takes away. It is now the caller's own rows with owner rights, as my_reactions is: every branch starts
--- at the caller's own characters (`mine`, filtered by auth.uid()), so it reads what it read before; the post's author is named as the read shows it (what shown_author says, written out: a view's functions are run as its reader). Everything else as 0092 wrote it, columns in the
+-- my_cards_ended (0340_conduct) was a security-invoker view reading acts_public as the caller (0340 moved it there from `acts`, whose `payload` a player is no longer granted), and its `k.character = mine.id` is then the shown character, which a veil changes; so it is now the caller's own rows with owner rights over `acts` as 0092 wrote them. It is now the caller's own rows with owner rights, as my_reactions is: every branch starts
+-- at the caller's own characters (`mine`, filtered by auth.uid()), so it reads what it read before; the post's author is named as the read shows it (what shown_author says, written out: a view's functions are run as its reader). Everything else as 0092 wrote it (0340's only change was the source it read, which owner rights make unneeded), columns in the
 -- same order; the grant is the same.
 alter view my_cards_ended set (security_invoker = false);
 create or replace view my_cards_ended as
@@ -1661,7 +1666,8 @@ create or replace view thread_open as
   left join threads rt on rt.id = r.thread
   where t.id is distinct from (select (u.value #>> '{}')::uuid from settings u where u.key = 'updatesThread');
 
--- play_moment (0092_card_end), reading the post's author as acts_public shows it (shown_author), so a moment of a play on a post whose author is hidden carries nothing at its author's reach. Everything else as 0092 wrote it.
+-- play_moment (0340_conduct, which is 0092's with the version a play landed on shown as acts_public shows it: `public_payload`), reading the post's author as acts_public shows it (shown_author), so a moment of a play on a post whose author
+-- is hidden carries nothing at its author's reach. Everything else as 0340 wrote it.
 
 create or replace function play_moment(play uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -1699,7 +1705,7 @@ begin
          coalesce(span_interval(setting('reachLasts') -> 'board'), interval '1000 months') as board into bound;
   return jsonb_build_object(
     'version', act_projection(on_post.id) || jsonb_build_object(
-      'current_payload', v.payload,
+      'current_payload', public_payload(v.payload, version_hidden(v.id), v.id),
       'edited_at', case when v.kind = 'edit' then v.created_at end,
       'shown_edited_at', case when v.kind = 'edit' and v.created_at > on_post.created_at + grace then v.created_at end),
     -- The rows' order is for a stable answer only: a caught play and its spring share a transaction's time, so readers order the layers
@@ -1916,7 +1922,7 @@ end $$;
 revoke execute on function open_report(uuid, uuid, text) from public, anon;
 grant execute on function open_report(uuid, uuid, text) to authenticated, service_role;
 
--- thread_page (0317_surfaces), also answering `veiled`: the caller's own veiled posts among the page's (my_veiled_posts), beside `faces`. Everything else as 0317 wrote it.
+-- thread_page (0340_conduct, which made 0317's text again so that `a.*` of acts_public holds `hidden` and the rest), also answering `veiled`: the caller's own veiled posts among the page's (my_veiled_posts), beside `faces`. Everything else as 0340 wrote it.
 
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
@@ -2507,8 +2513,8 @@ create or replace view my_draws as
     and not exists (select 1 from characters x where x.id = u.washer and x.owner = auth.uid())
   group by u.wash, u.play, u.post, u.washer, c.id, u.at;
 
--- my_group_moves (0157_plain_log_read), a security-invoker view that read `ru.*` of the appeal's ruling and so asked for `acts.character`, which a signed-in player is no longer granted: it reads the two columns it shows.
--- Everything else as 0157 wrote it (the caller's own rows, security invoker).
+-- my_group_moves (0340_conduct, which is 0157's reading acts_public, since a signed-in player is granted no `acts.payload` there), a security-invoker view that read `ru.*` of the appeal's ruling and so asked for `acts.character`, which a signed-in
+-- player is no longer granted here either: it reads the two columns it shows, through acts_public. Everything else as 0340 wrote it (the caller's own rows, security invoker; none of these Acts is a post, so acts_public's concealment holds them as they were).
 
 create or replace view my_group_moves with (security_invoker = true) as
   select m.id as move, c.id as character, m.created_at as at, m.thread, m.seq, m.payload #>> '{params,group}' as "group",
@@ -2523,10 +2529,10 @@ create or replace view my_group_moves with (security_invoker = true) as
          case when jsonb_typeof(r.payload -> 'until') = 'string' then (r.payload ->> 'until')::timestamptz end as ruled_until,
          nullif(r.payload ->> 'office', '') as ruled_office
   from characters c
-  join acts m on m.kind = 'move' and m.payload ->> 'kind' = 'conferGroup' and m.payload #>> '{params,character}' = c.id::text
-  left join acts e on e.kind = 'move_end' and e.target_act_id = m.id
+  join acts_public m on m.kind = 'move' and m.payload ->> 'kind' = 'conferGroup' and m.payload #>> '{params,character}' = c.id::text
+  left join acts_public e on e.kind = 'move_end' and e.target_act_id = m.id
   left join lateral (
-    select ru.payload, ru.created_at from acts ap join acts ru on ru.kind = 'appeal_ruling' and ru.target_act_id = ap.id
+    select ru.payload, ru.created_at from acts_public ap join acts_public ru on ru.kind = 'appeal_ruling' and ru.target_act_id = ap.id
     where ap.kind = 'appeal' and ap.target_act_id = m.id order by ru.created_at desc, ru.id desc limit 1
   ) r on true
   where c.owner = auth.uid();

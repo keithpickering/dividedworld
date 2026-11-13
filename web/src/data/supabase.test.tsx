@@ -163,6 +163,54 @@ describe('what the adapter may request', () => {
     await expect(refused.api.here({ kind: 'index' }, B)).rejects.toThrow('you do not play that character');
   });
 
+  it('reads a version\'s hidden flag from acts_public, absent when it is not hidden', async () => {
+    const row = { id: B, character: A, kind: 'post', thread: T, target_act_id: null, seq: 1, created_at: '2026-11-01T00:00:00+00:00', payload: { body: null }, current_payload: { body: null }, edited_at: null, shown_edited_at: null };
+    const h = harness((r) => (r.url.pathname === `${REST}/acts_public` ? rows([{ ...row, hidden: true, any_hidden: true }, { ...row, id: A, payload: { body: 'Shown.' }, current_payload: { body: 'Shown.' } }]) : undefined));
+    const versions = await h.api.history(B);
+    expect(versions.map((a) => a.hidden)).toEqual([true, undefined]);
+    expect(versions.map((a) => a.anyHidden)).toEqual([true, undefined]);
+  });
+
+  it('reads what a version\'s own words are from payload_hidden and payload_concealing, not from its body', async () => {
+    const row = { id: B, character: A, kind: 'post', thread: T, target_act_id: null, seq: 1, created_at: '2026-11-01T00:00:00+00:00', payload: { body: null }, current_payload: { body: 'Shown.' }, edited_at: null, shown_edited_at: null };
+    const h = harness((r) => (r.url.pathname === `${REST}/acts_public` ? rows([{ ...row, payload_concealing: true }, { ...row, id: A, payload_hidden: true }, { ...row, id: T }]) : undefined));
+    const versions = await h.api.history(B);
+    expect(versions.map((a) => a.payloadConcealing)).toEqual([true, undefined, undefined]);
+    expect(versions.map((a) => a.payloadHidden)).toEqual([undefined, true, undefined]);
+  });
+
+  it('reports a version to admins through report_post, the note empty as null, and refuses in the server\'s words', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/report_post')
+      ? (r.body as { section?: string }).section === 'hate' ? json({ code: '53400', message: 'you have 3 reports open, the most an account can; an admin will close one', hint: 'kayfabb.refusal' }, 400) : json(7)
+      : json({}, 404)));
+    expect(await h.api.reportPost(B, 'person', '   ')).toEqual({ ok: true, value: null });
+    expect(h.to('rpc/report_post')[0]?.body).toEqual({ version_act: B, section: 'person', note: null });
+    expect(await h.api.reportPost(B, 'person', 'a note')).toEqual({ ok: true, value: null });
+    expect(h.to('rpc/report_post')[1]?.body).toEqual({ version_act: B, section: 'person', note: 'a note' });
+    expect(await h.api.reportPost(B, 'hate', '')).toEqual({ ok: false, error: 'you have 3 reports open, the most an account can; an admin will close one', field: 'limit' });
+    expect(await h.api.reportPost('not-an-id', 'person', '')).toEqual({ ok: false, error: 'that post could not be found' });
+  });
+
+  it('counts the account\'s own open reports, null where it could not be read', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/my_open_reports') ? json({ open: 3, most: 3 }) : json({}, 404)));
+    expect(await h.api.myOpenReports()).toEqual({ open: 3, most: 3 });
+    const down = harness(() => json({}, 500));
+    expect(await down.api.myOpenReports()).toBeNull();
+  });
+
+  it('reads the author\'s own hidden words and its waiting state, nothing for anything else', async () => {
+    let answer: unknown = { status: 'hiddenUntilEdited', version: B, words: 'My words.' };
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/my_hidden_version') ? json(answer) : json({}, 404)));
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'hiddenUntilEdited', version: B, words: 'My words.' });
+    expect(h.to('rpc/my_hidden_version')[0]?.body).toEqual({ act: B });
+    answer = { status: 'waiting', version: A, words: 'My edit.' };
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'waiting', version: A, words: 'My edit.' });
+    answer = null;
+    expect(await h.api.myHiddenVersion(B)).toBeNull();
+    answer = { status: 'something', version: A };
+    expect(await h.api.myHiddenVersion(B)).toBeNull();
+  });
+
   it('hides a mask from presence through set_presence_hidden, and answers whether it is hidden', async () => {
     const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_presence_hidden') ? json({ character: B, hidden: true }) : json({}, 404)));
     expect(await h.api.setPresenceHidden(B, true)).toEqual({ ok: true, value: true });
@@ -1266,17 +1314,28 @@ describe('signing in goes through the account function', () => {
       }
       if (r.url.pathname === '/auth/v1/user') return json(SESSION.user);
       if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
       return undefined;
     });
-    expect(await h.api.requestCode(' a@b.c ', 'inv', '/board/general?page=2')).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
+    expect(await h.api.requestCode(' a@b.c ', 'inv', '/board/general?page=2', 4)).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
     expect(await h.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: true } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/account').map((r) => r.body)).toEqual([
-      { action: 'requestCode', email: ' a@b.c ', invite: 'inv', next: '/board/general?page=2' },
+      { action: 'requestCode', email: ' a@b.c ', invite: 'inv', next: '/board/general?page=2', conduct: 4 },
       { action: 'verifyCode', email: 'a@b.c', code: '123456' },
     ]);
-    expect(await h.api.session()).toEqual({ signedIn: true, account: A });
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: true });
     expect(h.to('rpc/whoami')[0]?.headers.get('authorization')).toBe(`Bearer ${JWT}`);
     expect(h.log.some((r) => /\/auth\/v1\/(otp|verify|recover|signup|magiclink)/.test(r.url.pathname))).toBe(false);
+  });
+
+  it('answers a sign-in Auth refused as barred with the barred answer, signed out, never "try again"', async () => {
+    const barred = harness(() => json({ error: 'this account is locked, so it cannot sign in; reach an admin through Contact to appeal', hint: 'kayfabb.barred' }, 403));
+    expect(await barred.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: false, barred: { until: undefined } } });
+  });
+
+  it('answers a link Auth refused as barred with the barred answer too, signed out, never the link\'s own refusal', async () => {
+    const barred = harness(() => json({ error: 'this account is locked, so it cannot sign in; reach an admin through Contact to appeal', hint: 'kayfabb.barred' }, 403));
+    expect(await barred.api.verifyLink('pkce_0123456789abcdef-hash')).toEqual({ ok: true, value: { account: false, barred: { until: undefined } } });
   });
 
   it('passes a wrong code through with its field and says why an account stayed closed', async () => {
@@ -1292,11 +1351,12 @@ describe('signing in goes through the account function', () => {
       if (r.url.pathname === '/functions/v1/account') return json({ session: SESSION, account: true });
       if (r.url.pathname === '/auth/v1/user') return json(SESSION.user);
       if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
       return undefined;
     });
     expect(await h.api.verifyLink(hash)).toEqual({ ok: true, value: { account: true } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/account').map((r) => r.body)).toEqual([{ action: 'verifyLink', tokenHash: hash }]);
-    expect(await h.api.session()).toEqual({ signedIn: true, account: A });
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: true });
     expect(h.log.some((r) => /\/auth\/v1\/(otp|verify|recover|signup|magiclink)/.test(r.url.pathname))).toBe(false);
     const closed = harness((r) => (r.url.pathname === '/auth/v1/user' ? json(SESSION.user) : json({ session: SESSION, account: false, why: 'registration is closed; when an admin opens it again, your next sign-in opens your account' })));
     expect(await closed.api.verifyLink(hash)).toEqual({ ok: true, value: { account: false, why: 'registration is closed; when an admin opens it again, your next sign-in opens your account' } });
@@ -1307,16 +1367,16 @@ describe('signing in goes through the account function', () => {
     const sentence = 'that link does not work, or it has expired: ask for a new code';
     const wrong = harness(() => json({ field: 'link', error: sentence }, 400));
     expect(await wrong.api.verifyLink(hash)).toEqual({ ok: false, error: sentence, field: 'link' });
-    expect(await wrong.api.session()).toEqual({ signedIn: false, account: null });
+    expect(await wrong.api.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
     const bare = harness(() => json({ account: true }));
     const answer = await bare.api.verifyLink(hash);
     expect(answer.ok).toBe(false);
-    expect(await bare.api.session()).toEqual({ signedIn: false, account: null });
+    expect(await bare.api.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
   });
 
   it('is signed out with no account call when there is no session', async () => {
     const h = harness(() => undefined);
-    expect(await h.api.session()).toEqual({ signedIn: false, account: null });
+    expect(await h.api.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
     expect(h.log).toEqual([]);
   });
 
@@ -1449,14 +1509,14 @@ describe('the estimate across sessions', () => {
     w.become('A', 'TOKEN_REFRESHED');
     w.become('A', 'SIGNED_IN');
     await w.tick();
-    expect(w.whoami).toHaveBeenCalledTimes(1);
+    expect(w.whoami.mock.calls.filter((c) => (c as unknown[])[0] === 'whoami')).toHaveLength(1);
     expect(heard).toHaveBeenCalledTimes(1);
     w.become('B');
     await w.tick();
-    expect(w.whoami).toHaveBeenCalledTimes(2);
+    expect(w.whoami.mock.calls.filter((c) => (c as unknown[])[0] === 'whoami')).toHaveLength(2);
     w.become(null, 'SIGNED_OUT');
     await w.tick();
-    expect(heard).toHaveBeenLastCalledWith({ signedIn: false, account: null });
+    expect(heard).toHaveBeenLastCalledWith({ signedIn: false, account: null, bar: null, conductAccepted: true });
   });
 });
 
@@ -2357,6 +2417,57 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(await refused.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: false, error: 'that nomination has already landed; reverse it instead' });
   });
 
+  it('reads the reports screen from admin_reports and admin_failed_mail, sends a decision as decide_report and an approval as decide, and gives a player no page', async () => {
+    const A = '00000000-0000-4000-8000-00000000000a';
+    const B = '00000000-0000-4000-8000-00000000000b';
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/is_admin')) return json(true);
+      if (r.url.pathname.endsWith('/rpc/admin_reports')) {
+        return json({
+          reports: [{ id: 3, versionAct: A, post: A, thread: B, section: 'hate', note: null, at: '2026-11-01T10:00:00+00:00', author: B, words: 'Words.', past: [{ outcome: 'nudge', until: null, at: '2026-10-30T10:00:00+00:00', note: 'Easy.' }] }],
+          reviews: [{ decision: 9, post: A, versionAct: B, thread: B, editedAt: '2026-11-02T10:00:00+00:00', author: null, words: 'Better.' }],
+        });
+      }
+      if (r.url.pathname.endsWith('/rpc/admin_failed_mail')) return json({ failed: [{ id: 5, template: 'nudge', account: B, kind: 'refused', error: 'no mailbox', at: '2026-11-02T11:00:00+00:00' }], waiting: 2, addressSet: false });
+      if (r.url.pathname.endsWith('/rpc/decide_report')) return json([11, 12]);
+      if (r.url.pathname.endsWith('/rpc/decide')) return json(13);
+      return json({}, 404);
+    });
+    const page = await h.api.reportsPage();
+    expect(page?.reports[0]).toEqual({ id: 3, versionAct: A, post: A, thread: B, section: 'hate', note: null, at: '2026-11-01T10:00:00+00:00', author: B, words: 'Words.', past: [{ outcome: 'nudge', until: null, at: '2026-10-30T10:00:00+00:00', note: 'Easy.' }] });
+    expect(page?.reviews[0]).toMatchObject({ decision: 9, versionAct: B, author: null, words: 'Better.' });
+    expect(page?.failed).toEqual([{ id: 5, template: 'nudge', account: B, kind: 'refused', error: 'no mailbox', at: '2026-11-02T11:00:00+00:00' }]);
+    expect([page?.waiting, page?.addressSet]).toEqual([2, false]);
+    expect(await h.api.decideReport(3, [{ outcome: 'suspend', until: '2026-12-01T12:00:00.000Z', note: 'A week.' }])).toEqual({ ok: true, value: { decisions: [11, 12] } });
+    expect(h.to('rpc/decide_report')[0]?.body).toEqual({ report: 3, outcomes: [{ outcome: 'suspend', until: '2026-12-01T12:00:00.000Z', note: 'A week.' }] });
+    expect(await h.api.decide({ version: B }, 'approve')).toEqual({ ok: true, value: null });
+    expect(h.to('rpc/decide')[0]?.body).toEqual({ account: null, version_act: B, outcome: 'approve', until: null, note: '' });
+    const player = harness((r) => (r.url.pathname.endsWith('/rpc/is_admin') ? json(false) : json({}, 404)));
+    expect(await player.api.reportsPage()).toBeNull();
+    expect(player.to('rpc/admin_reports')).toHaveLength(0);
+  });
+
+  it('reads the page\'s cut flags, coerces a mail kind it does not know to failed, and passes decide_report\'s and decide\'s refusals through in the server\'s words', async () => {
+    const B = '00000000-0000-4000-8000-00000000000b';
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/is_admin')) return json(true);
+      if (r.url.pathname.endsWith('/rpc/admin_reports')) return json({ reports: [], moreReports: true, reviews: [], moreReviews: true });
+      if (r.url.pathname.endsWith('/rpc/admin_failed_mail')) {
+        return json({ failed: [{ id: 5, template: 'nudge', account: B, kind: 'bounced', error: 'x', at: '2026-11-02T11:00:00+00:00' }, { id: 6, template: 'nudge', account: B, kind: 'refused', error: 'y', at: '2026-11-02T11:00:00+00:00' }], moreFailed: true, waiting: 0, addressSet: true });
+      }
+      if (r.url.pathname.endsWith('/rpc/decide_report')) return json({ code: '23514', message: 'that report is already decided; use decide to act further', hint: 'kayfabb.refusal' }, 400);
+      if (r.url.pathname.endsWith('/rpc/decide')) return json({ code: '42501', message: 'only an admin decides', hint: 'kayfabb.refusal' }, 403);
+      return json({}, 404);
+    });
+    const page = await h.api.reportsPage();
+    expect([page?.moreReports, page?.moreReviews, page?.moreFailed]).toEqual([true, true, true]);
+    expect(page?.failed.map((m) => m.kind)).toEqual(['failed', 'refused']);
+    expect(await h.api.decideReport(3, [{ outcome: 'none' }])).toEqual({ ok: false, error: 'that report is already decided; use decide to act further' });
+    expect(await h.api.decide({ version: B }, 'approve')).toEqual({ ok: false, error: 'only an admin decides' });
+    const plain = harness((r) => (r.url.pathname.endsWith('/rpc/is_admin') ? json(true) : r.url.pathname.endsWith('/rpc/admin_reports') ? json({ reports: [], reviews: [] }) : json({ failed: [], waiting: 0, addressSet: true })));
+    expect(await plain.api.reportsPage()).toMatchObject({ moreReports: false, moreReviews: false, moreFailed: false });
+  });
+
   it('passes an admin function\'s refusal through in the server\'s words, and throws a plain error when the queue cannot be read', async () => {
     const refused = harness(() => json({ code: '42501', message: 'only an admin holds a move', hint: 'kayfabb.refusal' }, 403));
     expect(await refused.api.holdMove(4)).toEqual({ ok: false, error: 'only an admin holds a move' });
@@ -3064,5 +3175,161 @@ describe('reports, appeals and what a page says of a ban', () => {
     const log = await h.api.movesLog('clerk');
     expect(log.rows[0]).toMatchObject({ kind: 'visit', outcome: 'filed', params: { post: 41 } });
     expect(log.rows[1]?.outcome).toBeUndefined();
+  });
+});
+
+describe('a refresh Auth refuses as banned (a barred player whose stored session is stale)', () => {
+  const EXPIRED = `${B64({ alg: 'HS256', typ: 'JWT' })}.${B64({ sub: 'u-1', aud: 'authenticated', role: 'authenticated', exp: 1000 })}.sig`;
+  const BAR = { signedIn: false, account: null, bar: { until: null, unknown: true }, conductAccepted: true };
+  /** A harness whose sign-in installs an expired token, so Auth is asked to refresh it and answers as banned. */
+  const banned = () => harness((r) => {
+    if (r.url.pathname === '/functions/v1/account') return json({ session: { ...SESSION, access_token: EXPIRED }, account: true });
+    if (r.url.pathname === '/auth/v1/token') return json({ code: 400, error_code: 'user_banned', msg: 'User is banned' }, 400);
+    if (r.url.pathname === '/auth/v1/logout') return new Response(null, { status: 204 });
+    return undefined;
+  });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  it('is signed out with a bar of unknown end, read from the refusal, and the listeners are told', async () => {
+    const h = banned();
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await h.api.verifyCode('a@b.c', '123456');
+    await settle();
+    expect(h.log.some((r) => r.url.pathname === '/auth/v1/token')).toBe(true);
+    expect(await h.api.session()).toEqual(BAR);
+    expect(heard).toHaveBeenCalledWith(BAR);
+  });
+
+  it('a refusal on another auth path, or another answer on the refresh, sets no bar', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/account') return json({ session: { ...SESSION, access_token: EXPIRED }, account: true });
+      if (r.url.pathname === '/auth/v1/token') return json({ code: 400, error_code: 'refresh_token_not_found' }, 400);
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    await settle();
+    expect((await h.api.session()).bar).toBeNull();
+  });
+
+  it('signing out clears the bar, so Use another address leaves the barred screen', async () => {
+    const h = banned();
+    await h.api.verifyCode('a@b.c', '123456');
+    await settle();
+    expect((await h.api.session()).bar).toEqual({ until: null, unknown: true });
+    await h.api.signOut();
+    expect(await h.api.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
+  });
+});
+
+describe('the session carries the bar and the code (the conduct plan, Task 4)', () => {
+  const signedIn = (extra: (r: Rec) => Response | undefined) => harness((r) => {
+    if (r.url.pathname === '/functions/v1/account') return json({ session: SESSION, account: true });
+    if (r.url.pathname === '/auth/v1/user') return json(SESSION.user);
+    if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
+    return extra(r);
+  });
+
+  it('reads my_conduct_log for the caller: each outcome a row, an outcome it does not know none, and no admin, note or reporter anywhere', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_conduct_log') ? json([
+      { decision: 7, outcome: 'hide', version_act: 'v1', post: 'p1', thread: 't1', at: '2026-11-01T00:00:00+00:00' },
+      { decision: 6, outcome: 'nudge', version_act: 'v1', post: 'p1', thread: 't1', at: '2026-11-01T00:00:00+00:00' },
+      { decision: 5, outcome: 'approve', version_act: 'v2', post: 'p2', thread: 't2', at: '2026-10-31T00:00:00+00:00' },
+    ]) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.conductLog()).toEqual([
+      { decision: 7, outcome: 'hide', versionAct: 'v1', post: 'p1', thread: 't1', at: '2026-11-01T00:00:00+00:00' },
+      { decision: 5, outcome: 'approve', versionAct: 'v2', post: 'p2', thread: 't2', at: '2026-10-31T00:00:00+00:00' },
+    ]);
+  });
+
+  it('reads my_bar and conduct_accepted for a signed-in account, beside whoami', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json({ kind: 'suspended', until: '2026-12-01T00:00:00+00:00' }) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json(false) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: { until: '2026-12-01T00:00:00+00:00' }, conductAccepted: false });
+    const ban = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json({ kind: 'banned', until: null }) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json(true) : undefined));
+    await ban.api.verifyCode('a@b.c', '123456');
+    expect(await ban.api.session()).toEqual({ signedIn: true, account: A, bar: { until: null }, conductAccepted: true });
+  });
+
+  it('a failed conduct_accepted read counts as NOT accepted, so the code is shown again (agreeing is harmless)', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json(null) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json({ message: 'boom' }, 500) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: false });
+  });
+
+  it('a failed my_bar read stays no bar: the server refuses a barred account\'s writes and the hint reloads', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json({ message: 'boom' }, 500) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json(true) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: true });
+  });
+
+  it('accepting while a reload is in flight still ends with the code accepted: the read after the accept is a fresh one', async () => {
+    let accepted = false;
+    const h = signedIn((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_bar')) return json(null);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) { const was = accepted; return new Promise<Response>((res) => setTimeout(() => res(json(was)), 60)) as unknown as Response; }
+      if (r.url.pathname.endsWith('/rpc/accept_conduct')) { accepted = true; return json(null); }
+      if (r.url.pathname.endsWith('/rpc/mark_read')) return json({ code: '28000', message: 'this account is banned', hint: 'kayfabb.barred' }, 401);
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await new Promise((r) => setTimeout(r, 200));
+    heard.mockClear();
+    await h.api.markRead(T, 3, null); // starts a reload that reads accepted = false, slowly
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await h.api.acceptConduct(2)).toEqual({ ok: true, value: {} });
+    await vi.waitFor(() => expect(heard).toHaveBeenLastCalledWith({ signedIn: true, account: A, bar: null, conductAccepted: true }));
+  });
+
+  it('keeps the signed-out path unchanged: no my_bar and no conduct_accepted without a session', async () => {
+    const h = harness(() => undefined);
+    await h.api.session();
+    expect(h.to('rpc/my_bar')).toEqual([]);
+    expect(h.to('rpc/conduct_accepted')).toEqual([]);
+  });
+
+  it('accepts the code through accept_conduct with the version', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/accept_conduct') ? json(null) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.acceptConduct(2)).toEqual({ ok: true, value: {} });
+    expect(h.to('rpc/accept_conduct')[0]?.body).toEqual({ version: 2 });
+  });
+
+  it('a refusal with the hint kayfabb.barred from any action reloads the session and tells its listeners', async () => {
+    let barred = false;
+    const h = signedIn((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_bar')) return json(barred ? { kind: 'banned', until: null } : null);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
+      if (r.url.pathname.endsWith('/rpc/mark_read')) { barred = true; return json({ code: '28000', message: 'this account is banned', hint: 'kayfabb.barred' }, 401); }
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await new Promise((r) => setTimeout(r, 30));
+    heard.mockClear();
+    await h.api.markRead(T, 3, null);
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledWith({ signedIn: true, account: A, bar: { until: null }, conductAccepted: true }));
+  });
+
+  it('an edge function answer carrying the hint kayfabb.barred reloads the session the same way', async () => {
+    let barred = false;
+    const h = signedIn((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_bar')) return json(barred ? { kind: 'suspended', until: '2099-01-01T00:00:00+00:00' } : null);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
+      if (r.url.pathname === '/functions/v1/act') { barred = true; return json({ error: 'this account is suspended until 2099-01-01', hint: 'kayfabb.barred' }, 403); }
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await new Promise((r) => setTimeout(r, 30));
+    heard.mockClear();
+    const out = await h.api.post(T, B, 'hi', null);
+    expect(out.ok).toBe(false);
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledWith({ signedIn: true, account: A, bar: { until: '2099-01-01T00:00:00+00:00' }, conductAccepted: true }));
   });
 });

@@ -1,0 +1,116 @@
+/* Written by mock.mjs from instances/divided-world/ui/glass.json through engine/ui/glass/apply.ts glassVars (the standard key). Do not edit. */
+@font-face{font-family:'Anton';font-weight:400;font-style:normal;font-display:block;src:url(../../../instances/divided-world/ui/fonts/Anton-Regular.woff2) format('woff2')}
+@font-face{font-family:'Barlow Condensed';font-weight:500;font-style:normal;font-display:block;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-Medium.woff2) format('woff2')}
+@font-face{font-family:'Barlow Condensed';font-weight:600;font-style:normal;font-display:block;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-SemiBold.woff2) format('woff2')}
+@font-face{font-family:'Barlow Condensed';font-weight:700;font-style:normal;font-display:block;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-Bold.woff2) format('woff2')}
+@font-face{font-family:'Barlow Condensed';font-weight:800;font-style:normal;font-display:block;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-ExtraBold.woff2) format('woff2')}
+@font-face{font-family:'Barlow Condensed';font-weight:700;font-style:italic;font-display:block;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-BoldItalic.woff2) format('woff2')}
+@font-face{font-family:'Barlow Condensed';font-weight:800;font-style:italic;font-display:block;src:url(../../../instances/divided-world/ui/fonts/BarlowCondensed-ExtraBoldItalic.woff2) format('woff2')}
+@font-face{font-family:'Silkscreen';font-weight:400;font-style:normal;font-display:block;src:url(../../../instances/divided-world/ui/fonts/Silkscreen-Regular.woff2) format('woff2')}
+:root{
+  --kb-glass-ground: #07050d;
+  --kb-glass-panel-soft: rgba(10, 6, 20, 0.72);
+  --kb-glass-panel: rgba(10, 6, 20, 0.82);
+  --kb-glass-panel-strong: rgba(10, 6, 20, 0.88);
+  --kb-glass-sheet: rgba(9, 5, 18, 0.92);
+  --kb-glass-field: #160d2a;
+  --kb-glass-field-2: #120b22;
+  --kb-glass-card: #0b0914;
+  --kb-glass-text: #f1ecff;
+  --kb-glass-text-2: #e4def7;
+  --kb-glass-text-hi: #ffffff;
+  --kb-glass-pale: #c9f8ff;
+  --kb-glass-violet: #a78bfa;
+  --kb-glass-neon-text: #9ef4ff;
+  --kb-glass-neon: #19e3ff;
+  --kb-glass-sweet: #2ee6ff;
+  --kb-glass-ready: #ffd93d;
+  --kb-glass-ready-text: #ffe27a;
+  --kb-glass-salty: #ff3d7f;
+  --kb-glass-salty-text: #ff9cc0;
+  --kb-glass-estimate: #ffc48a;
+  --kb-glass-loss: #ff8ab0;
+  --kb-glass-over: #ff8a96;
+  --kb-glass-hurt: #ff8fb1;
+  --kb-glass-ink-neon: #03141a;
+  --kb-glass-ink-salty: #14030a;
+  --kb-glass-ink-ready: #1a1403;
+  --kb-glass-font-display: "Anton", sans-serif;
+  --kb-glass-font-body: "Barlow Condensed", sans-serif;
+  --kb-glass-size-label: 1.25rem;
+  --kb-glass-size-body: 1.3125rem;
+  --kb-glass-size-lead: 1.5rem;
+  --kb-glass-size-title: 2.125rem;
+  --kb-glass-size-display-xs: 1.25rem;
+  --kb-glass-size-display-s: 1.625rem;
+  --kb-glass-size-display-m: 2.5rem;
+  --kb-glass-size-display-l: 3.25rem;
+  --kb-glass-size-display-xl: 6rem;
+  --kb-glass-size-phone-small: 1rem;
+  --kb-glass-size-phone-body: 1.0625rem;
+  --kb-glass-size-phone-display: 1.25rem;
+  --kb-glass-calm-opacity: 0.85;
+  --kb-glass-calm-feather: 60px;
+  --kb-glass-control-m-height: 48px;
+  --kb-glass-control-m-pad: 22px;
+  --kb-glass-control-m-size: var(--kb-glass-size-body);
+  --kb-glass-control-s-height: 36px;
+  --kb-glass-control-s-pad: 16px;
+  --kb-glass-control-s-size: var(--kb-glass-size-label);
+  --kb-glass-control-m-height-phone: 40px;
+  --kb-glass-control-m-pad-phone: 16px;
+  --kb-glass-control-m-size-phone: var(--kb-glass-size-phone-body);
+  --kb-glass-control-s-height-phone: 32px;
+  --kb-glass-control-s-pad-phone: 12px;
+  --kb-glass-control-s-size-phone: var(--kb-glass-size-phone-small);
+  --kb-glass-control-spacing: 2px;
+  --kb-glass-control-gap: 10px;
+  --kb-motion-smooth-enter: 380ms;
+  --kb-motion-smooth-exit: 300ms;
+  --kb-motion-smooth-screen: 420ms;
+  --kb-motion-smooth-stagger: 30ms;
+  --kb-motion-smooth-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --kb-motion-snappy-enter: 180ms;
+  --kb-motion-snappy-exit: 140ms;
+  --kb-motion-snappy-screen: 220ms;
+  --kb-motion-snappy-stagger: 24ms;
+  --kb-motion-snappy-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --kb-glass-orb-1-highlight: #ead6ff;
+  --kb-glass-orb-1-color: #b46cff;
+  --kb-glass-orb-1-shade: #3d1475;
+  --kb-glass-orb-2-highlight: #d6e9ff;
+  --kb-glass-orb-2-color: #3d9bff;
+  --kb-glass-orb-2-shade: #0c3275;
+  --kb-glass-orb-3-highlight: #d6fff0;
+  --kb-glass-orb-3-color: #2ef0a0;
+  --kb-glass-orb-3-shade: #08603f;
+  --kb-glass-orb-4-highlight: #fff7d6;
+  --kb-glass-orb-4-color: #ffd93d;
+  --kb-glass-orb-4-shade: #7a5c06;
+  --kb-glass-orb-5-highlight: #ffe7d6;
+  --kb-glass-orb-5-color: #ff9a3d;
+  --kb-glass-orb-5-shade: #7a3406;
+  --kb-glass-orb-6-highlight: #ffd6da;
+  --kb-glass-orb-6-color: #ff4d5e;
+  --kb-glass-orb-6-shade: #750815;
+  --kb-glass-orb-body-core: #1c1533;
+  --kb-glass-orb-body-edge: #07060c;
+  --kb-glass-class-face-fill: #3db8ff;
+  --kb-glass-class-face-ink: #03141a;
+  --kb-glass-class-face-large: #8fd6ff;
+  --kb-glass-class-heel-fill: #ff3d57;
+  --kb-glass-class-heel-ink: #14030a;
+  --kb-glass-class-heel-large: #ff959f;
+  --kb-glass-class-jabroni-fill: #ffd93d;
+  --kb-glass-class-jabroni-ink: #1a1403;
+  --kb-glass-class-jabroni-large: #ffe27a;
+  --kb-glass-class-technician-fill: #2ef0a0;
+  --kb-glass-class-technician-ink: #03141a;
+  --kb-glass-class-technician-large: #7dffc8;
+  --kb-glass-class-tweener-fill: #ff4fd8;
+  --kb-glass-class-tweener-ink: #1a0316;
+  --kb-glass-class-tweener-large: #ffa3ec;
+  --kb-glass-class-lurker-fill: #b97aff;
+  --kb-glass-class-lurker-ink: #12051f;
+  --kb-glass-class-lurker-large: #d4b0ff;
+}

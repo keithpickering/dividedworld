@@ -359,6 +359,21 @@ describe('the stand-in\'s profile', () => {
     await screen.findByRole('heading', { level: 1, name: 'Pipewrench' });
     expect(screen.queryByText(STAND_IN)).toBeNull();
   });
+
+  test('has no Group row: the stand-in is no Mod Bot and holds no rung, so its profile names no staff group (and the server answers it none)', async () => {
+    const fake = buildWorld(undefined, veiling);
+    const w = world(fake);
+    fake.seed.cards(w.me, { whodunnit: 1 });
+    expect((await fake.playCard('whodunnit', w.pipe, w.act, {}, '')).ok).toBe(true);
+    const stand = (await fake.act(w.act))!.character!;
+    renderIn(fake, <LoadedProfile id={stand} />, { path: `/c/${stand}`, instance: veiling });
+    const facts = await screen.findByRole('table', { name: 'About Nobody' });
+    expect(within(facts).queryByRole('rowheader', { name: 'Group' })).toBeNull();
+    expect(facts.querySelector('.kb-group-bar')).toBeNull();
+    cleanup();
+    renderIn(fake, <LoadedProfile id={w.pipe} />, { path: `/c/${w.pipe}`, instance: veiling });
+    expect(within(await screen.findByRole('table', { name: 'About Pipewrench' })).getByRole('rowheader', { name: 'Group' })).toBeTruthy();
+  });
 });
 
 describe('the Wearing row and the trophy case', () => {

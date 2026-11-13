@@ -20,24 +20,25 @@ import { LOST_ANSWER } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
-import { addressOf, useLocation, useNavigate } from '../router.tsx';
+import { addressOf, Link, useLocation, useNavigate } from '../router.tsx';
 import { LinkPanel } from './LinkPanel.tsx';
 import { useLinkHand } from './LinkHand.tsx';
 import { tokenHashOf } from './link.ts';
 import { safeNext } from './next.ts';
+import { Barred } from './Barred.tsx';
 import { OpenAccount } from './OpenAccount.tsx';
 import { setWhy, useSession } from './session.ts';
 import './account.css';
 import { CalmRegion } from '../glass/Calm.tsx';
 
 type Sent = { readonly message: string; readonly invite?: string };
-type Field = 'email' | 'invite' | 'ack' | 'code';
+type Field = 'email' | 'invite' | 'ack' | 'conduct' | 'code';
 type Refusal = { readonly text: string; readonly field: Field | null };
 
 const NO_ANSWER = 'No answer came back; ask again in a moment.';
 
 export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }) {
-  const { api, settings } = useKayfa();
+  const { api, settings, ui } = useKayfa();
   const session = useSession();
   const location = useLocation();
   const { query } = location;
@@ -59,11 +60,14 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   const [email, setEmail] = useState('');
   const [invite, setInvite] = useState(query.get('invite') ?? '');
   const [ack, setAck] = useState(false);
+  const [agreed, setAgreed] = useState(false);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState<'sending' | 'checking' | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [sent, setSent] = useState<Sent | null>(null);
   const [asked, setAsked] = useState(0);
+  /* Set when Auth refused the sign-in because the login is barred: shown plainly, the bar's own screen, while signed out. */
+  const [barred, setBarred] = useState<{ readonly until: string | null | undefined } | null>(null);
   const codeField = useRef<HTMLInputElement>(null);
   /* The emailed link's token, held in memory only: the address loses its fragment as the screen stands (the query stays, `next` with it), so no history entry holds it. A provider above (link hand, LinkHand.tsx) keeps it, and whether this page's press signed in, across the screen starting afresh under the account the press signed in; with none the screen's own state holds it. */
   const hand = useLinkHand();
@@ -91,14 +95,20 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
   if (link === null && session.signedIn && !session.account) return <div className="kb-acct">{title}<CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;
 
+  const leaveBar = () => { setBarred(null); setStep('email'); setCode(''); setSent(null); };
+  if (barred) return <Barred until={barred.until} signedIn={false} onLeave={leaveBar} />;
+
   const ask = async (e?: FormEvent, again = false) => {
     e?.preventDefault();
     if (busy) return;
     if (registering && !ack) { setRefusal({ text: 'Check the box to say you are 18 or older; then ask for a code.', field: 'ack' }); return; }
+    if (registering && !agreed) { setRefusal({ text: 'Check the box to agree to the code of conduct; then ask for a code.', field: 'conduct' }); return; }
     setBusy('sending');
     setRefusal(null);
     try {
-      const r = await api.requestCode(email.trim(), registering && invite.trim() !== '' ? invite.trim() : null, next === '/' ? null : next);
+      const who = registering && invite.trim() !== '' ? invite.trim() : null;
+      const kept = next === '/' ? null : next;
+      const r = await (registering ? api.requestCode(email.trim(), who, kept, ui.conduct.version) : api.requestCode(email.trim(), who, kept));
       if (!r.ok) { setRefusal({ text: `${r.field === 'email' ? 'The address ' : ''}${r.error}`, field: r.field === 'email' || r.field === 'invite' ? r.field : null }); return; }
       setSent(r.value);
       setCode('');
@@ -125,6 +135,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
         codeField.current?.select();
         return;
       }
+      if (r.value.barred) { setBarred(r.value.barred); return; }
       /* An open account moves this screen on through the session; one that is not open shows the way on, with its reason. */
       if (!r.value.account) setWhy(r.value.why ?? null);
       setHeld(false);
@@ -163,7 +174,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
         {title}
         <div className="kb-door">
           <CalmRegion className="kb-door-form">
-            <LinkPanel tokenHash={link} signedIn={start.pressed} registering={registering} onAside={() => setLink(null)} onRefused={(text) => { setHeld(session.account !== null); setLink(null); setRefusal({ text, field: null }); }} />
+            <LinkPanel tokenHash={link} signedIn={start.pressed} registering={registering} onAside={() => setLink(null)} onRefused={(text) => { setHeld(session.account !== null); setLink(null); setRefusal({ text, field: null }); }} onBarred={(bar) => { setLink(null); setBarred(bar); }} />
           </CalmRegion>
           {aside}
         </div>
@@ -201,6 +212,12 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
                   <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} {...tie('ack', 'kb-ack-note')} /> I am 18 or older.
                 </label>
                 <p id="kb-ack-note" className="kb-acct-row-sentence kb-door-ack-note">An acknowledgement, nothing legally binding.</p>
+                <label className="kb-acct-ack">
+                  {/* The checkbox is the acceptance: its version rides with the login and open_account records it with the account (0341), only here. */}
+                  <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} {...tie('conduct')} />
+                  {/* One span, so the label's flex does not make the link a box of its own: it stays a link inside a sentence. */}
+                  <span>I&apos;ve read and agree to the <Link to="/conduct" target="_blank" rel="noopener">code of conduct</Link>.</span>
+                </label>
               </>
             )}
             {alert}

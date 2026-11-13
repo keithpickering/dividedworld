@@ -918,3 +918,40 @@ describe('a thread that moved away leaves a stub, and a closed board says where 
     expect((await fake.boardPage('general', 2, []))!.stubs).toHaveLength(0);
   });
 });
+
+describe('a thread row\'s units and lines (list-rows plan, Task 1)', () => {
+  test('a unit is singular at one: "1 reply", "1 view", "4 replies"', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 2 });
+    replies(fake, w.ids[0]!, w.spritey, 1);
+    replies(fake, w.ids[1]!, w.spritey, 4);
+    fake.seed.views(w.ids[0]!, 1);
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const one = rowOf('Thread 001');
+    expect(one.querySelector('.kb-thread-replies')!.textContent).toBe('1 reply');
+    expect(one.querySelector('.kb-thread-views')!.textContent).toMatch(/1 view$/u);
+    expect(rowOf('Thread 002').querySelector('.kb-thread-replies')!.textContent).toBe('4 replies');
+  });
+
+  test('a spun row\'s "spun from" starts at the arrow, a sibling after the title\'s link', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 1 });
+    const origin = fake.seed.post(w.ids[0]!, w.spritey, 'a line to spin from', { at: T0 + 2 * DAY });
+    expect((await fake.spin(origin, w.mine!, 'Spun thread', 'x')).ok).toBe(true);
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'Spun thread' });
+    const row = rowOf('Spun thread');
+    const spun = row.querySelector('.kb-thread-spun') as HTMLElement;
+    expect(spun.textContent!.startsWith('↳')).toBe(true);
+    const title = row.querySelector('.kb-thread-title') as HTMLElement;
+    expect(spun.parentElement).toBe(title.parentElement);
+    expect(title.compareDocumentPosition(spun) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('the last cell starts at "last: ", with no leading separator', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(rowOf('Thread 001').querySelector('.kb-thread-last')!.textContent!.startsWith('last: ')).toBe(true);
+  });
+});

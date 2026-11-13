@@ -34,18 +34,20 @@ import { emojiBase, emojiOfKey, localKey, localReaction, singleEmoji } from '../
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
 import type { HandoffFacts } from '../../system/meeting.ts';
-import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, ReadFailure, REIGNS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, type SignedIn, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, ReadFailure, REPORT_LIMIT, REIGNS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
 import { quotedActs, visibleText } from '../../bbcode/visible.ts';
 import { parse } from '../../bbcode/parse.ts';
+import { concealQuotes } from '../../bbcode/conceal.ts';
 import { pageOf } from '../thread/pages.ts';
 import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   SurfaceLogRow,
+  AdminReport, AdminReview, ConductLogRow, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
@@ -89,12 +91,18 @@ export interface Seed {
    */
   account(name: string, options?: { email?: string; admin?: boolean; joinedAt?: number; seasoned?: boolean }): Id;
   admin(account: Id, on?: boolean): void;
+  /** Bars an account (`until` in epoch ms, null for a ban) or, with no `until`, lifts the bar; the account's session then carries it. */
+  bar(account: Id, until?: number | null): void;
+  /** An account that has not accepted the current code of conduct. */
+  unaccepted(account: Id): void;
   /** A character of an account; debuted unless said otherwise. */
   character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; loudness?: DebutLoudness; at?: number; pronouns?: PronounSet }): Id;
   retire(character: Id): void;
   /** A thread with its first Act; a null character is The System's, on its board only. */
   thread(board: string, character: Id | null, title: string, body?: string, options?: SeedAct): { thread: Id; act: Id };
   post(thread: Id, character: Id | null, body: string, options?: SeedAct & { quote?: Id }): Id;
+  /** An edit of a post by its own character, as that character's player, dated `at` (else now); returns the edit's Act, which is the version the History lists. */
+  edit(post: Id, character: Id, body: string, options?: SeedAct): Id;
   /** A reaction, refused in the server's words like any other. */
   react(account: Id, character: Id, act: Id, kind: string): void;
   /**
@@ -136,6 +144,26 @@ export interface Seed {
    * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
    */
   update(update: { title: string; body: string; changes?: readonly UpdateChange[]; at?: number }): Id;
+  /** An account's decision recorded before the screen opens (the admin screen's past decisions), dated `at` (else now). */
+  conductDecision(decision: { account: Id; outcome: string; until?: number; note?: string; at?: number; /** The version an admin's decision was about (a hide, an unhide, an approve): it is in the author's `conductLog`. */ version?: Id }): void;
+  /** An open report (`report_post`, 0340) on a post's version, dated `at` (else now), by `reporter` (an account) when the open-report limit is under test: the screen shows the version's words, the section and the note. */
+  conductReport(report: { version: Id; section: string; note?: string; at?: number; reporter?: Id }): number;
+  /** A post hidden until its author edited it and edited since, awaiting an admin's second look (`reviews_due`): `words` are the edit's. */
+  conductReview(review: { post: Id; version?: Id; words: string; at?: number }): void;
+  /**
+   * A version hidden by an admin (`hide`), hidden until its author edits it (`hideUntilEdited`), or an edit of the author's that waits for an admin after a second hide until
+   * edited (`waiting`): its words are null in every read a player makes, a post's `hidden` says so, and a quote of the post is emptied. The author's own words stay in the fake, which
+   * `myHiddenVersion` gives to the author of a version hidden until edited.
+   */
+  hide(version: Id, how: 'hide' | 'hideUntilEdited' | 'waiting'): void;
+  /** A version that quotes a post an admin hid whose layer the conceal job has not written yet: its body is null and `concealing` true until `concealed` says the job has run. */
+  concealing(version: Id): void;
+  /** The conceal job has run for this version: its body is served again, with the quotes of hidden posts emptied. */
+  concealed(version: Id): void;
+  /** A mail whose latest attempt failed (it is tried again) or was refused (never again). */
+  failedMail(mail: { account: Id; template: string; kind: 'failed' | 'refused'; error: string; at?: number }): void;
+  /** Mail waiting to go because no admin reply-to address is set (`n` rows with no attempt); with none set, `addressSet` is false. */
+  mailWaiting(n: number): void;
   /** The contact an admin set (`set_admin_contact`, 0081), past its admin check and held to its rules: a seed is the database's own hand. Refused in the server's words. */
   contact(links: readonly ContactLink[]): void;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
@@ -268,7 +296,7 @@ export interface Seed {
   report(character: Id, post: Id, reason: string, options?: { at?: number }): Id;
   /** A Mod's verdict on a report (`close_report`): the visit it sent, where it sent one. */
   verdict(report: Id, mod: Id, verdict: 'visit' | 'dismissed' | 'backfire', options?: { line?: string; visit?: Id; at?: number }): Id;
-  /** The infraction a visit's filing wrote (`infract`) against its post's author, dropping off at `expiresAt` (default two weeks on). */
+  /** The infraction a visit's filing wrote (`infract`) against its post's author, dropping off at `expiresAt` (default two weeks on, from `at`, which defaults to the visit's own date). */
   infraction(visit: Id, options?: { points?: number; band?: VisitBand; ruleNumber?: number | null; expiresAt?: number; at?: number }): Id;
   /** A character's appeal of an infraction or of a group move on it (`open_appeal`), and the staff member's ruling on it (`until`: the end a ruling sets, as on a ban). */
   appeal(character: Id, infraction: Id, plea: string, options?: { at?: number }): Id;
@@ -466,6 +494,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
   apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true, draw: true, wash: true,
   react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
+  acceptConduct: true, reportPost: true, decideReport: true, decide: true,
   wardrobe: true, setOutfit: true, beltLineage: true, showTrophies: true, randomEvent: true, grantGear: true, awardTrophy: true, reverseAward: true, makeTrophy: true,
   trophyAwardFailures: true, giveFailedAward: true, adminAwards: true, adminCharacterNamed: true,
 } satisfies Record<WriteName, true>));
@@ -604,7 +633,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   let session: { email: string | null; account: Id | null } = { email: null, account: null };
   const sessionListeners = new Set<(s: Session) => void>();
-  const sessionNow = (): Session => ({ signedIn: session.email !== null, account: session.account });
+  /** Each account's bar (null `until` is a ban) and whether it has accepted the current code: a test sets them through the seed; an account has accepted by default. */
+  const bars = new Map<Id, { until: number | null }>();
+  const unaccepted = new Set<Id>();
+  const sessionNow = (): Session => ({
+    signedIn: session.email !== null,
+    account: session.account,
+    bar: session.account !== null && bars.has(session.account) ? { until: bars.get(session.account)!.until === null ? null : iso(bars.get(session.account)!.until!) } : null,
+    conductAccepted: session.account === null || !unaccepted.has(session.account),
+  });
   const setSession = (next: typeof session) => {
     session = next;
     const snapshot = sessionNow();
@@ -749,14 +786,30 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (live.length === 0) return false;
     return !live.some((v) => v.casterAccount === account || (v.author !== null && characters.get(v.author)?.owner === account && account !== undefined));
   }
+  /** The versions hidden from players (hide, hideUntilEdited, and an edit that waits for an admin), as acts_public's `hidden` and `public_payload` serve them. */
+  const hiddenVersions = new Map<Id, 'hide' | 'hideUntilEdited' | 'waiting'>();
+  /** The quoting versions whose layer the job has not written yet (seeded): their bodies are withheld and `concealing` is true, as acts_public serves them (0340). */
+  const concealingActs = new Set<Id>();
+  /** The posts with a hidden version, whose quotes the conceal job empties. */
+  const hiddenPosts = (): Set<string> => new Set([...hiddenVersions.keys()].map((v) => (acts.get(v)?.kind === 'edit' ? acts.get(v)!.target : v)).filter((p): p is Id => p !== null));
+  /** A payload as a player reads it (`shown_payload`): a hidden version's body is null, and so is a body awaiting its layer; any other has its quotes of hidden posts emptied by the engine's own concealQuotes, as the job does. */
+  const publicPayload = (payload: Readonly<Record<string, unknown>>, hidden: boolean, version: Id): Readonly<Record<string, unknown>> =>
+    typeof payload['body'] !== 'string' ? payload : hidden || concealingActs.has(version) ? { ...payload, body: null } : { ...payload, body: concealQuotes(payload['body'], hiddenPosts()) };
 
   function publicAct(a: ActRec): Act {
     const latest = a.kind === 'post' ? edits(a).at(-1) : undefined;
+    const own = hiddenVersions.has(a.id);
+    const cur = latest === undefined ? own : hiddenVersions.has(latest.id);
     return {
-      id: a.id, character: shownAuthor(a), kind: a.kind, thread: a.thread, targetActId: a.target, seq: a.seq, createdAt: iso(a.at), payload: a.payload,
-      currentPayload: latest?.payload ?? a.payload,
+      id: a.id, character: shownAuthor(a), kind: a.kind, thread: a.thread, targetActId: a.target, seq: a.seq, createdAt: iso(a.at), payload: publicPayload(a.payload, own, a.id),
+      currentPayload: publicPayload(latest?.payload ?? a.payload, cur, latest?.id ?? a.id),
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
+      hidden: cur,
+      ...(own ? { payloadHidden: true } : {}),
+      ...(concealingActs.has(a.id) && !own ? { payloadConcealing: true } : {}),
+      ...(concealingActs.has(latest?.id ?? a.id) && !cur ? { concealing: true } : {}),
+      ...(a.kind === 'post' && (own || edits(a).some((e) => hiddenVersions.has(e.id))) ? { anyHidden: true } : {}),
       ...(untakenPlays.has(a.id) ? { untaken: true as const } : {}),
       /* A set's end is the face_down row's, stored when it was set (acts_public.ends_at, 0156). */
       ...(a.kind === 'set' && faceDown.get(a.id) ? { endsAt: iso(faceDown.get(a.id)!.endsAt) } : {}),
@@ -893,6 +946,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's), from the posts as the projection shows them, as the count a player reads is (group_now, 0400). */
   function groupOf(c: CharRec): string {
+    /* The stand-in a veil shows is no scored character and holds no rung, and is no Mod Bot either: no group (group_now answers it null, 0400), so no screen draws a bar or a staff badge for it. */
+    if (c.staff?.office === 'anonymous') return '';
     const posts = [...acts.values()].filter((a) => a.kind === 'post' && shownAuthor(a) === c.id).length;
     return earnedGroup(instance.groups.ladder, { posts, seasons: 0, staff: c.staff !== undefined && c.staff !== null });
   }
@@ -1068,6 +1123,33 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null; readonly note: string | null; readonly facts: HandoffFacts }[] = [];
   /** The seasons whose to-do an admin dismissed (`handover_dismissals`). */
   const dismissedTodos = new Set<number>();
+  /* The conduct screen's world (0340-0342): open reports, decisions, the re-review list, mail that failed and mail waiting for an address. */
+  interface ReportRec { readonly id: number; readonly version: Id; readonly section: string; readonly note: string | null; readonly at: number; readonly reporter?: Id }
+  interface DecisionRec { readonly id: number; readonly report: number | null; readonly version: Id | null; readonly account: Id | null; readonly outcome: string; readonly until: number | null; readonly note: string; readonly at: number }
+  /** The most reports to admins an account holds open (`Settings.conduct.openReportsMost`): the fake's own, three. */
+  const CONDUCT_OPEN_MOST = 3;
+  /** The pages the reports screen reads (admin_reports, admin_failed_mail): 50 reports and edits, 200 failed mails, each with a flag for more. */
+  const REPORTS_PAGE = 50;
+  const FAILED_PAGE = 200;
+  const conductReports: ReportRec[] = [];
+  const conductDecisions: DecisionRec[] = [];
+  const conductReviews: { decision: number; post: Id; version: Id; words: string; at: number }[] = [];
+  const conductFailed: (FailedMail & { readonly atMs: number })[] = [];
+  let conductWaiting = 0;
+  let conductNextId = 1;
+  let conductAddress = true;
+  const authorOf = (version: Id): Id | null => {
+    const a = acts.get(version);
+    const c = a?.character == null ? undefined : characters.get(a.character);
+    return c === undefined || c.owner === '' ? null : c.owner;
+  };
+  const postOf = (version: Id): Id => { const a = acts.get(version); return a?.kind === 'edit' && a.target !== null ? a.target : version; };
+  const recordDecision = (d: Omit<DecisionRec, 'id' | 'at'>): number => {
+    const id = conductNextId++;
+    conductDecisions.push({ ...d, id, at: now() });
+    return id;
+  };
+
   /** The to-dos the admin queue holds: each change of Boss with no update after it and no dismissal, newest first (admin_queue's `todos`). */
   function handoverTodos(): HandoverTodo[] {
     const latest = updateActs()[0]?.at ?? -Infinity;
@@ -2896,8 +2978,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /** Signs an address in once its code or link is good: a known account, an account its invite opens, or no account and the reason. */
-  function signInVerified(address: string): Answer<{ readonly account: boolean; readonly why?: string }> {
+  function signInVerified(address: string): Answer<SignedIn> {
     const known = byEmail.get(address);
+    /* Auth refuses a barred login after a correct code or link (mail/core.ts sets its ban), and nothing is signed in. */
+    const held = known ? bars.get(known) : undefined;
+    if (known && held && (held.until === null || held.until > now())) return ok({ account: false, barred: { until: held.until === null ? null : iso(held.until) } });
     if (known) { setSession({ email: address, account: known }); return ok({ account: true }); }
     const opened = tryOpen(address, pendingInvite.get(address) ?? null);
     if ('account' in opened) { setSession({ email: address, account: opened.account }); return ok({ account: true }); }
@@ -2909,7 +2994,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     now: () => now(),
     session: () => sessionNow(),
     onSession(listener) { sessionListeners.add(listener); return () => { sessionListeners.delete(listener); }; },
-    requestCode(email, invite, next) {
+    requestCode(email, invite, next, _conduct) {
       const address = email.trim().toLowerCase();
       if (address.length < 3 || address.length > 254 || !/^[^\s@]+@[^\s@]+$/.test(address)) return refuse('is not an email address', 'email');
       pendingInvite.set(address, invite);
@@ -2941,6 +3026,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return refuse(opened.why);
     },
     signOut() { setSession({ email: null, account: null }); },
+    acceptConduct(version) {
+      if (session.account === null) return refuse('sign in with an account first');
+      if (!Number.isInteger(version) || version < 1) return refuse('that is not a version of the code');
+      unaccepted.delete(session.account);
+      setSession(session);
+      return ok({});
+    },
     signInAddress: () => session.email,
     isAdmin: () => me()?.admin ?? false,
     updates(before) {
@@ -3403,10 +3495,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const original = acts.get(id);
       if (!original || original.kind !== 'post') return [];
       const versions = edits(original).map((e): Act => ({
-        id: e.id, character: shownAuthor(e), kind: 'edit', thread: e.thread, targetActId: id, seq: null, createdAt: iso(e.at), payload: e.payload,
-        currentPayload: e.payload, editedAt: null, shownEditedAt: null,
+        id: e.id, character: shownAuthor(e), kind: 'edit', thread: e.thread, targetActId: id, seq: null, createdAt: iso(e.at), payload: publicPayload(e.payload, hiddenVersions.has(e.id), e.id),
+        currentPayload: publicPayload(e.payload, hiddenVersions.has(e.id), e.id), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(e.id),
+        ...(concealingActs.has(e.id) && !hiddenVersions.has(e.id) ? { concealing: true, payloadConcealing: true } : {}),
+        ...(hiddenVersions.has(e.id) ? { payloadHidden: true } : {}),
       }));
-      return [{ ...publicAct(original), currentPayload: original.payload, editedAt: null, shownEditedAt: null }, ...versions];
+      return [{ ...publicAct(original), currentPayload: publicPayload(original.payload, hiddenVersions.has(id), id), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(id) }, ...versions];
     },
     spunFrom: (act, limit = SPUN_FROM_MAX) => [...threads.values()].filter((t) => t.origin === act).sort((a, b) => a.at - b.at).slice(0, limit).map(summary),
     spunFromMany(ids, limit) {
@@ -3947,8 +4041,96 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...(handoverSeason !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
       };
     },
+    reportsPage(): ReportsPage | null {
+      if (!core.isAdmin()) return null;
+      const wordsOf = (v: Id): string => String(acts.get(v)?.payload['body'] ?? '');
+      const reports = conductReports
+        .filter((r) => !conductDecisions.some((d) => d.report === r.id))
+        .sort((a, b) => b.at - a.at || b.id - a.id)
+        .slice(0, REPORTS_PAGE + 1)
+        .map((r): AdminReport => {
+          const author = authorOf(r.version);
+          const past = author === null ? [] : conductDecisions
+            .filter((d) => d.account === author || (d.version !== null && authorOf(d.version) === author))
+            .sort((a, b) => b.at - a.at || b.id - a.id).slice(0, 20)
+            .map((d): PastDecision => ({ outcome: d.outcome, until: d.until === null ? null : iso(d.until), at: iso(d.at), note: d.note }));
+          return { id: r.id, versionAct: r.version, post: postOf(r.version), thread: acts.get(r.version)?.thread ?? null, section: r.section, note: r.note, at: iso(r.at), author, words: wordsOf(r.version), past };
+        });
+      const reviews = conductReviews.sort((a, b) => a.at - b.at).slice(0, REPORTS_PAGE + 1).map((r): AdminReview => ({ decision: r.decision, post: r.post, versionAct: r.version, thread: acts.get(r.post)?.thread ?? null, editedAt: iso(r.at), author: authorOf(r.post), words: r.words }));
+      const failed = [...conductFailed].sort((a, b) => b.atMs - a.atMs).slice(0, FAILED_PAGE + 1).map(({ atMs: _at, ...m }): FailedMail => m);
+      return {
+        reports: reports.slice(0, REPORTS_PAGE), moreReports: reports.length > REPORTS_PAGE, reviews: reviews.slice(0, REPORTS_PAGE), moreReviews: reviews.length > REPORTS_PAGE,
+        failed: failed.slice(0, FAILED_PAGE), moreFailed: failed.length > FAILED_PAGE, waiting: conductAddress ? 0 : conductWaiting, addressSet: conductAddress,
+      };
+    },
+    reportPost: lossy((version: Id, section: string, note: string): Answer<null> => {
+      const account = me()?.id;
+      if (account === undefined) return refuse('sign in with an account first');
+      const open = conductReports.filter((r) => r.reporter === account && !conductDecisions.some((d) => d.report === r.id)).length;
+      if (open >= CONDUCT_OPEN_MOST) return { ok: false, error: `you have ${open} reports open, the most an account can; an admin will close one`, field: REPORT_LIMIT };
+      const target = acts.get(version);
+      if (target === undefined || (target.kind !== 'post' && target.kind !== 'edit')) return refuse('a report names a post or an edit');
+      if (section.trim() === '') return refuse('that is not a section of the code of conduct');
+      const said = note.trim();
+      if ([...said].length > 1000) return refuse('a note is at most 1000 characters');
+      conductReports.push({ id: conductNextId++, version, section, note: said === '' ? null : said, at: now(), reporter: account });
+      return ok(null);
+    }),
+    myOpenReports() {
+      const account = me()?.id;
+      return account === undefined ? null : { open: conductReports.filter((r) => r.reporter === account && !conductDecisions.some((d) => d.report === r.id)).length, most: CONDUCT_OPEN_MOST };
+    },
+    myHiddenVersion(post) {
+      const found = acts.get(post);
+      const p = found?.kind === 'edit' && found.target !== null ? acts.get(found.target) : found;
+      const owner = p?.character == null ? null : characters.get(p.character)?.owner;
+      if (p === undefined || p.kind !== 'post' || owner === undefined || owner === null || owner !== me()?.id) return null;
+      const cur = edits(p).at(-1) ?? p;
+      const how = hiddenVersions.get(cur.id);
+      if (how === 'hideUntilEdited') return { status: 'hiddenUntilEdited', version: cur.id, words: String(cur.payload['body'] ?? '') };
+      return how === 'waiting' ? { status: 'waiting', version: cur.id, words: String(cur.payload['body'] ?? '') } : null;
+    },
+    decideReport(report, outcomes) {
+      if (!me()?.admin) return refuse('only an admin decides a report');
+      const r = conductReports.find((x) => x.id === report);
+      if (!r) return refuse('there is no such report');
+      if (conductDecisions.some((d) => d.report === r.id)) return refuse('that report is already decided; use decide to act further');
+      if (outcomes.length === 0 || outcomes.length > 6) return refuse('outcomes is a list of one to six outcomes');
+      const names = outcomes.map((o) => o.outcome);
+      if (new Set(names).size !== names.length) return refuse('an outcome is given once');
+      if ((names.some((n) => n === 'none' || n === 'close') && names.length > 1) || (names.includes('hide') && names.includes('hideUntilEdited')) || (names.includes('suspend') && names.includes('ban'))) return refuse('those outcomes contradict each other');
+      const author = authorOf(r.version);
+      if (author === null && names.some((n) => n === 'nudge' || n === 'suspend' || n === 'ban')) return refuse('that version has no player account to write to');
+      for (const o of outcomes) {
+        if (o.outcome === 'suspend' && (o.until === undefined || Date.parse(o.until) <= now())) return refuse('a suspension needs an end date in the future');
+        if (o.outcome !== 'suspend' && o.until !== undefined) return refuse('only a suspension has an end date');
+      }
+      const decisions = outcomes.map((o) => recordDecision({ report: r.id, version: r.version, account: o.outcome === 'nudge' || o.outcome === 'suspend' || o.outcome === 'ban' ? author : null, outcome: o.outcome, until: o.until === undefined ? null : Date.parse(o.until), note: o.note ?? '' }));
+      return ok({ decisions });
+    },
+    decide(on, outcome: DecideOutcome, until, note) {
+      if (!me()?.admin) return refuse('only an admin decides');
+      if (on.account === undefined && on.version === undefined) return refuse('name an account or a version');
+      if (outcome === 'suspend' && (until === undefined || Date.parse(until) <= now())) return refuse('a suspension needs an end date in the future');
+      if (outcome !== 'suspend' && until !== undefined) return refuse('only a suspension has an end date');
+      const decision = recordDecision({ report: null, version: on.version ?? null, account: on.account ?? (on.version === undefined ? null : authorOf(on.version)), outcome, until: until === undefined ? null : Date.parse(until), note: note ?? '' });
+      if (on.version !== undefined && (outcome === 'approve' || outcome === 'hide' || outcome === 'hideUntilEdited' || outcome === 'unhide')) {
+        const at = conductReviews.findIndex((v) => v.version === on.version || v.post === postOf(on.version!));
+        if (at >= 0) conductReviews.splice(at, 1);
+      }
+      void decision;
+      return ok(null);
+    },
     queuePage(): QueuePage | null {
       return core.isAdmin() ? { queue: core.adminQueue(), boardNames: core.boardNames(), bosses: core.bosses(), contact: core.adminContact() } : null;
+    },
+    conductLog() {
+      const account = me()?.id;
+      /* my_conduct_log: the decisions on versions the caller's own characters wrote, newest first; never the note, the admin or a report. */
+      return account === undefined ? [] : conductDecisions
+        .filter((d) => d.version !== null && authorOf(d.version) === account && (d.outcome === 'hide' || d.outcome === 'hideUntilEdited' || d.outcome === 'unhide' || d.outcome === 'approve'))
+        .sort((a, b) => b.id - a.id).slice(0, 100)
+        .map((d): ConductLogRow => ({ decision: d.id, outcome: d.outcome as ConductLogRow['outcome'], versionAct: d.version!, post: postOf(d.version!), thread: acts.get(d.version!)?.thread ?? '', at: iso(d.at) }));
     },
     logPage(before): LogPage {
       const log = core.log(before);
@@ -4183,7 +4365,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     trophies: (character, cursor) => trophiesOf(character, cursor),
     beltLineage: (trophy, cursor) => beltLineage(trophy, cursor),
     showTrophies: lossy(showTrophies),
-    randomEvent: lossy(randomEvent),
+    /* Not lossy: the roll is taken by the page load itself (`RandomEvent`), so it would eat the loss a test armed for the write it means to lose (a report, a post). */
+    randomEvent,
     grantGear(character, gear, copies) {
       const no = adminOnly('grants gear');
       if (no) return no;
@@ -4443,6 +4626,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return a.id;
     },
     admin(account, on = true) { accounts.get(account)!.admin = on; },
+    bar(account, until) { if (until === undefined) bars.delete(account); else bars.set(account, { until }); },
+    unaccepted(account) { unaccepted.add(account); },
+    conductDecision(d) { conductDecisions.push({ id: conductNextId++, report: null, version: d.version ?? null, account: d.account, outcome: d.outcome, until: d.until ?? null, note: d.note ?? '', at: d.at ?? now() }); },
+    conductReport(r) {
+      const id = conductNextId++;
+      if (!acts.has(r.version)) throw new Error(`no such act ${r.version}`);
+      conductReports.push({ id, version: r.version, section: r.section, note: r.note ?? null, at: r.at ?? now(), ...(r.reporter === undefined ? {} : { reporter: r.reporter }) });
+      return id;
+    },
+    hide(version, how) { if (!acts.has(version)) throw new Error(`no such act ${version}`); hiddenVersions.set(version, how); },
+    concealing(version) { if (!acts.has(version)) throw new Error(`no such act ${version}`); concealingActs.add(version); },
+    concealed(version) { concealingActs.delete(version); },
+    conductReview(r) { conductReviews.push({ decision: conductNextId++, post: r.post, version: r.version ?? r.post, words: r.words, at: r.at ?? now() }); },
+    failedMail(m) { conductFailed.push({ id: conductNextId++, account: m.account, template: m.template, kind: m.kind, error: m.error, at: iso(m.at ?? now()), atMs: m.at ?? now() }); },
+    mailWaiting(n) { conductWaiting = n; conductAddress = false; },
     character(account, name, cls, o) {
       if (!accounts.has(account)) throw new Error(`no such account ${account}`);
       return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, loudness: o?.loudness ?? 'announced', retired: o?.retired, at: o?.at, ...(o?.pronouns === undefined ? {} : { pronouns: o.pronouns }) }).id;
@@ -4493,6 +4691,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (character === null) return systemAct(thread, o, body).id;
       const made = accepted(asAt(ownerOf(character), o.at, () => post(thread, character, body, o.quote ?? null)));
       return made.id;
+    },
+    edit(post, character, body, o = {}) {
+      accepted(asAt(ownerOf(character), o.at, () => edit(post, character, body)));
+      return edits(acts.get(post)!).at(-1)!.id;
     },
     react(account, character, act, kind) { accepted(as(account, () => react(act, character, kind))); },
     settle(o) {
@@ -4883,7 +5085,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const v = acts.get(visit);
       const post = v?.target ? acts.get(v.target) : undefined;
       if (!v || v.kind !== 'visit' || !post) throw new Error(`no such visit ${visit}`);
-      const at = o?.at ?? now();
+      /* Filed by its visit, so dated by the visit's own clock: a visit seeded on any clock keeps its infraction's two weeks on that same clock. */
+      const at = o?.at ?? v.at;
       return write({
         character: null, kind: 'infraction', thread: v.thread, at,
         payload: { character: post.character, band: o?.band ?? 'minor', points: o?.points ?? 2, rule_number: o?.ruleNumber === undefined ? 2 : o.ruleNumber, about_act: post.id, visit_act: visit, staff: (v.character ? characters.get(v.character)?.staff?.key : undefined) ?? 'seed', expires_at: iso(o?.expiresAt ?? at + 14 * 86_400_000) },

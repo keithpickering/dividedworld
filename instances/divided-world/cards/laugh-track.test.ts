@@ -144,3 +144,10 @@ test('the overlap pass stops at five clear cues and the rest are counted as drop
     { path: PATH, predicate: 'mostFiveCues', before: 7, after: 5 },
   ]);
 });
+
+test('screenReads holds the line, dwell, reach, murmur, fade, band, airtime and hold, each whole and bounded', () => {
+  const by = Object.fromEntries((laughTrack.screenReads as readonly { key: string; min?: number; max?: number }[]).map((r) => [r.key, r]));
+  assert.deepEqual(by['laughTrack.band'], { key: 'laughTrack.band', whole: true, min: 5, max: 90 });
+  assert.deepEqual(by['laughTrack.airMs'], { key: 'laughTrack.airMs', whole: true, min: 0, max: 5000 });
+  assert.deepEqual(by['laughTrack.holdMs'], { key: 'laughTrack.holdMs', whole: true, min: 0, max: 20000 });
+});

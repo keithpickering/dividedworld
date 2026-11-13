@@ -8,7 +8,7 @@
  * Nothing here writes: a loader runs on a hover as well as a press, and a hover is not a visit.
  */
 import { createElement, lazy, useState, type ComponentProps, type ComponentType } from 'react';
-import type { KayfaApi, Act, AlertsPage, ContactLink, Estimate, Id, LogPage, MyCharactersPage, MyInvite, QueuePage, SeasonPage, UpdatesPage } from './data/api.ts';
+import type { KayfaApi, Act, AlertsPage, ConductLogRow, ContactLink, Estimate, Id, LogPage, MyCharactersPage, MyInvite, QueuePage, ReportsPage, SeasonPage, UpdatesPage } from './data/api.ts';
 import { SIGNED_OUT_DOC, type LoadEnv, type ScreenDoc } from './screen-docs.ts';
 
 /** What a glass loader needs of the app: the api, and whether a player is signed in now. */
@@ -179,6 +179,16 @@ export function loadQueue(env: GlassEnv, preload: Preload): Promise<QueuePageDoc
   });
 }
 
+export const reportsKey = (): string => '/admin/reports';
+
+/** Signed out, or signed in and not an admin: the screen draws "The reports screen is for admins." */
+export function loadReports(env: GlassEnv, preload: Preload): Promise<ReportsPage | NotAdminDoc | typeof SIGNED_OUT_DOC> {
+  return beside(preload, async () => {
+    if (!(await env.signedIn())) return SIGNED_OUT_DOC;
+    return (await env.api.reportsPage()) ?? NOT_ADMIN_DOC;
+  });
+}
+
 /** How long the log's estimate is waited for beside its page before the page draws without it (boot's first load waits the same). */
 export const ESTIMATE_WAIT_MS = 600;
 
@@ -188,6 +198,8 @@ export interface LogDoc {
   readonly estimate: Estimate | null;
   /** The Acts the estimate's lines name that the page did not (`log_page` does not know the estimate), read with it. */
   readonly estimateActs?: readonly Act[];
+  /** What admins did to the player's posts (`conductLog`), the versions' Acts and the threads' titles the lines name: the page's log is not asked about them. */
+  readonly conduct?: { readonly rows: readonly ConductLogRow[]; readonly acts: readonly Act[]; readonly titles: ReadonlyMap<Id, string> };
   readonly estimateLater?: Promise<Estimate | null>;
 }
 
@@ -203,6 +215,17 @@ export function loadLog(env: GlassEnv, preload: Preload): Promise<ScreenDoc<LogD
     /* The estimate is read beside the page, and only waited for a little: it fills in when it lands. Its Acts (which the page was not asked about)
        are read with it and inside the same bound, so the first frame has their words and a hung read cannot hold the page; a read that fails leaves those lines in plain words. */
     const paged = env.api.logPage(null);
+    /* The admin's hides of the player's own posts (my_conduct_log): read beside the page, and a read that fails leaves those lines out rather than the page unread. */
+    const conductRead = (async (): Promise<LogDoc['conduct']> => {
+      const rows = await env.api.conductLog();
+      if (rows.length === 0) return undefined;
+      const threads = [...new Set(rows.map((r) => r.thread))];
+      const [acts, found] = await Promise.all([
+        env.api.actsById([...new Set(rows.map((r) => r.versionAct))]).catch((): readonly Act[] => []),
+        Promise.all(threads.map((t) => env.api.thread(t).catch(() => null))),
+      ]);
+      return { rows, acts, titles: new Map(found.flatMap((t) => (t ? [[t.id, t.title] as const] : []))) };
+    })().catch(() => undefined);
     const withActs = Promise.resolve(env.api.estimate()).then(
       async (estimate): Promise<{ readonly estimate: Estimate; readonly acts: readonly Act[] } | null> => {
         const want = estimateActIds(estimate, new Set((await paged).acts.map((a) => a.id)));
@@ -211,11 +234,12 @@ export function loadLog(env: GlassEnv, preload: Preload): Promise<ScreenDoc<LogD
       () => null,
     ).catch(() => null);
     const page = await paged;
+    const conduct = await conductRead;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const waited = await Promise.race([withActs, new Promise<'late'>((resolve) => { timer = setTimeout(() => resolve('late'), ESTIMATE_WAIT_MS); })]);
     clearTimeout(timer);
-    if (waited === 'late') return { page, estimate: null, estimateLater: withActs.then((r) => r?.estimate ?? null) };
-    if (waited === null) return { page, estimate: null };
-    return { page, estimate: waited.estimate, estimateActs: waited.acts };
+    if (waited === 'late') return { page, estimate: null, ...(conduct ? { conduct } : {}), estimateLater: withActs.then((r) => r?.estimate ?? null) };
+    if (waited === null) return { page, estimate: null, ...(conduct ? { conduct } : {}) };
+    return { page, estimate: waited.estimate, estimateActs: waited.acts, ...(conduct ? { conduct } : {}) };
   });
 }

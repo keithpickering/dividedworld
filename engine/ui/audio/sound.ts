@@ -116,7 +116,7 @@ export function setSoundPreference(p: SoundPreference): void {
 
 export interface SoundPlay {
   /** Plays the slot through the mixer and says its caption. Resolves with what the mixer answered (null when nothing sounded). */
-  play(key: string, opts?: { group?: string; fadeMs?: number }): Promise<{ lengthMs: number } | null>;
+  play(key: string, opts?: { group?: string; fadeMs?: number; tailMs?: number }): Promise<{ lengthMs: number } | null>;
   /**
    * Starts a loop and returns its handle at once; the handle works before the sound has loaded (a gain set meanwhile applies when it does, the
    * latest winning; a `stop` meanwhile means it never sounds). The loop starts silent, and `setGain` holds the slot's caption under `id` while

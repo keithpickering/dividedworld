@@ -30,7 +30,8 @@
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, ReadFailure, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import type { SignedIn } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -47,7 +48,7 @@ import type {
   Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -68,6 +69,8 @@ export interface SupabaseApiOptions {
 type Row = Record<string, any>;
 
 const REFUSAL_HINT = 'kayfabb.refusal';
+/** The hint a refusal for a barred account carries (0236_conduct.sql, refuse_if_barred). */
+const BARRED_HINT = 'kayfabb.barred';
 const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
 const NOT_READ = 'that could not be read right now; try again';
@@ -167,6 +170,11 @@ function toAct(r: Row): Act {
     currentPayload: r['current_payload'] ?? r['payload'] ?? {},
     editedAt: r['edited_at'] ?? null,
     shownEditedAt: r['shown_edited_at'] ?? null,
+    ...(r['hidden'] === true ? { hidden: true } : {}),
+    ...(r['any_hidden'] === true ? { anyHidden: true } : {}),
+    ...(r['concealing'] === true ? { concealing: true } : {}),
+    ...(r['payload_hidden'] === true ? { payloadHidden: true } : {}),
+    ...(r['payload_concealing'] === true ? { payloadConcealing: true } : {}),
     ...(r['untaken'] === true ? { untaken: true as const } : {}),
     ...(typeof r['ends_at'] === 'string' ? { endsAt: r['ends_at'] } : {}),
   };
@@ -704,20 +712,30 @@ function toEstimate(r: Row): Estimate {
 
 /* ---------------------------------------------------------------------- the adapter ---- */
 
-type Res = { data: unknown; error: { message: string; hint?: string | null } | null; status: number };
+type Res = { data: unknown; error: { message: string; hint?: string | null; code?: string | null } | null; status: number };
 
 export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
+  let bannedByRefresh = false;
+  const signedOutSession = (): Session => ({ signedIn: false, account: null, bar: bannedByRefresh ? { until: null, unknown: true } : null, conductAccepted: true });
   const { url, publishableKey, settingsFallback } = options;
   const face = options.face ?? ((c: Character) => c);
   const doFetch: typeof fetch = options.fetch ?? ((...a) => globalThis.fetch(...a));
   // supabase-js sends its key as the bearer where there is no session; a publishable key goes in apikey alone (Supabase's
   // migration guide, docs/plans/2026-11-02-api-keys-design.md), so a bearer that is the key itself is taken off. A session's
   // token is passed on as it is.
-  const clientFetch: typeof fetch = (input, init) => {
+  const clientFetch: typeof fetch = async (input, init) => {
     const headers = new Headers(init?.headers);
-    if (headers.get('authorization') !== `Bearer ${publishableKey}`) return doFetch(input, init);
-    headers.delete('authorization');
-    return doFetch(input, { ...init, headers });
+    const res = headers.get('authorization') !== `Bearer ${publishableKey}` ? await doFetch(input, init) : await doFetch(input, { ...init, headers: (headers.delete('authorization'), headers) });
+    /* The one place a refusal because the account is barred is noticed, whatever asked: the session is read again so the gate shows at once. */
+    if (res.status >= 400 && res.status < 500) {
+      const refresh = String(input instanceof Request ? input.url : input).includes('/auth/v1/token');
+      void res.clone().text().then((t) => {
+        /* Auth refused a token refresh because the login is banned: the sign-in screen is signed out, so the bar is kept here and every screen shows the barred words, never "try again". */
+        if (refresh && t.includes('user_banned')) { bannedByRefresh = true; void reloadSession(); }
+        else if (t.includes(BARRED_HINT)) void reloadSession();
+      }, () => undefined);
+    }
+    return res;
   };
   const client: SupabaseClient =
     options.client ??
@@ -825,16 +843,18 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       parsed = null;
     }
     if (got.status >= 200 && got.status < 300 && parsed) return { ok: true, value: parsed };
+    /* A refusal for a bar, from a function that answers for the player: the session is read again, as the rpc path does. */
+    if (parsed?.['hint'] === BARRED_HINT) void reloadSession();
     const words = parsed ? str(parsed['error']) : null;
     /* A 5xx from a write is an answer that may not say whether it was done: its words are shown, and the caller looks before it resends. */
     if (got.status >= 500 && !resend && lost === LOST && parsed?.['sent'] === false) return notSent(words ?? NOT_SENT);
     if (got.status >= 500 && !resend && lost === LOST) return { ok: false, error: words ?? LOST, uncertain: true };
-    if (words) return refusal(words, str(parsed?.['field']) ?? undefined);
+    if (words) return { ...refusal(words, str(parsed?.['field']) ?? undefined), ...(parsed?.['hint'] === BARRED_HINT ? { barred: true as const } : {}) };
     return refusal(got.status >= 500 ? lost : NOT_DONE);
   }
 
   /** A direct rpc that writes: its refusals are the server's words, a lost answer is never resent. */
-  async function rpcWrite(run: () => PromiseLike<unknown>): Promise<Answer<Row>> {
+  async function rpcWrite(run: () => PromiseLike<unknown>, fieldOf?: (code: string | null | undefined) => string | undefined): Promise<Answer<Row>> {
     if (offline()) return notSent();
     let r: Res;
     try {
@@ -843,15 +863,18 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return uncertain();
     }
     if (!r.error) return { ok: true, value: (r.data && typeof r.data === 'object' ? r.data : {}) as Row };
-    if (r.error.hint === REFUSAL_HINT && r.error.message) return refusal(r.error.message);
+    if (r.error.hint === REFUSAL_HINT && r.error.message) return refusal(r.error.message, fieldOf?.(r.error.code));
     return r.status === 0 || r.status >= 500 ? uncertain() : refusal(NOT_DONE);
   }
 
   /* ----------------------------------------------------------------- session ---- */
 
   /** What a sign-in answer from the account function comes to, for a code and a link alike: the session it carries installed, and whether an account opened. */
-  async function signedIn(a: Answer<Row>): Promise<Answer<{ readonly account: boolean; readonly why?: string }>> {
+  async function signedIn(a: Answer<Row>): Promise<Answer<SignedIn>> {
+    /* Auth refused the sign-in because the login is barred (the function's 403 with the barred hint), after a code or a link alike: its end is not known here, so the screen says no date. */
+    if (!a.ok && a.barred) { bannedByRefresh = false; return { ok: true, value: { account: false, barred: { until: undefined } } }; }
     if (!a.ok) return a;
+    bannedByRefresh = false;
     const s = a.value['session'] as Row | undefined;
     if (!s || !str(s['access_token']) || !str(s['refresh_token'])) return refusal(NOT_DONE);
     const set = await client.auth.setSession({ access_token: s['access_token'], refresh_token: s['refresh_token'] }).catch(() => null);
@@ -861,9 +884,30 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   }
   async function currentSession(): Promise<Session> {
     const { data } = await client.auth.getSession();
-    if (!data.session) return { signedIn: false, account: null };
-    const r = await read(() => client.rpc('whoami'));
-    return { signedIn: true, account: typeof r.data === 'string' ? r.data : null };
+    if (!data.session) return signedOutSession();
+    /* The bar and the code are read beside whoami. A failed my_bar read is no bar (the server refuses a barred account's writes, and its hint reloads this); a failed conduct_accepted read is NOT accepted, since nothing server-side enforces the code and agreeing again is harmless. */
+    const [r, bar, accepted] = await Promise.all([
+      read(() => client.rpc('whoami')),
+      read(() => client.rpc('my_bar')).then((x) => x.data, () => null),
+      read(() => client.rpc('conduct_accepted')).then((x) => x.data, () => false),
+    ]);
+    const until = bar && typeof bar === 'object' ? (bar as Row)['until'] : undefined;
+    return {
+      signedIn: true,
+      account: typeof r.data === 'string' ? r.data : null,
+      bar: bar && typeof bar === 'object' ? { until: typeof until === 'string' ? until : null } : null,
+      conductAccepted: accepted === true,
+    };
+  }
+
+  /** Everyone who asked to hear the session, so a refusal for a bar can tell them without waiting for Auth to change. */
+  const sessionListeners = new Set<(s: Session) => void>();
+  let reloading: Promise<void> | null = null;
+  function reloadSession(): Promise<void> {
+    reloading ??= currentSession()
+      .then((s) => { for (const l of [...sessionListeners]) l(s); }, () => undefined)
+      .finally(() => { reloading = null; });
+    return reloading;
   }
 
   /* ---------------------------------------------------------------- settings ---- */
@@ -1135,6 +1179,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     now: () => Date.now(),
     session: currentSession,
     onSession(listener) {
+      sessionListeners.add(listener);
       let heardFor: string | null | undefined;
       const { data } = client.auth.onAuthStateChange((_event, s) => {
         const id = s?.user?.id ?? null;
@@ -1144,15 +1189,21 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         heardFor = id;
         // Not awaited inside the callback: Auth holds its lock while it runs.
         setTimeout(() => {
-          void (s ? currentSession() : Promise.resolve<Session>({ signedIn: false, account: null }))
-            .catch((): Session => ({ signedIn: !!s, account: null }))
+          void (s ? currentSession() : Promise.resolve<Session>(signedOutSession()))
+            .catch((): Session => ({ signedIn: !!s, account: null, bar: null, conductAccepted: true }))
             .then(listener);
         }, 0);
       });
-      return () => data.subscription.unsubscribe();
+      return () => { sessionListeners.delete(listener); data.subscription.unsubscribe(); };
     },
-    async requestCode(email, invite, next) {
-      const a = await edge('account', { action: 'requestCode', email, invite, next }, NOT_DONE);
+    async acceptConduct(version) {
+      const a = await rpcWrite(() => client.rpc('accept_conduct', { version }));
+      /* A reload already in flight may have read before this accept landed: wait for it, then read afresh. */
+      if (a.ok) { await reloading; await reloadSession(); }
+      return a.ok ? { ok: true, value: {} } : a;
+    },
+    async requestCode(email, invite, next, conduct) {
+      const a = await edge('account', { action: 'requestCode', email, invite, next, ...(typeof conduct === 'number' ? { conduct } : {}) }, NOT_DONE);
       return a.ok ? { ok: true, value: { message: String(a.value['message'] ?? ''), ...(str(a.value['invite']) ? { invite: a.value['invite'] } : {}) } } : a;
     },
     verifyCode: async (email, code) => signedIn(await edge('account', { action: 'verifyCode', email, code }, NOT_DONE)),
@@ -1161,6 +1212,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async signOut() {
       lastEstimate = null;
       await client.auth.signOut();
+      if (bannedByRefresh) { bannedByRefresh = false; await reloadSession(); }
     },
     /* Reads the client's own session for its address, which is not signing in, up or a reset, so it is outside Task 11's rule that those go through the account function; no table is read. */
     async signInAddress() {
@@ -1813,6 +1865,31 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         return null;
       }
     },
+    async reportPost(version, section, note) {
+      if (!idOk(version)) return refusal('that post could not be found');
+      /* The open-report limit (errcode 53400) is told apart by `field: 'limit'`, so the form can say it as its own state and ask for the account's own count. */
+      const a = await rpcWrite(() => client.rpc('report_post', { version_act: version, section, note: note.trim() === '' ? null : note }), (code) => (code === '53400' ? REPORT_LIMIT : undefined));
+      return a.ok ? { ok: true, value: null } : a;
+    },
+    async myOpenReports(): Promise<{ readonly open: number; readonly most: number } | null> {
+      try {
+        const d = (await read(() => client.rpc('my_open_reports'))).data;
+        return isObject(d) && typeof d['open'] === 'number' && typeof d['most'] === 'number' ? { open: d['open'], most: d['most'] } : null;
+      } catch {
+        return null;
+      }
+    },
+    async myHiddenVersion(post): Promise<MyHiddenVersion | null> {
+      if (!idOk(post)) return null;
+      try {
+        const d = (await read(() => client.rpc('my_hidden_version', { act: post }))).data;
+        if (!isObject(d) || typeof d['version'] !== 'string') return null;
+        if (d['status'] === 'hiddenUntilEdited' && typeof d['words'] === 'string') return { status: 'hiddenUntilEdited', version: d['version'], words: d['words'] };
+        return d['status'] === 'waiting' && typeof d['words'] === 'string' ? { status: 'waiting', version: d['version'], words: d['words'] } : null;
+      } catch {
+        return null;
+      }
+    },
     async beatMod(board): Promise<{ readonly mod: string; readonly pronouns: PronounSet; readonly board: string } | null> {
       if (!idOk(board)) return null;
       try {
@@ -1909,6 +1986,35 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         boardNames: rowsOf(d['boardNames']).map((b): BoardName => ({ id: b['id'], slug: b['slug'], name: b['name'], was: b['was'] ?? b['name'] })),
         bosses: toBosses(d['bosses']), contact: toContact(d['contact']),
       };
+    },
+    async reportsPage(): Promise<ReportsPage | null> {
+      /* A caller who is not an admin has no page (admin_reports would refuse them); is_admin is the one way to ask. */
+      if ((await read(() => client.rpc('is_admin'))).data !== true) return null;
+      const [reports, mail] = await Promise.all([read(() => client.rpc('admin_reports')), read(() => client.rpc('admin_failed_mail'))]);
+      const r = isObject(reports.data) ? reports.data : {};
+      const m = isObject(mail.data) ? mail.data : {};
+      const id = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+      return {
+        reports: rowsOf(r['reports']).map((x): AdminReport => ({
+          id: num(x['id']), versionAct: String(x['versionAct'] ?? ''), post: String(x['post'] ?? ''), thread: id(x['thread']), section: String(x['section'] ?? ''), note: id(x['note']), at: String(x['at'] ?? ''),
+          author: id(x['author']), words: String(x['words'] ?? ''),
+          past: rowsOf(x['past']).map((d): PastDecision => ({ outcome: String(d['outcome'] ?? ''), until: id(d['until']), at: String(d['at'] ?? ''), note: String(d['note'] ?? '') })),
+        })),
+        reviews: rowsOf(r['reviews']).map((x): AdminReview => ({
+          decision: num(x['decision']), post: String(x['post'] ?? ''), versionAct: String(x['versionAct'] ?? ''), thread: id(x['thread']), editedAt: String(x['editedAt'] ?? ''), author: id(x['author']), words: String(x['words'] ?? ''),
+        })),
+        failed: rowsOf(m['failed']).map((x): FailedMail => ({ id: num(x['id']), template: String(x['template'] ?? ''), account: String(x['account'] ?? ''), kind: x['kind'] === 'refused' ? 'refused' : 'failed', error: String(x['error'] ?? ''), at: String(x['at'] ?? '') })),
+        moreReports: r['moreReports'] === true, moreReviews: r['moreReviews'] === true, moreFailed: m['moreFailed'] === true,
+        waiting: num(m['waiting']), addressSet: m['addressSet'] !== false,
+      };
+    },
+    async decideReport(report, outcomes) {
+      const a = await rpcWrite(() => client.rpc('decide_report', { report, outcomes: outcomes.map((o) => ({ outcome: o.outcome, ...(o.until === undefined ? {} : { until: o.until }), ...(o.note === undefined ? {} : { note: o.note }) })) }));
+      return a.ok ? { ok: true, value: { decisions: (Array.isArray(a.value) ? (a.value as unknown[]) : []).map((n) => num(n)) } } : a;
+    },
+    async decide(on, outcome, until, note) {
+      const a = await rpcWrite(() => client.rpc('decide', { account: on.account ?? null, version_act: on.version ?? null, outcome, until: until ?? null, note: note ?? '' }));
+      return a.ok ? { ok: true, value: null } : a;
     },
     async presenceBox(place): Promise<Presence> {
       const at = place.kind === 'thread' ? place.thread : place.kind === 'board' ? place.board : null;
@@ -2009,6 +2115,15 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
      */
     log(before) {
       return readLogPage(readLogViews, before ?? null);
+    },
+    /* What admins did to the player's own posts (`my_conduct_log`, 0340): the caller's own rows, newest first; an unknown outcome is no row. */
+    async conductLog() {
+      const d = (await read(() => client.rpc('my_conduct_log'))).data;
+      return rowsOf(d).flatMap((r): ConductLogRow[] => {
+        const outcome = r['outcome'];
+        return outcome === 'hide' || outcome === 'hideUntilEdited' || outcome === 'unhide' || outcome === 'approve'
+          ? [{ decision: num(r['decision']), outcome, versionAct: String(r['version_act']), post: String(r['post']), thread: String(r['thread']), at: String(r['at']) }] : [];
+      });
     },
     /* The log page in one read (`log_page`, 0123): the first range of the views comes from the document, and a page that would not move reads its one instant by the views as `log` does. */
     async logPage(before): Promise<LogPage> {

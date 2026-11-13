@@ -20,6 +20,7 @@ import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
+import { packStroke } from '../../cards/whoops/points.ts';
 import { BRUSH_PX, brushOf } from '../../cards/whoops/scrub.ts';
 import { HoldStage, type HoldStageValue } from '../stick-around/Effect.tsx';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
@@ -33,11 +34,15 @@ const LONG_NAME = 'Professor Hootenanny McGillicuddy III';
 type Viewer = 'reader' | 'author' | 'as-is';
 type Open = 'none' | 'whoops' | 'stick-around';
 
-/* Strokes across the top band of a 988x330 body, in shares with its aspect, a brush apart: enough to wash part of a splat, never all of it. */
+/* Strokes across the top of a 988x330 body, in shares with its aspect, a brush apart, packed as the card saves them: 18 rows, each washed three times. A pass takes `WASH_TAKES` of the field and not all of what it touches (docs/plans/2026-11-12-whoops-ink-field-design.md), so this leaves the top layer 97% washed on the desktop (the headline's 32%) and 32% on the phone, part of a splat and never all of it. */
 const WHERE = brushOf(BRUSH_PX, { w: 988, h: 330 });
-const PARTLY = Array.from({ length: 14 }, (_, i) => {
-  const y = 0.05 + i * (WHERE.width * WHERE.aspect) * 0.7;
-  return { tool: 'wash' as const, ...WHERE, points: [[0, y], [1, y]] as [number, number][] };
+const STEP = 0.7;
+const ROWS = 18;
+const PASSES = 3;
+const PARTLY = Array.from({ length: ROWS * PASSES }, (_, n) => {
+  const i = n % ROWS;
+  const y = 0.05 + i * (WHERE.width * WHERE.aspect) * STEP;
+  return packStroke({ tool: 'wash', ...WHERE, points: [[0, y], [1, y]] });
 });
 
 /**

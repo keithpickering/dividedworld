@@ -156,8 +156,9 @@ author's account and its past outcomes; the outcome form; the re-review list; an
 |---|---|
 | An open report (the reporter's) | An admin closes it; the email says so |
 | A version hidden | An admin unhides it |
+| An edit after a plain hide (added 2026-11-12, the owner's answer in the build) | An admin approves it, or unhides the hidden version, which frees every edit written after the hide |
 | Hidden until edited, first time | The author's edit |
-| Hidden until edited, again | An admin approves the edit |
+| Hidden until edited, again | An admin approves the edit (an edit after a second hide-until-edited stays hidden until then; confirmed as built, added 2026-11-12, the owner's answer in the build) |
 | Suspended | Its end date, or an admin, reached by replying to the email |
 | Banned | An admin, reached by replying to the email |
 | Not yet accepted the current code | Accepting it at sign-in |
@@ -175,5 +176,5 @@ author's account and its past outcomes; the outcome form; the re-review list; an
 
 ## Open
 
-- Whether a banned account's address may register again: an instance setting, decided when open registration opens.
+- Whether a banned account's address may register again: answered 2026-11-12 by the owner as no, since a ban that a fresh sign-up undoes is not a ban, and the refusal reads the same as for any other address. As built, an account is its Auth login and an address is one login, so signing up again is signing in as the barred account (supabase/tests/0167-banned-address.sql); there is no setting, because "yes" would need one login to hold two accounts.
 - The admin address and Resend's sending domain for dw.gripe: the owner's to set when the instance deploys.

@@ -11,6 +11,8 @@ export interface SoundSlot {
   readonly loop?: true;
   /** The caption's leading dot, any CSS color; none draws no dot. */
   readonly ink?: string;
+  /** A multiplier on the sound's own level (1 when absent), by which an instance levels its files against each other. */
+  readonly gain?: number;
 }
 export interface SoundsUi {
   readonly slots: readonly SoundSlot[];

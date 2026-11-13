@@ -16,6 +16,8 @@
  *    that: Glitter Bomb's tag stands 165px lower still (272 in all) and what follows the list 165px lower (275 in all).
  *  - Below the Fold was then added at the end of the on-sale slots (after Glitter Bomb, before the hidden Main Event), so no slot above it moves and Glitter Bomb's tag stays 272px lower;
  *    the list has one more row (55px), so what follows the list stands 55px lower again (330 in all).
+ *  - The reports plan (Task 7) added Reports to the strip between Moves and The machine, which the board's two-button strip does not draw: The machine's button stands 127px
+ *    to the right (the width of Reports and its gap), and the table's heads, held from it, stand 127px to its left, so the heads keep their place on the page.
  *  - Mooch, Toll, 4D Chess and the hidden Off Day were then added after Below the Fold (before the hidden Main Event, Off Day last), so no slot above them moves and Glitter Bomb's tag stays 272px lower;
  *    the list has four more rows (55px each): the hidden Main Event's cell and note stand 165px lower again (495 in all) and, under Off Day's row, Save changes and its note 220px lower (550 in all).
  *  - Jimmy Wails was then added after 4D Chess, the last on-sale slot (before the hidden Main Event), so no slot above it moves and Glitter Bomb's tag stays 272px lower;
@@ -47,13 +49,13 @@ const manifest: BoardManifest = {
     { id: 'title', role: 'heading', name: 'THE MACHINE', buildName: 'The machine', box: 'position' },
     at('lead', 'text', 'The slots in the order players see them. A hidden slot draws nothing; a sold-out slot shows greyed. What a pack can roll is set in the code, with the cards.', { buildShift: { y: 30 } }),
     at('moves', 'link', 'MOVES', { buildName: 'Moves', origin: 'lead', originEdge: 'bottom' }),
-    at('machine', 'link', 'THE MACHINE', { buildName: 'The machine', origin: 'lead', originEdge: 'bottom' }),
-    at('head-slot', 'columnheader', 'SLOT', { buildName: 'Slot', origin: 'machine', originEdge: 'bottom' }),
-    at('head-order', 'columnheader', 'ORDER', { buildName: 'Order', origin: 'machine', originEdge: 'bottom' }),
-    at('head-item', 'columnheader', 'ITEM', { buildName: 'Item', origin: 'machine', originEdge: 'bottom' }),
-    at('head-availability', 'columnheader', 'AVAILABILITY', { buildName: 'Availability', origin: 'machine', originEdge: 'bottom' }),
-    at('head-price', 'columnheader', 'PRICE', { buildName: 'Price', origin: 'machine', originEdge: 'bottom' }),
-    at('head-boss', 'columnheader', 'THE BOSS', { buildName: 'The Boss', origin: 'machine', originEdge: 'bottom' }),
+    at('machine', 'link', 'THE MACHINE', { buildName: 'The machine', buildShift: { x: 127 }, origin: 'lead', originEdge: 'bottom' }),
+    at('head-slot', 'columnheader', 'SLOT', { buildName: 'Slot', buildShift: { x: -127 }, origin: 'machine', originEdge: 'bottom' }),
+    at('head-order', 'columnheader', 'ORDER', { buildName: 'Order', buildShift: { x: -127 }, origin: 'machine', originEdge: 'bottom' }),
+    at('head-item', 'columnheader', 'ITEM', { buildName: 'Item', buildShift: { x: -127 }, origin: 'machine', originEdge: 'bottom' }),
+    at('head-availability', 'columnheader', 'AVAILABILITY', { buildName: 'Availability', buildShift: { x: -127 }, origin: 'machine', originEdge: 'bottom' }),
+    at('head-price', 'columnheader', 'PRICE', { buildName: 'Price', buildShift: { x: -127 }, origin: 'machine', originEdge: 'bottom' }),
+    at('head-boss', 'columnheader', 'THE BOSS', { buildName: 'The Boss', buildShift: { x: -127 }, origin: 'machine', originEdge: 'bottom' }),
     at('code-a1', 'cell', 'A1', { origin: 'head-slot', originEdge: 'bottom' }),
     at('availability-booster', 'combobox', 'Booster: availability', { origin: 'head-slot', originEdge: 'bottom' }),
     at('price-booster', 'textbox', 'Booster: price', { origin: 'head-slot', originEdge: 'bottom' }),
