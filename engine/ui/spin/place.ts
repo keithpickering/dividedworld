@@ -1,7 +1,8 @@
 /**
  * The words and the link of a spun thread's origin place (docs/plans/2026-11-04-origin-place-design.md, section 1). The place
- * comes with the thread's row, worked out in SQL; these two pure functions turn it into the phrase after "spun from" and the
- * address that phrase goes to, so the board's row and the ORIGIN box say the same thing. The engine names no card: a key becomes
+ * comes with the thread's row, worked out in SQL; `placeParts` turns it into the phrase after "spun from", in the stretches that are
+ * links, so the board's row and the ORIGIN box say the same thing, and `placeWords` and `placeHref` read the whole phrase and its
+ * first address from it. The engine names no card: a key becomes
  * a name through `cardName`, which the instance's card list answers.
  */
 import type { OriginPlace, PlaceOn, PostPlace } from '../data/api.ts';

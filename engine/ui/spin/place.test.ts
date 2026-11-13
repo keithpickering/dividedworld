@@ -77,3 +77,15 @@ for (const [name, place, words, href] of rows) {
     assert.deepEqual(placeParts(place, cardName, 20), [{ words, href }]);
   });
 }
+
+test('placeWords and placeHref read placeParts: the whole phrase as words, and the first place it goes', () => {
+  assert.equal(placeWords(glint({ at: pressed, from: castFrom }), glintName), 'Glitter Bomb on Wario, at #31 in Why are my posts shiny');
+  assert.equal(placeWords(glint({ at: null, from: castFrom }), glintName), 'Glitter Bomb on Wario, cast from #12 in Title');
+  assert.equal(placeHref(glint({ at: pressed, from: castFrom }), 20), '/c/c%2Fw');
+});
+
+test('placeParts: a face-down card and a key the instance lacks never name a card on a character either', () => {
+  const on = (card: string | null) => placeParts({ kind: 'play', card, on: onWario, from: null, at: pressed }, glintName, 20)[0];
+  assert.deepEqual(on(null), { words: 'a face-down card on ', href: null });
+  assert.deepEqual(on('gone'), { words: 'a card on ', href: null });
+});
