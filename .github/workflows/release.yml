@@ -2,8 +2,10 @@
 # else: the candidate is main's head when the run starts. It is built, its SQL suite and its e2e flows run, and only
 # then does `production` fast-forward to it. Netlify builds `production`. A red job stops everything after it:
 # production stays where it is, the run goes red and GitHub emails the owner, and `report` names the failed job.
-# The fix goes forward. A dispatch, the owner's alone, always releases main's head. Migrations and functions are
-# still deployed by hand (issue #243). 22:13 PDT, 21:13 PST. tools/check-release-workflows.mjs holds this shape.
+# The fix goes forward. A dispatch, the owner's alone, always releases main's head. After the tests and before the
+# site, three jobs deploy the backend (docs/plans/2026-11-12-release-backend-design.md): schema, functions and seed,
+# in the `production` Environment, which holds the Supabase secrets. 22:13 PDT, 21:13 PST.
+# tools/check-release-workflows.mjs holds this shape.
 # Carried from currents' release.yml, cut down to the site.
 name: Release
 on:
@@ -58,8 +60,91 @@ jobs:
     uses: ./.github/workflows/web.yml
     with:
       ref: ${{ needs.candidate.outputs.sha }}
-  promote:
+  schema:
     needs: [candidate, web]
+    if: needs.candidate.outputs.same != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      # ubuntu-latest ships psql, which check-deployed-migrations needs. Asked for by name, so a
+      # runner image without it fails here, before anything is touched, with a plain message.
+      - run: psql --version
+      # `--yes` answers db push's confirmation prompt, which has no terminal to read it from here.
+      # Never --include-all: a migration older than the remote's newest that is missing remotely is
+      # a problem for the owner (the --before check names it), not something to apply unseen.
+      - env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -e
+          node tools/check-deployed-migrations.mjs --db "$SUPABASE_DB_URL" --before
+          npx supabase db push --yes --db-url "$SUPABASE_DB_URL"
+          node tools/check-deployed-migrations.mjs --db "$SUPABASE_DB_URL" --after
+  functions:
+    needs: [candidate, schema]
+    if: needs.candidate.outputs.same != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      # The deploy overwrites and the CLI does not tell a transport failure from a refusal, so the
+      # whole deploy is tried up to three times (design D8).
+      - env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          for i in 1 2 3; do npx supabase functions deploy --use-api --project-ref "$SUPABASE_PROJECT_REF" && exit 0; sleep $((i * 20)); done; exit 1
+  seed:
+    needs: [candidate, functions]
+    if: needs.candidate.outputs.same != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      # curl retries only a timeout, a refused connection, 408, 429 and 5xx, so the seed's 422 stops
+      # at once. --fail-with-body prints the body on a 4xx or 5xx too, and the pipe keeps curl's exit
+      # status, so the summary shows the problems and the step still goes red.
+      - env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          KAYFABB_JOBS_KEY: ${{ secrets.KAYFABB_JOBS_KEY }}
+        run: |
+          set -o pipefail
+          {
+            echo "## Seed"
+            echo '```'
+            status=0
+            curl -sS --fail-with-body --retry 3 --retry-connrefused --max-time 120 -X POST "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/seed" -H "apikey: ${KAYFABB_JOBS_KEY}" || status=$?
+            echo
+            echo '```'
+            exit $status
+          } 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+  promote:
+    needs: [candidate, seed]
     if: needs.candidate.outputs.same != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -73,7 +158,7 @@ jobs:
       # A fast-forward only: no force, so `production` can only move along main.
       - run: git push origin "${{ needs.candidate.outputs.sha }}:refs/heads/production"
   report:
-    needs: [candidate, build, sql, web, promote]
+    needs: [candidate, build, sql, web, schema, functions, seed, promote]
     if: always() && needs.candidate.result == 'success' && needs.candidate.outputs.same != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -87,7 +172,7 @@ jobs:
       - env:
           CANDIDATE: ${{ needs.candidate.outputs.sha }}
           PREVIOUS: ${{ needs.candidate.outputs.previous }}
-          RESULTS: "build=${{ needs.build.result }} sql=${{ needs.sql.result }} web=${{ needs.web.result }} promote=${{ needs.promote.result }}"
+          RESULTS: "build=${{ needs.build.result }} sql=${{ needs.sql.result }} web=${{ needs.web.result }} schema=${{ needs.schema.result }} functions=${{ needs.functions.result }} seed=${{ needs.seed.result }} promote=${{ needs.promote.result }}"
         run: |
           {
             echo "## Release of ${CANDIDATE}"

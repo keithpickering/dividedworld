@@ -11,6 +11,9 @@
  * of them (a dropped job, a `--force`, a second workflow that also pushes, a production-only
  * build command) leaves the site deploying something the tests never saw. This check fails the
  * build on each; its rules R1 to R7 are the design's section 4. R8 and R9 are not the release's.
+ * R10 to R13 are the backend design's section 4 (docs/plans/2026-11-12-release-backend-design.md),
+ * whose own numbers R8 to R11 were taken here: its R8 is R10, its R9 is R11, its R10 is R12 and
+ * its R11 is R13. R1's chain there grows to build, sql, web, schema, functions, seed, promote.
  * R8: the Postgres every workflow's service starts is named by version and digest, and is one
  * string across all of them. The `postgres:17` tag moved from 17.11 to 17.12 on 2026-11-12 and
  * every SQL run failed (issue #596), and two workflows that must name one image are two lists
@@ -20,6 +23,14 @@
  * the matrix is the one list. A list with a gap, or a command whose total is larger than the
  * list, runs fewer tests and stays green (issue #605), and a second matrix key would multiply
  * `job-total`.
+ *
+ * R10: only `schema`, `functions` and `seed` name `environment: production`, and each does, so
+ * the secrets are readable by no pull-request workflow. R11: only those three jobs name the four
+ * Supabase and jobs-key secrets, and no other workflow does; they come through `env:`, never
+ * inside a `run:` line. R12: no workflow runs `--include-all`, `db reset` or `functions delete`,
+ * and no backend job traces its shell (`set -x`), which would print a secret. R13: `schema` runs
+ * check-deployed-migrations --before, then `db push`, then the check --after, in that order, and
+ * each backend job checks out the candidate.
  *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
  * alive check and cockpit reference stay behind.
@@ -35,7 +46,10 @@ import { parse } from 'yaml';
 const WORKFLOWS = '.github/workflows';
 const RELEASE = `${WORKFLOWS}/release.yml`;
 const CALLED = ['build', 'sql', 'web'];
-const JOBS = ['candidate', 'build', 'sql', 'web', 'promote', 'report'];
+const BACKEND = ['schema', 'functions', 'seed'];
+const JOBS = ['candidate', 'build', 'sql', 'web', ...BACKEND, 'promote', 'report'];
+const SECRET_NAMES = ['SUPABASE_ACCESS_TOKEN', 'SUPABASE_DB_URL', 'SUPABASE_PROJECT_REF', 'KAYFABB_JOBS_KEY'];
+const SECRET_NAME = new RegExp(`\\b(?:${SECRET_NAMES.join('|')})\\b`);
 const SHA = '${{ needs.candidate.outputs.sha }}';
 const REF = '${{ inputs.ref }}';
 /**
@@ -88,11 +102,11 @@ export function problems(files) {
   } else {
     const jobs = isObj(rel.jobs) ? rel.jobs : {};
     const missing = JOBS.filter((j) => !isObj(jobs[j]));
-    const chain = [['sql', 'build'], ['web', 'sql'], ['promote', 'web']];
+    const chain = [['sql', 'build'], ['web', 'sql'], ['schema', 'web'], ['functions', 'schema'], ['seed', 'functions'], ['promote', 'seed']];
     const broken = chain.filter(([job, before]) => isObj(jobs[job]) && !list(jobs[job].needs).includes(before));
     const bad1 = [
       ...(missing.length ? [`jobs missing: ${missing.join(', ')}`] : []),
-      ...broken.map(([j, b]) => `the chain build -> sql -> web -> promote is broken: ${j} does not need ${b}`),
+      ...broken.map(([j, b]) => `the chain build -> sql -> web -> schema -> functions -> seed -> promote is broken: ${j} does not need ${b}`),
     ];
     if (bad1.length) out.push(`${RELEASE}: R1 ${bad1.join('; ')}`);
 
@@ -243,6 +257,87 @@ export function problems(files) {
       }
       if (bad9.length) out.push(`${path}: R9 the e2e job: ${bad9.join('; ')}`);
     }
+  }
+
+  // R10: the Environment holding the secrets is named by the three backend jobs and no other.
+  if (docs[RELEASE]) {
+    const rj = isObj(docs[RELEASE].jobs) ? docs[RELEASE].jobs : {};
+    for (const name of BACKEND) if (!isObj(rj[name])) out.push(`${RELEASE}: R10 job ${name} is missing, so nothing declares environment production for it`);
+  }
+  for (const [path, doc] of Object.entries(docs)) {
+    for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
+      const env = job?.environment;
+      const named = typeof env === 'string' ? env : isObj(env) ? env.name : undefined;
+      const isBackend = path === RELEASE && BACKEND.includes(jobName);
+      if (isBackend && named !== 'production') out.push(`${path}: R10 job ${jobName} declares environment ${JSON.stringify(named)}, not production`);
+      if (!isBackend && env !== undefined) out.push(`${path}: R10 job ${jobName} names an environment; only schema, functions and seed in release.yml do`);
+    }
+  }
+
+  // R11: the secrets' names appear in the three backend jobs and nowhere else, and only in `env:`.
+  for (const [path, doc] of Object.entries(docs)) {
+    const found = new Set();
+    const text = (v) => JSON.stringify(v ?? {});
+    for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
+      const isBackend = path === RELEASE && BACKEND.includes(jobName);
+      if (!isBackend && SECRET_NAME.test(text(job))) found.add(`job ${jobName} names a secret; only schema, functions and seed in release.yml may`);
+      if (isBackend) {
+        for (const step of list(job?.steps)) {
+          if (/\$\{\{\s*secrets\./.test(String(step?.run ?? ''))) found.add(`job ${jobName} puts \${{ secrets.* }} inside a run line; pass it through env:`);
+          for (const [k, v] of Object.entries(isObj(step?.env) ? step.env : {})) {
+            const m = String(v).match(/^\$\{\{\s*secrets\.(\w+)\s*\}\}$/);
+            if (SECRET_NAMES.includes(k) && !(m && m[1] === k)) found.add(`job ${jobName} env ${k} is not \${{ secrets.${k} }}`);
+          }
+        }
+        if (SECRET_NAME.test(text({ ...job, steps: undefined })) ) found.add(`job ${jobName} names a secret outside a step's env`);
+      }
+    }
+    if (path !== RELEASE) {
+      const rest = text({ ...doc, jobs: undefined });
+      if (SECRET_NAME.test(rest)) found.add('names a secret outside a job');
+    }
+    if (found.size) out.push(`${path}: R11 ${[...found].join('; ')}`);
+  }
+
+  // R12: nothing runs a command that destroys or skips what the deploy protects.
+  for (const [path, doc] of Object.entries(docs)) {
+    const bad12 = new Set();
+    for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
+      const isBackend = path === RELEASE && BACKEND.includes(jobName);
+      for (const step of list(job?.steps)) {
+        for (const l of shellLines(step)) {
+          if (/--include-all\b/.test(l)) bad12.add(`job ${jobName} runs --include-all (${l.trim()})`);
+          if (/\bdb\s+reset\b/.test(l)) bad12.add(`job ${jobName} runs db reset (${l.trim()})`);
+          if (/\bfunctions\s+delete\b/.test(l)) bad12.add(`job ${jobName} runs functions delete (${l.trim()})`);
+          if (isBackend && (/(^|[;&|\s])set\s+(-[a-z]*x|[+-]o\s+xtrace)/.test(l) || /\bbash\s+-[a-z]*x/.test(l))) bad12.add(`job ${jobName} traces its shell, which would print a secret (${l.trim()})`);
+        }
+      }
+    }
+    if (bad12.size) out.push(`${path}: R12 ${[...bad12].join('; ')}`);
+  }
+
+  // R13: schema's order, and every backend job runs the candidate's code.
+  const rel13 = docs[RELEASE];
+  if (rel13 && isObj(rel13.jobs)) {
+    const bad13 = [];
+    for (const name of BACKEND) {
+      const job = rel13.jobs[name];
+      if (!isObj(job)) continue;
+      const cos = checkoutSteps(job);
+      if (!cos.length || cos.some((s) => s.with?.ref !== SHA)) bad13.push(`${name} does not check out ${SHA}`);
+    }
+    if (isObj(rel13.jobs.schema)) {
+      const lines = list(rel13.jobs.schema.steps).flatMap(shellLines);
+      const at = (re) => lines.findIndex((l) => re.test(l));
+      const before = at(/check-deployed-migrations\S*\s.*--before\b/);
+      const push = at(/\bsupabase\s+db\s+push\b/);
+      const after = at(/check-deployed-migrations\S*\s.*--after\b/);
+      if (before < 0) bad13.push('schema never runs check-deployed-migrations --before');
+      if (push < 0) bad13.push('schema never runs supabase db push');
+      if (after < 0) bad13.push('schema never runs check-deployed-migrations --after');
+      if (before >= 0 && push >= 0 && after >= 0 && !(before < push && push < after)) bad13.push('schema must run --before, then db push, then --after, in that order');
+    }
+    if (bad13.length) out.push(`${RELEASE}: R13 ${bad13.join('; ')}`);
   }
   return out;
 }
