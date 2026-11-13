@@ -12,13 +12,18 @@
  * The poisons, each its own case: a remote version the repository lacks (under both modes); a
  * local version not yet remote (fine before, a complaint after); equal lists; the command with no
  * --db, no mode, both modes, and a database on this machine in each spelling; the real folder; and
- * the retry, which repeats a connection failure and throws a query error at once.
+ * the retry, which repeats a transport failure and throws a query error or any refusal by a server
+ * that answered at once, with one case per class of psql message; and the environment the check
+ * hands psql (a connect timeout of its own, English messages), built without connecting.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { localVersions, problems, retrying } from './check-deployed-migrations.mjs';
+import * as checkModule from './check-deployed-migrations.mjs';
+import { connection } from './instance-files.mjs';
+
+const { localVersions, problems, retrying } = checkModule;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, 'check-deployed-migrations.mjs');
@@ -55,7 +60,7 @@ check('after names both directions at once', p.length === 2 && p.some((x) => x.i
 /* ----------------------------------------------------------------------- the command ---- */
 
 function cli(...argv) {
-  return spawnSync(process.execPath, [script, ...argv], { encoding: 'utf8', timeout: 10_000, env: { ...process.env, PGCONNECT_TIMEOUT: '1' } });
+  return spawnSync(process.execPath, [script, ...argv], { encoding: 'utf8', timeout: 10_000 });
 }
 const refuses = (name, argv, want) => {
   const c = cli(...argv);
@@ -114,6 +119,48 @@ await retryCase('7d. a refused login is not a transport failure and is thrown at
   try { await retrying(() => { calls++; throw refused(); }, { sleep: noSleep }); } catch (e) { err = e; }
   check('7d. a refused login is not a transport failure and is thrown at once', err && calls === 1, `${calls} calls`);
 });
+
+const psqlFailed = (detail) => () => new Error(`psql: error: connection to server at "db.example.com" (1.2.3.4), port 5432 failed: ${detail}`);
+const refusal = (name, make) => retryCase(name, async () => {
+  let calls = 0;
+  let err = null;
+  try { await retrying(() => { calls++; if (calls > 5) throw new Error('retried past the cap'); throw make(); }, { sleep: noSleep }); } catch (e) { err = e; }
+  check(name, err && calls === 1 && !/past the cap/.test(err.message), `${calls} calls, ${err?.message}`);
+});
+const transport = (name, make) => retryCase(name, async () => {
+  let calls = 0;
+  let err = null;
+  try { await retrying(() => { calls++; if (calls > 5) throw new Error('retried past the cap'); throw make(); }, { sleep: noSleep }); } catch (e) { err = e; }
+  check(name, err && calls === 3 && !/past the cap/.test(err.message), `${calls} calls, ${err?.message}`);
+});
+
+await refusal('7e. the pooler\'s "Tenant or user not found" is a refusal, thrown at once', psqlFailed('FATAL:  Tenant or user not found'));
+await refusal('7f. "no pg_hba.conf entry" is a refusal, thrown at once', psqlFailed('FATAL:  no pg_hba.conf entry for host "5.6.7.8", user "postgres", database "postgres", SSL encryption'));
+await refusal('7g. "SSL connection is required" is a refusal, thrown at once', psqlFailed('FATAL:  SSL connection is required. Please specify SSL options and retry.'));
+await refusal('7h. an unknown role is a refusal, thrown at once', psqlFailed('FATAL:  role "nobody" does not exist'));
+await refusal('7i. an unknown database is a refusal, thrown at once', psqlFailed('FATAL:  database "nope" does not exist'));
+await transport('7j. "the database system is starting up" is transient and retried', psqlFailed('FATAL:  the database system is starting up'));
+await transport('7k. "the database system is shutting down" is transient and retried', psqlFailed('FATAL:  the database system is shutting down'));
+await transport('7l. "remaining connection slots are reserved" is transient and retried', psqlFailed('FATAL:  remaining connection slots are reserved for non-replication superuser connections'));
+await transport('7m. "too many clients" is transient and retried', psqlFailed('FATAL:  sorry, too many clients already'));
+await transport('7n. "timeout expired" is a transport failure and is retried', psqlFailed('timeout expired'));
+await transport('7o. an unresolvable host name is a transport failure and is retried', () => new Error('psql: error: could not translate host name "db.example.com" to address: Temporary failure in name resolution'));
+await transport('7p. "server closed the connection unexpectedly" is a transport failure and is retried', () => new Error('psql:<stdin>:1: error: server closed the connection unexpectedly\n\tThis probably means the server terminated abnormally\n\tbefore or while processing the request.'));
+await transport('7q. "Network is unreachable" is a transport failure and is retried', psqlFailed('Network is unreachable\n\tIs the server running on that host and accepting TCP/IP connections?'));
+await transport('7r. "could not receive data from server" is a transport failure and is retried', () => new Error('psql: error: SSL SYSCALL error: EOF detected\npsql: error: could not receive data from server: Connection reset by peer'));
+
+/* ------------------------------------------------------- the environment psql gets ---- */
+
+const connectOptions = checkModule.connectOptions;
+const plain = connection('postgres://postgres:secretpw@db.invalid:5432/postgres');
+let handed = null;
+try { handed = connectOptions(plain); } catch (e) { check('8a. connectOptions exists', false, e.message); }
+if (handed) {
+  check('8a. a connection with no timeout of its own gets 10 seconds', handed.env.PGCONNECT_TIMEOUT === '10', JSON.stringify(handed.env.PGCONNECT_TIMEOUT));
+  check('8b. the URL\'s own connect_timeout is kept', connectOptions(connection('postgres://postgres:secretpw@db.invalid:5432/postgres?connect_timeout=3')).env.PGCONNECT_TIMEOUT === '3');
+  check('8c. psql runs untranslated: LC_ALL is C', handed.env.LC_ALL === 'C', String(handed.env.LC_ALL));
+  check('8d. the rest of the connection is untouched and the input is not mutated', handed.env.PGHOST === 'db.invalid' && handed.named === plain.named && !('LC_ALL' in plain.env));
+}
 
 /* ----------------------------------------------------------------------- the tail ---- */
 

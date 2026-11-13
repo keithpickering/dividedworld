@@ -25,9 +25,12 @@
  * refused too. It prints the host it read, never the URL: the password is handed to psql in its
  * environment (tools/instance-files.mjs), and every message passes through scrub().
  *
- * A connection that fails is tried again, three attempts with a pause that doubles between them,
- * and only a connection: a failure of the transport is a fact about the network, while a query
- * error (the table missing) or a refused login is a fact about the request, and is thrown at once.
+ * A transport failure is tried again, three attempts with a pause that doubles between them: no
+ * answer from the server is a fact about the network. A server that answered and refused (a login,
+ * an unknown tenant, role or database, pg_hba, SSL required) or a query error (the table missing)
+ * is a fact about the request, and is thrown at once; so is anything unrecognized. Only the
+ * server's own "come back soon" (starting up, too many clients) is retried. Each attempt gives up
+ * connecting after 10 seconds, unless the URL says connect_timeout.
  * Exit status: 0 no problems, 1 problems (each names its versions), 2 refused.
  */
 
@@ -70,11 +73,32 @@ export function problems(local, remote, mode) {
   return out;
 }
 
-/** A failure of the transport: the server could not be reached or dropped the line. A refused login is not. */
+/**
+ * A failure of the transport: no answer from a server, or an answer that says to come back soon.
+ * psql prefixes every connect error with `connection to server at ... failed`, so that prefix says
+ * nothing; what follows it does. A server that answered with FATAL has refused the request (an
+ * unknown tenant, role or database, no pg_hba.conf entry, SSL required, a wrong password) and
+ * trying again cannot change that, except the FATALs that name a moment (starting up, shutting
+ * down, too many clients, connection slots reserved). No answer at all (name resolution, refused,
+ * timed out, unreachable, the line dropped) is the network. Anything else is not retried.
+ */
 export function isConnectionFailure(error) {
   const text = String(error?.message ?? error);
-  if (/authentication failed|password|role .* does not exist|database .* does not exist/i.test(text)) return false;
-  return /could not connect|connection to server .* failed|connection refused|timeout expired|timed out|could not translate host name|temporary failure in name resolution|server closed the connection|network is unreachable|no route to host|connection reset|could not receive data/i.test(text);
+  if (/the database system is (starting up|shutting down|in recovery mode)|too many (clients|connections)|remaining connection slots are reserved/i.test(text)) return true;
+  if (/\b(FATAL|ERROR):/.test(text)) return false;
+  return /could not translate host name|name or service not known|temporary failure in name resolution|connection refused|timeout expired|timed out|server closed the connection unexpectedly|network is unreachable|no route to host|connection reset|could not receive data|ssl syscall|unexpected eof/i.test(text);
+}
+
+const CONNECT_TIMEOUT_SECONDS = '10';
+
+/**
+ * The connection as the check hands it to psql: a connect timeout of its own, unless the URL carried
+ * one (instance-files deletes the PG* variables a job sets, so none inherited would apply), and
+ * LC_ALL=C so that the messages isConnectionFailure reads are psql's English whatever the runner's locale.
+ * Pure; the connection it is given is not changed.
+ */
+export function connectOptions(c) {
+  return { ...c, env: { PGCONNECT_TIMEOUT: CONNECT_TIMEOUT_SECONDS, ...c.env, LC_ALL: 'C' } };
 }
 
 /**
@@ -127,7 +151,7 @@ async function main() {
     process.exit(2);
   }
   let c;
-  try { c = connection(a.db); } catch (e) {
+  try { c = connectOptions(connection(a.db)); } catch (e) {
     console.error(`  deployed-migrations: refused: ${scrub(e.message)}`);
     process.exit(2);
   }
