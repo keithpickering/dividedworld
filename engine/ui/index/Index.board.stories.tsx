@@ -30,7 +30,7 @@ const world: World = (fake, instance) => {
 const longTitleWorld: World = (fake, instance) => {
   const [first, second] = instance.classes;
   const me = fake.seed.account('story-player', { seasoned: true });
-  const hooligan = fake.seed.character(me, 'Reginald Featherstonehaugh', (second ?? first)!.key, { at: OCT_6 - 5 * 86_400_000 });
+  const hooligan = fake.seed.character(me, 'Sir Reginald Featherstonehaugh-Wetherby the Third', (second ?? first)!.key, { at: OCT_6 - 5 * 86_400_000 });
   const general = instance.boards.find((b) => !b.system)!.slug;
   fake.seed.thread(general, hooligan, 'A thread whose title goes on and on, well past the width a last post leaves it, so that it has to wrap', 'Hi.', { at: OCT_6 });
   fake.seed.settle({ at: OCT_6 - 86_400_000, wallet: { [me]: 240 } });
@@ -53,5 +53,5 @@ type Story = StoryObj<typeof IndexBoardStory>;
 /** The index on the Main board's layout, at 1440 wide. */
 export const Index: Story = {};
 
-/** The index with a long title and a long name in the last post (long, but narrower than the row: a name wider than the row breaks inside the byline, which no case holds); compared with no manifest. */
+/** The index with a long title and a long name in the last post (a name wider than the row on a phone, which the unit holds: its "·" stays at the head of the name's first line and its comma hangs); compared with no manifest. */
 export const LongTitle: Story = { parameters: { world: longTitleWorld } };

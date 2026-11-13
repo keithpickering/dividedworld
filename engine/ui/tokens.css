@@ -28,6 +28,12 @@
   --kb-board-link-visited: var(--kb-link-visited);
   --kb-board-muted: var(--kb-muted);
   --kb-focus: #000;
+  /*
+   * The hung comma of a last post's unit (board.css's .kb-thread-last-by, index.css's .kb-board-last-by): the comma's box and the gap after it. Both lists read these two, so a thread row and a
+   * board row hang the comma the same way; em, so they follow the unit's own text size. Not a look: a theme has no reason to change them.
+   */
+  --kb-comma: 0.4em;
+  --kb-comma-gap: 0.5em;
   --kb-selection-fg: #fff;
   --kb-selection-bg: #000;
   --kb-hud-bg: #fff;
