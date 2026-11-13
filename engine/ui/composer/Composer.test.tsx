@@ -692,3 +692,41 @@ describe('the notice about quotes nested too deep', () => {
     await waitFor(() => expect(posted).toHaveBeenCalledTimes(1));
   });
 });
+
+describe('the notice about quotes nested too deep, in an edit', () => {
+  const NOTICE = 'Some quotes in this post are nested too deep to show. A note will take their place.';
+  const deep = (id: string) => `[quote=${id}]`.repeat(MAX_DEPTH + 1) + 'deep' + '[/quote]'.repeat(MAX_DEPTH + 1);
+  const open = async (w: ReturnType<typeof threadWorld>, seq: number) => {
+    openThread(w, undefined, { settings: { postMaxLength: 2000 } });
+    const mine = await screen.findByRole('article', { name: new RegExp(`^Post ${seq} by Pipewrench`, 'u') });
+    await userEvent.click(within(mine).getByRole('button', { name: 'Edit' }));
+    return { mine, form: within(mine).getByRole('form', { name: `Edit post ${seq}` }) };
+  };
+
+  test('shows when the draft gains a cut, goes when it loses it, and the edit still saves', async () => {
+    const w = threadWorld(2, { postMaxLength: 2000 });
+    const edited = vi.spyOn(w.fake, 'edit');
+    const { form } = await open(w, 2);
+    const box = within(form).getByRole('textbox', { name: 'Your edit' });
+    expect(within(form).queryByText(NOTICE)).toBeNull();
+    await userEvent.clear(box);
+    await userEvent.paste(deep(w.ids[0]!));
+    const notice = await within(form).findByText(NOTICE);
+    expect(notice.closest('[role="status"]')).not.toBeNull();
+    await userEvent.clear(box);
+    await userEvent.paste('plain again');
+    await waitFor(() => expect(within(form).queryByText(NOTICE)).toBeNull());
+    await userEvent.clear(box);
+    await userEvent.paste(deep(w.ids[0]!));
+    await within(form).findByText(NOTICE);
+    await userEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(edited).toHaveBeenCalledTimes(1));
+  });
+
+  test('opening the edit form on a post that already holds a cut shows the notice at once', async () => {
+    const w = threadWorld(2, { postMaxLength: 2000 });
+    w.fake.seed.post(w.thread, w.pipe, deep(w.ids[0]!));
+    const { form } = await open(w, 3);
+    expect(within(form).getByText(NOTICE)).toBeInTheDocument();
+  });
+});
