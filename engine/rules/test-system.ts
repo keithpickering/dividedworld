@@ -29,15 +29,15 @@ export const testCosmeticsContent: Pick<Instance, 'gear' | 'trophies' | 'events'
   events: { lines: [] },
 };
 
-export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'conduct' | 'systemEnabled' | 'oldVoice' | 'cardWriteSettleSeconds' | 'oldVoiceWindow' | 'oldVoiceTokenizer' | 'oldVoicePromptFloor' | 'cardWriteShortShare' | 'cardWriteRerolls' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestBoards' | 'digestBoardDays' | 'movedStubDays' | 'farewellWindowHours' | 'bundleMostParts' | 'bundleAuthoredMostParts' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers' | 'cosmetics'> = {
+export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'conduct' | 'systemEnabled' | 'oldVoice' | 'cardWriteSettleSeconds' | 'oldVoiceWindow' | 'oldVoiceTokenizer' | 'oldVoicePromptFloor' | 'cardWriteFullShare' | 'cardWriteTopUps' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestBoards' | 'digestBoardDays' | 'movedStubDays' | 'farewellWindowHours' | 'bundleMostParts' | 'bundleAuthoredMostParts' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers' | 'cosmetics'> = {
   systemEnabled: false,
   oldVoice: true,
   cardWriteSettleSeconds: 30,
   oldVoiceWindow: 1024,
   oldVoiceTokenizer: 'gpt2',
   oldVoicePromptFloor: 256,
-  cardWriteShortShare: 0.5,
-  cardWriteRerolls: 3,
+  cardWriteFullShare: 0.9,
+  cardWriteTopUps: 3,
   conduct: { openReportsMost: 3, adminAddress: null },
   pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',

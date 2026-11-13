@@ -55,10 +55,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   oldVoiceTokenizer: 'gpt2',
   /** A play leaves room for at least 256 tokens of prompt, so a play may buy at most 768. */
   oldVoicePromptFloor: 256,
-  /** A text under half the tokens it asked for is rolled again. */
-  cardWriteShortShare: 0.5,
-  /** Up to three more rolls after the first. */
-  cardWriteRerolls: 3,
+  /** A tail under nine tenths of the tokens it bought is topped up. */
+  cardWriteFullShare: 0.9,
+  /** Up to three more calls after the first, each continuing a tail that came back short. */
+  cardWriteTopUps: 3,
   /** A character a player makes starts with it/its, as every character did before pronouns; its player changes it on the character's page. */
   pronouns: PRONOUN_PRESETS.it,
   /** Daily, at 09:23 UTC, an hour after the settlement, so the Boss's digest holds the newest standings. */
@@ -241,11 +241,11 @@ export const defaults: Settings = deepFreeze<Settings>({
     'laughTrack.perPlace': 5,
     'laughTrack.freePlaces': 5,
     'laughTrack.mostAdded': 100,
-    /** You Were Saying?: a play writes 25 tokens and 25 more for each step, at most 200, and each step costs 0.25 on top of its price at the machine. */
-    'youWereSaying.baseTokens': 25,
-    'youWereSaying.stepTokens': 25,
+    /** You Were Saying?: a play writes 50 tokens and 50 more for each step, at most 300, and each step costs 0.25 on top of its price at the machine. */
+    'youWereSaying.baseTokens': 50,
+    'youWereSaying.stepTokens': 50,
     'youWereSaying.stepPrice': 25,
-    'youWereSaying.mostTokens': 200,
+    'youWereSaying.mostTokens': 300,
     /** Jimmy Wails's drive: the four amounts a gift may be, in hundredths (0.10, 0.25, 0.50 and 1.00). */
     'jimmyWails.gift1': 10,
     'jimmyWails.gift2': 25,

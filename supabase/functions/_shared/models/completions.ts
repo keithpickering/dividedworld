@@ -21,7 +21,14 @@ export interface RawCompletion {
 }
 
 export async function complete(request: CompletionRequest, baseUrl: string, apiKey: string | undefined, serverModel: string, wire: Wire): Promise<RawCompletion> {
-  const body = { model: serverModel, prompt: request.prompt, temperature: request.temperature, top_p: request.topP, stop: request.stop, max_tokens: request.maxTokens };
+  // Only the sampling fields a request sets are sent (llama.cpp's names), so a request that sets none sends the body it always did.
+  const body: Record<string, unknown> = { model: serverModel, prompt: request.prompt, temperature: request.temperature, top_p: request.topP, stop: request.stop, max_tokens: request.maxTokens };
+  if (request.topK !== undefined) body.top_k = request.topK;
+  if (request.minP !== undefined) body.min_p = request.minP;
+  if (request.repeatPenalty !== undefined) body.repeat_penalty = request.repeatPenalty;
+  if (request.repeatLastN !== undefined) body.repeat_last_n = request.repeatLastN;
+  if (request.ignoreEos !== undefined) body.ignore_eos = request.ignoreEos;
+  if (request.ban && request.ban.length > 0) body.logit_bias = request.ban.map((id) => [id, false]);
   const started = wire.now();
   const answer = (await postJson(`${baseUrl.replace(/\/+$/, '')}/v1/completions`, apiKey ? { authorization: `Bearer ${apiKey}` } : {}, body, wire)) as {
     choices?: { text?: string }[];

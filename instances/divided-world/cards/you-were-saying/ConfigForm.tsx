@@ -17,13 +17,12 @@ import './you-were-saying.css';
 
 /** The length in words by the tokens a step reaches, the largest threshold the tokens meet: honest under overridden step sizes. */
 const WORDS_BY_TOKENS: readonly (readonly [number, string])[] = [
-  [200, 'a rant'],
-  [175, 'a very long paragraph'],
-  [150, 'a long paragraph'],
-  [125, 'a paragraph and a half'],
+  [300, 'a rant'],
+  [250, 'a very long paragraph'],
+  [200, 'a long paragraph'],
+  [150, 'a paragraph and a half'],
   [100, 'a paragraph'],
-  [75, 'a short paragraph'],
-  [50, 'a couple of sentences'],
+  [50, 'a short paragraph'],
   [0, 'about a sentence'],
 ];
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { tokenCounter } from './tokens.ts';
+import { tokenCounter, tokenId } from './tokens.ts';
 
 // Golden counts for test 2 were produced once by Python's `tokenizers` (0.23.3), loading the very files
 // that bpe.json was built from (openai-community/gpt2 `vocab.json` and `merges.txt`). Nothing here is derived
@@ -141,4 +141,14 @@ test('a text of 100,000 characters is counted in under a second', () => {
   console.log(`100,000 characters: ${n} tokens in ${ms.toFixed(0)} ms`);
   assert.ok(n > 0);
   assert.ok(ms < 1000, `${ms} ms`);
+});
+
+test('tokenId is the id of a text that is exactly one gpt2 token, null for anything else, and always null for bytes', () => {
+  assert.equal(tokenId('gpt2', '---'), 6329);
+  assert.equal(tokenId('gpt2', ' ---'), 11420);
+  assert.equal(tokenId('gpt2', 'Posted'), 14231);
+  assert.equal(tokenId('gpt2', ' Posted'), 12918);
+  assert.equal(tokenId('gpt2', 'hello world'), null);
+  assert.equal(tokenId('gpt2', ''), null);
+  for (const text of ['---', ' ---', 'Posted', 'hello world']) assert.equal(tokenId('bytes', text), null, text);
 });

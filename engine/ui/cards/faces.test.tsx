@@ -13,7 +13,7 @@ const ok = { ok: true as const, value: undefined };
 const settings = { economy: { 'a.price': 100, 'b.price': 250 } } as unknown as Settings;
 const plain: CardRules = { key: 'a', name: 'A card', alignment: 'sweet', rarity: 'common', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
 const longer: CardRules = { ...plain, key: 'b', name: 'B card', alignment: 'salty', rarity: 'common', stack: 3, playPrice: (_s, t) => Math.min(200, t.reach === 'post' ? t.length : 0) };
-const writer: CardRules = { ...plain, key: 'w', name: 'W card', rarity: 'rare', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
+const writer: CardRules = { ...plain, key: 'w', name: 'W card', rarity: 'rare', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
 const ui: CardUi = { key: 'b', art: { color: '#f00', ink: '#000', canvas: '', mark: '', tagline: 'Short.', credit: 'Test' }, summary: 'One sentence.', describe: () => 'In full.' };
 
 describe('what every screen knows of a card', () => {

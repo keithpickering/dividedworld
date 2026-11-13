@@ -30,7 +30,7 @@ const shieldy = rule('shieldy', 'Shieldy', { play: 'use', gimmick: { kind: 'ward
 const trappy = rule('trappy', 'Trappy', { play: 'set', trap: { trigger: { on: 'visit' } } });
 const sparkly = rule('sparkly', 'Sparkly', { rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'day', count: 7 } });
 /* Lifty is a takeover that stacks: drawn in a moment, and outermost there as it is live. */
-const scribey = rule('scribey', 'Scribey', { stack: 2, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } });
+const scribey = rule('scribey', 'Scribey', { stack: 2, writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } });
 const lifty = rule('lifty', 'Lifty', { stack: 2 });
 /* Slabby is a surface card (kept in a moment by its state, as a wall's washing is). */
 const strokesOk = (input: unknown) => ok({ strokes: [], payload: { input } });

@@ -33,7 +33,7 @@ const rules = (key: string, extra: Partial<CardRules> = {}): CardRules => ({
 });
 const KEYS = ['one', 'two', 'three'];
 /* A card that writes: its rules have `writes`, and its effect draws a tail after the words. */
-const WRITES: CardRules['writes'] = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) };
+const WRITES: CardRules['writes'] = { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) };
 const WRITERS = ['scribe', 'typer'];
 const instance: Instance = {
   ...testInstance,

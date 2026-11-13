@@ -41,8 +41,8 @@ const settings: Settings = {
   oldVoiceWindow: 1024,
   oldVoiceTokenizer: 'gpt2',
   oldVoicePromptFloor: 256,
-  cardWriteShortShare: 0.5,
-  cardWriteRerolls: 3,
+  cardWriteFullShare: 0.9,
+  cardWriteTopUps: 3,
   pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {
@@ -899,7 +899,7 @@ test('a skim is a cast card that reaches a post alone, lasts, and does not write
   assert.match(instanceProblems(withCards({ skim })).join('\n'), /card "splat" has a skim with no time up \(lasts\)/);
   assert.match(bad({ reaches: ['thread'], rarity: 'rare' }), /card "splat" has a skim, and a card with a skim reaches a post alone/);
   assert.match(bad({ reaches: ['post', 'thread'], rarity: 'rare' }), /card "splat" has a skim, and a card with a skim reaches a post alone/);
-  assert.match(bad({ writes: { tokens: () => 1, frame: () => ({ prompt: '', stop: [] }) } }), /card "splat" has a skim and writes; a card with a skim does not write/);
+  assert.match(bad({ writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 1, frame: () => ({ prompt: '', stop: [] }) } }), /card "splat" has a skim and writes; a card with a skim does not write/);
 });
 
 test('scoresAs is true or left out, on a cast card that reaches a character alone', () => {
@@ -1380,9 +1380,9 @@ test('the old voice window settings each refuse a value outside their bounds, in
   for (const v of [63, 1_000_001, 100.5]) assert.match(bad('oldVoiceWindow', v), /setting "oldVoiceWindow" is .*; it must be a whole number of tokens from 64 to 1,000,000/, String(v));
   assert.match(bad('oldVoiceTokenizer', 'llama'), /setting "oldVoiceTokenizer" is "llama"; it must be "gpt2" or "bytes"/);
   assert.match(bad('oldVoicePromptFloor', 0), /setting "oldVoicePromptFloor" is 0; it must be a whole number of tokens, at least 1/);
-  assert.match(bad('cardWriteShortShare', 1.5), /setting "cardWriteShortShare" is 1.5; it must be a number from 0 to 1/);
-  for (const v of [6, 2.5, -1]) assert.match(bad('cardWriteRerolls', v), /setting "cardWriteRerolls" is .*; it must be a whole number from 0 to 5/, String(v));
-  for (const [k, v] of [['oldVoiceWindow', 64], ['oldVoiceWindow', 1_000_000], ['oldVoiceTokenizer', 'bytes'], ['cardWriteShortShare', 0], ['cardWriteShortShare', 1], ['cardWriteRerolls', 0], ['cardWriteRerolls', 5]] as const) {
+  assert.match(bad('cardWriteFullShare', 1.5), /setting "cardWriteFullShare" is 1.5; it must be a number from 0 to 1/);
+  for (const v of [6, 2.5, -1]) assert.match(bad('cardWriteTopUps', v), /setting "cardWriteTopUps" is .*; it must be a whole number from 0 to 5/, String(v));
+  for (const [k, v] of [['oldVoiceWindow', 64], ['oldVoiceWindow', 1_000_000], ['oldVoiceTokenizer', 'bytes'], ['cardWriteFullShare', 0], ['cardWriteFullShare', 1], ['cardWriteTopUps', 0], ['cardWriteTopUps', 5]] as const) {
     assert.deepEqual(settingsProblems({ ...settings, [k]: v, ...(k === 'oldVoiceWindow' ? { oldVoicePromptFloor: 1 } : {}) } as unknown as Settings), [], `${k} = ${v}`);
   }
 });

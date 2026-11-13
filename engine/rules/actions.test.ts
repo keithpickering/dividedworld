@@ -158,7 +158,7 @@ test('a play names the card, the character, the post and the caster\'s configura
     { ok: true, rpc: 'play_card', args: { card: 'splat', through: id, target: other, config: { color: 'red' }, message: '' }, asService: true, needsTarget: true, play: 'cast' });
   assert.equal((decide({ action: 'playCard', card: 'splat', character: id, target: other, message: 'Take that.' }, instance) as unknown as { args: { message: unknown } }).args.message, 'Take that.', 'the caster\'s message travels to the card\'s rules');
   assert.match(refusal({ action: 'playCard', card: 'nothing', character: id, target: other }) ?? '', /^card:/);
-  const writing = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const writing = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
   const where = (oldVoice: boolean): Instance => ({ ...instance, cards: [...instance.cards, writing], settings: { ...instance.settings, oldVoice } });
   assert.equal(decide({ action: 'playCard', card: 'typewriter', character: id, target: other }, where(true)).ok, true, 'a card that writes is played where the old voice runs');
   assert.equal(decide({ action: 'playCard', card: 'typewriter', character: id, target: other }, where(false)).ok, false, 'and refused where it does not');

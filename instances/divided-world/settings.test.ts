@@ -54,7 +54,7 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
     'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostAdded': 200,
     'autocorrect.perVolume': 25, 'autocorrect.volumeStep': 50, 'autocorrect.mostAdded': 200,
     'laughTrack.perPlace': 5, 'laughTrack.freePlaces': 5, 'laughTrack.mostAdded': 100,
-    'youWereSaying.baseTokens': 25, 'youWereSaying.stepTokens': 25, 'youWereSaying.stepPrice': 25, 'youWereSaying.mostTokens': 200,
+    'youWereSaying.baseTokens': 50, 'youWereSaying.stepTokens': 50, 'youWereSaying.stepPrice': 25, 'youWereSaying.mostTokens': 300,
     'jimmyWails.gift1': 10, 'jimmyWails.gift2': 25, 'jimmyWails.gift3': 50, 'jimmyWails.gift4': 100, 'jimmyWails.overhead': 25,
     'machine.pullMost': 2, 'machine.moveDaysMost': 7, 'machine.repriceLeast': 50, 'machine.repriceMost': 200, 'machine.flashHoursLeast': 24, 'machine.flashHoursMost': 48,
   });
@@ -120,8 +120,8 @@ test('Divided World holds the five old voice window settings', () => {
   assert.equal(defaults.oldVoiceWindow, 1024);
   assert.equal(defaults.oldVoiceTokenizer, 'gpt2');
   assert.equal(defaults.oldVoicePromptFloor, 256);
-  assert.equal(defaults.cardWriteShortShare, 0.5);
-  assert.equal(defaults.cardWriteRerolls, 3);
+  assert.equal(defaults.cardWriteFullShare, 0.9);
+  assert.equal(defaults.cardWriteTopUps, 3);
 });
 
 test('Divided World\'s whole instance has no problems', () => {
