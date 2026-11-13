@@ -15,21 +15,27 @@ import { Kit } from '../../../../engine/ui/cards/Kit.tsx';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { STROKES, whoops } from '../whoops.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
-import { DROPS_SPEED, Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, dropsOf, percentWashed, savedOf } from './Effect.tsx';
+import { DROPS_SPEED, Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, dropsOf, heldBytes, percentWashed, savedOf } from './Effect.tsx';
 import { FIELD_SCALE, buildLayer, layerKey, type BuildInput } from './build.ts';
 import type { BuildClient } from './buildClient.ts';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { cursor } from './cursor.ts';
-import { paint, paintStandIn, type PaintLayer } from './paint.ts';
+import { paintSplat } from './paint.ts';
 import { decodePoints, packStroke } from './points.ts';
 import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, fits, fitStroke, minStepOf, type Pt, type Stroke } from './scrub.ts';
-import { DESIGN, THRESHOLD, makeSplat, type Box } from './splat.ts';
+import { DESIGN, THRESHOLD, makeSplat, unitPx, type Box } from './splat.ts';
+import { bandGrid, strokesInto } from './field.ts';
 import * as suds from './suds.ts';
 import { createClaims } from '../../../../engine/ui/cards/claims.ts';
 
 /* The suds and the drawn cursor are their own modules' (suds.test.ts, cursor.test.tsx): here the effect is seen to call them. */
 vi.mock('./suds.ts', () => ({ register: vi.fn(), unregister: vi.fn(), wash: vi.fn(), puff: vi.fn() }));
 vi.mock('./cursor.ts', () => ({ cursor: { over: vi.fn(), press: vi.fn(), leave: vi.fn() } }));
+/* The splat's painter is the config form's preview now: nothing in a post's drawing calls it, and a test says so. */
+vi.mock('./paint.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./paint.ts')>();
+  return { ...real, paintSplat: vi.fn(real.paintSplat) };
+});
 
 /*
  * The page's build client is the test's to hold: by default the real one with no worker (a light layer is built on the spot, as in the
@@ -150,15 +156,19 @@ function mount(o: Options = {}) {
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};
   let replay: () => void = () => {};
+  let edit: () => void = () => {};
   function Host() {
     const [held, set] = useState(props.states);
     /* The engine hands an effect a new list of the same plays whenever the post's plays are drawn again (Effects.tsx `PostEffects`). */
     const [list, setList] = useState(props.plays);
     push = set;
     replay = () => setList((was) => [...was]);
+    /* The post is edited: its payload is a new one, and the layers are built again from the saved states (nothing in them changes). */
+    const [payload, setPayload] = useState(props.post.currentPayload);
+    edit = () => setPayload({});
     const [view, setView] = useState<CardView | null>(null);
     say = setView;
-    const effect = <Effect {...props} plays={list} states={held} />;
+    const effect = <Effect {...props} post={{ ...props.post, currentPayload: payload }} plays={list} states={held} />;
     return (
       <>
         {props.place === 'thread' ? <div className="kb-act-main">{effect}{o.beside}</div> : effect}
@@ -168,8 +178,40 @@ function mount(o: Options = {}) {
   }
   const world = renderInWorld(<Host />, { settings: { cardSettings: o.clean === null ? {} : { 'whoops.clean': o.clean ?? 95 } } });
   const root = world.container.querySelector('.kb-whoops') as HTMLElement;
-  return { ...world, shown, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)), replay: () => act(() => replay()) };
+  return { ...world, shown, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)), replay: () => act(() => replay()), edit: () => act(() => edit()) };
 }
+
+/**
+ * IntersectionObserver faked for the post (the frame, watched at '100% 0px') and for the bands (`.kb-band` elements at '50% 0px', which
+ * `watchBands` places): each element is told it is in view or not as it is first watched, and again when a test says. `bands` says which
+ * bands the viewport holds; the post is in view unless said otherwise. Observers made are let go with the effects that made them.
+ */
+function sight(start: { post?: boolean; bands?: (band: number) => boolean } = {}) {
+  interface Obs { cb: IntersectionObserverCallback; opts?: IntersectionObserverInit; seen: Set<Element> }
+  const made: Obs[] = [];
+  let postIn = start.post ?? true;
+  let bandIn: (band: number) => boolean = start.bands ?? (() => true);
+  const isBand = (o: Obs) => o.opts?.rootMargin === '50% 0px';
+  const entry = (target: Element, on: boolean) => ({ target, isIntersecting: on, intersectionRatio: on ? 1 : 0 }) as unknown as IntersectionObserverEntry;
+  const verdict = (o: Obs, el: Element) => (isBand(o) ? bandIn([...(el.parentElement?.querySelectorAll(':scope > .kb-band') ?? [])].indexOf(el)) : postIn);
+  class Fake {
+    private readonly mine: Obs;
+    constructor(cb: IntersectionObserverCallback, opts?: IntersectionObserverInit) { this.mine = { cb, opts, seen: new Set() }; made.push(this.mine); }
+    observe(el: Element) { this.mine.seen.add(el); this.mine.cb([entry(el, verdict(this.mine, el))], this as unknown as IntersectionObserver); }
+    unobserve(el: Element) { this.mine.seen.delete(el); }
+    disconnect() { this.mine.seen.clear(); }
+    takeRecords() { return []; }
+  }
+  vi.stubGlobal('IntersectionObserver', Fake);
+  const tell = (only?: (o: Obs) => boolean) => act(() => { for (const o of made) if (!only || only(o)) for (const el of [...o.seen]) o.cb([entry(el, verdict(o, el))], {} as IntersectionObserver); });
+  return {
+    /** The post comes near the viewport, or goes far from it. */
+    see(on: boolean) { postIn = on; tell((o) => !isBand(o)); },
+    /** The viewport holds the bands `f` says it does. */
+    bands(f: (band: number) => boolean) { bandIn = f; tell(isBand); },
+  };
+}
+
 
 /** The washed share of each layer, as the component publishes it. */
 const washed = (root: HTMLElement) => root.dataset.kbWashed!.split(' ').map(Number);
@@ -328,16 +370,20 @@ describe('the layers', () => {
   });
 
   test('the post\'s words are laid out like any other post\'s: no fixed width, no transform and no padding, at 988px and at 390px', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
     for (const width of [MAX_FRAME, PHONE_FRAME]) {
       boxWidth = width;
       const { root, frame, unmount } = mount();
       const layout = root.querySelector('[data-kb-whoops-layout]') as HTMLElement;
       expect(layout.getAttribute('style') ?? '').toBe('');
       expect(frame.style.height).toBe('');
-      /* The ink is fitted to the body: a canvas the body's size, reaching out of the frame to the body's corner. */
-      const ink = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
-      expect([ink.width, ink.height]).toEqual([width, LINES * LINE_PX]);
-      expect([ink.style.left, ink.style.top, ink.style.width, ink.style.height]).toEqual(['0px', '0px', `${width}px`, `${LINES * LINE_PX}px`]);
+      /* The ink is fitted to the body: canvases laid down the body's box (a band of it each), reaching out of the frame to the body's corner. */
+      for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+      const [first, last] = [...root.querySelectorAll<HTMLCanvasElement>('canvas.kb-whoops-ink')];
+      expect([first!.width, first!.height]).toEqual([width, 512]);
+      expect([first!.style.left, first!.style.top, first!.style.width, first!.style.height]).toEqual(['0px', '0px', `${width}px`, '512px']);
+      expect([last!.width, last!.height]).toEqual([width, LINES * LINE_PX - 512]);
+      expect([last!.style.left, last!.style.top, last!.style.width, last!.style.height]).toEqual(['0px', '512px', `${width}px`, `${LINES * LINE_PX - 512}px`]);
       unmount();
     }
   });
@@ -958,42 +1004,34 @@ describe('the author\'s pen strokes belong to their layer', () => {
 });
 
 describe('the canvas', () => {
-  /** A recording stand-in for a 2D context: every call and every style set is logged against the context it was made on. */
-  function recorder(log: string[], name: string, onStroke: (style: unknown) => void) {
-    const state: Record<string, unknown> = {};
-    return new Proxy({}, {
-      get: (_t, key: string) => (key in state ? state[key] : (...args: unknown[]) => {
-        log.push(`${name}.${key}`);
-        if (key === 'stroke') onStroke(state.strokeStyle);
-        if (key === 'createRadialGradient') return { addColorStop() {} };
-        return args.length ? undefined : undefined;
-      }),
-      set: (_t, key: string, value) => { state[key] = value; return true; },
-    }) as unknown as CanvasRenderingContext2D;
-  }
-
-  test('each pen stroke is drawn in its layer, under the layers above it, and none over them all', () => {
-    const log: string[] = [];
-    const penColors: string[] = [];
-    const canvases = new Map<HTMLCanvasElement, string>();
-    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
-      if (!canvases.has(this)) canvases.set(this, canvases.size === 0 ? 'main' : 'work');
-      return recorder(log, canvases.get(this)!, (style) => penColors.push(`${canvases.get(this)}:${String(style)}`));
-    } as unknown as HTMLCanvasElement['getContext'];
+  test('a pen stroke is drawn on its own layer\'s canvases only: the layers are canvases of their own, so the ones above cover it and none lies over them all', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
     (globalThis as { Path2D?: unknown }).Path2D ??= class {};
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 64;
-    canvases.set(canvas, 'main');
-    const stroke: Stroke = { tool: 'ink', color: '#19e3ff', ...pen(), points: [[0.2, 0.2], [0.4, 0.2]] };
-    const painted = document.createElement('canvas');
-    const geo = { dpr: 1, box: { w: 64, h: 64 }, left: 0, top: 0 };
-    const layers: PaintLayer[] = [
-      { picture: paintStandIn({ painted, color: COLORS[0]!, strokes: [stroke] }, geo, 64, 64, 0), alpha: 1 },
-      { picture: paintStandIn({ painted, color: COLORS[1]!, strokes: [] }, geo, 64, 64, 1), alpha: 1 },
-    ];
-    paint(canvas, geo, layers);
-    expect(penColors).toEqual(['work:#19e3ff']);
-    expect(log.filter((l) => l === 'main.stroke')).toEqual([]);
+    const strokes = new Map<HTMLCanvasElement, string[]>();
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
+      const state: Record<string, unknown> = {};
+      return new Proxy({}, {
+        get: (_t, key: string) => (key in state ? state[key] : (...args: unknown[]) => {
+          if (key === 'stroke') strokes.set(this, [...(strokes.get(this) ?? []), String(state.strokeStyle)]);
+          if (key === 'createImageData') return { width: args[0], height: args[1], data: new Uint8ClampedArray(Number(args[0]) * Number(args[1]) * 4) };
+          return undefined;
+        }),
+        set: (_t, key: string, value) => { state[key] = value; return true; },
+      });
+    } as unknown as HTMLCanvasElement['getContext'];
+    /* Builds are held, so the stand-in is what is drawn. */
+    seam.client = { requestBuild: () => {}, cancel: () => {}, active: () => false, requester: () => 1, pace: () => 1 };
+    const { root, frame } = mount({ layers: 2, author: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Write in ink' }));
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+    const line: [number, number][] = [[0.03, 0.985], [0.08, 0.985], [0.13, 0.985]];
+    act(() => { fireEvent.pointerDown(frame, { clientX: px(...line[0]!)[0], clientY: px(...line[0]!)[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: px(...line[1]!)[0], clientY: px(...line[1]!)[1], pointerId: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerUp(frame, { clientX: px(...line[1]!)[0], clientY: px(...line[1]!)[1], pointerId: 1, pointerType: 'mouse' }); });
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+    const drawn = (layer: string) => [...root.querySelectorAll<HTMLCanvasElement>(`canvas.kb-whoops-ink[data-kb-layer="${layer}"]`)].flatMap((c) => strokes.get(c) ?? []);
+    expect(new Set(drawn('1')), 'the top layer holds the pen, in its ink').toEqual(new Set([COLORS[1]]));
+    expect(drawn('0'), 'the layer under it is not drawn on').toEqual([]);
   });
 });
 
@@ -1109,7 +1147,7 @@ describe('the body\'s box', () => {
       act(() => { fireEvent.pointerMove(frame, at(moved, 0.06)); });
       act(() => { fireEvent.pointerUp(frame, at(moved, 0.06)); });
     }
-    const canvas = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
+    const canvas = root.querySelector('canvas.kb-whoops-suds') as HTMLCanvasElement;
     expect(washed(root)[0], 'the frame takes the press where it now lives').toBeGreaterThan(0);
     expect(canvas.width, 'in the frame\'s box, not the cell\'s').toBe(600);
     const expected = new LayerInk(splatFor(0), Array.from({ length: PASSES }, () => ({ tool: 'wash', ...brushOf(BRUSH_PX, moved), points: [[x, y], [x + 0.06, y]] }) as Stroke), moved).washed;
@@ -1165,15 +1203,19 @@ describe('the body\'s box', () => {
     expect(cell.style.touchAction).toBe('');
   });
 
-  test('the ink canvas holds at most 4 million pixels: a 390x20000 body gets a density under 1', () => {
+  test('a tall body is drawn as softly as a short one: its ink canvases are a band tall at a point a pixel, never lowered to fit a whole-post canvas', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
     vi.stubGlobal('devicePixelRatio', 2);
+    seam.client = { requestBuild: () => {}, cancel: () => {}, active: () => false, requester: () => 1, pace: () => 1 };
     boxWidth = 390;
     boxHeight = 20_000;
     const { root } = mount();
-    const canvas = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
-    expect(canvas.width).toBeLessThan(390);
-    expect(canvas.width * canvas.height).toBeLessThanOrEqual(4_000_000);
-  });
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+    const inks = [...root.querySelectorAll<HTMLCanvasElement>('canvas.kb-whoops-ink')];
+    expect(inks.length, 'a band each of the 40 (no observer here: every band counts as near)').toBe(40);
+    for (const canvas of inks.slice(0, 39)) expect([canvas.width, canvas.height]).toEqual([390, 512]);
+    expect(inks.reduce((n, c) => n + c.width * c.height, 0), 'a point to the pixel, however tall').toBe(390 * 20_000);
+  }, 60_000);
 
   test('the suds stay registered when the top ink changes mid-wash (a layer going clean): they are re-registered with the new ink, and let go only when the post goes', () => {
     const { frame, root, unmount } = mount({ layers: 2 });
@@ -1187,29 +1229,25 @@ describe('the body\'s box', () => {
     expect(vi.mocked(suds.unregister)).toHaveBeenCalledTimes(1);
   });
 
-  test('the suds canvas is the ink\'s size and place, registered while the post is near with its box and density, and let go when it leaves', () => {
-    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
-    vi.stubGlobal('IntersectionObserver', class {
-      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    });
-    const see = (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+  test('the suds canvas is the box\'s size and place, over the ink, registered while the post is near with its box and density, and let go when it leaves', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+    const eyes = sight();
     const { root, unmount } = mount();
-    see(true);
-    const [ink, sud] = [...root.querySelectorAll<HTMLCanvasElement>('canvas')];
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+    const inks = [...root.querySelectorAll<HTMLCanvasElement>('canvas.kb-whoops-ink')];
+    const sud = root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-suds')!;
+    expect(inks.length).toBeGreaterThan(0);
     expect(sud).toHaveAttribute('data-kb-effect-ink');
-    expect([sud!.width, sud!.height, sud!.style.left, sud!.style.top]).toEqual([ink!.width, ink!.height, ink!.style.left, ink!.style.top]);
-    expect(ink!.compareDocumentPosition(sud!) & Node.DOCUMENT_POSITION_FOLLOWING, 'the suds are over the ink').toBeTruthy();
+    expect([sud.width, sud.height, sud.style.left, sud.style.top]).toEqual([boxNow().w, boxNow().h, inks[0]!.style.left, inks[0]!.style.top]);
+    for (const ink of inks) expect(ink.compareDocumentPosition(sud) & Node.DOCUMENT_POSITION_FOLLOWING, 'the suds are over the ink').toBeTruthy();
     const last = vi.mocked(suds.register).mock.calls.at(-1)!;
     expect(last[1]).toBe(sud);
     expect(last[2]).toEqual(boxNow());
     expect(last[3]).toBe(1);
     const host = last[0];
-    see(false);
+    eyes.see(false);
     expect(vi.mocked(suds.unregister)).toHaveBeenCalledWith(host);
-    see(true);
+    eyes.see(true);
     expect(vi.mocked(suds.register).mock.calls.at(-1)![0]).toBe(host);
     unmount();
     expect(vi.mocked(suds.unregister).mock.calls.at(-1)![0]).toBe(host);
@@ -1568,7 +1606,7 @@ describe('saving, one at a time', () => {
     const net = gated();
     const [x, y] = inkSpot(inkOf(0));
     const line: [number, number][] = [[x, y], [x + 0.03, y], [x + 0.05, y]];
-    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    const { frame, root, hear, edit } = mount({ author: true, save: net.save });
     drag(frame, line);
     const once = inkOf(0, [washStroke(line)]).washed;
     const twice = inkOf(0, [washStroke(line), washStroke(line)]).washed;
@@ -1577,7 +1615,7 @@ describe('saving, one at a time', () => {
     await settle(SAVE_AFTER_MS);
     expect(net.calls).toHaveLength(1);
     /* The server's state reaches this screen (another channel than the answer) before the answer does; the page may also have settled a little, so the layer is built again, not taken as the echo (the engine draws the post's plays again with the news). */
-    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    await act(async () => { edit(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
     expect(washed(root)[0], 'the stroke the save carried is in the saved state and is not added again from the ones kept').toBeCloseTo(once, 3);
     await net.accept(0);
     expect(washed(root)[0]).toBeCloseTo(once, 3);
@@ -1819,25 +1857,38 @@ describe('what a post costs a page', () => {
   };
   const canvases = (root: HTMLElement) => root.querySelectorAll('canvas');
 
-  test('the pixel density is capped at two', () => {
+  test('the suds\' pixel density is capped at two, and the ink\'s at one', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
     vi.stubGlobal('devicePixelRatio', 3);
-    expect(mount().root.querySelector('canvas')!.width).toBe(MAX_FRAME * 2);
+    const { root } = mount();
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+    expect((root.querySelector<HTMLCanvasElement>("canvas.kb-whoops-suds"))!.width).toBe(MAX_FRAME * 2);
+    expect(root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-ink')!.width, 'the ink is a point to the CSS px at most').toBe(MAX_FRAME);
   });
 
-  test('below the cap the density is the screen\'s own', () => {
+  test('below the cap the suds\' density is the screen\'s own, and the ink\'s too, below one', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
     vi.stubGlobal('devicePixelRatio', 1.5);
-    expect(mount().root.querySelector('canvas')!.width).toBe(MAX_FRAME * 1.5);
+    expect(mount().root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-suds')!.width).toBe(MAX_FRAME * 1.5);
+    vi.stubGlobal('devicePixelRatio', 0.5);
+    const { root } = mount();
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+    const first = root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-ink')!;
+    expect([first.width, first.height], 'a band of 256 points is 512 CSS px').toEqual([MAX_FRAME / 2, 256]);
+    expect(parseFloat(first.style.height), 'stretched to fill the box, as the lattice has 338 rows for 675 px').toBeCloseTo((256 * 675) / 338, 5);
   });
 
-  test('a post not near the viewport draws no canvas, and one that comes near draws it, hidden from a screen reader', () => {
-    const see = stubObserver();
+  test('a post not near the viewport draws no canvas, and one that comes near draws them, hidden from a screen reader', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+    const eyes = sight({ post: false });
     const { root } = mount();
     expect(canvases(root)).toHaveLength(0);
-    see(true);
-    /* The ink, and the suds over it. */
-    expect(canvases(root)).toHaveLength(2);
+    eyes.see(true);
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+    /* The ink, a canvas for each of the two bands, and the suds over it. */
+    expect(canvases(root)).toHaveLength(3);
     for (const canvas of canvases(root)) expect(canvas).toHaveAttribute('aria-hidden', 'true');
-    see(false);
+    eyes.see(false);
     expect(canvases(root)).toHaveLength(0);
   });
 
@@ -1977,7 +2028,7 @@ describe('the canvas, with the frame offset in the cell', () => {
   const realRect = Element.prototype.getBoundingClientRect;
   afterEach(() => { Element.prototype.getBoundingClientRect = realRect; });
 
-  test('the ink is drawn at the box\'s origin in its canvas, whatever the frame\'s offset in the cell', async () => {
+  test('the ink is placed at the box\'s corner whatever the frame\'s offset in the cell, and drawn from the band\'s own first row with no offset of its own', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
     (globalThis as { Path2D?: unknown }).Path2D ??= class {};
     /* The frame sits 9.875px right and 7.5px down in the cell. */
@@ -1985,28 +2036,33 @@ describe('the canvas, with the frame offset in the cell', () => {
       const at = this.classList.contains('kb-whoops-frame') ? { left: 9.875, top: 7.5 } : { left: 0, top: 0 };
       return { ...at, right: at.left, bottom: at.top, width: 0, height: 0, x: at.left, y: at.top, toJSON() {} } as DOMRect;
     };
-    const drawn: unknown[][] = [];
-    const moved: unknown[][] = [];
-    const canvases = new Map<HTMLCanvasElement, string>();
+    const moved: { canvas: HTMLCanvasElement; args: number[] }[] = [];
     HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
-      if (!canvases.has(this)) canvases.set(this, canvases.size === 0 ? 'main' : 'work');
       const state: Record<string, unknown> = {};
       return new Proxy({}, {
         get: (_t, key: string) => (key in state ? state[key] : (...args: unknown[]) => {
-          if (key === 'drawImage' && args.length === 5) drawn.push(args);
-          if (key === 'setTransform') moved.push(args);
+          if (key === 'setTransform') moved.push({ canvas: this, args: args as number[] });
           if (key === 'createImageData') return { data: new Uint8ClampedArray(Number(args[0]) * Number(args[1]) * 4) };
-          if (key === 'createRadialGradient' || key === 'createLinearGradient') return { addColorStop() {} };
           return undefined;
         }),
         set: (_t, key: string, value) => { state[key] = value; return true; },
       });
     } as unknown as HTMLCanvasElement['getContext'];
-    mount();
-    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    expect(drawn.length).toBeGreaterThan(0);
-    for (const [, x, y] of drawn) expect([x, y]).toEqual([0, 0]);
-    for (const m of moved) expect([m[4], m[5]]).toEqual([0, 0]);
+    /* The builds are held, so the stand-in is what is drawn. */
+    seam.client = { requestBuild: () => {}, cancel: () => {}, active: () => false, requester: () => 1, pace: () => 1 };
+    const { root } = mount();
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+    const inks = [...root.querySelectorAll<HTMLCanvasElement>('canvas.kb-whoops-ink')];
+    expect(inks).toHaveLength(2);
+    expect(inks.map((c) => [c.style.left, c.style.top])).toEqual([['-9.875px', '-7.5px'], ['-9.875px', `${512 - 7.5}px`]]);
+    /* Each canvas's own frame starts at its band's first row: the stand-in is moved up by that and by nothing else. */
+    for (const [band, c] of inks.entries()) {
+      const calls = moved.filter((m) => m.canvas === c);
+      expect(calls.length).toBeGreaterThan(0);
+      /* The reset to the identity is the only other transform. */
+      for (const m of calls) expect([m.args[4], [0, -512 * band].includes(m.args[5]!)], `band ${band}`).toEqual([0, true]);
+      expect(calls.some((m) => m.args[5] === -512 * band), `band ${band} is drawn from its first row`).toBe(true);
+    }
   });
 });
 
@@ -2014,15 +2070,16 @@ describe('the canvas, with the frame offset in the cell', () => {
 
 describe('the ink field: the picture a layer is drawn from', () => {
   const clock = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
-  const frames = () => act(() => { vi.advanceTimersByTime(60); });
+  /* A frame draws, the bands are heard near, React renders their canvases, and the next frame paints them: a few frames settle it. */
+  const frames = () => { for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); }); };
 
-  interface Fake { w: number; h: number; surface: Uint8ClampedArray; puts: { sx: number; sy: number; sw: number; sh: number }[]; draws: HTMLCanvasElement[]; strokes: number }
+  interface Fake { w: number; h: number; surface: Uint8ClampedArray; puts: { sx: number; sy: number; sw: number; sh: number }[]; draws: HTMLCanvasElement[]; strokes: number; arcs: { x: number; y: number; r: number; fill: unknown }[] }
   /** 2D contexts that keep what is put on them, so a test reads a canvas's pixels (jsdom has none), and log what is drawn onto it. */
   function fakeCanvases() {
     const fakes = new Map<HTMLCanvasElement, Fake>();
     const of = (c: HTMLCanvasElement): Fake => {
       let f = fakes.get(c);
-      if (!f) { f = { w: -1, h: -1, surface: new Uint8ClampedArray(0), puts: [], draws: [], strokes: 0 }; fakes.set(c, f); }
+      if (!f) { f = { w: -1, h: -1, surface: new Uint8ClampedArray(0), puts: [], draws: [], strokes: 0, arcs: [] }; fakes.set(c, f); }
       if (f.w !== c.width || f.h !== c.height) { f.w = c.width; f.h = c.height; f.surface = new Uint8ClampedArray(f.w * f.h * 4); }
       return f;
     };
@@ -2044,6 +2101,7 @@ describe('the ink field: the picture a layer is drawn from', () => {
           }
           if (key === 'drawImage') return (src: HTMLCanvasElement) => { f.draws.push(src); };
           if (key === 'stroke') return () => { f.strokes++; };
+          if (key === 'arc') return (x: number, y: number, r: number) => { f.arcs.push({ x, y, r, fill: state.fillStyle }); };
           if (key === 'createRadialGradient' || key === 'createLinearGradient') return () => ({ addColorStop() {} });
           return () => undefined;
         },
@@ -2056,19 +2114,22 @@ describe('the ink field: the picture a layer is drawn from', () => {
   /** A client that holds every build until told (or answers at once), and records what was asked and dropped. */
   function heldClient(holding = true) {
     const asks = new Map<string, { input: BuildInput; onDone: (b: ReturnType<typeof buildLayer>) => void }>();
-    const requested: string[] = [], cancelled: string[] = [];
-    let hold = holding;
+    const requested: string[] = [], cancelled: string[] = [], inputs: BuildInput[] = [];
+    let hold = holding, tokens = 0;
     const client: BuildClient = {
       requestBuild(key, input, onDone) {
         requested.push(key);
+        inputs.push(input);
         if (hold) asks.set(key, { input, onDone }); else onDone(buildLayer(input));
       },
       cancel(key) { cancelled.push(key); asks.delete(key); },
       active: () => false,
+      requester: () => ++tokens,
+      pace: () => 1,
     };
     seam.client = client;
     return {
-      requested, cancelled, asks,
+      requested, cancelled, inputs, asks,
       release: () => act(() => { hold = false; for (const [k, a] of [...asks]) { asks.delete(k); a.onDone(buildLayer(a.input)); } }),
     };
   }
@@ -2091,12 +2152,16 @@ describe('the ink field: the picture a layer is drawn from', () => {
   /** A line along bare paper (no layer-0 splat reaches it), in 49px steps: slow enough at 100ms a move to throw nothing. */
   const BARE: [number, number][] = [[0.03, 0.985], [0.08, 0.985], [0.13, 0.985]];
   const penOn = (points: readonly Pt[], drops?: 0 | 1 | 2 | 3): Stroke => ({ tool: 'ink', color: COLORS[0]!, ...pen(), points, ...(drops !== undefined ? { drops } : null) });
-  const referenceOf = (strokes: readonly Stroke[], layer = 0) => buildLayer({ seed: SEEDS[layer]!, color: COLORS[layer]!, box: boxNow(), density: 1, strokes }).image.data;
-  const inkCanvas = (root: HTMLElement) => root.querySelector<HTMLCanvasElement>('canvas[data-kb-effect-ink]')!;
-  /** What `paint` last drew on the ink canvas: the layer's picture, and whether it is a build's (put on) or the stand-in's (drawn). */
-  const lastPicture = (fk: ReturnType<typeof fakeCanvases>, root: HTMLElement) => {
-    const src = fk.of(inkCanvas(root)).draws.at(-1)!;
-    return { src, build: fk.of(src).puts.length > 0 };
+  /** The whole post's picture of a layer, as one band of every row. */
+  const referenceOf = (strokes: readonly Stroke[], layer = 0) => buildLayer({ seed: SEEDS[layer]!, color: COLORS[layer]!, box: boxNow(), density: 1, strokes, band: { row0: 0, rows: Math.ceil(boxNow().h) } }).image.data;
+  const inkCanvases = (root: HTMLElement) => [...root.querySelectorAll<HTMLCanvasElement>('canvas.kb-whoops-ink')];
+  /** The layer's picture on the page: its bands' canvases top to bottom, their pixels laid together, whether every band has had a picture put on it (a build's, where the stand-in is drawn), and the strokes drawn on them. */
+  const lastPicture = (fk: ReturnType<typeof fakeCanvases>, root: HTMLElement, layer = 0) => {
+    const canvases = inkCanvases(root).filter((c) => c.dataset.kbLayer === String(layer)).sort((a, b) => Number(a.dataset.kbBand) - Number(b.dataset.kbBand));
+    const surface = new Uint8ClampedArray(canvases.reduce((n, c) => n + c.width * c.height * 4, 0));
+    let at = 0;
+    for (const c of canvases) { surface.set(fk.of(c).surface, at); at += c.width * c.height * 4; }
+    return { canvases, surface, build: canvases.length > 0 && canvases.every((c) => fk.of(c).puts.length > 0), strokes: canvases.reduce((n, c) => n + fk.of(c).strokes, 0) };
   };
   const maxDiff = (a: Uint8ClampedArray, b: Uint8ClampedArray) => { let m = 0; for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i]! - b[i]!)); return m; };
 
@@ -2108,21 +2173,23 @@ describe('the ink field: the picture a layer is drawn from', () => {
   test('a pen stroke on a light layer changes the picture inside its rectangle and nowhere else', () => {
     clock();
     const fk = fakeCanvases();
+    sight();
     const { frame, root } = mount({ author: true });
     writeInk();
     frames();
     const first = lastPicture(fk, root);
     expect(first.build, 'a light layer is built before its first frame').toBe(true);
-    const picture = fk.of(first.src);
+    /* The line is on bare paper in the last band (rows 512 on). */
+    const canvas = first.canvases[1]!, picture = fk.of(canvas);
     const before = Uint8ClampedArray.from(picture.surface);
     const puts = picture.puts.length;
     dragTimed(frame, BARE, 100);
     frames();
-    expect(lastPicture(fk, root).src, 'the same canvas is updated in place').toBe(first.src);
+    expect(lastPicture(fk, root).canvases[1], 'the same canvas is updated in place').toBe(canvas);
     /* The stroke's reach: 2r = 16px each side of the line, and a pixel of shading around that. */
     const b = boxNow();
     /* The line's reach is 2r = 16px, and the bulb at its end (1.35r, reaching twice that) a little further: 26 all round. */
-    const [x0, x1, y0, y1] = [0.03 * b.w - 26, 0.13 * b.w + 26, 0.985 * b.h - 26, 0.985 * b.h + 26];
+    const [x0, x1, y0, y1] = [0.03 * b.w - 26, 0.13 * b.w + 26, 0.985 * b.h - 26 - 512, 0.985 * b.h + 26 - 512];
     let changed = 0;
     for (let y = 0; y < picture.h; y++) for (let x = 0; x < picture.w; x++) {
       const i = (y * picture.w + x) * 4;
@@ -2131,10 +2198,11 @@ describe('the ink field: the picture a layer is drawn from', () => {
       expect(x >= x0 && x <= x1 && y >= y0 && y <= y1, `pixel ${x},${y} changed outside the stroke's rectangle`).toBe(true);
     }
     expect(changed).toBeGreaterThan(500);
-    /* Only that rectangle was put on the canvas. */
+    /* Only that rectangle was put on the canvas, and the band above it was not touched. */
     const newPuts = picture.puts.slice(puts);
     expect(newPuts.length).toBeGreaterThan(0);
     for (const r of newPuts) expect([r.sx >= x0 - 2, r.sx + r.sw <= x1 + 2, r.sy >= y0 - 2, r.sy + r.sh <= y1 + 2], `put ${JSON.stringify(r)}`).toEqual([true, true, true, true]);
+    expect(fk.of(first.canvases[0]!).puts, 'a band the stroke does not reach is not put on again').toHaveLength(1);
   });
 
   test('the stand-in, then the build: a stroke made between is in both, once', () => {
@@ -2146,17 +2214,17 @@ describe('the ink field: the picture a layer is drawn from', () => {
     frames();
     const stand = lastPicture(fk, root);
     expect(stand.build, 'held back, the layer is drawn by the stand-in').toBe(false);
-    const flat = fk.of(stand.src).strokes;
+    const flat = stand.strokes;
     dragTimed(frame, BARE, 100);
     frames();
     expect(lastPicture(fk, root).build).toBe(false);
-    expect(fk.of(lastPicture(fk, root).src).strokes, 'the stroke is drawn flat by the stand-in').toBeGreaterThan(flat);
+    expect(lastPicture(fk, root).strokes, 'the stroke is drawn flat by the stand-in').toBeGreaterThan(flat);
     held.release();
     frames();
     const done = lastPicture(fk, root);
     expect(done.build, 'released, the build').toBe(true);
     const line = penOn(BARE, 0);
-    const got = fk.of(done.src).surface;
+    const got = done.surface;
     expect(maxDiff(got, referenceOf([line])), 'the stroke is in the build, as if it had been in it from the first').toBeLessThanOrEqual(4);
     expect(maxDiff(got, referenceOf([line, line])), 'and it is in once: twice would be a wider line').toBeGreaterThan(8);
   });
@@ -2179,7 +2247,7 @@ describe('the ink field: the picture a layer is drawn from', () => {
     const wash = washStroke(line);
     const once = referenceOf([wash]), twice = referenceOf([wash, wash]);
     expect(maxDiff(once, twice), 'the premise: a second wash over the same line shows').toBeGreaterThan(8);
-    const got = fk.of(done.src).surface;
+    const got = done.surface;
     expect(maxDiff(got, once), 'the wash is in the build, as if it had been in it from the first').toBeLessThanOrEqual(4);
     expect(maxDiff(got, twice), 'and it is in once, not twice').toBeGreaterThan(8);
   });
@@ -2201,7 +2269,7 @@ describe('the ink field: the picture a layer is drawn from', () => {
     const done = lastPicture(fk, root);
     expect(done.build).toBe(true);
     const line = penOn(BARE, 0);
-    expect(maxDiff(fk.of(done.src).surface, referenceOf([line]))).toBeLessThanOrEqual(4);
+    expect(maxDiff(done.surface, referenceOf([line]))).toBeLessThanOrEqual(4);
   });
 
   test('a build that already holds the stroke is not given it again, and the one it replaced is dropped', () => {
@@ -2214,15 +2282,15 @@ describe('the ink field: the picture a layer is drawn from', () => {
     dragTimed(frame, BARE, 100);
     frames();
     const first = [...held.asks.keys()];
-    expect(first).toHaveLength(1);
-    /* Another device saves a dab: the layer is built again, from its strokes, this one in them. The first request is let go. */
+    expect(first, 'a build for each of the two bands').toHaveLength(2);
+    /* Another device saves a dab: the layer is built again, from its strokes, this one in them. The first requests are let go. */
     const dab: Stroke = { tool: 'wash', ...brush(), points: [[0.5, 0.2]] };
     hear({ 'play-1': { state: { strokes: [packStroke(dab)] }, savedAt: SAVED_AT } });
     frames();
-    expect(held.cancelled).toContain(first[0]);
-    expect(held.asks.size).toBe(1);
-    expect([...held.asks.keys()][0]).not.toBe(first[0]);
-    /* The new request holds what the other device saved, and the stroke as it is kept (simplified, its drops on it). */
+    expect(held.cancelled).toEqual(expect.arrayContaining(first));
+    expect(held.asks.size).toBe(2);
+    for (const key of held.asks.keys()) expect(first).not.toContain(key);
+    /* The new requests hold what the other device saved, and the stroke as it is kept (simplified, its drops on it). */
     const asked = [...held.asks.values()][0]!.input.strokes;
     expect(asked.map((s) => s.tool)).toEqual(['wash', 'ink']);
     held.release();
@@ -2230,21 +2298,23 @@ describe('the ink field: the picture a layer is drawn from', () => {
     const done = lastPicture(fk, root);
     expect(done.build).toBe(true);
     const kept = asked[1]!;
-    expect(maxDiff(fk.of(done.src).surface, referenceOf([dab, kept])), 'the stroke is in it, once').toBeLessThanOrEqual(4);
-    expect(maxDiff(fk.of(done.src).surface, referenceOf([dab, kept, kept]))).toBeGreaterThan(8);
+    expect(maxDiff(done.surface, referenceOf([dab, kept])), 'the stroke is in it, once').toBeLessThanOrEqual(4);
+    expect(maxDiff(done.surface, referenceOf([dab, kept, kept]))).toBeGreaterThan(8);
   });
 
   test('a rebuild of the model in the middle of a stroke does not leave the rest of it on a dead model', () => {
-    const { frame, root, replay } = mount();
+    const { frame, root, hear } = mount();
     const [x, y] = inkSpot(inkOf(0));
     const path: Pt[] = [[x, y], [x + 0.01, y], [x + 0.02, y], [x + 0.03, y], [x + 0.04, y], [x + 0.05, y]];
     const px2 = (p: Pt) => px(p[0], p[1]);
     act(() => { fireEvent.pointerDown(frame, { clientX: px2(path[0]!)[0], clientY: px2(path[0]!)[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
     for (const p of path.slice(1, 3)) act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: px2(p)[0], clientY: px2(p)[1], pointerId: 1, pointerType: 'mouse' }); });
-    replay();
+    /* Another device's save changes a state: the model is built again from it. */
+    const dab: Stroke = { tool: 'wash', ...brush(), points: [[0.02, 0.02]] };
+    hear({ 'play-1': { state: { strokes: [packStroke(dab)] }, savedAt: SAVED_AT } });
     for (const p of path.slice(3)) act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: px2(p)[0], clientY: px2(p)[1], pointerId: 1, pointerType: 'mouse' }); });
     act(() => { fireEvent.pointerUp(frame, { clientX: px2(path.at(-1)!)[0], clientY: px2(path.at(-1)!)[1], pointerId: 1, pointerType: 'mouse' }); });
-    const whole = inkOf(0, [{ tool: 'wash', ...brush(), points: path }]);
+    const whole = inkOf(0, [dab, { tool: 'wash', ...brush(), points: path }]);
     expect(whole.washed).toBeGreaterThan(0);
     expect(washed(root)[0], 'the current model washed the whole stroke').toBeCloseTo(whole.washed, 3);
   });
@@ -2308,64 +2378,42 @@ describe('the ink field: the picture a layer is drawn from', () => {
   test('a post that leaves lets its pictures go, and builds again when it returns', () => {
     clock();
     fakeCanvases();
-    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
-    vi.stubGlobal('IntersectionObserver', class {
-      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    });
-    const see = (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+    const eyes = sight({ post: false });
     const held = heldClient(false);
     const { root } = mount();
-    see(true);
+    eyes.see(true);
     frames();
-    expect(root.dataset.kbPictures, 'built for the post that is near').toBe('1');
-    expect(held.requested).toHaveLength(1);
-    see(false);
+    expect(root.dataset.kbPictures, 'built for each band of the post that is near').toBe('2');
+    expect(held.requested).toHaveLength(2);
+    eyes.see(false);
     frames();
     expect(root.dataset.kbPictures, 'the cache is empty').toBe('0');
-    see(true);
+    expect(root.dataset.kbBands, 'and no band is held').toBe('');
+    eyes.see(true);
     frames();
-    expect(root.dataset.kbPictures).toBe('1');
-    expect(held.requested, 'and built again').toHaveLength(2);
+    expect(root.dataset.kbPictures).toBe('2');
+    expect(held.requested, 'and built again').toHaveLength(4);
   });
 
   test('a build still out when the post leaves is dropped, and its answer is not used', () => {
     clock();
     fakeCanvases();
-    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
-    vi.stubGlobal('IntersectionObserver', class {
-      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    });
-    const see = (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+    const eyes = sight({ post: false });
     const held = heldClient();
     const { root } = mount();
-    see(true);
+    eyes.see(true);
     frames();
-    const [key] = [...held.asks.keys()];
-    expect(key).toBeDefined();
-    see(false);
-    expect(held.cancelled).toContain(key);
+    const keys = [...held.asks.keys()];
+    expect(keys).toHaveLength(2);
+    eyes.see(false);
+    expect(held.cancelled).toEqual(expect.arrayContaining(keys));
     held.release();
     frames();
     expect(root.dataset.kbPictures).toBe('0');
   });
 
-  /** A post that goes far from the viewport and comes back, and the build client held by the test. */
-  function viewport() {
-    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
-    vi.stubGlobal('IntersectionObserver', class {
-      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    });
-    return (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
-  }
+  /** A post that goes far from the viewport and comes back: `see(true)` and `see(false)`. */
+  const viewport = () => sight({ post: false }).see;
 
   test('a resize while the build is out, with one stroke finished and one still open: after the build arrives both are in the picture once, and in the model', () => {
     clock();
@@ -2401,7 +2449,8 @@ describe('the ink field: the picture a layer is drawn from', () => {
     boxWidth = 800;
     act(() => { resizes.forEach((r) => r()); });
     frames();
-    expect(held.asks.size, 'only the new size is waited for').toBe(1);
+    expect(held.asks.size, 'only the new size is waited for, a band each').toBe(2);
+    expect([...held.asks.values()].every((a) => a.input.box.w === 800)).toBe(true);
     const asked = [...held.asks.values()][0]!.input;
     expect(asked.box.w).toBe(800);
     expect(asked.strokes.map((s) => s.tool), 'the finished stroke is in what the build is asked for').toEqual(['ink']);
@@ -2413,7 +2462,7 @@ describe('the ink field: the picture a layer is drawn from', () => {
     const done = lastPicture(fk, root);
     expect(done.build).toBe(true);
     const open: Stroke = { tool: 'ink', color: COLORS[0]!, ...oldPen, points: second!, drops: 0 };
-    const got = fk.of(done.src).surface;
+    const got = done.surface;
     /* A line of pixels along a stroke's edge sits on the threshold, where the build's stored field (rounded to 1/4096) and the live grid's differ in the last place: so the pictures are compared by how many pixels differ, not by the worst one. */
     const apart = (a: Uint8ClampedArray, b: Uint8ClampedArray) => { let n = 0; for (let i = 0; i < a.length; i += 4) if (Math.abs(a[i]! - b[i]!) > 4 || Math.abs(a[i + 3]! - b[i + 3]!) > 4) n++; return n; };
     expect(apart(got, referenceOf([...asked.strokes, open])), 'both strokes are in the picture').toBeLessThan(boxNow().w);
@@ -2453,8 +2502,8 @@ describe('the ink field: the picture a layer is drawn from', () => {
     expect(done.build).toBe(true);
     /* The strokes come back as this screen kept them: simplified, as a stroke is when it is kept (`fitStroke`). */
     const made = rows.flatMap((row) => fitStroke(washStroke(row), minStepOf(boxNow())));
-    expect(maxDiff(fk.of(done.src).surface, referenceOf(made)), 'the picture holds them').toBeLessThanOrEqual(4);
-    expect(maxDiff(fk.of(done.src).surface, referenceOf([])), 'and is not the untouched layer').toBeGreaterThan(8);
+    expect(maxDiff(done.surface, referenceOf(made)), 'the picture holds them').toBeLessThanOrEqual(4);
+    expect(maxDiff(done.surface, referenceOf([])), 'and is not the untouched layer').toBeGreaterThan(8);
   });
 
   test('after live strokes the picture\'s grid and the model agree: the washed share, and the field at the model\'s cell centers', () => {
@@ -2471,12 +2520,13 @@ describe('the ink field: the picture a layer is drawn from', () => {
     frames();
     const picture = lastPicture(fk, root);
     expect(picture.build).toBe(true);
-    expect(maxDiff(fk.of(picture.src).surface, referenceOf(kept)), 'the picture is the grid the strokes were applied to').toBeLessThanOrEqual(4);
+    expect(maxDiff(picture.surface, referenceOf(kept)), 'the picture is the grid the strokes were applied to').toBeLessThanOrEqual(4);
     /* The grid as built from the same strokes, read at the model's cell centers. */
     const box = boxNow();
     const model = inkOf(0, kept);
-    const grid = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box, density: 1, strokes: kept });
-    const once = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box, density: 1, strokes: [] });
+    const whole = { row0: 0, rows: Math.ceil(box.h) };
+    const grid = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box, density: 1, strokes: kept, band: whole });
+    const once = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box, density: 1, strokes: [], band: whole });
     const cols = Math.ceil(box.w);
     const at1 = (field: Uint16Array, cx: number, cy: number) => field[Math.min(Math.ceil(box.h) - 1, Math.floor(cy)) * cols + Math.min(cols - 1, Math.floor(cx))]! / FIELD_SCALE;
     const { cols: mc, rows: mr, step } = model.cells;
@@ -2500,7 +2550,7 @@ describe('the ink field: the picture a layer is drawn from', () => {
     const held = heldClient(false);
     const { frame, root } = mount({ layers: 1 });
     frames();
-    expect(root.dataset.kbPictures, 'drawn from a build').toBe('1');
+    expect(root.dataset.kbPictures, 'drawn from a build, a band each').toBe('2');
     scrubTo(frame, root, 0, inkOf(0), 0.96);
     frames();
     expect(states(root)).toEqual(['clean']);
@@ -2508,13 +2558,295 @@ describe('the ink field: the picture a layer is drawn from', () => {
     expect(held.cancelled.length, 'its build slot was let go').toBeGreaterThanOrEqual(1);
   }, 60_000);
 
+  /* ------------------------------------------------------------------ bands ---- */
+
+  const inkOfBand = (root: HTMLElement, band: number, layer = 0) => root.querySelector<HTMLCanvasElement>(`canvas.kb-whoops-ink[data-kb-band="${band}"][data-kb-layer="${layer}"]`)!;
+  const total = (p: ReturnType<typeof heldBytes>) => p.canvas + p.grids + p.scratch;
+
+  test('a tall post holds only the bands near the viewport', () => {
+    clock();
+    fakeCanvases();
+    sight({ bands: (i) => i >= 3 && i <= 6 });
+    const held = heldClient(false);
+    boxWidth = 390;
+    boxHeight = 20_000;
+    const { root } = mount({ layers: 3 });
+    frames();
+    const inks = inkCanvases(root);
+    expect(inks, 'three layers of four bands').toHaveLength(12);
+    expect([...new Set(inks.map((c) => c.dataset.kbBand))].sort()).toEqual(['3', '4', '5', '6']);
+    expect([...new Set(inks.map((c) => c.dataset.kbLayer))].sort()).toEqual(['0', '1', '2']);
+    for (const c of inks) {
+      expect(c).toHaveAttribute('aria-hidden', 'true');
+      expect(c).toHaveAttribute('data-kb-effect-ink');
+      expect([c.width, c.height]).toEqual([390, 512]);
+      expect([c.style.top, c.style.height]).toEqual([`${Number(c.dataset.kbBand) * 512}px`, '512px']);
+    }
+    expect(root.dataset.kbBands).toBe('3 4 5 6');
+    expect(root.dataset.kbPictures).toBe('12');
+    expect(held.requested, 'a build for each, and for no other band').toHaveLength(12);
+    expect([...new Set(held.inputs.map((i) => i.band.row0))].sort((a, b) => a - b)).toEqual([1536, 2048, 2560, 3072]);
+    const probe = heldBytes();
+    expect(probe.canvas, 'the canvases\' backing').toBe(12 * 390 * 512 * 4);
+    expect(probe.grids, 'the grids, with an apron row each side').toBe(12 * 390 * 514 * 5);
+    expect(total(probe) / 3, 'the pixels held a layer').toBeLessThan(12_000_000);
+  }, 60_000);
+
+  test('a band that leaves lets its picture go, and one that returns is built again with the strokes made meanwhile', () => {
+    clock();
+    const fk = fakeCanvases();
+    const eyes = sight();
+    const held = heldClient(false);
+    boxWidth = 390;
+    boxHeight = 1400;
+    const { root, frame } = mount({ author: true });
+    writeInk();
+    frames();
+    expect(root.dataset.kbBands).toBe('0 1 2');
+    expect(root.dataset.kbPictures).toBe('3');
+    const first = [...held.requested];
+    expect(first).toHaveLength(3);
+    const all = total(heldBytes());
+    eyes.bands((i) => i === 0);
+    frames();
+    expect(root.dataset.kbBands).toBe('0');
+    expect(root.dataset.kbPictures, 'bands 1 and 2 let their pictures go').toBe('1');
+    expect(held.cancelled).toEqual(expect.arrayContaining([first[1], first[2]]));
+    expect(inkCanvases(root), 'and their canvases').toHaveLength(1);
+    expect(total(heldBytes()), 'and what they held').toBeLessThan(all / 2);
+    /* A pen line in band 2's rows while it is away. */
+    const line: [number, number][] = [[0.1, 0.95], [0.3, 0.95], [0.5, 0.95]];
+    dragTimed(frame, line, 100);
+    frames();
+    eyes.bands(() => true);
+    frames();
+    expect(root.dataset.kbPictures).toBe('3');
+    const asked = held.inputs.filter((i) => i.band.row0 === 1024).at(-1)!;
+    expect(held.requested.length, 'band 2 and band 1 were built again, band 0 not').toBe(5);
+    expect(asked.strokes.map((s) => s.tool), 'the line made meanwhile is in what the band is asked for').toEqual(['ink']);
+    const got = fk.of(inkOfBand(root, 2)).surface;
+    const want = buildLayer({ ...asked, band: { row0: 1024, rows: 376 } }).image.data;
+    expect(maxDiff(got, want)).toBeLessThanOrEqual(4);
+    let inked = 0;
+    for (let i = 3; i < got.length; i += 4) if (got[i]! > 0) inked++;
+    expect(inked, 'and it shows').toBeGreaterThan(300);
+  });
+
+  test('a stroke across a band\'s edge is drawn in both bands, as the whole post draws it at the seam', () => {
+    clock();
+    const fk = fakeCanvases();
+    sight();
+    heldClient(false);
+    boxWidth = 390;
+    boxHeight = 1400;
+    const { root, frame } = mount({ author: true });
+    writeInk();
+    frames();
+    const bands = [inkOfBand(root, 0), inkOfBand(root, 1)];
+    expect(bands.map((c) => c.height)).toEqual([512, 512]);
+    const before = bands.map((c) => Uint8ClampedArray.from(fk.of(c).surface));
+    const puts = bands.map((c) => fk.of(c).puts.length);
+    /* Two runs along the seam, 8px either side of it, with the pen, at the thin edge of the splat where a line shows: the edge of each run's ink is at the seam, so the shading's gradient at the band's edge rows is steep, and a row of the neighbor is what it reads. */
+    const line: [number, number][] = [[0.9, 504 / 1400], [0.96, 504 / 1400], [0.96, 520 / 1400], [0.9, 520 / 1400]];
+    dragTimed(frame, line, 100);
+    frames();
+    const stroke = penOn(line, 0);
+    const box = boxNow();
+    const whole = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box, density: 1, strokes: [stroke], band: { row0: 0, rows: 1400 } }).image.data;
+    const seam = (band: number) => {
+      const c = bands[band]!, f = fk.of(c);
+      let worst = 0, changed = 0, first = '';
+      for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+        const i = (y * c.width + x) * 4;
+        if (before[band]![i + 3] !== f.surface[i + 3] || before[band]![i] !== f.surface[i]) changed++;
+        const lattice = band * 512 + y;
+        if (Math.abs(lattice - 512) > 40) continue;
+        /* A pixel with no ink has no color: the shading leaves what was in its buffer. */
+        const clear = f.surface[i + 3] === 0 && whole[(lattice * c.width + x) * 4 + 3] === 0;
+        for (let k = 0; k < (clear ? 0 : 4); k++) {
+          const d = Math.abs(f.surface[i + k]! - whole[(lattice * c.width + x) * 4 + k]!);
+          if (d > worst) { worst = d; first = `band ${band} row ${y} column ${x} channel ${k}: ${f.surface[i + k]} vs ${whole[(lattice * c.width + x) * 4 + k]}`; }
+        }
+      }
+      return { worst, changed, first };
+    };
+    for (const band of [0, 1]) {
+      const { worst, changed, first } = seam(band);
+      expect(changed, `band ${band} shows the stroke`).toBeGreaterThan(200);
+      expect(worst, `band ${band} at the seam: ${first}`).toBeLessThanOrEqual(4);
+    }
+    /* The rectangle put on each canvas is the stroke's rectangle on that band's own grid (a band's rows and one of apron each side) grown by one point, kept to the band's own rows: the shading reads a neighbor past it. */
+    for (const band of [0, 1]) {
+      const row0 = band * 512, top = Math.max(0, row0 - 1), end = Math.min(1400, row0 + 512 + 1), above = row0 - top;
+      const rect = strokesInto(bandGrid(box, 1, top, end - top), box, [stroke]);
+      const want = [Math.max(0, rect.x0 - 1), Math.min(390, rect.x1 + 1), Math.max(above, rect.y0 - 1) - above, Math.min(above + 512, rect.y1 + 1) - above];
+      const put = fk.of(bands[band]!).puts.slice(puts[band]!);
+      expect(put.length, `band ${band} was put on`).toBeGreaterThan(0);
+      expect([Math.min(...put.map((r) => r.sx)), Math.max(...put.map((r) => r.sx + r.sw)), Math.min(...put.map((r) => r.sy)), Math.max(...put.map((r) => r.sy + r.sh))], `band ${band}'s put rectangle`).toEqual(want);
+    }
+  });
+
+  test('a stroke open while its band leaves and returns is in the band\'s picture once, and is not lost', () => {
+    clock();
+    const fk = fakeCanvases();
+    const eyes = sight();
+    heldClient(false);
+    boxWidth = 390;
+    boxHeight = 1400;
+    const { root, frame } = mount({ author: true });
+    writeInk();
+    frames();
+    const line: [number, number][] = [[0.1, 0.94], [0.2, 0.95], [0.3, 0.94], [0.4, 0.95], [0.5, 0.94], [0.6, 0.95]];
+    let t = 1000;
+    at(frame, 'pointerDown', line[0]!, t);
+    at(frame, 'pointerMove', line[1]!, (t += 100));
+    frames();
+    eyes.bands((i) => i < 2);
+    frames();
+    expect(inkOfBand(root, 2), 'band 2 is away').toBeNull();
+    at(frame, 'pointerMove', line[2]!, (t += 100));
+    at(frame, 'pointerMove', line[3]!, (t += 100));
+    eyes.bands(() => true);
+    frames();
+    at(frame, 'pointerMove', line[4]!, (t += 100));
+    at(frame, 'pointerMove', line[5]!, (t += 100));
+    at(frame, 'pointerUp', line[5]!, t + 1);
+    frames();
+    const stroke = penOn(line, 0);
+    const band = { row0: 1024, rows: 376 };
+    const once = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box: boxNow(), density: 1, strokes: [stroke], band }).image.data;
+    const twice = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box: boxNow(), density: 1, strokes: [stroke, stroke], band }).image.data;
+    const got = fk.of(inkOfBand(root, 2)).surface;
+    expect(maxDiff(got, once), 'the whole line is in the band, from its first point').toBeLessThanOrEqual(4);
+    expect(maxDiff(got, twice), 'and once: twice is a wider line').toBeGreaterThan(8);
+  });
+
+  test('the stand-in is flat circles and holds no picture', () => {
+    clock();
+    const fk = fakeCanvases();
+    sight();
+    const held = heldClient();
+    const { root } = mount({ layers: 1 });
+    frames();
+    expect(held.asks.size, 'both bands are waiting for their build').toBe(2);
+    const canvases = inkCanvases(root);
+    expect(canvases).toHaveLength(2);
+    const unit = unitPx(boxNow());
+    const arcs = canvases.flatMap((c) => fk.of(c).arcs);
+    const box = boxNow();
+    for (const ball of splatFor(0).balls) {
+      const x = (ball.x / DESIGN.w) * box.w, y = ball.y * box.h, r = ball.r * unit;
+      /* A ball that lies off the box is in no band. */
+      if (y + r < 0 || y - r > box.h) continue;
+      expect(arcs.some((a) => Math.abs(a.x - x) < 1e-6 && Math.abs(a.y - y) < 1e-6 && Math.abs(a.r - r) < 1e-6), `a flat circle for the ball at ${x.toFixed(1)}, ${y.toFixed(1)}`).toBe(true);
+    }
+    expect(new Set(arcs.map((a) => a.fill)), 'in the layer\'s ink').toEqual(new Set([COLORS[0]]));
+    for (const c of canvases) expect(fk.of(c).puts, 'no picture is put on a canvas').toHaveLength(0);
+    expect(root.dataset.kbPictures).toBe('0');
+    expect(heldBytes().grids, 'no grid is held').toBe(0);
+    expect(vi.mocked(paintSplat), 'the splat is not painted').not.toHaveBeenCalled();
+  });
+
+  test('the sweep\'s open band shows in the stand-in', () => {
+    clock();
+    const fk = fakeCanvases();
+    sight();
+    heldClient();
+    const { root } = mount({ layers: 1 });
+    const button = screen.getByRole('button', { name: 'Hold to scrub' });
+    frames();
+    const stroked = () => inkCanvases(root).reduce((n, c) => n + fk.of(c).strokes, 0);
+    expect(stroked()).toBe(0);
+    act(() => { fireEvent.keyDown(button, { key: ' ' }); });
+    /* Held until the sweep is first on ink, inside its first band: nothing has been finished yet, so only the open stroke can be what is drawn. */
+    for (let k = 0; k < 100 && washed(root)[0] === 0; k++) act(() => { vi.advanceTimersByTime(50); });
+    expect(washed(root)[0], 'the sweep is washing').toBeGreaterThan(0);
+    expect(stroked(), 'and its open stroke is drawn on the stand-in').toBeGreaterThan(0);
+    const seen = stroked();
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(stroked(), 'and again as it goes on').toBeGreaterThan(seen);
+    act(() => { fireEvent.keyUp(button, { key: ' ' }); });
+  });
+
+  test('a save\'s echo does not rebuild: no build is asked for, and the pictures are never let go', async () => {
+    clock();
+    fakeCanvases();
+    sight();
+    const held = heldClient(false);
+    const net = gated();
+    const { root, frame, hear, replay } = mount({ author: true, save: net.save });
+    net.heard.current = hear;
+    writeInk();
+    frames();
+    dragTimed(frame, BARE, 100);
+    frames();
+    expect(root.dataset.kbPictures).toBe('2');
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(1);
+    const asked = held.requested.length;
+    const seen: (string | undefined)[] = [];
+    await net.accept(0);
+    seen.push(root.dataset.kbPictures);
+    /* The page draws the post's plays again, as it does whenever they are heard. */
+    await act(async () => { replay(); });
+    seen.push(root.dataset.kbPictures);
+    await settle(100);
+    frames();
+    seen.push(root.dataset.kbPictures);
+    expect(seen, 'never fewer than were held').toEqual(['2', '2', '2']);
+    expect(held.requested, 'no build was asked for').toHaveLength(asked);
+  });
+
+  test('two posts with the same play do not cancel each other\'s builds', () => {
+    clock();
+    fakeCanvases();
+    sight();
+    const held = heldClient();
+    const a = mount();
+    const b = mount();
+    frames();
+    expect(held.requested).toHaveLength(4);
+    expect(new Set(held.requested).size, 'each post asks with a key of its own').toBe(4);
+    a.unmount();
+    held.release();
+    frames();
+    expect(b.root.dataset.kbPictures, 'the other post\'s builds were not let go with it').toBe('2');
+  });
+
+  test('a box narrower than a pixel starts no sweep (its pace would be infinite)', () => {
+    clock();
+    const resizes: (() => void)[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { resizes.push(cb); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const { root } = mount();
+    const button = screen.getByRole('button', { name: 'Hold to scrub' });
+    frames();
+    boxWidth = 0;
+    act(() => { resizes.forEach((r) => r()); });
+    frames();
+    const before = washed(root)[0];
+    const asked = vi.spyOn(globalThis, 'requestAnimationFrame');
+    act(() => { fireEvent.keyDown(button, { key: ' ' }); });
+    expect(asked, 'no frame is asked for by a sweep that never starts').not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(washed(root)[0]).toBe(before);
+    act(() => { fireEvent.keyUp(button, { key: ' ' }); });
+    asked.mockRestore();
+  });
+
   test('a layer is asked for with the key of its strokes, so a stroke changes it', () => {
     clock();
     fakeCanvases();
     const held = heldClient(false);
     mount({ states: { 'play-1': { state: { strokes: [packStroke({ tool: 'wash', ...brush(), points: [[0.5, 0.5], [0.6, 0.5]] })] }, savedAt: SAVED_AT } } });
     frames();
-    expect(held.requested).toEqual([layerKey('play-1', boxNow(), 1, [{ tool: 'wash', ...brush(), points: [[0.5, 0.5], [0.6, 0.5]] }])]);
+    const strokes = [{ tool: 'wash' as const, ...brush(), points: [[0.5, 0.5], [0.6, 0.5]] as Pt[] }];
+    /* A key for each band (named by its first row) and this effect's requester token. */
+    expect(held.requested).toEqual([layerKey('play-1', boxNow(), 1, strokes, 0, 1), layerKey('play-1', boxNow(), 1, strokes, 512, 1)]);
   });
 });
 
@@ -2527,7 +2859,7 @@ describe('a save whose answer was lost', () => {
     authorClock();
     const net = gated();
     const line = lineAt();
-    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    const { frame, root, hear, edit } = mount({ author: true, save: net.save });
     drag(frame, line);
     const once = inkOf(0, [washStroke(line)]).washed;
     const twice = inkOf(0, [washStroke(line), washStroke(line)]).washed;
@@ -2536,7 +2868,7 @@ describe('a save whose answer was lost', () => {
     expect(net.calls).toHaveLength(1);
     await act(async () => { net.calls[0]!.answer(lost); });
     /* The server did store it, and the state reaches this screen (the page is also drawn again, so the layer is built from it). */
-    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    await act(async () => { edit(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
     expect(washed(root)[0], 'the stroke in the saved state is not added again from the ones kept').toBeCloseTo(once, 3);
     await settle(RETRY_AFTER_MS);
     expect(net.calls).toHaveLength(2);
@@ -2565,7 +2897,7 @@ describe('a save whose answer was lost', () => {
     authorClock();
     const net = gated();
     const [a, b] = rows();
-    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    const { frame, root, hear, edit } = mount({ author: true, save: net.save });
     drag(frame, a!);
     await settle(SAVE_AFTER_MS);
     await act(async () => { net.calls[0]!.answer(lost); });
@@ -2574,7 +2906,7 @@ describe('a save whose answer was lost', () => {
     expect(net.calls, 'the second save carries both').toHaveLength(2);
     await act(async () => { net.calls[1]!.answer(lost); });
     /* Only the first was stored. */
-    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    await act(async () => { edit(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
     const once = inkOf(0, [washStroke(a!), washStroke(b!)]).washed;
     expect(washed(root)[0], 'the stroke the first save stored is counted once').toBeCloseTo(once, 3);
     await settle(RETRY_AFTER_MS * 4);
@@ -2587,7 +2919,7 @@ describe('a save whose answer was lost', () => {
     authorClock();
     const net = gated();
     const [a, b, c] = rows();
-    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    const { frame, root, hear, edit } = mount({ author: true, save: net.save });
     drag(frame, a!);
     await settle(SAVE_AFTER_MS);
     await act(async () => { net.calls[0]!.answer(lost); });
@@ -2595,7 +2927,7 @@ describe('a save whose answer was lost', () => {
     await settle(SAVE_AFTER_MS);
     expect(net.calls).toHaveLength(2);
     await act(async () => { net.calls[1]!.answer({ ok: false, error: 'at most 200 strokes' }); });
-    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    await act(async () => { edit(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
     expect(washed(root)[0], 'counted once').toBeCloseTo(inkOf(0, [washStroke(a!), washStroke(b!)]).washed, 3);
     drag(frame, c!);
     await settle(SAVE_AFTER_MS);

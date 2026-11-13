@@ -15,10 +15,10 @@ import { brushOf, type Stroke } from './scrub.ts';
 const BOX: Box = { w: 120, h: 80 };
 const pen = (points: [number, number][], extra: object = {}): Stroke => ({ tool: 'ink', color: 'black', ...brushOf(12, BOX), points, ...extra });
 const wash = (points: [number, number][]): Stroke => ({ tool: 'wash', ...brushOf(16, BOX), points });
-const SMALL: BuildInput = { seed: 7, color: '#202020', box: BOX, density: 1, strokes: [pen([[0.2, 0.3], [0.7, 0.5]], { drops: 2 }), wash([[0.3, 0.4], [0.5, 0.45]])] };
+const SMALL: BuildInput = { seed: 7, color: '#202020', box: BOX, density: 1, strokes: [pen([[0.2, 0.3], [0.7, 0.5]], { drops: 2 }), wash([[0.3, 0.4], [0.5, 0.45]])], band: { row0: 0, rows: 80 } };
 /** An input whose estimate is over QUICK_MS without costing a test a second: a big box, density 1. */
 const BIG_BOX: Box = { w: 700, h: 500 };
-const BIG: BuildInput = { ...SMALL, box: BIG_BOX, strokes: [pen([[0.1, 0.1], [0.9, 0.9]])] };
+const BIG: BuildInput = { ...SMALL, box: BIG_BOX, strokes: [pen([[0.1, 0.1], [0.9, 0.9]])], band: { row0: 0, rows: 500 } };
 
 type Listener = (e: { data?: FromBuild; message?: string }) => void;
 /** A worker the test steers: it holds the messages it was sent and answers one at a time when told to. */
@@ -120,7 +120,7 @@ test('estimateWork is calibrated: the largest band it calls light builds in unde
 test('buildLayer refuses a band of more than BAND_MOST_PX points, and a band outside the lattice', () => {
   assert.equal(BAND_MOST_PX, 2_000_000);
   const box = { w: 390, h: 2000 };
-  assert.throws(() => buildLayer({ ...SMALL, box, density: 3, strokes: [] }), /too many/, 'a whole post of 7M points');
+  assert.throws(() => buildLayer({ ...SMALL, box, density: 3, strokes: [], band: { row0: 0, rows: 6000 } }), /too many/, 'a whole post of 7M points');
   assert.throws(() => buildLayer({ ...SMALL, box, density: 2.5, strokes: [], band: { row0: 0, rows: 2052 } }), /too many/);
   assert.doesNotThrow(() => buildLayer({ ...SMALL, box, density: 2.5, strokes: [], band: { row0: 0, rows: 2051 } }), 'the cap is on the band, not the post');
   assert.throws(() => buildLayer({ ...SMALL, band: { row0: 70, rows: 20 } }), /outside/);
@@ -128,12 +128,12 @@ test('buildLayer refuses a band of more than BAND_MOST_PX points, and a band out
 });
 
 test('layerKey names the play, box, density, the band\'s first row, the strokes\' count and last point, and the requester', () => {
-  const k = layerKey('p1', BOX, 2, SMALL.strokes);
+  const k = layerKey('p1', BOX, 2, SMALL.strokes, 0, 0);
   assert.equal(k, 'p1|120x80|2|0|2|0.5,0.45|0');
-  assert.notEqual(k, layerKey('p1', BOX, 2, SMALL.strokes.slice(0, 1)));
-  assert.equal(layerKey('p1', BOX, 2, []), 'p1|120x80|2|0|0|-|0');
+  assert.notEqual(k, layerKey('p1', BOX, 2, SMALL.strokes.slice(0, 1), 0, 0));
+  assert.equal(layerKey('p1', BOX, 2, [], 0, 0), 'p1|120x80|2|0|0|-|0');
   assert.equal(layerKey('p1', BOX, 2, SMALL.strokes, 512, 3), 'p1|120x80|2|512|2|0.5,0.45|3');
-  assert.notEqual(layerKey('p1', BOX, 2, SMALL.strokes, 512), layerKey('p1', BOX, 2, SMALL.strokes, 1024), 'each band has its own key');
+  assert.notEqual(layerKey('p1', BOX, 2, SMALL.strokes, 512, 1), layerKey('p1', BOX, 2, SMALL.strokes, 1024, 1), 'each band has its own key');
   assert.notEqual(layerKey('p1', BOX, 2, SMALL.strokes, 0, 1), layerKey('p1', BOX, 2, SMALL.strokes, 0, 2), 'each requester has its own key');
 });
 
@@ -152,11 +152,11 @@ test('buildLayer: the splat and strokes through the field, shaded; the field is 
   assert.ok(most <= 1 / 8192, `rounding ${most}`);
   assert.ok(ink > 100, 'the picture has ink in it');
   assert.ok(b.washed.some((w) => w === 1), 'the wash is marked');
-  const back = gridOf(b, BOX, 1);
+  const back = gridOf(b, BOX, 1, SMALL.band);
   assert.ok(back.values instanceof Float32Array);
   for (let i = 0; i < g.values.length; i += 7) assert.ok(Math.abs(back.values[i]! - Math.min(FIELD_MOST, g.values[i]!)) <= 1 / 8192 + 1e-3 * (g.values[i]! >= FIELD_MOST ? 1 : 0));
   assert.deepEqual(back.washed, b.washed);
-  assert.throws(() => gridOf(b, BIG_BOX, 1), /another box/);
+  assert.throws(() => gridOf(b, BIG_BOX, 1, SMALL.band), /another box/);
 });
 
 test('a build reports ms from the injected clock, read once before the work and once after', () => {
@@ -398,10 +398,10 @@ function pacedClient(over: object = {}) {
   return { c, feed };
 }
 /** About 1.04ms of estimated work: over the 1ms below which a build teaches the pace nothing, and light up to a pace of 11. */
-const TEACH: BuildInput = { ...SMALL, box: { w: 56, h: 56 }, strokes: [] };
+const TEACH: BuildInput = { ...SMALL, box: { w: 56, h: 56 }, strokes: [], band: { row0: 0, rows: 56 } };
 /** Estimated at about 4ms and about 20ms. */
-const FOUR_MS: BuildInput = { ...SMALL, box: { w: 110, h: 110 }, strokes: [] };
-const TWENTY_MS: BuildInput = { ...SMALL, box: { w: 246, h: 246 }, strokes: [] };
+const FOUR_MS: BuildInput = { ...SMALL, box: { w: 110, h: 110 }, strokes: [], band: { row0: 0, rows: 110 } };
+const TWENTY_MS: BuildInput = { ...SMALL, box: { w: 246, h: 246 }, strokes: [], band: { row0: 0, rows: 246 } };
 
 test('the pace starts at 1 and moves toward measured over estimated: 0.8 of it and 0.2 of the ratio', () => {
   reset();
@@ -422,7 +422,7 @@ test('the pace stays within 0.25 and 8, and a build estimated under 1ms does not
   assert.equal(c.pace!(), 8);
   for (let i = 0; i < 80; i++) { feed(TEACH, 0); assert.ok(c.pace!() >= 0.25, `${c.pace!()} under 0.25`); }
   assert.equal(c.pace!(), 0.25);
-  feed({ ...TEACH, box: { w: 10, h: 10 } }, 1000);
+  feed({ ...TEACH, box: { w: 10, h: 10 }, band: { row0: 0, rows: 10 } }, 1000);
   assert.equal(c.pace!(), 0.25, 'about 33 microseconds of estimated work teaches nothing');
 });
 
@@ -447,7 +447,7 @@ test('with the pace at 4 a band estimated at 4ms goes to the worker; at 0.5 one 
 
 test('a build the worker made teaches the pace too, from the ms it reports', () => {
   reset();
-  const ms = (3 * estimateWork(BIG.box, 1, BIG.strokes)) / 1e6;
+  const ms = (3 * estimateWork(BIG.box, 1, BIG.strokes, BIG.band)) / 1e6;
   let reads = 0;
   FakeWorker.now = () => (reads++ % 2 === 0 ? 0 : ms);
   const c = clientWith();

@@ -43,8 +43,8 @@ export interface BuildInput {
   readonly box: Box;
   readonly density: number;
   readonly strokes: readonly Stroke[];
-  /** The band's own rows. Left out, the whole lattice (the one band of a post that is not cut). */
-  readonly band?: Band;
+  /** The band's own rows: a whole lattice's is `{ row0: 0, rows }`. */
+  readonly band: Band;
 }
 export interface Built {
   /** The band's field and washed marks WITH the apron rows (`apron` of them above and below), `cols` a row. */
@@ -58,10 +58,9 @@ export interface Built {
   readonly ms: number;
 }
 
-/** The lattice's width and height in points, and the band of the whole of it. */
-function latticeOf(box: Box, density: number): { cols: number; rows: number; whole: Band } {
-  const cols = Math.ceil(box.w * density), rows = Math.ceil(box.h * density);
-  return { cols, rows, whole: { row0: 0, rows } };
+/** The lattice's width and height in points. */
+function latticeOf(box: Box, density: number): { cols: number; rows: number } {
+  return { cols: Math.ceil(box.w * density), rows: Math.ceil(box.h * density) };
 }
 /** The band's rows and its apron's, clipped to the lattice: the first and one past the last row held. */
 function heldOf(band: Band, lattice: number): { top: number; end: number } {
@@ -77,8 +76,8 @@ const defaultNow = (): number => performance.now();
 export function buildLayer(input: BuildInput, now: () => number = defaultNow): Built {
   const t0 = now();
   const { seed, color, box, density, strokes } = input;
-  const { cols, rows: lattice, whole } = latticeOf(box, density);
-  const band = input.band ?? whole;
+  const { cols, rows: lattice } = latticeOf(box, density);
+  const band = input.band;
   if (!(band.row0 >= 0 && band.rows >= 0 && band.row0 + band.rows <= lattice)) throw new Error(`a band outside the lattice (rows ${band.row0} to ${band.row0 + band.rows} of ${lattice})`);
   if (cols * band.rows > BAND_MOST_PX) throw new Error(`a band of too many points (more than ${BAND_MOST_PX})`);
   const { top, end } = heldOf(band, lattice);
@@ -98,11 +97,11 @@ export function buildLayer(input: BuildInput, now: () => number = defaultNow): B
 /**
  * A build's field and washed marks (the apron rows with them) as a grid of Float32 values, which the main thread draws
  * live strokes into: the band's rows and its apron, `row0` the first of them in the post's lattice. `band` is the
- * band the build was asked for (the whole lattice when left out).
+ * band the build was asked for.
  */
-export function gridOf(built: Pick<Built, 'field' | 'washed' | 'apron'>, box: Box, density: number, band?: Band): Grid {
-  const { cols, rows: lattice, whole } = latticeOf(box, density);
-  const own = band ?? whole, { above, below } = built.apron;
+export function gridOf(built: Pick<Built, 'field' | 'washed' | 'apron'>, box: Box, density: number, band: Band): Grid {
+  const { cols, rows: lattice } = latticeOf(box, density);
+  const own = band, { above, below } = built.apron;
   const grid = bandGrid(box, density, own.row0 - above, above + own.rows + below);
   if (built.field.length !== grid.values.length || cols * grid.rows !== grid.values.length || own.row0 + own.rows > lattice) throw new Error('a build for another box or density');
   for (let i = 0; i < built.field.length; i++) grid.values[i] = built.field[i]! / FIELD_SCALE;
@@ -141,9 +140,9 @@ export function estimateWork(box: Box, density: number, strokes: readonly Stroke
 /**
  * A layer's key: the play, the box, the density, the band's first row, the strokes' count and last point, and the
  * requester's token (`buildClient().requester()`), so two Effects asking for the same layer are two builds that neither
- * replaces nor cancels. A caller that gives no band or requester is the whole lattice and the one shared requester 0.
+ * replaces nor cancels.
  */
-export function layerKey(playId: string, box: Box, density: number, strokes: readonly Stroke[], row0 = 0, requester = 0): string {
+export function layerKey(playId: string, box: Box, density: number, strokes: readonly Stroke[], row0: number, requester: number): string {
   const last = strokes[strokes.length - 1]?.points.at(-1);
   return `${playId}|${box.w}x${box.h}|${density}|${row0}|${strokes.length}|${last ? `${last[0]},${last[1]}` : '-'}|${requester}`;
 }

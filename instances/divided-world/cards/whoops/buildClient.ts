@@ -49,10 +49,10 @@ export interface BuildClient {
   cancel(key: string): void;
   /** Whether a worker is running (for tests). */
   active(): boolean;
-  /** A fresh requester token for `layerKey`: one for each Effect. Optional only until Effect.tsx asks (Task 5). */
-  requester?(): number;
-  /** This page's pace: measured over estimated build time (for tests). Optional only until Effect.tsx's test doubles have it (Task 5). */
-  pace?(): number;
+  /** A fresh requester token for `layerKey`: one for each Effect. */
+  requester(): number;
+  /** This page's pace: measured over estimated build time (for tests). */
+  pace(): number;
 }
 
 const defaultWorker = (): WorkerLike => new Worker(new URL('./buildWorker.ts', import.meta.url), { type: 'module' }) as unknown as WorkerLike;

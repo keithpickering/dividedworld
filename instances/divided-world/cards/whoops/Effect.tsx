@@ -51,15 +51,16 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
+import { watchBands, type BandWatch } from '../../../../engine/ui/cards/bands.ts';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
 import { HOLD_MS, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SLOP_PX, SUPPRESS_MS, overInk, swipeKind } from '../wiping.ts';
 import { cursor, type CursorMode } from './cursor.ts';
 import { readLines } from './lines.ts';
-import { MAX_CANVAS_PX, MAX_DPR, holdStandIns, paint, paintSplat, paintStandIn, shadeField, type Geometry, type PaintLayer, type PixelsOut } from './paint.ts';
+import { MAX_CANVAS_PX, MAX_DPR, paintStandIn, shadeField, type PixelsOut } from './paint.ts';
 import { DROPS_MOST, beginLine, strokesInto, unionRect, type Grid, type Line, type Rect } from './field.ts';
-import { gridOf, layerKey, type Built } from './build.ts';
+import { gridOf, layerKey, type Band, type Built } from './build.ts';
 import { buildClient } from './buildClient.ts';
 import {
   BRUSH_PX, LayerInk, type LiveLine, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, SWEEP_PX_S, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
@@ -84,6 +85,9 @@ const REFRESH_MS = 150;
 export { HOLD_MS, SLOP_PX };
 /** The ink of a play whose config carries none we can draw (the server keeps one, so this is a safeguard). */
 const FALLBACK_INK = '#ff2bd6';
+/** A band of a post's pictures is this many CSS px tall (`round(BAND_PX * q)` points of its lattice), and is held while it lies within `BAND_NEAR` of the viewport (an IntersectionObserver `rootMargin`: half a screen above and below). */
+export const BAND_PX = 512;
+export const BAND_NEAR = '50% 0px';
 
 /** The help sentence of the hold, read by a screen reader with the control. */
 const HOLD_HELP = 'Hold Space or Enter on this button to scrub the ink away line by line, at the pace of a hand. Let go to stop. It never clears the ink all at once.';
@@ -152,8 +156,8 @@ interface Live {
   readonly layer: number; readonly tool: 'wash' | 'ink'; readonly width: number; readonly aspect: number; readonly color: string; readonly points: Pt[]; readonly pointer: number | null; readonly touch?: true;
   /** Where the pointer was and when (px of the box, the event's time in ms), the last moments of it: the pen's speed at the lift. */
   readonly trail: Sample[];
-  /** The layer model's open line for this stroke, ended when the stroke is; and the picture's grid's, when the grid is there. Both are made again on a new model or grid (`bindLines`). */
-  line?: LiveLine; gline?: Line; gpic?: Pic;
+  /** The layer model's open line for this stroke, ended when the stroke is; and one on the grid of each band's picture of its layer that has its grid. All are made again on a new model or grid (`bindLines`). */
+  line?: LiveLine; glines?: { readonly pic: Pic; readonly line: Line }[];
 }
 
 /** Where the pointer was, in px of the box, and when. */
@@ -186,30 +190,53 @@ export function dropsOf(trail: readonly Sample[], end: number): Drops {
 }
 
 /**
- * A layer's picture on this screen (ink-field design, section 5): its build, the grids a live stroke is drawn into beside it, and what
- * the build did not hold. One is made for a layer when it is first drawn, kept while the post is near, and let go with it. Until the
- * build arrives (`grid` is null) the layer is drawn by `paintStandIn`.
+ * A post's lattice of points: the post's box at `q` points a CSS px (what `denseGrid(box, q)` is), cut into bands of `per` rows
+ * (`round(BAND_PX * q)`, the last band the rows left), `count` of them. A band `j` is rows `j * per` on.
+ */
+interface Lattice { readonly cols: number; readonly rows: number; readonly per: number; readonly count: number }
+function latticeOf(box: Box, q: number): Lattice {
+  const cols = Math.ceil(box.w * q), rows = Math.ceil(box.h * q), per = Math.max(1, Math.round(BAND_PX * q));
+  return { cols, rows, per, count: Math.ceil(rows / per) };
+}
+const spanOf = (lat: Lattice, band: number): Band => ({ row0: band * lat.per, rows: Math.min(lat.per, lat.rows - band * lat.per) });
+/** The key of the band's picture of a layer, and of its canvas. */
+const slotOf = (band: number, layer: number): string => `${band}|${layer}`;
+/** What a picture is for: a different seed, ink, box or density is a different picture. */
+const geoOf = (layer: Layer, box: Box, q: number): string => `${layer.seed}|${layer.color}|${box.w}x${box.h}|${q}`;
+
+/**
+ * One layer's picture of one band on this screen (followups design, section 1): its build, the grid a live stroke goes into beside it,
+ * and what the build did not hold. One is made when a band near the viewport first draws the layer, kept while the band is near, and let
+ * go with it. The picture itself is the band's canvas, on the page (`ink` below). Until the build arrives (`grid` is null) the canvas
+ * shows `paintStandIn`.
  */
 interface Pic {
   /** What it is for: the seed, ink, box and density. A picture for another is let go. */
   readonly geo: string;
   readonly color: string;
-  /** The key the build was asked for with, which a drop cancels. */
+  /** The key the build was asked for with, which a drop cancels; and the band's slot. */
   readonly key: string;
+  readonly slot: string;
+  readonly layer: number;
+  readonly band: number;
   readonly box: Box;
   readonly q: number;
-  /** The field and the washed marks, as a Float32 grid a live stroke goes into by the model's own operations; and the canvas holding the shaded picture. Null until the build arrives. */
+  /** The band's own rows in the post's lattice, and the lattice's size (the gloss is placed from the whole). */
+  readonly span: Band;
+  readonly whole: { readonly cols: number; readonly rows: number };
+  /** The field and the washed marks, with their apron rows, as a Float32 grid a live stroke goes into by the model's own operations. Null until the build arrives. */
   grid: Grid | null;
-  canvas: HTMLCanvasElement | null;
   /** Strokes finished since the build was asked for, as the model got them, which the build does not hold: applied to its grid once, when it arrives. */
   readonly late: Stroke[];
   /** The rectangle of grid points a stroke has changed since it was last shaded. */
   dirty: Rect | null;
+  /** The stand-in is to be drawn (again): it was asked for, or a stroke changed what it shows while the build is out. */
+  standing: boolean;
 }
 
 /**
- * One buffer shaded rectangles are written into before they are put on a layer's canvas, shared by every layer on the page (a layer keeps
- * its canvas and its grid, and no pixels of its own): sized to the grid being shaded, and let go when no picture holds a grid.
+ * One buffer shaded rectangles are written into before they are put on a band's canvas, shared by every band on the page: sized to the
+ * grid being shaded (a band and its apron), and let go when no picture holds a grid.
  */
 let scratch: PixelsOut | null = null;
 let gridsHeld = 0;
@@ -225,19 +252,33 @@ function imageOf(ctx: CanvasRenderingContext2D, px: PixelsOut): ImageData {
   return img;
 }
 
+/** What each mounted effect holds, for `heldBytes`: its ink canvases' backing and its grids' memory. */
+const holders = new Set<() => { canvas: number; grids: number }>();
+/** For tests: the bytes the page's Whoops! effects hold in their bands' canvases and grids, and in the shading buffer they share. */
+export function heldBytes(): { canvas: number; grids: number; scratch: number } {
+  let canvas = 0, grids = 0;
+  for (const held of holders) { const h = held(); canvas += h.canvas; grids += h.grids; }
+  return { canvas, grids, scratch: scratch ? scratch.data.byteLength : 0 };
+}
+
 /** What a finger is doing: waiting to be told apart, wiping, or the page's. */
 interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
 
 /**
- * The pixel density of a box's ink canvas: the screen's, at most `MAX_DPR`, and low enough that the canvas, ceil(box ·
- * density) both ways, holds at most `MAX_CANVAS_PX`: a tall phone body lowers the density rather than hold a bigger canvas.
+ * The pixel density of a box's suds canvas: the screen's, at most `MAX_DPR`, and low enough that the canvas, ceil(box · density) both
+ * ways, holds at most `MAX_CANVAS_PX`. (The ink is not held to it: its bands are at `min(1, devicePixelRatio)` at any height.)
  */
-function densityOf(box: Box): number {
+function sudsDensityOf(box: Box): number {
   const screen = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
   const area = box.w * box.h;
   let d = Math.min(MAX_DPR, screen, area > 0 ? Math.sqrt(MAX_CANVAS_PX / area) : MAX_DPR);
   while (d > 0 && Math.ceil(box.w * d) * Math.ceil(box.h * d) > MAX_CANVAS_PX) d *= 0.9999;
   return d;
+}
+
+/** The points a picture's lattice has a CSS px: the screen's density, at most 1 (the ink is soft, and a point more shows nothing). */
+function pointsPerPx(): number {
+  return Math.min(1, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
 }
 
 /**
@@ -297,18 +338,25 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const bleed = place === 'thread';
   const frameRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const sudsRef = useRef<HTMLCanvasElement>(null);
-  /** This post's key with the suds module, and each layer's painted splat (by seed, color and box), kept while the post is near. */
+  /** This post's key with the suds module. */
   const sudsHost = useRef({});
-  const painted = useRef(new Map<string, HTMLCanvasElement>());
-  /** Each layer's picture, by layer: its build and the grids beside it, asked for when first drawn and let go with the post. */
-  const pics = useRef<(Pic | null)[]>([]);
+  /** Each band's picture of each layer, by `slotOf(band, layer)`: its build and the grid beside it, asked for when a near band first draws the layer and let go when the band leaves. */
+  const pics = useRef(new Map<string, Pic>());
+  /** The ink canvases on the page, by slot (one for each near band of each layer that is not gone), and the bands near the viewport now (also as state, to render the canvases). */
+  const inkEls = useRef(new Map<string, HTMLCanvasElement>());
+  const inkRefs = useRef(new Map<string, (el: HTMLCanvasElement | null) => void>());
+  const nearRef = useRef<readonly number[]>([]);
+  const [nearBands, setNearBands] = useState<readonly number[]>([]);
+  const bandWatch = useRef<BandWatch | null>(null);
+  /** This effect's token with the build client, so its builds are its own (`layerKey`). */
+  const requester = useRef<number | null>(null);
 
   /* What the handlers read: the latest of everything, so a handler made once is never stale. */
-  const dpr = densityOf(size.box);
-  const now = useRef({ layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near, dpr, built, surface });
-  now.current = { layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near, dpr, built, surface };
+  const q = pointsPerPx();
+  const sudsDpr = sudsDensityOf(size.box);
+  const now = useRef({ layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near, q, built, surface });
+  now.current = { layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near, q, built, surface };
   /** Drawn in a play's moment: as the saved states say, taking no input, saving, meeting and fading nothing. */
   const stillNow = useRef(still);
   stillNow.current = still;
@@ -349,7 +397,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const gone = useRef(false);
   const say = useCallback((words: string) => { if (!gone.current) setReport(words); }, []);
   /** What the ink grids were built from, so a state that changes nothing in them does not build them again. */
-  const builtFrom = useRef<{ splats: readonly Splat[]; w: number; h: number; top: number; payload: unknown; states: Map<string, string> } | null>(null);
+  const builtFrom = useRef<{ seeds: string; w: number; h: number; top: number; payload: unknown; states: Map<string, string> } | null>(null);
   const cleanedAt = useRef(new Map<string, number>());
   const wasClean = useRef<readonly boolean[] | null>(null);
   const live = useRef<Live | null>(null);
@@ -460,17 +508,26 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /* ------------------------------------------------------------- the pictures ---- */
 
   /*
-   * These are plain functions over refs (a stale one does what a fresh one does), so the callbacks that use them need not list them. A layer's
-   * picture is asked for when the layer is first drawn (`paintNow`), let go when the post leaves or the model is built again (`dropPics`),
-   * and answered by `arrive`. A live stroke goes to the layer's model and, once the grid is there, to the grid by the same operation.
+   * These are plain functions over refs (a stale one does what a fresh one does), so the callbacks that use them need not list them. A
+   * layer's picture of a band is asked for when a near band first draws the layer (`paintNow`), let go when the band leaves, the layer
+   * goes or the model is built again (`dropPic`, `dropPics`), and answered by `arrive`. A live stroke goes to the layer's model and,
+   * once a band's grid is there, to that grid by the same operation: one line for each band of the layer that holds a grid.
    */
   const openStrokes = (): Live[] => [live.current, sweepStroke.current].filter((s): s is Live => s !== null);
   const protoOf = (s: Live): Stroke => (s.tool === 'wash'
     ? { tool: 'wash', width: s.width, aspect: s.aspect, points: [] }
     : { tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points: [] });
+  /** A stroke being made, as a stroke so far. */
+  const strokeOf = (s: Live): Stroke => (s.tool === 'wash'
+    ? { tool: 'wash', width: s.width, aspect: s.aspect, points: s.points }
+    : { tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points: s.points });
+  const picsOf = (layer: number): Pic[] => [...pics.current.values()].filter((pic) => pic.layer === layer);
+  const countPics = (): number => [...pics.current.values()].filter((pic) => pic.grid).length;
   const mark = (pic: Pic, rect: Rect) => {
     if (rect.x1 > rect.x0 && rect.y1 > rect.y0) pic.dirty = pic.dirty ? unionRect(pic.dirty, rect) : rect;
   };
+  /** A stroke changed what the stand-in of the layer's bands that have no build yet shows. */
+  const touchStandIns = (layer: number) => { for (const pic of picsOf(layer)) if (!pic.grid) pic.standing = true; };
   /** The stroke's line on the layer's current model: begun again there, with every point so far (the model was built again since, or this is its first). */
   const bindInk = (s: Live) => {
     const ink = inks.current[s.layer];
@@ -479,108 +536,143 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     for (const p of s.points) line.to(p);
     s.line = line;
   };
-  /** The stroke's line on the picture's grid, with every point so far. */
+  /** The stroke's line on a band's grid, with every point so far (from its first, wherever the stroke has got to). */
   const bindGrid = (s: Live, pic: Pic) => {
     if (!pic.grid) return;
     const line = beginLine(pic.grid, pic.box, protoOf(s));
     for (const p of s.points) mark(pic, line.to(p));
-    s.gline = line;
-    s.gpic = pic;
+    (s.glines ??= []).push({ pic, line });
   };
   const bindLines = (s: Live) => {
     bindInk(s);
-    s.gline = undefined;
-    s.gpic = undefined;
-    const pic = pics.current[s.layer];
-    if (pic?.grid) bindGrid(s, pic);
+    s.glines = [];
+    for (const pic of picsOf(s.layer)) bindGrid(s, pic);
+    touchStandIns(s.layer);
   };
   const lineTo = (s: Live, p: Pt) => {
     s.line?.to(p);
-    if (s.gline && s.gpic) mark(s.gpic, s.gline.to(p));
+    for (const g of s.glines ?? []) mark(g.pic, g.line.to(p));
+    touchStandIns(s.layer);
   };
   const lineEnd = (s: Live, drops?: number) => {
     s.line?.end(drops);
-    if (s.gline && s.gpic) mark(s.gpic, s.gline.end(drops));
+    for (const g of s.glines ?? []) mark(g.pic, g.line.end(drops));
   };
 
-  const dropPic = (i: number) => {
-    const pic = pics.current[i];
-    if (!pic) return;
-    pics.current[i] = null;
+  const dropPic = (pic: Pic) => {
+    if (pics.current.get(pic.slot) !== pic) return;
+    pics.current.delete(pic.slot);
     buildClient().cancel(pic.key);
     if (pic.grid && --gridsHeld === 0) scratch = null;
-    for (const s of openStrokes()) if (s.layer === i) { s.gline = undefined; s.gpic = undefined; }
+    for (const s of openStrokes()) if (s.glines) s.glines = s.glines.filter((g) => g.pic !== pic);
   };
   const dropPics = () => {
-    for (let i = 0; i < pics.current.length; i++) dropPic(i);
-    pics.current = [];
+    for (const pic of [...pics.current.values()]) dropPic(pic);
     setPictures(0);
   };
+  /** A layer that is washed clean and has faded is gone: every band's picture of it is let go. */
+  const dropLayer = (layer: number) => {
+    const held = picsOf(layer);
+    if (held.length === 0) return;
+    for (const pic of held) dropPic(pic);
+    setPictures(countPics());
+  };
 
-  /** The build has arrived for layer `i`: its grid and canvas are kept (the build itself is let go), and what it does not hold is applied to the grid. */
-  const arrive = (i: number, pic: Pic, result: Built) => {
-    if (pics.current[i] !== pic || pic.grid) return;
+  /** The build has arrived for a band: its grid is kept (the build itself is let go), its picture is put on the band's canvas, and what the build does not hold is applied to the grid. */
+  const arrive = (pic: Pic, result: Built) => {
+    if (pics.current.get(pic.slot) !== pic || pic.grid) return;
+    const canvas = inkEls.current.get(pic.slot);
+    if (!canvas || canvas.width !== result.image.width || canvas.height !== result.image.height) {
+      /* The canvas is not the size of this build (the box changed since it was asked for): the next frame asks again. */
+      dropPic(pic);
+      schedulePaint();
+      return;
+    }
     let grid: Grid;
     try {
-      grid = gridOf(result, pic.box, pic.q);
+      grid = gridOf(result, pic.box, pic.q, pic.span);
     } catch (err) {
       console.error(err);
       return;
     }
-    const canvas = document.createElement('canvas');
-    canvas.width = result.image.width;
-    canvas.height = result.image.height;
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.putImageData(imageOf(ctx, result.image), 0, 0);
     pic.grid = grid;
-    pic.canvas = canvas;
+    pic.standing = false;
     gridsHeld++;
-    /* A stroke finished while the build was out is not in it: it goes in now, once. One still open goes on from where it is. */
+    /* A stroke finished while the build was out is not in it: it goes in now, once. One still open goes on from its first point (the build holds none of it). */
     for (const s of pic.late) mark(pic, strokesInto(grid, pic.box, [s]));
     pic.late.length = 0;
-    for (const s of openStrokes()) if (s.layer === i) bindGrid(s, pic);
-    setPictures(pics.current.filter((p) => p?.grid).length);
+    for (const s of openStrokes()) if (s.layer === pic.layer) bindGrid(s, pic);
+    setPictures(countPics());
     schedulePaint();
   };
 
-  /** Asks for layer `i`'s picture: built on the spot when it is light, in the worker when not (the stand-in shows meanwhile). */
-  const requestPic = (i: number, layer: Layer, b: Box, q: number): void => {
+  /** Asks for layer `i`'s picture of band `j`: built on the spot when it is light, in the worker when not (the stand-in shows meanwhile). */
+  const requestPic = (i: number, j: number, layer: Layer, b: Box, q: number, lat: Lattice): Pic => {
     const id = layer.play.id;
     const strokes = [...savedFor(id).strokes, ...unsavedOf(id)];
+    const span = spanOf(lat, j);
+    const client = buildClient();
+    requester.current ??= client.requester();
     /* The build input holds the strokes as saved (simplified), while the model keeps this screen's own strokes at full resolution until its next rebuild: the two differ by under a quarter of a brush, the difference the design accepts (docs/plans/2026-11-12-whoops-ink-field-design.md). */
-    const key = layerKey(id, b, q, strokes);
-    const pic: Pic = { geo: `${layer.seed}|${layer.color}|${b.w}x${b.h}|${q}`, color: layer.color, key, box: b, q, grid: null, canvas: null, late: [], dirty: null };
-    pics.current[i] = pic;
+    const key = layerKey(id, b, q, strokes, span.row0, requester.current);
+    const pic: Pic = {
+      geo: geoOf(layer, b, q), color: layer.color, key, slot: slotOf(j, i), layer: i, band: j, box: b, q, span, whole: { cols: lat.cols, rows: lat.rows },
+      grid: null, late: [], dirty: null, standing: true,
+    };
+    pics.current.set(pic.slot, pic);
     try {
-      buildClient().requestBuild(key, { seed: layer.seed, color: layer.color, box: b, density: q, strokes }, (result) => arrive(i, pic, result));
+      client.requestBuild(key, { seed: layer.seed, color: layer.color, box: b, density: q, strokes, band: span }, (result) => arrive(pic, result));
     } catch (err) {
-      /* The stand-in goes on drawing the layer. */
+      /* The stand-in goes on drawing the band. */
       console.error(err);
     }
+    return pic;
   };
 
-  /** Shades the rectangle a stroke has changed since it was last shaded, and puts that rectangle (and nothing else) on the layer's canvas. */
-  const flushPic = (pic: Pic) => {
+  /** Shades the rectangle a stroke has changed since it was last shaded, and puts that rectangle (and nothing else) on the band's canvas. */
+  const flushPic = (pic: Pic, canvas: HTMLCanvasElement) => {
     const r = pic.dirty;
     pic.dirty = null;
-    if (!r || !pic.grid || !pic.canvas) return;
-    const ctx = pic.canvas.getContext('2d');
+    if (!r || !pic.grid) return;
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const { cols, rows } = pic.grid;
-    const out = scratchFor(cols, rows);
-    shadeField(pic.grid, pic.grid.washed, pic.color, pic.q, r, out);
-    /* The shading reads one point past the rectangle for the gradient, so it writes one point past it too. */
-    const x0 = Math.max(0, r.x0 - 1), y0 = Math.max(0, r.y0 - 1), x1 = Math.min(cols, r.x1 + 1), y1 = Math.min(rows, r.y1 + 1);
-    if (x1 > x0 && y1 > y0) ctx.putImageData(imageOf(ctx, out), 0, 0, x0, y0, x1 - x0, y1 - y0);
+    const grid = pic.grid, { cols } = grid;
+    /* The grid's rows are the band's own, with an apron above (`above` rows, the first own row being `above`). The shading reads one point past the rectangle for the gradient, so it writes one point past it too: of the band's own rows only (the apron is the neighbor's to draw), and a change in the apron's row beside the band still moves the band's edge row. */
+    const above = pic.span.row0 - grid.row0, own = pic.span.rows;
+    const x0 = Math.max(0, r.x0 - 1), x1 = Math.min(cols, r.x1 + 1), y0 = Math.max(above, r.y0 - 1), y1 = Math.min(above + own, r.y1 + 1);
+    if (x1 <= x0 || y1 <= y0) return;
+    const out = scratchFor(cols, grid.rows);
+    shadeField(grid, grid.washed, pic.color, pic.q, { x0, y0, x1, y1 }, out, pic.whole);
+    ctx.putImageData(imageOf(ctx, out), 0, -above, x0, y0, x1 - x0, y1 - y0);
   };
 
-  /* Stand-in canvases are held while the post is near, and let go with it (paint.ts `holdStandIns`). */
-  useEffect(() => {
-    if (!near || !built) return;
-    return holdStandIns();
-  }, [near, built]);
+  /** The stand-in on a band's canvas: the layer's splat as flat circles, the strokes made so far, and the ones still open (a pointer's and the sweep's). */
+  const standIn = (pic: Pic, canvas: HTMLCanvasElement) => {
+    pic.standing = false;
+    const layer = now.current.layers[pic.layer];
+    const ink = inks.current[pic.layer];
+    if (!layer || !ink) return;
+    const id = layer.play.id;
+    const strokes = [...savedFor(id).strokes, ...unsavedOf(id)];
+    for (const s of openStrokes()) if (s.layer === pic.layer) strokes.push(strokeOf(s));
+    paintStandIn(canvas, { splat: ink.splat, color: layer.color, strokes }, { box: pic.box, q: pic.q, row0: pic.span.row0, rows: pic.span.rows });
+  };
+
   /* A post that goes lets its builds go: none is waited for, and the grids are let go. */
   useEffect(() => () => dropPics(), []);
+  /* What the page holds for the probe tests read (`heldBytes`). */
+  useEffect(() => {
+    const held = () => {
+      let canvas = 0, grids = 0;
+      for (const el of inkEls.current.values()) canvas += el.width * el.height * 4;
+      for (const pic of pics.current.values()) if (pic.grid) grids += pic.grid.values.byteLength + pic.grid.washed.byteLength;
+      return { canvas, grids };
+    };
+    holders.add(held);
+    return () => { holders.delete(held); };
+  }, []);
 
   /** Recompute everything a render or a test reads of the model, and what is covered. */
   const refresh = useCallback(() => {
@@ -608,9 +700,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   useEffect(() => {
     if (!splats) return;
     if (!near) {
-      /* Only the grids and the painted splats go: the strokes made on this screen are in `mine`, the saved ones are in the states, and both come back with the grids. */
+      /* Only the grids and the pictures go: the strokes made on this screen are in `mine`, the saved ones are in the states, and both come back with the grids. */
       inks.current = [];
-      painted.current.clear();
       dropPics();
       builtFrom.current = null;
       setHeld(0);
@@ -618,10 +709,11 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     }
     const fromStates = new Map(layers.map((l) => [l.play.id, canonical(states[l.play.id]?.state)]));
     const was = builtFrom.current;
-    /* The state that comes back from this screen's own save is what the grids already hold (the strokes in it were washed into them as they were made). */
-    const echo = was !== null && inks.current.length === layers.length && was.splats === splats && was.w === box.w && was.h === box.h && was.top === size.top && was.payload === post.currentPayload
+    /* The state that comes back from this screen's own save is what the grids already hold (the strokes in it were washed into them as they were made), and the plays drawn again with the same seeds are the same layers. */
+    const seeds = layers.map((l) => l.seed).join();
+    const echo = was !== null && inks.current.length === layers.length && was.seeds === seeds && was.w === box.w && was.h === box.h && was.top === size.top && was.payload === post.currentPayload
       && layers.every((l) => fromStates.get(l.play.id) === was.states.get(l.play.id) || fromStates.get(l.play.id) === lastSent.current.get(l.play.id));
-    builtFrom.current = { splats, w: box.w, h: box.h, top: size.top, payload: post.currentPayload, states: fromStates };
+    builtFrom.current = { seeds, w: box.w, h: box.h, top: size.top, payload: post.currentPayload, states: fromStates };
     if (echo) {
       refresh();
       schedulePaint();
@@ -651,31 +743,19 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
 
   /* ----------------------------------------------------------------- the canvas ---- */
 
-  /** A layer's splat as `paintSplat` paints it for this box, kept by (seed, color, box) while the post is near, one pixel to the CSS px at most. */
-  const paintedFor = useCallback((i: number, ink: LayerInk, color: string, seed: number, b: Box, density: number): HTMLCanvasElement => {
-    const q = Math.min(1, density);
-    const key = `${seed}|${color}|${b.w}|${b.h}|${q}`;
-    let held = painted.current.get(`${i}|${key}`);
-    if (!held) {
-      /* A box that changed leaves its older splat behind: this layer's other keys go. */
-      for (const k of painted.current.keys()) if (k.startsWith(`${i}|`)) painted.current.delete(k);
-      held = paintSplat(ink.splat, color, b, q);
-      painted.current.set(`${i}|${key}`, held);
-    }
-    return held;
-  }, []);
-
+  /*
+   * The ink is the near bands' canvases, one for each layer that is not gone, over the words (rendered below; each takes the picture of
+   * its band and layer). Every frame a stroke or a build asks for, each near band of each layer gets its picture asked for if it has none,
+   * and is drawn: the rectangle a stroke changed is shaded again from the grid, or, while the build is out, the stand-in is drawn again.
+   * A layer that is washed clean fades by its canvases' opacity, and is let go once it has faded.
+   */
   const paintNow = useCallback(() => {
     paintQueued.current = 0;
-    const canvas = canvasRef.current;
-    const { layers: all, size: sz, dpr: density } = now.current;
-    if (!canvas || !now.current.near || sz.box.w <= 0 || sz.box.h <= 0 || inks.current.length !== all.length) return;
-    /* The ink canvas is placed at the box's origin (`onBox`: left -size.left, top -size.top from the frame), so the box's origin is (0, 0) in the canvas's own frame; the frame's offset in the cell is where the canvas sits, never where the box lies in it. */
-    const geometry: Geometry = { dpr: density, box: sz.box, left: 0, top: 0 };
+    const { layers: all, size: sz, q: pq } = now.current;
+    if (!now.current.near || !now.current.built || sz.box.w <= 0 || sz.box.h <= 0 || inks.current.length !== all.length) return;
     const reduced = motionReduced();
-    const stroking = live.current;
+    const lat = latticeOf(sz.box, pq);
     let fading = false;
-    const layersOut: PaintLayer[] = [];
     all.forEach((layer, i) => {
       const id = layer.play.id;
       const clean = savedFor(id).clean || localClean.current.has(id);
@@ -686,54 +766,73 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         if (alpha > 0) fading = true;
       }
       if (alpha <= 0) {
-        /* A layer that is clean and faded is gone for good: its picture, grid and canvas are let go now, not held until the post leaves. */
-        if (pics.current[i]) {
-          dropPic(i);
-          setPictures(pics.current.filter((p) => p?.grid).length);
-        }
+        /* A layer that is clean and faded is gone for good: its pictures and grids are let go now, not held until the post leaves. */
+        dropLayer(i);
         return;
       }
-      /* The layer's picture is its build, asked for here the first time the layer is drawn (a light one is back before the frame is), and kept while the post is near. */
-      const q = Math.min(1, density);
-      if (pics.current[i]?.geo !== `${layer.seed}|${layer.color}|${sz.box.w}x${sz.box.h}|${q}`) {
-        dropPic(i);
-        requestPic(i, layer, sz.box, q);
+      for (const j of nearRef.current) {
+        if (j >= lat.count) continue;
+        const slot = slotOf(j, i);
+        /* A band's canvas is on the page a render after the band is heard near: its ref asks for a frame. */
+        const canvas = inkEls.current.get(slot);
+        if (!canvas) continue;
+        canvas.style.opacity = alpha < 1 ? String(alpha) : '';
+        let pic = pics.current.get(slot);
+        if (pic && pic.geo !== geoOf(layer, sz.box, pq)) { dropPic(pic); pic = undefined; }
+        /* The picture is its build, asked for here the first time the band draws the layer (a light one is back before the frame is), and kept while the band is near. */
+        pic ??= requestPic(i, j, layer, sz.box, pq, lat);
+        if (pic.grid) flushPic(pic, canvas);
+        else if (pic.standing) standIn(pic, canvas);
       }
-      const pic = pics.current[i];
-      if (pic?.grid && pic.canvas) {
-        flushPic(pic);
-        layersOut.push({ picture: pic.canvas, alpha });
-        return;
-      }
-      /* No build yet: the stand-in, the cached splat with every stroke drawn flat on it, the one under way included. */
-      const strokes = [...savedFor(id).strokes, ...unsavedOf(id)];
-      if (stroking && stroking.layer === i) {
-        strokes.push(stroking.tool === 'wash'
-          ? { tool: 'wash', width: stroking.width, aspect: stroking.aspect, points: stroking.points }
-          : { tool: 'ink', color: stroking.color, width: stroking.width, aspect: stroking.aspect, points: stroking.points });
-      }
-      layersOut.push({ picture: paintStandIn({ painted: paintedFor(i, inks.current[i]!, layer.color, layer.seed, sz.box, density), color: layer.color, strokes }, geometry, canvas.width, canvas.height, i), alpha });
     });
-    paint(canvas, geometry, layersOut);
     if (fading) schedulePaint();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the picture helpers are plain functions over refs
-  }, [savedFor, paintedFor]);
+  }, [savedFor]);
 
   const schedulePaint = useCallback(() => {
     if (paintQueued.current) return;
     paintQueued.current = requestAnimationFrame(paintNow);
   }, [paintNow]);
 
-  /* Canvases of the right size whenever the box, the layers or the post's nearness change: the ink's, and the suds' over it. */
+  /** The viewport's near bands have changed: a band that left lets its pictures go, and the canvases follow the set. */
+  const hearBands = useCallback((list: number[]) => {
+    nearRef.current = list;
+    for (const pic of [...pics.current.values()]) if (!list.includes(pic.band)) dropPic(pic);
+    setPictures(countPics());
+    setNearBands(list);
+    schedulePaint();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the picture helpers are plain functions over refs
+  }, [schedulePaint]);
+
+  /* While the post is near and built its body's bands are watched (the engine's band watcher, in the frame the canvases are placed in). */
+  const bandBox = { left: -size.left, top: -size.top, w: box.w, h: box.h };
+  const bandPx = latticeOf(box, q).per / q;
+  const bandBoxNow = useRef(bandBox);
+  bandBoxNow.current = bandBox;
+  useEffect(() => {
+    const host = frameRef.current;
+    if (!near || !built || !fixed || !host) return;
+    const watch = watchBands(host, bandBoxNow.current, bandPx, BAND_NEAR, hearBands);
+    bandWatch.current = watch;
+    return () => {
+      watch.stop();
+      bandWatch.current = null;
+      nearRef.current = [];
+      setNearBands([]);
+    };
+  }, [near, built, fixed, bandPx, hearBands]);
+  useLayoutEffect(() => { bandWatch.current?.update(bandBox); }, [bandBox.left, bandBox.top, bandBox.w, bandBox.h]);
+
+  /* The suds canvas is the box's size whenever the box, the layers or the post's nearness change. (The ink's canvases are sized when they render.) */
   useLayoutEffect(() => {
     if (!fixed) return;
-    for (const canvas of [canvasRef.current, sudsRef.current]) {
-      if (!canvas) continue;
-      canvas.width = Math.ceil(box.w * dpr);
-      canvas.height = Math.ceil(box.h * dpr);
+    const canvas = sudsRef.current;
+    if (canvas) {
+      canvas.width = Math.ceil(box.w * sudsDpr);
+      canvas.height = Math.ceil(box.h * sudsDpr);
     }
     schedulePaint();
-  }, [near, built, fixed, box.w, box.h, dpr, schedulePaint]);
+  }, [near, built, fixed, box.w, box.h, sudsDpr, schedulePaint]);
 
   useEffect(() => () => { if (paintQueued.current) cancelAnimationFrame(paintQueued.current); }, []);
 
@@ -745,8 +844,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const canvas = sudsRef.current;
     const host = sudsHost.current;
     if (!near || !built || !fixed || !canvas) return;
-    suds.register(host, canvas, box, dpr, topInk);
-  }, [near, built, fixed, box, dpr, topInk]);
+    suds.register(host, canvas, box, sudsDpr, topInk);
+  }, [near, built, fixed, box, sudsDpr, topInk]);
   /* Let go only when the post leaves or goes: a change of ink or box re-registers above, and the module keeps what is live. */
   useEffect(() => {
     if (!near || !built || !fixed) return;
@@ -876,8 +975,9 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const stroke: Stroke = s.tool === 'wash'
       ? { tool: 'wash', width: s.width, aspect: s.aspect, points: s.points }
       : { tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points: s.points, ...(drops !== undefined ? { drops } : null) };
-    const pic = pics.current[s.layer];
-    if (pic && !pic.grid && !s.gline) pic.late.push(stroke);
+    /* A band whose build is still out is given the stroke once its grid is there; the stand-in shows it meanwhile. */
+    for (const pic of picsOf(s.layer)) if (!pic.grid) pic.late.push(stroke);
+    touchStandIns(s.layer);
     const kept = fitStroke(stroke, minStepOf(now.current.size.box));
     mine.current.set(id, [...(mine.current.get(id) ?? []), ...kept]);
     if (now.current.reader.author) queueSave(id);
@@ -1258,12 +1358,19 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const startSweep = useCallback(() => {
     if (stillNow.current || sweeping.current || !built || inks.current.length !== now.current.layers.length) return;
     const b = now.current.size.box;
+    /* The pace is `SWEEP_PX_S` over the box's width: on a box of no width it is infinite, and the sweep would never end. */
+    if (!(b.w >= 1)) return;
     const rows = bandsOf(b);
     const brush = brushOf(SWEEP_BRUSH_ROWS * ROW_PX, b);
     const half = ROW_PX / 2 / b.h;
     const run = { raf: 0, last: performance.now(), sweep: { row: Math.min(sweepFrom.current, rows.length - 1), x: 0 } as Sweep, row: -1 };
     sweeping.current = run;
     const tick = (t: number) => {
+      /* A box that has shrunk to nothing since the sweep began ends it. */
+      if (!(now.current.size.box.w >= 1)) {
+        stopSweep();
+        return;
+      }
       const dt = Math.min(0.05, Math.max(0, (t - run.last) / 1000));
       run.last = t;
       const lives = liveInks();
@@ -1394,6 +1501,29 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
 
   /* The canvases are the box's size, reaching out of the frame to the box's corner. */
   const onBox = { left: -size.left, top: -size.top, width: box.w, height: box.h };
+  /** The post's lattice and which layers still have canvases: one that is washed clean has them until it has faded. */
+  const lat = latticeOf(box, q);
+  const reduced = motionReduced();
+  const shownLayer = (i: number): boolean => {
+    if (!view?.clean[i]) return true;
+    const at = cleanedAt.current.get(layers[i]!.play.id);
+    return !reduced && at !== undefined && performance.now() - at < FADE_MS;
+  };
+  /** A band's canvas's ref: kept by slot, asking for a frame when it arrives, and sized to nothing when it goes (a canvas's memory is freed with its size, not when the page gets to the element). */
+  const inkRef = (slot: string) => {
+    let f = inkRefs.current.get(slot);
+    if (!f) {
+      f = (el) => {
+        if (el) { inkEls.current.set(slot, el); schedulePaint(); return; }
+        const old = inkEls.current.get(slot);
+        if (old) { old.width = 0; old.height = 0; }
+        inkEls.current.delete(slot);
+        inkRefs.current.delete(slot);
+      };
+      inkRefs.current.set(slot, f);
+    }
+    return f;
+  };
   return (
     <div
       className="kb-whoops" data-kb-whoops
@@ -1403,6 +1533,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       data-kb-place={place}
       data-kb-held={held}
       data-kb-pictures={pictures}
+      data-kb-bands={nearBands.join(' ')}
       data-kb-splat={splats?.map((sp) => `${sp.placement.cx},${sp.placement.cy}`).join(' ')}
     >
       <div ref={frameRef} className="kb-whoops-frame" style={bleed ? { overflow: 'visible' } : undefined}>
@@ -1411,7 +1542,17 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         </div>
         {near && fixed && built && (
           <>
-            <canvas ref={canvasRef} className="kb-whoops-ink" data-kb-effect-ink aria-hidden="true" style={onBox} />
+            {nearBands.flatMap((j) => (j >= lat.count ? [] : layers.map((layer, i) => {
+              if (!shownLayer(i)) return null;
+              const span = spanOf(lat, j), slot = slotOf(j, i);
+              return (
+                <canvas
+                  key={slot} ref={inkRef(slot)} className="kb-whoops-ink" data-kb-effect-ink data-kb-band={j} data-kb-layer={i} aria-hidden="true"
+                  width={lat.cols} height={span.rows}
+                  style={{ left: -size.left, top: -size.top + span.row0 * (box.h / lat.rows), width: box.w, height: span.rows * (box.h / lat.rows) }}
+                />
+              );
+            })))}
             <canvas ref={sudsRef} className="kb-whoops-suds" data-kb-effect-ink aria-hidden="true" style={onBox} />
           </>
         )}
