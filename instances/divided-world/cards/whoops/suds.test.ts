@@ -8,15 +8,24 @@ import { afterEach, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { probe, puff, register, unregister, wash } from './suds.ts';
 
-interface Canvas { width: number; height: number; draws: number; clears: number; throwOnDraw: boolean; getContext(kind: string): unknown }
+interface Drawn { x: number; y: number; w: number }
+interface Canvas { width: number; height: number; draws: number; clears: number; throwOnDraw: boolean; tf: number[]; drawn: Drawn[]; getContext(kind: string): unknown }
 const canvas = (w = 400, h = 300): Canvas => {
   const cv: Canvas = {
-    width: w, height: h, draws: 0, clears: 0, throwOnDraw: false,
+    width: w, height: h, draws: 0, clears: 0, throwOnDraw: false, tf: [1, 0, 0, 1, 0, 0], drawn: [],
     getContext() {
       const grad = { addColorStop() {} };
       return new Proxy({}, {
         get: (_t, name) => {
-          if (name === 'drawImage') return () => { if (cv.throwOnDraw) throw new Error('draw'); cv.draws++; };
+          if (name === 'drawImage') {
+            return (_img: unknown, x: number, y: number, w: number) => {
+              if (cv.throwOnDraw) throw new Error('draw');
+              cv.draws++;
+              /* Where it lands on the canvas, in canvas px: the transform set last applied to the destination's corner. */
+              cv.drawn.push({ x: cv.tf[4]! + cv.tf[0]! * x, y: cv.tf[5]! + cv.tf[3]! * y, w });
+            };
+          }
+          if (name === 'setTransform') return (...a: number[]) => { cv.tf = a; };
           if (name === 'clearRect') return () => { cv.clears++; };
           if (name === 'createRadialGradient' || name === 'createLinearGradient' || name === 'createConicGradient') return () => grad;
           return () => {};
@@ -254,4 +263,50 @@ test('a very long move spawns no more than a 400px one does', () => {
   wash(again.host, { x: 0, y: 10 }, { x: 20000, y: 10 }, true);
   assert.ok(probe.size() <= 400 / 8 + 400 / 16 + 1 + 12, `${probe.size()} spawned`);
   assert.ok(ref > 0);
+});
+
+/** The sprites a canvas was drawn (not the wet sheen, which is the box's width). */
+const sprites = (c: Canvas) => c.drawn.filter((d) => d.w < 60);
+
+test('a host registered with a span offset draws each particle at its box position less that offset', () => {
+  const host = {}, cv = canvas(390 * 2, 2048 * 2);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', 1536);
+  wash(host, { x: 100, y: 1800 }, { x: 200, y: 1800 }, true);
+  tick(16);
+  const got = sprites(cv);
+  assert.ok(got.length > 0, 'something was drawn');
+  /* The wash is at box y 1800, which is 264 CSS px (528 canvas px) down the span; the spread of a brush's lather is under 60px. */
+  for (const d of got) assert.ok(d.y > (264 - 60) * 2 && d.y < (264 + 60) * 2, `drawn at canvas y ${d.y}`);
+});
+
+test('a particle outside the span is not drawn and throws nothing', () => {
+  const errors: unknown[] = [];
+  const realError = console.error;
+  console.error = (...a: unknown[]) => { errors.push(a); };
+  try {
+    const host = {}, cv = canvas(390 * 2, 2048 * 2);
+    register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', 1536);
+    wash(host, { x: 100, y: 100 }, { x: 200, y: 100 }, true);
+    wash(host, { x: 100, y: 9000 }, { x: 200, y: 9000 }, true);
+    assert.ok(probe.size() > 0, 'the particles exist');
+    tick(16);
+    tick(16);
+    assert.equal(sprites(cv).length, 0, 'nothing outside the span is drawn');
+    assert.deepEqual(errors, []);
+  } finally { console.error = realError; }
+});
+
+test('what is in the air survives a re-register with another offset, and is drawn at the new one', () => {
+  const host = {}, cv = canvas(390 * 2, 2048 * 2);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', 1536);
+  wash(host, { x: 100, y: 2300 }, { x: 200, y: 2300 }, true);
+  const n = probe.size();
+  assert.ok(n > 0);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', 2048);
+  assert.equal(probe.size(), n, 'the pool is kept');
+  cv.drawn.length = 0;
+  tick(16);
+  const got = sprites(cv);
+  assert.ok(got.length > 0);
+  for (const d of got) assert.ok(d.y > (252 - 60) * 2 && d.y < (252 + 60) * 2, `drawn at canvas y ${d.y}`);
 });

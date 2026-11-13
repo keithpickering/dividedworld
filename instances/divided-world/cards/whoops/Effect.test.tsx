@@ -1128,6 +1128,7 @@ describe('the body\'s box', () => {
   });
 
   test('words moved out of the cell by a plain appendChild, with no render: the frame takes the press in its own box, and the cell it left takes nothing; moved back, the cell\'s gutter washes again', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
     const { cell, frame, root } = mount();
     const away = document.createElement('div');
     document.body.append(away);
@@ -1147,6 +1148,8 @@ describe('the body\'s box', () => {
       act(() => { fireEvent.pointerMove(frame, at(moved, 0.06)); });
       act(() => { fireEvent.pointerUp(frame, at(moved, 0.06)); });
     }
+    /* The suds canvas is mounted a frame after the bands are heard near. */
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
     const canvas = root.querySelector('canvas.kb-whoops-suds') as HTMLCanvasElement;
     expect(washed(root)[0], 'the frame takes the press where it now lives').toBeGreaterThan(0);
     expect(canvas.width, 'in the frame\'s box, not the cell\'s').toBe(600);
@@ -1218,7 +1221,10 @@ describe('the body\'s box', () => {
   }, 60_000);
 
   test('the suds stay registered when the top ink changes mid-wash (a layer going clean): they are re-registered with the new ink, and let go only when the post goes', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
     const { frame, root, unmount } = mount({ layers: 2 });
+    /* The suds are registered once the bands are heard near, a frame on. */
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
     const before = vi.mocked(suds.register).mock.calls.at(-1)!;
     expect(before[4]).toBe(COLORS[1]);
     scrubTo(frame, root, 1, inkOf(1), 0.97);
@@ -1869,7 +1875,9 @@ describe('what a post costs a page', () => {
   test('below the cap the suds\' density is the screen\'s own, and the ink\'s too, below one', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
     vi.stubGlobal('devicePixelRatio', 1.5);
-    expect(mount().root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-suds')!.width).toBe(MAX_FRAME * 1.5);
+    const dense = mount().root;
+    for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+    expect(dense.querySelector<HTMLCanvasElement>('canvas.kb-whoops-suds')!.width).toBe(MAX_FRAME * 1.5);
     vi.stubGlobal('devicePixelRatio', 0.5);
     const { root } = mount();
     for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
@@ -2590,6 +2598,64 @@ describe('the ink field: the picture a layer is drawn from', () => {
     expect(probe.canvas, 'the canvases\' backing').toBe(12 * 390 * 512 * 4);
     expect(probe.grids, 'the grids, with an apron row each side').toBe(12 * 390 * 514 * 5);
     expect(total(probe) / 3, 'the pixels held a layer').toBeLessThan(12_000_000);
+  }, 60_000);
+
+  test('the suds canvas is placed over the near bands and sized to them, and follows the near set', () => {
+    clock();
+    fakeCanvases();
+    const eyes = sight({ bands: (i) => i >= 3 && i <= 6 });
+    heldClient(false);
+    boxWidth = 390;
+    boxHeight = 20_000;
+    const { root, frame } = mount({ layers: 1 });
+    frames();
+    const sud = () => root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-suds')!;
+    expect(root.dataset.kbBands).toBe('3 4 5 6');
+    expect([sud().width, sud().height], 'four bands tall at one canvas px to the CSS px').toEqual([390, 4 * 512]);
+    expect([sud().style.top, sud().style.height, sud().style.width]).toEqual([`${3 * 512}px`, `${4 * 512}px`, '390px']);
+    expect(sud().style.top, 'placed with band 3').toBe(inkOfBand(root, 3).style.top);
+    const last = vi.mocked(suds.register).mock.calls.at(-1)!;
+    expect([last[1], last[2], last[3], last[5]], 'the canvas, the whole box, the density and the span\'s offset').toEqual([sud(), boxNow(), 1, 3 * 512]);
+    const host = last[0];
+    /* A wash at a point in band 4 is thrown at its place in the box; the canvas holds it at that less the span's top. */
+    const y = 2300 / 20_000;
+    vi.mocked(suds.wash).mockClear();
+    drag(frame, [[0.3, y], [0.4, y], [0.5, y]]);
+    const [h, from] = vi.mocked(suds.wash).mock.calls[0]!;
+    expect(h).toBe(host);
+    expect(from.y).toBeCloseTo(2300, 3);
+    expect(from.y - last[5]!, 'inside the canvas').toBeGreaterThan(0);
+    expect(from.y - last[5]!).toBeLessThan(sud().height);
+    /* The near set moves: the suds are placed again, over its bands, for the same host (the module keeps what is in the air). */
+    eyes.bands((i) => i >= 4 && i <= 7);
+    frames();
+    expect(root.dataset.kbBands).toBe('4 5 6 7');
+    expect(sud().style.top).toBe(`${4 * 512}px`);
+    const moved = vi.mocked(suds.register).mock.calls.at(-1)!;
+    expect([moved[0], moved[1], moved[5]]).toEqual([host, sud(), 4 * 512]);
+    expect(vi.mocked(suds.unregister), 'not let go').not.toHaveBeenCalled();
+  }, 60_000);
+
+  test('with no band near the suds canvas is not mounted, the suds are let go, and a brush throws them to nothing', () => {
+    clock();
+    fakeCanvases();
+    const eyes = sight({ bands: (i) => i >= 3 && i <= 6 });
+    heldClient(false);
+    boxWidth = 390;
+    boxHeight = 20_000;
+    const { root, frame } = mount({ layers: 1 });
+    frames();
+    const host = vi.mocked(suds.register).mock.calls.at(-1)![0];
+    eyes.bands(() => false);
+    frames();
+    expect(root.dataset.kbBands).toBe('');
+    expect(root.querySelector('canvas.kb-whoops-suds')).toBeNull();
+    expect(vi.mocked(suds.unregister)).toHaveBeenCalledWith(host);
+    expect(() => drag(frame, [[0.3, 0.115], [0.4, 0.115], [0.5, 0.115]])).not.toThrow();
+    eyes.bands((i) => i === 5);
+    frames();
+    expect(root.querySelector('canvas.kb-whoops-suds')!.getAttribute('style')).toContain(`top: ${5 * 512}px`);
+    expect(vi.mocked(suds.register).mock.calls.at(-1)![5], 'registered again over the band that came near').toBe(5 * 512);
   }, 60_000);
 
   test('a band that leaves lets its picture go, and one that returns is built again with the strokes made meanwhile', () => {

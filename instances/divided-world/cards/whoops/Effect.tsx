@@ -264,15 +264,31 @@ export function heldBytes(): { canvas: number; grids: number; scratch: number } 
 /** What a finger is doing: waiting to be told apart, wiping, or the page's. */
 interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
 
+/** The span of the box the suds canvas covers: from the first near band's top to the last one's bottom, in CSS px of the box. */
+interface SudsSpan { readonly top: number; readonly h: number }
+
 /**
- * The pixel density of a box's suds canvas: the screen's, at most `MAX_DPR`, and low enough that the canvas, ceil(box · density) both
- * ways, holds at most `MAX_CANVAS_PX`. (The ink is not held to it: its bands are at `min(1, devicePixelRatio)` at any height.)
+ * The span the near bands cover, or null when none is near (or the lattice is empty). A band's top is its first row's place in the box,
+ * `row0 · (box.h / rows)`; the last band's bottom is the box's own when it holds the lattice's last row.
  */
-function sudsDensityOf(box: Box): number {
+function sudsSpanOf(box: Box, lat: Lattice, near: readonly number[]): SudsSpan | null {
+  const live = near.filter((j) => j >= 0 && j < lat.count);
+  if (!live.length || lat.rows <= 0) return null;
+  const first = spanOf(lat, Math.min(...live)), last = spanOf(lat, Math.max(...live));
+  const unit = box.h / lat.rows, end = last.row0 + last.rows >= lat.rows ? box.h : (last.row0 + last.rows) * unit;
+  const top = first.row0 * unit;
+  return { top, h: end - top };
+}
+
+/**
+ * The pixel density of the suds canvas over a span: the screen's, at most `MAX_DPR`, and low enough that the canvas, ceil(w · density) by
+ * ceil(h · density), holds at most `MAX_CANVAS_PX`. (The ink is not held to it: its bands are at `min(1, devicePixelRatio)` at any height.)
+ */
+function sudsDensityOf(w: number, h: number): number {
   const screen = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
-  const area = box.w * box.h;
+  const area = w * h;
   let d = Math.min(MAX_DPR, screen, area > 0 ? Math.sqrt(MAX_CANVAS_PX / area) : MAX_DPR);
-  while (d > 0 && Math.ceil(box.w * d) * Math.ceil(box.h * d) > MAX_CANVAS_PX) d *= 0.9999;
+  while (d > 0 && Math.ceil(w * d) * Math.ceil(h * d) > MAX_CANVAS_PX) d *= 0.9999;
   return d;
 }
 
@@ -354,7 +370,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
 
   /* What the handlers read: the latest of everything, so a handler made once is never stale. */
   const q = pointsPerPx();
-  const sudsDpr = sudsDensityOf(size.box);
+  const sudsSpan = sudsSpanOf(size.box, latticeOf(size.box, q), nearBands);
+  const sudsDpr = sudsDensityOf(size.box.w, sudsSpan?.h ?? 0);
   const now = useRef({ layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near, q, built, surface });
   now.current = { layers, states, reader, save, tool, threshold: (settings.cardSettings['whoops.clean'] ?? DEFAULT_CLEAN) / 100, size, near, q, built, surface };
   /** Drawn in a play's moment: as the saved states say, taking no input, saving, meeting and fading nothing. */
@@ -823,34 +840,44 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   }, [near, built, fixed, bandPx, hearBands]);
   useLayoutEffect(() => { bandWatch.current?.update(bandBox); }, [bandBox.left, bandBox.top, bandBox.w, bandBox.h]);
 
-  /* The suds canvas is the box's size whenever the box, the layers or the post's nearness change. (The ink's canvases are sized when they render.) */
+  /* The suds canvas is the near bands' span in size whenever the box, the layers, the post's nearness or the near set change. (The ink's canvases are sized when they render.) */
+  const sudsTop = sudsSpan?.top ?? 0, sudsH = sudsSpan?.h ?? 0;
   useLayoutEffect(() => {
     if (!fixed) return;
     const canvas = sudsRef.current;
     if (canvas) {
       canvas.width = Math.ceil(box.w * sudsDpr);
-      canvas.height = Math.ceil(box.h * sudsDpr);
+      canvas.height = Math.ceil(sudsH * sudsDpr);
     }
     schedulePaint();
-  }, [near, built, fixed, box.w, box.h, sudsDpr, schedulePaint]);
+  }, [near, built, fixed, box.w, sudsH, sudsDpr, schedulePaint]);
 
   useEffect(() => () => { if (paintQueued.current) cancelAnimationFrame(paintQueued.current); }, []);
 
   /* ------------------------------------------------------------------ the suds ---- */
 
-  /* The suds module draws on this post's own canvas while the post is near (the ink's box, in px), and lets it go when the post leaves or goes. */
+  /* The suds module draws on this post's own canvas while the post is near and a band is (the span's offset in the box, in px), and lets it go when the post leaves or goes, or when no band is near. */
+  const sudsLive = useRef(false);
   const topInk = layers.reduce((color, l, i) => (view?.clean[i] ? color : l.color), layers[0]?.color ?? FALLBACK_INK);
   useEffect(() => {
     const canvas = sudsRef.current;
     const host = sudsHost.current;
-    if (!near || !built || !fixed || !canvas) return;
-    suds.register(host, canvas, box, sudsDpr, topInk);
-  }, [near, built, fixed, box, sudsDpr, topInk]);
+    if (!near || !built || !fixed) return;
+    if (!canvas || !sudsSpan) {
+      /* No band near: no canvas is mounted, so what was in the air goes and a brush's suds are thrown to nothing. */
+      if (sudsLive.current) suds.unregister(host);
+      sudsLive.current = false;
+      return;
+    }
+    suds.register(host, canvas, box, sudsDpr, topInk, sudsTop);
+    sudsLive.current = true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the span is its top and height
+  }, [near, built, fixed, box, sudsDpr, topInk, sudsTop, sudsH]);
   /* Let go only when the post leaves or goes: a change of ink or box re-registers above, and the module keeps what is live. */
   useEffect(() => {
     if (!near || !built || !fixed) return;
     const host = sudsHost.current;
-    return () => suds.unregister(host);
+    return () => { suds.unregister(host); sudsLive.current = false; };
   }, [near, built, fixed]);
 
   /** What a move of the brush from `a` to `b` (shares of the box) throws up, in px of the box. */
@@ -1498,9 +1525,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const viewNow = useRef(cardView);
   viewNow.current = cardView;
   useEffect(() => { show(viewNow.current); }, [viewKey, controls, show]);
-
   /* The canvases are the box's size, reaching out of the frame to the box's corner. */
-  const onBox = { left: -size.left, top: -size.top, width: box.w, height: box.h };
   /** The post's lattice and which layers still have canvases: one that is washed clean has them until it has faded. */
   const lat = latticeOf(box, q);
   const reduced = motionReduced();
@@ -1553,7 +1578,12 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
                 />
               );
             })))}
-            <canvas ref={sudsRef} className="kb-whoops-suds" data-kb-effect-ink aria-hidden="true" style={onBox} />
+            {sudsSpan && (
+              <canvas
+                ref={sudsRef} className="kb-whoops-suds" data-kb-effect-ink aria-hidden="true"
+                style={{ left: -size.left, top: -size.top + sudsSpan.top, width: box.w, height: sudsSpan.h }}
+              />
+            )}
           </>
         )}
       </div>
