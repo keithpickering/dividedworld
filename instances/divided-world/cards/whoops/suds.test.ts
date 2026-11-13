@@ -424,3 +424,53 @@ test('a host whose span is its whole box (Graffiti) holds the sheen it always di
   register(host, asCanvas(cv), BOX, 2, '#cc2222', 0);
   assert.equal(probe.sheens(), 1, 'the same span keeps it');
 });
+
+test('the sheen is drawn onto the suds canvas to cover it exactly: canvas y 0 and the span\'s height, with `top` applied once', () => {
+  const { host, cv } = spanned();
+  wash(host, { x: 100, y: 1800 }, { x: 200, y: 1800 }, true);
+  cv.drawn.length = 0;
+  tick(16);
+  /* The suds canvas is shifted by `-top * density`, so the sheen is drawn at box y `top` (canvas y 0 once shifted); the fake records
+     the shifted corner in canvas px and the size as given, in CSS px (the canvas's scale applies it). A `top` applied twice lands at 2 * top * density. */
+  const sheen = cv.drawn.filter((d) => d.w === 390);
+  assert.equal(sheen.length, 1, 'the sheen is drawn once');
+  assert.deepEqual(sheen[0], { x: 0, y: 0, w: 390, h: SPAN });
+  void host;
+});
+
+test('a remake of the sheen does not restart its fade: it is gone 3.5s after the wash, not after the remake', () => {
+  const { host, cv } = spanned();
+  wash(host, { x: 100, y: 2300 }, { x: 200, y: 2300 }, true);
+  tick(1500);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', TOP + 512);
+  assert.equal(probe.sheens(), 1, 'the remade sheen is held');
+  tick(1500);
+  assert.equal(probe.sheens(), 1, 'still held 3.0s after the wash');
+  /* 3.6s after the wash, but only 2.1s after the remake. */
+  cv.drawn.length = 0;
+  tick(600);
+  assert.equal(probe.sheens(), 0, 'let go');
+  assert.equal(cv.drawn.filter((d) => d.w === 390).length, 0, 'no longer drawn');
+});
+
+test('a re-register that changes the span\'s height carries the sheen at the ratio of the two scales: neither stretched nor squashed', () => {
+  const { host } = spanned();
+  wash(host, { x: 100, y: 2300 }, { x: 200, y: 2300 }, true);
+  const old = sheens()[0]!;
+  assert.equal(old.width, 780, 'the old sheen is at the screen\'s density, scale 2');
+  /* A 6000px span is 2.34M CSS px of sheen: past what `WET_PX` allows at density 2, so its scale is less than 2. */
+  const sc = Math.sqrt(4_000_000 / (390 * 6000));
+  assert.ok(sc < 2);
+  register(host, asCanvas(canvas(390 * 2, 6000 * 2)), { w: 390, h: 20000 }, 2, '#cc2222', TOP);
+  assert.equal(probe.sheens(), 1, 'the sheen is kept');
+  const fresh = sheens().at(-1)!;
+  assert.notEqual(fresh, old, 'remade for the new span');
+  assert.equal(fresh.width, Math.floor(390 * sc));
+  assert.equal(fresh.height, Math.floor(6000 * sc));
+  const carry = fresh.drawn[0]!;
+  assert.ok(carry, 'the old pixels were drawn across');
+  /* The old pixels are old px / 2 CSS px, times the new scale. */
+  assert.ok(Math.abs(carry.w - (old.width / 2) * sc) < 1e-6, `width ${carry.w}`);
+  assert.ok(Math.abs(carry.h - (old.height / 2) * sc) < 1e-6, `height ${carry.h}`);
+  assert.equal(carry.y, 0, 'the same top, so the same page position');
+});
