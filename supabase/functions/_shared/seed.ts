@@ -7,7 +7,7 @@
  * use (supabase/migrations/0091_seed_reaction_kinds.sql).
  */
 import type { Instance, Weakness } from '../../../engine/rules/types.ts';
-import { DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
+import { DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
@@ -61,6 +61,7 @@ export interface ConductSeed {
 
 export function instanceSeed(instance: Instance, conduct: ConductSeed) {
   const dev = instance.developer ?? DEFAULT_DEVELOPER;
+  const anon = instance.anonymous ?? DEFAULT_ANONYMOUS;
   return {
     // The System's words travel as one setting, read by the SQL that posts them (0007).
     // The tick (0048) reads the stock lines and the moves' plain words from settings, so SQL names no instance and no kind.
@@ -80,7 +81,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       reads: (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)),
       // How it is played and how rare it is, and a Set card's trap, a Use card's gimmick and time up (0054, 0148), which seed_instance
       // checks as instanceProblems does. A trap (with its match), a gimmick or a time up left out travels as none.
-      rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts,
+      rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, discipline: c.discipline, lasts: c.lasts,
       // What a cast card's play pays its caster for votes on its post, and whether it names a class its target is scored as
       // for a window (0151); a trap's outcome travels inside the trap. One left out travels as none.
       skim: c.skim, scoresAs: c.scoresAs,
@@ -92,6 +93,8 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       replies: c.replies === true, keeps: c.keeps === true,
       // What the server draws one of at each play and the drive its plays share (0153), and the words a blank message is refused with (0153): data the SQL holds, never which card.
       draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,
+      // What a cast card on a post withholds while it is up, and whether its play adds a reaction to that one post (0357): the SQL knows only these flags, never which card.
+      veil: c.veil, addsReaction: c.reaction === true,
       // Whether its play is a surface any character may add to (0317): the SQL knows only this flag, never which card.
       surface: c.surface !== undefined,
     })),
@@ -112,6 +115,8 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
     // The developer persona (0062): the instance's, else the engine's plain one. It is not in `system`, which a model reads, and its tagline is its
     // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
     developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}), ...(dev.pronouns !== undefined ? { pronouns: dev.pronouns } : {}) },
+    // The anonymous poster (0357): the character shown in place of a veiled post's author, the instance's or the engine's plain one, made like the developer. It is not in `system`, which a model reads.
+    anonymous: { name: anon.name, title: anon.tagline, ...(anon.avatar !== undefined ? { avatar: anon.avatar } : {}), ...(anon.pronouns !== undefined ? { pronouns: anon.pronouns } : {}) },
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
     // The member groups (0128): the ladder, lowest first with each rung's index, then the groups a move confers with their tone. `condition` is the kind
     // (engine/rules/groups.ts CONDITION_KINDS), `atLeast` its count where it has one. seed_instance upserts them into group_kinds.

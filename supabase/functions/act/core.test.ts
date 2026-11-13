@@ -169,6 +169,8 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'playCard', card: 'whoops', character: id, target: id, config: { color: 'red' } },
       { whoami: id, card_target_reach: { act: id, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'c', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread } }]],
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread: null, tally: {} } }, []],
+    // A reaction to a blind post: its totals are hidden, so the answer's tally is null and nothing is sent.
+    [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread, tally: null } }, []],
     // A drop announced is The System's tally of one, sent now, with the Turns thread it opened; a
     // waiting or silent character is its player's alone.
     [{ action: 'createCharacter', name: 'Dropped', class: 'heel', timing: 'now', loudness: 'announced' },
@@ -1198,4 +1200,55 @@ test('a play of a card that replies, ridden by a back that lets it land, is hear
     { topic: 'thread:t', event: 'under', payload: { parent: target, play: 'k', act: reply } },
     { topic: 'thread:t', event: 'act', payload: spring },
   ]);
+});
+
+// The discipline cards (card notes, part 5): the engine's refusals, from the public facts card_target_reach carries, before any write.
+const asCharacter = (extra: Record<string, unknown>) => ({ reach: 'character', character: target, effects: [], ...extra });
+const playOn = (card: string, read: Record<string, unknown>) => {
+  const { dbs, calls } = pair({ whoami, card_target_reach: read, play_card: { id: 'k', kind: 'card' } });
+  return { run: () => runAction(dbs, instance, { action: 'playCard', card, character: id, target, reach: 'character', post: target, config: {}, message: '' }), calls };
+};
+const writes = (calls: string[]) => calls.filter((c) => c.startsWith('service:play_card:'));
+
+test('a heart on a character whose warn bar is empty is refused with the engine\'s words, before any write', async () => {
+  for (const card of ['happy-heart', 'super-happy-heart']) {
+    const { run, calls } = playOn(card, asCharacter({ warnPoints: 0, bannedUntil: null }));
+    const out = await run();
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: "this character's warn bar is empty" } }, card);
+    assert.deepEqual(writes(calls), [], card);
+  }
+});
+
+test('an Ultra Happy Heart on a character that is not banned is refused with the engine\'s words, before any write', async () => {
+  for (const bannedUntil of [null, new Date(Date.now() - 1000).toISOString()]) {
+    const { run, calls } = playOn('ultra-happy-heart', asCharacter({ warnPoints: 3, bannedUntil }));
+    const out = await run();
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'this character is not banned' } });
+    assert.deepEqual(writes(calls), []);
+  }
+});
+
+test('Take the Fall on one\'s own post is refused with the engine\'s words, before any write', async () => {
+  const post = { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [], author: id };
+  const { dbs, calls } = pair({ whoami, card_target_reach: post, play_card: { id: 'k', kind: 'card' } });
+  const out = await runAction(dbs, instance, { action: 'playCard', card: 'take-the-fall', character: id, target, config: {}, message: '' });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: "Take the Fall is played on another character's post" } });
+  assert.deepEqual(writes(calls), []);
+});
+
+test('each discipline card lands otherwise, and the RPC carries no argument beyond any card\'s', async () => {
+  const sent = async (card: string, read: Record<string, unknown>, reach: 'post' | 'character') => {
+    const { dbs, calls } = pair({ whoami, card_target_reach: read, play_card: { id: 'k', kind: 'card' } });
+    const out = await runAction(dbs, instance, { action: 'playCard', card, character: id, target, ...(reach === 'character' ? { reach, post: target } : {}), config: {}, message: '' });
+    assert.equal(out.status, 200, `${card}: ${JSON.stringify(out.body)}`);
+    const call = writes(calls);
+    assert.equal(call.length, 1, card);
+    return Object.keys(JSON.parse(call[0]!.slice('service:play_card:'.length))).sort();
+  };
+  const ours = [...await sent('happy-heart', asCharacter({ warnPoints: 4, bannedUntil: null }), 'character')];
+  assert.deepEqual(await sent('super-happy-heart', asCharacter({ warnPoints: 1, bannedUntil: null }), 'character'), ours);
+  assert.deepEqual(await sent('ultra-happy-heart', asCharacter({ warnPoints: 0, bannedUntil: new Date(Date.now() + 1e6).toISOString() }), 'character'), ours);
+  const post = { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [], author: whoami };
+  // Another character's post: the same arguments as any card cast on a post (Stick Around's), and none of its own.
+  assert.deepEqual(await sent('take-the-fall', post, 'post'), await sent('stick-around', post, 'post'));
 });

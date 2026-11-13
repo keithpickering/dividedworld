@@ -41,6 +41,8 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   | 'ended'
   /* The Mod Bots design, sections 5 to 9: warn points filed, a ban, a report made and an appeal made, each of the player's own characters. */
   | 'infraction' | 'ban' | 'report' | 'appeal' | 'bribe'
+  /* Card notes, part 5: a filing that landed on another character, which took the fall for the player's post. */
+  | 'fallTaken'
   /* Member groups, Task 11: a staff move into a group, how it ended and an appeal's ruling on it. */
   | 'grouped'
   /* The aura-grant design, section 2: an admin gave the player Aura (docs/plans/2026-11-08-aura-grant-design.md). */
@@ -388,7 +390,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...conductRows(data).filter((r) => inTab(r.characters)));
   rows.push(...surfaceRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -634,13 +636,16 @@ function modRows(data: LogData, words: Words): LogRow[] {
 
   for (const i of data.log.infractions) {
     const drops = Date.parse(i.expiresAt);
-    const left = i.points - i.relief;
+    const cards = i.cardRelief ?? 0;
+    const left = i.points - i.relief - cards;
     const tail: string[] = [];
     if (i.relief > 0) tail.push(` An appeal took ${plural(i.relief, 'point', 'points')} off.`);
+    if (cards > 0) tail.push(` Cards took ${plural(cards, 'point', 'points')} off.`);
     if (i.emptiedAt !== null) tail.push(` A ban emptied the bar on ${utcDay(i.emptiedAt)}, so ${left === 1 ? 'this point' : 'these points'} stopped counting then.`);
     rows.push({
       key: `infraction:${i.infraction}`, kind: 'infraction', at: i.at, what: `Warn points: ${plural(i.points, 'point', 'points')}`,
-      details: [`${i.mod ?? 'A Mod'}'s visit to `, post(i.thread, i.postSeq, true), ` filed ${i.rule ?? 'a breach of the rules'}: ${plural(i.points, 'warn point', 'warn points')} for ${nameOf(i.character)}, ${drops > now ? 'dropping off' : 'dropped off'} ${utcDay(i.expiresAt)}.`, ...tail],
+      /* An infraction that landed through a fall is on the character that took it, for a post that is not its own: "your post" is not said, and the line says who took the fall. */
+      details: [`${i.mod ?? 'A Mod'}'s visit to `, post(i.thread, i.postSeq, !i.fallPlay), ` filed ${i.rule ?? 'a breach of the rules'}: ${plural(i.points, 'warn point', 'warn points')} for ${nameOf(i.character)}${i.fallPlay ? ', who took the fall for that post' : ''}, ${drops > now ? 'dropping off' : 'dropped off'} ${utcDay(i.expiresAt)}.`, ...tail],
       aura: 0, wallet: null, characters: [i.character],
     });
   }
@@ -652,11 +657,25 @@ function modRows(data: LogData, words: Words): LogRow[] {
       : b.ruling === 'reduced' ? `An appeal shortened the ban: it ${over ? 'ended' : 'ends'} ${utcWhen(b.until)} UTC.`
       : b.ruling === 'increased' ? `An appeal lengthened the ban: it ${over ? 'ended' : 'ends by itself'} ${utcWhen(b.until)} UTC.`
       : `The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC.`;
+    /* An Unban ended it (`my_bans.lifted_at`, 0361): said by the card that did, in place of "ended by itself". A live lift is always the ban's first end, so an appeal ruled after it changes nothing here. */
+    const lifted = b.liftedAt != null;
+    const how = lifted ? `The ban ended ${utcWhen(b.liftedAt!)} UTC, when ${words.instance.cards.find((c) => c.key === b.liftedCard)?.name ?? 'a card'} was played on ${nameOf(b.character)}.` : ends;
     rows.push({
       key: `ban:${b.ban}`, kind: 'ban', at: b.at, what: `${nameOf(b.character)} was banned`,
-      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so ${pronounsOf(b.character).they} ${pronounsOf(b.character).was} banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. ${pronounsOf(b.character).They} can read but not post, react or play cards. ${ends} The ban is on ${nameOf(b.character)} only; each character has its own warn bar.`],
+      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so ${pronounsOf(b.character).they} ${pronounsOf(b.character).was} banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. ${pronounsOf(b.character).They} can read but not post, react or play cards. ${how} The ban is on ${nameOf(b.character)} only; each character has its own warn bar.`],
       aura: 0, wallet: null, characters: [b.character],
-      ...(!over && !data.log.appeals.some((a) => a.punishment === b.ban && a.refund === null) ? { appealBan: { ban: b.ban, character: b.character, until: b.until, days: b.days, rule: b.rule } } : {}),
+      ...(!over && !lifted && !data.log.appeals.some((a) => a.punishment === b.ban && a.refund === null) ? { appealBan: { ban: b.ban, character: b.character, until: b.until, days: b.days, rule: b.rule } } : {}),
+    });
+  }
+
+  /* A filing that landed on another character, which took the fall for a post of the player's (`my_falls_taken`): the author's row, naming the taker by its public name and no one's owner. */
+  for (const f of data.log.falls ?? []) {
+    const taker = f.takerName ?? 'Another character';
+    const name = nameOf(f.character);
+    rows.push({
+      key: `fallTaken:${f.infraction}`, kind: 'fallTaken', at: f.at, what: 'A fall taken for your post',
+      details: [`${f.mod ?? 'A Mod'}'s visit to `, post(f.thread, f.postSeq, true), ` filed ${f.rule ?? 'a breach of the rules'}. ${taker} took the fall, so the ${plural(f.points, 'warn point', 'warn points')} landed on ${taker} and none on ${name}. The post keeps its notice.`],
+      aura: 0, wallet: null, characters: [f.character],
     });
   }
 
@@ -741,7 +760,19 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       ...(typeof starts === 'string' ? { starts } : {}), ...(typeof ends === 'string' ? { ends } : {}),
     };
     const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {}, recorded);
-    return sentence ? [` ${sentence}`] : [];
+    return [...disciplineSaid(play), ...(sentence ? [` ${sentence}`] : [])];
+  };
+  /* What a play that is over when it lands (a heart, an Unban) did, from its own Act's payload as `tokens` is read: the points it took off the target's bar, or the bans it ended and when they were set to end. */
+  const disciplineSaid = (play: Act | undefined): string[] => {
+    if (play?.payload.instant !== true) return [];
+    const target = typeof play.payload.targetName === 'string' ? play.payload.targetName : 'the character';
+    const took = play.payload.took;
+    if (typeof took === 'number' && Number.isSafeInteger(took)) return [` It took ${plural(took, 'warn point', 'warn points')} off ${target}'s warn bar, oldest first.`];
+    const lifted = play.payload.lifted;
+    if (!Array.isArray(lifted) || lifted.length === 0) return [];
+    const ends = lifted.flatMap((b: unknown) => (typeof b === 'object' && b !== null && typeof (b as { until?: unknown }).until === 'string' ? [(b as { until: string }).until] : [])).sort((a, b) => Date.parse(b) - Date.parse(a));
+    const when = ends[0] === undefined ? '' : `, ${lifted.length === 1 ? 'which' : 'the longest of which'} was set to end ${utcWhen(ends[0])} UTC`;
+    return [lifted.length === 1 ? ` It ended ${target}'s ban${when}.` : ` It ended ${lifted.length} of ${target}'s bans${when}.`];
   };
   /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
   const cardName = (key: unknown) => instance.cards.find((c) => c.key === key)?.name ?? 'a card';

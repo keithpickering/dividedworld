@@ -48,6 +48,11 @@ begin
   select string_agg(relname, ', ') into bad from pg_class
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and relname like 'my\_%' and has_table_privilege('kayfabb_digest', oid, 'select');
   if bad is not null then raise exception 'the digest role reads % ', bad; end if;
+  -- A patrol's watches (0362): the role reads the two-column view of the live watches, which is public plays only, and not the plays under it.
+  select string_agg(attname, ', ' order by attname) into bad from pg_attribute
+  where attrelid = 'watched_characters'::regclass and attnum > 0 and not attisdropped and has_column_privilege('kayfabb_digest', 'watched_characters', attname, 'select');
+  if bad is distinct from 'character, weight' then raise exception 'the digest role reads these columns of watched_characters: %', bad; end if;
+  if has_table_privilege('kayfabb_digest', 'play_reach', 'select') then raise exception 'the digest role reads play_reach, which the watched_characters view stands in front of'; end if;
   -- Select only, on everything it has.
   select string_agg(relname, ', ') into bad from pg_class
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and has_table_privilege('kayfabb_digest', oid, 'insert,update,delete,truncate,references,trigger');
@@ -65,13 +70,15 @@ begin
       'setting(text)', 'span_interval(jsonb)', 'standings_season()', 'current_boss()', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)',
       -- Who a met demand credits (0206), reading the same public Acts and their public tallies; never `reactions`.
       'demand_contributors(uuid)',
+      -- The quadrant of a reaction kind, an instance's or a post's own (0359): demand_progress, demand_contributors and system_digest count by it; it reads two public tables as its owner and says nothing of who reacted.
+      'reaction_quadrant(uuid,text)',
       'system_digest(timestamp with time zone,timestamp with time zone)', 'staff_career(text)',
       -- The pool's signals (0088): the two functions it owns, and the folds it matches names with.
       'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)', 'name_skeleton(text)',
       -- The pool's thread read (0089) and the faces read that replaced its names read (0127): the two functions it owns.
       'pool_thread(uuid,integer,integer,uuid)', 'character_faces(jsonb)',
       -- A patrol's sample of the beat's recent posts (0110): the one function it owns, reading acts_public, characters_public and thread_list.
-      'patrol_sample(uuid[],integer)',
+      'patrol_sample(uuid[],integer,integer,bigint)',
       -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused; each reads no table.
       'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
       -- The same kind for a pack's pulls (0139): pure, reading no table.
@@ -121,7 +128,14 @@ begin
   denied := false;
   begin perform poison_patrol(); exception when insufficient_privilege then denied := true; end;
   if not denied then raise exception 'a function owned by the digest role read patrols, visits_open or staff_orders'; end if;
-  drop function poison_reactor(), poison_owner(), poison_class(), poison_patrol();
+  -- And one that reads the plays under a patrol's weights directly, not through the two-column view of them (0362).
+  create function poison_watch() returns bigint language plpgsql security definer set search_path = public, pg_temp as
+    $f$ begin return (select count(*) from play_reach); end $f$;
+  alter function poison_watch() owner to kayfabb_digest;
+  denied := false;
+  begin perform poison_watch(); exception when insufficient_privilege then denied := true; end;
+  if not denied then raise exception 'a function owned by the digest role read play_reach'; end if;
+  drop function poison_reactor(), poison_owner(), poison_class(), poison_patrol(), poison_watch();
   revoke create on schema public from kayfabb_digest;
 
   -- A later function given the role's ownership fails here, to be reviewed (0046 added the demand evaluator).
@@ -130,7 +144,7 @@ begin
       -- Who a met demand credits (0206), reading the same public Acts and their public tallies; never `reactions`.
       'demand_contributors(uuid)',
     'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)',
-    'pool_thread(uuid,integer,integer,uuid)', 'character_faces(jsonb)', 'patrol_sample(uuid[],integer)']);
+    'pool_thread(uuid,integer,integer,uuid)', 'character_faces(jsonb)', 'patrol_sample(uuid[],integer,integer,bigint)']);
   if bad is not null then raise exception 'functions owned by the digest role that this file has not reviewed: %', bad; end if;
   if exists (select 1 from pg_class where relowner = 'kayfabb_digest'::regrole) or exists (select 1 from pg_type where typowner = 'kayfabb_digest'::regrole and typtype <> 'c') then
     raise exception 'the digest role owns an object that is not a function';

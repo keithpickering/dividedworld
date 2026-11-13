@@ -8,7 +8,7 @@ declare
   bad text := '';
   r record;
   -- What the API roles are granted, on purpose; a new grant joins this list with its migration.
-  readable text[] := array['class_kinds', 'reaction_kinds', 'card_kinds', 'boards', 'threads', 'acts',
+  readable text[] := array['class_kinds', 'reaction_kinds', 'post_reaction_kinds', 'card_kinds', 'boards', 'threads', 'acts',
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
                            'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state',
@@ -24,12 +24,12 @@ declare
                            'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
                            'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_scored_as', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_posts_written_on', 'my_draws', 'my_walls_drawn_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
-                           'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'bars_now', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'play_reach', 'play_moments', 'play_moment_layers', 'spin_moments', 'spin_moment_layers',
+                           'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'bars_now', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'my_veiled_posts', 'play_reach', 'play_moments', 'play_moment_layers', 'spin_moments', 'spin_moment_layers',
                            -- The replies a play in force draws under their parents (0348): every column is a public fact of public Acts, written by play_card alone.
                            'post_under',
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
-                           'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
+                           'my_infractions', 'my_bans', 'my_falls_taken', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
                            -- The log of the cosmetics (0213): the caller's own characters' rows, drawn by a function no API role may call.
                            'my_cosmetic_log',
                            -- The search index (0117): one row per post or spin, readable as the Acts are; the table is no client's to write.
@@ -86,6 +86,8 @@ declare
                            'season_news(timestampwithtimezone,integer)',
                            -- A play's moment (0072): what was on a post when a play landed.
                            'play_moment(uuid)',
+                           -- Whether a post's totals are withheld from the caller's own account (0358, a totals veil): the reaction_tallies policy calls it, as the reader. It takes no account: the two-argument form, which does, is granted to no one.
+                           'my_totals_withheld(uuid)',
                            -- A spin's moment (0351): what was on the post a spin was pressed at, the same bytes for every reader.
                            'spin_moment(uuid)',
                            -- A persona's career (0083): public facts about staff.
@@ -111,6 +113,8 @@ declare
                            'open_appeal(uuid,uuid,text)',
                            -- The screens' reads (0111): the report's judge, and the two functions the log's views call, each a public fact about any id (a view's functions run as its reader).
                            'beat_mod_name(uuid)', 'punishment_words(uuid)', 'infraction_relief(uuid)',
+                           -- What the discipline cards took off an infraction and when a ban ends (0361): the log's views and the bar call them (a view's functions run as its reader); public facts about any id.
+                           'card_relief(uuid)', 'ban_ends(uuid)', 'fall_spent(uuid)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
                            -- The search index's words (0117): the folded text an index of names and titles is written with, the stemming language and the words of a text, each reading nothing but a
@@ -128,8 +132,8 @@ declare
                            'search_posts(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,text,jsonb,integer)', 'search_threads(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,text,jsonb,integer)',
                            'search_suggest(text,text[],uuid,boolean,integer)', 'search_suggest_threads(text,uuid,boolean,integer)', 'suggest_characters(text,integer)',
                            'search_matches(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_walk(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer,integer)',
-                           'search_matches_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_walk_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_cursor_ok(jsonb,boolean)', 'search_cursor_cast(jsonb)', 'search_updates_thread()',
-                           'search_match_conds(text,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_thread_matches(uuid,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_post_cards(uuid)',
+                           'search_cursor_ok(jsonb,boolean)', 'search_cursor_cast(jsonb)', 'search_updates_thread()',
+                           'search_thread_matches(uuid,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_post_cards(uuid)',
                            -- The pulls check on pack_kinds (0139), granted to PUBLIC like them, and the count of a hand, which the ledger's policy cuts to the caller's own cards (my_cards calls it).
                            -- Whether a spring or a take-back of a back exists (0340), the one fact card_held, which runs as its caller, can no longer read from the Acts' payload.
                            'pack_pulls_problem(jsonb)', 'card_held(uuid,text)', 'back_closed(uuid)',

@@ -1,7 +1,8 @@
 /**
  * The still contract (docs/plans/2026-11-03-effect-history-plan.md, Task 7; engine/ui/cards/types.ts, `EffectProps.still`): every card
  * of the instance that a moment draws (`drawnInMoment`) and that has an effect is drawn under `still` without saving, releasing,
- * meeting or holding the screen, however a reader presses and drags across it. Today that is Whoops! and Feelin' Fab (and Glitter Bomb,
+ * meeting or holding the screen, however a reader presses and drags across it. Today that is Whoops!, Feelin' Fab, and the two veils, Whodunnit? and Blind Study,
+ * which last (and Glitter Bomb,
  * which lasts, though it lands beyond a post and so is named in a moment, never drawn); a card added later that skips the contract fails
  * here. A vitest file, since it draws the effects: cards.test.ts runs under node:test with no document.
  */
@@ -34,12 +35,12 @@ afterEach(() => {
 /* Glitter Bomb lands beyond a post, so a moment names it and never draws it; if one is ever drawn (a post's own Effect, still), it keeps the contract too. */
 const drawn = instanceUi.cards.filter((c) => c.Effect && (c.key === 'glitter-bomb' || drawnInMoment(instance.cards.find((r) => r.key === c.key)!)));
 
-test('the instance has cards a moment draws, Whoops! and Feelin\' Fab among them, and Glitter Bomb is held to the same contract', () => {
-  expect(drawn.map((c) => c.key)).toEqual(expect.arrayContaining(['whoops', 'feelin-fab', 'glitter-bomb']));
+test('the instance has cards a moment draws, Whoops!, Feelin\' Fab and both veils among them, and Glitter Bomb is held to the same contract', () => {
+  expect(drawn.map((c) => c.key)).toEqual(expect.arrayContaining(['whoops', 'feelin-fab', 'glitter-bomb', 'whodunnit', 'blind-study']));
 });
 
 test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn still, saves, releases, meets and holds nothing, whatever is pressed', (key, card) => {
-  const plays: CardPlay[] = [1, 2].map((n) => ({ id: `${key}-${n}`, card: key, layer: n, caster: 'c2', message: '', config: { color: '#ffd93d', seed: n }, playedAt: `2026-11-03T12:0${n}:00.000Z`, post: POST.id }));
+  const plays: CardPlay[] = [1, 2].map((n) => ({ id: `${key}-${n}`, card: key, layer: n, caster: 'c2', message: '', config: { color: '#ffd93d', seed: n }, playedAt: `2026-11-03T12:0${n}:00.000Z`, post: POST.id, ends: n === 1 ? '2026-11-06T12:00:00.000Z' : '2099-01-01T00:00:00.000Z' }));
   const save = vi.fn(async (play: string) => ({ ok: true as const, value: { play, savedAt: '2026-11-03T13:00:00.000Z' } }));
   const release = vi.fn(async (play: string) => ({ ok: true as const, value: { play, releasedAt: '2026-11-03T13:00:00.000Z' } }));
   const met = vi.fn();
@@ -68,6 +69,23 @@ test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn still, saves, releas
   expect(holdScreen.mock.calls.filter(([held]) => held === true)).toEqual([]);
   /* Nothing is made inert, and nothing is lifted out of the post. */
   expect(container.querySelector('[inert]')).toBeNull();
+});
+
+/* A play drawn still was up at the moment's time (the engine drops one whose end is not after it), so a veil whose end is behind the clock is still up: no wore-off line, no "name is back", no "totals are showing". */
+test.each(['whodunnit', 'blind-study'])('%s, drawn still with an end behind the clock, is drawn as it was up', async (key) => {
+  const card = instanceUi.cards.find((c) => c.key === key)!;
+  const Effect = card.Effect!;
+  const shown: string[] = [];
+  const props: EffectProps = {
+    post: POST, plays: [{ id: `${key}-1`, card: key, layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-03T12:00:00.000Z', post: POST.id, ends: '2026-11-06T12:00:00.000Z' }], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: true,
+    show: (view) => { if (view) shown.push(view.state); }, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
+  };
+  vi.setSystemTime(Date.parse('2026-11-12T12:00:00.000Z'));
+  const { container } = renderInWorld(<Effect {...props} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+  expect(container.textContent).not.toContain('all along');
+  await vi.waitFor(() => expect(shown.length).toBeGreaterThan(0));
+  expect(shown.at(-1)).toBe(key === 'whodunnit' ? 'Author hidden from everyone' : 'Totals hidden from you');
 });
 
 test('Glitter Bomb drawn from a spin\'s moment is the still form: the flakes at rest, and no burst canvas sized', async () => {

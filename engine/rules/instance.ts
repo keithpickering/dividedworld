@@ -3,9 +3,10 @@
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
 import { ALIGNMENTS, QUADRANTS } from './types.ts';
+import { LOCAL_PREFIX } from './emoji.ts';
 import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
-import type { DeveloperPersona, EconomyRead, Instance, Persona, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
+import type { AnonymousPoster, DeveloperPersona, EconomyRead, Instance, Persona, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
 import { BEAT_KEY, conditionProblem, dueProblem } from '../system/conditions.ts';
 import { MOVE_KINDS } from '../system/moves.ts';
@@ -14,7 +15,7 @@ import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { POSTING_OFFICES, TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
 import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
 import { pronounProblems } from './pronouns.ts';
-import { BEYOND_POST, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
+import { BEYOND_POST, DISCIPLINE_KINDS, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, instant, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
 import type { Pull, SlotSeed } from './packs.ts';
 import type { EventLine } from './cosmetics.ts';
@@ -139,20 +140,23 @@ function poolRule(v: unknown): string | null {
 
 /**
  * The Mod Bots' settings (`Settings.modBots`): exactly the fields of ModBotSettings, each held as its own words say. Mirrors `setting_modbots`
- * in supabase/migrations/0103_orders.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ * in supabase/migrations/0103_orders.sql (as 0362_patrol_weights.sql wrote it again, with `patrolPool`), and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
 const MOD_BOTS_WHOLE = { allowanceMost: 1, ruleDaysMost: 1, patrolsPerDay: 0, reportPrice: 0, reportsPerDay: 1, judgmentsPerDay: 1, filingLinesPerDay: 1, appealPrice: 0, tailHours: 1, filingGraceMinutes: 1 } as const;
 /** The most a patrol's judgment reads: a bounded read. */
 export const PATROL_SAMPLE_MOST = 25;
-const MOD_BOTS_KEYS = [...Object.keys(MOD_BOTS_WHOLE), 'patrolSample', 'visitHours', 'cap', 'filingCron'].sort();
+/** The most posts a patrol draws its sample from: a bounded read. */
+export const PATROL_POOL_MOST = 100;
+const MOD_BOTS_KEYS = [...Object.keys(MOD_BOTS_WHOLE), 'patrolSample', 'patrolPool', 'visitHours', 'cap', 'filingCron'].sort();
 function modBotsRule(v: unknown): string | null {
-  const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours and filingGraceMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice and appealPrice (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
+  const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours and filingGraceMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice and appealPrice (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), patrolPool (a whole number from patrolSample to ${PATROL_POOL_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
   const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
   if (!object(v)) return shape;
   const extra = Object.keys(v).find((k) => !MOD_BOTS_KEYS.includes(k));
   if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
   for (const [k, least] of Object.entries(MOD_BOTS_WHOLE)) if (!isWhole(v[k], least)) return `${shape}; "${k}" is not`;
   if (!isWhole(v.patrolSample, 1) || (v.patrolSample as number) > PATROL_SAMPLE_MOST) return `${shape}; "patrolSample" is not`;
+  if (!isWhole(v.patrolPool, v.patrolSample as number) || (v.patrolPool as number) > PATROL_POOL_MOST) return `${shape}; "patrolPool" is not`;
   const pair = (name: 'visitHours' | 'cap', a: string, b: string): string | null => {
     const o = v[name];
     if (!object(o) || Object.keys(o).length !== 2 || !isWhole(o[a], 1) || !isWhole(o[b], 1)) return `${shape}; "${name}" is not`;
@@ -379,21 +383,33 @@ export const DEVELOPER_STAFF_KEY = 'developer';
 /** The developer persona an instance gets when it names none: plain, as the engine is. */
 export const DEFAULT_DEVELOPER: DeveloperPersona = Object.freeze({ name: 'The developers', tagline: '' });
 
-/** Problems with `instance.developer`, each a sentence naming what is wrong; none when it is left out. */
-function developerProblems(d: Instance['developer']): string[] {
+/** The staff key the anonymous poster is seeded under: reserved as the developer's is, so no Boss or Mod Bot has it. */
+export const ANONYMOUS_STAFF_KEY = 'anonymous';
+
+/** The poster a veil shows for a withheld author when an instance names none: plain, as the engine is. */
+export const DEFAULT_ANONYMOUS: AnonymousPoster = Object.freeze({ name: 'Anonymous', tagline: '' });
+
+/** Problems with a persona of the developer's shape (the developer, the anonymous poster), each a sentence naming what is wrong; none when it is left out. */
+function personaShapeProblems(d: Instance['developer'], subject: string): string[] {
   if (d === undefined) return [];
   const out: string[] = [];
-  if (typeof d.name !== 'string' || d.name.trim() === '') out.push('the developer has no name');
+  if (typeof d.name !== 'string' || d.name.trim() === '') out.push(`${subject} has no name`);
   else {
-    if (d.name !== d.name.trim()) out.push('the developer name has a space at its start or end; a character\'s name has none');
-    if (d.name.length > DEVELOPER_NAME_MAX) out.push(`the developer name is ${d.name.length} characters; a character\'s name is at most ${DEVELOPER_NAME_MAX}`);
+    if (d.name !== d.name.trim()) out.push(`${subject} name has a space at its start or end; a character\'s name has none`);
+    if (d.name.length > DEVELOPER_NAME_MAX) out.push(`${subject} name is ${d.name.length} characters; a character\'s name is at most ${DEVELOPER_NAME_MAX}`);
   }
-  if (typeof d.tagline !== 'string') out.push('the developer tagline is not text');
-  else if (d.tagline.length > DEVELOPER_TAGLINE_MAX) out.push(`the developer tagline is ${d.tagline.length} characters; the seed keeps at most ${DEVELOPER_TAGLINE_MAX} and cuts the rest in silence`);
-  if (d.pronouns !== undefined) for (const p of pronounProblems(d.pronouns)) out.push(`the developer's pronouns: ${p}`);
-  if (d.avatar !== undefined && (typeof d.avatar !== 'string' || d.avatar.trim() === '')) out.push('the developer avatar is blank; leave it out for none, or name the instance\'s picture');
+  if (typeof d.tagline !== 'string') out.push(`${subject} tagline is not text`);
+  else if (d.tagline.length > DEVELOPER_TAGLINE_MAX) out.push(`${subject} tagline is ${d.tagline.length} characters; the seed keeps at most ${DEVELOPER_TAGLINE_MAX} and cuts the rest in silence`);
+  if (d.pronouns !== undefined) for (const p of pronounProblems(d.pronouns)) out.push(`${subject}'s pronouns: ${p}`);
+  if (d.avatar !== undefined && (typeof d.avatar !== 'string' || d.avatar.trim() === '')) out.push(`${subject} avatar is blank; leave it out for none, or name the instance\'s picture`);
   return out;
 }
+
+/** Problems with `instance.developer`. */
+const developerProblems = (d: Instance['developer']): string[] => personaShapeProblems(d, 'the developer');
+
+/** Problems with `instance.anonymous`: the developer's checks again, with "the anonymous poster" as the subject. */
+export const anonymousProblems = (a: Instance['anonymous']): string[] => personaShapeProblems(a, 'the anonymous poster');
 
 /** Problems with the packs and the machine's slots, each a sentence naming what is wrong. */
 function packProblems(instance: Instance): string[] {
@@ -480,6 +496,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.reactions, (r) => r.key)) out.push(`reaction key "${k}" is used twice`);
   for (const e of duplicates(instance.reactions, (r) => r.emoji)) out.push(`reaction emoji "${e}" is used twice`);
   for (const r of instance.reactions) {
+    if (r.key.startsWith(LOCAL_PREFIX)) out.push(`reaction key "${r.key}" starts with ${LOCAL_PREFIX}, which is kept for reactions a card adds to one post`);
     if (!QUADRANTS.includes(r.quadrant)) out.push(`reaction "${r.key}" has no quadrant (${JSON.stringify(r.quadrant)} is not one of ${QUADRANTS.join(', ')})`);
   }
   if (!instance.classes.length) out.push('the instance has no class');
@@ -496,7 +513,7 @@ export function instanceProblems(instance: Instance): string[] {
   if (!systems.length) out.push('no board is The System\'s: exactly one board sets system: true, where The System posts');
   if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
-  out.push(...developerProblems(instance.developer), ...packProblems(instance), ...cosmeticsProblems(instance));
+  out.push(...developerProblems(instance.developer), ...anonymousProblems(instance.anonymous), ...packProblems(instance), ...cosmeticsProblems(instance));
   out.push(...groupsProblems(instance.groups));
   if (!instance.ranks.length) out.push('the instance has no rank');
   instance.ranks.forEach((r, i) => {
@@ -591,7 +608,8 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   }
   const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
   const postAlone = !beyond;
-  if (c.lasts !== undefined && play !== 'use' && !beyond && c.skim === undefined) out.push(`${who} has a time up (lasts), and only a use card or a card reaching beyond a post does`);
+  // A cast on a post may end (a skim, a veil); a set card does not, it springs and lands as a cast with its own time.
+  if (c.lasts !== undefined && play !== 'use' && play !== 'cast' && !beyond) out.push(`${who} has a time up (lasts), and only a use card, a cast card or a card reaching beyond a post does`);
   if (c.lasts !== undefined && !isSpan(c.lasts, LASTS_UNITS)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000`);
   const on = (c.trap?.trigger as { on?: unknown } | undefined)?.on;
   if (c.trap !== undefined && !TRIGGERS.includes(on as never)) out.push(`${who} springs on ${on === undefined || on === null ? 'nothing' : JSON.stringify(on)}; a set card springs on ${TRIGGERS.join(' or ')}`);
@@ -606,6 +624,7 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (c.gimmick?.kind === 'ride' && postAlone === false) out.push(`${who} has a ride, and a card with a ride reaches a post alone`);
   if (c.trap?.outcome !== undefined) out.push(...outcomeProblems(c.trap.outcome, who, play, on, match));
   if (c.skim !== undefined) out.push(...skimProblems(c, who, play));
+  out.push(...veilProblems(c, who, play));
   if (c.scoresAs !== undefined) {
     if (c.scoresAs !== true) out.push(`${who} has scoresAs ${JSON.stringify(c.scoresAs)}; scoresAs is true or left out`);
     else {
@@ -631,10 +650,59 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
     // A thread's play or a character's (docs/plans/2026-11-12-glitter-keeps-plan.md). SQL mirrors none of this (0348_post_under.sql).
     else if (!(play === 'cast' && Array.isArray(c.reaches) && c.reaches.length === 1 && ['thread', 'character'].includes(c.reaches[0] as string) && c.lasts !== undefined)) out.push(`${who} keeps, and only a cast card that reaches one thread or one character, with a time up, does`);
   }
+  if (c.discipline !== undefined) out.push(...disciplineProblems(c, who, play));
   if (c.setPhrase !== undefined && typeof c.setPhrase !== 'function') out.push(`${who} has a set phrase that is not a function`);
   else if (c.setPhrase !== undefined && play !== 'cast') out.push(`${who} has a set phrase, and only a cast card has one`);
   return out;
 }
+
+/** The effects a discipline card holds apart from, as `who` names them (a card has a discipline, writes, replies and so on, never two of them). */
+const NOT_WITH_DISCIPLINE: readonly [keyof CardRules, string][] = [
+  ['writes', 'writes'], ['replies', 'replies'], ['keeps', 'keeps'], ['skim', 'a skim'], ['scoresAs', 'scoresAs'],
+  ['gimmick', 'a gimmick'], ['draws', 'draws'], ['drive', 'a drive'], ['needsMessage', 'needsMessage'], ['surface', 'a surface'],
+];
+
+/**
+ * A discipline (card notes, Part 5): one of four kinds on a cast card, with no other effect. A relief and an unban reach a character alone and are over when they land, so
+ * they have no time up, no stack and no pin; a fall reaches a post alone, with a stack of 1 and no time up (a filing ends it); a watch reaches a character alone, with a time up
+ * and a weight above 1 and at most 10. seed_instance holds the same.
+ */
+function disciplineProblems(c: CardRules, who: string, play: string): string[] {
+  const d = c.discipline as unknown;
+  if (typeof d !== 'object' || d === null) return [`${who} has a discipline that is not an object with a kind`];
+  const e = d as Record<string, unknown>;
+  if (!DISCIPLINE_KINDS.includes(e.kind as never)) return [`${who} has the discipline kind ${JSON.stringify(e.kind)}; a discipline is ${DISCIPLINE_KINDS.slice(0, -1).join(', ')} or ${DISCIPLINE_KINDS.at(-1)}`];
+  const kind = e.kind as string;
+  const a = `${kind === 'unban' ? 'an' : 'a'} ${kind}`;
+  const out: string[] = [];
+  if (play !== 'cast') out.push(`${who} has a discipline, and only a cast card does`);
+  for (const [field, said] of NOT_WITH_DISCIPLINE) if (c[field] !== undefined) out.push(`${who} has ${a} and ${said}; a card with a discipline has no other effect`);
+  const reaches: unknown = c.reaches;
+  const only = (reach: string): boolean => (reach === 'post' && reaches === undefined) || (Array.isArray(reaches) && reaches.length === 1 && reaches[0] === reach);
+  const reachWord = kind === 'fall' ? 'post' : 'character';
+  if (!only(reachWord)) out.push(`${who} has ${a}, and ${a} reaches a ${reachWord} alone`);
+  if (kind === 'relief') {
+    if (e.points !== 'lightestBand' && e.points !== 'all') out.push(`${who} has a relief of ${JSON.stringify(e.points)}; relief takes the lightestBand or all`);
+  }
+  if (kind === 'relief' || kind === 'unban') {
+    for (const [field, said] of [['lasts', 'a time up'], ['stack', 'a stack'], ['pins', 'pins']] as const) {
+      if (c[field] !== undefined) out.push(`${who} has ${a} and ${said}; ${a} is over when it lands and has none`);
+    }
+  }
+  if (kind === 'fall') {
+    if (c.stack !== undefined && c.stack !== 1) out.push(`${who} has a fall, and a fall has a stack of 1`);
+    if (c.lasts !== undefined) out.push(`${who} has a fall and a time up; a fall lasts until a filing spends it`);
+  }
+  if (kind === 'watch') {
+    if (c.lasts === undefined) out.push(`${who} has a watch with no time up (lasts); a watch ends at its time`);
+    const w = e.weight;
+    if (typeof w !== 'number' || !Number.isFinite(w) || !(w > 1 && w <= WATCH_WEIGHT_MOST)) out.push(`${who} has a watch of weight ${JSON.stringify(w) ?? 'none'}; weight is a number above 1 and at most ${WATCH_WEIGHT_MOST}`);
+  }
+  return out;
+}
+
+/** The most a watch may multiply a character's weight in a patrol's draw. */
+const WATCH_WEIGHT_MOST = 10;
 
 /** A ride's or a skim's share: a fraction of a vote, above 0 and at most 1. `said` is how the card's words name what holds it ("a ride", "an outcome of share"). */
 function shareProblem(e: Record<string, unknown>, who: string, what: string, said: string): string | null {
@@ -666,6 +734,29 @@ function skimProblems(c: CardRules, who: string, play: string): string[] {
   if (Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post')) out.push(`${who} has a skim, and a card with a skim reaches a post alone`);
   if (c.lasts === undefined) out.push(`${who} has a skim with no time up (lasts); a skim ends at its time`);
   if (c.writes !== undefined) out.push(`${who} has a skim and writes; a card with a skim does not write`);
+  return out;
+}
+
+/** A veil or a reaction (card notes, Part 3): a cast card on a post alone; a veil ends at its time, a reaction neither writes nor is seeded, and a card has one of the two. */
+function veilProblems(c: CardRules, who: string, play: string): string[] {
+  const out: string[] = [];
+  const postOnly = Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post';
+  const flags = [['veil', c.veil !== undefined], ['reaction', c.reaction !== undefined]] as const;
+  for (const [name, has] of flags) {
+    if (!has) continue;
+    if (play !== 'cast') out.push(`${who} has a ${name}, and only a cast card does`);
+    if (c.reaches !== undefined && !postOnly) out.push(`${who} has a ${name}, and a card with a ${name} reaches a post alone`);
+  }
+  if (c.veil !== undefined) {
+    if (c.veil !== 'author' && c.veil !== 'totals') out.push(`${who} has a veil of ${JSON.stringify(c.veil)}; a veil is author or totals`);
+    if (c.lasts === undefined) out.push(`${who} has a veil with no time up (lasts); a veil ends at its time`);
+  }
+  if (c.reaction !== undefined) {
+    if ((c.reaction as unknown) !== true) out.push(`${who} has a reaction of ${JSON.stringify(c.reaction)}; a reaction is true or left out`);
+    if (c.writes !== undefined) out.push(`${who} has a reaction and writes; a card with a reaction does not write`);
+    if (c.seeded) out.push(`${who} has a reaction and is seeded; a card with a reaction is not`);
+  }
+  if (c.veil !== undefined && c.reaction !== undefined) out.push(`${who} has both a veil and a reaction; a card has one of the two`);
   return out;
 }
 
@@ -736,7 +827,7 @@ function reachProblems(c: CardRules, settings: Settings): string[] {
   const beyond = BEYOND_POST.filter((r) => c.reaches!.includes(r));
   if ((c.play ?? 'cast') === 'set' && beyond.length) out.push(`${who} is a set card, and a set card lands only on a post`);
   if (c.pins !== undefined && (c.pins !== true || !c.reaches.includes('thread'))) out.push(`${who} pins ${JSON.stringify(c.pins)}; only a card that reaches a thread pins, and pins is true or left out`);
-  if (beyond.length && c.lasts === undefined) out.push(`${who} reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time`);
+  if (beyond.length && c.lasts === undefined && !instant(c)) out.push(`${who} reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time`);
   const least = settings?.reachRarity;
   const longest = settings?.reachLasts;
   for (const r of beyond) {
@@ -937,6 +1028,7 @@ function systemProblems(instance: Instance): string[] {
   for (const k of duplicates(roster, (p) => p.key)) out.push(`persona key "${k}" is used twice`);
   /* The developer persona's staff key is the engine's (0062): a roster member under it would be the character the persona is seeded as, or be left unmade. */
   if (rosterKeys.has(DEVELOPER_STAFF_KEY)) out.push(`persona key "${DEVELOPER_STAFF_KEY}" is reserved for the developer persona, which a model never plays`);
+  if (rosterKeys.has(ANONYMOUS_STAFF_KEY)) out.push(`persona key "${ANONYMOUS_STAFF_KEY}" is reserved for the anonymous poster, which a model never plays`);
   const text = (v: unknown) => typeof v === 'string' && v.trim() !== '';
   for (const p of roster) {
     const who = `persona "${p.key}"`;

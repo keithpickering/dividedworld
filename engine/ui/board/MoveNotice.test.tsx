@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { testInstance, buildWorld, renderIn } from '../test-world.tsx';
 import { dayAndTime } from '../characters/format.ts';
+import { localKey } from '../../rules/emoji.ts';
 import { MoveNotice } from './MoveNotice.tsx';
 import { seedMoves, type MoveWorld } from './move-world.ts';
 
@@ -53,6 +54,16 @@ describe('the Boss\'s notice on the board its move changed', () => {
     const items = within(chips).getAllByRole('listitem');
     expect(items.map((i) => i.textContent)).toEqual(['Fire, 9F 9', 'Tomato, 6T 6', 'Tea, 3E 3']);
     expect(within(chips).queryByText(/Zzz/u)).toBeNull();
+  });
+
+  test('draws a reaction a card added to the post from its key alone, as the row does', async () => {
+    const fake = buildWorld();
+    const w = seedMoves(fake, testInstance);
+    const real = fake.moveNotice.bind(fake);
+    fake.moveNotice = async (act) => { const n = await real(act); return n && { ...n, reactions: [{ kind: localKey('\u{1F480}'), count: 12 }, ...n.reactions] }; };
+    renderIn(fake, <MoveNotice act={w.inForce} />, { path: `/b/${w.general}` });
+    const chips = within(await screen.findByRole('table', { name: 'Announcement from The Director' })).getByRole('list', { name: 'Reactions' });
+    expect(within(chips).getAllByRole('listitem')[0]).toHaveTextContent('\u{1F480} 12');
   });
 
   test('carries the Act\'s long label in glass, from the move kind\'s catalog and never from the Boss\'s words', async () => {

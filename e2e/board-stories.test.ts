@@ -52,6 +52,10 @@ test('the payout cards\' stories are listed, the Lens of each and the play form 
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['skim', 'ride', 'ride-back', 'scored-as', 'skim-form', 'ride-back-form', 'scored-as-form'].map((n) => `boards-01-payout-cards--${n}`)));
 });
 
+test('the discipline cards\' stories are listed, a heart, a fall waiting, a fall taken and a character told on', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['a-heart', 'a-fall-waiting', 'a-fall-taken', 'told-on'].map((n) => `boards-01-lens-discipline-cards--${n}`)));
+});
+
 test('the caption bar\'s stories are listed, short, long and held on the Main and the Phone board', () => {
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['short', 'long', 'held'].flatMap((n) => [`boards-captions--${n}-main`, `boards-captions--${n}-phone`])));
 });
@@ -64,5 +68,13 @@ test('the reply cut in under its post and Feelin\' Glam\'s stories are listed, e
   expect(boardStoryIds()).toEqual(expect.arrayContaining([
     'boards-22-reply-cut-in--under-light', 'boards-22-reply-cut-in--under-dark',
     'boards-10-feelin-fab--glam-live-light', 'boards-10-feelin-fab--glam-live-dark', 'boards-10-feelin-fab--glam-over-light', 'boards-10-feelin-fab--glam-over-dark',
+  ]));
+});
+
+test('the veil cards\' stories are listed: the posts for their author, a third reader and the caster, the stand-in\'s profile, Overreaction\'s play form and the worn-off line', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining([
+    ...['veiled-and-blind', 'veiled-and-blind-phone', 'reader', 'caster', 'stand-in-profile'].map((n) => `boards-01-veiled-and-blind-posts--${n}`),
+    'boards-01-reaction-card-form--form', 'boards-01-reaction-card-form--form-phone',
+    'boards-22-whodunnit--wore-off-light', 'boards-22-whodunnit--wore-off-dark',
   ]));
 });

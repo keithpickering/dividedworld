@@ -9,11 +9,13 @@
  * (`readPlays`), never one per post ("Weigh a design at the scale of a busy instance"), and a play
  * that arrives live is added to the post it names whichever page that post is on.
  */
-import { useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { Act, ActKind, EffectState, Id, KayfaApi, SurfaceAct, SurfaceNow } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
+import { useKayfa } from '../context.tsx';
 import { BEYOND_POST, fallsOn, type BeyondPost, type CardRules } from '../../rules/cards.ts';
-import type { Settings, Span } from '../../rules/types.ts';
+import { localKey, singleEmoji } from '../../rules/emoji.ts';
+import { QUADRANTS, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, KitControl } from './types.ts';
 import { endsWords, keptEndedWords } from './marks.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
@@ -50,7 +52,9 @@ export function shownPlays(plays: readonly CardPlay[], now: number): readonly Ca
  * is no play of its own: `Plays.add` reveals the back it names.
  */
 export function playOf(act: Act): CardPlay | null {
-  const beyond = act.kind === 'card' && BEYOND_POST.includes(act.payload.reach as BeyondPost) ? act.payload.reach as BeyondPost : null;
+  /* A play that is over when it lands (a heart, an Unban) keeps no `ends` and no `play_reach` row: it is a mark on the post it was played from, whatever reach its payload names, so it is read before the beyond-a-post rule asks for a time up. */
+  const instant = act.kind === 'card' && act.payload.instant === true;
+  const beyond = act.kind === 'card' && !instant && BEYOND_POST.includes(act.payload.reach as BeyondPost) ? act.payload.reach as BeyondPost : null;
   const on = beyond ? act.payload[beyond] : undefined;
   if (beyond && (typeof on !== 'string' || typeof act.payload.ends !== 'string')) return null;
   if (act.targetActId === null && !beyond) return null;
@@ -78,6 +82,12 @@ export function playOf(act: Act): CardPlay | null {
     ...(act.untaken === true ? { untaken: true as const } : {}),
     ...(typeof act.payload.drive === 'string' ? { drive: act.payload.drive } : {}),
     ...(typeof act.payload.drawn === 'string' ? { drawn: act.payload.drawn } : {}),
+    ...(typeof act.payload.targetName === 'string' ? { targetName: act.payload.targetName } : {}),
+    ...(instant ? {
+      instant: true as const,
+      ...(typeof act.payload.took === 'number' && Number.isSafeInteger(act.payload.took) ? { took: act.payload.took } : {}),
+      ...(Array.isArray(act.payload.lifted) ? { lifted: act.payload.lifted.length } : {}),
+    } : {}),
   };
 }
 
@@ -90,12 +100,22 @@ export const homeOf = (play: Pick<CardPlay, 'post' | 'on'>): Id => play.on ?? pl
 
 /**
  * The plays in force: all but a play an admin ended (`reversed`: its layer is off), a play that did not take (`untaken`: its text never
- * arrived, and it was refunded) and a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers
+ * arrived, and it was refunded), a play that is over when it lands (`instant`: a heart, an Unban), a fall a filing has spent (`spent`) and a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers
  * a card or pins a thread reads this; the marks and the Lens read `markedPlays`, which keeps an ended play on a post to say so.
  */
 export function livePlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
-  const live = plays.filter((p) => !p.reversed && !p.untaken && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
+  const live = plays.filter((p) => !p.reversed && !p.untaken && !p.instant && !p.spent && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
   return live.length === plays.length ? plays : live;
+}
+
+/**
+ * The plays that hold a place in a target's stack, which is what the form and the ghost marks ask the rules whether another card lands on: `livePlays`, and also a fall a filing has spent, as the
+ * server counts it (`place_cast`, 0361: a spent fall holds its place unless an admin ended it, which `reversed` says). An instant play holds none. A spent fall is never drawn from this list; it is a mark, and
+ * `livePlays` is what draws.
+ */
+export function stackPlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
+  const held = plays.filter((p) => !p.reversed && !p.untaken && !p.instant && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
+  return held.length === plays.length ? plays : held;
 }
 
 /**
@@ -124,6 +144,68 @@ export function playsFallingOn(plays: readonly CardPlay[], post: { readonly crea
   const at = new Date(now);
   const falling = plays.filter((p) => !p.reversed && !p.untaken && fallsOn({ at: p.playedAt, ...(p.ends !== undefined ? { ends: p.ends } : {}) }, { at: post.createdAt }, keeps.has(p.card), at));
   return falling.length === plays.length ? plays : falling;
+}
+
+/** A timer's delay is held under 2^31 ms; a later end is waited for in steps, each re-arming at the time it wakes to. */
+export const TIMER_MOST = 2 ** 31 - 1;
+
+/**
+ * The time, redrawn when the soonest of these ends (epochs) passes, so something that ends on its own (a drive, a veil's line) is drawn as ended without a
+ * read. Nothing is scheduled while none is ahead.
+ */
+export function useAt(ends: readonly number[]): number {
+  const { api } = useKayfa();
+  const [now, setNow] = useState(() => api.now());
+  const ahead = ends.filter((e) => e > now);
+  const next = ahead.length === 0 ? null : Math.min(...ahead);
+  useEffect(() => {
+    if (next === null) return;
+    const timer = setTimeout(() => setNow(api.now()), Math.min(TIMER_MOST, Math.max(0, next - api.now()) + 1));
+    return () => clearTimeout(timer);
+  }, [api, next, now]);
+  return now;
+}
+
+/** The plays a card of the rules reaches nothing beyond a post with, still in force on their post: not caught, not a card back, not reversed by an admin, not one that did not take. */
+const standing = (p: CardPlay): boolean => !p.caught && !p.faceDown && !p.untaken && !p.reach;
+
+/** A reaction a card added to one post (a `reaction` card's play, card notes Part 3): the key it is tallied under, its emoji and the quadrant it scores in. */
+export interface LocalKind {
+  /** `x-` and the emoji's code points (`localKey`): what a tally and `react` carry. */
+  readonly key: string;
+  readonly emoji: string;
+  readonly quadrant: Quadrant;
+  readonly play: Id;
+  /** An admin ended its play: the kind is no longer offered, and what it earned stays counted. */
+  readonly ended: boolean;
+}
+
+/**
+ * The post-local reaction kinds a post's plays of a `reaction` card add, in play order, each once: a play that was caught, did not take or holds a
+ * configuration the rules would not take adds none. Read from the plays as they are on this screen, so a kind is offered the moment its play lands.
+ */
+export function localKindsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'reaction'>[]): readonly LocalKind[] {
+  const out: LocalKind[] = [];
+  for (const p of plays) {
+    if (!standing(p) || !cards.some((c) => c.key === p.card && c.reaction === true)) continue;
+    const emoji = singleEmoji(p.config.emoji);
+    const quadrant = QUADRANTS.find((q) => q === p.config.quadrant);
+    if (emoji === null || quadrant === undefined) continue;
+    const key = localKey(emoji);
+    if (out.some((k) => k.key === key)) continue;
+    out.push({ key, emoji, quadrant, play: p.id, ended: p.reversed === true });
+  }
+  return out;
+}
+
+/** A live play of a `veil: 'totals'` card on a post: who cast it, and when its totals show again. */
+export interface BlindPlay { readonly play: Id; readonly caster: Id | null; readonly ends: string }
+
+/** The plays on a post that hide its reaction totals now: a `totals` veil, in force, whose end is still ahead. */
+export function blindPlaysOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'veil'>[], now: number): readonly BlindPlay[] {
+  return plays
+    .filter((p) => standing(p) && !p.reversed && p.ends !== undefined && Date.parse(p.ends) > now && cards.some((c) => c.key === p.card && c.veil === 'totals'))
+    .map((p) => ({ play: p.id, caster: p.caster, ends: p.ends! }));
 }
 
 /** The soonest end still ahead among plays beyond a post, as an epoch, or null: when what is drawn changes next by itself. */
@@ -223,6 +305,8 @@ export interface Plays {
   setStates(states: Readonly<Record<Id, EffectState>>): boolean;
   /** Mark each of these plays reversed in place, as its `card_end` would (one not held yet is remembered, as an early `card_end` is); true when a play was marked or newly remembered. */
   setEnded(plays: readonly Id[]): boolean;
+  /** A filing spent these Take the Fall plays (the thread page's `spent`): each is marked spent in place, stays a mark and is no longer live. One for a play not here is kept for when it is; true when any was new. */
+  setSpent(plays: readonly Id[]): boolean;
   /** The reader released themselves from these plays. */
   setReleased(plays: readonly Id[]): boolean;
   /** The reader's own card backs' cards, by set: drawn under the back on their screen alone, never sent. */
@@ -272,6 +356,8 @@ export function createPlays(): Plays {
   const takenBacks = new Map<Id, string>();
   /* The plays an admin ended: a `card_end` that arrived before its play is kept here for when the play does. */
   const ended = new Set<Id>();
+  /* The falls a filing spent: a mark that arrived before its play is kept here for when the play does. */
+  const spentPlays = new Set<Id>();
   /* Each post's billing order, by play id: set by a read of its page, with a play that arrives later appended. */
   const order = new Map<Id, readonly Id[]>();
   /* Each card's view on a post, by `viewKey`: kept apart from the snapshots, so setting one never moves a snapshot or another card's view. */
@@ -355,7 +441,8 @@ export function createPlays(): Plays {
         const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at, ...(early.quadrant !== undefined ? { quadrant: early.quadrant } : {}) } } : found;
         const takenAt = found.faceDown ? takenBacks.get(found.id) : undefined;
         const withTaken = takenAt ? { ...withSpring, takenBack: { at: takenAt } } : withSpring;
-        const play = ended.has(found.id) ? { ...withTaken, reversed: true as const } : withTaken;
+        const withEnd = ended.has(found.id) ? { ...withTaken, reversed: true as const } : withTaken;
+        const play = spentPlays.has(found.id) ? { ...withEnd, spent: true as const } : withEnd;
         const home = homeOf(play);
         const own = byPost.get(home) ?? new Map<Id, CardPlay>();
         /* A play already held is the same play, with one change it can learn: that it did not take (`untaken`, 0149), set in place so its place in the billing stays. */
@@ -400,6 +487,22 @@ export function createPlays(): Plays {
       }
       changed(touched);
       return remembered || touched.size > 0;
+    },
+    setSpent(next) {
+      const touched = new Set<Id>();
+      let learned = false;
+      for (const target of next) {
+        if (!spentPlays.has(target)) { spentPlays.add(target); learned = true; }
+        const home = postOf.get(target);
+        const own = home === undefined ? undefined : byPost.get(home);
+        const was = own?.get(target);
+        if (own && was && !was.spent) {
+          own.set(target, { ...was, spent: true });
+          touched.add(home!);
+        }
+      }
+      changed(touched);
+      return learned || touched.size > 0;
     },
     setReleased(plays) {
       const touched = new Set<Id>();
@@ -523,10 +626,11 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
 /**
  * Take a screen document's plays, with their saved states and the reader's releases, into the store with no read (the forum-load plan,
  * Task 13): the document holds what `readPlays`, `readAbove` and `readEffects` would have asked for. `faces` are the reader's own card
- * backs' cards, by set. The states and releases are the document's for the cards the instance draws an effect for.
+ * backs' cards, by set; `spent` the Take the Fall plays a filing has spent. The states and releases are the document's for the cards the instance draws an effect for.
  */
-export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}, surfaces: Readonly<Record<Id, SurfaceNow>> = {}): void {
+export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}, surfaces: Readonly<Record<Id, SurfaceNow>> = {}, spent: readonly Id[] = []): void {
   plays.add(acts);
+  plays.setSpent(spent);
   plays.setStates(states);
   plays.setReleased(releases);
   plays.setFaces(faces);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BRIBE_BOUNDS, DEFAULT_DEVELOPER, deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
+import { ANONYMOUS_STAFF_KEY, BRIBE_BOUNDS, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER, deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
 import type { Instance, Persona, Settings, SystemContent } from './types.ts';
 import { PHASE_CAPS } from '../system/phases.ts';
 import { DUTIES } from '../system/duties.ts';
@@ -68,7 +68,7 @@ const settings: Settings = {
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
   pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, chatterCron: '37 17 * * *' },
-  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
+  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   conduct: { openReportsMost: 3, adminAddress: null },
@@ -761,7 +761,8 @@ test('a trap is a set card\'s, and a gimmick and a time up are a use card\'s', (
   assert.match(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: day, reaches: ['board'] })).join('\n'), /card "splat" is a use card and reaches a board; a use card reaches a post, a character or a thread/);
   assert.match(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: day, reaches: ['post', 'moon'] })).join('\n'), /a use card reaches a post, a character or a thread/);
   assert.deepEqual(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: { unit: 'day', count: 1 }, rarity: 'rare', reaches: ['post', 'character', 'thread'] })), []);
-  assert.match(instanceProblems(withCards({ play: 'set', trap, lasts: day })).join('\n'), /card "splat" has a time up \(lasts\), and only a use card or a card reaching beyond a post does/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap, lasts: day })).join('\n'), /card "splat" has a time up \(lasts\), and only a use card, a cast card or a card reaching beyond a post does/);
+  assert.deepEqual(instanceProblems(withCards({ lasts: day })), [], 'a cast on a post may end');
   assert.match(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: { unit: 'minute', count: 7 } })).join('\n'), /card "splat" lasts .*; it must be a span/);
   assert.deepEqual(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'hour', count: 36 } })), [], 'a card may last hours');
   assert.match(instanceProblems(withCards({ play: 'deal' })).join('\n'), /card "splat" is played "deal"; a card is cast, used, set or kept/);
@@ -842,6 +843,46 @@ test('a trap outcome is a ride on a set card that springs on a cast and names it
   assert.match(set({ trigger: cast, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" has an outcome beside a match; a ride outcome names its card \(catches\)/);
   assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" springs on a cast and names no card to catch/);
   assert.match(instanceProblems(withCards({ trap: { trigger: cast, outcome: { kind: 'ride', share: 1 } } })).join('\n'), /card "splat" has a trap, and only a set card has one/);
+});
+
+test('the anonymous poster: the developer\'s checks again, with its own subject and its own reserved key', () => {
+  assert.deepEqual(DEFAULT_ANONYMOUS, { name: 'Anonymous', tagline: '' });
+  assert.equal(ANONYMOUS_STAFF_KEY, 'anonymous');
+  assert.deepEqual(instanceProblems({ ...good, anonymous: { name: 'A. Nonymous', tagline: 'Nobody', avatar: 'anon' } }), []);
+  const bad = (anonymous: unknown) => instanceProblems({ ...good, anonymous } as Instance).join('\n');
+  assert.match(bad({ name: ' ' }), /the anonymous poster has no name/);
+  assert.match(bad({ name: 'G'.repeat(41) }), /the anonymous poster name is 41 characters; a character's name is at most 40/);
+  assert.match(bad({ name: ' Padded ' }), /the anonymous poster name has a space/);
+  assert.match(bad({ name: 'Anon', tagline: 'x'.repeat(41) }), /the anonymous poster tagline is 41 characters/);
+  assert.match(bad({ name: 'Anon', avatar: ' ' }), /the anonymous poster avatar is blank/);
+  assert.match(said(withBoss({ key: 'anonymous' })), /persona key "anonymous" is reserved for the anonymous poster/);
+  assert.match(said(withBot({ key: 'anonymous' })), /persona key "anonymous" is reserved for the anonymous poster/);
+});
+
+test('a reaction key of an instance may not start with x-, which a card keeps for one post', () => {
+  const kind = (key: string, emoji: string) => ({ key, emoji, label: key, quadrant: 'calmPositive' as const });
+  const base = good.reactions;
+  assert.match(instanceProblems({ ...good, reactions: [...base, kind('x-1f480', '💀')] }).join('\n'), /reaction key "x-1f480" starts with x-, which is kept for reactions a card adds to one post/);
+  assert.deepEqual(instanceProblems({ ...good, reactions: [...base, kind('xylophone', '🎼')] }), []);
+});
+
+test('a veil or a reaction is a cast card on a post, a veil ends, and the two never meet', () => {
+  const week = { unit: 'day', count: 3 };
+  const reaction = { reaction: true as const };
+  const bad = (more: Record<string, unknown>) => instanceProblems(withCards({ lasts: week, ...more })).join('\n');
+  assert.deepEqual(instanceProblems(withCards({ veil: 'author', lasts: week })), []);
+  assert.deepEqual(instanceProblems(withCards({ veil: 'totals', lasts: week })), []);
+  assert.deepEqual(instanceProblems(withCards({ ...reaction })), [], 'a reaction card need not end');
+  assert.match(bad({ veil: 'author', play: 'use', gimmick: { kind: 'ward', upTo: 'common' } }), /card "splat" has a veil, and only a cast card does/);
+  assert.match(bad({ reaction: true, play: 'use', gimmick: { kind: 'ward', upTo: 'common' } }), /card "splat" has a reaction, and only a cast card does/);
+  assert.match(bad({ veil: 'author', reaches: ['post', 'thread'], rarity: 'rare' }), /card "splat" has a veil, and a card with a veil reaches a post alone/);
+  assert.match(bad({ reaction: true, reaches: ['character'], rarity: 'rare' }), /card "splat" has a reaction, and a card with a reaction reaches a post alone/);
+  assert.match(instanceProblems(withCards({ veil: 'author' })).join('\n'), /card "splat" has a veil with no time up \(lasts\); a veil ends at its time/);
+  assert.match(bad({ veil: 'everyone' }), /card "splat" has a veil of "everyone"; a veil is author or totals/);
+  assert.match(bad({ veil: 'author', reaction: true }), /card "splat" has both a veil and a reaction; a card has one of the two/);
+  assert.match(bad({ reaction: true, writes: { tokens: () => 1, frame: () => ({ prompt: '', stop: [] }) } }), /card "splat" has a reaction and writes; a card with a reaction does not write/);
+  assert.match(bad({ reaction: true, seeded: true }), /card "splat" has a reaction and is seeded; a card with a reaction is not/);
+  assert.match(bad({ reaction: 'yes' }), /card "splat" has a reaction of "yes"; a reaction is true or left out/);
 });
 
 test('a skim is a cast card that reaches a post alone, lasts, and does not write', () => {
@@ -961,8 +1002,8 @@ test('a card beyond a post ends at its time, and no later than its reach\'s boun
   assert.match(instanceProblems(withCards({ rarity: 'legendary', reaches: ['thread', 'board'], lasts: { unit: 'week', count: 1 } })).join('\n'), /card "splat" lasts 1 week, longer than a thread effect may \(reachLasts\.thread, 1 day\)/);
 });
 
-test('a Cast on a post alone has no time up', () => {
-  assert.match(instanceProblems(withCards({ reaches: ['post'], lasts: { unit: 'day', count: 1 } })).join('\n'), /card "splat" has a time up \(lasts\), and only a use card or a card reaching beyond a post does/);
+test('a Cast on a post alone may have a time up, and a Set may not', () => {
+  assert.deepEqual(instanceProblems(withCards({ reaches: ['post'], lasts: { unit: 'day', count: 1 } })), []);
 });
 
 test('a set card lands on a post alone', () => {
@@ -1380,4 +1421,51 @@ test('a card that replies is a cast card that reaches a post alone, stack 1, and
   assert.match(bad({ keeps: true, reaches: ['character'] }), /card "splat" keeps, and only a cast card that reaches one thread or one character, with a time up, does/, 'a character with no time up');
   assert.match(bad({ keeps: true, reaches: ['thread'] }), /card "splat" keeps, and only a cast card that reaches one thread or one character, with a time up, does/, 'no time up');
   assert.match(bad({ keeps: true, reaches: ['thread'], lasts: day, play: 'use', gimmick: { kind: 'ward', flavors: ['salty'] } }), /card "splat" keeps, and only a cast card that reaches one thread or one character, with a time up, does/, 'a use card');
+});
+
+test('a discipline is one of four kinds on a cast card, held apart from the effects that write, reply, keep, skim, score, ride on a gimmick, draw, run a drive or need a message', () => {
+  const day = { unit: 'day', count: 1 };
+  const week = { unit: 'week', count: 1 };
+  const writes = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) };
+  const bad = (over: Record<string, unknown>) => instanceProblems(withCards({ rarity: 'rare', ...over })).join('\n');
+  const relief = { discipline: { kind: 'relief', points: 'lightestBand' }, reaches: ['character'] };
+  assert.equal(bad(relief), '', 'a well-formed relief: no time up asked, since it is over when it lands');
+  assert.equal(bad({ discipline: { kind: 'relief', points: 'all' }, reaches: ['character'] }), '');
+  assert.equal(bad({ discipline: { kind: 'unban' }, reaches: ['character'] }), '', 'a well-formed unban');
+  assert.equal(bad({ discipline: { kind: 'fall' }, reaches: ['post'] }), '', 'a well-formed fall');
+  assert.equal(bad({ discipline: { kind: 'fall' }, stack: 1 }), '', 'a fall reaches a post by default');
+  assert.equal(bad({ discipline: { kind: 'watch', weight: 2 }, reaches: ['character'], lasts: week }), '', 'a well-formed watch');
+  assert.match(bad({ discipline: 'relief', reaches: ['character'] }), /card "splat" has a discipline that is not an object with a kind/);
+  assert.match(bad({ discipline: { kind: 'smite' }, reaches: ['character'] }), /card "splat" has the discipline kind "smite"; a discipline is relief, unban, fall or watch/);
+  assert.match(bad({ ...relief, play: 'use', gimmick: { kind: 'ward', flavors: ['salty'] }, lasts: day }), /card "splat" has a discipline, and only a cast card does/);
+  assert.match(bad({ ...relief, play: 'set', trap: { trigger: { on: 'cast' } }, catches: () => 'a' }), /card "splat" has a discipline, and only a cast card does/);
+  assert.match(bad({ discipline: { kind: 'relief', points: 'some' }, reaches: ['character'] }), /card "splat" has a relief of "some"; relief takes the lightestBand or all/);
+  for (const d of [{ kind: 'relief', points: 'all' }, { kind: 'unban' }]) {
+    const name = d.kind; const an = name === 'unban' ? 'an unban' : 'a relief';
+    assert.match(bad({ discipline: d, reaches: ['post'] }), new RegExp(`card "splat" has ${an}, and ${an} reaches a character alone`));
+    assert.match(bad({ discipline: d, reaches: ['character', 'thread'], lasts: day }), new RegExp(`${an} reaches a character alone`));
+    assert.match(bad({ discipline: d }), new RegExp(`${an} reaches a character alone`), 'no reaches means a post');
+    assert.match(bad({ discipline: d, reaches: ['character'], lasts: day }), new RegExp(`card "splat" has ${an} and a time up; ${an} is over when it lands and has none`));
+    assert.match(bad({ discipline: d, reaches: ['character'], stack: 2 }), new RegExp(`card "splat" has ${an} and a stack; ${an} is over when it lands and has none`));
+    assert.match(bad({ discipline: d, reaches: ['character'], stack: 1 }), new RegExp(`has ${an} and a stack`), 'any stack, even 1');
+    assert.match(bad({ discipline: d, reaches: ['character'], pins: true }), new RegExp(`card "splat" has ${an} and pins`));
+  }
+  assert.doesNotMatch(bad(relief), /reaches beyond a post with no time up/, 'an instant card needs no time up');
+  assert.match(bad({ discipline: { kind: 'watch', weight: 2 }, reaches: ['character'] }), /reaches beyond a post with no time up/, 'a watch is not instant');
+  assert.match(bad({ discipline: { kind: 'fall' }, reaches: ['post', 'character'], lasts: day }), /card "splat" has a fall, and a fall reaches a post alone/);
+  assert.match(bad({ discipline: { kind: 'fall' }, reaches: ['thread'], lasts: day }), /a fall reaches a post alone/);
+  assert.match(bad({ discipline: { kind: 'fall' }, stack: 2 }), /card "splat" has a fall, and a fall has a stack of 1/);
+  assert.match(bad({ discipline: { kind: 'fall' }, lasts: day }), /card "splat" has a fall and a time up; a fall lasts until a filing spends it/);
+  assert.match(bad({ discipline: { kind: 'watch', weight: 2 }, reaches: ['post'], lasts: day }), /card "splat" has a watch, and a watch reaches a character alone/);
+  assert.match(bad({ discipline: { kind: 'watch', weight: 2 }, reaches: ['character'] }), /card "splat" has a watch with no time up \(lasts\); a watch ends at its time/);
+  for (const weight of [1, 0.5, 11, Infinity, NaN, '2', undefined]) {
+    assert.match(bad({ discipline: { kind: 'watch', weight }, reaches: ['character'], lasts: week }), /card "splat" has a watch of weight .*; weight is a number above 1 and at most 10/, String(weight));
+  }
+  assert.equal(bad({ discipline: { kind: 'watch', weight: 10 }, reaches: ['character'], lasts: week }), '', 'ten is the most');
+  const held: [string, Record<string, unknown>][] = [
+    ['writes', { writes }], ['replies', { replies: true }], ['keeps', { keeps: true, reaches: ['thread'], lasts: day }], ['a skim', { skim: { share: 0.1 }, lasts: week }],
+    ['scoresAs', { scoresAs: true }], ['a gimmick', { gimmick: { kind: 'earn', by: 1.2 } }], ['draws', { draws: ['a'] }], ['a message', { needsMessage: 'say why' }],
+    ['a drive', { drive: {} }], ['a surface', { surface: {} }],
+  ];
+  for (const [what, over] of held) assert.match(bad({ discipline: { kind: 'fall' }, ...over }), /card "splat" has a fall and (writes|replies|keeps|a skim|scoresAs|a gimmick|draws|needsMessage|a drive|a surface); a card with a discipline has no other effect/, what);
 });
