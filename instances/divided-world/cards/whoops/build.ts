@@ -1,8 +1,10 @@
 /**
- * Building a Whoops! layer's picture, pure and with no DOM (ink-field design, section 5): the splat, every stroke in
- * order, then shaded once. The same function runs on the main thread (a light layer) and in the worker (buildWorker.ts),
- * so the two cannot disagree. A layer's key and what it costs are here too, so the client (buildClient.ts) and the Effect
- * read one definition.
+ * Building one band of a Whoops! layer's picture, pure and with no DOM (docs/plans/2026-11-12-whoops-ink-field-design.md,
+ * section 5; docs/plans/2026-11-12-whoops-followups-design.md, sections 1 and 2): the splat, then every stroke of the layer
+ * in order, run over the band's rows of the post's one lattice and one row of apron each side, then the band shaded once.
+ * The same function runs on the main thread (a band whose estimate times the page's pace is under `QUICK_MS`) and in the
+ * worker (buildWorker.ts), so the two cannot disagree. A band's key and what it costs are here too, so the client
+ * (buildClient.ts) and the Effect read one definition.
  *
  * The field leaves as a `Uint16Array` of value x 4096, half a `Float32Array`'s memory. A `Uint16Array` tops out at 65535,
  * so a value held to `FIELD_MOST` (16) is stored as 65535 (15.99976): the one place the rounding exceeds 1/8192, and far

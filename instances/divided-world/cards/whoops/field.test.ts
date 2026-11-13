@@ -189,7 +189,7 @@ test('a dab is one pass: a one-point wash lowers its center by WASH_TAKES', () =
   near(at(h, 250.5, 219.5), 3 - WASH_TAKES, 1e-4);
 });
 
-test('a short drag is a dab: a line under 2r long takes WASH_TAKES under its end, as a tap does', () => {
+test('a short drag is a dab: a line no longer than R (2r) takes WASH_TAKES under its end, as a tap does', () => {
   const brush = brushOf(30, MID);
   for (const drag of [3, 4, 14]) {
     const g = denseGrid(MID, 1);

@@ -7,8 +7,8 @@
  * is fitted to the post body's box (refinements design, section 1). In the thread that box is the body's padding box
  * (`.kb-act-main`, the cell this sits in, border to border and bar to bar); in the ORIGIN box it is the frame. Every position the
  * effect keeps is a share of that box, across from 0 to 1 and down from 0 to 1, and each screen maps the shares onto its own box,
- * so a body whose height changes stretches its ink and its strokes with it. The ink is a canvas laid over the words, sized to
- * the box and reaching out of the frame to the cell's corner; the tag is the glass reaching in (`tag` in cards.ts draws it), and
+ * so a body whose height changes stretches its ink and its strokes with it. The ink is canvases laid over the words, one for each
+ * layer of each band of the box near the viewport (bands of `BAND_PX`), placed in the box and reaching out of the frame to the cell's corner; the tag is the glass reaching in (`tag` in cards.ts draws it), and
  * the card's state and controls are the Lens's and the kit's, from the view the effect publishes (`show`, below).
  *
  * Input. The effect takes its pointer and touch input on the frame, and in the thread on the cell too, so a press beside the reactions, on the tag's row
@@ -25,12 +25,17 @@
  * thin arm clears in a pass and a core takes several; a pen adds to the field and melts into it, with a bulb at its end and
  * drops from a quick lift. The author's pen strokes (written back in a layer's ink) are that layer's ink like the splat: a reader's
  * stroke scrubs them on their screen, a line under one is hidden from a screen reader, and the layers above them cover them. A
- * stroke's points are packed when saved (points.ts). The canvas only shows the model, and only for a post near the viewport: a page
- * can hold many splatted posts and a canvas is megabytes. A layer's picture is its build (build.ts): made on the spot when the
- * layer is light and in a worker when it is heavy, with a stand-in (paint.ts `paintStandIn`) drawn meanwhile, and a stroke made
- * while a build is out is applied to it once it arrives. Live strokes then go into the layer's grid and only the rectangle they
- * changed is shaded again. A layer washed clean lets its picture go once it has faded (at once under reduced motion). The grids are let go with the post (a post that has
- * left holds only the strokes made on this screen) and are built again when it returns.
+ * stroke's points are packed when saved (points.ts). The canvases only show the model, and only for the bands of a post near the
+ * viewport (docs/plans/2026-11-12-whoops-followups-design.md, section 1): a page can hold many splatted posts, one post can be
+ * 20,000px tall, and a canvas is megabytes, so nothing is sized to the post, and a tall post is drawn at the density a short one is.
+ * The model stays whole (`LayerInk`'s cells, held while the post is near); what a band holds is a picture of each layer that has ink:
+ * its build (build.ts, a run of rows of the post's one lattice with an apron row each side), made on the spot when the band's estimate
+ * at this page's measured pace is quick and in a worker when it is not, with a stand-in (paint.ts `paintStandIn`: flat circles for the
+ * splat, then the strokes) drawn on the band's own canvas meanwhile, and a stroke made while a build is out is applied to it once it
+ * arrives. Live strokes then go into the grid of each held band of the layer and only the rectangle they changed is shaded again.
+ * A layer washed clean lets its pictures go once it has faded (at once under reduced motion). A band's pictures are let go when the
+ * band leaves the viewport's reach, and all of them with the post (a post that has left holds only the strokes made on this screen
+ * and the model's cells); they are built again when it returns.
  *
  * Whose strokes. A stroke scrubs the top layer that still has ink where it starts. A reader's strokes
  * are kept in this component's memory only, so a reload brings the ink back. The post author's are
@@ -347,9 +352,9 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const [uncovered, setUncovered] = useState({ words: '', n: 0 });
   const readBefore = useRef<ReadonlySet<string> | null>(null);
   const [view, setView] = useState<View | null>(null);
-  /** How many layers' ink grids are held: none for a post that has left the viewport. */
+  /** How many layers' models (`LayerInk`) are held: none for a post that has left the viewport. */
   const [held, setHeld] = useState(0);
-  /** How many layers' pictures (a build and its grid) are held: none for a post that has left the viewport, and none while a build is out. */
+  /** How many band pictures (a build's grid, for a band of a layer) are held: none for a post that has left the viewport, and none while their builds are out. */
   const [pictures, setPictures] = useState(0);
 
   /** In the thread the box is the post's whole body (the cell), the frame sits inside it, and the ink runs from the frame out to the body's borders, what the engine lifts drawn in front of it. */
@@ -492,7 +497,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     if ((cell ?? f) !== now.current.surface) remeasure.current();
   });
 
-  /* Only a post near the viewport is drawn: past a screen above or below, the canvas is dropped. */
+  /* Only a post near the viewport is drawn: past a screen above or below, no band is watched and no canvas is held. */
   useEffect(() => {
     const f = frameRef.current;
     if (!f || typeof IntersectionObserver !== 'function') return;
@@ -627,7 +632,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     schedulePaint();
   };
 
-  /** Asks for layer `i`'s picture of band `j`: built on the spot when it is light, in the worker when not (the stand-in shows meanwhile). */
+  /** Asks for layer `i`'s picture of band `j`: built on the spot when its estimate at this page's pace is under `QUICK_MS`, in the worker when not (the stand-in shows meanwhile). */
   const requestPic = (i: number, j: number, layer: Layer, b: Box, q: number, lat: Lattice): Pic => {
     const id = layer.play.id;
     const strokes = [...savedFor(id).strokes, ...unsavedOf(id)];
@@ -679,7 +684,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     paintStandIn(canvas, { splat: ink.splat, color: layer.color, strokes }, { box: pic.box, q: pic.q, row0: pic.span.row0, rows: pic.span.rows });
   };
 
-  /* A post that goes lets its builds go: none is waited for, and the grids are let go. */
+  /* A post that goes lets its builds go: none is waited for, and its bands' grids are let go. */
   useEffect(() => () => dropPics(), []);
   /* What the page holds for the probe tests read (`heldBytes`). */
   useEffect(() => {

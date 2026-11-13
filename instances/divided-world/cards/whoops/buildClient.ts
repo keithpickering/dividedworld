@@ -1,17 +1,18 @@
 /**
- * The page's side of the layer-build worker (ink-field design, section 5; the worker's side is buildWorker.ts, the build
- * itself build.ts). It follows the foil worker's pattern (engine/ui/shine/foilClient.ts), without importing it.
+ * The page's side of the band-build worker (docs/plans/2026-11-12-whoops-ink-field-design.md, section 5, and
+ * docs/plans/2026-11-12-whoops-followups-design.md, sections 1 and 2; the worker's side is buildWorker.ts, the build itself
+ * build.ts). It follows the foil worker's pattern (engine/ui/shine/foilClient.ts), without importing it.
  *
- * `requestBuild(key, input, onDone)` asks for a band's picture; the key is `layerKey(...)`, which names the band and a
+ * `requestBuild(key, input, onDone)` asks for a band's picture; the key is `layerKey(...)`, which carries the band's `row0` and a
  * requester (`requester()` gives a fresh token, one for each Effect, so two Effects with the same layer are two builds that
  * neither replaces nor cancels). A band whose estimated work times the page's pace is under `QUICK_MS` is built on the main
  * thread at once, and `onDone` is called before `requestBuild` returns (the caller has its picture before its first frame).
  * The pace is this page's own number, sent nowhere: it starts at 1, and each finished build with an estimate of at least
  * 1ms moves it toward what the build measured over what was estimated (`ms`, from the injected clock), within `PACE_LEAST`
- * and `PACE_MOST`, so a slow device sends more to the worker and a fast one builds more at once. A heavy one goes to one worker for the page, started with the first
- * heavy build and ended `IDLE_MS` after the last one finished. There is one build out for a key at a time: a newer
+ * and `PACE_MOST`, so a slow device sends more to the worker and a fast one builds more at once. A heavier band goes to one
+ * worker for the page, started with the first and ended `IDLE_MS` after the last one finished. There is one build out for a key at a time: a newer
  * request for the key replaces the waiting one, and the answer to the one out is dropped when a newer request waits
- * behind it (the newer one is sent then), so `onDone` hears the latest request only. `cancel(key)` (the post left the
+ * behind it (the newer one is sent then), so `onDone` hears the latest request only. `cancel(key)` (the band left the
  * viewport) drops the waiting build and ignores the answer to the one out; the key may be asked for again. A build's
  * buffers come back transferred: the worker keeps none, and the page owns them. `gridOf` (build.ts) turns the field
  * back into a Float32 `Grid`, which the main thread keeps for live strokes.

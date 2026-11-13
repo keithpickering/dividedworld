@@ -1,5 +1,6 @@
 /**
- * Whoops!'s ink field operations, pure (ink-field design, sections 1 to 3). A splat is a field of balls; a pen line
+ * Whoops!'s ink field operations, pure (docs/plans/2026-11-12-whoops-ink-field-design.md, sections 1 to 3, and
+ * docs/plans/2026-11-12-whoops-followups-design.md, sections 1, 3 and 5). A splat is a field of balls; a pen line
  * adds to that field and a wash takes from it, each in the order it was made, and what is ink is wherever the field
  * reaches `THRESHOLD`. No DOM and no canvas: the painter shades a dense grid of this field, `LayerInk` holds a grid of
  * cells and asks single points, and all three run the operations below, so they cannot disagree.
@@ -9,7 +10,12 @@
  *
  * A grid may hold only a run of the rows of a post's one lattice (a band): `row0` is the lattice row its row 0 is, and
  * every row's position is `oy + (row0 + j) * step`, the same arithmetic the whole grid does, so a band's value at a
- * lattice point equals the whole grid's bit for bit. `rowY` is the one place a row's position is worked out.
+ * lattice point equals the whole grid's bit for bit. `rowY` is the one place a row's position is worked out. A held
+ * band's grid also has one apron row each side (build.ts), and the operations take the whole box, so a point's value
+ * never depends on which band holds it.
+ *
+ * A wash that is a dab is topped up at its end (`DAB_FADE_ENDS`), and `COVER_OVER` is the field value at which washed ink
+ * has thinned to `READ_THROUGH` opacity, below which a point no longer covers the words under it.
  *
  * A brush is kept as a stroke keeps it: `width` a share of the box's width, `aspect` the drawer's box's proportions. It
  * is round in the space (x px, y px / k) with k = aspect * box.h / box.w (scrub.ts, paint.ts `trace`), and every
@@ -334,14 +340,15 @@ export function beginPen(grid: Grid, box: Box, brush: Brush): Line {
 
 /**
  * Begin a wash line: a disc every max(1, r / 3) px along the path, each taking a share of `WASH_TAKES`. A line whose
- * whole path is shorter than R = 2r is a dab, a tap or a short drag: at `end` it is topped up at its last point so the
- * center there has taken `WASH_TAKES`, as a one-point line's does; the top-up fades out between R and `DAB_FADE_ENDS` R.
+ * whole path is shorter than `DAB_FADE_ENDS` R (1.5 R, R = 2r) is a dab, a tap or a short drag: at `end` it is topped
+ * up at its last point so the center there has taken `WASH_TAKES`, as a one-point line's does, in full while the path
+ * is no longer than R and fading in a straight line to nothing at 1.5 R. A path of 1.5 R or more is a pass, not topped up.
  */
 export function beginWash(grid: Grid, box: Box, brush: Brush): Line {
   const k = kOf(brush, box), r = radiusOf(brush, box), R = 2 * r, h = Math.max(1, r / 3);
   const w = (WASH_TAKES * h) / (PASS_INTEGRAL * R);
   let at: [number, number] | null = null, carry = 0, ended = false, length = 0;
-  /* The discs pressed while the path is still short of R, so the top-up knows what its last point already took. */
+  /* The discs pressed while the path is still short of 1.5 R (where the top-up has faded out), so the top-up knows what its last point already took. */
   const dabs: [number, number][] = [];
   /* One disc: every point with ink under it is lowered by take * falloff, never below zero, and marked washed. */
   const press = (cx: number, cy: number, take: number): Rect => {

@@ -28,7 +28,7 @@ import { THIN_FLOOR, THIN_SPAN, denseGrid, splatInto, type Grid, type Rect } fro
 /** The pixel density a splat is drawn at: past two the extra pixels show nothing on soft ink and cost a quarter more memory each step. */
 export const MAX_DPR = 2;
 
-/** The most pixels one post's ink canvas, and each splat painted for it, may have: past it iOS fails silently, and three layers of it would be about 94 MB. */
+/** The most pixels one canvas sized to a whole box may have (the config preview's splat, `paintSplat`, and the suds canvas over the near bands): past it iOS fails silently. The ink is not held to it: a post's ink is in bands of at most `BAND_PX` rows, never sized to the post. */
 export const MAX_CANVAS_PX = 4_000_000;
 
 /** What `shadeField` writes into: ImageData's shape, so a worker with no DOM can use it. */

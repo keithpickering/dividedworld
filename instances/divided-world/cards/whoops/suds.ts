@@ -12,7 +12,7 @@
  *
  * Coordinates: `from`, `to` and `at` are CSS px in the host's box (`box.w` by `box.h`, origin at its top left),
  * the same px the splat and the ink grid use. `density` is canvas px per CSS px. The canvas is the span of the box
- * the host's near bands cover (`register`'s `top` is where it starts), so a particle is drawn at its box position
+ * the host's near bands cover (docs/plans/2026-11-12-whoops-followups-design.md, section 1; `register`'s `top` is where it starts), so a particle is drawn at its box position
  * less `top` and one outside the span is skipped. The module draws on the canvas it is given and never sizes it.
  */
 import { motionReduced } from '../../../../engine/ui/appearance.ts';

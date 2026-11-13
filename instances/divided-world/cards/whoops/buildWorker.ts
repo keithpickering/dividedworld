@@ -1,5 +1,6 @@
 /**
- * The build worker's entry (ink-field design, section 5): the page starts it with
+ * The build worker's entry (docs/plans/2026-11-12-whoops-ink-field-design.md, section 5, and
+ * docs/plans/2026-11-12-whoops-followups-design.md, section 2; a build is one band's): the page starts it with
  * `new Worker(new URL('./buildWorker.ts', import.meta.url), { type: 'module' })` (buildClient.ts) and Vite bundles it as a
  * same-origin script. It answers each `build` message with `buildLayer`'s result, its three buffers transferred.
  */

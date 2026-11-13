@@ -1,7 +1,8 @@
 /**
- * Whoops!'s scrubbing, the pure half of its drawing (refinements design sections 3 and 4): what a layer's ink is
+ * Whoops!'s scrubbing, the pure half of its drawing (docs/plans/2026-11-06-whoops-refinements-design.md, sections 3 and 4;
+ * docs/plans/2026-11-12-whoops-followups-design.md, sections 4 and 5): what a layer's ink is
  * after the strokes on it, which layer a stroke scrubs, the bounds a saved stroke keeps to, the accessible sweep's
- * pace, and which lines of text lie under ink. No DOM and no canvas: `Effect.tsx` draws what this decides, and
+ * pace (`SWEEP_PX_S`, a hand's px a second on any box), and which lines of text lie under ink (not those whose ink is washed thin enough to read through, `READ_THROUGH`). No DOM and no canvas: `Effect.tsx` draws what this decides, and
  * every rule here is testable in Node.
  *
  * Everything is in shares of the post body's box on this screen: a point is across 0 to 1 and down 0 to 1, so a
@@ -17,8 +18,8 @@
  * wherever the field reaches THRESHOLD. There is one implementation of those operations, in field.ts, shared with the
  * painter (paint.ts shades the same field over a denser grid), so what is counted here and what is drawn cannot
  * disagree. "Does this point still have ink" is that field's value, never a read of pixels, so it costs no canvas.
- * A stroke's points are kept packed when saved (points.ts), and a layer too heavy to build on the page is built in a
- * worker (build.ts) with a stand-in drawn meanwhile; this model never waits for either. Each screen's model is its
+ * A stroke's points are kept packed when saved (points.ts), and a band of a layer too heavy to build on the page is built in a
+ * worker (build.ts) with a stand-in drawn meanwhile; this model is the whole post's, never a band's, and never waits for either. Each screen's model is its
  * own; for the same strokes the shares are close, not equal.
  */
 import { STROKES } from '../whoops.ts';
