@@ -1,8 +1,8 @@
 import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, renderIn } from '../test-world.tsx';
-import { Hand, drawn } from './Hand.tsx';
+import { Hand } from './Hand.tsx';
 import { handOrder } from './arc.ts';
 import type { CardFace } from './faces.ts';
 
@@ -19,14 +19,6 @@ const hand = (held: readonly { card: string; held: number }[], props: Partial<Pa
 /** The Phone board's layout, as a player's text size of 150% makes it (useBoard.ts). */
 const phone = () => document.documentElement.setAttribute('data-kb-text-size', '150');
 afterEach(() => document.documentElement.removeAttribute('data-kb-text-size'));
-
-describe('the faces a hand draws', () => {
-  test('one for each copy held, two at most of a kind, the last of a larger kind saying how many are held', () => {
-    expect(drawn([{ card: 'stick', held: 1 }, { card: 'whoops', held: 2 }], [stick, whoops]).map((d) => [d.face.key, d.copy, d.total])).toEqual([['stick', 0, null], ['whoops', 0, null], ['whoops', 1, null]]);
-    expect(drawn([{ card: 'whoops', held: 5 }], [stick, whoops]).map((d) => [d.face.key, d.copy, d.total])).toEqual([['whoops', 0, null], ['whoops', 1, 5]]);
-    expect(drawn([], [stick, whoops])).toEqual([]);
-  });
-});
 
 describe('the hand on the Main board', () => {
   const five = ['a', 'b', 'c', 'd', 'e'].map((k) => face(k, `Card ${k}`, 'sweet'));
@@ -80,25 +72,127 @@ describe('the hand on the Main board', () => {
   });
 });
 
+describe('the hand on the Phone board', () => {
+  const move = (key: string, name: string): CardFace => ({ ...face(key, name, 'sweet'), play: 'cast' });
+  const gimmick = (key: string, name: string): CardFace => ({ ...face(key, name, 'salty'), play: 'use' });
+  const button = (key: string) => document.querySelector<HTMLButtonElement>(`li[data-kb-card="${key}"] > button`)!;
+  const scrollTo = vi.fn();
+  beforeEach(() => {
+    scrollTo.mockClear();
+    (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo = scrollTo;
+    phone();
+  });
+  afterEach(() => { delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo; });
+
+  test('a hand of Whoops! x5 and Stick Around draws two cards, Whoops! saying 5 in hand and showing x5', () => {
+    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 5 }]);
+    expect(document.querySelectorAll('li.kb-hand-card')).toHaveLength(2);
+    const five = screen.getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 5 in hand' });
+    expect(five.closest('li')).toHaveTextContent('×5');
+    expect(screen.getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' }).closest('li')).not.toHaveTextContent('×');
+  });
+
+  test('a Gimmick listed first in the faces stands after a Move, and the first of its group is marked', () => {
+    const g = gimmick('g', 'Gimmick G');
+    const m = move('m', 'Move M');
+    hand([{ card: 'g', held: 1 }, { card: 'm', held: 1 }], { faces: [g, m] });
+    const lis = [...document.querySelectorAll('li.kb-hand-card')];
+    expect(lis.map((li) => li.getAttribute('data-kb-card'))).toEqual(['m', 'g']);
+    expect(lis.map((li) => li.hasAttribute('data-kb-group-start'))).toEqual([false, true]);
+  });
+
+  test('a click with no pointer (detail 0) on a card that is not the middle calls onPick', () => {
+    const onPick = vi.fn();
+    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { onPick });
+    expect(document.querySelector('li[data-kb-middle]')).toHaveAttribute('data-kb-card', 'stick');
+    fireEvent.click(button('whoops'), { detail: 0 });
+    expect(onPick).toHaveBeenCalledWith(whoops);
+  });
+
+  test('a pointer click on a card that is not the middle brings it to the middle and calls nothing else', () => {
+    const onPick = vi.fn();
+    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { onPick });
+    scrollTo.mockClear();
+    fireEvent.click(button('whoops'), { detail: 1 });
+    expect(onPick).not.toHaveBeenCalled();
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo.mock.calls[0]![0]).toMatchObject({ behavior: 'smooth' });
+  });
+
+  test('a pointer click on the middle card calls onPick', () => {
+    const onPick = vi.fn();
+    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { onPick });
+    fireEvent.click(button('stick'), { detail: 1 });
+    expect(onPick).toHaveBeenCalledWith(stick);
+  });
+
+  test('under Off the card comes to the middle at once', () => {
+    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { instant: true });
+    scrollTo.mockClear();
+    fireEvent.click(button('whoops'), { detail: 1 });
+    expect(scrollTo.mock.calls[0]![0]).toMatchObject({ behavior: 'instant' });
+  });
+
+  test('the line names the middle card, and says the armed sentence when the middle card is armed', () => {
+    const { unmount } = hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { armed: 'whoops', onPick: () => {} });
+    // The armed card is not the middle: the line speaks of the middle card.
+    expect(document.querySelector('.kb-hand-says')).toHaveTextContent('Stick Around. Stick Around in a sentence.');
+    unmount();
+    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { armed: 'stick', onPick: () => {} });
+    expect(document.querySelector('.kb-hand-says')).toHaveTextContent('Stick Around is armed. Every post it can land on now shows a dashed + mark');
+  });
+
+  test('a card that takes focus is brought to the middle', () => {
+    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }]);
+    scrollTo.mockClear();
+    button('whoops').focus();
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  test('the pose is written for the cards in view and two steps beyond, and a card that leaves them gets the edge pose', async () => {
+    const proto = HTMLElement.prototype;
+    const restore = ['offsetLeft', 'offsetWidth', 'clientWidth'].map((k) => [k, Object.getOwnPropertyDescriptor(proto, k)] as const);
+    Object.defineProperty(proto, 'offsetLeft', { configurable: true, get(this: HTMLElement) { return this.matches('li.kb-hand-card') ? [...this.parentElement!.children].indexOf(this) * 66 : 0; } });
+    Object.defineProperty(proto, 'offsetWidth', { configurable: true, get() { return 104; } });
+    Object.defineProperty(proto, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.matches('ul.kb-hand-cards') ? 390 : 0; } });
+    try {
+      const many = Array.from({ length: 100 }, (_, i) => face(`k${i}`, `Card ${i}`, 'sweet'));
+      hand(many.map((f) => ({ card: f.key, held: 1 })), { faces: many });
+      const ul = document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
+      const y = (i: number) => ul.children[i]!.getAttribute('style')?.match(/--kb-swipe-y: ([^;]+)/)?.[1];
+      expect(y(60)).toBe('40px');
+      expect(ul.children[2]).toHaveAttribute('data-kb-middle');
+      expect(y(2)).not.toBe('40px');
+      ul.scrollLeft = 66 * 50;
+      fireEvent.scroll(ul);
+      await vi.waitFor(() => expect(ul.children[52]).toHaveAttribute('data-kb-middle'));
+      expect(y(2)).toBe('40px');
+      expect(ul.children[2]!.getAttribute('style')).toContain('--kb-swipe-turn: -18deg');
+      expect(y(52)).not.toBe('40px');
+    } finally {
+      for (const [k, d] of restore) { if (d) Object.defineProperty(proto, k, d); else delete (proto as unknown as Record<string, unknown>)[k]; }
+    }
+  });
+
+  test('Right and Left move focus to the neighbor and stop at the ends; Tab is left to the dialog', () => {
+    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }]);
+    button('stick').focus();
+    fireEvent.keyDown(button('stick'), { key: 'ArrowRight' });
+    expect(button('whoops')).toHaveFocus();
+    fireEvent.keyDown(button('whoops'), { key: 'ArrowRight' });
+    expect(button('whoops')).toHaveFocus();
+    expect(fireEvent.keyDown(button('whoops'), { key: 'Tab' })).toBe(true);
+    fireEvent.keyDown(button('whoops'), { key: 'Home' });
+    expect(button('stick')).toHaveFocus();
+  });
+});
+
 describe('the hand', () => {
   test('each kind is a button by the card\'s name and alignment, with its rules in plain words as its description', () => {
     hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 2 }]);
     expect(screen.getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' })).toHaveAccessibleDescription('Stick Around, in plain words.');
     expect(screen.getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Hand · 3' })).toBeInTheDocument();
-  });
-
-  test('on the Phone board a kind held twice is still two faces', () => {
-    phone();
-    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 2 }]);
-    expect(screen.getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(2);
-  });
-
-  test('on the Phone board a kind held more than twice says how many in the name of its last face', () => {
-    phone();
-    hand([{ card: 'whoops', held: 5 }]);
-    expect(screen.getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 5 in hand' })).toBeInTheDocument();
   });
 
   test('pressing a card shows what it does in the sheet\'s line, and the Vending Machine is a link', () => {
