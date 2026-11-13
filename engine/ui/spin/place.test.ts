@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { OriginPlace } from '../data/api.ts';
-import { placeHref, placeWords } from './place.ts';
+import { placeHref, placeParts, placeWords } from './place.ts';
 
 const names: Record<string, string> = { whoops: 'Whoops!' };
 const cardName = (key: string) => names[key];
@@ -38,3 +38,42 @@ test('a post lands on the page that holds its place number', () => {
   assert.equal(placeHref({ ...post, seq: 45 }, 20), '/t/t1?page=3#post-45');
   assert.equal(placeHref({ kind: 'play', card: 'whoops', on: { ...post, seq: 45 }, from: null, at: null }, 20), '/t/t1?page=3#post-45');
 });
+
+const pressed = { kind: 'post', thread: 't9', title: 'Why are my posts shiny', seq: 31 } as const;
+const castFrom = { kind: 'post', thread: 't1', title: 'Title', seq: 12 } as const;
+const onWario = { kind: 'character', id: 'c/w', name: 'Wario' } as const;
+const glint = (extra: { at: typeof pressed | null; from: typeof castFrom | null }): OriginPlace => ({ kind: 'play', card: 'glint', on: onWario, ...extra });
+const glintName = (key: string) => (key === 'glint' ? 'Glitter Bomb' : undefined);
+
+test('placeParts: a play on a character with a pressed post says the card, the name, and where it was pressed', () => {
+  assert.deepEqual(placeParts(glint({ at: pressed, from: castFrom }), glintName, 20), [
+    { words: 'Glitter Bomb on ', href: null },
+    { words: 'Wario', href: '/c/c%2Fw', character: 'c/w' },
+    { words: ', at ', href: null },
+    { words: '#31 in Why are my posts shiny', href: '/t/t9?page=2#post-31' },
+  ]);
+});
+
+test('placeParts: a play on a character with only a cast-from post says where it was cast from', () => {
+  assert.deepEqual(placeParts(glint({ at: null, from: castFrom }), glintName, 20), [
+    { words: 'Glitter Bomb on ', href: null },
+    { words: 'Wario', href: '/c/c%2Fw', character: 'c/w' },
+    { words: ', cast from ', href: null },
+    { words: '#12 in Title', href: '/t/t1?page=1#post-12' },
+  ]);
+});
+
+test('placeParts: a play on a character with neither post is the card and the name alone (an older server)', () => {
+  assert.deepEqual(placeParts(glint({ at: null, from: null }), glintName, 20), [
+    { words: 'Glitter Bomb on ', href: null },
+    { words: 'Wario', href: '/c/c%2Fw', character: 'c/w' },
+  ]);
+  assert.deepEqual(placeParts({ kind: 'play', card: 'glint', on: { kind: 'character', id: 'c1', name: null }, from: null, at: null }, glintName, 20)[1], { words: 'a character', href: '/c/c1', character: 'c1' });
+});
+
+for (const [name, place, words, href] of rows) {
+  if (place.kind === 'play' && place.on?.kind === 'character') continue;
+  test(`placeParts: ${name} is one part with today's words and address`, () => {
+    assert.deepEqual(placeParts(place, cardName, 20), [{ words, href }]);
+  });
+}

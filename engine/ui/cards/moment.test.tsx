@@ -49,7 +49,8 @@ const act = (id: string, kind: Act['kind'], payload: Record<string, unknown>, mi
 });
 const card = (id: string, key: string, minutes: number, payload: Record<string, unknown> = {}) => act(id, 'card', { card: key, message: '', config: {}, layer: 1, ...payload }, minutes);
 const version: Act = { id: 'p1', character: 'c-author', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: at(0), payload: { body: 'then' }, currentPayload: { body: 'then' }, editedAt: null, shownEditedAt: null };
-const moment = (layers: PlayMoment['layers'], above: PlayMoment['above'] = []): PlayMoment => ({ version, layers, above, recorded: true, at: at(0) });
+/* A play's moment is at its own time (the first layer's); a spin's is the spin's, which `time` says. */
+const moment = (layers: PlayMoment['layers'], above: PlayMoment['above'] = [], time: string = layers[0]!.act.createdAt): PlayMoment => ({ version, layers, above, recorded: true, at: time });
 
 function draw(m: PlayMoment, onWords = vi.fn()) {
   const api = buildWorld({}, instance);
@@ -233,5 +234,61 @@ describe('a moment names what it does not draw', () => {
     draw(m);
     expect(chain()).toEqual(['smear']);
     expect(named(m)).toEqual(['Sparkly on Spritey']);
+  });
+});
+
+describe('a character play is the moment\'s own play when it is the first layer', () => {
+  /* Sparkly reaches a character: the origin play of a spun-at post, which is not a layer on the post. */
+  const onAuthor = (id: string, minutes: number, ends: number) => card(id, 'sparkly', minutes, { reach: 'character', character: 'c-author', ends: at(ends) });
+  const aboveOf = (id: string, minutes: number): PlayMoment['above'][number] => {
+    const a = onAuthor(id, minutes, 60);
+    return { play: id, reach: 'character', target: 'c-author', endsAt: at(60), act: a };
+  };
+
+  test('it is `above`, neither drawn among the post\'s layers nor named, and its card\'s effect is drawn once, still, with its play', () => {
+    const m = moment([{ act: onAuthor('k1', 5, 60), state: null }, { act: card('k2', 'smear', 1), state: null }]);
+    const parts = momentParts(m, instance.cards, cards, () => '');
+    expect(parts.above?.id).toBe('k1');
+    expect(parts.drawn.map((p) => p.id)).toEqual(['k2']);
+    expect(parts.named).toEqual([]);
+    const plays: string[][] = [];
+    cards[5] = ui('sparkly', { Effect: ({ children, still, plays: mine, reach }: EffectProps) => { plays.push(mine.map((p) => p.id)); return <div data-kb-wrap="sparkly" data-kb-still={String(still)} data-kb-reach={reach}>{children}</div>; } });
+    try {
+      draw(m);
+      expect(document.querySelectorAll('[data-kb-wrap="sparkly"]')).toHaveLength(1);
+      const el = document.querySelector('[data-kb-wrap="sparkly"]')!;
+      expect(el.getAttribute('data-kb-still')).toBe('true');
+      expect(el.getAttribute('data-kb-reach')).toBe('character');
+      expect(plays.at(-1)).toEqual(['k1']);
+      expect(screen.queryByText(/Sparkly/)).toBeNull();
+    } finally {
+      cards[5] = ui('sparkly');
+    }
+  });
+
+  test('it wraps as PostEffects wraps an author\'s play: inside the post\'s own layers and inside every takeover', () => {
+    draw(moment([{ act: onAuthor('k1', 5, 60), state: null }, { act: card('k2', 'smear', 1), state: null }, { act: card('k3', 'lifty', 2), state: null }]));
+    expect(chain()).toEqual(['sparkly', 'smear', 'lifty']);
+  });
+
+  test('another character play in `above` is named and not drawn', () => {
+    const m = moment([{ act: onAuthor('k1', 5, 60), state: null }], [aboveOf('k9', 3)]);
+    expect(momentParts(m, instance.cards, cards, (c) => (c === 'c-author' ? 'Spritey' : '')).named).toEqual(['Sparkly on Spritey']);
+    draw(m);
+    expect(document.querySelectorAll('[data-kb-wrap="sparkly"]')).toHaveLength(1);
+  });
+
+  test('a play on a post is unchanged: no `above`', () => {
+    expect(momentParts(moment([{ act: card('k2', 'smear', 5), state: null }]), instance.cards, cards, () => '').above).toBeNull();
+  });
+
+  test('a Use that ended between the play and the moment is left out, and one still running is drawn', () => {
+    const use = (id: string, ends: number) => card(id, 'shieldy', 1, { ends: at(ends) });
+    const layers = [{ act: onAuthor('k1', 5, 60), state: null }, { act: use('u1', 10), state: null }, { act: use('u2', 30), state: null }];
+    expect(momentParts(moment(layers), instance.cards, cards, () => '').drawn.map((p) => p.id).sort()).toEqual(['u1', 'u2']);
+    const spun = momentParts(moment(layers, [], at(20)), instance.cards, cards, () => '');
+    expect(spun.drawn.map((p) => p.id)).toEqual(['u2']);
+    expect(spun.named).toEqual([]);
+    expect(spun.above?.id).toBe('k1');
   });
 });
