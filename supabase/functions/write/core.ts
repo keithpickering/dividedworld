@@ -23,13 +23,13 @@
  * short ends the loop, else after `cardWriteRerolls` more the longest stands, the earliest on a tie. A rejection or a transport failure on the
  * first try finishes the job as an error; on a later one it ends the loop and the best so far is finished as the text. A database error or an
  * unwritten ledger row stops the run on any try. No try starts after `REROLL_DEADLINE_MS`. No reader sees a try: the text is stored once.
- * Before each try after the first the job's claim is renewed (`renew_card_write`, 0471; issue #584), so every re-roll starts with a fresh five minutes. A
- * renewal that says the claim is no longer this run's (it ran out and the job was claimed again, or an edit queued it afresh) ends this run's work on the
- * job without a finish: the claim that holds it finishes it, and `finish_card_write` keeps the first finish either way, so nothing is lost and nothing is
- * written twice. A database error from the renewal stops the run, as any does. What a renewal cannot cover is a single try that outlasts one claim: a try is
- * up to four attempts of 60 seconds (about 242 s), twice that when a scrub hit regenerates inside it (about 484 s). The first fits a claim; the second can
- * not, and then the job may be claimed again and run twice at once while this try finishes. The first finish still wins and the other's cost falls on the
- * instance. That try's own renewal before its next re-roll (if it lives to one) answers false and stops it.
+ * Before every model call after the job's first (each re-roll, and the second call a scrub hit makes inside a try) the job's claim is renewed
+ * (`renew_card_write`, 0471; issue #584), so each of those calls starts on a fresh five minutes. A renewal that says the claim is no longer this run's (it ran
+ * out and the job was claimed again, or an edit queued it afresh) ends this run's work on the job without a finish or a count: the claim that holds it finishes
+ * it, and `finish_card_write` keeps the first finish either way, so nothing is lost and nothing is written twice. A database error from a renewal stops the
+ * run, as any does. The longest span between renewals is one `models.complete`: up to four attempts of 60 seconds (about 242 s) inside a 300 s claim, so
+ * nothing in a job can outlive its claim unless a single call outlasts the claim's five minutes, which its own retries and timeouts do not allow. The
+ * first call runs on the claim as `claim_card_writes` made it.
  *
  * **Time.** Jobs on different posts run up to `CONCURRENCY` at once, so a slow endpoint lengthens the wait and never stalls the board; a claim
  * takes no more jobs than that and hands back only the first waiting play of each post, so after a round the next is claimed, until a claim
@@ -41,7 +41,7 @@ import { writeTokensMost } from '../../../engine/rules/cards.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { Instance, Settings } from '../../../engine/rules/types.ts';
 import type { Models } from '../../../engine/system/model.ts';
-import { scrubbedComplete } from '../../../engine/system/scrub.ts';
+import { ClaimLost, scrubbedComplete } from '../../../engine/system/scrub.ts';
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 import { TransportFailure } from '../_shared/models/transport.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
@@ -53,11 +53,9 @@ export const CONCURRENCY = 4;
 /** No new round is claimed after this long; a claim lasts five minutes (a model call may take four) and the function's limit is longer. */
 export const BUDGET_MS = 90_000;
 /**
- * No re-roll starts this long after the job's first call: how long one play may keep rolling. Each re-roll renews the job's claim first, so it starts with
- * a fresh five minutes; the bound is no longer what keeps a job inside its claim. A try that has started can itself run for minutes (a call retries
- * transport failures, and a scrub hit calls again: about 242 s, or about 484 s with a scrub regeneration), and a try longer than a claim can still let
- * the job be claimed again. `finish_card_write` keeps the first finish, so the caster is charged once and refunded at most once, and the second run's
- * cost falls on the instance.
+ * No re-roll starts this long after the job's first call: how long one play may keep rolling, a bound on the work and not on the claim. Every model call
+ * after the first starts on a freshly renewed five-minute claim, and one call is at most about 242 s (four attempts at 60 s), so a job does not outlive
+ * its claim; were one to, `finish_card_write` keeps the first finish, so the caster is charged once and refunded at most once.
  */
 export const REROLL_DEADLINE_MS = 120_000;
 /** A stored text is at most this many characters (card_texts). */
@@ -136,19 +134,18 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
       };
       const shortUnder = Math.ceil(Math.round(settings.cardWriteShortShare * maxTokens * 1e9) / 1e9); // rounded first: 0.07 * 100 is 7.000000000000001
       const firstCall = now();
+      // Renews this claim; false when it is no longer this run's (it ran out and was taken again, or an edit queued the job afresh). A database error throws.
+      const renew = async (): Promise<boolean> => (await db.rpc<boolean>('renew_card_write', { play: job.play, version: job.version, attempts: job.attempts })) === true;
       let best: { text: string; length: number } | null = null;
       for (let attempt = 0; attempt <= settings.cardWriteRerolls; attempt++) {
         if (attempt > 0 && now() - firstCall >= REROLL_DEADLINE_MS) break;
-        if (attempt > 0) {
-          // Renewed before every re-roll, never before the first try (the claim is fresh). A database error throws out of here as it does anywhere.
-          const mine = await db.rpc<boolean>('renew_card_write', { play: job.play, version: job.version, attempts: job.attempts });
-          // Not this run's claim any more: the claim that holds the job finishes it. Finishing here with a text the other claim may be making would race it;
-          // finish_card_write keeps the first finish either way, so nothing is lost and nothing is written twice. Stop quietly.
-          if (mine !== true) return;
-        }
+        // Renewed before every re-roll, never before the first try (the claim is fresh); the scrub's second call renews through the same hook.
+        // Not this run's claim any more: the claim that holds the job finishes it. Finishing here with a text the other claim may be making would race
+        // it; finish_card_write keeps the first finish either way, so nothing is lost and nothing is written twice. The run stops quietly (ClaimLost below).
+        if (attempt > 0 && !(await renew())) return;
         let got: string;
         try {
-          got = (await scrubbedComplete(models, request, instance.system.scrubWords)).value;
+          got = (await scrubbedComplete(models, request, instance.system.scrubWords, renew)).value;
         } catch (e) {
           // Past the first try the best so far stands; a database or ledger failure is never softened.
           if (best !== null && (e instanceof AnswerRejected || e instanceof TransportFailure)) break;
@@ -160,6 +157,8 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
       }
       text = best!.text;
     } catch (e) {
+      // The scrub's renewal said the claim is no longer this run's: stop quietly, as a false renewal before a re-roll does (no finish, no count).
+      if (e instanceof ClaimLost) return;
       if (e instanceof AnswerRejected) return finish(job, null, e.predicate);
       if (e instanceof TransportFailure) return finish(job, null, 'unreachable');
       if (stops(e)) throw e;

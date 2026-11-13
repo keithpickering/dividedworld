@@ -453,3 +453,34 @@ test('a database error from the renewal stops the run', async () => {
   assert.equal(requests.length, 1);
   assert.deepEqual(finishes(calls), []);
 });
+
+test('a scrubbed first answer renews the claim once, before the regeneration', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
+  const order: string[] = [];
+  const inner = db.rpc;
+  const logged: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => { order.push(fn); return inner<T>(fn, args); } };
+  const { models } = scripted(['a badword', x(150)]);
+  const models2 = { complete: async (r: CompletionRequest) => { order.push('call'); return models.complete(r); } } as unknown as Models;
+  await runWrites(logged, models2, instance, bytes, 8);
+  assert.deepEqual(renewals(calls).map((c) => c.args), [{ play: P1, version: V, attempts: 1 }]);
+  assert.deepEqual(order, ['claim_card_writes', 'call', 'renew_card_write', 'call', 'finish_card_write', 'claim_card_writes']);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(150), failed: null }]);
+});
+
+test('a renewal that says no before the regeneration makes no second call and no finish', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]], { renew: false });
+  const { models, requests } = scripted(['a badword', x(150)]);
+  const out = await runWrites(db, models, instance, bytes, 8);
+  assert.equal(requests.length, 1);
+  assert.equal(renewals(calls).length, 1);
+  assert.deepEqual(finishes(calls), []);
+  assert.deepEqual(out, { claimed: 1, written: 0, failed: 0, errored: 0 });
+});
+
+test('a database error from the renewal before the regeneration stops the run', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]], { failOn: 'renew_card_write' });
+  const { models, requests } = scripted(['a badword', x(150)]);
+  await assert.rejects(runWrites(db, models, instance, bytes, 8), DatabaseError);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(finishes(calls), []);
+});

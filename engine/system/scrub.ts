@@ -15,7 +15,8 @@
  *
  * `scrubbedComplete` asks again once on a hit (each call keeps its own ledger row, inside `models.complete`), and a
  * second hit is a rejected answer ("A validator tighter than the schema…": a rejection costs a refund, so the one retry
- * comes first). An error or rejection from `models.complete` itself passes through untouched.
+ * comes first). An error or rejection from `models.complete` itself passes through untouched. A caller may pass `beforeAgain`, called before that second call
+ * (the write job renews its claim there, issue #584); false stops with `ClaimLost` and no second call.
  */
 import type { CompletionRequest, ModelResult, Models } from './model.ts';
 import { AnswerRejected } from './model.ts';
@@ -80,10 +81,23 @@ export function scrubHit(text: string, words: readonly string[]): string | null 
   return null;
 }
 
+/**
+ * What `scrubbedComplete` throws when its `beforeAgain` hook says no: the caller's claim on the work is gone, so no second call is made. It is not an
+ * `AnswerRejected`, so no caller mistakes it for a rejection of the answer; the caller that passed the hook decides what stopping means.
+ */
+export class ClaimLost extends Error {
+  constructor() { super('the claim on this work is no longer held'); this.name = 'ClaimLost'; }
+}
+
 /** A completion that passes the scrubber: one more try on a hit, and a rejection when that hits too. */
-export async function scrubbedComplete(models: Models, request: CompletionRequest, words: readonly string[]): Promise<ModelResult<string>> {
+export async function scrubbedComplete(
+  models: Models, request: CompletionRequest, words: readonly string[],
+  /** Called once, only after a hit and before the second call; false makes no second call and throws `ClaimLost`. Unset, the second call is made at once. */
+  beforeAgain?: () => Promise<boolean>,
+): Promise<ModelResult<string>> {
   let hit: string | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0 && beforeAgain && !(await beforeAgain())) throw new ClaimLost();
     const out = await models.complete(request);
     hit = scrubHit(out.value, words);
     if (hit === null) return out;
