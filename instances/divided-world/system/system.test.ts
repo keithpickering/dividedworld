@@ -70,14 +70,44 @@ test('FanGaME is built on the premise in the Boss\'s office', () => {
 });
 
 test('the premise holds the design\'s hard facts: it cannot know who is behind a mask, it never takes a side, it reads only the digest', () => {
-  assert.match(BOSS_PREMISE, /robo-McMahon/);
-  assert.match(BOSS_PREMISE, /toybox/);
-  assert.match(BOSS_PREMISE, /action figures/);
+  assert.match(BOSS_PREMISE, /Gabe made the staff out of Personality Cores and gave you the job of running his forum for him/);
   assert.match(BOSS_PREMISE, /do not know, and can never find out, who is behind any mask/);
   assert.match(BOSS_PREMISE, /lands on a mask, never on a person/);
   assert.match(BOSS_PREMISE, /do not take a side/);
   assert.match(BOSS_PREMISE, /only the digest of public play/);
   assert.match(BOSS_PREMISE, /never acted on/);
+});
+
+const FRAME_LEAK = /\bthe system\b|robo-?mcmahon|toybox/i;
+const staffTexts = (): [string, string][] => {
+  const out: [string, string][] = [
+    ['BOSS_PREMISE', BOSS_PREMISE], ['MOD_BOT_PREMISE', MOD_BOT_PREMISE], ['MEMBER_PREMISE', MEMBER_PREMISE],
+    ['BOSS_ANSWER_RULES', BOSS_ANSWER_RULES], ['MOD_BOT_ANSWER_RULES', MOD_BOT_ANSWER_RULES], ['MEMBER_ANSWER_RULES', MEMBER_ANSWER_RULES],
+    ['announcementsTitle', system.announcementsTitle],
+  ];
+  for (const p of [...system.roster, ontopic, qualityControl]) for (const o of ['boss', 'mod', 'member'] as const) out.push([`${p.key}:${o}`, personaPrompt(system, p, o)]);
+  for (const [k, lines] of Object.entries(system.stockLines)) lines.forEach((l, i) => out.push([`${k}[${i}]`, l]));
+  return out;
+};
+test('nothing the staff are told or say names the System, robo-McMahon or a toybox', () => {
+  for (const [where, text] of staffTexts()) assert.doesNotMatch(text, FRAME_LEAK, where);
+});
+test('the frame guard is red on a planted leak', () => {
+  assert.match('It is done. The System has spoken.', FRAME_LEAK);
+  assert.match('You are robo-McMahon.', FRAME_LEAK);
+});
+
+/** The tokens that fill in lowercase, by key: `{move}` everywhere ("a rule"), and a visit's `{rule}` ("the premise of Help"). `ruleSet`'s `{rule}` is "Rule 3: ..." and may open one. */
+const LOWER_TOKENS = (key: string): string[] => ['move', ...(key === 'visitArrived' || key === 'visitFiled' ? ['rule'] : [])];
+const opensSentence = (line: string, token: string): boolean => new RegExp(`(^|[.!?]["')\\]]*\\s+)\\{${token}\\}`).test(line);
+test('a token that fills in lowercase never opens a sentence', () => {
+  for (const [k, lines] of Object.entries(system.stockLines)) for (const line of lines) for (const t of LOWER_TOKENS(k)) assert.ok(!opensSentence(line, t), `${k}: ${line}`);
+});
+test('the sentence-start guard is red on planted lines', () => {
+  assert.ok(opensSentence('You did it. {move} is over.', 'move'));
+  assert.ok(opensSentence('{move} has expired.', 'move'));
+  assert.ok(opensSentence('Nobody panic. {mod} is breathing. {rule}.', 'rule'));
+  assert.ok(!opensSentence('It is done: {move}.', 'move'));
 });
 
 test('both premises tell the persona to use the pronouns written beside each character\'s name', () => {

@@ -1,5 +1,5 @@
 /**
- * Stock lines: what The System says at each standing order when a model call is out of budget
+ * Stock lines: what the staff say at each standing order when a model call is out of budget
  * or fails (design, section 2), so cost never grows without bound and nothing stalls. In the
  * board's world, so they may bluff; they carry no fact the glass does not show plainly. Each key
  * may use only the tokens the engine gives it (engine/system/stock.ts): `{move}` a move's plain
@@ -13,41 +13,41 @@ import type { StockLines } from '../../../engine/rules/types.ts';
 
 export const stockLines: StockLines = Object.freeze({
   moveLanded: Object.freeze([
-    'It is done: {move}. The System has spoken and does not take questions.',
+    'It is done: I have decided on {move}. I do not take questions.',
     'Effective immediately: {move}. Please remain calm and keep posting.',
-    'The System has decided on {move}. The System feels good about it.',
+    'I have decided on {move}, and I feel good about it.',
   ]),
   moveMet: Object.freeze([
-    'You did it. {move} is over. The System is not proud, it is merely satisfied.',
+    'You did it, and so {move} is over. I am not proud. I am merely satisfied.',
     'The demand was met and {move} is lifted. Do not let it go to your heads.',
-    'Fine. {move} ends here. Well performed. Do not get used to it.',
+    'Fine. As of now, {move} ends. Well performed. Do not get used to it.',
   ]),
   moveExpired: Object.freeze([
-    'Nobody did anything, so {move} has run its course. The System is not disappointed. It is a little disappointed.',
-    'Time is up: {move} is over. The System was going to do something about that, and now it will not.',
-    '{move} has expired. The System has already moved on to something it will like more.',
+    'Nobody did anything, so {move} has run its course. I am not disappointed. I am a little disappointed.',
+    'Time is up: {move} is over. I was going to do something about that, and now I will not.',
+    'As of today, {move} has expired. I have already moved on to something I will like more.',
   ]),
   moveReversed: Object.freeze([
-    'A higher power has stepped in and {move} is undone. The System has been overruled and would like that noted.',
-    'It turns out {move} was a mistake. The System stands by it, and it is also over.',
-    'Management has intervened: {move} is reversed. The System would like a word with Management.',
+    'A higher power has stepped in and {move} is undone. I have been overruled, and I would like that noted.',
+    'It turns out {move} was a mistake. I stand by it, and it is also over.',
+    'Management has intervened: {move} is reversed. I would like a word with Management.',
   ]),
   moveSuperseded: Object.freeze([
     'A new era has begun, and {move} has been filed under things the last Boss did. It is over.',
-    'The new Boss has looked at {move} and decided it was somebody else\'s idea. It is set aside.',
-    'Regime change: {move} did not survive the handover. The System sends its regards.',
+    'I have looked at {move} and decided it was somebody else\'s idea. It is set aside.',
+    'Regime change: {move} did not survive the handover. My regards to whoever thought of it.',
   ]),
   // A favor whose check came and the demand was not met: the group is taken back. `{move}` names the group by its name. DRAFT for the owner.
   moveUnmet: Object.freeze([
-    'The check came and the demand was not met, so {move} is withdrawn. The System is not surprised. The System is a little surprised.',
-    'Time was called and nothing was done: {move} is over. The favor was a loan and the System is collecting.',
-    'Audit complete. {move} does not survive it. The System expected more and has written down exactly how much.',
+    'The check came and the demand was not met, so {move} is withdrawn. I am not surprised. I am a little surprised.',
+    'Time was called and nothing was done: {move} is over. The favor was a loan, and I am collecting.',
+    'Audit complete, and {move} does not survive it. I expected more, and I have written down exactly how much.',
   ]),
   // A move overturned on appeal. DRAFT for the owner.
   moveOverturned: Object.freeze([
-    'On appeal, {move} is overturned. The System would like it noted that the System was right and has been outvoted.',
-    'The appeal succeeded and {move} is undone. The System accepts this the way a cat accepts a bath.',
-    '{move} did not survive its appeal. The System has filed a grievance against the appeal.',
+    'On appeal, {move} is overturned. I would like it noted that I was right and have been outvoted.',
+    'The appeal succeeded and {move} is undone. I accept this the way a cat accepts a bath.',
+    'So {move} did not survive its appeal. I have filed a grievance against the appeal.',
   ]),
   bossFarewell: Object.freeze([
     '{boss} is leaving the building. Please stop clapping.',
@@ -60,26 +60,26 @@ export const stockLines: StockLines = Object.freeze({
     '{boss} has taken the seat. The seat is warm. Nobody wants to talk about why.',
   ]),
   boardDescription: Object.freeze([
-    'Welcome to {board}! Posts go here. Posts also go elsewhere. The System has decided this is the better one.',
+    'Welcome to {board}! Posts go here. Posts also go elsewhere. The staff have decided this is the better one.',
     '{board}: a board. Please be nice, or at least be interesting.',
-    'The System was told to describe {board} and has chosen to give you a feeling instead.',
+    'The staff were told to describe {board} and have chosen to give you a feeling instead.',
   ]),
   // A rule landing: `{rule}` is the engine's words for it, `{board}` the board's name. DRAFT for the owner.
   ruleSet: Object.freeze([
-    'New law on {board}. {rule}. The System expects compliance and will notice either way.',
-    'Be advised, {board}. {rule}. The System has written it down so nobody can say they were not told.',
-    'The System has added to the pile on {board}. {rule}. The System regrets nothing.',
+    'New law on {board}. {rule}. I expect compliance, and I will notice either way.',
+    'Be advised, {board}. {rule}. It is written down now, so nobody can say they were not told.',
+    'The pile on {board} grows by one. {rule}. I regret nothing.',
     'A staff member has had an idea about {board}, and the idea is now law. {rule}. Do not look at the staff member.',
     'Attention, {board}. {rule}. This was not a suggestion, though it was phrased like one in the meeting.',
     'The rulebook for {board} grew by one. {rule}. The rulebook has never once been read all the way through.',
   ]),
   // A Mod arriving on a post, and filing it. `{rule}` is the rules charged, in the engine's words. DRAFT for the owner.
   visitArrived: Object.freeze([
-    '{mod} has taken an interest in this post. {rule}. {mod} will be back.',
+    '{mod} has taken an interest in this post, on a charge of {rule}. {mod} will be back.',
     'This post is now under inspection by {mod}, who suspects {rule}.',
     '{mod} is looking at this post. The charge is {rule}. {mod} takes a long time over these.',
     '{mod} has arrived with a clipboard and no explanation, and suspects {rule}.',
-    'Nobody panic. {mod} is only standing next to this post and breathing. {rule}.',
+    'Nobody panic. {mod} is only standing next to this post and breathing, and thinking about {rule}.',
     '{mod} has opened a file on this post. Page one reads {rule}. There is no page two yet.',
   ]),
   visitFiled: Object.freeze([
@@ -101,7 +101,7 @@ export const stockLines: StockLines = Object.freeze({
   ]),
   reportBackfired: Object.freeze([
     '{mod} has read {reporter}\'s report and has a few things to say about wasting the staff\'s time.',
-    'The System noticed who sent that report, {reporter}. The System is in a mood.',
+    '{mod} noticed who sent that report, {reporter}. {mod} is in a mood.',
     '{reporter} reported, and {mod} read it, and now {mod} is reading {reporter} instead.',
     '{reporter}\'s report has been returned to sender, with interest. {mod} added a note in the margin.',
     'It is a bold thing, {reporter}, to bring {mod} a report like that. {mod} admires it and is about to ruin it.',
