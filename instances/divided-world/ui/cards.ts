@@ -64,6 +64,26 @@ import { feelinFab } from '../cards/feelin-fab.ts';
 import { belowTheFold } from '../cards/below-the-fold.ts';
 import { lineCutter } from '../cards/line-cutter.ts';
 import { feelinGlam } from '../cards/feelin-glam.ts';
+import happyHeartCanvas from './cards/happy-heart/art.webp?url';
+import happyHeartMark from './cards/happy-heart/mark.svg?url';
+import happyHeartArt from './cards/happy-heart/art.json';
+import superHappyHeartCanvas from './cards/super-happy-heart/art.webp?url';
+import superHappyHeartMark from './cards/super-happy-heart/mark.svg?url';
+import superHappyHeartArt from './cards/super-happy-heart/art.json';
+import ultraHappyHeartCanvas from './cards/ultra-happy-heart/art.webp?url';
+import ultraHappyHeartMark from './cards/ultra-happy-heart/mark.svg?url';
+import ultraHappyHeartArt from './cards/ultra-happy-heart/art.json';
+import takeTheFallCanvas from './cards/take-the-fall/art.webp?url';
+import takeTheFallMark from './cards/take-the-fall/mark.svg?url';
+import takeTheFallArt from './cards/take-the-fall/art.json';
+import tattleTaleCanvas from './cards/tattle-tale/art.webp?url';
+import tattleTaleMark from './cards/tattle-tale/mark.svg?url';
+import tattleTaleArt from './cards/tattle-tale/art.json';
+import { happyHeart } from '../cards/happy-heart.ts';
+import { superHappyHeart } from '../cards/super-happy-heart.ts';
+import { ultraHappyHeart } from '../cards/ultra-happy-heart.ts';
+import { takeTheFall } from '../cards/take-the-fall.ts';
+import { tattleTale } from '../cards/tattle-tale.ts';
 import { laughTrack } from '../cards/laugh-track.ts';
 import laughTrackCanvas from './cards/laugh-track/art.webp?url';
 import laughTrackMark from './cards/laugh-track/mark.svg?url';
@@ -139,6 +159,12 @@ const setMoveWords = (lands: string) => `You can also set it face down on one of
 
 /** A span in words: "a week", "3 days". */
 export const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `${s.unit === 'hour' ? 'an' : 'a'} ${s.unit}` : `${s.count} ${s.unit}s`);
+
+/** How much likelier a watch makes a pick, from the rules' weight and never restated: "twice" only while the weight is 2. */
+function likelier(rules: { readonly discipline?: { readonly kind: string; readonly weight?: number } }): string {
+  const weight = rules.discipline?.weight ?? 1;
+  return weight === 2 ? 'twice as likely' : `${weight} times as likely`;
+}
 
 /** What an Earn Gimmick adds to a reaction's count, as the end of a sentence, read from the card's own rules: "20% higher", or "doubled" at exactly 1. */
 const earnWords = (c: { readonly gimmick?: GimmickEffect }) => {
@@ -512,6 +538,59 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     hint: "A Feelin' Glam: every post in this thread glows one level more.",
     describe: () =>
       `A Sweet card, ${feelinGlam.rarity}, cast on a thread from its title. For ${spanWords(feelinGlam.lasts!)}, every post in the thread is drawn with one more level of Feelin' Fab's rainbow, up to Feelin' Fab's three: two Feelin' Fabs and a Feelin' Glam make the full prism. It takes none of a post's three Feelin' Fab places. A post written in the thread during that time keeps its extra level after it; every other post loses it when the time is up. If an admin ends the card, every post loses the level. One fits on a thread at a time. ${setMoveWords("the quoting post's thread")} It costs nothing more to play.`,
+  },
+  /*
+   * The discipline cards (docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 9): Moves only ever cast face up, so none holds a face-down sentence, and none draws or
+   * configures anything. Sweet's cyan, and Salty's pink for Tattle-Tale. Their words are the glass's: plain and true, never in character. The warn points a Happy Heart
+   * takes are the lightest band's, the targeting cap is the settings', and "twice" is said only while the rules' weight is 2.
+   */
+  {
+    key: 'happy-heart',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: happyHeartCanvas, mark: happyHeartMark, credit: happyHeartArt.credit, tagline: 'Take a notch off a warn bar.' },
+    summary: "Cast on a character. Takes the oldest points off that character's warn bar.",
+    status: 'Took points off a warn bar',
+    hint: "A Happy Heart took warn points off a character's bar.",
+    describe: (settings: Settings) => {
+      const lightest = Math.min(...Object.values(settings.warnBar.bands));
+      return `A Sweet card, ${happyHeart.rarity}, cast from any post by the character it lands on. It takes the oldest ${lightest} warn point${lightest === 1 ? '' : 's'} off that character's warn bar at once, as many as the lightest breach lands, or as many as are left. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`;
+    },
+  },
+  {
+    key: 'super-happy-heart',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: superHappyHeartCanvas, mark: superHappyHeartMark, credit: superHappyHeartArt.credit, tagline: 'Empty a warn bar.' },
+    summary: "Cast on a character. Empties that character's warn bar.",
+    status: 'Emptied a warn bar',
+    hint: "A Super Happy Heart emptied a character's warn bar.",
+    describe: () =>
+      `A Sweet card, ${superHappyHeart.rarity}, cast from any post by the character it lands on. It takes every point off that character's warn bar at once. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`,
+  },
+  {
+    key: 'ultra-happy-heart',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: ultraHappyHeartCanvas, mark: ultraHappyHeartMark, credit: ultraHappyHeartArt.credit, tagline: 'End a ban on the spot.' },
+    summary: 'Cast on a banned character. Ends the ban at once.',
+    status: 'Ended a ban',
+    hint: "An Ultra Happy Heart ended a character's ban.",
+    describe: () =>
+      `A Sweet card, ${ultraHappyHeart.rarity}, cast from any post by a banned character. It ends that character's ban at once: the character can post, react and play cards again from that moment. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar stays as the ban left it, empty. If the character is not banned the play is refused and you keep the card. A banned character cannot play cards, so another character plays it: anyone's, one of your own included. It is always cast face up. It costs nothing more to play.`,
+  },
+  {
+    key: 'take-the-fall',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: takeTheFallCanvas, mark: takeTheFallMark, credit: takeTheFallArt.credit, tagline: 'Take the blame for a post.' },
+    summary: "Cast on another character's post. The next Mod Bot filing on it lands on your character instead.",
+    /* A fall waits as a live play; once a filing spends it the play is no longer live, and the Lens heads the mark with what it did. */
+    status: (plays) => (plays.length > 0 ? 'Waiting to take the fall' : 'Took the fall'),
+    hint: 'Someone has offered to take the fall for this post.',
+    describe: () =>
+      `A Sweet card, ${takeTheFall.rarity}, cast face up on a post by another character. The next time a Mod Bot's visit to that post files, its warn points land on the character that played this card instead of the post's author, and a ban they bring is that character's too. Only the points and the ban move: the post keeps its notice. One fits on a post. It waits until a visit files, the first filing uses it up, and it can be played while a visit is open. The character that took the fall can appeal the filing. It costs nothing more to play.`,
+  },
+  {
+    key: 'tattle-tale',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: tattleTaleCanvas, mark: tattleTaleMark, credit: tattleTaleArt.credit, tagline: 'Point the Mod Bots at someone.' },
+    summary: `Cast on a character. Mod Bot patrols are ${likelier(tattleTale)} to look at that character's posts for ${spanWords(tattleTale.lasts!)}.`,
+    status: 'Told on to the Mod Bots',
+    hint: 'A Tattle-Tale: someone told the Mod Bots to watch this character.',
+    describe: (settings: Settings) =>
+      `A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For ${spanWords(tattleTale.lasts!)}, when a Mod Bot's patrol picks which recent posts to look at, that character's posts are ${likelier(tattleTale)} to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules, and staff still cannot pick one character more than ${settings.modBots.cap.punishments} times in ${settings.modBots.cap.days} days. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`,
   },
   /*
    * Hall Pass (docs/plans/2026-11-07-face-down-moves-design.md, section 4): Sweet's cyan, as Force Field is. A Gimmick, set face down
