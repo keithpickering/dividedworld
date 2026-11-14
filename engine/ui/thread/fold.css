@@ -135,3 +135,27 @@
 .kb-act-grid[hidden] {
   display: none;
 }
+
+/* The newspaper unfold (fold.tsx `useFoldMotion`): everything here is on only while a motion runs (`data-kb-fold-moving` on the article), and at rest nothing is left, since a perspective or a transform would trap a fixed Lens inside the row. */
+.kb-act-grid {
+  transform-origin: top center;
+}
+
+.kb-act[data-kb-fold-moving] {
+  perspective: 900px;
+}
+
+.kb-act[data-kb-fold-moving] > .kb-act-grid {
+  position: relative;
+  overflow: hidden;
+}
+
+.kb-act[data-kb-fold-moving] > .kb-act-grid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: linear-gradient(rgb(0 0 0 / 0.55), rgb(0 0 0 / 0.1));
+  opacity: var(--kb-fold-shade, 0);
+  pointer-events: none;
+}

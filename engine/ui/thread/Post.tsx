@@ -41,7 +41,7 @@ import { ConcealingNote, HiddenNote, HiddenOwn, useMyHidden } from '../conduct/H
 import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteHead, text, useHistory, when, type PostAbout } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 import { FoldBar } from './FoldBar.tsx';
-import { RowFoldCtx } from './fold.tsx';
+import { RowFoldCtx, useFoldMotion } from './fold.tsx';
 
 export { ThreadCtx, type ThreadContext };
 
@@ -257,6 +257,8 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   const folding = (act.kind === 'post' || act.kind === 'spin') && livePlays(ownPlays, api.now()).some((p) => !p.reach && ui.cards.find((c) => c.key === p.card)?.foldsRow === true);
   const [folded, setFolded] = useState(false);
   const toggleFold = useCallback(() => setFolded((was) => !was), []);
+  const grid = useRef<HTMLDivElement>(null);
+  useFoldMotion(folded, folding, grid, ref);
   const rowFold = useMemo(() => (folding ? { open: folded, toggle: toggleFold } : null), [folding, folded, toggleFold]);
   const { actingCharacters: acting } = usePlayer();
   const own = useMyHidden(act.id, act.character !== null && acting.some((c) => c.id === act.character), act.hidden === true);
@@ -322,7 +324,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
       <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {spoken}{cut && `, cut in under post ${cut.seq}`}</h2>
       {cut && <p className="kb-act-cutline kb-small">Cut in line under post {cut.seq}</p>}
       {folding && <FoldBar person={person} name={name} spoken={spoken} seq={seq} open={folded} toggle={toggleFold} marks={marks} controls={`post-${seq}-row`} />}
-      <div className="kb-act-grid" {...(folding ? { id: `post-${seq}-row`, hidden: !folded } : {})}>
+      <div ref={grid} className="kb-act-grid" {...(folding ? { id: `post-${seq}-row`, hidden: !folded } : {})}>
         {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
         {!plain && (person
           ? <Postbit person={person} layout={layout} marks={characterMarks} />

@@ -12,6 +12,19 @@ import type { CardUi, EffectProps } from '../cards/types.ts';
 import { LoadedThread } from '../loaded.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 
+/* `animate` is Motion's, replaced: it sets the value at once and settles at once unless a test holds it (`motion.hold`), and it records what it was asked to run. */
+const motion = vi.hoisted(() => ({ hold: false, calls: [] as Array<{ to: number; transition: Record<string, unknown> }>, stops: 0, pending: [] as Array<() => void> }));
+vi.mock('motion/react', async (orig) => ({
+  ...(await orig<typeof import('motion/react')>()),
+  animate: (value: { set: (v: number) => void }, to: number, transition: Record<string, unknown>) => {
+    motion.calls.push({ to, transition });
+    let settle = () => {};
+    const done = new Promise<void>((res) => { settle = () => { value.set(to); res(); }; });
+    if (motion.hold) motion.pending.push(settle); else settle();
+    return { then: done.then.bind(done), stop: () => { motion.stops++; } };
+  },
+}));
+
 const rules = (key: string, extra: Partial<CardRules> = {}): CardRules => ({
   key, name: key, alignment: 'pepperoni', rarity: 'rare', reaches: ['post'], playPrice: () => 0, validateConfig: (c) => ok(c ?? {}),
   canApply: (t, e, _c, now) => landsOn({ key, reaches: ['post'] }, t, e, now),
@@ -53,12 +66,29 @@ const post = (seq: number) => document.getElementById(`post-${seq}`)!;
 const toggleOf = (article: HTMLElement) => within(article).getByRole('button', { name: /^(Show|Hide) post #/u });
 const grid = (article: HTMLElement) => article.querySelector<HTMLElement>('.kb-act-grid')!;
 
+/* Where the feel is on and the browser can animate, a press runs the motion; jsdom has neither, so the tests give it both. */
+const canAnimate = () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  Element.prototype.animate = vi.fn() as never;
+};
+const rest = (article: HTMLElement) => {
+  const g = grid(article);
+  expect(g.style.transform).toBe('');
+  expect(g.style.height).toBe('');
+  expect(g.style.getPropertyValue('--kb-fold-shade')).toBe('');
+  expect(g.style.perspective).toBe('');
+  expect(article.style.transform).toBe('');
+  expect(article.style.perspective).toBe('');
+  expect(article).not.toHaveAttribute('data-kb-fold-moving');
+};
+
 beforeEach(() => {
+  motion.hold = false; motion.calls.length = 0; motion.stops = 0; motion.pending.length = 0;
   localStorage.clear();
   Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } });
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); delete (Element.prototype as { animate?: unknown }).animate; document.documentElement.removeAttribute('data-kb-motion'); });
 
 describe('a post that wears a card that folds the row', () => {
   test('is drawn as a bar with the avatar, the name, its number and Show post, and its row hidden', async () => {
@@ -186,5 +216,101 @@ describe('a post that wears a card that folds the row', () => {
     expect(toggleOf(third)).toHaveAccessibleName('Show post #3 by Spritey');
     await userEvent.click(toggleOf(third));
     expect(toggleOf(third)).toHaveAccessibleName('Hide post #3 by Spritey');
+  });
+});
+
+describe('the newspaper unfold', () => {
+  test('shows and hides the row at the press under reduced motion, and runs no animation', async () => {
+    canAnimate();
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'folder');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await userEvent.click(toggleOf(second));
+    expect(grid(second)).not.toHaveAttribute('hidden');
+    expect(grid(second).style.transform).toBe('');
+    expect(second).not.toHaveAttribute('data-kb-fold-moving');
+    await userEvent.click(toggleOf(second));
+    expect(grid(second)).toHaveAttribute('hidden');
+    expect(motion.calls).toHaveLength(0);
+    rest(second);
+  });
+
+  test('runs a motion when the feel is on: height, rotateX on a spring and the shade, then leaves nothing on at rest', async () => {
+    canAnimate();
+    motion.hold = true;
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'folder');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await userEvent.click(toggleOf(second));
+    /* The state is the press's at once; the motion is still running. */
+    expect(toggleOf(second)).toHaveAttribute('aria-expanded', 'true');
+    expect(grid(second)).not.toHaveAttribute('hidden');
+    expect(second).toHaveAttribute('data-kb-fold-moving');
+    expect(grid(second).style.transform).toBe('rotateX(-88deg)');
+    expect(motion.calls.map((c) => c.to)).toEqual(expect.arrayContaining([0]));
+    expect(motion.calls.some((c) => c.transition.type === 'spring' && c.transition.stiffness === 170 && c.transition.damping === 18)).toBe(true);
+    await act(async () => { motion.pending.splice(0).forEach((f) => f()); });
+    await waitFor(() => rest(second));
+    expect(grid(second)).not.toHaveAttribute('hidden');
+  });
+
+  test('leaves no inline transform, height or shade once an open completes, and hides the grid when a fold completes', async () => {
+    canAnimate();
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'folder');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await userEvent.click(toggleOf(second));
+    await waitFor(() => rest(second));
+    expect(grid(second)).not.toHaveAttribute('hidden');
+    await userEvent.click(toggleOf(second));
+    await waitFor(() => rest(second));
+    expect(grid(second)).toHaveAttribute('hidden');
+    expect(toggleOf(second)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('reverses a motion from where it is: the running animations stop and the row ends as the last press left it', async () => {
+    canAnimate();
+    motion.hold = true;
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'folder');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    await userEvent.click(toggleOf(second));
+    const first = motion.pending.splice(0);
+    await userEvent.click(toggleOf(second));
+    expect(motion.stops).toBeGreaterThanOrEqual(3);
+    expect(toggleOf(second)).toHaveAttribute('aria-expanded', 'false');
+    expect(grid(second)).not.toHaveAttribute('hidden');
+    /* The first press's animations settling late change nothing. */
+    await act(async () => { first.forEach((f) => f()); });
+    expect(second).toHaveAttribute('data-kb-fold-moving');
+    await act(async () => { motion.pending.splice(0).forEach((f) => f()); });
+    await waitFor(() => rest(second));
+    expect(grid(second)).toHaveAttribute('hidden');
+  });
+
+  test('keeps the grid the same node before a fold lands, while folded, through a motion and after the play is reversed', async () => {
+    canAnimate();
+    const w = world();
+    w.fake.seed.admin(w.me);
+    const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'folder');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    const node = grid(second);
+    await userEvent.click(toggleOf(second));
+    await waitFor(() => rest(second));
+    expect(grid(second)).toBe(node);
+    await userEvent.click(toggleOf(second));
+    await waitFor(() => rest(second));
+    expect(grid(second)).toBe(node);
+    await act(async () => { expect((await w.fake.reverseCard(played)).ok).toBe(true); });
+    await waitFor(() => expect(second.querySelector('.kb-fold-bar')).toBeNull());
+    expect(grid(second)).toBe(node);
+    expect(node).not.toHaveAttribute('hidden');
+    rest(second);
   });
 });
