@@ -463,12 +463,12 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   {
     key: 'hype-up',
-    art: { color: '#2ee6ff', ink: '#03141a', canvas: hypeUpCanvas, mark: hypeUpMark, credit: hypeUpArt.credit, tagline: 'Give a character a push.' },
-    summary: `Cast on a character. For ${spanWords(hypeUp.lasts!)}, what it earns from positive reactions is ${earnWords(hypeUp)}. A loss is never made worse.`,
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: hypeUpCanvas, mark: hypeUpMark, credit: hypeUpArt.credit, tagline: 'Give a post a push.' },
+    summary: `Cast on a post. For ${spanWords(hypeUp.lasts!)}, what it earns from positive reactions is ${earnWords(hypeUp)}. A loss is never made worse.`,
     status: 'Earns more from positive reactions',
     describe: (settings: Settings) =>
-      `A Sweet card, ${hypeUp.rarity}, cast from any post by the character it lands on. For ${spanWords(hypeUp.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnWords(hypeUp)}, and then it stops by itself. It never makes a loss worse, and it takes nothing from you. It does not add to that character's own Publicity Tour: while both are up, the larger of the two applies. A Mod Bot earns nothing, so it gains nothing from one. ${setMoveWords("the quoting post's character")} It costs nothing more to play.`,
-    logPlay: () => `What that character earns from positive reactions is ${earnWords(hypeUp)} until it ends.`,
+      `A Sweet card, ${hypeUp.rarity}, cast on any post, yours or another's. For ${spanWords(hypeUp.lasts!)}, whatever that post earns its author from a positive reaction (excited or calm) is ${earnWords(hypeUp)}, and then it stops by itself. Only reactions after it lands count, and a post carries one at a time. It never makes a loss worse, and it takes nothing from you. It does not add to the author's own Publicity Tour: while both are up, the larger applies. A Mod Bot earns nothing, so its posts gain nothing from one. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+    logPlay: () => `What that post earns from positive reactions is ${earnWords(hypeUp)} until it ends.`,
   },
   {
     key: 'heat-magnet',

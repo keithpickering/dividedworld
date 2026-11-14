@@ -118,7 +118,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
   test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', whodunnit: 'the quoting post', 'blind-study': 'the quoting post', overreaction: 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': "the quoting post's character", 'main-event': "the quoting post's thread", 'feelin-glam': "the quoting post's thread" };
+    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', whodunnit: 'the quoting post', 'blind-study': 'the quoting post', overreaction: 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': 'the quoting post', 'main-event': "the quoting post's thread", 'feelin-glam': "the quoting post's thread" };
     for (const [key, reach] of Object.entries(lands)) {
       expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
@@ -194,7 +194,8 @@ describe('Divided World\'s Gimmick cards in plain words', () => {
       const f = faces.find((x) => x.key === key)!;
       return `${f.describe} ${f.summary}`;
     };
-    for (const key of ['publicity-tour', 'heat-magnet', 'hype-up']) expect(say(key), key).toMatch(/3 days[\s\S]*earns from[\s\S]*20% higher/u);
+    for (const key of ['publicity-tour', 'heat-magnet']) expect(say(key), key).toMatch(/3 days[\s\S]*earns from[\s\S]*20% higher/u);
+    expect(say('hype-up')).toMatch(/3 days[\s\S]*earns its author[\s\S]*doubled/u);
     expect(say('sugar-coat')).toMatch(/a week[\s\S]*Salty or Pepperoni/u);
     expect(say('last-word')).toMatch(/a week[\s\S]*refused before it is written/u);
     expect(say('class-clown')).toMatch(/3 days[\s\S]*earns from[\s\S]*is doubled/u);
@@ -744,7 +745,7 @@ describe('Sugar Coat, Hype-Up and Last Word in plain words (card notes Part 4, T
   const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
   test('each wears its flavor\'s color with its ink, says what it does in a tagline and a summary, and keeps its status to six words', () => {
     for (const [key, color, ink, tagline] of [
-      ['sugar-coat', '#2ee6ff', '#03141a', 'Only Sweet cards land on your post.'], ['hype-up', '#2ee6ff', '#03141a', 'Give a character a push.'],
+      ['sugar-coat', '#2ee6ff', '#03141a', 'Only Sweet cards land on your post.'], ['hype-up', '#2ee6ff', '#03141a', 'Give a post a push.'],
       ['last-word', '#ff3d7f', '#14030a', 'Stop quotes of your post.'],
     ] as const) {
       expect([ui(key).art.color, ui(key).art.ink, ui(key).art.tagline], key).toEqual([color, ink, tagline]);
@@ -752,12 +753,12 @@ describe('Sugar Coat, Hype-Up and Last Word in plain words (card notes Part 4, T
       expect(typeof ui(key).status === 'string' ? (ui(key).status as string).split(' ').length : 0, key).toBeLessThanOrEqual(6);
     }
     expect(ui('sugar-coat').summary).toBe('Used on your post. Turns away Salty and Pepperoni cards for a week.');
-    expect(ui('hype-up').summary).toBe('Cast on a character. For 3 days, what it earns from positive reactions is 20% higher. A loss is never made worse.');
+    expect(ui('hype-up').summary).toBe('Cast on a post. For 3 days, what it earns from positive reactions is doubled. A loss is never made worse.');
     expect(ui('last-word').summary).toBe('Used on your post. Nobody can quote it for a week.');
     const sugarWords = ui('sugar-coat').describe!({} as never);
     expect(sugarWords).toContain('It does not stop a card from being set face down there.');
     expect(sugarWords).not.toContain('It never stops a card set face down.');
-    expect(ui('hype-up').logPlay!({}, {})).toBe('What that character earns from positive reactions is 20% higher until it ends.');
+    expect(ui('hype-up').logPlay!({}, {})).toBe('What that post earns from positive reactions is doubled until it ends.');
     expect(ui('last-word').logPlay!({}, {})).toBe('Nobody can quote that post until it ends.');
   });
 });
