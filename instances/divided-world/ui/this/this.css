@@ -11,3 +11,127 @@
   font-display: block;
   src: url('./fonts/PermanentMarker-Regular.woff2') format('woff2');
 }
+
+/*
+ * THIS (Effect.tsx): a note under the words the caster points at (docs/plans/2026-11-13-this-design.md, sections 2 and 3). The phrase is drawn over a
+ * highlighter's swipe; right after its last word the line opens (`.dw-this-gap`, an inline box of no width whose height the effect sets) and the drawn
+ * note (`.dw-this-note`, THIS, the caster's words and an arrow up to the phrase) is placed in the gap against `.dw-this`. The words after the phrase
+ * continue under the gap, so the note never lies over them. A phrase edited out leaves a receipt at the foot of the words (`.dw-this-receipt`).
+ *
+ * Nothing here moves. The ink is the game's own piece on the board's ground: two custom properties, light and dark, held to 4.5:1 against every
+ * theme's post rows by ink.test.ts (the values are ink.ts's). Dark is written for the device's dark and for a player who chose it, as theme.css does.
+ */
+:root {
+  --dw-this-ink: #c01c12;
+  --dw-this-swipe: rgb(255 228 0 / 0.9);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-kb-mode="light"]) {
+    --dw-this-ink: #ff988a;
+    --dw-this-swipe: rgb(255 228 0 / 0.2);
+  }
+}
+:root[data-kb-mode="dark"] {
+  --dw-this-ink: #ff988a;
+  --dw-this-swipe: rgb(255 228 0 / 0.2);
+}
+
+.dw-this {
+  position: relative;
+}
+
+/* The highlighter: a band across the lower part of the line, not a box. */
+.dw-this-hl {
+  background: linear-gradient(transparent 58%, var(--dw-this-swipe) 58% 94%, transparent 94%);
+}
+
+/* The gap: in the line after the phrase's last word, no width, as tall as the effect says (the line, the note and the arrow's room). Its one line is for a screen reader. */
+.dw-this-gap {
+  display: inline-block;
+  width: 0;
+  vertical-align: top;
+}
+
+/*
+ * The drawn note. It is placed (its `top`) by the effect and is as wide as `.dw-this`. It has no z-index and takes no handler, and sets no
+ * `pointer-events`: ink laid over the post (Whoops!, Graffiti) covers it as it covers the words, and a press goes to that ink first.
+ */
+.dw-this-note {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  color: var(--dw-this-ink);
+  font-family: 'Permanent Marker', 'Comic Sans MS', cursive;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Until the effect has placed it (it needs the wrapper's width), the note is not drawn, so a folded post never shows it at the top of the words. */
+.dw-this-note:not([data-placed]) {
+  visibility: hidden;
+}
+.dw-this-word {
+  flex: none;
+  display: block;
+  padding-top: 2px;
+  font-size: 1.9375rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  transform: rotate(-4deg);
+  transform-origin: left center;
+}
+.dw-this-words {
+  display: block;
+  min-width: 0;
+  padding-top: 0.5rem;
+  font-size: 1.0625rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+/* The arrow's path is in the note's own coordinates, from the middle of THIS up to the phrase. */
+.dw-this-arrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+}
+.dw-this-arrow path {
+  fill: none;
+  stroke: var(--dw-this-ink);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* A receipt: real text at the foot of the words, read once. */
+.dw-this-receipt {
+  margin: 0.75rem 0 0;
+  color: var(--dw-this-ink);
+  font-family: 'Permanent Marker', 'Comic Sans MS', cursive;
+  font-size: 1.0625rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Under Feelin' Fab's bright ink (thread.css) the words are the bright ink with its outline, so the note and the receipt are too, and the
+ * swipe is not drawn (the band would be under white words). The outline is the body's own, drawn around the glyphs and, for the arrow, around its stroke.
+ */
+.kb-act-main[data-kb-bright-ink] .dw-this-hl {
+  background: none;
+}
+.kb-act-main[data-kb-bright-ink] :is(.dw-this-note, .dw-this-receipt) {
+  color: var(--kb-bright-ink);
+  text-shadow: -1px -1px 0 var(--kb-bright-outline), 1px -1px 0 var(--kb-bright-outline), -1px 1px 0 var(--kb-bright-outline), 1px 1px 0 var(--kb-bright-outline), 0 0 3px var(--kb-bright-outline);
+}
+.kb-act-main[data-kb-bright-ink] .dw-this-arrow path {
+  stroke: var(--kb-bright-ink);
+}
+.kb-act-main[data-kb-bright-ink] .dw-this-arrow {
+  filter: drop-shadow(1px 0 0 var(--kb-bright-outline)) drop-shadow(-1px 0 0 var(--kb-bright-outline)) drop-shadow(0 1px 0 var(--kb-bright-outline)) drop-shadow(0 -1px 0 var(--kb-bright-outline));
+}
