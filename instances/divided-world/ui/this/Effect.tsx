@@ -20,7 +20,8 @@
  * places each note and arrow that is not already placed. A pass over its own result writes nothing, so the `ResizeObserver` of `.dw-this`, which sees
  * the gaps make it taller, ends after one more look. It runs in a layout effect when the places or words change, on that observer, and when the
  * marker's face has loaded. It measures against its own `.dw-this`, never an ancestor, and not at all while the wrapper has no width (a folded post).
- * A play's moment (`still`) draws the same and measures once; it has no observer.
+ * A gap with no boxes (the phrase is inside a closed [spoiler]) is skipped and its note is hidden; opening the spoiler resizes the wrapper, and the
+ * observer places it. A play's moment (`still`) draws the same and watches the same size, since it can be mounted folded and shown later.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
@@ -91,9 +92,17 @@ export function ThisEffect({ post, plays, show, still, children }: EffectProps) 
     const noteOf = new Map<string, HTMLElement>();
     for (const g of el.querySelectorAll<HTMLElement>('[data-dw-this-gap]')) gapOf.set(g.dataset['dwThisGap']!, g);
     for (const n of el.querySelectorAll<HTMLElement>('[data-dw-this-note]')) noteOf.set(n.dataset['dwThisNote']!, n);
+    /* A gap with no boxes (inside a closed [spoiler], or under any hidden ancestor) has no place: its note is hidden again and nothing is written for it. The others are laid out without it. */
+    const shown = new Set<string>();
+    for (const { play } of wedges) {
+      const gap = gapOf.get(play.id), note = noteOf.get(play.id);
+      if (!gap || !note) continue;
+      if (gap.getClientRects().length === 0) note.removeAttribute('data-placed');
+      else shown.add(play.id);
+    }
     const read = (): Spot[] => wedges.flatMap(({ play }): Spot[] => {
       const gap = gapOf.get(play.id), note = noteOf.get(play.id);
-      if (!gap || !note) return [];
+      if (!gap || !note || !shown.has(play.id)) return [];
       const at = gap.getBoundingClientRect();
       /* The element right before the gaps at this place is whatever is drawn for the phrase's last piece (the highlight, a cue, a tape's segment): its last box is the last line piece. Otherwise, a piece ending where the phrase does. */
       let before: Node | null = gap.previousSibling;
@@ -133,7 +142,8 @@ export function ThisEffect({ post, plays, show, still, children }: EffectProps) 
   useEffect(() => {
     let live = true;
     const again = () => { if (live) measureNow.current(); };
-    const resize = !still && typeof ResizeObserver === 'function' ? new ResizeObserver(again) : null;
+    /* Watched in a moment too: a still moment can be mounted folded or hidden and shown later, and looking at a size binds nothing a player can reach and saves nothing. A `<details>` opening or closing changes the wrapper's size, so this observer alone re-measures a spoiler; no `toggle` listener is needed. */
+    const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(again) : null;
     if (host.current) resize?.observe(host.current);
     /* The marker's face changes the notes' height when it arrives. */
     const fonts = typeof document !== 'undefined' ? document.fonts : undefined;

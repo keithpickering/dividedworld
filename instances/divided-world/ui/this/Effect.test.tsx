@@ -229,7 +229,7 @@ describe('THIS: a play\'s moment', () => {
       fireEvent.keyDown(el, { key: 'Enter' });
     }
   };
-  test('it draws the same from the same props, observes nothing, and no press or key changes it or says anything new', () => {
+  test('it draws the same from the same props, only watches its own size, and no press or key changes it or says anything new', () => {
     const live = mount();
     const liveHtml = document.body.innerHTML;
     expect(live.views.length).toBeGreaterThan(0);
@@ -237,7 +237,8 @@ describe('THIS: a play\'s moment', () => {
     resizes = [];
     const m = mount({ still: true });
     expect(document.body.innerHTML).toBe(liveHtml);
-    expect(resizes).toHaveLength(0);
+    /* It watches the wrapper's size (a moment can be drawn folded or hidden and shown later) and binds nothing a player can reach. */
+    expect(resizes).toHaveLength(1);
     const said = m.views.length;
     const html = document.body.innerHTML;
     act(() => press(document.querySelector<HTMLElement>('.dw-this')!));
@@ -298,6 +299,8 @@ describe('THIS: a busy page', () => {
 describe('THIS: the measuring', () => {
   /* Stand-in boxes: the wrapper is 300 wide, each gap sits on a line at the top its place says, the notes are 36 tall. */
   const tops = new Map<string, number>();
+  /* Gaps with no boxes at all: inside a closed [spoiler], whose details has no rendered content. */
+  const unrendered = new Set<string>();
   const box = (top: number, left: number, width: number, height: number) => ({ x: left, y: top, left, top, right: left + width, bottom: top + height, width, height, toJSON: () => ({}) });
   function stand() {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
@@ -308,6 +311,7 @@ describe('THIS: the measuring', () => {
       return box(0, 0, 0, 0);
     });
     vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      if (this.classList.contains('dw-this-gap')) return (unrendered.has(this.getAttribute('data-dw-this-gap')!) ? [] : [{ left: 150, right: 150, top: 40, bottom: 60, width: 0, height: 20 }]) as unknown as DOMRectList;
       return (this.classList.contains('dw-this-hl') ? [{ left: 20, right: 150, top: 40, bottom: 60, width: 130, height: 20 }] : []) as unknown as DOMRectList;
     });
     vi.spyOn(window, 'getComputedStyle').mockImplementation((() => ({ lineHeight: '20px', fontSize: '16px', getPropertyValue: () => '' })) as never);
@@ -315,7 +319,7 @@ describe('THIS: the measuring', () => {
   const resize = () => act(() => { for (const r of resizes) r.cb(); });
 
   test('each gap is given its height and each note its place and arrow once, from no .kb-act-main, and a pass over the result writes nothing', () => {
-    tops.clear(); tops.set('a', 40); tops.set('b', 40); tops.set('c', 140);
+    tops.clear(); unrendered.clear(); tops.set('a', 40); tops.set('b', 40); tops.set('c', 140);
     stand();
     const plays = [playOf('a', 'People blame the engine', 'one'), playOf('b', 'People blame the engine', 'two'), playOf('c', 'Stop asking for slopes', 'three')];
     mount({ plays });
@@ -336,6 +340,81 @@ describe('THIS: the measuring', () => {
     resize();
     expect(seen.takeRecords()).toEqual([]);
     seen.disconnect();
+  });
+
+  const placed = () => notes().map((n) => n.hasAttribute('data-placed'));
+  const one = (id: string) => notes().find((n) => n.getAttribute('data-dw-this-note') === id)!;
+
+  test('a gap with no boxes (a closed spoiler) leaves its note unplaced and writes nothing; it is placed when the gap is rendered and a measure comes', () => {
+    tops.clear(); unrendered.clear(); unrendered.add('a');
+    stand();
+    mount();
+    expect(placed()).toEqual([false]);
+    expect(gaps()[0]!.style.height).toBe('');
+    expect(notes()[0]!.style.top).toBe('');
+    expect(q('.dw-this-arrow path')[0]!.getAttribute('d')).toBe('');
+    unrendered.clear();
+    resize();
+    expect(placed()).toEqual([true]);
+    expect(gaps()[0]!.style.height).not.toBe('');
+    expect(notes()[0]!.style.top).not.toBe('');
+  });
+
+  test('a placed note whose gap loses its boxes (the spoiler is closed) is hidden again', () => {
+    tops.clear(); unrendered.clear();
+    stand();
+    mount();
+    expect(placed()).toEqual([true]);
+    unrendered.add('a');
+    resize();
+    expect(placed()).toEqual([false]);
+    unrendered.clear();
+    resize();
+    expect(placed()).toEqual([true]);
+  });
+
+  test('notes at one place with one gap unrendered: the other is laid out alone, and the unrendered one is skipped', () => {
+    tops.clear(); unrendered.clear(); unrendered.add('a'); tops.set('b', 40);
+    stand();
+    mount({ plays: [playOf('a', 'People blame the engine', 'one'), playOf('b', 'People blame the engine', 'two')] });
+    const word = { lineHeight: 20, noteHeight: 36, wordX: 33, piece: { left: 20, width: 130 } };
+    const [want] = layOut([{ ...word, id: 'b', lineTop: 40 }], 300);
+    expect(placed()).toEqual([false, true]);
+    expect(gaps().map((g) => g.style.height)).toEqual(['', `${want!.gapHeight}px`]);
+    expect(one('a').style.top).toBe('');
+    expect(one('b').style.top).toBe(`${want!.noteTop}px`);
+  });
+
+  test('the observer measures when the wrapper goes from no width to a width (a folded post unfolds)', () => {
+    tops.clear(); unrendered.clear();
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => box(0, 0, 0, 0));
+    mount();
+    expect(placed()).toEqual([false]);
+    vi.restoreAllMocks();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => null) as never);
+    stand();
+    resize();
+    expect(placed()).toEqual([true]);
+    expect(gaps()[0]!.style.height).not.toBe('');
+  });
+
+  test('a face that loads after the post is gone measures nothing and throws nothing', async () => {
+    tops.clear(); unrendered.clear();
+    stand();
+    let loaded: () => void = () => {};
+    const arrives = new Promise<void>((r) => { loaded = r; });
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load: () => arrives, ready: arrives } });
+    try {
+      mount();
+      const rect = Element.prototype.getBoundingClientRect as unknown as ReturnType<typeof vi.fn>;
+      cleanup();
+      rect.mockClear();
+      loaded();
+      await act(async () => { await arrives; await Promise.resolve(); });
+      expect(rect).not.toHaveBeenCalled();
+    } finally {
+      delete (document as { fonts?: unknown }).fonts;
+    }
   });
 
   test('a wrapper with no width (folded, or not laid out) is not measured, and a new place is measured when it appears', () => {
