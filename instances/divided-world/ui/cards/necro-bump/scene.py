@@ -1,18 +1,19 @@
 """Necro Bump card art: a headstone shot back up out of its own grave on a spring, an arrow cut into it under the
-R.I.P., dirt still flying, a fat moon behind. (The card bumps an old post's thread to the top of its board and marks
+R.I.P., dirt still flying, a cold moon over its shoulder. (The card bumps an old post's thread to the top of its board and marks
 the post "bumped" for a day.)"""
 import sys, os, math, random
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # rig.py is one folder up, shared by every card
 sys.dont_write_bytecode = True           # no __pycache__ beside the card folders: the art guard reads every folder there as a card's
 import bpy
-from mathutils import Vector
+from mathutils import Vector, Quaternion
 import rig
 
 OUT = sys.argv[-1]
 rnd = random.Random(int(os.environ.get('BUMP_SEED', '9')))
 sc = rig.reset()
-rig.backdrop(22, [(0.0, '#0a0102'), (0.4, '#3a0a0a'), (0.75, '#8a2414'), (1.0, '#160304')]).scale = (80, 50, 1)
-rig.ball((1.5, 20, 3.6), 4.2, rig.glow('moon', rig.hexrgb('#ffb24a'), 1.6), 'moon', 64, scale=(1, 0.05, 1))
+rig.backdrop(22, [(0.0, '#04030c'), (0.3, '#1a1030'), (0.5, '#4a1c44'), (0.72, '#241238'), (1.0, '#0e0c24')]).scale = (260, 200, 1)
+MOON = tuple(float(v) for v in os.environ.get('BUMP_MOON', '8.4 20 17.5').split())
+rig.ball(MOON, 3.0, rig.glow('moon', rig.hexrgb('#e8f0ff'), 1.5), 'moon', 64, scale=(1, 0.05, 1))
 G = -3.3
 m, n, l, b = rig.material('ground'); b.inputs['Base Color'].default_value = (*rig.hexrgb('#1c0c08'), 1); b.inputs['Roughness'].default_value = 0.9
 rig.floor(G, m)
@@ -51,15 +52,13 @@ rig.ball((0, 0, G + 0.02), 1.0, rig.plastic('hole', (0.002, 0.001, 0.001), rough
 for i in range(26):                      # and what went up with the stone
     a = rnd.uniform(0, math.tau); d = rnd.uniform(0.6, 2.4)
     rig.ball((math.cos(a) * d, rnd.uniform(-1.2, 0.6), G + rnd.uniform(0.6, 3.2)), rnd.uniform(0.05, 0.16), dirt, 'clod', 10)
-line = rig.glow('line', rig.hexrgb('#ffd27a'), 2.0, alpha=0.6)
-for x in (-1.75, -1.5, 1.6, 1.85):       # the speed of it
-    z0 = rnd.uniform(-2.2, -1.2)
-    rig.tube('line', [(x, -0.4, z0), (x, -0.4, z0 + rnd.uniform(1.0, 1.9))], 0.03, line, res=2)
-
 LOOK = (0, 0, 1.0)
-rig.area('key', (-5, -9, 6), 4.0, 1400, rgb=(1.0, 0.92, 0.85), look_at=LOOK)
-rig.area('rim', (5, 6, 7), 4.0, 2600, rgb=(1.0, 0.55, 0.2), look_at=LOOK, glossy=False)
-rig.area('soft', (-7, -4, -1), 8.0, 300, rgb=(1.0, 0.8, 0.7), look_at=LOOK)
-rig.world((0.06, 0.015, 0.01), 0.6)
-rig.camera(50, elev=3)
+rig.area('key', (-6, -7, 8), 4.0, 1500, rgb=(0.6, 0.75, 1.0), look_at=LOOK)       # moonlight
+rig.area('rim', (5, 6, 7), 4.0, 2600, rgb=(0.3, 0.6, 1.0), look_at=LOOK, glossy=False)
+rig.area('soft', (-7, -4, -1), 8.0, 220, rgb=(0.6, 0.7, 1.0), look_at=LOOK)
+rig.world((0.01, 0.015, 0.04), 0.6)
+cam = rig.camera(32)                     # low in the grass and tipped, looking up at it
+EYE = Vector(tuple(float(v) for v in os.environ.get('BUMP_EYE', '-1.5 -7.8 -2.7').split())); AIM = Vector((0.4, 0, -0.3))
+cam.location = EYE
+cam.rotation_euler = ((AIM - EYE).to_track_quat('-Z', 'Y') @ Quaternion((0, 0, 1), math.radians(9))).to_euler()
 rig.render(OUT)

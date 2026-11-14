@@ -34,14 +34,15 @@ for gx in range(-9, 10):                 # polka dots, wherever the paper is
         if all(inside(x + dx, z + dz) for dx, dz in ((0.16, 0), (-0.16, 0), (0, 0.16), (0, -0.16))):
             parts.append(rig.ball((x, -0.2, z), 0.055, dot, 'dot', 10, scale=(1, 0.25, 1)))
 for sx in (-1, 1):                       # a ribbon round each arm
-    mid = Vector((sx * 1.05, 0, -0.1)); along = Vector((sx * 1.62, 0, -1.9)).normalized(); across = Vector((-along.z, 0, along.x))
-    r = rig.slab('ribbon', [tuple((mid + along * a + across * c).xz) for a, c in ((-0.11, -0.46), (0.11, -0.46), (0.11, 0.46), (-0.11, 0.46))], -0.235, 0.235, gold, 0.02); parts.append(r)
-parts.append(rig.slab('ribbon', [(-0.11, 0.3), (0.11, 0.3), (0.11, 1.32), (-0.11, 1.32)], -0.235, 0.235, gold, 0.02))
-for sx in (-1, 1):                       # the bow at its elbow
-    bpy.ops.mesh.primitive_torus_add(major_radius=0.3, minor_radius=0.085, major_segments=40, minor_segments=12, location=(sx * 0.34, -0.3, 1.0), rotation=(math.radians(90), 0, math.radians(sx * 20)))
-    o = bpy.context.object; bpy.ops.object.shade_smooth(); o.scale = (1.25, 1, 0.8); o.data.materials.append(gold); parts.append(o)
-    parts.append(rig.tube('tail', [(sx * 0.05, -0.3, 0.95), (sx * 0.3, -0.32, 0.55), (sx * 0.28, -0.3, 0.2)], 0.07, gold, res=4))
-parts.append(rig.ball((0, -0.34, 1.0), 0.15, gold, 'knot', 24))
+    mid = Vector((sx * 0.965, 0, -0.1)); along = Vector((sx * 1.68, 0, -2.0)).normalized(); across = Vector((-along.z, 0, along.x))
+    r = rig.slab('ribbon', [tuple((mid + along * a + across * c).xz) for a, c in ((-0.12, -0.47), (0.12, -0.47), (0.12, 0.47), (-0.12, 0.47))], -0.25, 0.25, gold, 0.02); parts.append(r)
+parts.append(rig.slab('ribbon', [(-0.12, 0.26), (0.12, 0.26), (0.12, 1.36), (-0.12, 1.36)], -0.25, 0.25, gold, 0.02))
+LOOP = [(0.0, 0.07), (0.3, 0.36), (0.72, 0.44), (0.82, 0.02), (0.7, -0.36), (0.3, -0.26), (0.0, -0.07)]     # one loop of the bow, pinched at the knot
+TAIL = [(0.0, 0.0), (0.2, -0.04), (0.5, -0.72), (0.34, -0.62), (0.2, -0.8), (0.0, -0.12)]                   # one tail, notched
+for sx in (-1, 1):                       # the bow at its elbow: two loops, a knot, two tails
+    loop = rig.slab('loop', [(sx * x, z) for x, z in LOOP], -0.09, 0.09, gold, 0.07); loop.location = (0, -0.36, 0.95); loop.rotation_euler = (0, math.radians(sx * 14), math.radians(sx * -16)); parts.append(loop)
+    tail = rig.slab('tail', [(sx * x, z) for x, z in TAIL], -0.03, 0.03, gold, 0.015); tail.location = (0, -0.3, 0.9); parts.append(tail)
+parts.append(rig.ball((0, -0.42, 0.95), 0.17, gold, 'knot', 24, scale=(1, 0.8, 1.15)))
 rig.group(parts, loc=(0.25, 0, 1.5), rot=(-14, -28, 12), scale=1.0)
 
 # ---- the way it goes: out, round, and back --------------------------------------------------------

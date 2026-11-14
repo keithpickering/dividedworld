@@ -49,9 +49,12 @@ def dart(hit, away, color, spin):
     for turn in (0, 90):
         f = rig.slab('flight', [(1.85, 0.0), (2.1, 0.34), (2.75, 0.34), (2.5, 0.0), (2.75, -0.34), (2.1, -0.34)], -0.012, 0.012, flight, 0.0)
         f.rotation_euler.x = math.radians(turn + spin); parts.append(f)
-    root = rig.group(parts, loc=tuple(hit + away * 0.3), scale=0.72)
-    root.rotation_euler = Vector((1, 0, 0)).rotation_difference(away).to_euler()
-    o = rig.slab('flash', rig.star(8, 0.34, 0.13, rnd.uniform(0, 1)), -0.02, 0.02, flash, 0.0); o.location = hit + Vector((0, -0.25, 0))
+    tumble = (away + Vector((rnd.uniform(-1, 1), rnd.uniform(-0.5, 0.2), rnd.uniform(-1, 1))) * 0.75).normalized()   # end over end, any way but back in
+    root = rig.group(parts, loc=tuple(hit + Vector((away.x, away.y * 0.4, away.z)) * rnd.uniform(0.4, 0.6)), scale=0.6)
+    root.rotation_euler = Vector((1, 0, 0)).rotation_difference(tumble).to_euler()
+    out = (hit - C).normalized()         # the burst stands off the shell and leans out with it, so no point of it is in the coconut
+    o = rig.slab('flash', rig.star(8, 0.34, 0.13, rnd.uniform(0, 1)), -0.02, 0.02, flash, 0.0); o.location = hit + out * 0.22 + Vector((0, -0.12, 0))
+    o.rotation_euler = Vector((0, -1, 0)).rotation_difference((out * 0.75 + Vector((0, -1, 0))).normalized()).to_euler()
 for x, z, away, color, spin in ((-1.0, 0.8, (-0.8, -0.35, 0.75), '#3fb8e8', 20), (1.1, 0.5, (0.9, -0.3, 0.45), '#ffc21c', 50),
                                 (-1.05, -0.65, (-0.9, -0.3, -0.45), '#6fd86a', 35), (0.9, -0.85, (0.75, -0.4, -0.7), '#e2101c', 10)):
     dart(on_shell(x, z), Vector(away).normalized(), color, spin)

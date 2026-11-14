@@ -1,4 +1,4 @@
-"""Whoopee Cushion card art: the cushion itself, mid-squeeze, letting go a cloud out of its nozzle, with the noise
+"""Whoopee Cushion card art: the cushion itself, mid-squeeze, letting go a small cloud out of its nozzle, with the noise
 spelled out under it. (The card springs on the first common cast on its post, lets it land, and pays the setter a
 share of what it draws.)"""
 import sys, os, math, random
@@ -31,15 +31,10 @@ bpy.context.view_layer.update()
 MOUTH = cushion.matrix_world @ (out * 2.8); BLOW = (cushion.matrix_world.to_3x3() @ out).normalized()
 
 puff = rig.plastic('puff', rig.hexrgb('#dff2a8'), rough=0.9, emit=0.04)       # the cloud, greener than is polite
-for i in range(26):
-    t = (i / 25) ** 0.8; d = 0.2 + 1.5 * t; spread = 0.1 + 0.5 * t
-    p = MOUTH + BLOW * d + Vector((rnd.uniform(-spread, spread), rnd.uniform(-spread, spread), rnd.uniform(-spread, spread) + 0.5 * t * t))
-    rig.ball(tuple(p), 0.13 + 0.26 * t * rnd.uniform(0.7, 1.2), puff, 'puff', 24)
-line = rig.glow('line', rig.hexrgb('#fff1a0'), 3.0)
-for k in range(7):                       # the noise, as lines
-    a = rnd.uniform(-0.6, 0.6); side = Vector((0, 0, 1)).cross(BLOW).normalized()
-    start = MOUTH + BLOW * rnd.uniform(0.2, 0.9) + side * a + Vector((0, 0, rnd.uniform(-0.6, 0.6)))
-    rig.tube('line', [tuple(start), tuple(start + (BLOW + side * a * 0.6) * rnd.uniform(0.5, 1.0))], 0.03, line, res=2)
+for i in range(18):
+    t = (i / 17) ** 0.8; d = 0.15 + 0.95 * t; spread = 0.06 + 0.3 * t
+    p = MOUTH + BLOW * d + Vector((rnd.uniform(-spread, spread), rnd.uniform(-spread, spread), rnd.uniform(-spread, spread) + 0.55 * t * t))
+    rig.ball(tuple(p), 0.1 + 0.17 * t * rnd.uniform(0.7, 1.2), puff, 'puff', 24)
 gold = rig.plastic('gold', rig.hexrgb('#ffc21c'), rough=0.2, metallic=0.8, emit=0.15)
 for ch, x, z, tilt in (('P', -1.5, -1.6, 14), ('F', -0.75, -1.85, 5), ('F', 0.0, -1.95, -3), ('F', 0.75, -1.85, -8), ('T', 1.5, -1.6, -16)):
     rig.text(ch, 1.05, gold, (x, -0.8, z), depth=0.14, bevel=0.03, rot=(0, math.radians(tilt), 0))

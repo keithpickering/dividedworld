@@ -79,12 +79,12 @@ rig.lathe('cap', [(1.63, -0.1), (1.64, 0.15), (1.56, 0.5), (1.32, 0.86), (0.9, 1
 brim = rig.ball((0, -1.2, CZ - 0.02), 1.0, red, 'brim', 48, scale=(1.62, 1.05, 0.2)); brim.rotation_euler.x = math.radians(9)
 badge = rig.ball((0, -1.47, CZ + 0.62), 0.47, white, 'badge', 48, scale=(1, 0.2, 1)); badge.rotation_euler.x = math.radians(-24)
 rig.text('SVH', 0.36, red, (0, -1.56, CZ + 0.63), depth=0.02, bevel=0.006, rot=(math.radians(-24), 0, 0))
-for sx in (-1, 1):                       # the eyes: wide, white, a red ring round a pinprick, looking dead ahead
-    ex, ez = sx * 0.6, px(8, 10.1)[1]
-    for r, mat, y, sy in ((0.52, white, -1.24, 0.5), (0.2, iris, -1.47, 0.3), (0.075, black, -1.52, 0.3)):
-        rig.ball((ex - sx * 0.05 * (mat is not white), y, ez), r, mat, 'eye', 48, scale=(0.94, sy, 1.16))
-    rig.tube('brow', [(sx * (0.12 + 1.05 * t), -1.36 + 0.5 * t * t, ez + 0.72 + 0.16 * math.sin(math.pi * t)) for t in (j / 10 for j in range(11))], 0.09, black, res=5)
-rig.ball((0, -1.55, px(8, 13)[1] + 0.08), 0.37, skin, 'nose', 40, scale=(1.12, 1, 1))
+for sx in (-1, 1):                       # the eyes: bulging out of the head, a red ring round a pinprick, looking dead ahead
+    ex, ez = sx * 0.62, px(8, 10.1)[1]
+    for r, mat, y, sy in ((0.62, white, -1.3, 0.82), (0.23, iris, -1.77, 0.3), (0.085, black, -1.82, 0.3)):
+        rig.ball((ex - sx * 0.05 * (mat is not white), y, ez), r, mat, 'eye', 48, scale=(0.94, sy, 1.12))
+    rig.tube('brow', [(sx * (0.1 + 1.1 * t), -1.86 + 0.55 * t * t, ez + 0.42 + 0.5 * t + 0.08 * math.sin(math.pi * t)) for t in (j / 10 for j in range(11))], 0.13, black, res=5)   # low over the nose, high at the temples
+rig.ball((0, -1.98, px(8, 13)[1] + 0.08), 0.42, skin, 'nose', 40, scale=(1.12, 1, 1))     # out in front of the mustache
 hair = rig.plastic('mustache', (0.006, 0.004, 0.003), rough=0.6)
 MZ = px(8, 13.7)[1]
 for sx in (-1, 1):                       # the mustache, which the smiley's few pixels run into the mouth: three lobes a side, the last turned up

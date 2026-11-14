@@ -29,11 +29,8 @@ z = G
 for w, d, h, hx, title, turn, dx in ((4.3, 3.0, 0.95, '#7a1848', 'ALL OF IT', -7, 0.1), (4.0, 2.8, 0.8, '#e86fa8', 'THE REST OF IT', 6, -0.15),
                                      (3.7, 2.6, 1.05, '#3a8f9a', 'THE FOOTNOTES', -3, 0.1), (3.2, 2.3, 0.6, '#f2e2c0', 'APPENDIX Q', 11, -0.1)):
     book(z, w, d, h, hx, title, turn, dx); z += h
-ribbon = rig.plastic('ribbon', rig.hexrgb('#d8121c'), rough=0.4)
-rig.tube('ribbon', [(-1.25, -1.0, z - 0.35), (-1.3, -1.2, z - 0.62), (-1.22, -1.25, z - 1.0)], 0.045, ribbon, res=3).scale.x = 1.0
-
 apple = rig.plastic('apple', rig.hexrgb('#e2101c'), rough=0.12, coat=1.0)        # the apple, with one leaf
-A = Vector((-0.35, 0.2, z + 0.62))
+A = Vector((-0.8, 0.25, z + 0.62))
 rig.ball(tuple(A), 0.72, apple, 'apple', 48, scale=(1.05, 1.05, 0.92))
 rig.ball(tuple(A + Vector((0, 0, 0.6))), 0.2, rig.plastic('dimple', rig.hexrgb('#7a0810'), rough=0.3), 'dimple', 24, scale=(1, 1, 0.35))
 rig.cone(tuple(A + Vector((0, 0, 0.55))), tuple(A + Vector((0.1, 0, 0.98))), 0.035, 0.045, rig.plastic('stem', rig.hexrgb('#4a2a12'), rough=0.6), 12)
@@ -46,7 +43,7 @@ for sx in (-1, 1):
     lens = rig.ball((sx * 0.44, 0, 0), 0.34, rig.glow('lens', (0.8, 0.95, 1.0), 0.6, alpha=0.25), 'lens', 32, scale=(1, 0.05, 1)); glasses.append(lens)
     glasses.append(rig.tube('arm', [(sx * 0.8, 0, 0.05), (sx * 0.84, 0.9, 0.08), (sx * 0.84, 1.15, -0.1)], 0.03, gold, res=4))
 glasses.append(rig.tube('bridge', [(-0.09, 0, 0.1), (0, 0, 0.16), (0.09, 0, 0.1)], 0.03, gold, res=4))
-rig.group(glasses, loc=(1.05, -0.35, z + 0.37), rot=(-8, 0, 14), scale=1.0)
+rig.group(glasses, loc=(0.85, -0.55, z + 0.37), rot=(-8, 0, -12), scale=1.0)
 
 LOOK = (0, 0, 0.8)
 rig.area('key', (-5, -9, 8), 4.0, 2100, look_at=LOOK)
