@@ -327,6 +327,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'below-the-fold',
     Effect: BelowTheFoldEffect,
+    foldsRow: true,
     art: { color: '#ff3d7f', ink: '#14030a', canvas: belowTheFoldCanvas, mark: belowTheFoldMark, credit: belowTheFoldArt.credit, tagline: 'Fold a post away.' },
     summary: 'Folds a post behind a bar. Any reader opens it with one press.',
     status: 'Folded behind a bar',

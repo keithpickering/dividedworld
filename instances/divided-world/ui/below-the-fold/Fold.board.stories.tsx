@@ -1,7 +1,9 @@
 /**
- * Below the Fold as stories for the owner's word (docs/plans/2026-11-11-below-the-fold-plan.md, Task 3): post #41 of the boards fixture at
+ * Below the Fold as stories for the owner's word (docs/plans/2026-11-11-below-the-fold-plan.md, Task 3; the row's bar is
+ * docs/plans/2026-11-13-fold-the-row-design.md): post #41 of the boards fixture at
  * the Main board's moment, folded by a play of #42's author (who is not #41's), on the light board and on the dark. The Opened story is the
- * same post with its bar pressed by the play function (the story route renders no play, so e2e/fold.spec.ts presses the bar itself).
+ * same post with its bar pressed by the play function (the story route renders no play, so e2e/fold.spec.ts presses the bar itself). The bar is the engine's row bar, drawn over the post's whole
+ * row; `Reduced` is the same folded post with motion reduced (`data-kb-motion="reduce"`), where the unfold is instant.
  * Open them at 1440 by 1120.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -15,9 +17,10 @@ import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
 interface Args {
   readonly mode: 'light' | 'dark';
+  readonly reduced?: boolean;
 }
 
-function Folded({ mode }: Args) {
+function Folded({ mode, reduced = false }: Args) {
   const { api } = useKayfa();
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
@@ -28,6 +31,11 @@ function Folded({ mode }: Args) {
     root.setAttribute('data-kb-mode', mode);
     return () => { root.removeAttribute('data-kb-mode'); };
   }, [mode]);
+  useEffect(() => {
+    if (!reduced) return;
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    return () => { document.documentElement.removeAttribute('data-kb-motion'); };
+  }, [reduced]);
   useEffect(() => {
     if (thread === null) return;
     let live = true;
@@ -56,9 +64,10 @@ export const FoldedLight: Story = { args: { mode: 'light' } };
 export const FoldedDark: Story = { args: { mode: 'dark' } };
 export const OpenedLight: Story = {
   args: { mode: 'light' },
-  play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Show post' })); },
+  play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: /^Show post/u })); },
 };
 export const OpenedDark: Story = {
   args: { mode: 'dark' },
-  play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Show post' })); },
+  play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: /^Show post/u })); },
 };
+export const Reduced: Story = { args: { mode: 'light', reduced: true } };
