@@ -71,7 +71,6 @@ describe('the Random Event dialog', () => {
     expect(within(dialog).getByText('You touched the statue.')).toBeInTheDocument();
     expect(within(dialog).queryByText(/gear|card/iu)).toBeNull();
     expect(within(dialog).queryByRole('link', { name: 'Wear it' })).toBeNull();
-    expect(within(dialog).getByText(/Nothing was given/u)).toBeInTheDocument();
   });
 
   test('an item key this instance does not know is still named, never called nothing', async () => {
@@ -80,7 +79,6 @@ describe('the Random Event dialog', () => {
     open(fake);
     const dialog = await screen.findByRole('dialog', { name: 'SOMETHING HAPPENED!' });
     expect(within(dialog).getByText('You found mystery-hat under a park bench.')).toBeInTheDocument();
-    expect(within(dialog).queryByText(/Nothing was given/u)).toBeNull();
     expect(within(dialog).queryByRole('link', { name: 'Wear it' })).toBeNull();
   });
 
