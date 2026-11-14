@@ -4,11 +4,14 @@
 -- again on every call, so a thread page spent about 200 ms planning and 18 ms running. A `plpgsql` function with `plan_cache_mode = force_generic_plan` plans each statement once
 -- per database connection, with no argument's value and the same for every caller.
 --
+-- Every one also sets `jit = off`. A kept plan is not kept with its JIT output, so a plan that costs more than jit_above_cost (100000 by default) is compiled again on every call: at about
+-- 200 thousand Acts thread_page plans just above that line and spent about 2 s compiling a 15 ms read. A busy instance's thread page is always there.
+--
 -- Part 1 writes again, as `plpgsql`, each stable function in ALLOWED_RPCS (tools/check-web-reads.mjs) that was `language sql`: today's definition (pg_get_functiondef on a database
 -- with every migration applied), the same arguments, return type, volatility, security and search_path, with `#variable_conflict use_column` so that a name that is both a variable
 -- (a parameter, a column of `returns table`) and a column means the column, as it did in SQL. A `begin atomic` body's last statement is returned and a statement before it is performed.
--- Part 2 sets the plan on the stable client reads that were already `plpgsql`. Grants are kept by `create or replace` and `alter`, and none is restated.
--- supabase/tests/0318-client-reads-plan-once.sql names any client read that is not planned once.
+-- Part 2 sets the plan and jit on the stable client reads that were already `plpgsql`. Grants are kept by `create or replace` and `alter`, and none is restated.
+-- supabase/tests/0319-client-reads-plan-once.sql names any client read that is not planned once.
 
 -- ---- 1. Written again as plpgsql ----
 
@@ -18,6 +21,7 @@ create or replace function public.admin_contact()
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -33,6 +37,7 @@ create or replace function public.alerts_page(in_before timestamp with time zone
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -129,6 +134,7 @@ create or replace function public.beat_mod_name(in_board uuid)
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -147,6 +153,7 @@ create or replace function public.board_page(in_slug text, in_page integer, effe
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -302,6 +309,7 @@ create or replace function public.boot()
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -385,6 +393,7 @@ create or replace function public.card_target(target uuid)
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -424,6 +433,7 @@ create or replace function public.conduct_accepted()
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -441,6 +451,7 @@ create or replace function public.drive_gifts_page(drive uuid, before_at timesta
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -467,6 +478,7 @@ create or replace function public.finished_seasons()
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -488,6 +500,7 @@ create or replace function public.index_page()
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -538,6 +551,7 @@ create or replace function public.is_admin()
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -553,6 +567,7 @@ create or replace function public.log_page(in_before timestamp with time zone)
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1126,6 +1141,7 @@ create or replace function public.move_thread_names(items jsonb)
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1147,6 +1163,7 @@ create or replace function public.my_account_opened()
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1162,6 +1179,7 @@ create or replace function public.my_alerts(before timestamp with time zone DEFA
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1237,6 +1255,7 @@ create or replace function public.my_alerts_unread()
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1289,6 +1308,7 @@ create or replace function public.my_apologies(in_character uuid)
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1308,6 +1328,7 @@ create or replace function public.my_bar()
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1323,6 +1344,7 @@ create or replace function public.my_characters_page()
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1374,6 +1396,7 @@ create or replace function public.my_conduct_log(most integer DEFAULT 100)
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1394,6 +1417,7 @@ create or replace function public.my_open_reports()
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1411,6 +1435,7 @@ create or replace function public.my_settlement_moved(settlement bigint)
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1428,6 +1453,7 @@ create or replace function public.my_wardrobe()
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1447,6 +1473,7 @@ create or replace function public.pinned_threads(board uuid)
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1464,6 +1491,7 @@ create or replace function public.profile_page(in_character uuid)
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1577,6 +1605,7 @@ create or replace function public.queue_page()
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1598,6 +1627,7 @@ create or replace function public.record_page(in_character uuid, in_kind text, i
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1751,6 +1781,7 @@ create or replace function public.result_place(in_season integer, in_character u
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1773,6 +1804,7 @@ create or replace function public.results_page(in_season integer, page integer)
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -1798,6 +1830,7 @@ create or replace function public.search_posts(q text, author uuid, board uuid, 
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -2027,6 +2060,7 @@ create or replace function public.search_suggest(prefix text, kinds text[], boar
  set search_path to 'public', 'pg_temp'
  set "pg_trgm.word_similarity_threshold" to '0.3'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -2105,6 +2139,7 @@ create or replace function public.search_threads(q text, author uuid, board uuid
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -2376,6 +2411,7 @@ create or replace function public.season_news(before timestamp with time zone DE
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -2465,6 +2501,7 @@ create or replace function public.season_page(in_tab text, in_season integer, in
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -2589,6 +2626,7 @@ create or replace function public.staff_career(of_staff text)
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -2614,6 +2652,7 @@ create or replace function public.standings_page(page_offset integer, page_limit
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -2656,6 +2695,7 @@ create or replace function public.surface_acts(play uuid)
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -2677,6 +2717,7 @@ create or replace function public.thread_page(in_thread uuid, in_page integer, i
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -3167,6 +3208,7 @@ create or replace function public.trophies_of(of_character uuid, before timestam
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -3192,6 +3234,7 @@ create or replace function public.updates(before timestamp with time zone DEFAUL
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -3206,6 +3249,7 @@ create or replace function public.updates_page(in_update uuid, in_before timesta
  stable
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -3250,6 +3294,7 @@ create or replace function public.visit_quiz(visit uuid)
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -3267,6 +3312,7 @@ create or replace function public.whoami()
  stable security definer
  set search_path to 'public', 'pg_temp'
  set plan_cache_mode = force_generic_plan
+ set jit = off
 as $function$
 #variable_conflict use_column
 begin
@@ -3279,23 +3325,44 @@ $function$;
 -- ---- 2. Already plpgsql: the plan is set ----
 
 alter function public.admin_awards(timestamp with time zone,integer,uuid) set plan_cache_mode = force_generic_plan;
+alter function public.admin_awards(timestamp with time zone,integer,uuid) set jit = off;
 alter function public.admin_character_named(text) set plan_cache_mode = force_generic_plan;
+alter function public.admin_character_named(text) set jit = off;
 alter function public.admin_failed_mail() set plan_cache_mode = force_generic_plan;
+alter function public.admin_failed_mail() set jit = off;
 alter function public.admin_machine() set plan_cache_mode = force_generic_plan;
+alter function public.admin_machine() set jit = off;
 alter function public.admin_queue() set plan_cache_mode = force_generic_plan;
+alter function public.admin_queue() set jit = off;
 alter function public.admin_reports() set plan_cache_mode = force_generic_plan;
+alter function public.admin_reports() set jit = off;
 alter function public.belt_lineage(text,timestamp with time zone,integer,uuid) set plan_cache_mode = force_generic_plan;
+alter function public.belt_lineage(text,timestamp with time zone,integer,uuid) set jit = off;
 alter function public.boss_roster_names() set plan_cache_mode = force_generic_plan;
+alter function public.boss_roster_names() set jit = off;
 alter function public.drive_gifts(uuid[]) set plan_cache_mode = force_generic_plan;
+alter function public.drive_gifts(uuid[]) set jit = off;
 alter function public.effects_above(uuid[],uuid,uuid) set plan_cache_mode = force_generic_plan;
+alter function public.effects_above(uuid[],uuid,uuid) set jit = off;
 alter function public.following_thread(uuid) set plan_cache_mode = force_generic_plan;
+alter function public.following_thread(uuid) set jit = off;
 alter function public.move_progress(uuid) set plan_cache_mode = force_generic_plan;
+alter function public.move_progress(uuid) set jit = off;
 alter function public.my_hidden_version(uuid) set plan_cache_mode = force_generic_plan;
+alter function public.my_hidden_version(uuid) set jit = off;
 alter function public.next_settlement_at(timestamp with time zone) set plan_cache_mode = force_generic_plan;
+alter function public.next_settlement_at(timestamp with time zone) set jit = off;
 alter function public.play_moment(uuid) set plan_cache_mode = force_generic_plan;
+alter function public.play_moment(uuid) set jit = off;
 alter function public.post_tails(uuid[]) set plan_cache_mode = force_generic_plan;
+alter function public.post_tails(uuid[]) set jit = off;
 alter function public.presence_box(text,uuid) set plan_cache_mode = force_generic_plan;
+alter function public.presence_box(text,uuid) set jit = off;
 alter function public.screen_refusal(text) set plan_cache_mode = force_generic_plan;
+alter function public.screen_refusal(text) set jit = off;
 alter function public.spin_moment(uuid) set plan_cache_mode = force_generic_plan;
+alter function public.spin_moment(uuid) set jit = off;
 alter function public.standing_place(uuid) set plan_cache_mode = force_generic_plan;
+alter function public.standing_place(uuid) set jit = off;
 alter function public.trophy_award_failures(timestamp with time zone,integer,uuid,boolean) set plan_cache_mode = force_generic_plan;
+alter function public.trophy_award_failures(timestamp with time zone,integer,uuid,boolean) set jit = off;

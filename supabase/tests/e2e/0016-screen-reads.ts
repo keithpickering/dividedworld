@@ -2,7 +2,7 @@
  * The screen functions' guard (the forum load plan, Task 3). A screen function is a function in `public` named `boot` or ending
  * `_page`: one call that returns everything a screen reads, so the page costs one request however many things it shows. What
  * makes that safe is what the function is, so this file reads each one's catalog row and its recorded dependencies and asserts:
- *   1. (retired by 0366) a SQL-standard body (`begin atomic`) used to be required so that Postgres recorded the dependencies. The client
+ *   1. (retired by 0367) a SQL-standard body (`begin atomic`) used to be required so that Postgres recorded the dependencies. The client
  *      reads are now plpgsql with `plan_cache_mode = force_generic_plan`, which records none: what a migration removes from under a page
  *      is found by the call-coverage guard in tools/test-sql.mjs (docs/plans/2026-11-13-plan-once-design.md, section 5). Dependencies are
  *      still read below for whichever screen function has a SQL-standard body (a plpgsql one has none, and is checked by 2 and 4);

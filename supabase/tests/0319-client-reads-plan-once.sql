@@ -2,18 +2,19 @@
 --
 -- A client read is a stable function in public (the list is ALLOWED_RPCS, tools/check-web-reads.mjs, which tools/test-sql.mjs hands this file as the setting kayfabb.client_rpcs).
 -- A `language sql` function is planned afresh on every call, and a `plpgsql` one plans each statement for the first five calls and then may switch to a generic plan, so a page that reads many
--- rows pays for planning on every call. A `plpgsql` function with `plan_cache_mode = force_generic_plan` plans once. The check names every client read that is not that.
+-- rows pays for planning on every call. A `plpgsql` function with `plan_cache_mode = force_generic_plan` plans once, and with `jit = off` it is not compiled by JIT on every call (a kept plan costing
+-- more than jit_above_cost is compiled anew each call). The check names every client read that is not that.
 --
--- 1. The poison: a planted `language sql` read is named, is not named once exempt, and a planted `plpgsql` read without the setting is still named; one with it is not.
+-- 1. The poison: a planted `language sql` read is named, is not named once exempt, and a planted `plpgsql` read without both settings is still named, one with only plan_cache_mode too, and one with both is not.
 -- 2. The exemptions: empty today.
--- 3. The real list: every client read that is a stable function in public is `plpgsql` with the setting, or the file raises naming each one that is not.
+-- 3. The real list: every client read that is a stable function in public is `plpgsql` with both settings, or the file raises naming each one that is not.
 
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
 begin
   if ok is not true then raise exception '%', what; end if;
 end $$;
 
--- The names, among those that are stable functions in public, that are not plpgsql or do not hold plan_cache_mode=force_generic_plan, less the exempt. Sorted.
+-- The names, among those that are stable functions in public, that are not plpgsql or do not hold plan_cache_mode=force_generic_plan and jit=off, less the exempt. Sorted.
 create function pg_temp.not_planned_once(names text[], exempt text[]) returns text[] language sql as $$
   select coalesce(array_agg(distinct p.proname::text order by p.proname::text), '{}')
   from pg_proc p
@@ -22,7 +23,7 @@ create function pg_temp.not_planned_once(names text[], exempt text[]) returns te
   where p.provolatile = 's'
     and p.proname::text = any (names)
     and not (p.proname::text = any (exempt))
-    and (l.lanname <> 'plpgsql' or not coalesce(p.proconfig, '{}') @> array['plan_cache_mode=force_generic_plan'])
+    and (l.lanname <> 'plpgsql' or not coalesce(p.proconfig, '{}') @> array['plan_cache_mode=force_generic_plan', 'jit=off'])
 $$;
 
 -- ---- 1. The poison ----
@@ -49,8 +50,16 @@ alter function public.planted_client_read() set plan_cache_mode = force_generic_
 
 do $$
 begin
+  perform pg_temp.expect(pg_temp.not_planned_once(array['planted_client_read'], '{}') = array['planted_client_read'],
+    'the check did not name a plpgsql read with plan_cache_mode but without jit = off: ' || pg_temp.not_planned_once(array['planted_client_read'], '{}')::text);
+end $$;
+
+alter function public.planted_client_read() set jit = off;
+
+do $$
+begin
   perform pg_temp.expect(pg_temp.not_planned_once(array['planted_client_read'], '{}') = '{}',
-    'the check named a plpgsql read that holds the setting: ' || pg_temp.not_planned_once(array['planted_client_read'], '{}')::text);
+    'the check named a plpgsql read that holds both settings: ' || pg_temp.not_planned_once(array['planted_client_read'], '{}')::text);
 end $$;
 
 drop function public.planted_client_read();
@@ -68,6 +77,6 @@ declare
 begin
   unplanned := pg_temp.not_planned_once(string_to_array(current_setting('kayfabb.client_rpcs'), ','), coalesce((select array_agg(name) from exempt_reads), '{}'));
   if cardinality(unplanned) > 0 then
-    raise exception '% client read(s) are not plpgsql with plan_cache_mode = force_generic_plan: %', cardinality(unplanned), array_to_string(unplanned, ', ');
+    raise exception '% client read(s) are not plpgsql with plan_cache_mode = force_generic_plan and jit = off: %', cardinality(unplanned), array_to_string(unplanned, ', ');
   end if;
 end $$;
