@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'post_veil_cards', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts'];
 
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -229,6 +229,9 @@ test('an instance exported and imported into a fresh database is the same instan
       begin
         veil_post := tests.post(a, t, 'Veiled, and carried across.');
         perform play_card(bob, 'expveil', b, veil_post, '{}', 0, '');
+        -- The veil's author edits the veiled post while the veil is up (0369): the edit is a row of post_veil_cover beside the post's own, which the export carries and the import writes as a replica.
+        perform tests.act(a, 'edit', t, jsonb_build_object('body', 'Veiled, edited, and carried across.'), veil_post);
+        if not exists (select 1 from post_veil_cover c join acts e on e.id = c.act where e.kind = 'edit' and e.target_act_id = veil_post) then raise exception 'the fixture''s author veil has no cover row for its author''s edit'; end if;
         blind_post := tests.post(a, t, 'Blind, and carried across.');
         perform play_card(bob, 'expblind', b, blind_post, '{}', 0, '');
         over_post := tests.post(a, t, 'Overreacted to, and carried across.');
