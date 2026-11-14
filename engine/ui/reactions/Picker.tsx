@@ -88,6 +88,8 @@ export function Picker({ subject, as, own, local = [], send, busy, refusal: give
   const [placed, setPlaced] = useState<Placed | null>(null);
   const grid = useRef<HTMLDivElement>(null);
   const [refusal, setRefusal] = useState<string | null>(given);
+  /* The kind a choice is waiting on: it stays pressed in until the answer comes. */
+  const [choosing, setChoosing] = useState<string | null>(null);
   const alive = useRef(true);
   const countId = useId();
   const describedId = useId();
@@ -122,7 +124,8 @@ export function Picker({ subject, as, own, local = [], send, busy, refusal: give
     /* A press dropped for one in flight leaves a refusal on screen as it is. */
     if (busy) return;
     setRefusal(null);
-    const answer = await send(kind);
+    setChoosing(kind);
+    const answer = await send(kind).finally(() => { if (alive.current) setChoosing(null); });
     if (answer === 'busy') return;
     if (answer !== 'sent') { setRefusal(answer.refusal); return; }
     /* Closed meanwhile (Esc, Close): the reaction still counts, but focus is not taken back. */
@@ -168,6 +171,7 @@ export function Picker({ subject, as, own, local = [], send, busy, refusal: give
                           <button
                             key={r.key} type="button" className="kb-picker-kind" disabled={!ok} tabIndex={tab ? 0 : -1}
                             data-kb-reaction={r.key} data-kb-row={at[qi]![ki]!.row} data-kb-col={at[qi]![ki]!.col} data-kb-own={kinds.has(r.key) ? '' : undefined}
+                            data-kb-choosing={choosing === r.key ? '' : undefined}
                             aria-label={`${r.name}${kinds.has(r.key) ? ', your reaction' : ''}`}
                             onClick={() => void choose(r.key)}
                           >
