@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EXCERPT_WORDS } from './excerpt.ts';
 import { testSystem } from '../rules/test-system.ts';
 import { APOLOGY_RULE, APOLOGY_VERDICTS, apologyPrompt, repairApology } from './apology.ts';
 import { schemaProblems } from './schema.ts';
@@ -61,4 +62,14 @@ test('the judge is told the premise of the office it holds: a Mod\'s, a Boss\'s 
 
 test('the apology schema is one the provider accepts', () => {
   for (const office of POSTING_OFFICES) assert.deepEqual(schemaProblems(apologyPrompt(testSystem, persona, office, 'Ann was made Pariah on Games.', 'Sorry.', 80).schema), [], office);
+});
+
+test('a long apology is cut at a word with an ellipsis, and the prompt says once what that means', () => {
+  const body = `${'sorry '.repeat(1000)}end`;
+  const p = apologyPrompt(testSystem, persona, 'mod', 'Ann was made Pariah on Games.', body, 80);
+  assert.match(p.message, /sorry…"/);
+  assert.ok(p.message.length < 4500);
+  assert.equal((p.system + p.message).split(EXCERPT_WORDS).length - 1, 1);
+  const short = apologyPrompt(testSystem, persona, 'mod', 'x', 'I am sorry.', 80);
+  assert.equal((short.system + short.message).split(EXCERPT_WORDS).length - 1, 1, 'an apology is always an excerpt shown');
 });

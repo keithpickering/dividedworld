@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EXCERPT_WORDS } from './excerpt.ts';
 import { CLIPS, DIGEST_MOST, renderDigest, type Digest } from './digest.ts';
 import type { Memory } from './memory.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
@@ -162,4 +163,21 @@ test('a board line with a days count that is no number never reads NaN', () => {
     assert.ok(!text.includes('NaN') && !text.includes('Infinity') && !text.includes('undefined'), String(bad));
     assert.ok(text.includes('Busy Place (Where it is loud.): 12 posts.'), `without days: ${String(bad)}`);
   }
+});
+
+test('a digest excerpt the source cut ends in an ellipsis though it is under the bound, and one that fit does not', () => {
+  const cutOut = renderDigest({ ...small, excerpts: [{ ...small.excerpts[0]!, text: 'It was me all al', cut: true }] }, null, []);
+  assert.ok(cutOut.includes('It was me all…'), 'the source said it cut');
+  const whole = renderDigest({ ...small, excerpts: [{ ...small.excerpts[0]!, text: 'It was me all along', cut: false }] }, null, []);
+  assert.ok(whole.includes('It was me all along') && !whole.includes('along…'), 'a post that fit gains no ellipsis');
+});
+
+test('a digest excerpt over the bound is cut at a word with an ellipsis, and the digest says once what that means, only when it shows one', () => {
+  const text = 'word '.repeat(400);
+  const out = renderDigest({ ...small, excerpts: [{ ...small.excerpts[0]!, text }] }, null, []);
+  assert.ok(out.includes('word…'), 'cut at a word, marked');
+  assert.ok(!out.includes('word '.repeat(300)), 'the excerpt is bounded');
+  assert.equal(out.split(EXCERPT_WORDS).length - 1, 1);
+  const none = renderDigest({ ...small, excerpts: [] }, null, []);
+  assert.ok(!none.includes(EXCERPT_WORDS));
 });

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EXCERPT_WORDS } from './excerpt.ts';
 import { testSystem } from '../rules/test-system.ts';
 import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, CHATTER_RULE, CHATTER_WORDS_MOST, CHATTER_TOKENS, type OfferedCard, type RepairFacts } from './chatter.ts';
 import { personaPrompt } from './prompt.ts';
@@ -193,6 +194,17 @@ test('the prompt carries the persona, the premise, the thread cut to excerptChar
   assert.ok(p.message.includes('You are replying to Bob (they/them)'), 'the post it replies to, with its pronouns');
 });
 
+test('a thread post or a quoted post the source cut ends in an ellipsis even under the bound, and one that fit does not', () => {
+  const p = chatterPrompt({
+    ...base,
+    thread: { title: 'Pineapple', posts: [{ name: 'Ann', pronouns: she, body: 'Pineapple is fi', cut: true }, { name: 'Bob', pronouns: they, body: 'It is not.', cut: false }] },
+    quoting: { name: 'Ann', pronouns: she, body: 'Pineapple is fi', cut: true },
+  });
+  assert.ok(p.message.includes('Ann (she/her): Pineapple is…'), 'the thread post the source cut');
+  assert.ok(p.message.includes('Bob (they/them): It is not.') && !p.message.includes('It is not.…'), 'a post that fit gains no ellipsis');
+  assert.ok(p.message.includes('You are replying to Ann (she/her): "Pineapple is…"'), 'the quoted post the source cut');
+});
+
 test('the prompt tells the persona its own pronouns after its persona, and tags each thread post and the quoted post with its author\'s', () => {
   const p = chatterPrompt({ ...base, names: (id) => (id === 'x' ? 'Cy (she/her)' : id) });
   assert.ok(p.system.includes(`${personaPrompt(testSystem, persona, 'boss')}\n\nYour pronouns are he/him (he, him, his, his, himself).`), 'the self line follows the persona');
@@ -232,7 +244,7 @@ const fitFrame = (budget: number, over: Partial<Parameters<typeof chatterComplet
   chatterCompletion({ name: 'Old Timer', thread: { title: LONG_TITLE, posts: fitPosts }, limits: fitLimits, fit: { budget, count: (t) => t.length }, ...over });
 
 test('the pool post frame under budget is the prompt it was before the window, byte for byte', () => {
-  const whole = 'Welcome to the Message Boards - Thread View\nThread: A long thread title about pineapples and more\n\nP0: post number 0 yyyyyyyyyyy…\nP1: post number 1 yyyyyyyyyyy…\nP2: post number 2 yyyyyyyyyyy…\nP3: post number 3 yyyyyyyyyyy…\nP4: post number 4 yyyyyyyyyyy…\nP5: post number 5 yyyyyyyyyyy…\nOld Timer:';
+  const whole = 'Welcome to the Message Boards - Thread View\nThread: A long thread title about pineapples and more\n\nP0: post number 0…\nP1: post number 1…\nP2: post number 2…\nP3: post number 3…\nP4: post number 4…\nP5: post number 5…\nOld Timer:';
   assert.equal(fitFrame(whole.length).prompt, whole, 'a budget that just holds it');
   assert.equal(fitFrame(1_000_000).prompt, whole);
   assert.deepEqual(fitFrame(1_000_000).stop, ['\n']);
@@ -243,11 +255,11 @@ test('over budget the pool post frame drops the oldest thread posts first, and s
   const one = fitFrame(whole.length - 1).prompt;
   assert.ok(!one.includes('P0:') && one.includes('P1:') && one.includes('P5:'), one);
   assert.ok(one.includes(`Thread: ${LONG_TITLE}`), 'the title is untouched while a post can go');
-  const three = fitFrame(whole.length - 3 * 'P0: post number 0 yyyyyyyyyyy…\n'.length).prompt;
+  const three = fitFrame(whole.length - 3 * 'P0: post number 0…\n'.length).prompt;
   assert.ok(!three.includes('P2:') && three.includes('P3:') && three.includes('P5:'), three);
   for (const budget of [whole.length - 1, 150, 90, 1]) assert.ok(fitFrame(budget).prompt.endsWith('\nOld Timer:'));
   const bare = fitFrame(1_000_000, { thread: { title: LONG_TITLE, posts: [] } }).prompt.length;
-  const last = fitFrame(bare + 'P5: post number 5 yyyyyyyyyyy…\n'.length).prompt;
+  const last = fitFrame(bare + 'P5: post number 5…\n'.length).prompt;
   assert.ok(last.includes('P5:') && !last.includes('P4:'), 'the newest post is the last to go');
 });
 
@@ -441,4 +453,15 @@ test('words over CHATTER_WORDS_MOST are cut at a sentence and the cut is recorde
   assert.ok(r.answer.words.length <= CHATTER_WORDS_MOST && r.answer.words.length > CHATTER_WORDS_MOST - 100);
   assert.deepEqual(r.trims, [{ path: 'words', predicate: `maxLength(${CHATTER_WORDS_MOST})`, before: words.length, after: r.answer.words.length }]);
   assert.ok(CHATTER_TOKENS * 2 >= CHATTER_WORDS_MOST + noteMost + 400, 'the cap holds the words at two characters a token, the note, and the JSON around them');
+});
+
+test('a post body over the excerpt bound is cut at a word and ends in an ellipsis, and the prompt says once what that means, only when it shows an excerpt', () => {
+  const body = 'Pineapple belongs on pizza because everyone deserves joy';
+  const p = chatterPrompt({ ...base, thread: { title: 'T', posts: [{ name: 'Ann', pronouns: she, body }] }, quoting: { name: 'Ann', pronouns: she, body } });
+  assert.ok(p.message.includes('Ann (she/her): Pineapple belongs…'), 'the thread post is cut at a word');
+  assert.ok(p.message.includes('"Pineapple belongs…"'), 'the quoted body is cut at a word');
+  const all = p.system + p.message;
+  assert.equal(all.split(EXCERPT_WORDS).length - 1, 1, 'the sentence once');
+  const none = chatterPrompt({ ...base, thread: null, quoting: null, startThread: true });
+  assert.ok(!(none.system + none.message).includes(EXCERPT_WORDS), 'no excerpt, no sentence');
 });

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EXCERPT_WORDS } from './excerpt.ts';
 import {
   APPEAL_RULE,
   APPEAL_VERDICTS,
@@ -313,6 +314,23 @@ test('a Mod\'s prompt opens with the Mod premise and its answer rules; an appeal
   assert.ok(!boss.includes(testSystem.offices.mod.premise));
 });
 
+test('the order line, or its absence, is written only for a Mod: the Boss hearing an appeal is shown neither', () => {
+  assert.ok(modPrompt(base).includes('Your standing order from the Boss'), 'a Mod with an order');
+  assert.ok(modPrompt({ ...base, order: null }).includes('The Boss has given you no standing order.'), 'a Mod with none');
+  const boss = appealPrompt(appeal({ office: 'boss', order: 'Last day. You are Boss next, as discussed.' })).system;
+  assert.ok(!boss.includes('standing order') && !boss.includes('Last day.'), 'the Boss is shown no order');
+  assert.ok(!appealPrompt(appeal({ office: 'boss', order: null })).system.includes('The Boss has given you no standing order.'), 'nor the line that says there is none');
+});
+
+test('a post the source cut ends in an ellipsis in every prompt that shows it, and one that fit does not', () => {
+  const cutPost = { name: 'Bob', pronouns: they, body: 'Odyssey. Odys', cut: true };
+  const f = filingPrompt(filing({ post: cutPost, thread: { title: 'T', posts: [cutPost] } })).message;
+  assert.ok(f.includes('Bob (they/them): Odyssey.…') && f.includes('by Bob (they/them): "Odyssey.…"'), 'a filing');
+  assert.ok(reportPrompt(report({ post: cutPost })).message.includes('"Odyssey.…"'), 'a report');
+  assert.ok(appealPrompt(appeal({ post: cutPost })).message.includes('"Odyssey.…"'), 'an appeal');
+  assert.ok(!filingPrompt(filing()).message.includes('Odyssey.…'), 'a post that fit');
+});
+
 test('a rule is said in words: its number, its scope and its predicate', () => {
   assert.equal(ruleWords(base.rules[0]!), 'Rule 2: no double posting (moderate)');
   assert.equal(ruleWords(base.rules[1]!), 'House Rule 1: the word "frobnicate" is banned (severe)');
@@ -384,7 +402,7 @@ const fitFiling = (budget: number, over: Partial<Parameters<typeof filingComplet
   });
 
 test('the filing frame under budget is the prompt it was before the window, byte for byte', () => {
-  const whole = 'Welcome to the Message Boards - Thread View\nBoard: Games\nThread: "A long thread title about pineapples and more"\nP0: post number 0 yyyyyyyyyyy…\nP1: post number 1 yyyyyyyyyyy…\nP2: post number 2 yyyyyyyyyyy…\nP3: post number 3 yyyyyyyyyyy…\nP4: post number 4 yyyyyyyyyyy…\nP5: post number 5 yyyyyyyyyyy…\n[Moderator action: Rule 2: no double posting]\nMod One:';
+  const whole = 'Welcome to the Message Boards - Thread View\nBoard: Games\nThread: "A long thread title about pineapples and more"\nP0: post number 0…\nP1: post number 1…\nP2: post number 2…\nP3: post number 3…\nP4: post number 4…\nP5: post number 5…\n[Moderator action: Rule 2: no double posting]\nMod One:';
   assert.equal(fitFiling(whole.length).prompt, whole);
   assert.equal(fitFiling(1_000_000).prompt, whole);
 });
@@ -396,7 +414,7 @@ test('over budget the filing frame drops the oldest thread posts first and keeps
   assert.ok(one.includes(`Thread: "${FIT_TITLE}"`), 'the title is untouched while a post can go');
   for (const budget of [whole.length - 1, 150, 1]) assert.ok(fitFiling(budget).prompt.endsWith('\nMod One:'));
   const bare = fitFiling(1_000_000, { thread: { title: FIT_TITLE, posts: [] } }).prompt.length;
-  const nearly = fitFiling(bare + 'P5: post number 5 yyyyyyyyyyy…\n'.length).prompt;
+  const nearly = fitFiling(bare + 'P5: post number 5…\n'.length).prompt;
   assert.ok(nearly.includes('P5:') && !nearly.includes('P4:'), 'the newest post is the last to go');
 });
 
@@ -784,4 +802,25 @@ test('the patrol, report and filing prompts say what a premise charge is for, an
   assert.ok(filingPrompt(filing({ mode: 'line' })).system.includes(FILING_STANDS), 'filing, line, the charge stands');
   assert.ok(!filingPrompt(filing({ mode: 'move' })).system.includes(FILING_STANDS), 'filing, move, no stands');
   assert.match(PREMISE_MEANING, /nonsense on a board that asks for nonsense/);
+});
+
+test('every Mod duty prompt cuts a post body at a word with an ellipsis and says once what that means, only when it shows an excerpt', () => {
+  const body = 'Odyssey is the best Mario game ever made by anyone';
+  const limits = { threadPosts: 8, excerptChars: 20, titleMaxLength: 100 };
+  const post = { name: 'Bob', pronouns: they, body };
+  const thread = { title: 'Best Mario game?', posts: [post] };
+  const prompts = {
+    filing: filingPrompt(filing({ limits, post, thread })),
+    report: reportPrompt(report({ limits, post, thread })),
+    appeal: appealPrompt(appeal({ limits, post, thread })),
+    patrol: patrolPrompt(patrol({ limits, sample: [{ ...sample[0]!, body }] })),
+  };
+  for (const [name, p] of Object.entries(prompts)) {
+    assert.ok(p.message.includes('"Odyssey is the best…"'), `${name}: the body is cut at a word`);
+    assert.equal((p.system + p.message).split(EXCERPT_WORDS).length - 1, 1, `${name}: the sentence once`);
+  }
+  const move = appealPrompt(appeal({ punishment: { kind: 'move', group: 'Trial', apology: false }, thread: null }));
+  assert.ok(!(move.system + move.message).includes(EXCERPT_WORDS), 'an appeal of a move shows no excerpt and no sentence');
+  const empty = patrolPrompt(patrol({ sample: [] }));
+  assert.ok(!(empty.system + empty.message).includes(EXCERPT_WORDS), 'no sample, no sentence');
 });
