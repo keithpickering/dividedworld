@@ -4582,6 +4582,24 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
     fake.clock.advance(4 * 86_400_000);
     expect(must(await fake.playCard('hype', anaFace, theirs, {}, '')).kind).toBe('card');
   });
+
+  test('a caught cast of a post earn card holds no end, as place_cast writes it (0370)', async () => {
+    const collector = { ...base, key: 'collector', name: 'Collector', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'hype' };
+    const fake = createFake({ instance: { ...instance, cards: [hype, collector], settings: { ...settings, economy: {} } }, now: () => Date.now() });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+    fake.seed.cards(ana, { collector: 1 });
+    fake.seed.cards(bo, { hype: 1 });
+    fake.signInAs(ana);
+    const set = must(await fake.setCard('collector', anaFace, opener, {}));
+    fake.signInAs(bo);
+    const caught = must(await fake.playCard('hype', boFace, opener, {}, ''));
+    expect(caught.payload.caught).toBe(set.id);
+    expect(caught.payload).not.toHaveProperty('ends');
+  });
 });
 
 describe('post veils, blind totals and a post-local reaction (card notes, Part 3, Task 7)', () => {

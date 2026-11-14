@@ -509,7 +509,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     const on = a.reach === 'character' ? a.on : a.reach === undefined ? a.target : undefined;
     if (!earn || on === undefined) continue;
     const list = boostsOn.get(on) ?? [];
-    // A use card lasts and so does a cast card's earn, so a play of an earn card always has `ends`; a row without one is malformed and boosts nothing.
+    // A use card lasts and so does a cast card's earn, so a play of an earn card in effect always has `ends`; a caught play is never in effect and comes without one (0370), and a row without one boosts nothing.
     if (a.ends === undefined) continue;
     list.push({ card: a.card!, play: a.id, ...(earn.group !== undefined ? { group: earn.group } : {}), from: a.at, ends: a.ends, by: earn.by, quadrants: earn.quadrants ?? [], reactions: earn.reactions ?? [] });
     boostsOn.set(on, list);
