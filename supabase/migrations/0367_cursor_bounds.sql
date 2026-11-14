@@ -8,10 +8,12 @@
 -- generic plan hash-joined all of it. Otherwise each definition is unchanged: the same arguments, return shape, volatility, security,
 -- search_path and refusals.
 
--- Partial on purpose: Postgres proves a partial index's predicate only from a query's own clauses, never from a NOT NULL constraint, so only a query that says
--- `a.id is not null` (admin_awards' page) can use this index. An unscoped (at desc, id desc) index was picked for the `held` lookup in trophy_item
--- (`where trophy = ... order by at desc, id desc limit 1`), which then filtered away other trophies' rows. The two-belt case in 0319 guards it.
-create index if not exists trophy_awards_at_id on trophy_awards (at desc, id desc) where id is not null;
+-- Partial on purpose, so that only admin_awards' page can use this index. An unscoped (at desc, id desc) index was picked for the `held` lookup in
+-- trophy_item (`where trophy = ... order by at desc, id desc limit 1`), which then filtered away other trophies' rows; the two-belt case in 0319
+-- guards it. A query can use a partial index only when its own clauses imply the predicate, so the predicate is `at > '-infinity'`: always true,
+-- and said only by admin_awards. It is not `id is not null`: Postgres 17 drops an IS NOT NULL qual on a NOT NULL column before it matches
+-- indexes, so that predicate could be matched by no query at all (found in CI, Postgres 17.11).
+create index if not exists trophy_awards_at_id on trophy_awards (at desc, id desc) where at > '-infinity';
 
 CREATE OR REPLACE FUNCTION public.log_page(in_before timestamp with time zone)
  RETURNS jsonb
@@ -705,8 +707,8 @@ begin
   return (
     with page as (
       select a as aw, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
-      -- `a.id is not null` is always true; it lets this page, and no other read, use the partial index trophy_awards_at_id.
-      where a.id is not null and (a.at, a.id) < (coalesce(before, 'infinity'), coalesce(before_id, '00000000-0000-0000-0000-000000000000'::uuid))
+      -- `a.at > '-infinity'` is always true; it lets this page, and no other read, use the partial index trophy_awards_at_id.
+      where a.at > '-infinity'::timestamptz and (a.at, a.id) < (coalesce(before, 'infinity'), coalesce(before_id, '00000000-0000-0000-0000-000000000000'::uuid))
       order by a.at desc, a.id desc
       limit size + 1
     )
