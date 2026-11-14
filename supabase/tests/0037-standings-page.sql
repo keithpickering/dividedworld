@@ -186,7 +186,8 @@ end $$;
 do $$
 declare
   open_season bigint := standings_season();  -- the block above left the instance between seasons
-  body text := (select prosrc from pg_proc where proname = 'standings_page');
+  -- The function is plpgsql (0368): its statement is what stands between `begin return query` and `end`.
+  body text := (select regexp_replace(regexp_replace(prosrc, '^\s*#variable_conflict[^\n]*\s*begin\s*return query\s*', ''), ';\s*end\s*$', '') from pg_proc where proname = 'standings_page');
   plan text;
   analyzed jsonb;
   touched bigint;

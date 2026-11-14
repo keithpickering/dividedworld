@@ -322,7 +322,7 @@ begin
   raise notice 'sl-big buffers: my_draws %, my_walls_drawn_on %, log_page %', b_draws, b_walls, b_page;
   if b_draws > per * n_draws + slack then raise exception 'my_draws touched % shared buffers for % rows (at most % each and % over): it opens payloads', b_draws, n_draws, per, slack; end if;
   if b_walls > per * n_walls + slack then raise exception 'my_walls_drawn_on touched % shared buffers for % rows (at most % each and % over): it opens payloads', b_walls, n_walls, per, slack; end if;
-  -- log_page names acts_public six times and a `begin atomic` body is planned at each call, so the page pays for planning the view: about 3,900 buffers more with the veil's union over the concealment than the concealment alone
+  -- log_page names acts_public six times and a page that plans its statements at each call would pay for planning the view: about 3,900 buffers more with the veil's union over the concealment than the concealment alone
   -- (7,850 to plan the page against 3,970, measured by `explain` on this fixture), and the figure is the number of relations the plan names, never the rows read. The allowance is that, with margin, over the 2,000 of the other
   -- two reads (32,700 in a full run of this suite, against 24,000 allowed before the veil's union). It stays a bound on the shape: a page that opened each row's payload would be more than a buffer a row beyond it.
   if b_page > per * (n_draws + 1) + page_slack then raise exception 'the drawer''s log_page touched % shared buffers (at most % each over the % rows it reads and % over): it opens payloads', b_page, per, n_draws, page_slack; end if;

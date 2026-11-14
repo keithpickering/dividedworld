@@ -73,6 +73,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { ALLOWED_RPCS } from './check-web-reads.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const migrationsDir = path.join(repoRoot, 'supabase/migrations');
@@ -132,6 +133,18 @@ function psql(url, sql) {
   }
 }
 
+/** Like psql, but answers the rows of one query as `name|count` pairs, or the error. @returns {{ rows: { name: string, calls: string }[], error: string | null }} */
+function psqlRows(url, sql) {
+  try {
+    const out = execFileSync(PSQL.file, [...PSQL.args, '-v', 'ON_ERROR_STOP=1', '-q', '-X', '-A', '-t', '-F', '|', url, '-f', '-'], { input: sql, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });
+    const rows = String(out).split('\n').filter((l) => l.includes('|')).map((l) => { const [name, calls] = l.split('|'); return { name, calls }; });
+    return { rows, error: null };
+  } catch (err) {
+    if (err.code === 'ENOENT') { console.error('\n  psql not found; run scripts/setup-container.sh'); process.exit(2); }
+    return { rows: [], error: timedOut(err) ? killedWhy() : (err.stderr || err.stdout || String(err)).trim() };
+  }
+}
+
 /** SQL with its `--` and block comments blanked, so a comment cannot stand in for code. */
 const withoutComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
 
@@ -184,10 +197,59 @@ export const FILE_TIMEOUT_MS = Number(process.env.KAYFABB_SQL_FILE_TIMEOUT_MS) >
 export const boundsSql = (db) => Object.entries(SESSION_BOUNDS).map(([k, v]) => `alter database ${db} set ${k} to '${v}';`).join('\n');
 
 /**
+ * Every connection to the scratch database counts function calls (`track_functions = all`), so that after the last file
+ * Postgres's own statistics say which client reads a test called, a call in a rolled-back transaction included (see
+ * `coverageSql` and the `coverage` step).
+ */
+export const trackSql = (db) => `alter database ${db} set track_functions to 'all';`;
+
+/**
+ * The client reads as a setting of the scratch database, `kayfabb.client_rpcs` (names joined by commas), so an assertion file reads the list
+ * with `current_setting('kayfabb.client_rpcs')` and holds no copy (supabase/tests/0320-client-reads-plan-once.sql).
+ */
+export const clientRpcsSql = (db) => `alter database ${db} set kayfabb.client_rpcs to '${ALLOWED_RPCS.join(',')}';`;
+
+/**
+ * The stable functions in `public` among the client reads, each with the calls the statistics hold (summed over overloads).
+ * Run on a connection of its own after every other has ended; the flush is forced anyway.
+ */
+export const coverageSql = `select pg_stat_force_next_flush();
+select p.proname, coalesce(sum(s.calls), 0)
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public'
+left join pg_stat_user_functions s on s.funcid = p.oid
+where p.provolatile = 's' and p.proname = any (string_to_array('${ALLOWED_RPCS.join(',')}', ','))
+group by p.proname order by p.proname;`;
+
+/**
  * What runs on the scratch database before each assertion file (the start of the file's own psql call) and each end-to-end
  * file (a psql call of its own), outside any transaction (see the header). Exported so tools/test-sql-refusal.mjs reads the text sent.
  */
 export const VACUUM_STATEMENT = 'vacuum (analyze);';
+
+/**
+ * Client reads the statistics cannot count, each with the reason. Postgres counts a call when it returns, so a function whose
+ * only work is to raise is never counted, however often it is called. `screen_refusal` is that function (0094): it is reached
+ * only from a screen's refused argument, and tests/0096-thread-page.sql asserts the refusal it raises. Not a way to excuse a
+ * read nobody tests: an entry is a function that always raises, and the reason says so.
+ */
+export const UNCOUNTABLE_READS = Object.freeze({
+  screen_refusal: 'it only raises, and a call that raises is not counted; supabase/tests/0096-thread-page.sql asserts its refusal through thread_page',
+});
+
+/**
+ * The stable functions among the client reads (ALLOWED_RPCS, tools/check-web-reads.mjs) that no test called: `stableNames`
+ * are the reads that are stable functions in `public`, `callRows` the `{ name, calls }` Postgres's function statistics hold
+ * for them (summed over overloads). A name with no row, or a row with no calls, is uncalled. Sorted. Pure, so
+ * tools/test-sql-coverage.mjs drives it red on a planted name.
+ * @param {string[]} stableNames
+ * @param {{ name: string, calls: number | string }[]} callRows
+ */
+export function uncalledReads(stableNames, callRows) {
+  const calls = new Map();
+  for (const r of callRows) calls.set(r.name, (calls.get(r.name) ?? 0) + Number(r.calls));
+  return stableNames.filter((n) => !((calls.get(n) ?? 0) > 0)).sort();
+}
 
 const timedOut = (err) => err.code === 'ETIMEDOUT' || (err.signal != null && err.status == null);
 const killedWhy = () => `did not finish within ${FILE_TIMEOUT_MS / 1000}s and was killed: a hang that neither lock_timeout (${SESSION_BOUNDS.lock_timeout}) nor statement_timeout (${SESSION_BOUNDS.statement_timeout}) ended`;
@@ -215,7 +277,7 @@ function main() {
      where that is; the URL is this machine's and the database is dropped with it. */
   if (!step('scratch_url', psql(url, `alter database ${scratch} set kayfabb.scratch_url to '${target.replaceAll("'", "''")}';`))) process.exit(1);
   /* Before any connection to it, so the shim, every migration, every file and every dblink session start bounded. */
-  if (!step('bounds', psql(url, boundsSql(scratch)))) process.exit(1);
+  if (!step('bounds', psql(url, boundsSql(scratch) + '\n' + trackSql(scratch) + '\n' + clientRpcsSql(scratch)))) process.exit(1);
   try {
     const [shimFile, ...migrationPaths] = migrationFiles();
     if (!step('setup/auth-shim.sql', psql(target, fs.readFileSync(shimFile, 'utf8')))) return 1;
@@ -264,6 +326,18 @@ function main() {
       } catch (err) {
         step(`e2e/${f}`, (timedOut(err) ? `${killedWhy()}\n` : '') + String(err.stdout || '') + String(err.stderr || ''));
       }
+    }
+    /* A client read no test calls is one whose broken reference nothing would find: a plpgsql body is checked only when
+       it runs. Every connection before this one has ended, so their counts are flushed. */
+    console.log('\nsql: coverage');
+    const counted = psqlRows(target, coverageSql);
+    if (counted.error) step('coverage', `could not read the function statistics:\n${counted.error}`);
+    else {
+      const uncalled = uncalledReads(counted.rows.map((r) => r.name).filter((n) => !(n in UNCOUNTABLE_READS)), counted.rows);
+      step('coverage', uncalled.length
+        ? `${uncalled.length} client read(s) in ALLOWED_RPCS no test called: ${uncalled.join(', ')}\n`
+          + 'A client read no test calls is one whose broken reference nothing would find; add a call to the assertion file that tests it.'
+        : null);
     }
     console.log(`\n  sql: ${migrations.length} migration(s); ${ran} assertion file(s); ${e2e.length} end-to-end file(s); ${failed} failed`);
     return failed ? 1 : 0;
