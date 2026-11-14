@@ -15,7 +15,7 @@ import { instance } from '../index.ts';
 import { publicityTour } from './publicity-tour.ts';
 import { atOrBelow, castOnPost, drawnInMoment, giftSplit, instant, wardTurnsAway, openDrive, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
-import { boundedPhrase } from './phrase-bound.ts';
+import { boundedPhrase, characters } from './phrase-bound.ts';
 import { WORDS, thisCard } from './this.ts';
 import { CUES, PLACES, laughTrack, placesOf, type Cue } from './laugh-track.ts';
 import { decide } from '../../../engine/rules/actions.ts';
@@ -532,11 +532,12 @@ const answers: Record<string, Record<string, unknown>> = {
   '4d-chess': { card: 'whoops', quadrant: 'calmPositive' },
   graffiti: { stencil: 'horns', can: 'red', spot: 4 },
   'laugh-track': { cues: [{ phrase: 'the same old', sound: 'laugh' }, { phrase: 'something new', sound: 'boo' }] },
+  this: { phrase: 'the same old', words: 'again' },
 };
 
 test('each card that lets the model set options gives an object schema its own validateConfig accepts for a sample answer', () => {
   const keys = cards.filter((c) => c.staffOptions).map((c) => c.key).sort();
-  assert.deepEqual(keys, ['4d-chess', 'autocorrect', 'card-collector', 'graffiti', 'laugh-track', 'stick-around', 'whoops']);
+  assert.deepEqual(keys, ['4d-chess', 'autocorrect', 'card-collector', 'graffiti', 'laugh-track', 'stick-around', 'this', 'whoops']);
   for (const card of cards) {
     if (!card.staffOptions) continue;
     const { prompt, schema } = card.staffOptions;
@@ -1257,6 +1258,9 @@ test('THIS\'s configuration: no words is nothing, the words are one line of at m
   assert.equal(thisWhy(thisConfig(7)), 'the phrase is the words to point at');
   assert.equal(thisWhy(thisConfig('Mario', 7)), 'the words are what the note says after THIS');
   assert.equal(thisWhy(thisConfig('abc', 7)), 'the phrase has at least 4 letters or digits', 'the phrase is asked first');
+  assert.deepEqual(thisCard.validateConfig({ phrase: 'Mario', words: '   ' }), { ok: true, value: { phrase: 'Mario', words: '' } }, 'words of only spaces are no words');
+  assert.equal(thisWhy({ phrase: 'Mario', words: 'one two' }), 'the words are one line', 'a line separator is a line break');
+  assert.equal(thisWhy({ phrase: 'Mario', words: null }), 'the words are what the note says after THIS');
   assert.equal(thisCard.validateConfig(null).ok, false);
 });
 
@@ -1273,4 +1277,31 @@ test('THIS lands on a post that holds its phrase, three deep, and on the caster\
 test('THIS with no configuration answers what landsOn does', () => {
   assert.equal(thisCard.canApply(on('anything'), [], undefined, new Date()).ok, true);
   assert.deepEqual(thisCard.canApply(on('x'), [{ card: 'this', act: 'a' }, { card: 'this', act: 'b' }, { card: 'this', act: 'c' }], undefined, new Date()), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
+});
+
+test('THIS\'s persona options: the words are trimmed to 60 characters at a word\'s end and the trim is named; nothing else is repaired', () => {
+  const repair = (config: unknown, text = 'I like Mario a lot') => thisCard.repairStaff!(config, on(text), 'cast');
+  const phrase = 'Mario';
+  const sixtyOne = `${'a'.repeat(30)} ${'b'.repeat(30)}`;
+  assert.equal(characters(sixtyOne), 61);
+  assert.deepEqual(repair({ phrase, words: sixtyOne }), {
+    config: { phrase, words: 'a'.repeat(30) },
+    trims: [{ path: 'card.config.this.words', predicate: 'mostSixtyCharacters', before: 61, after: 30 }],
+  });
+  assert.deepEqual(repair({ phrase, words: 'c'.repeat(70) }), {
+    config: { phrase, words: 'c'.repeat(60) },
+    trims: [{ path: 'card.config.this.words', predicate: 'mostSixtyCharacters', before: 70, after: 60 }],
+  });
+  const sixty = { phrase, words: 'd'.repeat(60) };
+  assert.deepEqual(repair(sixty), { config: sixty, trims: [] });
+  const emoji = repair({ phrase, words: '\u{1F600}'.repeat(70) });
+  assert.equal(characters((emoji.config as { words: string }).words), 60, 'cut by characters, never through a surrogate pair');
+  assert.equal(thisConfig(phrase, (emoji.config as { words: string }).words).ok, true);
+  const missing = { phrase: 'Luigi', words: 'fine' };
+  assert.deepEqual(repair(missing), { config: missing, trims: [] });
+  const verdict = thisCard.validateConfig(missing);
+  assert.equal(verdict.ok, true);
+  assert.equal(thisCard.canApply(on('I like Mario a lot'), [], (verdict as { value: { phrase: string; words: string } }).value, new Date()).ok, false);
+  assert.deepEqual(repair({ phrase: 'ab', words: 'x' }), { config: { phrase: 'ab', words: 'x' }, trims: [] });
+  assert.deepEqual(repair('nonsense'), { config: 'nonsense', trims: [] });
 });

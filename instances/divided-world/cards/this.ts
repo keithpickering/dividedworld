@@ -17,6 +17,22 @@ export const WORDS = { most: 60 } as const;
 
 export type ThisConfig = { readonly phrase: string; readonly words: string };
 
+/**
+ * A persona's words repaired (design, section 4): words past 60 characters are cut to the longest stretch that ends at a word's end (the last white
+ * space within the first 61 characters; with none, the first 60), counted and cut by characters, so an emoji is one and no pair is split. The trim is
+ * named. Nothing else is repaired: a phrase that is not in the post, or is out of bounds, is returned as given and the decision refuses in the card's words.
+ */
+function repairWords(config: unknown): { readonly config: unknown; readonly trims: readonly { readonly path: string; readonly predicate: string; readonly before: number; readonly after: number }[] } {
+  const words = typeof config === 'object' && config !== null ? (config as { words?: unknown }).words : undefined;
+  if (typeof words !== 'string') return { config, trims: [] };
+  const all = [...words.trim()];
+  if (all.length <= WORDS.most) return { config, trims: [] };
+  const head = all.slice(0, WORDS.most + 1);
+  const space = head.findLastIndex((c) => /\s/u.test(c));
+  const kept = (space > 0 ? head.slice(0, space) : head.slice(0, WORDS.most)).join('').trim();
+  return { config: { ...(config as object), words: kept }, trims: [{ path: 'card.config.this.words', predicate: 'mostSixtyCharacters', before: all.length, after: characters(kept) }] };
+}
+
 export const thisCard: CardRules<ThisConfig> = {
   key: 'this',
   name: 'THIS',
@@ -32,6 +48,16 @@ export const thisCard: CardRules<ThisConfig> = {
     if (!lands.ok || typeof config?.phrase !== 'string' || target.reach !== 'post') return lands;
     return occurrences(target.text, config.phrase).length ? lands : refuse(`“${config.phrase}” is not in this post's own words`);
   },
+  staffOptions: {
+    prompt: 'Choose the words in the post to point at, and what to say about them. The phrase must be copied exactly from the post you are replying to: whole words, on one line, at least 4 letters or digits and up to 100 characters. The note reads THIS and then your words: one line of up to 60 characters, or none.',
+    schema: {
+      type: 'object',
+      properties: { phrase: { type: 'string' }, words: { type: 'string' } },
+      required: ['phrase', 'words'],
+      additionalProperties: false,
+    },
+  },
+  repairStaff: repairWords,
   validateConfig: (config) => {
     const { phrase: p, words: w = '' } = typeof config === 'object' && config !== null ? (config as { phrase?: unknown; words?: unknown }) : {};
     if (typeof p !== 'string') return refuse('the phrase is the words to point at');
