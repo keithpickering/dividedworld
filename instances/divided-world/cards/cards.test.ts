@@ -1256,6 +1256,7 @@ test('THIS\'s configuration: no words is nothing, the words are one line of at m
   assert.equal(thisWhy(thisConfig('abc')), 'the phrase has at least 4 letters or digits');
   assert.equal(thisWhy(thisConfig(7)), 'the phrase is the words to point at');
   assert.equal(thisWhy(thisConfig('Mario', 7)), 'the words are what the note says after THIS');
+  assert.equal(thisWhy(thisConfig('abc', 7)), 'the phrase has at least 4 letters or digits', 'the phrase is asked first');
   assert.equal(thisCard.validateConfig(null).ok, false);
 });
 

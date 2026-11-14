@@ -35,9 +35,9 @@ export const thisCard: CardRules<ThisConfig> = {
   validateConfig: (config) => {
     const { phrase: p, words: w = '' } = typeof config === 'object' && config !== null ? (config as { phrase?: unknown; words?: unknown }) : {};
     if (typeof p !== 'string') return refuse('the phrase is the words to point at');
-    if (typeof w !== 'string') return refuse('the words are what the note says after THIS');
     const bounded = boundedPhrase(p);
     if (!bounded.ok) return refuse(bounded.why);
+    if (typeof w !== 'string') return refuse('the words are what the note says after THIS');
     const words = w.trim();
     if (characters(words) > WORDS.most) return refuse(`the words are at most ${WORDS.most} characters`);
     if (LINE_BREAK.test(words)) return refuse('the words are one line');
