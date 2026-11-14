@@ -271,6 +271,8 @@ export interface ThreadPost {
   /** The author's pronouns, resolved by the caller; the prompt writes `Name (she/her)`, the old voice's completion frame writes no tag. */
   readonly pronouns: PronounSet;
   readonly body: string;
+  /** Whether the source (`pool_thread`) shortened `body`: the excerpt then ends in an ellipsis whatever its length. */
+  readonly cut?: boolean;
 }
 
 export interface ChatterLimits {
@@ -336,7 +338,7 @@ export function memoryLines(memory: Memory | null, names: (id: string) => string
 function threadLines(thread: ChatterInput['thread'], l: ChatterLimits, tagged: boolean): string[] {
   if (thread === null) return [];
   const shown = thread.posts.slice(-Math.max(l.threadPosts, 0));
-  return [`Thread: "${clip(thread.title, l.titleMaxLength)}"`, ...shown.map((p) => `${tagged ? taggedName(clip(p.name, 60), p.pronouns) : clip(p.name, 60)}: ${excerpt(p.body, l.excerptChars)}`)];
+  return [`Thread: "${clip(thread.title, l.titleMaxLength)}"`, ...shown.map((p) => `${tagged ? taggedName(clip(p.name, 60), p.pronouns) : clip(p.name, 60)}: ${excerpt(p.body, l.excerptChars, p.cut === true)}`)];
 }
 
 export function chatterPrompt(i: ChatterInput): { readonly system: string; readonly message: string } {
@@ -377,7 +379,7 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
   const lines = threadLines(i.thread, l, true);
   const message = [
     ...(lines.length ? [lines.join('\n')] : ['There is no thread yet; yours will be its first post.']),
-    ...(i.quoting ? [`You are replying to ${taggedName(clip(i.quoting.name, 60), i.quoting.pronouns)}: "${excerpt(i.quoting.body, l.excerptChars)}"`] : []),
+    ...(i.quoting ? [`You are replying to ${taggedName(clip(i.quoting.name, 60), i.quoting.pronouns)}: "${excerpt(i.quoting.body, l.excerptChars, i.quoting.cut === true)}"`] : []),
     i.startThread ? 'Write the title and the opening post.' : 'Write your post.',
   ].join('\n\n');
   return { system, message };

@@ -65,6 +65,8 @@ export interface DigestExcerpt {
   readonly character: string;
   readonly reactions: number;
   readonly text: string;
+  /** Whether SQL shortened `text` (the post was longer than the setting `digestExcerptChars`): the line then ends in an ellipsis. */
+  readonly cut?: boolean;
 }
 
 export interface DigestCharacter {
@@ -238,7 +240,7 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   );
   section(
     'Top posts',
-    digest.excerpts.slice(0, E).map((e) => `${name(e.character)}, ${e.reactions} reactions: ${excerpt(e.text, C)}`),
+    digest.excerpts.slice(0, E).map((e) => `${name(e.character)}, ${e.reactions} reactions: ${excerpt(e.text, C, e.cut === true)}`),
     'No post drew attention.',
   );
   if (digest.excerpts.length > 0) out.push('', EXCERPT_WORDS);

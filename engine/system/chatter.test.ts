@@ -194,6 +194,17 @@ test('the prompt carries the persona, the premise, the thread cut to excerptChar
   assert.ok(p.message.includes('You are replying to Bob (they/them)'), 'the post it replies to, with its pronouns');
 });
 
+test('a thread post or a quoted post the source cut ends in an ellipsis even under the bound, and one that fit does not', () => {
+  const p = chatterPrompt({
+    ...base,
+    thread: { title: 'Pineapple', posts: [{ name: 'Ann', pronouns: she, body: 'Pineapple is fi', cut: true }, { name: 'Bob', pronouns: they, body: 'It is not.', cut: false }] },
+    quoting: { name: 'Ann', pronouns: she, body: 'Pineapple is fi', cut: true },
+  });
+  assert.ok(p.message.includes('Ann (she/her): Pineapple is…'), 'the thread post the source cut');
+  assert.ok(p.message.includes('Bob (they/them): It is not.') && !p.message.includes('It is not.…'), 'a post that fit gains no ellipsis');
+  assert.ok(p.message.includes('You are replying to Ann (she/her): "Pineapple is…"'), 'the quoted post the source cut');
+});
+
 test('the prompt tells the persona its own pronouns after its persona, and tags each thread post and the quoted post with its author\'s', () => {
   const p = chatterPrompt({ ...base, names: (id) => (id === 'x' ? 'Cy (she/her)' : id) });
   assert.ok(p.system.includes(`${personaPrompt(testSystem, persona, 'boss')}\n\nYour pronouns are he/him (he, him, his, his, himself).`), 'the self line follows the persona');

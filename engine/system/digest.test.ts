@@ -165,6 +165,13 @@ test('a board line with a days count that is no number never reads NaN', () => {
   }
 });
 
+test('a digest excerpt the source cut ends in an ellipsis though it is under the bound, and one that fit does not', () => {
+  const cutOut = renderDigest({ ...small, excerpts: [{ ...small.excerpts[0]!, text: 'It was me all al', cut: true }] }, null, []);
+  assert.ok(cutOut.includes('It was me all…'), 'the source said it cut');
+  const whole = renderDigest({ ...small, excerpts: [{ ...small.excerpts[0]!, text: 'It was me all along', cut: false }] }, null, []);
+  assert.ok(whole.includes('It was me all along') && !whole.includes('along…'), 'a post that fit gains no ellipsis');
+});
+
 test('a digest excerpt over the bound is cut at a word with an ellipsis, and the digest says once what that means, only when it shows one', () => {
   const text = 'word '.repeat(400);
   const out = renderDigest({ ...small, excerpts: [{ ...small.excerpts[0]!, text }] }, null, []);

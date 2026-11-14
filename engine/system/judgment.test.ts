@@ -314,6 +314,23 @@ test('a Mod\'s prompt opens with the Mod premise and its answer rules; an appeal
   assert.ok(!boss.includes(testSystem.offices.mod.premise));
 });
 
+test('the order line, or its absence, is written only for a Mod: the Boss hearing an appeal is shown neither', () => {
+  assert.ok(modPrompt(base).includes('Your standing order from the Boss'), 'a Mod with an order');
+  assert.ok(modPrompt({ ...base, order: null }).includes('The Boss has given you no standing order.'), 'a Mod with none');
+  const boss = appealPrompt(appeal({ office: 'boss', order: 'Last day. You are Boss next, as discussed.' })).system;
+  assert.ok(!boss.includes('standing order') && !boss.includes('Last day.'), 'the Boss is shown no order');
+  assert.ok(!appealPrompt(appeal({ office: 'boss', order: null })).system.includes('The Boss has given you no standing order.'), 'nor the line that says there is none');
+});
+
+test('a post the source cut ends in an ellipsis in every prompt that shows it, and one that fit does not', () => {
+  const cutPost = { name: 'Bob', pronouns: they, body: 'Odyssey. Odys', cut: true };
+  const f = filingPrompt(filing({ post: cutPost, thread: { title: 'T', posts: [cutPost] } })).message;
+  assert.ok(f.includes('Bob (they/them): Odyssey.…') && f.includes('by Bob (they/them): "Odyssey.…"'), 'a filing');
+  assert.ok(reportPrompt(report({ post: cutPost })).message.includes('"Odyssey.…"'), 'a report');
+  assert.ok(appealPrompt(appeal({ post: cutPost })).message.includes('"Odyssey.…"'), 'an appeal');
+  assert.ok(!filingPrompt(filing()).message.includes('Odyssey.…'), 'a post that fit');
+});
+
 test('a rule is said in words: its number, its scope and its predicate', () => {
   assert.equal(ruleWords(base.rules[0]!), 'Rule 2: no double posting (moderate)');
   assert.equal(ruleWords(base.rules[1]!), 'House Rule 1: the word "frobnicate" is banned (severe)');
