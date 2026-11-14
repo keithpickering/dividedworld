@@ -2,8 +2,11 @@
 -- A page cursor written `<arg> is null or <column> <= <arg>` is a catch-all: a plan built before the value is known cannot drop the `is null` arm,
 -- so a deep page reads every row behind the cursor and keeps a page. Each bound is rewritten as `<column> <= coalesce(<arg>, 'infinity')`, or as a row
 -- comparison `(at, id) < (coalesce(before, 'infinity'), coalesce(before_id, nil uuid))` for the keyset ones, which a generic plan seeks on and which
--- returns the same rows. cosmetic_log_rows also bounds each branch on its own, since the outer limit alone reads every row behind the cursor, and
--- trophy_awards gets the (at desc, id desc) index that admin_awards' row comparison seeks on. trophies_of, belt_lineage and admin_awards also carry the whole awards row in their page CTE, so nothing joins back to trophy_awards: with a page of unknown size a generic plan hash-joined all of it. Taken from pg_get_functiondef, nothing else changed.
+-- returns the same rows. cosmetic_log_rows also bounds each branch on its own, since the outer limit alone reads every row behind the cursor.
+-- trophy_awards gets a partial (at desc, id desc) index that only admin_awards' row comparison seeks on. trophies_of, belt_lineage and
+-- admin_awards also carry the whole awards row in their page CTE, so nothing joins back to trophy_awards: with a page of unknown size a
+-- generic plan hash-joined all of it. Otherwise each definition is unchanged: the same arguments, return shape, volatility, security,
+-- search_path and refusals.
 
 -- Partial on purpose: Postgres proves a partial index's predicate only from a query's own clauses, never from a NOT NULL constraint, so only a query that says
 -- `a.id is not null` (admin_awards' page) can use this index. An unscoped (at desc, id desc) index was picked for the `held` lookup in trophy_item
