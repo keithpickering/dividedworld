@@ -64,11 +64,13 @@ function Post({ staged, stores, nameOf }: { readonly staged: Staged; readonly st
   return (
     <article id={`front-door-post-${seq}`} className="kb-act" aria-labelledby={`front-door-post-${seq}-title`} data-kb-seq={seq} data-kb-kind="post" data-kb-postbit="side">
       <h2 id={`front-door-post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
-      {person && <Postbit person={person} layout="side" link={false} />}
-      <header className="kb-act-meta">{marks}<span className="kb-act-number">#{seq}</span></header>
-      <div className="kb-act-main">
-        <PostEffects plays={stores.plays} post={act} place="thread" marks={marks} nameOf={nameOf}><BbCode text={body} /></PostEffects>
-        <Reactions act={act.id} author={act.character} authorName={name} tallies={stores.tallies} mine={stores.mine} />
+      <div className="kb-act-grid">
+        {person && <Postbit person={person} layout="side" link={false} />}
+        <header className="kb-act-meta">{marks}<span className="kb-act-number">#{seq}</span></header>
+        <div className="kb-act-main">
+          <PostEffects plays={stores.plays} post={act} place="thread" marks={marks} nameOf={nameOf}><BbCode text={body} /></PostEffects>
+          <Reactions act={act.id} author={act.character} authorName={name} tallies={stores.tallies} mine={stores.mine} />
+        </div>
       </div>
     </article>
   );
