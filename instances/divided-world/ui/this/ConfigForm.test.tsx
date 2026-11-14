@@ -96,6 +96,39 @@ describe('THIS\'s play form', () => {
     expect(said().textContent).toBe('');
   });
 
+  test('the same message said again is a change a screen reader hears: every other one ends in a no-break space', () => {
+    form({ phrase: 'the same old', words: '' });
+    const said = () => document.querySelector('[data-kb-count-said]')!;
+    type(words(), 'a'.repeat(60));
+    const first = said().textContent;
+    type(words(), 'a'.repeat(55));
+    type(words(), 'a'.repeat(60));
+    const second = said().textContent;
+    expect(second).not.toBe(first);
+    expect(second!.endsWith('\u00a0')).toBe(true);
+    type(words(), 'a'.repeat(55));
+    type(words(), 'a'.repeat(60));
+    expect(said().textContent).toBe(first);
+  });
+
+  test('a drop from full into the band under the limit takes back what was said, and typing on in the band says nothing new', () => {
+    form({ phrase: 'the same old', words: '' });
+    const said = () => document.querySelector('[data-kb-count-said]')!;
+    type(words(), 'a'.repeat(60));
+    expect(said().textContent).toMatch(/words are full/);
+    type(words(), 'a'.repeat(55));
+    expect(said().textContent).toBe('');
+    type(words(), 'a'.repeat(30));
+    /* As the play form does: inside the band the count stays as last said (a stale "20 characters left." while the player types on), and is not repeated. */
+    type(words(), 'a'.repeat(40));
+    expect(said().textContent!.replace(/\u00a0$/, '')).toBe('20 characters left.');
+    type(words(), 'a'.repeat(41));
+    type(words(), 'a'.repeat(59));
+    expect(said().textContent!.replace(/\u00a0$/, '')).toBe('20 characters left.');
+    type(words(), 'a'.repeat(39));
+    expect(said().textContent).toBe('');
+  });
+
   test('the form reports the trimmed pair on every change', () => {
     const { onChange } = form(undefined);
     type(phrase(), '  the same old ');

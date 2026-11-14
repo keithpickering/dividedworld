@@ -54,11 +54,10 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const changeWords = (next: string) => {
     const was = characters(words);
     const now = characters(next);
-    /* Said politely and seldom: never on every key, only as the words near their limit, fill it, or lose what ran past it. */
-    if (now > WORDS.most) sayCount(`${WORDS.most} of ${WORDS.most} characters: the words are full, and the rest is not kept.`);
-    else if (now === WORDS.most && was < WORDS.most) sayCount(`${WORDS.most} of ${WORDS.most} characters: the words are full.`);
+    /* Said politely and seldom: never on every key, only as the words near their limit, or fill it (the field stops typing at the limit, and the form is only ever given words within it, so nothing runs past). */
+    if (now === WORDS.most && was < WORDS.most) sayCount(`${WORDS.most} of ${WORDS.most} characters: the words are full.`);
     else if (now >= NEAR && was < NEAR) sayCount(`${WORDS.most - now} characters left.`);
-    else if (now < NEAR || (now < WORDS.most && was >= WORDS.most)) sayCount('');
+    else if (now < NEAR || (now < WORDS.most && was === WORDS.most)) sayCount('');
     setWords(next);
     report(phrase, next);
   };
@@ -85,7 +84,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
       />
       <p className="kb-play-fine" id={`${id}-words-count`}>
         <span>{`${characters(words)} / ${WORDS.most}`}</span>
-        <span className="kb-visually-hidden" aria-live="polite" data-kb-count-said>{said.words}{said.words && said.n % 2 === 0 ? ' ' : ''}</span>
+        <span className="kb-visually-hidden" aria-live="polite" data-kb-count-said>{said.words}{said.words && said.n % 2 === 0 ? '\u00a0' : ''}</span>
       </p>
       <ConfigHint>The note will read: <span data-this-note>{words.trim() ? `THIS ${words.trim()}` : 'THIS'}</span></ConfigHint>
     </fieldset>
