@@ -89,6 +89,11 @@ import laughTrackCanvas from './cards/laugh-track/art.webp?url';
 import laughTrackMark from './cards/laugh-track/mark.svg?url';
 import laughTrackArt from './cards/laugh-track/art.json';
 import { ConfigForm as LaughTrackConfigForm } from './laugh-track/ConfigForm.tsx';
+import { WORDS as THIS_WORDS, thisCard, type ThisConfig } from '../cards/this.ts';
+import thisCanvas from './cards/this/art.svg?url';
+import thisMark from './cards/this/mark.svg?url';
+import thisArt from './cards/this/art.json';
+import { ConfigForm as ThisConfigForm } from './this/ConfigForm.tsx';
 import { graffiti } from '../cards/graffiti.ts';
 import { LOG_DRAW as GRAFFITI_LOG_DRAW, LOG_WASH as GRAFFITI_LOG_WASH, describeDraw as describeGraffitiDraw } from '../cards/graffiti/words.ts';
 import { ConfigForm as CardCollectorConfigForm } from '../cards/card-collector/ConfigForm.tsx';
@@ -240,6 +245,7 @@ const AutocorrectEffect = lazy(() => import('../cards/autocorrect/Effect.tsx').t
 const FeelinFabEffect = lazy(() => import('./feelin-fab/Effect.tsx').then((m) => ({ default: m.FeelinFabEffect })));
 const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m) => ({ default: m.GlitterBombEffect })));
 const LaughTrackEffect = lazy(() => import('./laugh-track/Effect.tsx').then((m) => ({ default: m.LaughTrackEffect })));
+const ThisEffect = lazy(() => import('./this/Effect.tsx').then((m) => ({ default: m.ThisEffect })));
 const BelowTheFoldEffect = lazy(() => import('./below-the-fold/Effect.tsx').then((m) => ({ default: m.BelowTheFoldEffect })));
 const WhodunnitEffect = lazy(() => import('./whodunnit/Effect.tsx').then((m) => ({ default: m.WhodunnitEffect })));
 const BlindStudyEffect = lazy(() => import('./blind-study/Effect.tsx').then((m) => ({ default: m.BlindStudyEffect })));
@@ -409,6 +415,25 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     describe: () =>
       `A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience stirs as a reader gets close and the phrase's underline fades in. Pointing at the phrase, tapping it, or pressing Enter on it plays the reaction. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. ${setMoveWords('the quoting post')} Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`,
     logPlay: () => 'It gave the post a studio audience.',
+  },
+  /*
+   * THIS (docs/plans/2026-11-13-this-design.md): Pepperoni's color. A note under the words the caster points at: THIS, an arrow and the
+   * caster's own handwriting (ui/this/Effect.tsx); the form picks the phrase and the words (ui/this/ConfigForm.tsx).
+   */
+  {
+    key: 'this',
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: thisCanvas, mark: thisMark, credit: thisArt.credit, tagline: 'Point at it.' },
+    summary: 'Point at a line of a post and say something about it.',
+    status: 'Notes on its words',
+    hint: 'Someone pointed at these words. The Lens says who.',
+    Effect: ThisEffect,
+    ConfigForm: ThisConfigForm,
+    describe: () =>
+      `A Pepperoni card, ${thisCard.rarity}. You choose words in a post, and the post gets a note under them: THIS, an arrow, and up to ${THIS_WORDS.most} characters of your own after it, or none. The note names nobody; the Lens says who played it. Up to ${thisCard.stack} fit on a post, and they stay. If the author edits the words out, the note moves to the foot of the post and quotes them. ${setMoveWords('the quoting post')} A set one lands only when the quote's own words hold its phrase. It costs nothing more to play than its price at the machine.`,
+    logPlay: (config) => {
+      const { phrase, words } = config as Partial<ThisConfig>;
+      return `It pointed at “${phrase ?? ''}” and wrote “THIS${words ? ` ${words}` : ''}”.`;
+    },
   },
   /*
    * The card mechanic's first plays (docs/plans/2026-11-01-card-mechanic-design.md, section 6). Pepperoni's color is the

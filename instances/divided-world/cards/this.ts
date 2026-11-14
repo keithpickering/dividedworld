@@ -30,7 +30,7 @@ function repairWords(config: unknown): { readonly config: unknown; readonly trim
   const all = [...words.trim()];
   if (all.length <= WORDS.most) return { config, trims: [] };
   const head = all.slice(0, WORDS.most + 1);
-  const space = head.findLastIndex((c) => /\s/u.test(c));
+  const space = head.reduce((last, c, i) => (/\s/u.test(c) ? i : last), -1);
   const kept = (space > 0 ? head.slice(0, space) : head.slice(0, WORDS.most)).join('').trim();
   return { config: { ...(config as object), words: kept }, trims: [{ path: 'card.config.this.words', predicate: 'mostSixtyCharacters', before: all.length, after: characters(kept) }] };
 }

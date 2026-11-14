@@ -29,6 +29,7 @@ import { feelinFab } from '../cards/feelin-fab.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
+import { WORDS as THIS_WORDS, thisCard } from '../cards/this.ts';
 import { LOG_DRAW, LOG_WASH, describeDraw } from '../cards/graffiti/words.ts';
 import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
 import type { CardPlay } from '../../../engine/ui/cards/types.ts';
@@ -118,11 +119,12 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
   test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', whodunnit: 'the quoting post', 'blind-study': 'the quoting post', overreaction: 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': 'the quoting post', 'main-event': "the quoting post's thread", 'feelin-glam': "the quoting post's thread" };
+    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', this: 'the quoting post', whodunnit: 'the quoting post', 'blind-study': 'the quoting post', overreaction: 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': 'the quoting post', 'main-event': "the quoting post's thread", 'feelin-glam': "the quoting post's thread" };
     for (const [key, reach] of Object.entries(lands)) {
       expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
     expect(face('autocorrect').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
+    expect(face('this').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
   });
   test('Line Cutter holds no face-down sentence, and every word of its face is the plan\'s, true to its rules', () => {
     const t = face('line-cutter');
@@ -399,6 +401,35 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(instance.machine[at]).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
     // Laugh Track was the last on-sale slot; card notes Part 3's Overreaction and Blind Study follow it, then card notes Part 5's Happy Heart and Take the Fall, and nothing else on sale does.
     expect(instance.machine.slice(at + 1).filter((m) => m.availability === 'onSale').map((m) => ('card' in m.item ? m.item.card : 'pack'))).toEqual(['overreaction', 'blind-study', 'happy-heart', 'take-the-fall']);
+  });
+  test('THIS has its face, its words and its handwriting, each the plan\'s, and its numbers are the rules\'', () => {
+    const ui = instanceUi.cards.find((c) => c.key === 'this')!;
+    expect(ui.art.color).toBe('#d24a2c');
+    expect(ui.art.ink).toBe('#0d0301');
+    expect(ui.art.tagline).toBe('Point at it.');
+    expect(ui.summary).toBe('Point at a line of a post and say something about it.');
+    expect(ui.status).toBe('Notes on its words');
+    expect(ui.hint).toBe('Someone pointed at these words. The Lens says who.');
+    expect(ui.Effect).toBeDefined();
+    expect(ui.ConfigForm).toBeDefined();
+    expect(ui.logPlay!({ phrase: 'the same old', words: 'again' }, {} as never)).toBe('It pointed at “the same old” and wrote “THIS again”.');
+    expect(ui.logPlay!({ phrase: 'the same old', words: '' }, {} as never)).toBe('It pointed at “the same old” and wrote “THIS”.');
+    const said = ui.describe(instance.settings);
+    expect(said).toBe(`A Pepperoni card, ${thisCard.rarity}. You choose words in a post, and the post gets a note under them: THIS, an arrow, and up to ${THIS_WORDS.most} characters of your own after it, or none. The note names nobody; the Lens says who played it. Up to ${thisCard.stack} fit on a post, and they stay. If the author edits the words out, the note moves to the foot of the post and quotes them. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. A set one lands only when the quote's own words hold its phrase. It costs nothing more to play than its price at the machine.`);
+    expect(THIS_WORDS.most).toBe(60);
+    expect(thisCard.stack).toBe(3);
+  });
+  test('THIS\'s handwriting is vendored with its license, and its stylesheet names no font outside its own folder', () => {
+    const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'this');
+    const font = fs.readFileSync(path.join(dir, 'fonts', 'PermanentMarker-Regular.woff2'));
+    expect(font.subarray(0, 4).toString('latin1')).toBe('wOF2');
+    expect(font.length).toBeGreaterThan(5_000);
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'LICENSE.txt'), 'utf8')).toMatch(/Apache License\s+Version 2\.0/u);
+    const css = fs.readFileSync(path.join(dir, 'this.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const urls = [...css.matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/gu)].map((m) => m[1]!);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const u of urls) expect(u, u).toMatch(/^\.\/fonts\/[\w.-]+\.woff2$/u);
+    expect(css).toMatch(/font-display:\s*block/u);
   });
   test('Whoops! draws its effect and its ink form, and each play\'s tag takes its own ink', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;

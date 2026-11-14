@@ -1,0 +1,13 @@
+/*
+ * Permanent Marker, the caster's handwriting on a THIS note (Apache License 2.0; fonts/LICENSE.txt). The Latin subset, vendored
+ * from the @fontsource/permanent-marker package, version 5.3.0 (files/permanent-marker-latin-400-normal.woff2, the file Google
+ * Fonts serves for family=Permanent+Marker), on 2026-11-14. Nothing is fetched at run time. `block` so a note is never drawn in a
+ * fallback face that measures differently.
+ */
+@font-face {
+  font-family: 'Permanent Marker';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('./fonts/PermanentMarker-Regular.woff2') format('woff2');
+}
