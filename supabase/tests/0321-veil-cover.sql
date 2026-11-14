@@ -493,6 +493,7 @@ declare
   t uuid := tests.thread('Vk cost'); stand uuid := pg_temp.stand();
   p uuid := tests.post(a, t, 'A veiled post in a long thread.');
   v uuid; scans_before bigint; scans_after bigint;
+  p2 uuid; q uuid; fetched_before bigint; fetched_after bigint;
 begin
   insert into acts (character, kind, thread, payload) select a, 'post', t, jsonb_build_object('body', 'Filler ' || g) from generate_series(1, 400) g;
   insert into acts (character, kind, thread, payload) select b, 'post', t, jsonb_build_object('body', 'Reply ' || g) from generate_series(1, 200) g;
@@ -508,5 +509,17 @@ begin
   perform tests.act(a, 'edit', t, jsonb_build_object('body', 'Edited.'), p);
   scans_after := (select coalesce(sum(x.seq_scan + coalesce(x.idx_scan, 0)), 0) from pg_stat_xact_user_tables x where x.relname = 'post_veils');
   if not (scans_after > scans_before) then raise exception 'the author''s own edit of a veiled post read post_veils not at all, so the count measures nothing'; end if;
+  -- A veil landing reads the Acts on its post, never the author's other Acts: an author with three thousand Acts elsewhere (quotes of another post) has a veil land on a second post of theirs, and the rows fetched from acts
+  -- stay near the post's own Acts. A scan of the author's Acts by character (the arm that cannot use acts_target or acts_edits, which are partial) fetches all of them.
+  q := tests.post(b, t, 'Another post, quoted many times.');
+  p2 := tests.post(a, t, 'A second veiled post.');
+  insert into acts (character, kind, thread, payload, target_act_id) select a, 'post', t, jsonb_build_object('body', 'Quote ' || g), q from generate_series(1, 3000) g;
+  perform tests.act(a, 'edit', t, jsonb_build_object('body', 'Edited before the veil.'), p2);
+  analyze acts;
+  fetched_before := (select coalesce(sum(x.idx_tup_fetch + x.seq_tup_read), 0) from pg_stat_xact_user_tables x where x.relname = 'acts');
+  perform pg_temp.veil(p2, t, a, b, bob);
+  fetched_after := (select coalesce(sum(x.idx_tup_fetch + x.seq_tup_read), 0) from pg_stat_xact_user_tables x where x.relname = 'acts');
+  raise notice 'acts rows fetched by an author veil landing: %', fetched_after - fetched_before;
+  if fetched_after - fetched_before > 100 then raise exception 'an author veil landing fetched % rows of acts, with the author holding three thousand Acts elsewhere', fetched_after - fetched_before; end if;
   perform pg_temp.agree('the cost thread');
 end $$;

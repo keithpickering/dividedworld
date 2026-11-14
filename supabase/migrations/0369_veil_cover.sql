@@ -55,8 +55,12 @@ begin
   insert into post_veil_cover (act, play)
   select new.post, new.play
   union
+  -- The author's Acts on the post, in two selects so that each reaches an index of its own: acts_target is partial (kind <> 'edit') and acts_edits holds the edits (kind = 'edit'); one select over both is a scan of the author's Acts.
   select a.id, new.play from acts a
-  where a.target_act_id = new.post and a.character = new.author and a.kind not in ('post', 'spin')
+  where a.target_act_id = new.post and a.character = new.author and a.kind not in ('post', 'spin', 'edit')
+  union
+  select a.id, new.play from acts a
+  where a.target_act_id = new.post and a.character = new.author and a.kind = 'edit'
   union
   select d.id, new.play from acts k join acts d on d.target_act_id = k.id
   where k.kind = 'card' and k.target_act_id = new.post and d.kind in ('draw', 'wash') and d.character = new.author
@@ -107,7 +111,10 @@ create trigger post_veil_cards_cover after insert on post_veil_cards for each ro
 insert into post_veil_cover (act, play)
 select v.post, v.play from post_veils_live v where v.veil = 'author'
 union
-select a.id, v.play from post_veils_live v join acts a on a.target_act_id = v.post and a.character = v.author and a.kind not in ('post', 'spin') where v.veil = 'author'
+-- (two selects for the author's own Acts, as in the trigger: acts_target and acts_edits are each partial)
+select a.id, v.play from post_veils_live v join acts a on a.target_act_id = v.post and a.character = v.author and a.kind not in ('post', 'spin', 'edit') where v.veil = 'author'
+union
+select a.id, v.play from post_veils_live v join acts a on a.target_act_id = v.post and a.character = v.author and a.kind = 'edit' where v.veil = 'author'
 union
 select d.id, v.play from post_veils_live v join acts k on k.target_act_id = v.post and k.kind = 'card' join acts d on d.target_act_id = k.id and d.kind in ('draw', 'wash') and d.character = v.author where v.veil = 'author'
 union
