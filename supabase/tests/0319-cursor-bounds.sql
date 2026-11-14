@@ -113,10 +113,10 @@ declare
   post uuid := tests.post(a, th);
   deep text := 'now() - interval ''19000 minutes''';
   cases text[][];
-  c text[]; d bigint; z bigint; bad text := ''; limit_deep integer;
+  c text[]; d bigint; z bigint; bad text := '';
 begin
   insert into admins (account) values (adm);
-  insert into trophy_kinds (key, name, belt) values ('cb-belt', 'Cb Belt', true);
+  insert into trophy_kinds (key, name, belt) values ('cb-belt', 'Cb Belt', true), ('cb-belt2', 'Cb Belt Two', true);
   insert into characters (name, staff, staff_kind) values ('Cb Staff', 'cb-staff', 'persona'), ('Cb Staff Two', 'cb-staff2', 'persona');
   -- The caller's rows, a minute apart, and 50 other owners' at now().
   insert into wallet_events (account, kind, change, balance_after, at) select ann, 'grant', 1, g, now() - g * interval '1 minute' from generate_series(1, n) g;
@@ -124,7 +124,7 @@ begin
   insert into random_events (account, character, at, outcome, line, line_text) select ann, a, now() - g * interval '1 minute', 'line', 'x', 'x' from generate_series(1, n) g;
   insert into random_events (account, character, at, outcome, line, line_text) select c.owner, c.id, now(), 'line', 'x', 'x' from characters c where c.id = any (others);
   insert into trophy_awards (trophy, character, by, at) select 'cb-belt', a, 'admin', now() - g * interval '1 minute' from generate_series(1, n) g;
-  insert into trophy_awards (trophy, character, by, at) select 'cb-belt', o, 'admin', now() from unnest(others) o;
+  insert into trophy_awards (trophy, character, by, at) select 'cb-belt2', o, 'admin', now() - g * interval '1 minute' from unnest(others) o, generate_series(1, n / 50) g; -- a second belt, another 20,000 awards: a scan of every award would read double
   insert into staff_notes (staff, act, body, at) select 'cb-staff', post, 'n', now() - g * interval '1 minute' from generate_series(1, n) g;
   insert into staff_notes (staff, act, body, at) select 'cb-staff2', post, 'n', now() from generate_series(1, 50);
   analyze wallet_events; analyze random_events; analyze trophy_awards; analyze staff_notes;

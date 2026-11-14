@@ -3,7 +3,7 @@
 -- so a deep page reads every row behind the cursor and keeps a page. Each bound is rewritten as `<column> <= coalesce(<arg>, 'infinity')`, or as a row
 -- comparison `(at, id) < (coalesce(before, 'infinity'), coalesce(before_id, nil uuid))` for the keyset ones, which a generic plan seeks on and which
 -- returns the same rows. cosmetic_log_rows also bounds each branch on its own, since the outer limit alone reads every row behind the cursor, and
--- trophy_awards gets the (at desc, id desc) index that admin_awards' row comparison seeks on. Taken from pg_get_functiondef, nothing else changed.
+-- trophy_awards gets the (at desc, id desc) index that admin_awards' row comparison seeks on. trophies_of, belt_lineage and admin_awards also carry the whole awards row in their page CTE, so nothing joins back to trophy_awards: with a page of unknown size a generic plan hash-joined all of it. Taken from pg_get_functiondef, nothing else changed.
 
 create index if not exists trophy_awards_at_id on trophy_awards (at desc, id desc);
 
@@ -644,7 +644,7 @@ CREATE OR REPLACE FUNCTION public.trophies_of(of_character uuid, before timestam
  SET search_path TO 'public', 'pg_temp'
 AS $function$
   with page as (
-    select a.id, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
+    select a as aw, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
     where a.character = of_character
       and ((a.at, a.id) < (coalesce(before, 'infinity'), coalesce(before_id, '00000000-0000-0000-0000-000000000000'::uuid)))
       and not exists (select 1 from trophy_reversals r where r.award = a.id)
@@ -652,7 +652,7 @@ AS $function$
     limit least(greatest(coalesce(most, 50), 1), 100) + 1
   )
   select jsonb_build_object(
-    'awards', coalesce((select jsonb_agg(trophy_item(a) order by p.n) from page p join trophy_awards a on a.id = p.id where p.n <= least(greatest(coalesce(most, 50), 1), 100)), '[]'::jsonb),
+    'awards', coalesce((select jsonb_agg(trophy_item(p.aw) order by p.n) from page p where p.n <= least(greatest(coalesce(most, 50), 1), 100)), '[]'::jsonb),
     'more', exists (select 1 from page p where p.n > least(greatest(coalesce(most, 50), 1), 100)))
 $function$;
 
@@ -671,7 +671,7 @@ begin
   if not is_belt then raise exception '"%" is not a belt', trophy_key using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   return (
     with page as (
-      select a.id, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
+      select a as aw, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
       where a.trophy = trophy_key
         and ((a.at, a.id) < (coalesce(before, 'infinity'), coalesce(before_id, '00000000-0000-0000-0000-000000000000'::uuid)))
         and not exists (select 1 from trophy_reversals r where r.award = a.id)
@@ -679,10 +679,10 @@ begin
       limit size + 1
     )
     select jsonb_build_object(
-      'reigns', coalesce((select jsonb_agg(jsonb_build_object('award', a.id, 'character', a.character, 'name', c.name, 'began', a.at, 'by', trophy_given_by(a),
-                            'ended', (select x.at from trophy_awards x where x.trophy = trophy_key and (x.at, x.id) > (a.at, a.id)
+      'reigns', coalesce((select jsonb_agg(jsonb_build_object('award', (p.aw).id, 'character', (p.aw).character, 'name', c.name, 'began', (p.aw).at, 'by', trophy_given_by(p.aw),
+                            'ended', (select x.at from trophy_awards x where x.trophy = trophy_key and (x.at, x.id) > ((p.aw).at, (p.aw).id)
                                         and not exists (select 1 from trophy_reversals r where r.award = x.id) order by x.at, x.id limit 1)) order by p.n)
-                          from page p join trophy_awards a on a.id = p.id join characters c on c.id = a.character where p.n <= size), '[]'::jsonb),
+                          from page p join characters c on c.id = (p.aw).character where p.n <= size), '[]'::jsonb),
       'more', exists (select 1 from page p where p.n > size)));
 end $function$;
 
@@ -698,16 +698,16 @@ begin
   perform only_admins('reads the trophies given');
   return (
     with page as (
-      select a.id, a.at, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
+      select a as aw, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
       where (a.at, a.id) < (coalesce(before, 'infinity'), coalesce(before_id, '00000000-0000-0000-0000-000000000000'::uuid))
       order by a.at desc, a.id desc
       limit size + 1
     )
     select jsonb_build_object(
-      'awards', coalesce((select jsonb_agg(jsonb_build_object('award', a.id, 'trophy', a.trophy, 'name', k.name, 'art', k.art, 'belt', k.belt, 'character', a.character, 'to', c.name,
-                            'by', trophy_given_by(a), 'at', a.at, 'line', a.line,
-                            'reversed', exists (select 1 from trophy_reversals r where r.award = a.id)) order by p.n)
-                          from page p join trophy_awards a on a.id = p.id join trophy_kinds k on k.key = a.trophy join characters c on c.id = a.character where p.n <= size), '[]'::jsonb),
+      'awards', coalesce((select jsonb_agg(jsonb_build_object('award', (p.aw).id, 'trophy', (p.aw).trophy, 'name', k.name, 'art', k.art, 'belt', k.belt, 'character', (p.aw).character, 'to', c.name,
+                            'by', trophy_given_by(p.aw), 'at', (p.aw).at, 'line', (p.aw).line,
+                            'reversed', exists (select 1 from trophy_reversals r where r.award = (p.aw).id)) order by p.n)
+                          from page p join trophy_kinds k on k.key = (p.aw).trophy join characters c on c.id = (p.aw).character where p.n <= size), '[]'::jsonb),
       'kinds', coalesce((select jsonb_agg(jsonb_build_object('key', k.key, 'name', k.name, 'belt', k.belt, 'made', k.made_by is not null, 'art', k.art) order by k.name, k.key) from trophy_kinds k), '[]'::jsonb),
       'more', exists (select 1 from page p where p.n > size)));
 end $function$;
