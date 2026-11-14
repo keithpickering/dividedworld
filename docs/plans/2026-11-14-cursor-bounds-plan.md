@@ -9,9 +9,10 @@ instance content is involved and no interface changes. No state is added, and no
 timing is computed from a private fact (§5): every rewritten function returns the same rows for every argument. One
 check is added, with its poison (Task 1).
 
-Numbers: the migration is `0366` and the SQL test `0318`, the next free on main when this was written. If main has
-taken them by the time the PR merges, take main's next numbers. `docs/plans/2026-11-13-plan-once-plan.md` claims the
-same numbers. This plan goes first (§1), and plan-once takes the numbers after it, as its own plan already allows.
+Numbers: the migration is `0367` and the SQL test `0319`, after the `0366` and `0318` that
+`docs/plans/2026-11-13-plan-once-plan.md` claims. If main has taken them by the time the PR merges, take main's next
+numbers. Plan-once rewrites the same functions, and is being built at the same time. Whichever of the two lands second
+regenerates its migration from the definitions then on main (Task 3), so neither undoes the other.
 
 The order: 1, then 2, then 3, then 4.
 
@@ -19,7 +20,7 @@ The order: 1, then 2, then 3, then 4.
 
 Model: sonnet
 
-**Files:** a new `supabase/tests/0318-cursor-bounds.sql`.
+**Files:** a new `supabase/tests/0319-cursor-bounds.sql`.
 
 **What:** the file defines `pg_temp.catch_all_bounds() returns table (fn text, arg text)`. It reads every `language sql`
 or `plpgsql` function in `public` (`prokind = 'f'`) by `pg_get_functiondef`, and returns each function and input
@@ -63,7 +64,7 @@ matcher is wrong or main has moved. Find out which before going on.
 
 Model: sonnet
 
-**Files:** the same `supabase/tests/0318-cursor-bounds.sql`, a second `do` block.
+**Files:** the same `supabase/tests/0319-cursor-bounds.sql`, a second `do` block.
 
 **What:** the cost the design measured, asserted on the real functions. It needs no plan-cache setting: Postgres 16
 already plans these `language sql` bodies with the argument unknown, and the `plpgsql` ones are pinned with
@@ -103,7 +104,7 @@ rows at a cursor 19,000 deep. Record each function's figure in the PR.
 
 Model: sonnet
 
-**Files:** a new `supabase/migrations/0366_cursor_bounds.sql`.
+**Files:** a new `supabase/migrations/0367_cursor_bounds.sql`.
 
 **What:** take each function's current definition from a scratch database with every migration applied
 (`pg_get_functiondef`), never from a migration file, since a later one may have replaced it. Write it again with
@@ -120,7 +121,7 @@ Model: sonnet
 
 A header comment says why in a few lines and names the design. Grants are kept by `create or replace`. Restate none.
 
-Then `0318` turns green, and the whole `npm run test:sql` passes. The existing tests of these functions are the proof
+Then `0319` turns green, and the whole `npm run test:sql` passes. The existing tests of these functions are the proof
 that the rows haven't changed: `0042-log-reads.sql`, `0124-log-page.sql`, `0165-plain-log-read.sql`,
 `0172-cosmetics-log.sql`, `0167-trophies.sql`, `0169-award-trophy-move.sql`, `0171-admin-awards.sql`,
 `0088-staff-notes.sql`, and any other `grep -l` finds.
@@ -130,7 +131,7 @@ that the rows haven't changed: `0042-log-reads.sql`, `0124-log-page.sql`, `0165-
 Model: inline
 
 The PR body says what §1 found, gives each function's deep-cursor reads before and after from Task 2, links #673, and
-says that `docs/plans/2026-11-13-plan-once-plan.md` takes the numbers after this one.
+says which of this and plan-once landed first, and that the migration was regenerated from main if this one is second.
 
 ## Review focus
 

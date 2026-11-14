@@ -12,8 +12,8 @@ each with its poison: the coverage guard (Task 1) and the plan-once check (Task 
 Numbers: the migration is `0366` and the SQL test `0318`, the next free on main when this was written; if main has
 taken them by the time the PR merges, take main's next numbers, as earlier PRs have.
 
-This plan waits on `docs/plans/2026-11-14-cursor-bounds-plan.md`, which rewrites the cursor catch-alls a generic plan
-cannot seek on and takes `0366` and `0318` first.
+`docs/plans/2026-11-14-cursor-bounds-plan.md` rewrites six of the same functions. Whichever of the two lands second
+regenerates its migration from the definitions then on main, so neither undoes the other.
 
 The order: 1, then 2, then 3, then 4.
 
