@@ -12,15 +12,20 @@
 --
 -- The triggers (none `enable always`: an import writes as a replica, tools/import-instance.mjs, and carries the rows it exported):
 --   post_veils_cover       after a post_veils row of an author veil: the post, and what its author has already written on it, found by the indexes acts already has.
---   acts_veil_cover        after an Act: where it is the post's own character's Act on a post (an edit, a set, a draw on a card of the post...), the post's live author veils cover it. Every other Act reads the target's row
---                          and the post's row by key and nothing else: the same two reads for every character, and no veil table, no owner.
+--   acts_veil_cover        after an Act that targets another Act and is no post or spin: it reads the target's id, kind and target by key, and, where the target is a card and the Act a draw or a wash, the post the card is on.
+--                          Where the post's own character wrote it (an edit, a set, a draw on a card of the post...), the post's live author veils cover it. An Act with no target, a post and a spin read nothing; every other
+--                          character's Act reads those same rows by key and no veil table: what is read depends on the Act's kind and target, never on who owns a character.
 --   post_veil_cards_cover  after a post_veil_cards row: the card is covered by the live veils on its post and author.
--- veil_cover_lock(post): an advisory transaction lock on the post, taken by the first and second trigger before each reads. A veil landing and its author's Act on the post, committed from two sessions at once, would each
--- miss the other (neither sees the other's uncommitted row); the lock makes the second wait for the first's commit and then read it. Only the post's own character's Acts and the veil's landing take it, so another character's
--- Act on a veiled post never waits, and no row is locked by the trigger, so the lock order (post, then visits_open, then character) is kept: the advisory lock comes after every row lock those functions take.
+-- veil_cover_lock(post): an advisory transaction lock on the post, taken by all three triggers before each reads post_veils or the Acts and cards a veil covers. A veil landing and its author's Act on the post, or a spring
+-- writing a card while a second veil lands, committed from two sessions at once, would each miss the other (neither sees the other's uncommitted row); the lock makes the second wait for the first's commit and then read it.
+-- Only the post's own character's Acts, a card laid by a back, and the veil's landing take it, so another character's Act on a veiled post never waits, and no row is locked by the trigger, so the lock order (post, then
+-- visits_open, then character) is kept: the advisory lock comes after every row lock those functions take.
 --
--- Masks: what a response could prove is who owns a character, and nothing here reads an owner. The extra work on an Act is the same two probes by key for every character who is not the post's own, and the post's own
--- character's Act gains a probe of post_veils_post and the lock, keyed on the character and the post, never on a player.
+-- Live, twice over: the fill below reads post_veils_live, so it skips a veil an admin has already ended, while the triggers ask only the time (ends_at > now()) and so cover under a veil that an admin ended an instant ago
+-- (design section 4). Both are fine because the cover is only ever read through post_veils_live: a row under a veil that is not live shows nothing, and an ended veil never becomes live again.
+--
+-- Masks: what a response could prove is who owns a character, and nothing here reads an owner. The work on an Act is keyed on its kind, its target and its character, never on a player: the post's own character's Act gains a
+-- probe of post_veils_post and the lock, and no other Act waits on anything.
 --
 -- acts_public is made again with the same columns in the same order and the concealment as 0357 has it. Its two selects still read `acts` alone, with no WHERE and no join of their own, so the union stays one appendrel;
 -- `ok` is now a probe of post_veil_cover by the Act's id and post_veils_live by the play.
@@ -30,7 +35,6 @@ create table post_veil_cover (
   play uuid not null references post_veils (play),
   primary key (act, play)
 );
-create index post_veil_cover_play on post_veil_cover (play);
 create trigger post_veil_cover_no_update before update or delete on post_veil_cover for each row execute function post_veils_append_only();
 create trigger post_veil_cover_no_truncate before truncate on post_veil_cover for each statement execute function post_veils_append_only();
 alter table post_veil_cover enable always trigger post_veil_cover_no_update;
@@ -47,7 +51,6 @@ revoke all on function veil_cover_lock(uuid) from public, anon, authenticated, s
 create function post_veils_cover() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if new.veil <> 'author' then return null; end if;
   perform veil_cover_lock(new.post);
   insert into post_veil_cover (act, play)
   select new.post, new.play
@@ -63,17 +66,16 @@ begin
   return null;
 end $$;
 revoke all on function post_veils_cover() from public, anon, authenticated, service_role;
-create trigger post_veils_cover after insert on post_veils for each row execute function post_veils_cover();
+create trigger post_veils_cover after insert on post_veils for each row when (new.veil = 'author') execute function post_veils_cover();
 
 create function acts_veil_cover() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  tgt acts%rowtype;
+  tgt record;
   pst uuid;
   pc uuid;
 begin
-  if new.target_act_id is null or new.kind in ('post', 'spin') then return null; end if;
-  select * into tgt from acts where id = new.target_act_id;
+  select t.id, t.kind, t.target_act_id into tgt from acts t where t.id = new.target_act_id;
   if new.kind in ('draw', 'wash') and tgt.kind = 'card' then pst := tgt.target_act_id; else pst := tgt.id; end if;
   select a.character into pc from acts a where a.id = pst;
   if pc is not null and pc = new.character then
@@ -86,11 +88,12 @@ begin
   return null;
 end $$;
 revoke all on function acts_veil_cover() from public, anon, authenticated, service_role;
-create trigger acts_veil_cover after insert on acts for each row execute function acts_veil_cover();
+create trigger acts_veil_cover after insert on acts for each row when (new.target_act_id is not null and new.kind not in ('post', 'spin')) execute function acts_veil_cover();
 
 create function post_veil_cards_cover() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
+  perform veil_cover_lock(new.post);
   insert into post_veil_cover (act, play)
   select new.card, v.play from post_veils v
   where v.post = new.post and v.veil = 'author' and v.author = new.author and v.ends_at > now()

@@ -10,7 +10,8 @@
 --  2. The poisons: with the trigger on acts that writes the cover off, an author's edit on a veiled post is named by the disagreement; the same with the trigger on post_veils off and a veil cast on a post that has an edit,
 --     and with the trigger on post_veil_cards off. Each is rolled back, and the file raises if any comes back empty (a check that has only ever passed proves that it runs, not that it detects).
 --  3. The races (first in the file, as 0304's section 13 is, so the committed rows meet none of this file's locks): a veil's landing held open, and the author's edit of the post waits for it and is covered; the edit held
---     open, and the veil waits for it and covers it; another character's Acts on the post while a veil's landing is held open do not wait.
+--     open, and the veil waits for it and covers it; a spring's card held open, and a second veil's landing waits for it and covers it; another character's Acts on the post while a veil's landing is held open do not wait
+--     (and the author's own Act under the same timeout does, so that check is shown able to fail).
 --  4. The cost of an insert: a reply, a quote and a card by a character who is not the post's author read post_veils not at all; the author's own Act on the post does (so the count measures something).
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
@@ -166,9 +167,9 @@ do $$
 declare
   u uuid := gen_random_uuid(); u2 uuid := gen_random_uuid(); u3 uuid := gen_random_uuid();
   a uuid := gen_random_uuid(); c uuid := gen_random_uuid(); o uuid := gen_random_uuid(); t uuid := gen_random_uuid();
-  p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); p3 uuid := gen_random_uuid();
+  p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); p3 uuid := gen_random_uuid(); p4 uuid := gen_random_uuid(); q4 uuid := gen_random_uuid(); k4 uuid := gen_random_uuid();
   url text := current_setting('kayfabb.scratch_url');
-  seen text; got text; vplay uuid; edit uuid; n integer;
+  seen text; got text; ctl text; vplay uuid; edit uuid; n integer;
 begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'vc-author@test.invalid'), (%2$L, 'vc-caster@test.invalid'), (%3$L, 'vc-other@test.invalid');
@@ -176,13 +177,15 @@ begin
     insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Vc Race Author', now(), now()), (%5$L, %2$L, 'Vc Race Caster', now(), now()), (%6$L, %3$L, 'Vc Race Other', now(), now());
     insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
     insert into threads (id, board, title) select %7$L, b.id, 'Vc race' from boards b where b.slug = 'general';
-    insert into acts (id, character, kind, thread, payload) values (%8$L, %4$L, 'post', %7$L, '{"body": "A post a veil lands on first."}'), (%9$L, %4$L, 'post', %7$L, '{"body": "A post an edit lands on first."}'),
-      (%10$L, %4$L, 'post', %7$L, '{"body": "A post another character acts on."}');
     insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack) values ('vcrace', 'Vc Race Veil', 'salty', 'rare', 'cast', '{post}', interval '3 days', 'author', 1);
+    insert into acts (id, character, kind, thread, payload) values (%8$L, %4$L, 'post', %7$L, '{"body": "A post a veil lands on first."}'), (%9$L, %4$L, 'post', %7$L, '{"body": "A post an edit lands on first."}'),
+      (%10$L, %4$L, 'post', %7$L, '{"body": "A post another character acts on."}'), (%11$L, %4$L, 'post', %7$L, '{"body": "A post a back springs on while a veil lands."}');
+    insert into acts (id, character, kind, thread, target_act_id, payload) values (%12$L, %6$L, 'post', %7$L, %11$L, '{"body": "A quote of it."}'),
+      (%13$L, %4$L, 'card', %7$L, %12$L, '{"card": "vcrace", "message": "", "config": {}, "layer": 43}');
     -- A veil that is not refused needs the stand-in (removed again below, with the veils these races land ended first).
     insert into characters (name, staff, staff_kind, debuted_at) select 'Anonymous', 'anonymous', 'anonymous', now() where not exists (select 1 from characters k where k.staff_kind = 'anonymous');
     insert into character_profiles (character, title, signature) select k.id, 'Could be anyone.', '' from characters k where k.staff_kind = 'anonymous' and not exists (select 1 from character_profiles x where x.character = k.id);
-  $sql$, u, u2, u3, a, c, o, t, p1, p2, p3));
+  $sql$, u, u2, u3, a, c, o, t, p1, p2, p3, p4, q4, k4));
   perform extensions.dblink_connect('vc_h', url);
   perform extensions.dblink_connect('vc_v', url);
 
@@ -234,11 +237,36 @@ begin
     got := null;
   exception when others then got := sqlstate || ' ' || sqlerrm; end;
   perform extensions.dblink_exec('vc_v', 'commit');
+  -- The positive control: the post's own character's Act, under the same timeout while the same landing is still held, must wait for it and trip the timeout (55P03), or the check above could not have failed.
+  perform extensions.dblink_exec('vc_v', 'begin');
+  perform extensions.dblink_exec('vc_v', 'set local lock_timeout = ''1500ms''');
+  begin
+    perform extensions.dblink_exec('vc_v', format($x$ insert into acts (character, kind, thread, target_act_id, payload) values (%1$L, 'edit', %2$L, %3$L, '{"body": "The author acts while the landing is held."}') $x$, a, t, p3));
+    ctl := null;
+  exception when others then ctl := sqlstate || ' ' || sqlerrm; end;
+  perform extensions.dblink_exec('vc_v', 'rollback');
   perform extensions.dblink_exec('vc_h', 'commit');
+  if ctl is null or ctl not like '55P03%' then raise exception 'race (c) positive control: the author''s own Act under a veil landing did not trip the lock_timeout with 55P03 (%)', ctl; end if;
   if got is not null then raise exception 'another character''s Acts on a post waited for a veil landing on it: %', got; end if;
   select count(*) into n from acts x where x.target_act_id = p3 and x.character = o;
   if n is distinct from 2 then raise exception 'the two other-character Acts were not written (%)', n; end if;
   perform pg_temp.agree('race (c), another character''s Acts');
+
+  -- (d) A spring's card on a quote is held open (its post_veil_cards row is written, its trigger holds the post's lock, having read no veil); a second author veil landing on the post waits for it, and once the card commits the veil
+  -- covers it. Without the lock the landing reads the table while the row is uncommitted, and the card is left uncovered.
+  perform extensions.dblink_exec('vc_h', 'begin');
+  perform * from extensions.dblink('vc_h', format('insert into post_veil_cards (card, post, author) values (%L, %L, %L) returning 1', k4, p4, a)) as x(r integer);
+  perform extensions.dblink_send_query('vc_v', format('select /* vc_d */ place_cast(%L, ''vcrace'', %L, ''{}'', '''', ''post'', null, %L, 0)', c, p4, u2));
+  seen := pg_temp.parked('vc_d', 'vc_v');
+  perform extensions.dblink_exec('vc_h', 'commit');
+  begin perform * from extensions.dblink_get_result('vc_v') as x(r jsonb); got := null; exception when others then got := sqlstate || ' ' || sqlerrm; end;
+  perform * from extensions.dblink_get_result('vc_v') as x(r jsonb);
+  if seen is distinct from 'waiting' then raise exception 'a veil landing on the post did not wait for a spring writing its card (it %)', seen; end if;
+  if got is not null then raise exception 'the veil that waited for the spring failed: %', got; end if;
+  select v.play into vplay from post_veils v where v.post = p4;
+  if vplay is null then raise exception 'race (d) landed no veil'; end if;
+  if not exists (select 1 from post_veil_cover x where x.act = k4 and x.play = vplay) then raise exception 'the card the veil waited for has no cover row'; end if;
+  perform pg_temp.agree('race (d), the spring first');
 
   perform extensions.dblink_disconnect('vc_h');
   perform extensions.dblink_disconnect('vc_v');
