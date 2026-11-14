@@ -64,6 +64,12 @@ other settings (a seed, a camera) are environment variables read at its top. Who
 full Blender build. Blender also writes a 24 MB file, `waveletNoiseTile.bin`, into the folder it is run from when it
 simulates that fire; the repository ignores it, and it can be deleted.
 
+To change a scene by hand, save it as a Blender file and open that: `ART_RENDER=0 ART_BLEND=whoops.blend` builds the
+scene, renders nothing and writes the file, with the camera, lights and render settings the picture shipped at. A
+scene pasted into Blender's Scripting tab does not run, since it finds `rig.py` from its own path and takes the
+picture's name from the command line. The repository ignores `.blend` files, and a change made by hand is not in the
+scene: to keep it, write it back into `scene.py`.
+
 Each scene's defaults are the settings its shipped picture was rendered at (the samples, Whoops!'s mesh, Heat Magnet's
 simulation), so a scene run as above makes its picture again as it shipped.
 
