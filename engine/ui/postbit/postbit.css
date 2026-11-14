@@ -265,6 +265,8 @@
     flex-direction: row;
     align-items: flex-start;
     gap: 0.6em;
+    /* Room for a piece standing above the slot (--kb-overhang, in slot widths, set by Postbit); 3.6em is the slot's width in ems. */
+    padding-top: calc(var(--kb-overhang, 0) * 3.6em);
   }
 
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-text {

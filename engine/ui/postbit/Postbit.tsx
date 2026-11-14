@@ -15,6 +15,7 @@ import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import { useNarrow } from '../media.ts';
 import type { Character } from '../data/api.ts';
+import { outfitOverhang } from '../../rules/cosmetics.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { monthYear, shortDate } from './dates.ts';
 import { Link } from '../router.tsx';
@@ -101,9 +102,11 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   /* The side layout shows the chosen trophies and any belt under the rank; the stacked band and a phone show a held belt only, beside the name. */
   const shelf = counts ? postbitTrophies(c.trophies, instance.settings.cosmetics.trophies.shownMost) : [];
   const belts = counts ? [] : heldBelts(c.trophies);
+  /* On a phone the postbit's top edge is the post's: a piece standing above the slot would cover the post above, so the root pads by how far (postbit.css). */
+  const overhang = shape === 'side' && c.avatarPortrait ? outfitOverhang(c.outfit, (g) => ui.gear[g]?.aspect, c.portraitTallness, instance.settings.cosmetics.gear.reach) : 0;
   const pipImages = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   return (
-    <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={shape}>
+    <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={shape} style={overhang > 0 ? ({ '--kb-overhang': overhang } as CSSProperties) : undefined}>
       <Avatar character={c} layout={shape} />
       <div className="kb-postbit-text">
         <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}{belts.length > 0 && <span className="kb-postbit-belts">{belts.map((t) => <TrophyBadge key={t.award} trophy={t} />)}</span>}</span>

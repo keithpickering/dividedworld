@@ -390,6 +390,16 @@ describe('gear on the postbit', () => {
     expect(slot().querySelector('picture img')).toHaveAttribute('src', 'tall.webp');
   });
 
+  test('the root carries --kb-overhang for a cap standing above its slot, and none for gear inside', () => {
+    /* `tall` (aspect 2) at w 0.5, y 0.1 in a slot 2 tall: half-height 0.5 above a center of 0.2, so 0.3 over the top. */
+    show(person({}, { outfit: [{ gear: 'tall', x: 0.5, y: 0.1, w: 0.5, turn: 0, layer: 0 }], portraitTallness: null }));
+    const root = screen.getByRole('group') as HTMLElement;
+    expect(Number(root.style.getPropertyValue('--kb-overhang'))).toBeCloseTo(0.3, 6);
+    document.body.innerHTML = '';
+    show(person({}, { outfit: [{ gear: 'band', x: 0.5, y: 0.5, w: 0.5, turn: 0, layer: 0 }], portraitTallness: null }));
+    expect((screen.getByRole('group') as HTMLElement).style.getPropertyValue('--kb-overhang')).toBe('');
+  });
+
   test('the tall slot takes the portrait\'s tallness as its aspect ratio', () => {
     show(person({}, { portraitTallness: 1.4 }));
     expect((slot() as HTMLElement).style.aspectRatio).toBe('1 / 1.4');
@@ -695,6 +705,11 @@ describe('the postbit\'s phone block draws the tall slot, in the order name, ran
   test('the wide block keeps its own orders: the rank at 0 and the group at 3', () => {
     expect(rules(wide, `${SIDE} .kb-postbit-rank`)).toMatch(/order:\s*0\b/u);
     expect(rules(wide, `${SIDE} .kb-postbit-group`)).toMatch(/order:\s*3\b/u);
+  });
+
+  test('a phone pads the top by the overhang, in the slot\'s own width', () => {
+    expect(rules(phone, SIDE)).toMatch(/padding-top:\s*calc\(var\(--kb-overhang, 0\) \* 3\.6em\)/u);
+    expect(rules(wide, SIDE)).not.toMatch(/padding-top/u);
   });
 
   test('no rule hides a square outfit layer, since a portrait slot holds none', () => {

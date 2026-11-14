@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { beltHolder, inSquare, outfitProblems, pieceProblem } from './cosmetics.ts';
+import { beltHolder, inSquare, outfitOverhang, outfitProblems, pieceProblem } from './cosmetics.ts';
 import type { CosmeticsSettings, Piece } from './cosmetics.ts';
 
 const settings: CosmeticsSettings = {
@@ -78,4 +78,25 @@ test('a belt is held by the truly latest award, whatever form its time is writte
   const b = { character: 'bo', at: '2026-03-01T00:00:00+00:00' };
   assert.equal(beltHolder([a, b]), 'bo');
   assert.equal(beltHolder([b, a]), 'bo');
+});
+
+test('outfitOverhang: how far the highest piece stands above the slot, in slot widths, never below 0', () => {
+  const aspects: Record<string, number> = { cap: 0.5, tall: 2 };
+  const aspectOf = (g: string) => aspects[g];
+  /* A cap at y 0.05, w 0.76, aspect 0.5, in a slot 2 tall: half-height 0.19, center 0.1, so 0.09 above. */
+  assert.ok(Math.abs(outfitOverhang([piece({ gear: 'cap', y: 0.05, w: 0.76 })], aspectOf, 2, 0.4) - 0.09) < 1e-9);
+  assert.equal(outfitOverhang([piece({ gear: 'cap', y: 0.5, w: 0.76 })], aspectOf, 2, 0.4), 0);
+  assert.equal(outfitOverhang([], aspectOf, 2, 0.4), 0);
+  /* A piece turned a quarter has its width for height: 0.5 tall art of w 0.5 (aspect 2) turns to half-height 0.25 at center 0.2 (y 0.1). */
+  assert.ok(Math.abs(outfitOverhang([piece({ gear: 'tall', y: 0.1, w: 0.5, turn: 90 })], aspectOf, 2, 0.4) - 0.05) < 1e-9);
+  assert.ok(Math.abs(outfitOverhang([piece({ gear: 'tall', y: 0.1, w: 0.5, turn: 0 })], aspectOf, 2, 0.4) - 0.3) < 1e-9);
+  /* Art the instance does not know is skipped, as Outfit skips it. */
+  assert.equal(outfitOverhang([piece({ gear: 'nope', y: 0, w: 1 })], aspectOf, 2, 0.4), 0);
+  /* Capped at the settings' reach, where the layer's clip cuts. */
+  assert.equal(outfitOverhang([piece({ gear: 'tall', y: 0, w: 1 })], aspectOf, 2, settings.gear.reach), 0.4);
+  /* Tallness null reads as 2; a shorter slot moves the center up. */
+  assert.equal(outfitOverhang([piece({ gear: 'cap', y: 0.05, w: 0.76 })], aspectOf, null, 0.4), outfitOverhang([piece({ gear: 'cap', y: 0.05, w: 0.76 })], aspectOf, 2, 0.4));
+  assert.ok(outfitOverhang([piece({ gear: 'cap', y: 0.1, w: 0.76 })], aspectOf, 1, 0.4) > outfitOverhang([piece({ gear: 'cap', y: 0.1, w: 0.76 })], aspectOf, 2, 0.4));
+  /* The highest of several wins. */
+  assert.ok(Math.abs(outfitOverhang([piece({ gear: 'cap', y: 0.05, w: 0.76 }), piece({ gear: 'tall', y: 0.1, w: 0.5 })], aspectOf, 2, 0.4) - 0.3) < 1e-9);
 });
