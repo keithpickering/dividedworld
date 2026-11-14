@@ -12,6 +12,9 @@ each with its poison: the coverage guard (Task 1) and the plan-once check (Task 
 Numbers: the migration is `0366` and the SQL test `0318`, the next free on main when this was written; if main has
 taken them by the time the PR merges, take main's next numbers, as earlier PRs have.
 
+This plan waits on `docs/plans/2026-11-14-cursor-bounds-plan.md`, which rewrites the cursor catch-alls a generic plan
+cannot seek on and takes `0366` and `0318` first.
+
 The order: 1, then 2, then 3, then 4.
 
 ## Task 1. Every client read is called somewhere in the suite (the guard, §5)
