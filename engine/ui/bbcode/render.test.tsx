@@ -476,6 +476,77 @@ describe('layout and effects', () => {
       expect(el2.querySelector('.kb-bb')!.innerHTML).toMatch(/cats<\/i><span data-trail="t"><\/span><strong>/u);
     });
 
+    test('a standing trail at a gap no text node ends at (after a quote, an [hr]) is drawn before the next text piece, once', () => {
+      const el = draw([wrapRun(0, 5, 'r', 0, trailOf('t'), true)], 'cats[quote=00000001-1111-4111-8111-111111111111]x[/quote] today');
+      expect(trailsIn(el)).toEqual(['t']);
+      expect(el.textContent).toContain('today');
+      cleanup();
+      const el2 = draw([wrapRun(0, 5, 'r', 0, trailOf('t'), true)], 'cats[hr]today');
+      expect(trailsIn(el2)).toEqual(['t']);
+      expect(el2.querySelector('.kb-bb')!.lastChild!.previousSibling).toBe(el2.querySelector('[data-trail]'));
+    });
+
+    test('a standing end in the middle of a gap draws before the next text piece; one after the last text node draws after the last piece', () => {
+      const el = draw([wrapRun(0, 5, 'r', 0, trailOf('t'), true)], 'cats[hr][hr]today');
+      expect(trailsIn(el)).toEqual(['t']);
+      cleanup();
+      const el2 = draw([wrapRun(0, 5, 'r', 0, trailOf('t'), true)], 'cats[hr]');
+      expect(trailsIn(el2)).toEqual(['t']);
+      cleanup();
+      const el3 = draw([wrapRun(0, 9, 'r', 0, trailOf('t'), true)], 'cats[quote=00000001-1111-4111-8111-111111111111]x[/quote][hr]');
+      expect(trailsIn(el3)).toEqual(['t']);
+    });
+
+    test('a standing end strictly inside a later one of several text nodes under one wrap run cuts it there, its words joining to the original', () => {
+      const el = draw([wrapRun(0, 9, 'r', 0, trailOf('t'), true), wrapRun(0, 12, 'all', 1)], 'ab[b]cdef[/b]gh[i]ij[/i]');
+      expect(trailsIn(el)).toEqual(['t']);
+      expect(el.textContent).toBe('abcdefghij');
+      const cut = el.querySelector('[data-trail]')!;
+      expect(cut.previousSibling!.textContent).toBe('i');
+      expect(cut.nextSibling!.textContent).toBe('j');
+    });
+
+    test('a replace stretch spanning several text nodes with a standing end inside it is drawn as before, the trail once', () => {
+      let calls = 0;
+      const cover: TextRun = { start: 1, end: 7, key: 'c', z: 1, mode: 'replace', render: ({ key }) => { calls++; return <b key={key}>X</b>; } };
+      const el = draw([wrapRun(0, 5, 'r', 0, trailOf('t'), true), cover], 'ab[b]cd[/b]ef[i]gh[/i]');
+      expect(calls).toBe(1);
+      expect(trailsIn(el)).toEqual(['t']);
+      expect(el.querySelectorAll('b')).toHaveLength(1);
+    });
+
+    test('a standing end exactly on the boundary of two adjacent runs inside one node is drawn once', () => {
+      const el = draw([wrapRun(0, 4, 'a', 0, trailOf('a'), true), wrapRun(4, 8, 'b', 0)], 'catsdogs');
+      expect(trailsIn(el)).toEqual(['a']);
+      expect(el.querySelector('.kb-bb')!.innerHTML).toBe('<i>cats</i><span data-trail="a"></span><i>dogs</i>');
+    });
+
+    test('a standing end beyond the text is clamped and drawn once at the end', () => {
+      const el = draw([wrapRun(2, 99, 'r', 0, trailOf('t'), true)], 'I love cats');
+      expect(trailsIn(el)).toEqual(['t']);
+      expect(el.querySelector('.kb-bb')!.innerHTML).toBe('I <i>love cats</i><span data-trail="t"></span>');
+    });
+
+    test('a standing run with no trail cuts nothing and draws nothing extra', () => {
+      let calls = 0;
+      const mk = (stands: boolean): TextRun => ({ start: 2, end: 9, key: 'r', z: 0, mode: 'wrap', render: ({ text, key }) => { calls++; return <i key={key}>{text}</i>; }, ...(stands ? { stands: true as const } : {}) });
+      const top = (): TextRun => ({ start: 5, end: 12, key: 'h', z: 1, mode: 'wrap', render: ({ text, key }) => { calls++; return <u key={key}>{text}</u>; } });
+      const a = draw([mk(true), top()], 'I love big cats today');
+      const [callsStands, html] = [calls, a.querySelector('.kb-bb')!.innerHTML];
+      cleanup();
+      calls = 0;
+      const b = draw([mk(false), top()], 'I love big cats today');
+      expect(callsStands).toBe(calls);
+      expect(html).toBe(b.querySelector('.kb-bb')!.innerHTML);
+      expect(trailsIn(a)).toEqual([]);
+    });
+
+    test('a replace run that says it stands draws no standing trail', () => {
+      const run: TextRun = { start: 2, end: 9, key: 'r', z: 0, mode: 'replace', render: ({ key }) => <b key={key}>X</b>, trail: trailOf('t'), stands: true } as TextRun;
+      const el = draw([run], 'I love big cats today');
+      expect(trailsIn(el)).toEqual([]);
+    });
+
     test('is absent from a run that has none: it draws what it always drew', () => {
       const el = draw([wrapRun(7, 15, 'r')], 'I love big cats today');
       expect(trailsIn(el)).toEqual([]);
