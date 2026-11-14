@@ -15,6 +15,7 @@ import { instance } from '../index.ts';
 import { publicityTour } from './publicity-tour.ts';
 import { atOrBelow, castOnPost, giftSplit, instant, wardTurnsAway, openDrive, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
+import { boundedPhrase } from './phrase-bound.ts';
 import { CUES, PLACES, laughTrack, placesOf, type Cue } from './laugh-track.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
@@ -845,6 +846,13 @@ test('Jimmy Wails cannot be set face down: it draws, runs a drive and needs a me
 
 /* ---- Laugh Track (docs/plans/2026-11-11-laugh-track-plan.md, Task 9) ---- */
 const cue = (phrase: string, sound: Cue['sound'] = 'laugh'): Cue => ({ phrase, sound });
+test('boundedPhrase is the one phrase bound: it refuses 101 characters, three letters and two lines in those words, and trims what it keeps', () => {
+  assert.deepEqual(boundedPhrase('a'.repeat(101)), { ok: false, why: 'the phrase is at most 100 characters' });
+  assert.deepEqual(boundedPhrase('abc'), { ok: false, why: 'the phrase has at least 4 letters or digits' });
+  assert.deepEqual(boundedPhrase('two\nlines'), { ok: false, why: 'the phrase is one line' });
+  assert.deepEqual(boundedPhrase('  four  '), { ok: true, phrase: 'four' });
+});
+
 const ltConfig = (cues: unknown) => laughTrack.validateConfig({ cues });
 const ltWhy = (v: unknown) => (v as { why: string }).why;
 const ltLands = (body: string, cues: Cue[], effects: { card: string; act: string }[] = []) => laughTrack.canApply(on(body), effects, { cues } as never, new Date());

@@ -27,7 +27,7 @@ import { ConfigHint } from '../../../../engine/ui/cards/config/ConfigHint.tsx';
 import { PostWords } from '../../../../engine/ui/cards/config/PostWords.tsx';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
 import { GlassButton } from '../../../../engine/ui/glass/Button.tsx';
-import { PHRASE } from '../../cards/autocorrect.ts';
+import { PHRASE } from '../../cards/phrase-bound.ts';
 import { CUES, PLACES, laughTrack, placesOf, type Cue, type Sound } from '../../cards/laugh-track.ts';
 import './laugh-track.css';
 

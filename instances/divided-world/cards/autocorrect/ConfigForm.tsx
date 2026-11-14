@@ -10,7 +10,8 @@ import { visibleText } from '../../../../engine/bbcode/visible.ts';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
 import { ConfigField } from '../../../../engine/ui/cards/config/ConfigField.tsx';
 import { ConfigHint } from '../../../../engine/ui/cards/config/ConfigHint.tsx';
-import { PHRASE, REPLACEMENT } from '../autocorrect.ts';
+import { REPLACEMENT } from '../autocorrect.ts';
+import { PHRASE } from '../phrase-bound.ts';
 import { occurrences } from './match.ts';
 import './autocorrect.css';
 
