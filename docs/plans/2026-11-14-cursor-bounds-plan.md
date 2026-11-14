@@ -87,8 +87,7 @@ For each case, seed the caller with **20,000** rows one minute apart, plus 50 ot
 | `staff_notes_recent` | `staff_notes` of one staff | `(staff, at desc, id desc)` |
 
 `admin_awards` reads every award with no owner key in front. Assert its deep call reads at most `most + 200`, which the
-row comparison on an `(at, id)` order allows. If no index serves that order, record it on #673 rather than adding one
-here.
+row comparison on Task 3's `(at desc, id desc)` index allows.
 
 For `log_page` only the wallet branch is seeded. The other branches read none of the caller's rows, so they show up in
 other tables' counts, not in `wallet_events`'.
@@ -118,6 +117,11 @@ Model: sonnet
   `(a.at, a.id) < (coalesce(before, 'infinity'), coalesce(before_id, '00000000-0000-0000-0000-000000000000'::uuid))`
   (§2 gives why the rows are the same).
 - `staff_notes_recent`: `since is null or s.at > since` becomes `s.at > coalesce(since, '-infinity')`.
+- `cosmetic_log_rows` (the owner's answer, 2026-11-14, to a gap found in the build): each of its six branches also
+  gets its own `order by <time> desc limit least(greatest(most, 0), 1000)`, the shape `log_page` uses, because the
+  outer limit alone reads every row behind the cursor, even on the first page.
+- `admin_awards` (the same answer): a new index `trophy_awards (at desc, id desc)`, the order its row-comparison bound
+  seeks on. No index has that order today.
 
 A header comment says why in a few lines and names the design. Grants are kept by `create or replace`. Restate none.
 
