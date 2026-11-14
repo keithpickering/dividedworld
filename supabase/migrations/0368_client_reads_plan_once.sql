@@ -586,7 +586,7 @@ begin
              l.shares_kept,
              l.params
             FROM my_ledger l
-           WHERE ((log_page.in_before IS NULL) OR (l.ends_at <= log_page.in_before))
+           WHERE (l.ends_at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY l.ends_at DESC, l.settlement, l."character", l.reason
           LIMIT 200
          ), wl AS MATERIALIZED (
@@ -599,7 +599,7 @@ begin
              e.ref,
              e.at
             FROM my_wallet_events e
-           WHERE ((log_page.in_before IS NULL) OR (e.at <= log_page.in_before))
+           WHERE (e.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY e.at DESC, e.settlement, e.kind, e.ref, e.change, e.overflow, e.floored, e.balance_after
           LIMIT 200
          ), cd AS MATERIALIZED (
@@ -612,7 +612,7 @@ begin
              c.pack,
              c.repriced
             FROM my_card_ledger c
-           WHERE ((log_page.in_before IS NULL) OR (c.at <= log_page.in_before))
+           WHERE (c.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY c.at DESC, c.card, c.kind, c.act, c.price, c.pack
           LIMIT 200
          ), pk AS MATERIALIZED (
@@ -623,7 +623,7 @@ begin
              p.contents,
              p.bought_at
             FROM my_packs p
-           WHERE ((log_page.in_before IS NULL) OR (p.bought_at <= log_page.in_before))
+           WHERE (p.bought_at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY p.bought_at DESC, p.id
           LIMIT 200
          ), po AS MATERIALIZED (
@@ -634,7 +634,7 @@ begin
              p.target_name,
              p.target_character
             FROM my_posts_played_on p
-           WHERE ((log_page.in_before IS NULL) OR (p.at <= log_page.in_before))
+           WHERE (p.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY p.at DESC, p.play
           LIMIT 200
          ), wr AS MATERIALIZED (
@@ -646,7 +646,7 @@ begin
              w.over,
              w.at
             FROM my_posts_written_on w
-           WHERE ((log_page.in_before IS NULL) OR (w.at <= log_page.in_before))
+           WHERE (w.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY w.at DESC, w.play, w.version
           LIMIT 200
          ), dr AS MATERIALIZED (
@@ -659,7 +659,7 @@ begin
              r.at,
              r.cells
             FROM my_draws r
-           WHERE ((log_page.in_before IS NULL) OR (r.at <= log_page.in_before))
+           WHERE (r.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY r.at DESC, r.act, r.mine
           LIMIT 200
          ), wd AS MATERIALIZED (
@@ -672,7 +672,7 @@ begin
              r.at,
              r.cells
             FROM my_walls_drawn_on r
-           WHERE ((log_page.in_before IS NULL) OR (r.at <= log_page.in_before))
+           WHERE (r.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY r.at DESC, r.act, r.mine
           LIMIT 200
          ), sv AS MATERIALIZED (
@@ -680,7 +680,7 @@ begin
              p.post,
              p.saved_at
             FROM my_posts_played_on p
-           WHERE ((p.saved_at IS NOT NULL) AND ((log_page.in_before IS NULL) OR (p.saved_at <= log_page.in_before)))
+           WHERE ((p.saved_at IS NOT NULL) AND (p.saved_at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone)))
            ORDER BY p.saved_at DESC, p.play
           LIMIT 200
          ), se AS MATERIALIZED (
@@ -691,7 +691,7 @@ begin
              f.ended_at,
              f.ended_by
             FROM my_face_down f
-           WHERE ((f.ended_at IS NOT NULL) AND ((log_page.in_before IS NULL) OR (f.ended_at <= log_page.in_before)))
+           WHERE ((f.ended_at IS NOT NULL) AND (f.ended_at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone)))
            ORDER BY f.ended_at DESC, f.play
           LIMIT 200
          ), sp AS MATERIALIZED (
@@ -701,7 +701,7 @@ begin
              f.ends_at,
              f.passed_at
             FROM my_face_down f
-           WHERE ((f.passed_at IS NOT NULL) AND (f.spring IS NULL) AND ((log_page.in_before IS NULL) OR (f.passed_at <= log_page.in_before)))
+           WHERE ((f.passed_at IS NOT NULL) AND (f.spring IS NULL) AND (f.passed_at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone)))
            ORDER BY f.passed_at DESC, f.play
           LIMIT 200
          ), ca AS MATERIALIZED (
@@ -713,7 +713,7 @@ begin
              c.price,
              c.at
             FROM my_caught c
-           WHERE ((log_page.in_before IS NULL) OR (c.at <= log_page.in_before))
+           WHERE (c.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY c.at DESC, c.play
           LIMIT 200
          ), en AS MATERIALIZED (
@@ -728,7 +728,7 @@ begin
              e.caster_name,
              e."character"
             FROM my_cards_ended e
-           WHERE ((log_page.in_before IS NULL) OR (e.at <= log_page.in_before))
+           WHERE (e.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY e.at DESC, e.card_end
           LIMIT 200
          ), inf AS MATERIALIZED (
@@ -749,7 +749,7 @@ begin
              i.card_relief,
              i.fall_play
             FROM my_infractions i
-           WHERE ((log_page.in_before IS NULL) OR (i.at <= log_page.in_before))
+           WHERE (i.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY i.at DESC, i.infraction
           LIMIT 200
          ), bn AS MATERIALIZED (
@@ -766,7 +766,7 @@ begin
              b.lifted_at,
              b.lifted_card
             FROM my_bans b
-           WHERE ((log_page.in_before IS NULL) OR (b.at <= log_page.in_before))
+           WHERE (b.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY b.at DESC, b.ban
           LIMIT 200
          ), fl AS MATERIALIZED (
@@ -781,7 +781,7 @@ begin
              f.mod_name,
              f.taker_name
             FROM my_falls_taken f
-           WHERE ((log_page.in_before IS NULL) OR (f.at <= log_page.in_before))
+           WHERE (f.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY f.at DESC, f.infraction
           LIMIT 200
          ), gm AS MATERIALIZED (
@@ -806,7 +806,7 @@ begin
              g.ruled_until,
              g.ruled_office
             FROM my_group_moves g
-           WHERE ((log_page.in_before IS NULL) OR (g.at <= log_page.in_before))
+           WHERE (g.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY g.at DESC, g.move
           LIMIT 200
          ), rp AS MATERIALIZED (
@@ -821,7 +821,7 @@ begin
              r.mod_name,
              r.refund
             FROM my_reports r
-           WHERE ((log_page.in_before IS NULL) OR (r.at <= log_page.in_before))
+           WHERE (r.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY r.at DESC, r.report
           LIMIT 200
          ), ap AS MATERIALIZED (
@@ -838,7 +838,7 @@ begin
              a.hearer_name,
              a.refund
             FROM my_appeals a
-           WHERE ((log_page.in_before IS NULL) OR (a.at <= log_page.in_before))
+           WHERE (a.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY a.at DESC, a.appeal
           LIMIT 200
          ), cs AS MATERIALIZED (
@@ -880,7 +880,7 @@ begin
              s.starts_at,
              s.ends_at
             FROM my_scored_as s
-           WHERE ((log_page.in_before IS NULL) OR (s.ends_at <= log_page.in_before))
+           WHERE (s.ends_at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY s.ends_at DESC, s.settlement, s."character"
           LIMIT 200
          ), tn AS MATERIALIZED (
@@ -3214,15 +3214,15 @@ as $function$
 begin
   return (
   with page as (
-    select a.id, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
+    select a as aw, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
     where a.character = of_character
-      and (before is null or a.at < before or (before_id is not null and a.at = before and a.id < before_id))
+      and ((a.at, a.id) < (coalesce(before, 'infinity'), coalesce(before_id, '00000000-0000-0000-0000-000000000000'::uuid)))
       and not exists (select 1 from trophy_reversals r where r.award = a.id)
     order by a.at desc, a.id desc
     limit least(greatest(coalesce(most, 50), 1), 100) + 1
   )
   select jsonb_build_object(
-    'awards', coalesce((select jsonb_agg(trophy_item(a) order by p.n) from page p join trophy_awards a on a.id = p.id where p.n <= least(greatest(coalesce(most, 50), 1), 100)), '[]'::jsonb),
+    'awards', coalesce((select jsonb_agg(trophy_item(p.aw) order by p.n) from page p where p.n <= least(greatest(coalesce(most, 50), 1), 100)), '[]'::jsonb),
     'more', exists (select 1 from page p where p.n > least(greatest(coalesce(most, 50), 1), 100)))
   );
 end
