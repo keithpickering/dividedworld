@@ -224,7 +224,7 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
       return { progress: null, state: first.state, ends: first.ends, yours: false, controls: [], notes: Object.fromEntries(ofKind.map((p) => [p.id, [say(p).note, yours(p)].filter((w) => w !== '').join(' ')])) };
     }
     const rules = instance.cards.find((c) => c.key === kind);
-    /* A play beyond a post ends on its timer: the view's way out says when, the latest of the kind's (each is drawn until its own). */
+    /* Any play with `ends` (a play beyond a post, a skim, a cast earn) ends on its timer: the view's way out says when, the latest of the kind's (each is drawn until its own). */
     const latestEnd = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken && p.ends !== undefined).map((p) => p.ends!).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
     /* The plays the card's status is given are the live ones that no filing has spent: a status that is a function of them (a fall's) reads "waiting" from a live play and "took it" from none, and a play an admin ended
        never reaches it (it is simply ended, below), so "took it" is said only of a fall a filing spent (`CardPlay.spent`, from the page). */
