@@ -2055,6 +2055,9 @@ begin
 end
 $function$;
 
+-- Force pg_trgm shared library to load in this session so its GUCs are registered as USERSET
+SELECT extensions.word_similarity('a', 'b');
+
 create or replace function public.search_suggest(prefix text, kinds text[], board uuid, exclude_system boolean, most integer)
  returns jsonb
  language plpgsql
