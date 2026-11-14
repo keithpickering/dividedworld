@@ -39,9 +39,12 @@ describe('the stacked postbit', () => {
     expect(bit).toHaveTextContent('Professional Wrench');
   });
 
-  test('a phone stacks whatever the reader chose, so it drops them too, and a wide side by side keeps them', () => {
+  test('a phone draws the side markup whatever the reader chose, so it drops them too, and a wide side by side keeps them', () => {
     widthOf(390);
     show(person(), 'side');
+    expect(screen.getByRole('group')).not.toHaveTextContent(/Posts|Joined/u);
+    document.body.innerHTML = '';
+    show(person(), 'stacked');
     expect(screen.getByRole('group')).not.toHaveTextContent(/Posts|Joined/u);
   });
 
@@ -74,11 +77,25 @@ describe('the postbit', () => {
     expect(within(screen.getByRole('group', { name: 'About Pipewrench' })).getByText('Pipewrench')).toBeInTheDocument();
   });
 
-  test('side by side puts the portrait in the tall slot, with the square for a phone', () => {
+  test('side by side puts the portrait in the tall slot, and the slot has no source for the square', () => {
     show(person());
     expect(screen.getByRole('group')).toHaveAttribute('data-kb-postbit', 'side');
     expect(slot().querySelector('img')).toHaveAttribute('src', 'tall.webp');
-    expect(slot().querySelector('source')).toHaveAttribute('srcset', 'sq.webp');
+    expect(slot().querySelector('source')).toBeNull();
+  });
+
+  test('a phone draws the side markup with the portrait whatever the reader chose; a wide screen keeps the stacked square', () => {
+    widthOf(390);
+    show(person(), 'stacked');
+    expect(screen.getByRole('group')).toHaveAttribute('data-kb-postbit', 'side');
+    expect(slot()).toHaveAttribute('data-kb-slot', 'portrait');
+    expect(slot().querySelector('img')).toHaveAttribute('src', 'tall.webp');
+    document.body.innerHTML = '';
+    widthOf(1440);
+    show(person(), 'stacked');
+    expect(screen.getByRole('group')).toHaveAttribute('data-kb-postbit', 'stacked');
+    expect(slot().querySelector('img')).toHaveAttribute('src', 'sq.webp');
+    expect(slot().querySelector('source')).toBeNull();
   });
 
   test('a real portrait is marked as one, so its slot can take the portrait\'s own shape', () => {
@@ -92,7 +109,8 @@ describe('the postbit', () => {
     expect(slot()).toHaveAttribute('data-kb-slot', 'tall');
   });
 
-  test('stacked uses the square, and never loads the portrait', () => {
+  test('stacked, on a wide screen, uses the square and never loads the portrait', () => {
+    widthOf(1440);
     show(person(), 'stacked');
     expect(screen.getByRole('group')).toHaveAttribute('data-kb-postbit', 'stacked');
     expect(slot().querySelector('img')).toHaveAttribute('src', 'sq.webp');
@@ -375,13 +393,14 @@ describe('gear on the postbit', () => {
     expect((slot() as HTMLElement).style.aspectRatio).toBe('1 / 1.4');
   });
 
-  test('the stacked band and the phone draw the square, with the pieces cut through its frame', () => {
+  test('the stacked band draws the square, with the pieces cut through its frame', () => {
+    widthOf(1440);
     show(person({}, { outfit: [{ ...worn[0]!, y: 0.25 }], squareFrame: SQUARE, portraitTallness: 2 }), 'stacked');
     expect(slot().querySelector('.kb-outfit')).toHaveAttribute('data-kb-on', 'square');
     expect(slot().querySelector<HTMLElement>('.kb-outfit img')!.style.top).toBe('50%');
   });
 
-  test('a side by side portrait carries both layers in the DOM at every width, and the stylesheet shows one', () => {
+  test('a portrait\'s slot holds only the portrait layer at every width, and the stacked band only the square', () => {
     const outfit = [{ ...worn[0]!, y: 0.25 }];
     for (const w of [1440, 390]) {
       document.body.innerHTML = '';
@@ -389,22 +408,14 @@ describe('gear on the postbit', () => {
       show(person({}, { outfit, squareFrame: SQUARE, portraitTallness: 2 }));
       expect(slot()).toHaveAttribute('data-kb-slot', 'portrait');
       expect(slot().querySelector('.kb-outfit[data-kb-on="portrait"]')).not.toBeNull();
-      expect(slot().querySelector('.kb-outfit[data-kb-on="square"]')).not.toBeNull();
+      expect(slot().querySelectorAll('.kb-outfit')).toHaveLength(1);
+      expect(slot()).not.toHaveAttribute('data-kb-square');
     }
-    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
-    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
-    expect(css).toMatch(/\.kb-outfit\[data-kb-on="square"\]\s*\{[^}]*display:\s*none/u);
-    expect(phone).toMatch(/data-kb-square[^{]*\.kb-outfit\[data-kb-on="portrait"\]\s*\{[^}]*display:\s*none/u);
-    expect(phone).toMatch(/\.kb-outfit\[data-kb-on="square"\]\s*\{[^}]*display:\s*block/u);
-  });
-
-  test('no rule hides the square outfit outside the side layout, and the phone crops the portrait slot with cover', () => {
-    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
-    const hides = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => /display:\s*none/u.test(m[2]!) && m[1]!.includes('data-kb-on="square"'));
-    expect(hides.length).toBeGreaterThan(0);
-    for (const m of hides) expect(m[1]).toContain('data-kb-postbit="side"');
-    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
-    expect(phone).toMatch(/data-kb-slot="portrait"\]\s*>\s*picture\s*>\s*img\s*\{[^}]*object-fit:\s*cover/u);
+    document.body.innerHTML = '';
+    widthOf(1440);
+    show(person({}, { outfit, squareFrame: SQUARE, portraitTallness: 2 }), 'stacked');
+    expect(slot().querySelectorAll('.kb-outfit')).toHaveLength(1);
+    expect(slot().querySelector('.kb-outfit[data-kb-on="square"]')).not.toBeNull();
   });
 
   test('a mask with no portrait draws its square or initial and no gear', () => {
@@ -421,15 +432,10 @@ describe('gear on the postbit', () => {
 describe('a portrait with no square', () => {
   const worn = [{ gear: 'band', x: 0.5, y: 0.1, w: 0.5, turn: 0, layer: 0 }];
   test('stacked, the square gear is not drawn over the initial letter', () => {
+    widthOf(1440);
     show(person({}, { avatarSquare: null, outfit: worn, portraitTallness: 2 }), 'stacked');
     expect(slot().querySelector('.kb-outfit')).toBeNull();
     expect(slot()).toHaveTextContent('P');
-  });
-
-  test('on a phone its portrait gear is hidden, since the 1:1 cover slot is not the portrait\'s shape', () => {
-    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
-    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
-    expect(phone).toMatch(/data-kb-slot="portrait"\]:not\(\[data-kb-square\]\)\s*>\s*\.kb-outfit\[data-kb-on="portrait"\]\s*\{[^}]*display:\s*none/u);
   });
 });
 
