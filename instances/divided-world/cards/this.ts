@@ -1,5 +1,5 @@
 /**
- * THIS (Pepperoni, common): the caster points at a phrase of a post and says what they like about it, and every reader sees an arrow
+ * THIS (Pepperoni, common): the caster points at a phrase of a post and says something about it (agreeing or not), and every reader sees an arrow
  * pointing at the phrase, with the caster's words after THIS (docs/plans/2026-11-13-this-design.md, sections 1 and 4).
  *
  * Its rules here are its bounds and where it lands; the arrow is the screens' to draw. It is free to set, as Feelin' Fab's face is.
@@ -8,6 +8,7 @@
  * - **The words** are optional, one line of plain text, at most 60 characters; none is `''`.
  * - **It lands** only where its phrase is in the post's own words (a quote, code or a link is not; a cast whose phrase is not there is
  *   refused in plain words), up to three deep, as Autocorrect does, and on the caster's own post as on any.
+ * - **A persona** is offered it with its options (`staffOptions`), and words that run long are trimmed (`repairStaff`, below).
  */
 import { landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import { occurrences } from './autocorrect/match.ts';
@@ -19,7 +20,8 @@ export type ThisConfig = { readonly phrase: string; readonly words: string };
 
 /**
  * A persona's words repaired (design, section 4): words past 60 characters are cut to the longest stretch that ends at a word's end (the last white
- * space within the first 61 characters; with none, the first 60), counted and cut by characters, so an emoji is one and no pair is split. The trim is
+ * space within the first 61 characters; with none, the first 60), counted and cut by characters, so no surrogate pair is split (a joined emoji may be). The cut is at the white space even where that keeps one short word, since the first 60
+ * characters would end inside a word. The trim is
  * named. Nothing else is repaired: a phrase that is not in the post, or is out of bounds, is returned as given and the decision refuses in the card's words.
  */
 function repairWords(config: unknown): { readonly config: unknown; readonly trims: readonly { readonly path: string; readonly predicate: string; readonly before: number; readonly after: number }[] } {
