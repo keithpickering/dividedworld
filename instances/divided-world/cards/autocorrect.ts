@@ -9,7 +9,7 @@
  * (autocorrect/Effect.tsx). Both find the phrase with one matcher (autocorrect/match.ts) over the post's visible text, so the
  * strips the screens lay are the occurrences the server priced.
  *
- * - **The phrase** is 4 to 100 characters with at least 4 letters or digits, so tiny words cannot be carpet-bombed cheaply.
+ * - **The phrase** is 4 to 100 characters with at least 4 letters or digits (phrase-bound.ts), so tiny words cannot be carpet-bombed cheaply.
  * - **The replacement** is one line of plain text, 1 to 100 characters, and never the phrase itself (ignoring case). BBCode in
  *   it is kept as the text it is: the strip draws it as a string and never parses it.
  * - **It lands** only where its phrase is in the post's own words (a quote, code or a link is not; a cast whose phrase is not there

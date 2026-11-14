@@ -1,6 +1,6 @@
 /**
  * Autocorrect's settings in the play form (docs/plans/2026-11-03-autocorrect-design.md, section 1): the phrase to cover and the
- * words to cover it with, as two ConfigFields bounded as the card's rules bound them (autocorrect.ts), and a live ConfigHint under them
+ * words to cover it with, as two ConfigFields bounded as the card's rules bound them (phrase-bound.ts, autocorrect.ts), and a live ConfigHint under them
  * that counts the places the phrase covers in this post's own words, through the card's own matcher, so the form and the server
  * agree. The count is a preview; the server decides again, and refuses a phrase that is not there in the same words.
  */

@@ -6,7 +6,7 @@
  * Its rules here are its bounds, where it lands and its price; the sounds and the caption are the screens'. Both find a phrase with the
  * engine's one matcher (engine/bbcode/phrase.ts) over the post's visible text, so the places a screen cues are the ones the server priced.
  *
- * - **A cue** is a phrase, bounded as Autocorrect's is (4 to 100 characters, at least 4 letters or digits, one line), and a sound.
+ * - **A cue** is a phrase, bounded by the one phrase bound (phrase-bound.ts: 4 to 100 characters, at least 4 letters or digits, one line), and a sound.
  *   Two cues with the same words are one cue too many.
  * - **It lands** only where every cue's phrase is in the post's own words and outside any link (a Laugh Track never cues a bare address), no two cued places overlap and at most `PLACES.most` places are
  *   cued, on a post with no audience yet: it stacks one deep.
