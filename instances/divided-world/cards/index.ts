@@ -8,7 +8,7 @@
  * You Were Saying?, the one card that writes, a Move only ever cast face up: the old voice finishes the post (docs/plans/2026-11-07-you-were-saying-design.md).
  * Below the Fold, Salty's bar over a post (docs/plans/2026-11-11-card-notes-design.md, section 2).
  * Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md): Mooch, Toll and 4D Chess pay a share of a vote, and Off Day scores a character as a class.
- * Part 4 (docs/plans/2026-11-11-card-notes-part-4-plan.md): Sugar Coat turns away Salty and Pepperoni cards, Hype-Up is Publicity Tour's push on another's mask, and Last Word stops quotes of a post.
+ * Part 4 (docs/plans/2026-11-11-card-notes-part-4-plan.md): Sugar Coat turns away Salty and Pepperoni cards, Hype-Up is Publicity Tour's push, doubled, on one post (docs/plans/2026-11-13-hype-up-on-a-post-plan.md), and Last Word stops quotes of a post.
  * Part 3 (docs/plans/2026-11-11-card-notes-part-3-plan.md): Whodunnit? veils a post's author, Blind Study its reaction totals, and Overreaction adds a reaction to one post's picker.
  * Jimmy Wails, the first card with a drive: an appeal cast on a post that anyone may give to (docs/plans/2026-11-03-jimmy-wails-design.md).
  * Laugh Track, an audience that laughs, cheers or boos at the cued words of a post as a reader points at or taps them (docs/plans/2026-11-11-laugh-track-design.md).

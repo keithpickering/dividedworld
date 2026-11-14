@@ -4486,17 +4486,21 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
     ...base, key: 'glow', name: 'Glow', alignment: 'sweet' as const, rarity: 'uncommon' as const, reaches: ['character' as const], gimmick: { kind: 'earn' as const, by: 0.1 }, lasts: { unit: 'day' as const, count: 3 },
     canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'glow', reaches: ['character'] }, t, e, now),
   };
-  const items = [hush, move, glow].map((c) => ({ item: { card: c.key }, availability: 'onSale' as const, price: 100 }));
+  const hype = {
+    ...base, key: 'hype', name: 'Hype', alignment: 'sweet' as const, rarity: 'uncommon' as const, reaches: ['post' as const], gimmick: { kind: 'earn' as const, by: 0.1 }, lasts: { unit: 'day' as const, count: 3 },
+    canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'hype', reaches: ['post'] }, t, e, now),
+  };
+  const items = [hush, move, glow, hype].map((c) => ({ item: { card: c.key }, availability: 'onSale' as const, price: 100 }));
   /* On the wall clock: a card's own rules (quoteStop, landsOn) read the time as the server does. */
   function setup() {
-    const fake = createFake({ instance: { ...instance, cards: [hush, move, glow], machine: items, settings: { ...settings, economy: {}, postMaxLength: 2000 } }, now: () => Date.now() });
+    const fake = createFake({ instance: { ...instance, cards: [hush, move, glow, hype], machine: items, settings: { ...settings, economy: {}, postMaxLength: 2000 } }, now: () => Date.now() });
     const ana = fake.seed.account('ana');
     const bo = fake.seed.account('bo');
     const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
     const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
     fake.seed.wallet(ana, 500);
-    fake.seed.cards(ana, { hush: 2, move: 2, glow: 2 });
+    fake.seed.cards(ana, { hush: 2, move: 2, glow: 2, hype: 2 });
     fake.signInAs(ana);
     return { fake, ana, bo, anaFace, boFace, thread, opener };
   }
@@ -4564,6 +4568,37 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
     expect(typeof played.payload.ends).toBe('string');
     expect((await fake.effectsAbove([boFace], thread, board)).map((e) => [e.play, e.target])).toEqual([[played.id, boFace]]);
     expect(await fake.playCard('glow', anaFace, boFace, {}, '', 'character', theirs)).toEqual(refused('this character already carries that card', 'config'));
+  });
+
+  test('a cast of a post earn card has ends a lasts out, and a second cast on that post is refused until it passes', async () => {
+    const { fake, boFace, thread, anaFace } = setup();
+    const theirs = fake.seed.post(thread, boFace, 'Bo here.');
+    const at = Date.now();
+    const played = must(await fake.playCard('hype', anaFace, theirs, {}, ''));
+    expect(played).toMatchObject({ kind: 'card', payload: { card: 'hype' } });
+    expect(Date.parse(played.payload.ends as string) - at).toBeGreaterThanOrEqual(3 * 86_400_000 - 1000);
+    expect(Date.parse(played.payload.ends as string) - at).toBeLessThanOrEqual(3 * 86_400_000 + 1000);
+    expect(await fake.playCard('hype', anaFace, theirs, {}, '')).toMatchObject({ ok: false });
+    fake.clock.advance(4 * 86_400_000);
+    expect(must(await fake.playCard('hype', anaFace, theirs, {}, '')).kind).toBe('card');
+  });
+
+  test('a caught cast of a post earn card holds no end, as place_cast writes it (0370)', async () => {
+    const collector = { ...base, key: 'collector', name: 'Collector', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'hype' };
+    const fake = createFake({ instance: { ...instance, cards: [hype, collector], settings: { ...settings, economy: {} } }, now: () => Date.now() });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+    fake.seed.cards(ana, { collector: 1 });
+    fake.seed.cards(bo, { hype: 1 });
+    fake.signInAs(ana);
+    const set = must(await fake.setCard('collector', anaFace, opener, {}));
+    fake.signInAs(bo);
+    const caught = must(await fake.playCard('hype', boFace, opener, {}, ''));
+    expect(caught.payload.caught).toBe(set.id);
+    expect(caught.payload).not.toHaveProperty('ends');
   });
 });
 

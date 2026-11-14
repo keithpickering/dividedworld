@@ -1136,6 +1136,8 @@ const cardsWorld: Instance = {
     { ...splat, key: 'dustBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1e-8 } },
     { ...splat, key: 'useGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
     { ...splat, key: 'castGrouped', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
+    { ...splat, key: 'castPostGrouped', reaches: ['post'] as const, lasts: { unit: 'day', count: 3 }, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1, group: 'publicity' } },
+    { ...splat, key: 'castCharGrouped', reaches: ['character'] as const, lasts: { unit: 'day', count: 3 }, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.2, group: 'publicity' } },
     { ...splat, key: 'bigGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.2, group: 'warm' } },
     { ...splat, key: 'fireGrouped', play: 'use' as const, gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5, group: 'warm' } },
     { ...splat, key: 'heatGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['excitedPositive'], by: 0.1, group: 'warm' } },
@@ -1692,6 +1694,17 @@ test('a cast earn on another player\'s character boosts that character\'s earnin
   const boost = r.entries.find((e) => e.reason === 'card.boost')!;
   assert.equal(boost.player, 'tom');
   assert.deepEqual(boost.params, { card: 'castGrouped' });
+  assert.equal(r.entries.filter((e) => e.player === 'bob' && e.reason === 'card.boost').length, 0, 'the caster is paid nothing for it');
+});
+test('a cast earn on a post boosts the post earning alone, and shares its group with a cast earn on the character: the larger, per earning', () => {
+  const onPost: InputAct = { id: 'h1', character: 'bob-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'castPostGrouped', ends: FROM + 20 * H };
+  const r = settle(earnBoard([onPost, castOn('h2', 'bob-1', 'castCharGrouped', FROM + 3 * H, 'tom-1')], [
+    react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
+    react('tp2', 'dee', 'dee-1', 'tea', FROM + 5 * H),
+  ]), cardsWorld);
+  const byAct = (act: string) => r.details.filter((d) => d.reason === 'card.boost' && d.act === act).map((d) => [d.params, d.amount]);
+  assert.deepEqual(byAct('tp1'), [[{ card: 'castPostGrouped' }, 10]], 'the post earning gets the 1, the larger of the group');
+  assert.deepEqual(byAct('tp2'), [[{ card: 'castCharGrouped' }, 2]], 'another post of the same character gets the 0.2');
   assert.equal(r.entries.filter((e) => e.player === 'bob' && e.reason === 'card.boost').length, 0, 'the caster is paid nothing for it');
 });
 test('two earns of one group on one character make one boost per earning, by the earlier play\'s card', () => {

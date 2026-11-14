@@ -2102,9 +2102,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         : { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
-    /* A caught play joins no drive; a play a ride back let land is a play like any other (drive_plays leaves a caught play out, 0153). */
+    /* A caught play joins no drive and holds no end, since it is never in effect (place_cast, 0370); a play a ride back let land is a play like any other (drive_plays leaves a caught play out, 0153). */
     const drive = catches && !rides ? undefined : driveOf(rules, target, playId);
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && !(catches && !rides) ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
     /* What a landed play on a post writes beside its Act (land_rows, 0357): not for a caught one. */
     if (!(catches && !rides)) landRows(rules, written, on, decided.value.config, account.id, at);
     /* A cast that landed (a ride lets it) writes its reply, a post of the thread with a number of its own, and remembers it under its parent; a caught one writes none, and the id its Act names is no post's. */
