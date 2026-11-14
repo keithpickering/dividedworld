@@ -23,6 +23,39 @@
   font-weight: 700;
 }
 
+/*
+ * The banner above the front door is the real forum's, quieted (the owner's word of 2026-11-14). A visitor's one way in is the glass's Sign in
+ * below, so the banner keeps what makes the board look like a board, the name and the address, and draws less of what only works in the real
+ * forum: the loading meter (nothing loads here), the Boards control and the boards bar (its Index is this page, its Sign in the glass's). All of it is hidden
+ * by `display: none`, so it leaves the reading order too. The signed-in forum's banner is untouched: the selector needs the door on the page, and
+ * the door is only ever drawn signed out. On a phone the name stands alone, larger, in the banner's middle.
+ */
+.kb-frame:has(.kb-front-door) .kb-meter,
+.kb-frame:has(.kb-front-door) .kb-menu-button,
+.kb-frame:has(.kb-front-door) .kb-nav {
+  display: none;
+}
+
+.kb-frame:has(.kb-front-door) .kb-logo {
+  font-size: 2rem;
+}
+
+@media (max-width: 40em) {
+  .kb-frame:has(.kb-front-door) .kb-banner {
+    justify-content: center;
+    padding-block: 14px;
+  }
+
+  .kb-frame:has(.kb-front-door) .kb-banner-side {
+    display: none;
+  }
+
+  .kb-frame:has(.kb-front-door) .kb-logo {
+    font-size: clamp(1.5rem, 8vw, 2.5rem);
+    text-align: center;
+  }
+}
+
 /* A staged post has no date, so its number stands where a thread's does: at the row's end. */
 .kb-front-door .kb-act-meta {
   justify-content: flex-end;
