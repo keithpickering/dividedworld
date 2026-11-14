@@ -599,6 +599,10 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.equal(sql(`select count(*) from card_ledger l join auth.users u on u.id = l.account and u.email = 'exp-ann@test.invalid' where l.kind = 'returned' and l.card = 'expmatch'`), '1', 'the taken-back Reversal is returned to the setter\'s ledger');
   assert.equal(sql(`select count(*) from acts where kind = 'take_back' and payload ->> 'set' in (select f.play::text from face_down f where f.card = 'expmatch')`), '1', 'the take-back Act names the back it takes back');
   assert.equal(sql(`select ends_at <= now() from face_down where card = 'exptime'`), 't', 'a back whose time passed is held as ended');
+  // The post earn (Task 6): a cast on a post for three days carries its ends in its payload, and the round trip below carries that value as it is.
+  const postEnds = (url: string) => psqlOn(url, `select coalesce(string_agg(payload ->> 'ends', ',' order by payload ->> 'ends'), '-') from acts where kind = 'card' and payload ->> 'card' = 'exppost'`);
+  assert.match(postEnds(from), /^\d{4}-\d{2}-\d{2}T[\d:.]+[+-]\d{2}:\d{2}$/, 'the post earn\'s play holds the ends its three days give');
+  assert.equal(sql(`select (payload ->> 'ends')::timestamptz - created_at from acts where kind = 'card' and payload ->> 'card' = 'exppost'`), '3 days', 'the post earn ends three days after it was played');
   // The drive and its gifts (0153): the play opened a drive with a drawn key, both gifts are `donation` Acts, and each wallet event names its gift; Ann's full wallet cut off part of what arrived.
   const gifts = `select d.id from acts d join acts o on o.id = d.target_act_id and o.payload ->> 'card' = 'expdrive' where d.kind = 'donation'`;
   assert.match(sql(`select payload ->> 'drawn' from acts where kind = 'card' and payload ->> 'card' = 'expdrive'`), /^exp-[ab]$/, 'the drive\'s play drew a key');
@@ -817,6 +821,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const quoting = `select count(*) from acts q join acts n on n.kind = 'post' and n.payload ->> 'body' = 'Under No quote, and quoted before it.'
       where q.kind = 'post' and q.payload ->> 'body' like '%Bob, quoting under No quote.%' and q.payload ->> 'body' like '%[quote=' || n.id::text || ']%'`;
     assert.equal(psqlOn(fresh.toString(), quoting), '1', 'the post quoting the No quote is in the imported instance, quoting its post');
+    assert.equal(postEnds(fresh.toString()), postEnds(from), 'the post earn\'s ends are the same in the imported instance');
     // A share of the skim ledger row carries across, and its owner reads the card it was paid by through my_ledger_shares (0290).
     const skimShare = (url: string) => psqlOn(url, `begin; select set_config('request.jwt.claims', jsonb_build_object('sub', (select id from auth.users where email = 'exp-ann@test.invalid'), 'role', 'authenticated')::text, true); set local role authenticated; select string_agg(coalesce(to_jsonb(s) ->> 'card', '-') || ':' || s.amount, ',' order by s.amount) from my_ledger_shares s where s.reason = 'card.skim'; rollback;`).split('\n').pop();
     assert.equal(skimShare(from), 'expskim:7', 'the skim share reads its card in the fixture');
