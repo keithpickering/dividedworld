@@ -288,8 +288,9 @@ test('an instance exported and imported into a fresh database is the same instan
       -- quotes that post. The quote is written first, since a quote of a post under a live No quote is refused (acts_quote_guard); the import writes it as a replica.
       insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values
         ('expearn', 'Exported Earn', 'sweet', 'uncommon', 'cast', null, '{character}', interval '36 hours', '{"kind": "earn", "quadrants": ["excitedPositive", "calmPositive"], "by": 0.1, "group": "publicity"}'),
-        ('expnoquote', 'Exported No Quote', 'salty', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "noQuote"}');
-      insert into card_ledger (account, card, kind, price) values (ann, 'expearn', 'bought', 0), (ann, 'expnoquote', 'bought', 0);
+        ('expnoquote', 'Exported No Quote', 'salty', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "noQuote"}'),
+        ('exppost', 'Exported Post Earn', 'sweet', 'uncommon', 'cast', null, '{post}', interval '3 days', '{"kind": "earn", "quadrants": ["excitedPositive", "calmPositive"], "by": 1, "group": "publicity"}');
+      insert into card_ledger (account, card, kind, price) values (ann, 'expearn', 'bought', 0), (ann, 'expnoquote', 'bought', 0), (ann, 'exppost', 'bought', 0);
       declare quiet_post uuid; earn_post uuid;
       begin
         quiet_post := tests.post(a, t, 'Under No quote, and quoted before it.');
@@ -299,6 +300,7 @@ test('an instance exported and imported into a fresh database is the same instan
         perform play_card(ann, 'expnoquote', a, quiet_post, '{}', 0, '');
         earn_post := tests.post(b, t, 'Bob, earned on.');
         perform play_card(ann, 'expearn', a, b, '{}', 0, '', 'character', earn_post);
+        perform play_card(ann, 'exppost', a, earn_post, '{}', 0, '', 'post');
       end;
       -- A pack bought from its slot (0139): the pack's kind, its slot, the packs row with the pulls as they stood, and a pulled row per card.
       insert into card_kinds (key, name, alignment, rarity) values ('exppull', 'Exported Pull', 'sweet', 'common');
