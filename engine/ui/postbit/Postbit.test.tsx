@@ -370,8 +370,7 @@ describe('the side by side avatar slot, in the stylesheet', () => {
     expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] > picture > img')).toMatch(/height:\s*auto\s*;/u);
   });
 
-  test('the phone keeps its small square, which the portrait\'s rules must not reach', () => {
-    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
+  test('the wide block keeps its own portrait rules, which the phone block restates for itself', () => {
     expect(css).toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*data-kb-slot="portrait"/u);
   });
 });
@@ -490,10 +489,11 @@ describe('the postbit\'s text over the outfit, in the stylesheet', () => {
     expect(decls('.kb-postbit-avatar')).toMatch(/position:\s*relative/u);
   });
 
-  test('the text-over-gear rule is scoped to wide windows and the phone side layout is not touched by it', () => {
-    expect(css).toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*\.kb-postbit-text > \*/u);
+  test('the text-over-gear rule holds at every width: it sits outside any media block, and its marks exception with it', () => {
     const bare = css.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*\s*\}/gu, '');
-    expect(bare).not.toMatch(/\.kb-postbit-text > \*/u);
+    expect(bare).toMatch(/\.kb-postbit-text > \*\s*\{[^}]*z-index:\s*2/u);
+    expect(bare).toMatch(/\.kb-postbit-text > \.kb-postbit-marks\s*\{[^}]*position:\s*absolute/u);
+    expect(css).not.toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*\.kb-postbit-text > \*/u);
   });
 
   test('the tall slot lets gear reach past its edge and does not crop the portrait', () => {
@@ -636,5 +636,63 @@ describe('the side by side postbit, in the stylesheet: rank under the avatar, th
     const frameless = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.includes('.kb-postbit-avatar:has(')).map((m) => m[2]!).join('');
     expect(frameless).toMatch(/border:\s*(?:0|none)\s*;/u);
     expect(css).toMatch(/\.kb-postbit-avatar\s*\{[^}]*border:\s*1px solid var\(--kb-rule\)/u);
+  });
+});
+
+describe('the postbit\'s phone block draws the tall slot, in the order name, rank, title, group', () => {
+  const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+  /* The phone block's body, by brace matching: the block after the wide one, to its own closing brace. */
+  const phone = (() => {
+    const at = css.indexOf('@media (max-width: 40em)');
+    const open = css.indexOf('{', at);
+    let depth = 0;
+    for (let i = open; i < css.length; i += 1) {
+      if (css[i] === '{') depth += 1;
+      if (css[i] === '}' && (depth -= 1) === 0) return css.slice(open + 1, i);
+    }
+    return '';
+  })();
+  const wide = css.slice(css.indexOf('@media not all and (max-width: 40em)'), css.indexOf('@media (max-width: 40em)'));
+  const rules = (block: string, selector: string) => [...block.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim() === selector)).map((m) => m[2]!).join('');
+  const SIDE = '.kb-postbit[data-kb-postbit="side"]';
+  const PORTRAIT = `${SIDE} .kb-postbit-avatar[data-kb-slot="portrait"]`;
+
+  test('the portrait slot is 3.6em wide, lets its gear reach out, and takes the portrait\'s own shape', () => {
+    const slot = rules(phone, PORTRAIT);
+    expect(slot).toMatch(/flex:\s*0 0 3\.6em/u);
+    expect(slot).toMatch(/width:\s*3\.6em/u);
+    expect(slot).toMatch(/overflow:\s*visible/u);
+    expect(slot).toMatch(/container-type:\s*inline-size/u);
+    expect(slot).toMatch(/aspect-ratio:\s*auto\s*;/u);
+    expect(phone).not.toMatch(/aspect-ratio:\s*1\s*!important/u);
+    expect(rules(phone, `${PORTRAIT} > picture > img`)).toMatch(/aspect-ratio:\s*auto 1 \/ 2/u);
+    expect(rules(phone, `${PORTRAIT}[data-kb-shaped] > picture > img`)).toMatch(/aspect-ratio:\s*auto\s*;/u);
+  });
+
+  test('the picture fills the slot, never cropped to it', () => {
+    expect(phone).not.toMatch(/object-fit:\s*cover/u);
+    expect(rules(phone, `${PORTRAIT} > picture > img`)).toMatch(/object-fit:\s*fill/u);
+  });
+
+  test('the row starts at the top, since the avatar is taller than the text; a square slot keeps 3.2em', () => {
+    expect(rules(phone, SIDE)).toMatch(/align-items:\s*flex-start/u);
+    expect(rules(phone, `${SIDE} .kb-postbit-avatar`)).toMatch(/width:\s*3\.2em/u);
+  });
+
+  test('the text reads name, rank, title, group, warn meter, revealed class', () => {
+    const order = (sel: string) => Number(/order:\s*(-?\d+)/u.exec(rules(phone, `${SIDE} ${sel}`))?.[1] ?? 'NaN');
+    const got = ['.kb-postbit-name', '.kb-postbit-rank', '.kb-postbit-title', '.kb-postbit-group', '.kb-postbit-warn', '.kb-postbit-class'].map(order);
+    expect(got).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(phone).not.toMatch(/kb-postbit-marks[^{}]*\{[^}]*order:/u);
+  });
+
+  test('the wide block keeps its own orders: the rank at 0 and the group at 3', () => {
+    expect(rules(wide, `${SIDE} .kb-postbit-rank`)).toMatch(/order:\s*0\b/u);
+    expect(rules(wide, `${SIDE} .kb-postbit-group`)).toMatch(/order:\s*3\b/u);
+  });
+
+  test('no rule hides a square outfit layer, since a portrait slot holds none', () => {
+    expect(css).not.toMatch(/data-kb-on="square"/u);
+    expect(css).not.toMatch(/data-kb-square/u);
   });
 });

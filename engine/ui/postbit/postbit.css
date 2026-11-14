@@ -1,8 +1,9 @@
 /*
  * The postbit. Side by side (the default on a wide screen): the name, the title and the rank over
  * a tall avatar slot, 1:2, as the Main board draws it, then the counts. Stacked: a band with a
- * square avatar beside the text, above the post. A phone (40em and under) is always stacked,
- * whatever the reader chose. Percentages and em throughout.
+ * square avatar beside the text, above the post. A phone (40em and under) is always the side markup,
+ * whatever the reader chose: the whole portrait in a 3.6em slot beside the text, which reads name,
+ * rank, title, group. Percentages and em throughout.
  *
  * Forced colors: reasoned, not tested. Gear is `<img>` art and keeps its colors; the text runs and the post's cells keep their grounds, which
  * the system maps to Canvas, so no letters sit on art. A browser test with forced-colors emulation would be the proof.
@@ -181,14 +182,40 @@
 }
 
 /*
+ * Gear may reach past the tall slot (a cap above it), drawn under the text: the name, title, rank, trophies and counts are each on a layer
+ * above the slot, every run on the post's own ground, so no piece is ever behind letters that are read over it (the cosmetics board 01).
+ * The ground is the post cell's token (thread.css sets it per row, even rows differ in several themes), with the board's where a postbit
+ * is shown outside a post. It holds at every width: on a phone the slot is narrow (3.6em) and a piece reaches past each side, under the name.
+ */
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-text > * {
+  position: relative;
+  z-index: 2;
+  align-self: flex-start;
+  max-width: 100%;
+  background: var(--kb-post-bg, var(--kb-bg));
+}
+
+/*
+ * Except the character's marks strip, which is no run of words: it lies over the postbit's top corner out of the flow (cards/marks.css,
+ * `.kb-postbit .kb-postbit-marks`), and the rule above, more specific, would put it back in the flow on a ground of its own with the runs
+ * after it covering its tiles. At auto, its tiles (z-index 3) are over the runs and the gear in the postbit's own stack.
+ */
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-text > .kb-postbit-marks {
+  position: absolute;
+  z-index: auto;
+  max-width: none;
+  background: none;
+}
+
+/*
  * A portrait is any shape from 1:1 to 1:2, whatever the player cropped. The slot is 1:2 only until the
- * picture loads, so nothing jumps far; then the picture's own shape sets the height, and `cover` crops
- * nothing. The phone shows the square instead (the picture's source, below), so it keeps its own rule.
+ * picture loads, so nothing jumps far; then the picture's own shape sets the height, and the picture fills
+ * it, so nothing is cropped. A phone restates the same shape rules at its own width (the phone block, below).
  */
 @media not all and (max-width: 40em) {
   /*
    * Side by side, the rank sits above the avatar (order 0, ahead of it), the group directly under the avatar, and the warn meter, counts
-   * and revealed class follow the group (order 4, above). Wide windows only: a phone keeps its own order.
+   * and revealed class follow the group (order 4, above). Wide windows only: a phone keeps its own order (below).
    */
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-rank {
     order: 0;
@@ -196,37 +223,6 @@
 
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-group {
     order: 3;
-  }
-
-  /*
-   * Gear may reach past the tall slot (a cap above it), drawn under the text: the name, title, rank, trophies and counts are each on a layer
-   * above the slot, every run on the post's own ground, so no piece is ever behind letters that are read over it (the cosmetics board 01).
-   * The ground is the post cell's token (thread.css sets it per row, even rows differ in several themes), with the board's where a postbit
-   * is shown outside a post. Wide windows only: the phone's slot is a small square and nothing overlaps.
-   */
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-text > * {
-    position: relative;
-    z-index: 2;
-    align-self: flex-start;
-    max-width: 100%;
-    background: var(--kb-post-bg, var(--kb-bg));
-  }
-
-  /*
-   * Except the character's marks strip, which is no run of words: it lies over the postbit's top corner out of the flow (cards/marks.css,
-   * `.kb-postbit .kb-postbit-marks`), and the rule above, more specific, would put it back in the flow on a ground of its own with the runs
-   * after it covering its tiles. At auto, its tiles (z-index 3) are over the runs and the gear in the postbit's own stack.
-   */
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-text > .kb-postbit-marks {
-    position: absolute;
-    z-index: auto;
-    max-width: none;
-    background: none;
-  }
-
-  /* The square's gear is for the phone. */
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > .kb-outfit[data-kb-on="square"] {
-    display: none;
   }
 
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] {
@@ -251,33 +247,41 @@
 }
 
 @media (max-width: 40em) {
-  /* The portrait's slot is the small square here, whatever shape it was given inline; the square's gear shows and the portrait's does not. */
+  /*
+   * The portrait's slot is the tall slot here too: 3.6em wide (half the right column's height), at the shape the portrait was cut, so at most
+   * 7.2em tall. The picture is the portrait file and fills the slot, and gear reaches past its edges as on a wide screen (the text keeps its
+   * ground, above). A square in a tall slot with no portrait, and the square slot, keep 3.2em (the avatar rule below).
+   */
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] {
-    overflow: hidden;
-    aspect-ratio: 1 !important;
+    flex: 0 0 3.6em;
+    width: 3.6em;
+    max-width: none;
+    overflow: visible;
+    container-type: inline-size;
+    aspect-ratio: auto;
   }
 
-  /* A portrait with no square never stretches in the small square slot. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture {
+    height: auto;
+  }
+
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture > img {
-    object-fit: cover;
+    height: auto;
+    aspect-ratio: auto 1 / 2;
+    object-fit: fill;
   }
 
-  .kb-postbit-avatar[data-kb-square] > .kb-outfit[data-kb-on="portrait"] {
-    display: none;
+  /* A portrait whose tallness is known sets the slot's shape inline (Outfit's slotShape), and the picture fills it. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture,
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture > img {
+    height: 100%;
+    aspect-ratio: auto;
   }
 
-  /* With no square the picture is the portrait cropped to the 1:1 slot, which the portrait's percentages do not fit: it wears nothing here. */
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"]:not([data-kb-square]) > .kb-outfit[data-kb-on="portrait"] {
-    display: none;
-  }
-
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > .kb-outfit[data-kb-on="square"] {
-    display: block;
-  }
-
+  /* The avatar is taller than the text beside it, so the row starts at the top. */
   .kb-postbit[data-kb-postbit="side"] {
     flex-direction: row;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.6em;
   }
 
@@ -290,6 +294,31 @@
     flex: 0 0 3.2em;
     width: 3.2em;
     aspect-ratio: 1;
+  }
+
+  /* The text reads name, rank, title, group, then the warn meter and the revealed class. The marks strip is out of the flow and takes no order. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-name {
+    order: 0;
+  }
+
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-rank {
+    order: 1;
+  }
+
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-title {
+    order: 2;
+  }
+
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-group {
+    order: 3;
+  }
+
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-warn {
+    order: 4;
+  }
+
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-class {
+    order: 5;
   }
 }
 
