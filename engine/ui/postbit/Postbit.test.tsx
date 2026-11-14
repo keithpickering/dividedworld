@@ -370,8 +370,11 @@ describe('the side by side avatar slot, in the stylesheet', () => {
     expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] > picture > img')).toMatch(/height:\s*auto\s*;/u);
   });
 
-  test('the wide block keeps its own portrait rules, which the phone block restates for itself', () => {
-    expect(css).toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*data-kb-slot="portrait"/u);
+  test('the wide block sets its own portrait slot to the portrait\'s shape, which the phone block restates for itself', () => {
+    const bare = css.replace(/\/\*[\s\S]*?\*\//gu, '');
+    const wide = bare.slice(bare.indexOf('@media not all and (max-width: 40em)'), bare.indexOf('@media (max-width: 40em)'));
+    const slot = [...wide.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.trim() === '.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"]').map((m) => m[2]!).join('');
+    expect(slot).toMatch(/aspect-ratio:\s*auto\s*;/u);
   });
 });
 
@@ -492,7 +495,10 @@ describe('the postbit\'s text over the outfit, in the stylesheet', () => {
   test('the text-over-gear rule holds at every width: it sits outside any media block, and its marks exception with it', () => {
     const bare = css.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*\s*\}/gu, '');
     expect(bare).toMatch(/\.kb-postbit-text > \*\s*\{[^}]*z-index:\s*2/u);
-    expect(bare).toMatch(/\.kb-postbit-text > \.kb-postbit-marks\s*\{[^}]*position:\s*absolute/u);
+    const marks = /\.kb-postbit-text > \.kb-postbit-marks\s*\{([^}]*)\}/u.exec(bare)?.[1] ?? '';
+    expect(marks).toMatch(/position:\s*absolute/u);
+    expect(marks).toMatch(/z-index:\s*auto/u);
+    expect(marks).toMatch(/background:\s*none/u);
     expect(css).not.toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*\.kb-postbit-text > \*/u);
   });
 
@@ -661,17 +667,17 @@ describe('the postbit\'s phone block draws the tall slot, in the order name, ran
     const slot = rules(phone, PORTRAIT);
     expect(slot).toMatch(/flex:\s*0 0 3\.6em/u);
     expect(slot).toMatch(/width:\s*3\.6em/u);
-    expect(slot).toMatch(/overflow:\s*visible/u);
-    expect(slot).toMatch(/container-type:\s*inline-size/u);
+    expect(rules(css, PORTRAIT)).toMatch(/overflow:\s*visible/u);
+    expect(rules(css, PORTRAIT)).toMatch(/container-type:\s*inline-size/u);
     expect(slot).toMatch(/aspect-ratio:\s*auto\s*;/u);
     expect(phone).not.toMatch(/aspect-ratio:\s*1\s*!important/u);
-    expect(rules(phone, `${PORTRAIT} > picture > img`)).toMatch(/aspect-ratio:\s*auto 1 \/ 2/u);
-    expect(rules(phone, `${PORTRAIT}[data-kb-shaped] > picture > img`)).toMatch(/aspect-ratio:\s*auto\s*;/u);
+    expect(rules(css, `${PORTRAIT} > picture > img`)).toMatch(/aspect-ratio:\s*auto 1 \/ 2/u);
+    expect(rules(css, `${PORTRAIT}[data-kb-shaped] > picture > img`)).toMatch(/aspect-ratio:\s*auto\s*;/u);
   });
 
   test('the picture fills the slot, never cropped to it', () => {
     expect(phone).not.toMatch(/object-fit:\s*cover/u);
-    expect(rules(phone, `${PORTRAIT} > picture > img`)).toMatch(/object-fit:\s*fill/u);
+    expect(rules(css, `${PORTRAIT} > picture > img`)).toMatch(/object-fit:\s*fill/u);
   });
 
   test('the row starts at the top, since the avatar is taller than the text; a square slot keeps 3.2em', () => {

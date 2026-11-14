@@ -176,6 +176,23 @@
   object-fit: fill;
 }
 
+/* The picture takes the portrait's own shape (the slot is 1:2 only until it loads), at every width; the shape rules are stated once here. */
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture {
+  height: auto;
+}
+
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture > img {
+  height: auto;
+  aspect-ratio: auto 1 / 2;
+}
+
+/* A portrait whose tallness is known sets the slot's shape inline (Outfit's slotShape), and the picture fills it. */
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture,
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture > img {
+  height: 100%;
+  aspect-ratio: auto;
+}
+
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="square"] {
   width: 3.2em;
   aspect-ratio: 1;
@@ -210,7 +227,7 @@
 /*
  * A portrait is any shape from 1:1 to 1:2, whatever the player cropped. The slot is 1:2 only until the
  * picture loads, so nothing jumps far; then the picture's own shape sets the height, and the picture fills
- * it, so nothing is cropped. A phone restates the same shape rules at its own width (the phone block, below).
+ * it, so nothing is cropped. The slot's own shape is set again in the wide and phone blocks, below, where each sets its width.
  */
 @media not all and (max-width: 40em) {
   /*
@@ -228,22 +245,6 @@
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] {
     aspect-ratio: auto;
   }
-
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture {
-    height: auto;
-  }
-
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture > img {
-    height: auto;
-    aspect-ratio: auto 1 / 2;
-  }
-
-  /* A portrait whose tallness is known sets the slot's shape inline (Outfit's slotShape), and the picture fills it. */
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture,
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture > img {
-    height: 100%;
-    aspect-ratio: auto;
-  }
 }
 
 @media (max-width: 40em) {
@@ -256,25 +257,6 @@
     flex: 0 0 3.6em;
     width: 3.6em;
     max-width: none;
-    overflow: visible;
-    container-type: inline-size;
-    aspect-ratio: auto;
-  }
-
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture {
-    height: auto;
-  }
-
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture > img {
-    height: auto;
-    aspect-ratio: auto 1 / 2;
-    object-fit: fill;
-  }
-
-  /* A portrait whose tallness is known sets the slot's shape inline (Outfit's slotShape), and the picture fills it. */
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture,
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture > img {
-    height: 100%;
     aspect-ratio: auto;
   }
 
