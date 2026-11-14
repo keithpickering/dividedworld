@@ -116,7 +116,7 @@ begin
   perform tests.become_anon();
   if jsonb_array_length(staff_career('cr-ann') -> 'led') is distinct from 1 then raise exception 'a visitor reads a different career'; end if;
   perform tests.unbecome();
-  if (select proconfig from pg_proc where oid = 'staff_career(text)'::regprocedure) is distinct from array['search_path=public, pg_temp'] then raise exception 'search_path is not pinned: %', (select proconfig from pg_proc where oid = 'staff_career(text)'::regprocedure); end if;
+  if (select proconfig from pg_proc where oid = 'staff_career(text)'::regprocedure) is distinct from array['search_path=public, pg_temp', 'plan_cache_mode=force_generic_plan'] then raise exception 'search_path is not pinned and the plan fixed: %', (select proconfig from pg_proc where oid = 'staff_career(text)'::regprocedure); end if;
   if staff_career('cr-ann')::text ~ '[0-9a-f]{8}-[0-9a-f]{4}-' or position((select id from auth.users where email = 'cr-admin@test.invalid')::text in staff_career('cr-ann')::text) > 0 then
     raise exception 'a career holds an id (the cause ''admin'' is a word, not the admin): %', staff_career('cr-ann');
   end if;

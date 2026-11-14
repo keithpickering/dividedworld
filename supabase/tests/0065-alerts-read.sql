@@ -241,8 +241,9 @@ begin
   set local enable_seqscan = off;
   set local plan_cache_mode = force_generic_plan;
   for src in select unnest(array['my_alerts', 'my_alerts_unread']) loop
-    select p.prosrc into shown from pg_proc p where p.proname = src and p.pronamespace = 'public'::regnamespace;
-    if shown is null then raise exception '% is a SQL function with text to plan', src; end if;
+    -- The statement between the plpgsql wrapper's `begin return query` (or `return (`) and its `end` (0366).
+    select regexp_replace(regexp_replace(regexp_replace(p.prosrc, '^\s*#variable_conflict[^\n]*\s*begin\s*return (query|\()\s*', ''), '\)?;\s*end\s*$', ''), '\s*$', '') into shown from pg_proc p where p.proname = src and p.pronamespace = 'public'::regnamespace;
+    if shown is null then raise exception '% is a function with text to plan', src; end if;
     if src = 'my_alerts' then execute format('prepare plan_%s(timestamptz, integer) as %s', src, shown); else execute format('prepare plan_%s as %s', src, shown); end if;
     plan := '';
     stmt := case when src = 'my_alerts' then 'explain (analyze, buffers) execute plan_my_alerts(null, 30)' else 'explain (analyze, buffers) execute plan_my_alerts_unread' end;
@@ -435,7 +436,7 @@ begin
   -- holds for every plan; probing each thread's posts in full, the defect this guards (7,055 buffers here), does not fit it.
   plan := '';
   -- The function's own statement, as shipped, so the plan shows the statement and not the call.
-  execute format('prepare plan_heavy as %s', (select prosrc from pg_proc where proname = 'my_alerts_unread' and pronamespace = 'public'::regnamespace));
+  execute format('prepare plan_heavy as %s', (select regexp_replace(regexp_replace(prosrc, '^\s*#variable_conflict[^\n]*\s*begin\s*return \(\s*', ''), '\)?;\s*end\s*$', '') from pg_proc where proname = 'my_alerts_unread' and pronamespace = 'public'::regnamespace));
   for ln in execute 'explain (analyze, buffers) execute plan_heavy' loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   deallocate plan_heavy;
   set local enable_seqscan = on;
