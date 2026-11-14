@@ -13,6 +13,7 @@
  */
 import { pronounsOr, taggedName, type PronounSet } from '../rules/pronouns.ts';
 import type { Memory } from './memory.ts';
+import { excerpt, EXCERPT_WORDS } from './excerpt.ts';
 
 export interface DigestThread {
   readonly thread: string;
@@ -64,6 +65,8 @@ export interface DigestExcerpt {
   readonly character: string;
   readonly reactions: number;
   readonly text: string;
+  /** Whether SQL shortened `text` (the post was longer than the setting `digestExcerptChars`): the line then ends in an ellipsis. */
+  readonly cut?: boolean;
 }
 
 export interface DigestCharacter {
@@ -237,9 +240,10 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   );
   section(
     'Top posts',
-    digest.excerpts.slice(0, E).map((e) => `${name(e.character)}, ${e.reactions} reactions: ${clip(line(e.text), C)}`),
+    digest.excerpts.slice(0, E).map((e) => `${name(e.character)}, ${e.reactions} reactions: ${excerpt(e.text, C, e.cut === true)}`),
     'No post drew attention.',
   );
+  if (digest.excerpts.length > 0) out.push('', EXCERPT_WORDS);
   section('Outside', feed.slice(0, F).map((f) => `- ${clip(line(f), CLIPS.feedItem)}`), 'Nothing from outside.');
   return out.join('\n');
 }

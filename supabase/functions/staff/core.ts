@@ -132,19 +132,19 @@ export interface Standing {
 /** `pool_thread`'s answer: each post's author carries `pronouns`, null for a character with no profile row. */
 export interface ThreadRead {
   readonly title: string;
-  readonly posts: readonly { readonly act: string; readonly name: string; readonly pronouns: PronounSet | null; readonly body: string }[];
+  readonly posts: readonly { readonly act: string; readonly name: string; readonly pronouns: PronounSet | null; readonly body: string; readonly cut?: boolean }[];
 }
 
 /** The instance's default set (`Settings.pronouns`), else the engine's it-set: what a character with no profile row is written with. */
 export const instanceSet = (settings: { readonly pronouns?: PronounSet }): PronounSet => pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
 
 /** The thread as a prompt is given it, each author's set settled. */
-export const threadFor = (read: ThreadRead, fallback: PronounSet) => ({ title: read.title, posts: read.posts.map((p) => ({ name: p.name, pronouns: pronounsOr(p.pronouns, fallback), body: p.body })) });
+export const threadFor = (read: ThreadRead, fallback: PronounSet) => ({ title: read.title, posts: read.posts.map((p) => ({ name: p.name, pronouns: pronounsOr(p.pronouns, fallback), body: p.body, cut: p.cut === true })) });
 
 /** The post named by `act` in the read, its author's set settled; `absent` where the read does not hold it, or where there is none (a group move's appeal is about no post). */
 export const postFor = (read: ThreadRead, act: string | null, fallback: PronounSet, absent: { readonly name: string }) => {
   const found = read.posts.find((p) => p.act === act);
-  return found ? { name: found.name, pronouns: pronounsOr(found.pronouns, fallback), body: found.body } : { name: absent.name, pronouns: fallback, body: '' };
+  return found ? { name: found.name, pronouns: pronounsOr(found.pronouns, fallback), body: found.body, cut: found.cut === true } : { name: absent.name, pronouns: fallback, body: '' };
 };
 
 /** One character's pronouns, from `character_faces` (a report's reporter, an appeal's appellant), else the fallback. */

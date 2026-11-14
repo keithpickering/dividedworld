@@ -178,7 +178,7 @@ interface Week {
 
 interface ThreadRead {
   readonly title: string;
-  readonly posts: readonly { readonly act: string; readonly name: string; readonly pronouns: PronounSet | null; readonly body: string }[];
+  readonly posts: readonly { readonly act: string; readonly name: string; readonly pronouns: PronounSet | null; readonly body: string; readonly cut?: boolean }[];
   /** The live surfaces on the page it reads (pool_thread), each its play, its card's key and a few plain words naming whose post it is on; absent where the database reports none. */
   readonly walls?: readonly { readonly play: string; readonly card: string; readonly about: string }[];
 }
@@ -304,7 +304,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     // A character with no profile row reads null pronouns; it takes the instance's default, else the engine's it-set. The persona's own set is its file's, else the same.
     const instanceSet = pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
     const quotedRead = read && p.quoting ? (read.posts.find((x) => x.act === p.quoting) ?? null) : null;
-    const quotedPost: ThreadPost | null = quotedRead ? { name: quotedRead.name, pronouns: pronounsOr(quotedRead.pronouns, instanceSet), body: quotedRead.body } : null;
+    const quotedPost: ThreadPost | null = quotedRead ? { name: quotedRead.name, pronouns: pronounsOr(quotedRead.pronouns, instanceSet), body: quotedRead.body, cut: quotedRead.cut === true } : null;
 
     // The cards on offer: a Cast needs a post to land on (the post it replies to, which it was shown), a Set lands on its own new post. Only
     // when the day's allowance has a slot for a card.
@@ -323,7 +323,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     const faces = known.length ? await db.rpc<Record<string, { name: string; pronouns: PronounSet | null }>>('character_faces', { ids: known }) : {};
 
     const limits = { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
-    const thread = read ? { title: read.title, posts: read.posts.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body })) } : null;
+    const thread = read ? { title: read.title, posts: read.posts.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true })) } : null;
 
     // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.
     let raw: unknown;
