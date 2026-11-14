@@ -87,7 +87,7 @@ test('outfitOverhang: how far the highest piece stands above the slot, in slot w
   assert.ok(Math.abs(outfitOverhang([piece({ gear: 'cap', y: 0.05, w: 0.76 })], aspectOf, 2, 0.4) - 0.09) < 1e-9);
   assert.equal(outfitOverhang([piece({ gear: 'cap', y: 0.5, w: 0.76 })], aspectOf, 2, 0.4), 0);
   assert.equal(outfitOverhang([], aspectOf, 2, 0.4), 0);
-  /* A piece turned a quarter has its width for height: 0.5 tall art of w 0.5 (aspect 2) turns to half-height 0.25 at center 0.2 (y 0.1). */
+  /* A piece turned a quarter has its width for height: 1.0 tall art of w 0.5 (aspect 2) turns to half-height 0.25 at center 0.2 (y 0.1). */
   assert.ok(Math.abs(outfitOverhang([piece({ gear: 'tall', y: 0.1, w: 0.5, turn: 90 })], aspectOf, 2, 0.4) - 0.05) < 1e-9);
   assert.ok(Math.abs(outfitOverhang([piece({ gear: 'tall', y: 0.1, w: 0.5, turn: 0 })], aspectOf, 2, 0.4) - 0.3) < 1e-9);
   /* Art the instance does not know is skipped, as Outfit skips it. */
