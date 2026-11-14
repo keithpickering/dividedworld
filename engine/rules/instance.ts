@@ -596,9 +596,13 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (play === 'keep') out.push(`${who} is kept, and Keep is not built until it is designed`);
   if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a set card has one`);
   if (play === 'set' && c.trap === undefined) out.push(`${who} is a set card with no trap`);
-  const castEarn = play === 'cast' && c.gimmick?.kind === 'earn' && Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'character';
-  if (c.gimmick !== undefined && play !== 'use' && !castEarn) out.push(`${who} has a gimmick, and only a use card has one, or a cast card on a character an earn`);
+  const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
+  const postAlone = !beyond;
+  // A cast earn reaches a character alone or a post alone (reaches left out is a post).
+  const castEarn = play === 'cast' && c.gimmick?.kind === 'earn' && (c.reaches === undefined || (Array.isArray(c.reaches) && c.reaches.length === 1 && (c.reaches[0] === 'character' || c.reaches[0] === 'post')));
+  if (c.gimmick !== undefined && play !== 'use' && !castEarn) out.push(`${who} has a gimmick, and only a use card has one, or a cast card on a character alone or a post alone an earn`);
   if (castEarn) out.push(...gimmickProblems(c.gimmick, who, reactionKeys));
+  if (castEarn && postAlone && c.lasts === undefined) out.push(`${who} has an earn with no time up (lasts); an earn on a cast card ends at its time`);
   if (play === 'use') {
     if (c.gimmick === undefined) out.push(`${who} is a use card with no gimmick`);
     else out.push(...gimmickProblems(c.gimmick, who, reactionKeys));
@@ -606,8 +610,6 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
     const outside = Array.isArray(c.reaches) ? c.reaches.filter((r) => r !== 'post' && r !== 'character' && r !== 'thread') : [];
     if (outside.length) out.push(`${who} is a use card and reaches ${outside.map((r) => (r === 'board' ? 'a board' : JSON.stringify(r))).join(' and ')}; a use card reaches a post, a character or a thread`);
   }
-  const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
-  const postAlone = !beyond;
   // A cast on a post may end (a skim, a veil); a set card does not, it springs and lands as a cast with its own time.
   if (c.lasts !== undefined && play !== 'use' && play !== 'cast' && !beyond) out.push(`${who} has a time up (lasts), and only a use card, a cast card or a card reaching beyond a post does`);
   if (c.lasts !== undefined && !isSpan(c.lasts, LASTS_UNITS)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000`);

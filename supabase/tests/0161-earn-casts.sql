@@ -1,8 +1,8 @@
--- An Earn a cast card carries (supabase/migrations/0316_card_notes_part_4.sql; docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 3, sections 1, 5, 6 and 8). A cast card that reaches a character alone may
--- carry an earn Gimmick: it lands on any character, anyone's, by the stack count; a use card with an earn is still used on one's own character alone; a staff character casts none (the settlement leaves a
+-- An Earn a cast card carries (supabase/migrations/0316_card_notes_part_4.sql; docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 3, sections 1, 5, 6 and 8; on a post alone, 0369_hype_up_on_a_post.sql and supabase/tests/0369-post-earn-casts.sql).
+-- A cast card that reaches a character alone, or a post alone with a time up, may carry an earn Gimmick: it lands on any character, anyone's, by the stack count; a use card with an earn is still used on one's own character alone; a staff character casts none (the settlement leaves a
 -- staff character's Acts out, so it would never be paid); set face down it lands on the quoting post's character as a cast does. settlement_input carries its play with its end and the character it is on,
 -- in its own window and, through earn_up, in the next, and estimate_input for the target's player carries another's play made inside the open window and for a third player does not.
--- The catalog holds the same three refusals card_kinds_problem says in the engine's words (engine/rules/instance.ts, playProblems and gimmickProblems). The cards are this file's own (ec...).
+-- The catalog holds the same refusals card_kinds_problem says in the engine's words (engine/rules/instance.ts, playProblems and gimmickProblems). The cards are this file's own (ec...).
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
 begin
@@ -31,7 +31,7 @@ create function pg_temp.entry(input jsonb, id uuid) returns jsonb language sql a
 $$;
 create function pg_temp.ms(t timestamptz) returns bigint language sql as $$ select (extract(epoch from t) * 1000)::bigint $$;
 
--- ---- The catalog: a cast earn on a character seeds; the other pairings are refused by the table's checks and by card_kinds_problem, in the engine's words ----
+-- ---- The catalog: a cast earn on a character, or on a post with a time up, seeds; the other pairings are refused by the table's checks and by card_kinds_problem, in the engine's words ----
 select tests.unbecome();
 do $$
 declare
@@ -41,14 +41,16 @@ begin
   perform pg_temp.cards();
   if not exists (select 1 from card_kinds where key = 'ecboost' and play = 'cast' and gimmick ->> 'kind' = 'earn') then raise exception 'a cast card with an earn did not seed'; end if;
 
-  -- The table: a cast card holds a gimmick only when it is an earn on a character alone.
+  -- The table: a cast card holds a gimmick only when it is an earn on a character alone or a post alone.
   why := pg_temp.coded(format($f$insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values ('ecpoison', 'Poison', 'sweet', 'common', 'cast', interval '1 day', '{character}', %L)$f$,
     '{"kind": "ward", "upTo": "common"}'));
   if why is null or why not like '23514 %card_kinds_gimmick_use%' then raise exception 'a cast card with a ward went into the catalog: %', why; end if;
   why := pg_temp.coded(format($f$insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values ('ecpoison', 'Poison', 'sweet', 'common', 'cast', interval '1 day', '{post,character}', %L)$f$, earn));
   if why is null or why not like '23514 %card_kinds_gimmick_use%' then raise exception 'a cast card with an earn on a post as well went into the catalog: %', why; end if;
-  why := pg_temp.coded(format($f$insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values ('ecpoison', 'Poison', 'sweet', 'common', 'cast', interval '1 day', '{post}', %L)$f$, earn));
-  if why is null or why not like '23514 %card_kinds_gimmick_use%' then raise exception 'a cast card with an earn on a post went into the catalog: %', why; end if;
+  why := pg_temp.coded(format($f$insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values ('ecpost', 'Ec Post', 'sweet', 'common', 'cast', interval '1 day', '{post}', %L)$f$, earn));
+  if why is not null then raise exception 'a cast card with an earn on a post alone was refused by the catalog: %', why; end if;
+  why := pg_temp.coded(format($f$insert into card_kinds (key, name, alignment, rarity, play, reaches, gimmick) values ('ecpostbare', 'Ec Post Bare', 'sweet', 'common', 'cast', '{post}', %L)$f$, earn));
+  if why is null or why not like '23514 %card_kinds_gimmick_lasts%' then raise exception 'a cast card with an earn on a post and no time up went into the catalog: %', why; end if;
   why := pg_temp.coded(format($f$insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values ('ecpoison', 'Poison', 'sweet', 'common', 'use', interval '1 day', '{post}', %L)$f$,
     '{"kind": "hex"}'));
   if why is null or why not like '23514 %card_kinds_gimmick_kind%' then raise exception 'a gimmick of a kind that is none went into the catalog: %', why; end if;
@@ -63,14 +65,16 @@ begin
     || '{"key": "oq2", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 7}, "gimmick": {"kind": "noQuote"}}]')::jsonb);
   if why is not null then raise exception 'clean cards were refused: %', why; end if;
 
+  why := card_kinds_problem(('[{"key": "poison", "rarity": "common", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": ' || earn || '}]')::jsonb);
+  if why is not null then raise exception 'a cast card on a post with an earn and a time up was refused: %', why; end if;
   why := card_kinds_problem(('[{"key": "poison", "rarity": "common", "reaches": ["post"], "gimmick": ' || earn || '}]')::jsonb);
-  if why is distinct from 'card "poison" has a gimmick, and only a use card has one, or a cast card on a character an earn' then raise exception 'a cast card on a post with an earn: %', why; end if;
+  if why is distinct from 'card "poison" has an earn with no time up (lasts); an earn on a cast card ends at its time' then raise exception 'a cast card on a post with an earn and no time up: %', why; end if;
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "reaches": ["character"], "lasts": {"unit": "day", "count": 1}, "gimmick": {"kind": "ward", "upTo": "common"}}]');
-  if why is distinct from 'card "poison" has a gimmick, and only a use card has one, or a cast card on a character an earn' then raise exception 'a cast card on a character with a ward: %', why; end if;
+  if why is distinct from 'card "poison" has a gimmick, and only a use card has one, or a cast card on a character alone or a post alone an earn' then raise exception 'a cast card on a character with a ward: %', why; end if;
   why := card_kinds_problem(('[{"key": "poison", "rarity": "common", "reaches": ["character", "post"], "lasts": {"unit": "day", "count": 1}, "gimmick": ' || earn || '}]')::jsonb);
-  if why is distinct from 'card "poison" has a gimmick, and only a use card has one, or a cast card on a character an earn' then raise exception 'a cast card reaching a character and a post with an earn: %', why; end if;
+  if why is distinct from 'card "poison" has a gimmick, and only a use card has one, or a cast card on a character alone or a post alone an earn' then raise exception 'a cast card reaching a character and a post with an earn: %', why; end if;
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "cast"}}, "reaches": ["character"], "gimmick": {"kind": "earn", "quadrants": ["calmPositive"], "by": 0.1}}]');
-  if why is distinct from 'card "poison" has a gimmick, and only a use card has one, or a cast card on a character an earn' then raise exception 'a set card with an earn: %', why; end if;
+  if why is distinct from 'card "poison" has a gimmick, and only a use card has one, or a cast card on a character alone or a post alone an earn' then raise exception 'a set card with an earn: %', why; end if;
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": {"kind": "hex"}}]');
   if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn, price, ride or noQuote' then raise exception 'the kinds a gimmick may be: %', why; end if;
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "reaches": ["character"], "lasts": {"unit": "day", "count": 7}, "gimmick": {"kind": "noQuote"}}]');

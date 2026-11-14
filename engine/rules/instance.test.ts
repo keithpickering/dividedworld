@@ -768,15 +768,20 @@ test('a trap is a set card\'s, and a gimmick and a time up are a use card\'s', (
   assert.match(instanceProblems(withCards({ play: 'deal' })).join('\n'), /card "splat" is played "deal"; a card is cast, used, set or kept/);
 });
 
-test('a cast card on a character may carry an earn, and nothing else a gimmick', () => {
+test('a cast card on a character or a post alone may carry an earn, and nothing else a gimmick', () => {
   const earn = { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 };
   const hours = { unit: 'hour', count: 36 };
   const cast = (over: Record<string, unknown>) => instanceProblems(withCards({ rarity: 'uncommon', lasts: hours, ...over })).join('\n');
   assert.equal(cast({ reaches: ['character'], gimmick: earn }), '', 'a cast earn on a character passes');
   assert.equal(cast({ reaches: ['character'], gimmick: { ...earn, group: 'warm' } }), '');
-  assert.match(cast({ gimmick: earn }), /card "splat" has a gimmick, and only a use card has one, or a cast card on a character an earn/, 'a cast earn on a post');
-  assert.match(cast({ reaches: ['character'], gimmick: { kind: 'ward', flavors: ['salty'] } }), /only a use card has one, or a cast card on a character an earn/, 'a cast ward');
-  assert.match(cast({ rarity: 'rare', reaches: ['character', 'post'], gimmick: earn }), /only a use card has one, or a cast card on a character an earn/, 'a cast earn on a character and a post');
+  const gimmickWords = /card "splat" has a gimmick, and only a use card has one, or a cast card on a character alone or a post alone an earn/;
+  const days3 = { unit: 'day', count: 3 };
+  assert.equal(cast({ gimmick: earn, lasts: days3 }), '', 'a cast earn on a post, reaches left out');
+  assert.equal(cast({ reaches: ['post'], gimmick: earn, lasts: days3 }), '', 'a cast earn on a post alone');
+  assert.match(cast({ gimmick: earn, lasts: undefined }), /card "splat" has an earn with no time up \(lasts\); an earn on a cast card ends at its time/, 'a cast earn on a post with no time up');
+  assert.match(cast({ reaches: ['character'], gimmick: { kind: 'ward', flavors: ['salty'] } }), gimmickWords, 'a cast ward');
+  assert.match(cast({ gimmick: { kind: 'ward', flavors: ['salty'] }, lasts: days3 }), gimmickWords, 'a cast ward on a post');
+  assert.match(cast({ rarity: 'rare', reaches: ['character', 'post'], gimmick: earn, lasts: days3 }), gimmickWords, 'a cast earn on a character and a post');
   assert.match(cast({ reaches: ['character'], gimmick: { ...earn, group: '' } }), /card "splat" has an earn with the group ""; a group is a word/);
   assert.match(cast({ reaches: ['character'], gimmick: { ...earn, group: 3 } }), /card "splat" has an earn with the group 3; a group is a word/);
 });

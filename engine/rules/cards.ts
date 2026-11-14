@@ -99,6 +99,7 @@ export interface CardEffect {
  * earn effects on one character or post that share a `group` do not add: for each earning the largest `by` among them applies (an earn with no group boosts on its own);
  * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up;
  * a no-quote stops a post that quotes the post it is on, before that post is written.
+ * A cast card that reaches one character or one post alone may carry an earn too, ending at its `lasts`.
  */
 export type GimmickEffect =
   | { readonly kind: 'ward'; readonly upTo?: Rarity; readonly flavors?: readonly Alignment[]; readonly cards?: readonly string[] }
@@ -286,15 +287,15 @@ export interface CardRules<Config = unknown> {
    */
   readonly scoresAs?: true;
   /**
-   * A use card's effect while it is up; every use card has one. A cast card that reaches a character alone may carry an earn, which the character it
-   * lands on has while the play is up. Nothing else has one.
+   * A use card's effect while it is up; every use card has one. A cast card that reaches a character alone or a post alone may carry an earn, which the character or post it
+   * lands on has while the play is up (a post's earn has a `lasts`). Nothing else has one.
    */
   readonly gimmick?: GimmickEffect;
   /** Where it can land; a post unless it says (`['post']`). A reach beyond a post takes at least its `reachRarity`. */
   readonly reaches?: readonly Reach[];
   /**
    * How long a Use card is up once played, and how long a play beyond a post lasts, at most its reach's `reachLasts`;
-   * with none, a Use stays. A cast on a post with a `lasts` ends at its time too, and landsOn then leaves it out of the stack; a cast on a
+   * with none, a Use stays. A cast earn on a post must have one. A cast on a post with a `lasts` ends at its time too, and landsOn then leaves it out of the stack; a cast on a
    * post with none does not end.
    */
   readonly lasts?: Span;
