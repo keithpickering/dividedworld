@@ -11,7 +11,8 @@
  * Departures, each a decision:
  *  - The banner stands 13px lower and the Boards button is a 44px target, as in 03-phone; the crumb and everything under it keep that offset.
  *  - The crumb stands 25px lower than the board draws it and the title 29px (the banner's 13px, the Boards button's growth, and the crumb's own gap); the
- *    pager and the first post's author stand 27 and 24px lower. The rank and the post's line are the phone postbit's departure below. The rank is set at the type scale's 13.75px, as the board draws it (the owner's word, 2026-11-13, PR #660).
+ *    pager and the first post's author stand 27 and 24px lower. The rank and the post's line are the phone postbit's departure below. The rank is set
+ *    at the type scale's 13.75px, as the board draws it (the owner's word, 2026-11-13, PR #660).
  *  - The words under the post line are the fixture's, not the board's, so only each post's author, rank, line and permalink are compared.
  *  - The HUD is drawn for place only and is 01-main's.
  *  - The group bar (docs/plans/2026-11-06-member-groups-design.md, the look the owner approved in docs/research/2026-11-06-member-groups/01-bars.html,
@@ -19,7 +20,8 @@
  *    the right column, so it no longer pushes the rank down (see the next departure); it lengthens the column by its own room, which the band's height
  *    follows only where the column is taller than the avatar.
  *  - The phone's postbit draws the whole portrait, 3.6em wide and at most twice as tall, with the rank directly under the name, then the title, then the
- *    group bar (the owner's word, 2026-11-14, docs/plans/2026-11-14-mobile-postbit-design.md). The band's height is now the avatar's, so the rank stands
+ *    group bar (the owner's ask, 2026-11-14, docs/plans/2026-11-14-mobile-postbit-design.md section 1; section 2 holds the decisions). The band's
+ *    height is now the avatar's, so the rank stands
  *    19.1px lower than the board draws it, and the post's line and its permalink stand 31.4px
  *    lower, as the match measures them.
  */

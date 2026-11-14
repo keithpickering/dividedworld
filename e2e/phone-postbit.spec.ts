@@ -17,8 +17,14 @@ async function open(page: Page) {
   await page.goto(STORY);
   await expect(page.locator('.kb-postbit').first()).toBeVisible();
   await loadFaces(page);
-  /* The pictures load lazily: give the ones in view a moment, so the boxes below are measured at each picture's own shape (a miss fails on the numbers). */
-  await page.waitForFunction(() => [...document.querySelectorAll('.kb-postbit-avatar img')].every((i) => (i as HTMLImageElement).naturalWidth > 0), undefined, { timeout: 4000 }).catch(() => undefined);
+  /* The pictures load lazily: bring each into view and wait for it, so the boxes below are measured at each picture's own shape (a picture that never loads fails here). */
+  const pics = page.locator('.kb-postbit-avatar img');
+  for (let i = 0, n = await pics.count(); i < n; i++) {
+    const pic = pics.nth(i);
+    await pic.scrollIntoViewIfNeeded();
+    await expect.poll(() => pic.evaluate((el) => (el as HTMLImageElement).complete && (el as HTMLImageElement).naturalWidth > 0), { message: `avatar picture ${i} loads once in view`, timeout: 10000 }).toBe(true);
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
 }
 
 /**
