@@ -85,6 +85,31 @@ export function inSquare(piece: Piece, square: SquareFrame): Piece {
 }
 
 /**
+ * How far above the top of a tall slot its highest piece's turned box stands, in units of the slot's width, never below 0. The slot is 1
+ * wide and `tallness ?? 2` tall (the portrait's own shape, null where unknown); a piece's `y` is a fraction of the slot's height, its
+ * `w` of its width, and its height is `w * aspect`. Its half-height once turned is `(w*|sin| + w*aspect*|cos|) / 2`, the formula
+ * `touchesSquare` (ui/gear/Outfit.tsx) uses. A piece whose art `aspectOf` does not know is skipped, as `Outfit` skips it. The result is
+ * capped at `reach` (`settings.cosmetics.gear.reach`), where the layer's own clip cuts a piece, so nothing stands higher than that.
+ */
+export function outfitOverhang(
+  pieces: readonly Piece[],
+  aspectOf: (gear: string) => number | undefined,
+  tallness: number | null,
+  reach: number,
+): number {
+  const height = tallness ?? 2;
+  let over = 0;
+  for (const p of pieces) {
+    const aspect = aspectOf(p.gear);
+    if (aspect === undefined) continue;
+    const rad = (p.turn * Math.PI) / 180;
+    const half = (p.w * Math.abs(Math.sin(rad)) + p.w * aspect * Math.abs(Math.cos(rad))) / 2;
+    over = Math.max(over, half - p.y * height);
+  }
+  return Math.min(over, reach);
+}
+
+/**
  * The character who holds a belt now: the award with the latest instant not reversed, or null when none stands. Instants are compared as
  * instants (`Date.parse`), never as strings, since `Z`, `+00:00` and fractional seconds spell one moment several ways; an award whose
  * `at` does not parse is skipped. An exact tie goes to the larger `character` id, since the order awards arrive in (from SQL) is not

@@ -6,14 +6,16 @@
  * profile) and the instance's ranks; the pips from the character's pip style. "Joined" is the month
  * and never the day: two characters made a minute apart is a way of reading who owns them. The
  * layout is the reader's setting, side by side with a tall avatar or stacked with a square one; a
- * phone is always stacked, which is the stylesheet's to say (postbit.css), and the square then
- * stands in for a portrait through `<picture>`.
+ * phone draws the side markup whatever the reader chose, with the portrait, and the stylesheet
+ * (postbit.css) lays that markup out for the narrow screen. The square is for the stacked band and
+ * for a mask with no portrait.
  */
 import { memo, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import { useNarrow } from '../media.ts';
 import type { Character } from '../data/api.ts';
+import { outfitOverhang } from '../../rules/cosmetics.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { monthYear, shortDate } from './dates.ts';
 import { Link } from '../router.tsx';
@@ -37,13 +39,13 @@ export type PostbitLayout = 'side' | 'stacked';
 
 /**
  * The avatar slot: the portrait in the tall slot, the square where there is none, the initial where there is no avatar. A portrait draws at the shape it
- * was cut (`portraitTallness`) and wears its outfit; the square, on the stacked band and on a phone, wears the same pieces cut through its own frame.
+ * was cut (`portraitTallness`) and wears its outfit; the square, on the stacked band, wears the same pieces cut through its own frame.
  * A mask with no portrait wears nothing.
  */
 function Avatar({ character, layout }: { readonly character: Character; readonly layout: PostbitLayout }) {
   const { avatarSquare: square, avatarPortrait: portrait, outfit, squareFrame, portraitTallness } = character;
-  const squareFor = portrait && outfit.length > 0 ? <Outfit pieces={outfit} on="square" frame={squareFrame ?? (portraitTallness ? { x: 0, y: 0, w: 1, h: 1 / portraitTallness } : null)} /> : null;
   if (layout === 'stacked' || !portrait) {
+    const squareFor = portrait && outfit.length > 0 ? <Outfit pieces={outfit} on="square" frame={squareFrame ?? (portraitTallness ? { x: 0, y: 0, w: 1, h: 1 / portraitTallness } : null)} /> : null;
     const src = layout === 'stacked' ? square : square ?? portrait;
     return (
       <span className="kb-postbit-avatar" data-kb-slot={layout === 'side' && src ? 'tall' : 'square'} aria-hidden="true">
@@ -52,15 +54,13 @@ function Avatar({ character, layout }: { readonly character: Character; readonly
       </span>
     );
   }
-  /* Both layers are always here and the stylesheet shows one by the width the <picture> source uses, so a phone never paints the tall slot and swaps. */
+  /* One picture and one outfit layer, the portrait's, at every width: a phone draws this markup too. */
   return (
-    <span className="kb-postbit-avatar" data-kb-slot="portrait" data-kb-square={square ? '' : undefined} data-kb-shaped={portraitTallness === null ? undefined : ''} aria-hidden="true" style={slotShape(portraitTallness)}>
+    <span className="kb-postbit-avatar" data-kb-slot="portrait" data-kb-shaped={portraitTallness === null ? undefined : ''} aria-hidden="true" style={slotShape(portraitTallness)}>
       <picture>
-        {square && <source media="(max-width: 40em)" srcSet={square} />}
         <img src={portrait} alt="" loading="lazy" decoding="async" />
       </picture>
       <Outfit pieces={outfit} on="portrait" />
-      {square && squareFor}
     </span>
   );
 }
@@ -105,8 +105,9 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   /* The stand-in a card's veil shows in place of a post's author (office `anonymous`) is no scored character and holds no rung: no bar, no badge, no meter, no rank. */
   const standIn = c.office === 'anonymous';
   const scored = !c.staff && !standIn;
-  /* A stacked postbit, chosen or forced on a phone, drops Posts and Joined: the profile carries them a tap away (the board look design, section 3). */
+  /* A phone draws the side markup whatever the reader chose, and drops Posts and Joined: the profile carries them a tap away (the board look design, section 3). */
   const narrow = useNarrow();
+  const shape: PostbitLayout = layout === 'stacked' && !narrow ? 'stacked' : 'side';
   const counts = layout === 'side' && !narrow;
   const index = rankIndex(instance.ranks, person.standing);
   const rank = instance.ranks[index]?.name ?? '';
@@ -117,10 +118,12 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   /* The side layout shows the chosen trophies and any belt under the rank; the stacked band and a phone show a held belt only, beside the name. */
   const shelf = counts ? postbitTrophies(c.trophies, instance.settings.cosmetics.trophies.shownMost) : [];
   const belts = counts ? [] : heldBelts(c.trophies);
+  /* On a phone the postbit's top edge is the post's: a piece standing above the slot would cover the post above, so the root pads by how far (postbit.css). */
+  const overhang = shape === 'side' && c.avatarPortrait ? outfitOverhang(c.outfit, (g) => ui.gear[g]?.aspect, c.portraitTallness, instance.settings.cosmetics.gear.reach) : 0;
   const pipImages = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   return (
-    <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={layout}>
-      <Avatar character={c} layout={layout} />
+    <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={shape} style={overhang > 0 ? ({ '--kb-overhang': overhang } as CSSProperties) : undefined}>
+      <Avatar character={c} layout={shape} />
       <div className="kb-postbit-text">
         <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}{belts.length > 0 && <span className="kb-postbit-belts">{belts.map((t) => <TrophyBadge key={t.award} trophy={t} />)}</span>}</span>
         {/* The group's bar under the name; a staff character's has its office title beside it. */}
