@@ -486,6 +486,39 @@ describe('layout and effects', () => {
       expect(el2.querySelector('.kb-bb')!.lastChild!.previousSibling).toBe(el2.querySelector('[data-trail]'));
     });
 
+    test('a standing end in a gap whose next text node lies under a replace stretch that began earlier draws one trail', () => {
+      let calls = 0;
+      const cover: TextRun = { start: 3, end: 8, key: 'c', z: 1, mode: 'replace', render: ({ key }) => { calls++; return <b key={key}>X</b>; } };
+      const el = draw([wrapRun(0, 5, 'r', 0, trailOf('t'), true), cover], 'cats[hr]today');
+      expect(calls).toBe(1);
+      expect(trailsIn(el)).toEqual(['t']);
+      cleanup();
+      const after: TextRun = { start: 6, end: 12, key: 'c', z: 1, mode: 'replace', render: ({ key }) => <b key={key}>X</b> };
+      const el2 = draw([wrapRun(0, 5, 'r', 0, trailOf('t'), true), after], 'cats[hr]today');
+      expect(trailsIn(el2)).toEqual(['t']);
+    });
+
+    test('two standing runs ending in one gap are both drawn once, lower z first then list order; a node-end and a moved gap-end share an offset in that order too', () => {
+      const el = draw([wrapRun(0, 5, 'a', 1, trailOf('a'), true), wrapRun(0, 5, 'b', 0, trailOf('b'), true), wrapRun(1, 5, 'c', 0, trailOf('c'), true)], 'cats[hr]today');
+      expect(trailsIn(el)).toEqual(['b', 'c', 'a']);
+      cleanup();
+      // 'cats[hr]' is 'cats' and a separator: the run ending at 4 is at the last node's end, the one ending at 5 falls in the gap after it and is moved there.
+      const el2 = draw([wrapRun(0, 4, 'node', 1, trailOf('node'), true), wrapRun(0, 5, 'gap', 0, trailOf('gap'), true)], 'cats[hr]');
+      expect(trailsIn(el2)).toEqual(['gap', 'node']);
+      cleanup();
+      const el3 = draw([wrapRun(0, 4, 'node', 0, trailOf('node'), true), wrapRun(0, 5, 'gap', 1, trailOf('gap'), true)], 'cats[hr]');
+      expect(trailsIn(el3)).toEqual(['node', 'gap']);
+    });
+
+    test('a trail moved to the next text node is drawn inside what wraps it, and one with no text node at all is dropped', () => {
+      const el = draw([wrapRun(0, 5, 'r', 0, trailOf('t'), true)], 'cats[hr][b]today[/b]');
+      expect(el.querySelector('strong')!.innerHTML).toMatch(/^<span data-trail="t"><\/span>today$/u);
+      expect(trailsIn(el)).toEqual(['t']);
+      cleanup();
+      const el2 = draw([wrapRun(0, 5, 'r', 0, trailOf('t'), true)], '[hr][hr]');
+      expect(trailsIn(el2)).toEqual([]);
+    });
+
     test('a standing end in the middle of a gap draws before the next text piece; one after the last text node draws after the last piece', () => {
       const el = draw([wrapRun(0, 5, 'r', 0, trailOf('t'), true)], 'cats[hr][hr]today');
       expect(trailsIn(el)).toEqual(['t']);
