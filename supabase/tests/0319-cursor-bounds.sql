@@ -84,3 +84,72 @@ begin
   select string_agg(f, ', ') into bad from unnest(coalesce(found, '{}')) f where f not like 'planted\_%';
   if bad is not null then raise exception 'cursor bounds written as a catch-all (use col <= coalesce(arg, ''infinity'')): %', bad; end if;
 end $$;
+
+-- ---- Task 2. A deep page reads a page, not the depth ----
+-- One case for each function the bound is rewritten in. The caller's table is seeded with 20,000 rows a minute apart plus 50 other owners' rows at now(), analyzed, and a
+-- page is read once 19,000 rows deep and once from the top (a null cursor), as the owning account. A read is a tuple the source table gave up: the change in
+-- seq_tup_read + idx_tup_fetch from pg_stat_xact_user_tables around the call. Each call reads at most 400 (a page is 200, with room for a boundary probe and plan noise).
+-- Postgres 16 already plans a `language sql` body with its argument unknown; the plpgsql functions are pinned to a generic plan and called once, uncounted, first.
+-- Seeding goes straight into the tables as the file's superuser, as 0313-discipline-scale.sql does; a trophy kind, a staff persona and an Act for a note are written inline,
+-- since the fixtures have none. A staff_notes_recent cursor is a lower bound (`since`), so "deep" is a cursor just behind the newest note: the catch-all reads all 20,000 to
+-- find the 200 that are not there, and a seek reads none.
+create function pg_temp.reads(tbl text, stmt text) returns bigint language plpgsql as $f$
+declare before_n bigint; after_n bigint;
+begin
+  select seq_tup_read + idx_tup_fetch into before_n from pg_stat_xact_user_tables where relname = tbl;
+  execute stmt;
+  select seq_tup_read + idx_tup_fetch into after_n from pg_stat_xact_user_tables where relname = tbl;
+  return after_n - before_n;
+end $f$;
+
+do $$
+declare
+  most_reads constant integer := 400;
+  n constant integer := 20000;
+  ann uuid := tests.account('cb-ann'); adm uuid := tests.account('cb-adm');
+  a uuid := tests.character(ann, 'Cb Ann');
+  others uuid[] := array(select tests.character(tests.account('cb-o' || g), 'Cb Other ' || g) from generate_series(1, 50) g);
+  th uuid := tests.thread();
+  post uuid := tests.post(a, th);
+  deep text := 'now() - interval ''19000 minutes''';
+  cases text[][];
+  c text[]; d bigint; z bigint; bad text := ''; limit_deep integer;
+begin
+  insert into admins (account) values (adm);
+  insert into trophy_kinds (key, name, belt) values ('cb-belt', 'Cb Belt', true);
+  insert into characters (name, staff, staff_kind) values ('Cb Staff', 'cb-staff', 'persona'), ('Cb Staff Two', 'cb-staff2', 'persona');
+  -- The caller's rows, a minute apart, and 50 other owners' at now().
+  insert into wallet_events (account, kind, change, balance_after, at) select ann, 'grant', 1, g, now() - g * interval '1 minute' from generate_series(1, n) g;
+  insert into wallet_events (account, kind, change, balance_after, at) select o, 'grant', 1, 1, now() from (select owner o from characters where id = any (others)) t;
+  insert into random_events (account, character, at, outcome, line, line_text) select ann, a, now() - g * interval '1 minute', 'line', 'x', 'x' from generate_series(1, n) g;
+  insert into random_events (account, character, at, outcome, line, line_text) select c.owner, c.id, now(), 'line', 'x', 'x' from characters c where c.id = any (others);
+  insert into trophy_awards (trophy, character, by, at) select 'cb-belt', a, 'admin', now() - g * interval '1 minute' from generate_series(1, n) g;
+  insert into trophy_awards (trophy, character, by, at) select 'cb-belt', o, 'admin', now() from unnest(others) o;
+  insert into staff_notes (staff, act, body, at) select 'cb-staff', post, 'n', now() - g * interval '1 minute' from generate_series(1, n) g;
+  insert into staff_notes (staff, act, body, at) select 'cb-staff2', post, 'n', now() from generate_series(1, 50);
+  analyze wallet_events; analyze random_events; analyze trophy_awards; analyze staff_notes;
+  perform set_config('plan_cache_mode', 'force_generic_plan', true);
+
+  -- table, deep statement, null statement, the most a deep call may read, run as
+  cases := array[
+    ['wallet_events', format('select log_page(%s)', deep), 'select log_page(null)', most_reads::text, ann::text],
+    ['random_events', format('select count(*) from cosmetic_log_rows(%s)', deep), 'select count(*) from cosmetic_log_rows(null)', most_reads::text, ann::text],
+    ['trophy_awards', format('select trophies_of(%L, %s, 50)', a, deep), format('select trophies_of(%L, null, 50)', a), most_reads::text, ann::text],
+    ['trophy_awards', format('select belt_lineage(''cb-belt'', %s, 50)', deep), 'select belt_lineage(''cb-belt'', null, 50)', most_reads::text, ann::text],
+    -- admin_awards has no owner key in front: its deep call may read what a page reads and what the row comparison skips, most + 200.
+    ['trophy_awards', format('select admin_awards(%s, 50)', deep), 'select admin_awards(null, 50)', (50 + 200)::text, adm::text],
+    ['staff_notes', 'select staff_notes_recent(''cb-staff'', now() - interval ''30 seconds'', 200)', 'select staff_notes_recent(''cb-staff'', null, 200)', most_reads::text, 'service']];
+  foreach c slice 1 in array cases loop
+    -- staff_notes_recent is the service role's alone (0088).
+    if c[5] = 'service' then perform tests.become_service(); else perform tests.become(c[5]::uuid); end if;
+    -- A stat that was never counted would pass every bound: the call must have read something.
+    execute c[2]; execute c[3];                      -- once each, uncounted, so the plan is built before the count
+    d := pg_temp.reads(c[1], c[2]); z := pg_temp.reads(c[1], c[3]);
+    perform tests.unbecome();
+    raise notice '% %: deep % reads, null % reads', c[1], substr(c[2], 1, 40), d, z;
+    if z < 1 then bad := bad || format(E'\n  %s: the null call read nothing, so reads were not counted (%s)', c[2], z); end if;
+    if d > c[4]::integer then bad := bad || format(E'\n  %s read %s %s rows deep (at most %s)', substr(c[2], 1, 60), d, c[1], c[4]); end if;
+  end loop;
+  perform set_config('plan_cache_mode', 'auto', true);
+  if bad <> '' then raise exception 'a deep page reads its depth:%', bad; end if;
+end $$;
