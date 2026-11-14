@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 /**
  * The shine loop on a busy page, as Chromium runs it (docs/plans/2026-11-06-shine-plan.md, Task 11; the design's section 6): a thread of
- * seventeen posts, sixteen of them shiny (instances/divided-world/ui/Shine.board.stories.tsx), about five in view at 1200 x 900.
+ * seventeen posts, sixteen of them shiny (instances/divided-world/ui/Shine.board.stories.tsx), two or three in view at 1200 x 900 (a post's body is at least 22.5em, engine/ui/thread/thread.css; before that
+ * floor held, about five were).
  * Scrolled top to bottom over three seconds with a moving mouse, the page keeps its frames (the 95th percentile of the gap between
  * animation frames is under 20 ms) and no shiny post fully out of view is drawn. At rest with shimmer a post whose painted body is no
  * bigger than its words is drawn on every second frame, about thirty a second, and a bigger one at its share of that (engine/ui/cards/
@@ -368,7 +369,7 @@ test('a shiny post\'s canvases hold no more pixels than its words\' box did at t
   const d = await page.evaluate(() => Math.min(2, window.devicePixelRatio || 1));
   /* The posts in view, which have drawn (one out of view may keep a canvas's 300 by 150 default until it is first drawn). */
   const posts = (await held(page)).filter((p) => inView(p) && p.shine!.some((c) => c.w > 0));
-  expect(posts.length, 'posts in view hold their buffers').toBeGreaterThan(2);
+  expect(posts.length, 'posts in view hold their buffers').toBeGreaterThanOrEqual(2);
   const over = posts.flatMap((p, i) => p.shine!.filter((c) => c.w * c.h > Math.max(p.own! * d * d, p.area! * (d / 2) ** 2) * 1.05 + 4 * (c.w + c.h))
     .map((c) => `post ${i}: a ${c.w}x${c.h} canvas, its words ${Math.round(p.own!)} px squared, its body ${Math.round(p.area!)}`));
   expect(over).toEqual([]);
@@ -385,7 +386,7 @@ test.describe('a busy thread', () => {
     await open(page, 'full');
     const first = await hosts(page);
     const visible = first.filter((h) => inView(h)).length;
-    expect(visible, 'about five shiny posts in view').toBeGreaterThanOrEqual(3);
+    expect(visible, 'two or three shiny posts in view').toBeGreaterThanOrEqual(2);
     expect(visible).toBeLessThanOrEqual(8);
     expect(heldOutOfView(await held(page), 900).holding, 'at the top the posts in view hold their buffers (the buffer check can see one)').toBeGreaterThanOrEqual(visible);
     /* The first run down the page is a warm-up (the script compiled, each post's buffers and flakes made for the first time) and is not timed.

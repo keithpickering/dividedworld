@@ -20,7 +20,8 @@
  *    "since Nov 2" words are the board's longer labels), and the number of posts the story's world seeds is the board's (212 and 31).
  *  - The board's counts are one text, the build's two lines: "Joined" is held for the counts' place.
  *  - The stacked band stands in the build under the thread's follow, reply and presence rows, which the board does not draw: it is held from the page's top at the
- *    shift measured; its name stands 42px nearer the left (no 10px band padding, and the build's square is 48px where the board draws 52) and its belt, a badge after the name, 20px nearer.
+ *    shift measured, and 51.3px lower than it stood before a post's body kept its 22.5em min-height (engine/ui/thread/thread.css), which makes
+ *    the second post, whose 1:1.4 portrait is shorter than the first's, that much taller; its name stands 42px nearer the left (no 10px band padding, and the build's square is 48px where the board draws 52) and its belt, a badge after the name, 20px nearer.
  */
 import type { BoardManifest, Landmark } from '../../board-match.ts';
 
@@ -50,8 +51,8 @@ const manifest: BoardManifest = {
     part('a2-rank', 'a2', 'text', 'Jobber', -163.1),
     part('a2-counts', 'a2', 'text', 'Posts: 31Joined Nov 2026', 75.9, { buildName: 'Joined Nov 2026' }),
     part('t5', 'a2', 'img', "Met the Boss's demand: 12 characters post in Tomato Talk", -140.6, { buildName: "Met the Boss's Demand" }),
-    { id: 'band-name', role: 'link', name: 'Pipewrench', nth: 1, buildNth: 1, box: 'position', buildSize: NAME_SIZE, buildShift: { x: -42, y: 180.5 } },
-    { id: 'band-belt', role: 'img', name: 'Holds the Hardcore Belt', buildName: 'The Hardcore Belt', nth: 0, buildNth: 1, box: 'position', type: false, buildShift: { x: -20.1, y: 185.7 } },
+    { id: 'band-name', role: 'link', name: 'Pipewrench', nth: 1, buildNth: 1, box: 'position', buildSize: NAME_SIZE, buildShift: { x: -42, y: 231.8 } },
+    { id: 'band-belt', role: 'img', name: 'Holds the Hardcore Belt', buildName: 'The Hardcore Belt', nth: 0, buildNth: 1, box: 'position', type: false, buildShift: { x: -20.1, y: 237 } },
   ],
 };
 

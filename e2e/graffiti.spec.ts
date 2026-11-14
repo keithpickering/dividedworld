@@ -626,7 +626,12 @@ for (const [where, viewport] of [['wide', { width: 1280, height: 800 }], ['on a 
   test.describe(`the post jumps clear of the dock at once, ${where}`, () => {
     const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 7'];
     test.use(viewport ? { viewport, reducedMotion: 'no-preference' } : { ...pixel, reducedMotion: 'no-preference' });
-    const share = viewport ? 0.75 : 0.7;
+    /*
+     * Wide, the body's top goes at 60% of the window: low enough that the dock (351px over an 800px window) covers the body, and high enough
+     * that the Draw tile at the body's top right is clear of the HUD. Lower, the HUD covers the tile, so the click's own scroll to reach it
+     * would be the post's first move. (Until post bodies kept their min-height, the page was too short to put the post that low at all.)
+     */
+    const share = viewport ? 0.6 : 0.7;
     test('pressing the ghost on a post low in the window', async ({ page }) => {
       await expectJump(page, share, false, 'ghost');
     });

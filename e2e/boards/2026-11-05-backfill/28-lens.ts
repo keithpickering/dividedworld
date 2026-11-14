@@ -76,7 +76,8 @@ export default manifest;
  *
  * By decision: the board is drawn in the desktop's sizes and the build sets a phone in the glass's phone tokens (as board 18's header says), so no phone type is compared and a part is
  * held by its place; the sheet's board has no role or name (its first screen is a `figure`), so its parts are found by their words and held from the WHOOPS! tab; the Lens's words
- * are the build's (the state "32% washed for you" where the board's older "3 layers · top: Gloomba's yellow, 41% washed"); the empty row's sentence is the one the desktop says, in the build's truer words
+ * are the build's (the state "33% washed for you" where the board's older "3 layers · top: Gloomba's yellow, 41% washed"; 33% and not the desktop's 32%, since the
+ * share is of the post's body and a phone's body is the 22.5em min-height, engine/ui/thread/thread.css); the empty row's sentence is the one the desktop says, in the build's truer words
  * (the board's phone draws only its second half, which the build does not say, so the build's is found and not placed); the board's sheet is 420px tall, the build's 55% of the room above the HUD (the Float's SHEET_SHARE).
  * STICK AROUND stands 8px right of the board's (`x: 8`) because the WHOOPS! tab before it is set at the phone's 21px where the board draws
  * 19px, and a tab's place is held from the first tab's left edge, so it carries the first tab's width. The shift is CI's measure (8.5px; 7.8px
@@ -103,7 +104,7 @@ export const phone: BoardManifest = {
   landmarks: [
     { id: 'tab', role: 'text', name: 'WHOOPS!', box: 'none', type: false },
     sheet('tab-stick-around', 'text', 'STICK AROUND', { x: 8 }),
-    sheet('headline', 'text', "3 layers · top: Gloomba's yellow, 41% washed", { x: -9, y: -8.5 }, { buildName: '32% washed for you' }),
+    sheet('headline', 'text', "3 layers · top: Gloomba's yellow, 41% washed", { x: -9, y: -8.5 }, { buildName: '33% washed for you' }),
     sheet('hold', 'text', 'HOLD TO SCRUB', { x: -11.2, y: -25 }, { buildName: 'Hold to scrub' }),
     sheet('fold', 'text', '⌄ 3 plays · Gloomba, Pipewrench, Mrs. Hooligan', {}, { box: 'none', buildName: '3 plays · Gloomba, Pipewrench, Mrs. Hooligan' }),
   ],
