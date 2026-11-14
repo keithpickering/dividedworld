@@ -5,7 +5,10 @@
 -- returns the same rows. cosmetic_log_rows also bounds each branch on its own, since the outer limit alone reads every row behind the cursor, and
 -- trophy_awards gets the (at desc, id desc) index that admin_awards' row comparison seeks on. trophies_of, belt_lineage and admin_awards also carry the whole awards row in their page CTE, so nothing joins back to trophy_awards: with a page of unknown size a generic plan hash-joined all of it. Taken from pg_get_functiondef, nothing else changed.
 
-create index if not exists trophy_awards_at_id on trophy_awards (at desc, id desc);
+-- Partial on purpose: Postgres proves a partial index's predicate only from a query's own clauses, never from a NOT NULL constraint, so only a query that says
+-- `a.id is not null` (admin_awards' page) can use this index. An unscoped (at desc, id desc) index was picked for the `held` lookup in trophy_item
+-- (`where trophy = ... order by at desc, id desc limit 1`), which then filtered away other trophies' rows. The two-belt case in 0319 guards it.
+create index if not exists trophy_awards_at_id on trophy_awards (at desc, id desc) where id is not null;
 
 CREATE OR REPLACE FUNCTION public.log_page(in_before timestamp with time zone)
  RETURNS jsonb
@@ -699,7 +702,8 @@ begin
   return (
     with page as (
       select a as aw, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
-      where (a.at, a.id) < (coalesce(before, 'infinity'), coalesce(before_id, '00000000-0000-0000-0000-000000000000'::uuid))
+      -- `a.id is not null` is always true; it lets this page, and no other read, use the partial index trophy_awards_at_id.
+      where a.id is not null and (a.at, a.id) < (coalesce(before, 'infinity'), coalesce(before_id, '00000000-0000-0000-0000-000000000000'::uuid))
       order by a.at desc, a.id desc
       limit size + 1
     )
