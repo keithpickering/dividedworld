@@ -28,6 +28,7 @@ import { PostWords } from '../../../../engine/ui/cards/config/PostWords.tsx';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
 import { GlassButton } from '../../../../engine/ui/glass/Button.tsx';
 import { PHRASE } from '../../cards/phrase-bound.ts';
+import { wholeWords } from '../whole-words.ts';
 import { CUES, PLACES, laughTrack, placesOf, type Cue, type Sound } from '../../cards/laugh-track.ts';
 import './laugh-track.css';
 
@@ -56,17 +57,6 @@ function boundOf(phrase: string): string | undefined {
 }
 
 const places = (n: number) => `${n} ${n === 1 ? 'place' : 'places'}`;
-
-/** A selection's words as whole words of the text: as selected, else without a first or last word that the selection cut short. */
-function wholeWords(selected: string, text: string): string {
-  const words = selected.trim().split(/\s+/u).filter(Boolean);
-  const tries = [words, words.slice(1), words.slice(0, -1), words.slice(1, -1)];
-  for (const t of tries) {
-    const phrase = t.join(' ');
-    if (phrase && [...phrase].length <= PHRASE.most && occurrences(text, phrase).length > 0) return phrase;
-  }
-  return '';
-}
 
 type Row = { key: number; cue: Cue };
 
