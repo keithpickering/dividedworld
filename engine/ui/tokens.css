@@ -219,6 +219,9 @@
   --kb-sheet-link: #000;
   --kb-sheet-rule: #000;
   --kb-sheet-muted: #555;
+  /* The fold's bevel and shade (thread/fold.css): a light edge and a dark crease cast by the bar, and the shade a swinging post falls under. Light and shadow, so the same in every mode. */
+  --kb-fold-bar-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 3px 4px -1px rgb(0 0 0 / 0.55);
+  --kb-fold-shade-bg: linear-gradient(rgb(0 0 0 / 0.55), rgb(0 0 0 / 0.1));
   --kb-font-sheet: Verdana, Tahoma, Geneva, 'DejaVu Sans', sans-serif;
 }
 

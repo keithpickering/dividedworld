@@ -446,9 +446,9 @@ describe('the post cells over the postbit\'s gear, in the stylesheet', () => {
    * in a browser, and these hold the rules it rests on.
    */
   test('the post is a stacking context and the postbit\'s cell lies under the others at a negative level', () => {
-    expect(decls('.kb-act')).toMatch(/isolation:\s*isolate/u);
-    expect(z(decls('.kb-act > .kb-postbit'))).toBeLessThan(0);
-    expect(z(decls('.kb-act-main'))).toBeGreaterThan(z(decls('.kb-act > .kb-postbit')));
+    expect(decls('.kb-act-grid')).toMatch(/isolation:\s*isolate/u);
+    expect(z(decls('.kb-act-grid > .kb-postbit'))).toBeLessThan(0);
+    expect(z(decls('.kb-act-main'))).toBeGreaterThan(z(decls('.kb-act-grid > .kb-postbit')));
   });
 
   test('the line above, the actions and the panels take no level, so what hangs from the line above stays in the post\'s stack', () => {
@@ -456,7 +456,7 @@ describe('the post cells over the postbit\'s gear, in the stylesheet', () => {
   });
 
   test('every post cell keeps the post ground the lift relies on', () => {
-    expect(decls('.kb-act > *')).toMatch(/background:\s*var\(--kb-post-bg\)/u);
+    expect(decls('.kb-act-grid > *')).toMatch(/background:\s*var\(--kb-post-bg\)/u);
   });
 });
 

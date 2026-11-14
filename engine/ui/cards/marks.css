@@ -228,7 +228,7 @@
  */
 @media (max-width: 40em) {
   header[data-kb-callout-row],
-  .kb-act > .kb-postbit[data-kb-callout-row] {
+  .kb-act-grid > .kb-postbit[data-kb-callout-row] {
     margin-bottom: calc(1px + var(--kb-callout-room, 0px));
   }
 

@@ -147,4 +147,31 @@ describe('Below the Fold', () => {
     unmount();
     expect(show).toHaveBeenLastCalledWith(null);
   });
+
+  test('in a post\'s row (given `fold`) it draws the children and no bar of its own, and tells the Lens the row\'s state with the row\'s press', () => {
+    const toggle = vi.fn();
+    const { container, show, met, rerender, props } = setup({ fold: { open: false, toggle } });
+    expect(container.querySelector('.dw-fold-bar')).toBeNull();
+    expect(screen.getByText('The words of the post.')).toBeVisible();
+    const folded = last(show);
+    expect(folded).toMatchObject({ progress: null, state: 'Folded for you', ends: 'Ends when you press Show post.', yours: true, notes: {} });
+    expect(folded.controls).toHaveLength(1);
+    expect(folded.controls[0]).toMatchObject({ kind: 'press', label: 'Show post', run: toggle });
+    expect(met).toHaveBeenCalledTimes(1);
+    rerender(<BelowTheFoldEffect {...props} fold={{ open: true, toggle }} />);
+    const open = last(show);
+    expect(open).toMatchObject({ state: 'Open for you', yours: false });
+    expect(open.controls[0]).toMatchObject({ kind: 'press', label: 'Hide post', run: toggle });
+    expect(met).toHaveBeenCalledTimes(1);
+    expect(viewProblems(folded, { holds: false, covers: true })).toEqual([]);
+    expect(viewProblems(open, { holds: false, covers: false })).toEqual([]);
+  });
+
+  test('without `fold` the bar shows its words first and a chevron after them', () => {
+    setup();
+    const el = bar();
+    expect(el.firstElementChild).toHaveTextContent('Show post');
+    expect(el.lastElementChild?.tagName.toLowerCase()).toBe('svg');
+    expect(el.lastElementChild).toHaveAttribute('aria-hidden', 'true');
+  });
 });

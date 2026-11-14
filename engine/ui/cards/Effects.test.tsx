@@ -15,6 +15,7 @@ import { PlayerProvider } from '../player.tsx';
 import { buildWorld, testGlass, testInstance } from '../test-world.tsx';
 import { createClaims } from './claims.ts';
 import { PostEffects, VersionEffects } from './Effects.tsx';
+import { RowFoldCtx } from '../thread/fold.tsx';
 import { PlayProvider, usePlay, type PlayTarget } from './play.tsx';
 import { createPlays, playOf } from './plays.ts';
 import type { CardUi, EffectProps, Written } from './types.ts';
@@ -37,7 +38,7 @@ const WRITES: CardRules['writes'] = { sampling: { temperature: 0.9, topP: 0.95 }
 const WRITERS = ['scribe', 'typer'];
 const instance: Instance = {
   ...testInstance,
-  cards: [...KEYS.map((k) => rules(k)), ...WRITERS.map((k) => rules(k, { writes: WRITES, stack: 2 })), rules('beacon', { reaches: ['thread'] }), rules('comp')],
+  cards: [...KEYS.map((k) => rules(k)), ...WRITERS.map((k) => rules(k, { writes: WRITES, stack: 2 })), rules('beacon', { reaches: ['thread'] }), rules('comp'), rules('folder', { reaches: ['post', 'thread'] })],
 };
 const at = '2026-10-29T12:00:00.000Z';
 /** A play, its layer and time ordering it after the ones before in `played`. */
@@ -106,11 +107,11 @@ const tailsAfter = (words: Element): string[] => {
   for (let el = words.nextElementSibling; el && el.hasAttribute('data-kb-tail'); el = el.nextElementSibling) out.push(el.getAttribute('data-kb-tail')!);
   return out;
 };
-function drawn(cards: CardUi[], played: (string | Act)[], more?: ReactNode) {
+function drawn(cards: CardUi[], played: (string | Act)[], more?: ReactNode, fold: { open: boolean; toggle: () => void } | null = null) {
   const kayfa = kayfaOf(cards);
   const store = createPlays();
   store.add(played.map((c, i) => (typeof c === 'string' ? play(c, i + 1) : c)));
-  const view = render(<KayfaProvider value={kayfa}><PlayerProvider api={kayfa.api}><PlayProvider><PostEffects plays={store} post={words} place="thread" nameOf={() => 'x'}><span data-kb-words>hi</span></PostEffects>{more}</PlayProvider></PlayerProvider></KayfaProvider>);
+  const view = render(<KayfaProvider value={kayfa}><PlayerProvider api={kayfa.api}><PlayProvider><RowFoldCtx.Provider value={fold}><PostEffects plays={store} post={words} place="thread" nameOf={() => 'x'}><span data-kb-words>hi</span></PostEffects></RowFoldCtx.Provider>{more}</PlayProvider></PlayerProvider></KayfaProvider>);
   return { ...view, words: view.container.querySelector('[data-kb-words]')! };
 }
 
@@ -205,5 +206,38 @@ describe('a post\'s history version nests the same way', () => {
 
   test('a beneath card is inside a card without it', () => {
     expect(outward(version([ui('one'), ui('two', { beneath: true })], ['one', 'two']))).toEqual(['two', 'one']);
+  });
+});
+
+describe('a card that folds the row is given the row\'s fold (CardUi.foldsRow)', () => {
+  /* Records the `fold` each draw of the effect is given. */
+  const seen: (EffectProps['fold'] | 'none')[] = [];
+  const Spy = ({ children, fold }: EffectProps): ReactNode => { seen.push(fold ?? 'none'); return <>{children}</>; };
+  const folder = (extra: Partial<CardUi> = {}) => ui('folder', { Effect: Spy, foldsRow: true, ...extra });
+  const inRow = (cards: CardUi[], played: (string | Act)[], value: { open: boolean; toggle: () => void } | null) => {
+    seen.length = 0;
+    return drawn(cards, played, undefined, value);
+  };
+
+  test('inside a row it is given the reader\'s state and the press that changes it', () => {
+    const toggle = vi.fn();
+    inRow([folder()], ['folder'], { open: false, toggle });
+    expect(seen.at(-1)).toEqual({ open: false, toggle });
+  });
+
+  test('outside a row it is given none', () => {
+    inRow([folder()], ['folder'], null);
+    expect(seen.at(-1)).toBe('none');
+  });
+
+  test('a card without foldsRow is never given it', () => {
+    inRow([folder({ foldsRow: undefined })], ['folder'], { open: true, toggle: vi.fn() });
+    expect(seen.at(-1)).toBe('none');
+  });
+
+  test('a play on the thread\'s reach is never given it', () => {
+    inRow([folder()], [above('folder')], { open: true, toggle: vi.fn() });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((f) => f === 'none')).toBe(true);
   });
 });

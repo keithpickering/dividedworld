@@ -83,7 +83,7 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   out.push(...classLookProblems(ui.classLooks, instance));
   /* The Lens's heading for a card with no live view: a short status, never a sentence (cards/lens-words.ts). */
   for (const card of ui.cards ?? []) {
-    out.push(...drawnByProblems(card, ui.cards ?? []));
+    out.push(...drawnByProblems(card, ui.cards ?? []), ...foldsRowProblems(card));
     if (card.status === undefined) out.push(`the card "${card.key}" has no status, so its Lens heading would be a sentence`);
     else for (const words of statusWords(card.status, instance.cards?.find((c) => c.key === card.key)?.stack ?? 1)) out.push(...wordsProblems('status', words).map((p) => `the card "${card.key}": ${p}`));
   }
@@ -103,6 +103,16 @@ function drawnByProblems(card: CardUi, cards: readonly CardUi[]): string[] {
   if (named === undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which has no CardUi`);
   else if (named.drawnBy !== undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which is itself drawn by "${named.drawnBy}"; a chain is refused`);
   else if (named.Effect === undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which has no Effect to draw it`);
+  return out;
+}
+
+/** A card that folds the row (`CardUi.foldsRow`) draws the fold where a post has no row, so it has an `Effect`, and is no takeover, which lifts the post out of the row the fold hides. */
+function foldsRowProblems(card: CardUi): string[] {
+  if (card.foldsRow === undefined) return [];
+  const out: string[] = [];
+  const who = `the card "${card.key}"`;
+  if (card.Effect === undefined) out.push(`${who} folds the row and has no Effect to draw the fold where a post has no row`);
+  if (card.takeover) out.push(`${who} folds the row and is a takeover, which lifts the post out of the row the fold hides`);
   return out;
 }
 

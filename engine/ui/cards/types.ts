@@ -231,6 +231,11 @@ export interface EffectProps {
    * False on every live post.
    */
   readonly still: boolean;
+  /**
+   * The post's row, for this reader: whether it is open, and the press that changes it. Given only to a card with `CardUi.foldsRow`, on its post's own reach, and only in a
+   * thread's post: absent in the ORIGIN box, the front door, a moment and History, where the effect draws its own fold.
+   */
+  readonly fold?: { readonly open: boolean; readonly toggle: () => void };
   /** The post's marks, drawn where the card's effect puts them (a takeover's only; null for every other card). */
   readonly marks: ReactNode;
   /**
@@ -413,6 +418,11 @@ export interface CardUi {
   readonly summary?: string;
   /** The effect covers the post (the reader cannot read it as it stands), so the Lens leads with the card's controls. */
   readonly takeover?: boolean;
+  /**
+   * A live play of this card on a post folds the post's whole row behind a bar the engine draws (thread/fold.tsx). The card's effect is given `fold` where the post has a row,
+   * and draws its own fold where it has none (`EffectProps.fold`). It must have an `Effect` and must not be a `takeover` (`instanceUiProblems`).
+   */
+  readonly foldsRow?: true;
   /**
    * `nestOrder` nests this card's effect (a layer other cards' ink lies on) inside every card without it, whatever its play
    * order, and outside only the cards that write (whose tail stays next to the words); among several, play order holds. A

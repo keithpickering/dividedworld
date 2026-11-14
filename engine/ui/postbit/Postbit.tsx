@@ -65,6 +65,22 @@ function Avatar({ character, layout }: { readonly character: Character; readonly
   );
 }
 
+/**
+ * The character's square, small (a fold bar's): its square avatar; else its portrait cropped to a square from the top; else the initial. It wears no
+ * outfit. The caller gives it the person the postbit is given, so a veiled post's stand-in stands here too.
+ */
+export function SquareAvatar({ character, size = 24 }: { readonly character: Character; readonly size?: number }) {
+  const { avatarSquare: square, avatarPortrait: portrait } = character;
+  const src = square ?? portrait;
+  return (
+    <span className="kb-fold-avatar" aria-hidden="true" style={{ width: size, height: size }}>
+      {src
+        ? <img src={src} alt="" loading="lazy" decoding="async" style={square ? undefined : { objectFit: 'cover', objectPosition: 'top' }} />
+        : <span className="kb-postbit-none">{character.name.slice(0, 1)}</span>}
+    </span>
+  );
+}
+
 /** The rank's pips: as many as the instance has ranks, the first (rank index + 1) filled. */
 export function Pips({ ranks, index, name, style }: { readonly ranks: number; readonly index: number; readonly name: string; readonly style: { readonly full: string; readonly empty: string } | undefined }) {
   const images = style ? ({ '--kb-pip-full': `url("${style.full}")`, '--kb-pip-none': `url("${style.empty}")` } as CSSProperties) : undefined;

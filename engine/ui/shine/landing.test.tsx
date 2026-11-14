@@ -154,6 +154,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('a post with an inner grid', () => {
+  it('registers the grid\'s cells and not the grid itself', () => {
+    const article = box(0, 0, 0, 0, document.body, false);
+    const h = document.createElement('h2');
+    h.className = 'kb-visually-hidden';
+    article.append(h);
+    const grid = box(0, 100, 700, 400, article, false);
+    grid.className = 'kb-act-grid';
+    const meta = box(100, 100, 600, 30, grid), main = box(100, 130, 600, 300, grid);
+    keep(landPost(article));
+    expect(FakeResize.live()).toBe(2);
+    drop(300, 250);
+    settle();
+    expect(cellTiles(main)).toHaveLength(1);
+    expect(loose(main).length).toBeGreaterThan(0);
+    expect(loose(grid)).toHaveLength(0);
+    expect(cellTiles(grid).filter((t) => t.parentElement === grid)).toHaveLength(0);
+    expect(loose(meta)).toHaveLength(0);
+  });
+});
+
 describe('where a flake lands', () => {
   it('a plain post\'s body takes it in the cell\'s own px and makes one tile; a second landing in that tile makes none and one draw a frame', () => {
     const { article, main, postbit } = post();

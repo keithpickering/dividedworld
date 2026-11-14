@@ -138,7 +138,7 @@ function useRing(place: EffectPlace) {
     const unhang = () => { t.removeAttribute('data-kb-hung'); t.removeAttribute('style'); };
     measure.current = () => {
       const now = bodyOf(el, place);
-      const nowBar = now?.closest('article')?.querySelector<HTMLElement>(':scope > .kb-act-meta') ?? null;
+      const nowBar = now?.closest('article')?.querySelector<HTMLElement>(':scope > .kb-act-grid > .kb-act-meta, :scope > .kb-act-meta') ?? null;
       if (now !== body || nowBar !== bar) {
         if (body) watch?.unobserve(body);
         if (bar) watch?.unobserve(bar);

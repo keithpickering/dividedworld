@@ -68,7 +68,7 @@ const at = (page: Page, q: { x: number; y: number }) => page.evaluate(({ x, y })
   if (!hit) return 'nothing';
   if (hit.closest('.kb-outfit')) return 'gear';
   if (hit.matches('canvas[data-kb-landing]')) return 'tile';
-  const cell = hit.closest('article.kb-act > *');
+  const cell = hit.closest('article.kb-act > .kb-act-grid > *');
   return cell === hit ? `the ground of ${cell.className}` : `content of ${cell?.className ?? hit.tagName}`;
 }, q);
 

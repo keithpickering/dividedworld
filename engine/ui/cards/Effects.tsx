@@ -40,6 +40,7 @@ import type { PostPlays } from './plays.ts';
 import type { CardPlay, CardUi, CardView, Drive, EffectPlace, EffectProps, Written } from './types.ts';
 import { glassInk } from './ink.ts';
 import { useOwnerOf } from '../thread/context.ts';
+import { useRowFold } from '../thread/fold.tsx';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 /** What a staged page's effect is answered with: it saves nothing and releases nothing, without asking anyone (staged.ts). */
@@ -233,6 +234,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /* A card drawn by another gives its plays to that card's wrap before the wraps are ordered, so the post draws one effect of the named card (`handedOn`). */
   const wraps = handedOn(firsts, here, ui.cards);
   const { writing: within, rest, takeovers } = nestOrder(wraps, ui.cards, writing);
+  const rowFold = useRowFold();
   const wrapIn = (node: ReactNode, list: readonly Wrap[], from: number): ReactNode => {
     let wrapped = node;
     for (const [i, { key, reach, mine, of }] of list.entries()) {
@@ -250,6 +252,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
           give={give} moreGifts={moreGifts} wallet={wallet}
           {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(played, key, gifts, at) } : {})}
           reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
+          {...(rowFold !== null && reach === 'post' && card.foldsRow ? { fold: rowFold } : {})}
           ink={claims.at(`${reach}:${key}`, from + i)} {...(reach === 'post' ? { surface: surfaceOf(key, mine, of) } : {})}
         >
           {wrapped}

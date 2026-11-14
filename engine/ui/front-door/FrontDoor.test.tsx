@@ -22,6 +22,21 @@ const test_card: CardUi = {
 const draw = () => renderInWorld(<FrontDoor />, { cards: [test_card] });
 
 describe('the front door', () => {
+  test('each post is drawn like a thread\'s: one .kb-act-grid under the article holds the postbit, meta and main', () => {
+    draw();
+    const articles = [...document.querySelectorAll('article.kb-act')];
+    expect(articles).toHaveLength(2);
+    for (const a of articles) {
+      const grids = [...a.children].filter((c) => c.classList.contains('kb-act-grid'));
+      expect(grids).toHaveLength(1);
+      const kids = [...grids[0]!.children];
+      expect(kids.some((c) => c.classList.contains('kb-act-meta'))).toBe(true);
+      expect(kids.some((c) => c.classList.contains('kb-act-main'))).toBe(true);
+      expect(kids.some((c) => c.classList.contains('kb-postbit'))).toBe(true);
+      expect([...a.children].filter((c) => c.classList.contains('kb-act-meta') || c.classList.contains('kb-act-main'))).toHaveLength(0);
+    }
+  });
+
   test('the title is the h1, the label is visible, and the whole is a region named by the label', () => {
     draw();
     expect(screen.getByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
