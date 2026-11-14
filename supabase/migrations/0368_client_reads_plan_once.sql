@@ -11,7 +11,7 @@
 -- with every migration applied), the same arguments, return type, volatility, security and search_path, with `#variable_conflict use_column` so that a name that is both a variable
 -- (a parameter, a column of `returns table`) and a column means the column, as it did in SQL. A `begin atomic` body's last statement is returned and a statement before it is performed.
 -- Part 2 sets the plan and jit on the stable client reads that were already `plpgsql`. Grants are kept by `create or replace` and `alter`, and none is restated.
--- supabase/tests/0319-client-reads-plan-once.sql names any client read that is not planned once.
+-- supabase/tests/0320-client-reads-plan-once.sql names any client read that is not planned once.
 
 -- ---- 1. Written again as plpgsql ----
 

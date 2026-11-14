@@ -205,7 +205,7 @@ export const trackSql = (db) => `alter database ${db} set track_functions to 'al
 
 /**
  * The client reads as a setting of the scratch database, `kayfabb.client_rpcs` (names joined by commas), so an assertion file reads the list
- * with `current_setting('kayfabb.client_rpcs')` and holds no copy (supabase/tests/0319-client-reads-plan-once.sql).
+ * with `current_setting('kayfabb.client_rpcs')` and holds no copy (supabase/tests/0320-client-reads-plan-once.sql).
  */
 export const clientRpcsSql = (db) => `alter database ${db} set kayfabb.client_rpcs to '${ALLOWED_RPCS.join(',')}';`;
 

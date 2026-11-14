@@ -241,7 +241,7 @@ begin
   set local enable_seqscan = off;
   set local plan_cache_mode = force_generic_plan;
   for src in select unnest(array['my_alerts', 'my_alerts_unread']) loop
-    -- The statement between the plpgsql wrapper's `begin return query` (or `return (`) and its `end` (0367).
+    -- The statement between the plpgsql wrapper's `begin return query` (or `return (`) and its `end` (0368).
     select regexp_replace(regexp_replace(regexp_replace(p.prosrc, '^\s*#variable_conflict[^\n]*\s*begin\s*return (query|\()\s*', ''), '\)?;\s*end\s*$', ''), '\s*$', '') into shown from pg_proc p where p.proname = src and p.pronamespace = 'public'::regnamespace;
     if shown is null then raise exception '% is a function with text to plan', src; end if;
     if src = 'my_alerts' then execute format('prepare plan_%s(timestamptz, integer) as %s', src, shown); else execute format('prepare plan_%s as %s', src, shown); end if;

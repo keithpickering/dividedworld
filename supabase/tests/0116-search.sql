@@ -802,7 +802,7 @@ begin
   end loop;
   perform tests.unbecome();
 
-  -- What they are: invokers and stable; the reads, the suggested threads and the cursor check in plpgsql with one generic plan kept per connection (0367; a screen's dependencies are checked by the call-coverage guard in tools/test-sql.mjs, not recorded); the matches are built as text and
+  -- What they are: invokers and stable; the reads, the suggested threads and the cursor check in plpgsql with one generic plan kept per connection (0368; a screen's dependencies are checked by the call-coverage guard in tools/test-sql.mjs, not recorded); the matches are built as text and
   -- run, in plpgsql, invoker and stable too; the two definers pin their search_path.
   for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace
             and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_cursor_ok') and (p.prosecdef or p.provolatile = 'v' or (p.proname <> 'search_cursor_ok' and (p.prolang <> (select oid from pg_language where lanname = 'plpgsql') or p.proconfig is null or not p.proconfig @> array['plan_cache_mode=force_generic_plan', 'jit=off']))) loop
