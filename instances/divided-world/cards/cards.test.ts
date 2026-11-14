@@ -1259,8 +1259,8 @@ test('THIS\'s configuration: no words is nothing, the words are one line of at m
   assert.equal(thisWhy(thisConfig('Mario', 7)), 'the words are what the note says after THIS');
   assert.equal(thisWhy(thisConfig('abc', 7)), 'the phrase has at least 4 letters or digits', 'the phrase is asked first');
   assert.deepEqual(thisCard.validateConfig({ phrase: 'Mario', words: '   ' }), { ok: true, value: { phrase: 'Mario', words: '' } }, 'words of only spaces are no words');
-  assert.equal(thisWhy({ phrase: 'Mario', words: 'one two' }), 'the words are one line', 'a line separator is a line break');
-  assert.equal(thisWhy({ phrase: 'Mario', words: null }), 'the words are what the note says after THIS');
+  assert.equal(thisWhy(thisConfig('Mario', 'one two')), 'the words are one line', 'a line separator is a line break');
+  assert.equal(thisWhy(thisConfig('Mario', null)), 'the words are what the note says after THIS');
   assert.equal(thisCard.validateConfig(null).ok, false);
 });
 
