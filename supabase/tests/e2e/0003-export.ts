@@ -229,7 +229,7 @@ test('an instance exported and imported into a fresh database is the same instan
       begin
         veil_post := tests.post(a, t, 'Veiled, and carried across.');
         perform play_card(bob, 'expveil', b, veil_post, '{}', 0, '');
-        -- The veil's author edits the veiled post while the veil is up (0369): the edit is a row of post_veil_cover beside the post's own, which the export carries and the import writes as a replica.
+        -- The veil's author edits the veiled post while the veil is up (0371): the edit is a row of post_veil_cover beside the post's own, which the export carries and the import writes as a replica.
         perform tests.act(a, 'edit', t, jsonb_build_object('body', 'Veiled, edited, and carried across.'), veil_post);
         if not exists (select 1 from post_veil_cover c join acts e on e.id = c.act where e.kind = 'edit' and e.target_act_id = veil_post) then raise exception 'the fixture''s author veil has no cover row for its author''s edit'; end if;
         blind_post := tests.post(a, t, 'Blind, and carried across.');

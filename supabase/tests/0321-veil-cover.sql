@@ -1,4 +1,4 @@
--- The veil's cover is stored (supabase/migrations/0369_veil_cover.sql; docs/plans/2026-11-14-veil-cover-design.md, sections 5 and 6; docs/plans/2026-11-14-veil-cover-plan.md, Task 1).
+-- The veil's cover is stored (supabase/migrations/0371_veil_cover.sql; docs/plans/2026-11-14-veil-cover-design.md, sections 5 and 6; docs/plans/2026-11-14-veil-cover-plan.md, Task 1).
 -- post_veil_cover (act, play) holds one row for each Act an author veil play covers, and acts_public reads it where 0357's derivation named fourteen subqueries. This file holds the stored cover to that derivation, Act by Act:
 -- pg_temp.derived_character below is 0357's second select as it stood, copied, and is the record of what the cover must equal; it lives in this test and in no view. The cards and rows are this file's own (vc...).
 --
