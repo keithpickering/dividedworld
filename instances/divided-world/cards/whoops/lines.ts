@@ -4,6 +4,9 @@
  * (Effect.tsx) uses them to hide a line from a screen reader while ink covers it and read it out once it does
  * not, as the eye does. The box is the screen's own, so the lines are read again when it is resized.
  *
+ * A text node inside a `[data-dw-aside]` (the hidden line a note leaves in the post's own words, a drawn note, a receipt) is no
+ * line of the post and is skipped.
+ *
  * A browser that cannot measure a range (it has no `getClientRects` on one) gives no lines, and the
  * Effect then treats the post as one block: covered while any layer holds ink, read once none does.
  */
@@ -22,6 +25,8 @@ export function readLines(root: HTMLElement, box: Box): TextLine[] {
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let order = 0;
   for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+    /* A note's hidden line, a drawn note and a receipt are asides (`data-dw-aside`): none is a line of the post. */
+    if (node.parentElement?.closest('[data-dw-aside]')) continue;
     const data = node.nodeValue ?? '';
     for (const m of data.matchAll(/\S+/g)) {
       const range = document.createRange();
