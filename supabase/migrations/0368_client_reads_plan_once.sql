@@ -10,6 +10,8 @@
 -- Part 1 writes again, as `plpgsql`, each stable function in ALLOWED_RPCS (tools/check-web-reads.mjs) that was `language sql`: today's definition (pg_get_functiondef on a database
 -- with every migration applied), the same arguments, return type, volatility, security and search_path, with `#variable_conflict use_column` so that a name that is both a variable
 -- (a parameter, a column of `returns table`) and a column means the column, as it did in SQL. A `begin atomic` body's last statement is returned and a statement before it is performed.
+-- log_page and trophies_of are taken as 0367_cursor_bounds.sql leaves them (coalesce(..., 'infinity') bounds, row comparisons, trophies_of's page CTE carrying the awards row); belt_lineage and admin_awards
+-- are already plpgsql there and keep their bodies in Part 2.
 -- Part 2 sets the plan and jit on the stable client reads that were already `plpgsql`. Grants are kept by `create or replace` and `alter`, and none is restated.
 -- supabase/tests/0320-client-reads-plan-once.sql names any client read that is not planned once.
 
