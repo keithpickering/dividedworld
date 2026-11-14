@@ -2498,6 +2498,14 @@ describe('where glitter lands in a thread', () => {
     expect(probe.landed()).toEqual({ effect: 0, cell: 0, page: 0 });
   });
 
+  /* The cut line is a direct child of the article, outside the grid's `> *` background, so its own rule must give it the post's color. */
+  test('thread.css (source-level guard): the reply cut line holds its own background from a --kb- token', () => {
+    const css = readFileSync(join(process.cwd(), 'engine/ui/thread/thread.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const rules = [...css.matchAll(/(?:^|\})\s*\.kb-act-cutline\s*\{([^}]*)\}/gu)].map((m) => m[1]!);
+    expect(rules.length).toBeGreaterThan(0);
+    expect(rules.some((r) => /background(-color)?:\s*var\(--kb-[a-z0-9-]+\)/u.test(r))).toBe(true);
+  });
+
   /* Source-level guard: jsdom has no layout or stacking, so the stacking of a landed cell can only be asserted on the stylesheet's text. */
   test('thread.css (source-level guard): a landed meta cell keeps a positive stack level over the body, so its hung marks and callout are not trapped under it', () => {
     const css = readFileSync(join(process.cwd(), 'engine/ui/thread/thread.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');

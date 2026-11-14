@@ -526,9 +526,9 @@
 
 /* The one plain line above the date row: what it is, for a reader who is not following the indent. A band of the post's color, ruled from the next as the others are. */
 .kb-act-cutline {
-  grid-area: cut;
   margin: 0 0 1px;
   padding: 0.25em 1%;
+  background: var(--kb-post-bg);
   color: var(--kb-muted);
   overflow-wrap: anywhere;
 }
