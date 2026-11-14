@@ -11,7 +11,7 @@
   color: var(--kb-head-fg);
   text-shadow: var(--kb-head-shadow);
   font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 3px 4px -1px rgb(0 0 0 / 0.55);
+  box-shadow: var(--kb-fold-bar-shadow);
 }
 
 @media (pointer: coarse) {
@@ -155,7 +155,7 @@
   position: absolute;
   inset: 0;
   z-index: 5;
-  background: linear-gradient(rgb(0 0 0 / 0.55), rgb(0 0 0 / 0.1));
+  background: var(--kb-fold-shade-bg);
   opacity: var(--kb-fold-shade, 0);
   pointer-events: none;
 }
