@@ -388,8 +388,8 @@ describe('layout and effects', () => {
   });
 
   describe('a wrap run\'s trail', () => {
-    const wrapRun = (start: number, end: number, key: string, z = 0, trail?: (k: string) => React.ReactNode): TextRun => ({
-      start, end, key, z, mode: 'wrap', render: ({ text, key: k }) => <i key={k}>{text}</i>, ...(trail ? { trail } : {}),
+    const wrapRun = (start: number, end: number, key: string, z = 0, trail?: (k: string) => React.ReactNode, stands?: true): TextRun => ({
+      start, end, key, z, mode: 'wrap', render: ({ text, key: k }) => <i key={k}>{text}</i>, ...(trail ? { trail } : {}), ...(stands ? { stands } : {}),
     });
     const trailOf = (name: string) => (k: string) => <span key={k} data-trail={name} />;
     const draw = (runs: TextRun[], text: string) => {
@@ -431,6 +431,49 @@ describe('layout and effects', () => {
       const el = draw([wrapRun(2, 6, 'a', 0, trailOf('a')), wrapRun(6, 10, 'b', 0, trailOf('b'))], 'I love big cats today');
       expect(trailsIn(el)).toEqual(['a', 'b']);
       expect(el.querySelector('.kb-bb')!.innerHTML).toMatch(/<span data-trail="a"><\/span><i>[^<]*<\/i><span data-trail="b">/u);
+    });
+
+    test('a standing trail under a higher wrap run is drawn where its end falls, cutting the higher run piece in two', () => {
+      const el = draw([wrapRun(7, 15, 'low', 0, trailOf('low'), true), wrapRun(11, 21, 'high', 1)], 'I love big cats today');
+      expect(trailsIn(el)).toEqual(['low']);
+      const html = el.querySelector('.kb-bb')!.innerHTML;
+      expect(html).toMatch(/<i>cats<\/i><span data-trail="low"><\/span><i> today<\/i>$/u);
+      expect([...el.querySelectorAll('i')].slice(1).map((i) => i.textContent).join('')).toBe('cats today');
+    });
+
+    test('a standing trail ending inside a higher replace run is drawn right after it, and the replace run is drawn once', () => {
+      let calls = 0;
+      const cover: TextRun = { start: 11, end: 18, key: 'c', z: 0, mode: 'replace', render: ({ key }) => { calls++; return <b key={key}>X</b>; } };
+      const el = draw([wrapRun(7, 15, 'r', 0, trailOf('t'), true), cover], 'I love big cats today');
+      expect(calls).toBe(1);
+      expect(el.querySelectorAll('b')).toHaveLength(1);
+      expect(trailsIn(el)).toEqual(['t']);
+      expect(el.querySelector('.kb-bb')!.innerHTML).toMatch(/<b>X<\/b><span data-trail="t"><\/span>day$/u);
+    });
+
+    test('two standing trails at one offset are both drawn, lower z first then list order; an ordinary trail on top comes before them', () => {
+      const el = draw([wrapRun(7, 15, 'a', 1, trailOf('a'), true), wrapRun(3, 15, 'b', 0, trailOf('b'), true), wrapRun(5, 15, 'c', 1, trailOf('c'), true)], 'I love big cats today');
+      expect(trailsIn(el)).toEqual(['b', 'a', 'c']);
+      cleanup();
+      const el2 = draw([wrapRun(7, 15, 'st', 0, trailOf('st'), true), wrapRun(10, 15, 'top', 5, trailOf('top'))], 'I love big cats today');
+      expect(trailsIn(el2)).toEqual(['top', 'st']);
+    });
+
+    test('a standing run on top at its own end draws its trail once', () => {
+      const el = draw([wrapRun(7, 15, 'r', 0, trailOf('t'), true)], 'I love big cats today');
+      expect(trailsIn(el)).toEqual(['t']);
+      expect(el.querySelector('.kb-bb')!.innerHTML).toBe('I love <i>big cats</i><span data-trail="t"></span> today');
+    });
+
+    test('a standing trail at the end of the text, or where a text node ends and a [b] begins, is drawn once, in the piece that ends there', () => {
+      const el = draw([wrapRun(7, 30, 'r', 0, trailOf('t'), true)], 'I love big [b]cats[/b]');
+      expect(trailsIn(el)).toEqual(['t']);
+      expect(el.querySelector('strong')!.innerHTML).toMatch(/cats<\/i><span data-trail="t"><\/span>$/u);
+      cleanup();
+      const el2 = draw([wrapRun(7, 15, 'r', 0, trailOf('t'), true), wrapRun(0, 21, 'all', 1)], 'I love big cats[b] today[/b]');
+      expect(trailsIn(el2)).toEqual(['t']);
+      expect(el2.querySelector('strong')!.querySelector('[data-trail]')).toBeNull();
+      expect(el2.querySelector('.kb-bb')!.innerHTML).toMatch(/cats<\/i><span data-trail="t"><\/span><strong>/u);
     });
 
     test('is absent from a run that has none: it draws what it always drew', () => {
