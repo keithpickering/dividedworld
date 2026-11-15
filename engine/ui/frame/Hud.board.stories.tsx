@@ -5,8 +5,11 @@
  * and the way out under it (engine/ui/orbs/Orbs.tsx). The player is seasoned, so no tip stands over the notch.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { World } from '../story.tsx';
+import { cardOf, type World } from '../story.tsx';
 import { Frame } from './Frame.tsx';
+
+/** A card the player holds, three of it; to the HUD it is only something in hand. */
+const HELD = '4d-chess';
 
 /** The ordinary player, with the wallet full: the seed's estimate (+0.85) then lies wholly past the cap. */
 const seeded = (fake: Parameters<World>[0], instance: Parameters<World>[1]) => {
@@ -15,7 +18,7 @@ const seeded = (fake: Parameters<World>[0], instance: Parameters<World>[1]) => {
   fake.seed.character(me, 'Mrs. Hooligan', (b ?? a)!.key);
   const pipewrench = fake.seed.character(me, 'Pipewrench', a!.key);
   fake.seed.settle({ wallet: { [me]: instance.settings.walletCap } });
-  fake.seed.cards(me, { [instance.cards[0]?.key ?? 'card']: 3 });
+  fake.seed.cards(me, { [cardOf(instance.cards, HELD).key]: 3 });
   fake.seed.estimate(me, { entries: [{ character: 'x', reason: `${a!.key}.story`, amount: 85 }] });
   fake.signInAs(me);
   return { me, pipewrench };

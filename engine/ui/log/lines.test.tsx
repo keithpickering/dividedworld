@@ -121,6 +121,7 @@ describe('cards set face down, traps and catches', () => {
     cards: [
       ...testInstance.cards,
       { ...testInstance.cards[0]!, key: 'snare', name: 'Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' },
+      { ...testInstance.cards[0]!, key: 'lure', name: 'Lure', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const], upTo: 'common' as const } } },
       { ...testInstance.cards[0]!, key: 'dud', name: 'Dud', play: 'set' as const },
       { ...testInstance.cards[0]!, key: 'hook', name: 'Hook', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'reply' } as never } },
       { ...testInstance.cards[0]!, key: 'pass', name: 'Hall Pass', rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'visit' as const } } },
@@ -232,6 +233,11 @@ describe('cards set face down, traps and catches', () => {
   test('a catching set card names the card it waits for; a Hall Pass waits for a Mod Bot\'s visit', () => {
     expect(text(setRow('snare', { springs: true, catches: 'whoops' }))).toBe('Snare set face down on your post #3. It waits for a Whoops!, and ends by itself if none comes.');
     expect(text(setRow('pass', { springs: true }))).toBe('Hall Pass set face down on your post #3. It waits for a Mod Bot\'s visit, and ends by itself if none comes.');
+  });
+
+  test('a set card that waits for a match says what it matches; a row that names its card still names it', () => {
+    expect(text(setRow('lure', { springs: true }))).toBe('Lure set face down on your post #3. It waits for a Salty card, up to common, and ends by itself if none comes.');
+    expect(text(setRow('lure', { springs: true, catches: 'whoops' }))).toBe('Lure set face down on your post #3. It waits for a Whoops!, and ends by itself if none comes.');
   });
 
   test('a back set before the named catch keeps the words it had', () => {

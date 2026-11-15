@@ -20,6 +20,7 @@
 import { landsOn, ok, refuse, type CardRules, type Verdict } from '../../../engine/rules/cards.ts';
 import type { SurfaceStroke } from '../../../engine/rules/surface.ts';
 import { STENCILS, STENCIL_KEYS, type StencilKey } from './graffiti/stencils.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const CANS = { black: '#111111', white: '#fafafa', red: '#e8202a', orange: '#ff7a1a', yellow: '#ffd200',
   lime: '#7ed321', green: '#16a34a', teal: '#14b8a6', cyan: '#22c7f0', blue: '#2457e6', purple: '#7c3aed',
@@ -145,3 +146,6 @@ export const graffiti: CardRules<GraffitiConfig> = {
     },
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 300;

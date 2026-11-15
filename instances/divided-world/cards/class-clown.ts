@@ -3,6 +3,7 @@
  * then it ends by itself (the card types design). The keys are this instance's reactions.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const classClown: CardRules<Record<string, never>> = {
   key: 'class-clown',
@@ -17,3 +18,6 @@ export const classClown: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(classClown, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

@@ -34,6 +34,7 @@ test('a title in double quotes, as one with an apostrophe must be, is read, and 
   expect(boardStoryIds(instanceUis(repo))).toEqual(['boards-98-feelin-quoted--seen']);
   expect(boardStoryIds()).toContain('boards-10-feelin-fab--twenty-light');
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['boards-20-below-the-fold--folded-light', 'boards-20-below-the-fold--folded-dark', 'boards-20-below-the-fold--opened-light', 'boards-20-below-the-fold--opened-dark', 'boards-20-below-the-fold--reduced']));
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['fresh-light', 'fresh-dark', 'thinning', 'long-post', 'reduced'].map((n) => `boards-24-hot-box--${n}`)));
 });
 
 test('an instance with no ui folder adds none, and the real repository lists the Hold stories', () => {
@@ -62,6 +63,10 @@ test('the caption bar\'s stories are listed, short, long and held on the Main an
 
 test('Laugh Track\'s stories are listed, the thread on the Main and the Phone board, near a cue and after one is heard', () => {
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['main', 'phone', 'near-main', 'near-phone', 'heard-main', 'heard-phone'].map((n) => `boards-21-laugh-track--${n}`)));
+});
+
+test('THIS\'s stories are listed, each on the Main board and the Phone one', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['two-notes', 'bare', 'receipt', 'taped', 'inked', 'fab'].flatMap((n) => [`boards-23-this--${n}-main`, `boards-23-this--${n}-phone`])));
 });
 
 test('the reply cut in under its post and Feelin\' Glam\'s stories are listed, each on the light board and the dark', () => {

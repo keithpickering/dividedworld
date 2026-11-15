@@ -8,6 +8,7 @@ import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
 import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
+import { faceUpOnly, playOf, reachesOf } from '../../../engine/rules/cards.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
@@ -18,7 +19,7 @@ import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
-import { spanWords } from './cards.ts';
+import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearUi } from './cosmetics.ts';
 import { mooch } from '../cards/mooch.ts';
@@ -28,7 +29,11 @@ import { feelinGlam } from '../cards/feelin-glam.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
+import { ropeBreak } from '../cards/rope-break.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
+import { WORDS as THIS_WORDS, thisCard } from '../cards/this.ts';
+import { HOT_BOX_LASTS, hotBox } from '../cards/hot-box.ts';
+import { setMoveWords } from './cards/words.ts';
 import { LOG_DRAW, LOG_WASH, describeDraw } from '../cards/graffiti/words.ts';
 import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
 import type { CardPlay } from '../../../engine/ui/cards/types.ts';
@@ -117,12 +122,19 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(t.describe).toMatch(/the one card it catches, from the cards cast on a post, uncommon or commoner/u);
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
-  test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', whodunnit: 'the quoting post', 'blind-study': 'the quoting post', overreaction: 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': 'the quoting post', 'main-event': "the quoting post's thread", 'feelin-glam': "the quoting post's thread" };
-    for (const [key, reach] of Object.entries(lands)) {
-      expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
+  /* Where a set card lands is its reach, said in the instance's own words for it: a post, that post's character, or that post's thread. */
+  const LANDS_ON: Readonly<Record<string, string>> = { post: 'the quoting post', character: "the quoting post's character", thread: "the quoting post's thread" };
+  const settable = instance.cards.filter((c) => playOf(c) === 'cast' && !faceUpOnly(c));
+  test('every card that can be set face down says so, landing at its own reach and no other', () => {
+    expect(settable.length, 'the rule checks a card').toBeGreaterThan(0);
+    for (const c of settable) {
+      expect(reachesOf(c), `${c.key} reaches one thing`).toHaveLength(1);
+      const reach = LANDS_ON[reachesOf(c)[0]!];
+      expect(reach, `${c.key}'s reach is one the rule has words for`).toBeDefined();
+      expect(face(c.key).describe, c.key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
     expect(face('autocorrect').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
+    expect(face('this').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
   });
   test('Line Cutter holds no face-down sentence, and every word of its face is the plan\'s, true to its rules', () => {
     const t = face('line-cutter');
@@ -318,6 +330,11 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       if (holdsNumber(said(key, economy))) expect(wordsRead[key]?.length ?? 0, `${key}: "${said(key, economy)}"`).toBeGreaterThan(0);
     }
   });
+  test('the screen entries are listed in key order, one for each card and none spare', () => {
+    const keys = cardsUi.map((c) => c.key);
+    expect(keys).toEqual([...keys].sort());
+    expect(keys).toEqual(instance.cards.map((c) => c.key));
+  });
   test('every card has a face and rules in plain words, true to the settings it is told', () => {
     expect(instanceUi.cards.map((c) => c.key).sort()).toEqual(instance.cards.map((c) => c.key).sort());
     for (const c of instance.cards) {
@@ -396,9 +413,54 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(laughTrack.alignment).toBe('pepperoni');
     expect(laughTrack.setPhrase!({ cues: [{ phrase: 'first one', sound: 'boo' }, { phrase: 'second', sound: 'cheer' }] })).toBe('first one');
     const at = instance.machine.findIndex((m) => 'card' in m.item && m.item.card === 'laugh-track');
-    expect(instance.machine[at]).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
-    // Laugh Track was the last on-sale slot; card notes Part 3's Overreaction and Blind Study follow it, then card notes Part 5's Happy Heart and Take the Fall, and nothing else on sale does.
-    expect(instance.machine.slice(at + 1).filter((m) => m.availability === 'onSale').map((m) => ('card' in m.item ? m.item.card : 'pack'))).toEqual(['overreaction', 'blind-study', 'happy-heart', 'take-the-fall']);
+    expect(instance.machine[at]).toEqual({ item: { card: 'laugh-track' }, availability: 'hidden', price: 150 });
+    // The machine's rule (machine.test.ts) hides every uncommon, so Laugh Track is not drawn: the commons are the only cards on sale.
+    expect(instance.machine.filter((m) => 'card' in m.item && m.availability === 'onSale').every((m) => instance.cards.find((c) => c.key === (m.item as { card: string }).card)!.rarity === 'common')).toBe(true);
+  });
+  test('THIS has its face, its words and its handwriting, each the plan\'s, and its numbers are the rules\'', () => {
+    const ui = instanceUi.cards.find((c) => c.key === 'this')!;
+    expect(ui.art.color).toBe('#d24a2c');
+    expect(ui.art.ink).toBe('#0d0301');
+    expect(ui.art.tagline).toBe('Point at it.');
+    expect(ui.summary).toBe('Point at a line of a post and say something about it.');
+    expect(ui.status).toBe('Notes on its words');
+    expect(ui.hint).toBe('Someone pointed at these words. The Lens says who.');
+    expect(ui.Effect).toBeDefined();
+    expect(ui.ConfigForm).toBeDefined();
+    expect(ui.logPlay!({ phrase: 'the same old', words: 'again' }, {} as never)).toBe('It pointed at “the same old” and wrote “THIS again”.');
+    expect(ui.logPlay!({ phrase: 'the same old', words: '' }, {} as never)).toBe('It pointed at “the same old” and wrote “THIS”.');
+    const said = ui.describe(instance.settings);
+    expect(said).toBe(`A Pepperoni card, ${thisCard.rarity}. You choose words in a post, and the post gets a note under them: THIS, an arrow, and up to ${THIS_WORDS.most} characters of your own after it, or none. The note names nobody; the Lens says who played it. Up to ${thisCard.stack} fit on a post, and they stay. If the author edits the words out, the note moves to the foot of the post and quotes them. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. A set one lands only when the quote's own words hold its phrase. It costs nothing more to play than its price at the machine.`);
+    expect(THIS_WORDS.most).toBe(60);
+    expect(thisCard.stack).toBe(3);
+  });
+  test('Hot Box has its face, its words and its log line, each the plan\'s, and its span is the rules\'', () => {
+    const ui = instanceUi.cards.find((c) => c.key === 'hot-box')!;
+    expect(ui).toBeDefined();
+    expect(ui.art.color).toBe('#ff3d7f');
+    expect(ui.art.ink).toBe('#14030a');
+    expect(ui.art.tagline).toBe('Smoke out a post.');
+    expect(ui.summary).toBe('Fills a post with smoke in your color. Readers wave it away to read, and it rolls back in.');
+    expect(ui.status).toBe('Smoke on this post');
+    expect(ui.hint).toBe('Point at the words to part the smoke.');
+    expect(ui.Effect).toBeDefined();
+    expect(ui.ConfigForm).toBeDefined();
+    expect(ui.describe(instance.settings)).toBe(`A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. It lasts ${spanWords(HOT_BOX_LASTS)}, thinning as it goes, then clears by itself. One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`);
+    expect(ui.describe(instance.settings)).toContain('It lasts 3 days, thinning');
+    expect(ui.logPlay!({ color: '#19e3ff' }, {} as never)).toBe('It smoked the post in cyan.');
+    expect(ui.logPlay!({ color: 'not a color' }, {} as never)).toBeUndefined();
+  });
+  test('THIS\'s handwriting is vendored with its license, and its stylesheet names no font outside its own folder', () => {
+    const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'this');
+    const font = fs.readFileSync(path.join(dir, 'fonts', 'PermanentMarker-Regular.woff2'));
+    expect(font.subarray(0, 4).toString('latin1')).toBe('wOF2');
+    expect(font.length).toBeGreaterThan(5_000);
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'LICENSE.txt'), 'utf8')).toMatch(/Apache License\s+Version 2\.0/u);
+    const css = fs.readFileSync(path.join(dir, 'this.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const urls = [...css.matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/gu)].map((m) => m[1]!);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const u of urls) expect(u, u).toMatch(/^\.\/fonts\/[\w.-]+\.woff2$/u);
+    expect(css).toMatch(/font-display:\s*block/u);
   });
   test('Whoops! draws its effect and its ink form, and each play\'s tag takes its own ink', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
@@ -466,20 +528,6 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.logSave!({ peeled: [], stuck: { '1': one, '2': one } })).toEqual({ what: 'Strips peeled', said: 'You started peeling 2 of its strips.' });
     expect(ac.logSave!({ peeled: [0, 2], stuck: {} })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
     expect(ac.logSave!({ peeled: [], stuck: {} })).toBeUndefined();
-  });
-  /* The card that writes, in the log (the design's section 13): the caster's length, the author's clear, and what it did to the author's post. */
-  test('You Were Saying? says the length its play recorded, the author\'s clear as theirs, and what it did in its own words', () => {
-    const ywsCard = instanceUi.cards.find((c) => c.key === 'you-were-saying')!;
-    /* The line is the recorded number, whatever the configuration or the economy now say; a play with no record says nothing of a length. */
-    expect(ywsCard.logPlay!({ steps: 0 }, { tokens: 100 })).toBe('It was played for 100 tokens.');
-    expect(ywsCard.logPlay!({ steps: 3 }, { tokens: 1 })).toBe('It was played for 1 token.');
-    expect(ywsCard.logPlay!({ steps: 99 }, { tokens: 400 })).toBe('It was played for 400 tokens.');
-    expect(ywsCard.logPlay!({ steps: 1 }, {})).toBeUndefined();
-    expect(ywsCard.logSave!({ cleared: 'v1' })).toEqual({ what: 'Tail erased', verb: 'erased' });
-    expect(ywsCard.logSave!({})).toBeUndefined();
-    expect(ywsCard.logWritten!.continued).toBe('continued it');
-    expect(ywsCard.logWritten!.again('You Were Saying?')).toBe('made its You Were Saying? again');
-    expect(ywsCard.logWritten!.failed).toBe('didn\'t take');
   });
   test('the three lines of the author and the caster\'s length are said whole, from the instance\'s own words', () => {
     const at = '2026-11-09T10:00:00.000Z';
@@ -878,7 +926,7 @@ describe('the cosmetics art files', () => {
   });
 });
 
-describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, Task 9)', () => {
+describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card notes Part 6, Task 9)', () => {
   const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
   const play = (config: Record<string, unknown>, over: Partial<CardPlay> = {}): CardPlay => ({ id: 'k', card: 'x', layer: 1, caster: null, message: '', config, playedAt: '2026-11-12T00:00:00.000Z', post: 'p', ...over });
   /* A rule's share, retuned for one test and put back: the words are read from the rules, never restated. */
@@ -946,6 +994,22 @@ describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, T
     expect(say()).toBe(`A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name one Move, uncommon or commoner, and one of the four kinds of reaction. When that Move is cast on your post, this springs and shows itself; the Move lands as usual and its caster keeps everything it earns, and from then on each vote of your kind on that Move pays you a vote. A Move cast by one of your own characters springs it and pays you nothing. It springs once, or comes back to your hand after ${instance.settings.setLasts.count} ${instance.settings.setLasts.unit}s if nothing springs it. It costs nothing more to set.`);
     retuned(fourDChess, 'trap', { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 0.5 } }, () => expect(say()).toContain('pays you half a vote.'));
     expect(ui('4d-chess').describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day if nothing');
+  });
+
+  test('Rope Break is a face-down Reversal with the same status as every one, its Sweet colors, no form and no effect, and its words say what it catches', () => {
+    const rope = ui('rope-break');
+    expect(rope.status).toBe('Set, face down to everyone else');
+    expect(rope.status).toBe(ui('card-collector').status);
+    expect(rope.art.color).toBe('#2ee6ff');
+    expect(rope.art.ink).toBe('#03141a');
+    expect(rope.art.tagline).toBe('Reach the ropes.');
+    expect(rope.summary).toBe('Set face down on your post. Catches the first Salty common cast there, and takes it into your hand.');
+    expect(rope.Effect).toBeUndefined();
+    expect(rope.ConfigForm).toBeUndefined();
+    const said = rope.describe(instance.settings);
+    expect(said).toBe(`A Sweet card, ${ropeBreak.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Salty common card cast on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
+    expect(said).not.toContain('names');
+    expect(rope.describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day.');
   });
 
   test('Off Day says the class it names and when, before its window opens and from then', () => {

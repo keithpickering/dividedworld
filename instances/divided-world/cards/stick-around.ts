@@ -9,6 +9,7 @@
  * (the screens' design, sections 6 and 10).
  */
 import { landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 const DEFAULT_SENTENCE = 'I legally certify that I have read this post in full and thought about it contemplatively';
 const MOST = 200;
@@ -34,3 +35,6 @@ export const stickAround: CardRules<{ sentence: string }> = {
     return ok({ sentence });
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 100;

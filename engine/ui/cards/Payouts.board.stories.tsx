@@ -1,12 +1,10 @@
 /**
  * The payout cards' screens (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 9), on the boards fixture's player, whose HUD is on Pipewrench:
  * `Skim`, `Ride`, `RideBack` and `ScoredAs` (the Lens of each, with its status and its end) and `SkimForm`, `RideBackForm` and `ScoredAsForm` (the
- * play form of each, opened as a player opens it, on Pipewrench's own post #43). Each card is found by its rules, naming no card and no instance.
+ * play form of each, opened as a player opens it, on Pipewrench's own post #43). Each card is named by key (the map below), so a new card cannot change a story.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useRef, useState } from 'react';
-import { playOf } from '../../rules/cards.ts';
-import type { CardRules } from '../../rules/cards.ts';
 import type { Fake } from '../data/fake.ts';
 import { useKayfa } from '../context.tsx';
 import { Frame } from '../frame/Frame.tsx';
@@ -14,16 +12,17 @@ import { LoadedThread } from '../loaded.tsx';
 import { usePlayer } from '../player.tsx';
 import { useLocation } from '../router.tsx';
 import { usePlay } from './play.tsx';
+import { cardOf } from '../story.tsx';
 
 type Scene = 'skim' | 'ride' | 'rideBack' | 'scoredAs' | 'skimForm' | 'rideBackForm' | 'scoredAsForm';
 
-/** The card each scene is about, by what its rules say it does. */
-const found = (cards: readonly CardRules[], scene: Scene): CardRules | undefined => {
+/** The card each scene is about, by key: the skim card, the ride Gimmick, the ride Reversal, and the scored-as card. */
+const keyOf = (scene: Scene): string => {
   switch (scene) {
-    case 'skim': case 'skimForm': return cards.find((c) => c.skim !== undefined);
-    case 'ride': return cards.find((c) => c.gimmick?.kind === 'ride');
-    case 'rideBack': case 'rideBackForm': return cards.find((c) => playOf(c) === 'set' && c.trap?.outcome !== undefined);
-    case 'scoredAs': case 'scoredAsForm': return cards.find((c) => c.scoresAs === true);
+    case 'skim': case 'skimForm': return 'mooch';
+    case 'ride': return 'toll';
+    case 'rideBack': case 'rideBackForm': return '4d-chess';
+    case 'scoredAs': case 'scoredAsForm': return 'off-day';
   }
 };
 
@@ -33,6 +32,8 @@ function useSeeded(scene: Scene, thread: string | null): string | null {
   const [shown, setShown] = useState<string | null>(null);
   /* Seeded once: the fake keeps what is seeded, and a second seeding would lay a second thread. */
   const done = useRef(false);
+  /* Looked up in render, so a key the instance lacks fails the story there and is not swallowed by the seeder's catch. */
+  const card = cardOf(instance.cards, keyOf(scene));
   useEffect(() => {
     if (thread === null || done.current) return;
     done.current = true;
@@ -42,8 +43,7 @@ function useSeeded(scene: Scene, thread: string | null): string | null {
       if (scene.endsWith('Form')) { if (live) setShown(thread); return; }
       const fake = api as Fake;
       const pipe = (await api.myCharacters()).find((c) => c.name === 'Pipewrench');
-      const card = found(instance.cards, scene);
-      if (!pipe || !card) throw new Error('the boards fixture has no Pipewrench, or the instance has no such card');
+      if (!pipe) throw new Error('the boards fixture has no Pipewrench');
       const { thread: mine, act: post } = fake.seed.thread('general', pipe.id, 'A thread Pipewrench started', 'The opening post.');
       const ends = new Date(Date.now() + 5 * 86_400_000).toISOString();
       if (scene === 'skim') fake.seed.card(pipe.id, post, card.key, { config: { quadrant: 'excitedPositive' }, ends });
@@ -66,15 +66,15 @@ function Act({ scene }: { readonly scene: Scene }) {
   useEffect(() => {
     if (!play || account === null) return;
     const form = scene.endsWith('Form');
-    const key = found(instance.cards, scene)?.key;
-    if (form && key) play.arm(key);
+    const key = cardOf(instance.cards, keyOf(scene)).key;
+    if (form) play.arm(key);
     const timer = setInterval(() => {
       if (form) {
         const ghost = document.querySelector<HTMLButtonElement>('#post-43 .kb-ghost-mark');
         if (ghost) { clearInterval(timer); ghost.click(); }
         return;
       }
-      const mark = document.querySelector<HTMLButtonElement>(`.kb-mark[data-kb-card="${key ?? ''}"], .kb-mark[data-kb-back="down"]`);
+      const mark = document.querySelector<HTMLButtonElement>(`.kb-mark[data-kb-card="${key}"], .kb-mark[data-kb-back="down"]`);
       if (mark) { clearInterval(timer); mark.scrollIntoView?.({ block: 'center' }); mark.click(); }
     }, 150);
     return () => clearInterval(timer);

@@ -2,7 +2,7 @@
  * Board 05 of the booster packs boards, the machine's admin page (docs/research/2026-11-07-booster-packs/05-admin.html, 1440 by 1180): the title and lead, the
  * admin pages' strip (Moves, The machine) under the lead with The machine filled, a plain table of the ten slots in grid order, and one Save changes under a
  * rule. The build is the story `Boards/00 Admin machine` (engine/ui/admin/Machine.board.stories.tsx): the instance's own machine with the board's two Boss
- * moves, a Pull of Whoops! and a markup of Glitter Bomb. The phone drawing, the fourth screen of board 04, is a side of board 04's manifest (`phone.also`, e2e/boards/2026-11-07-booster-packs/01-machine.ts).
+ * moves, a Pull of Whoops! and a markup of Stick Around. The phone drawing, the fourth screen of board 04, is a side of board 04's manifest (`phone.also`, e2e/boards/2026-11-07-booster-packs/01-machine.ts).
  *
  * Every part is held from a part above it, the first from the strip's bottom edge and the rest of a row from its slot's code, so a wrapped line never moves
  * what follows it.
@@ -35,6 +35,12 @@
  *  - Happy Heart and Take the Fall (card notes Part 5) were then added after Blind Study, the end of the on-sale slots (before the hidden Main Event), and the hidden Super Happy Heart, Tattle-Tale and Ultra Happy Heart
  *    as the last three slots (after Whodunnit?), so no slot above them moves and Glitter Bomb's tag stays 272px lower; the list has two more on-sale rows (55px each) and three more hidden rows:
  *    the hidden Main Event's cell and note stand 110px lower again (935 in all), and Save changes and its note stand 110px and 165px lower again (1430 in all).
+ *  - THIS was then added beside Feelin' Fab's slot, as its plan says (the two free-to-play commons at 0.20 stand together), so every row under Feelin' Fab's stands one row (55px) lower:
+ *    Glitter Bomb's tag 327px lower in all, the hidden Main Event's cell and note 990px, and Save changes and its note 1485px.
+ *  - The machine's slots are the instance's rule (instances/divided-world/machine.ts), not the board's drawing: the Booster, the common cards on sale (Autocorrect, Below the Fold, Feelin' Fab,
+ *    Hype-Up, Overreaction, Stick Around, THIS, Whoops!, You Were Saying?), then every uncommon, rare and legendary card hidden. The list is the board's ten on-sale rows with the hidden rows after them, so the
+ *    rows keep the board's places, and what stands in them is the build's: the board's pulled Whoops! row (A2) is the build's Autocorrect, with Whoops! pulled in E1, so the pull's tag stands 382px lower than the board's;
+ *    Stick Around, the one marked up, is the build's D1, so its tag stands 113px higher than the board's mark on E1; and the first hidden row (the board's hidden Main Event) stands 55px lower (it is the eleventh row, under the board's ten), and carries the same note. Save changes and its note keep the 1485px shift, the hidden rows being as many as before. The bullets above that give other figures are the history of earlier machines, superseded by these.
  *  - The build's controls are the glass's own measure, so a button is compared by its place and not its size, and a field's type is the glass's.
  *  - A control's accessible name in the build says whose it is ("Whoops!: move up"), where the board's arrows are named "Move up" alone.
  *  - The note beside Save changes says what a price is held to (between 0.01 and 1,000,000.00) where the board's note says a Boss move reads the new price; the
@@ -65,13 +71,13 @@ const manifest: BoardManifest = {
     at('availability-booster', 'combobox', 'Booster: availability', { origin: 'head-slot', originEdge: 'bottom' }),
     at('price-booster', 'textbox', 'Booster: price', { origin: 'head-slot', originEdge: 'bottom' }),
     at('code-a2', 'cell', 'A2', { origin: 'head-slot', originEdge: 'bottom' }),
-    at('tag-pull', 'text', 'PULLED BY THE BOSS · TO NOV 9', { origin: 'head-slot', originEdge: 'bottom' }),
+    at('tag-pull', 'text', 'PULLED BY THE BOSS · TO NOV 9', { buildShift: { y: 382 }, origin: 'head-slot', originEdge: 'bottom' }),
     at('code-e1', 'cell', 'E1', { origin: 'head-slot', originEdge: 'bottom' }),
-    at('tag-markup', 'text', 'MARKED UP ×1.5 · 2.25 TO NOV 8', { buildName: 'Marked up ×1.5 · 2.25 · to Nov 8', buildShift: { y: 272 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('code-none', 'cell', '–', { buildShift: { y: 935 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('hidden-note', 'text', 'Only in packs. The Boss may flash-sale it.', { buildShift: { y: 935 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 1430 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 1430 } }),
+    at('tag-markup', 'text', 'MARKED UP ×1.5 · 2.25 TO NOV 8', { buildName: 'Marked up ×1.5 · 2.25 · to Nov 8', buildShift: { y: -113 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('code-none', 'cell', '–', { buildShift: { y: 55 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('hidden-note', 'text', 'Only in packs. The Boss may flash-sale it.', { buildShift: { y: 55 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 1485 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 1485 } }),
   ],
 };
 export default manifest;

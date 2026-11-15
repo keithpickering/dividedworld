@@ -169,7 +169,7 @@ describe('a trap', () => {
     const s = said(row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' }), ctx([caught, set(), act('post9', { seq: 9, character: 'cPipe' })], { names }));
     expect(s).toEqual({
       line: 'Pipewrench\'s face-down trap caught your Whoops!',
-      detail: 'Pipewrench set it face down two days before you cast it, and it named Whoops! exactly. Your Whoops! is now Pipewrench\'s. In Hobbies.',
+      detail: 'Pipewrench set it face down two days before you cast it, and it was waiting for Whoops!. Your Whoops! is now Pipewrench\'s. In Hobbies.',
       ways: [{ text: 'Go to the post', to: '/t/t1?page=1#post-9' }], who: 'Spritey',
     });
     expect(JSON.stringify(s)).not.toMatch(/account|owner|player/iu);
@@ -178,7 +178,7 @@ describe('a trap', () => {
     const caught = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', caught: 'set1' } });
     const c = ctx([caught, set(), act('post9', { seq: 9, character: 'cPipe' })], { names, staff: new Set(['cPipe']) });
     const s = said(row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' }), c);
-    expect(s.detail).toBe('Pipewrench set it face down two days before you cast it, and it named Whoops! exactly. Your Whoops! is spent. In Hobbies.');
+    expect(s.detail).toBe('Pipewrench set it face down two days before you cast it, and it was waiting for Whoops!. Your Whoops! is spent. In Hobbies.');
     expect(s.detail).not.toMatch(/now Pipewrench/u);
   });
   test('the instance may give either a voice; it is handed the facts and nothing private', () => {
@@ -208,7 +208,7 @@ describe('a trap', () => {
     const r = row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
     const post = act('post9', { seq: 9 });
     expect(said(r, ctx([spring(), post]))).toEqual({ line: 'Your face-down Whoops! sprang', detail: 'A quote set it off, and it landed. In Hobbies.', ways: [{ text: 'Go to the post', to: '/t/t1?page=1#post-9' }], who: 'Pipewrench' });
-    expect(said(r, ctx([spring({ payload: { card: 'trap', trigger: 'cast', did: 'caught', set: 'set1', by: 'k', caught: 'k' } }), post])).detail).toBe('A cast of the card it named set it off, and the card is now in your hand. In Hobbies.');
+    expect(said(r, ctx([spring({ payload: { card: 'trap', trigger: 'cast', did: 'caught', set: 'set1', by: 'k', caught: 'k' } }), post])).detail).toBe('A cast it was waiting for set it off, and the card is now in your hand. In Hobbies.');
     expect(said(r, ctx([spring({ payload: { card: 'pass', trigger: 'visit', did: 'ended', set: 'set1' } }), post])).detail).toBe('A Mod Bot\'s visit set it off, and it ended the visit. In Hobbies.');
   });
   /* A ride back (card notes, Part 6): the cast landed as usual, so the caster is told, and the setter is told its pay. */

@@ -3,9 +3,12 @@
  * place first of three in season 1, the Posts, spins and plays of its public record, and a reveal. Its days are the board's, Oct 18 to 29, dated in
  * the week before the backend's clock so a reader's "days ago" has turned to a date for a while. Not a story: a story file exports only stories.
  */
-import type { World } from '../story.tsx';
+import { cardOf, type World } from '../story.tsx';
 
 const OCT = (day: number, hour = 12) => Date.UTC(2026, 9, day, hour);
+
+/** The card Spritey plays on its public record. */
+const PLAYED = '4d-chess';
 
 export const spriteyWorld: World = (fake, instance) => {
   const cls = instance.classes[0]!.key;
@@ -18,7 +21,7 @@ export const spriteyWorld: World = (fake, instance) => {
   const first = fake.seed.thread(general, spritey, 'The long one', 'Where to begin.', { at: OCT(18) });
   fake.seed.post(first.thread, spritey, 'Post 168 of the long thread. Still going.', { at: OCT(19) });
   fake.seed.reveal(spritey, first.thread, { class: cls, at: OCT(20) });
-  fake.seed.card(spritey, first.act, instance.cards[0]!.key, { at: OCT(22) });
+  fake.seed.card(spritey, first.act, cardOf(instance.cards, PLAYED).key, { at: OCT(22) });
   fake.seed.thread(general, spritey, 'who keeps splatting my posts', 'Again.', { at: OCT(27) });
   fake.seed.post(first.thread, spritey, 'Third time this week. I wrote four whole paragraphs about the new ink and it all went.', { at: OCT(29) });
   fake.seed.settle({ at: OCT(28), standings: { [spritey]: 650, [gloomba]: 320, [hooligan]: 140 }, wallet: { [me]: 240 } });

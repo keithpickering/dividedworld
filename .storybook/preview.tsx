@@ -26,7 +26,7 @@ import type { WorldParameters } from '../engine/ui/story.tsx';
 import { instance } from '../instances/divided-world/index.ts';
 import { instanceUi } from '../instances/divided-world/ui/index.ts';
 import { fallbackSettings } from '../web/src/data/settings.ts';
-import { assertMoment, createBoardsFake, seedBoards } from '../web/src/data/fixtures/boards.ts';
+import { assertMoment, boardMachine, createBoardsFake, seedBoards } from '../web/src/data/fixtures/boards.ts';
 import { onPageClock } from '../web/src/data/fixtures/page-clock.ts';
 
 /* The instance's glass, as the app puts it on the page. */
@@ -39,7 +39,7 @@ const ABOVE = SWITCH + 8;
 const BELOW = SWITCH - 8;
 
 const withWorld: Decorator = (Story, context) => {
-  const { world, path, moment } = context.parameters as WorldParameters;
+  const { world, path, moment, boardsMachine } = context.parameters as WorldParameters;
   const made = useMemo(() => {
     if (moment !== undefined) {
       const named = assertMoment(moment);
@@ -47,10 +47,10 @@ const withWorld: Decorator = (Story, context) => {
       return { api: onPageClock(fake), path: seedBoards(fake, named) };
     }
     if (!world && !path) return null;
-    const fake = createFake({ instance, settings: fallbackSettings });
+    const fake = createFake({ instance: world && boardsMachine ? { ...instance, machine: boardMachine(instance.machine) } : instance, settings: fallbackSettings });
     world?.(fake, instance);
     return { api: onPageClock(fake), path };
-  }, [world, path, moment]);
+  }, [world, path, moment, boardsMachine]);
   if (!made) return <Story />;
   const { api } = made;
   if (made.path) window.history.replaceState(null, '', made.path);

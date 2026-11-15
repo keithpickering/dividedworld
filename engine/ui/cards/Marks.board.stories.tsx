@@ -7,8 +7,8 @@
  * "+2"), and `Armed` (Whoops! armed the way pressing its card in the hand arms it: the dashed ghost mark ends the strip of every post it
  * can land on, #41 and #42 among them), `AsItLanded` (the fixture's play's moment shown in #41's body, from its Lens's As it landed), `EndThisCard` (an admin's Lens, with its End this card), `EndedByAnAdmin` (the same play after an admin ended it) and `SpunFromAPlay` (a thread spun from a takeover card's play on #41, over its Whoops!: the play's moment in the ORIGIN box). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
  *
- * The story names no instance: the cards are the instance's own, in its order, and the kinds past them are keys no card has, which a
- * mark draws as a swatch under the key's name, so six kinds are six distinct cards on the post.
+ * The cards are the instance's own, each named by its key (so a card added later changes no board here), and the kinds past them are keys
+ * no card has, which a mark draws as a swatch under the key's name, so six kinds are six distinct cards on the post.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
@@ -16,12 +16,19 @@ import { useKayfa } from '../context.tsx';
 import type { Fake } from '../data/fake.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { usePlayer } from '../player.tsx';
+import { cardOf } from '../story.tsx';
 import { useLocation, useNavigate } from '../router.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { usePlay } from './play.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
 const MINUTE = 60_000;
+
+/** The cards #41's extra plays are, after the fixture's Whoops!, by key. A key the instance lacks fails the story rather than shifting it. */
+const EXTRA_PLAYS = ['stick-around', 'card-collector', 'hall-pass', 'force-field', 'publicity-tour'] as const;
+/** The card the armed story arms (the instance's Whoops!), and the takeover card the spun story plays. */
+const ARMED = 'whoops';
+const TAKEOVER = 'stick-around';
 
 type Kinds = 1 | 6;
 /** An admin looking at #41's play: its Lens offers "End this card" (`admin`), or the play was ended already and its Lens says so (`ended`). */
@@ -42,9 +49,9 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: 
         const target = acts.find((a) => a.seq === 41);
         const casters = [45, 44, 43, 42, 45].map((n) => acts.find((a) => a.seq === n)?.character ?? null);
         if (!target || casters.some((c) => c === null)) throw new Error('the boards fixture has no #41, or no author for a post around it');
-        /* The fixture's play is one kind; the instance's other cards are the next, then keys no card has. */
+        /* The fixture's play is one kind; the cards named above are the next, then keys no card has. */
         const have = new Set((await api.cardsOn(target.id, 8)).map((a) => String(a.currentPayload.card)));
-        const keys = [...instance.cards.map((c) => c.key), ...Array.from({ length: kinds }, (_, i) => `story-kind-${i + 1}`)].filter((k) => !have.has(k)).slice(0, kinds - have.size);
+        const keys = [...EXTRA_PLAYS.map((k) => cardOf(instance.cards, k).key), ...Array.from({ length: kinds }, (_, i) => `story-kind-${i + 1}`)].filter((k) => !have.has(k)).slice(0, kinds - have.size);
         keys.forEach((card, i) => {
           fake.clock.advance(MINUTE);
           fake.seed.card(casters[i]!, target.id, card, { layer: 2 + i, message: '' });
@@ -71,15 +78,15 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: 
   return ready;
 }
 
-/** Arms the instance's first card with settings of its own (a `ConfigForm`), as the player's press in the hand does: the story names no card. */
+/** Arms Whoops!, a card with settings of its own (a `ConfigForm`), as the player's press in the hand does. */
 function Arm() {
   const { ui } = useKayfa();
   const play = usePlay();
-  const key = ui.cards.find((c) => c.ConfigForm !== undefined)?.key ?? null;
+  const key = cardOf(ui.cards, ARMED).key;
   /* A card is armed for an account and put back when the account changes (play.tsx), so it is armed once the account is known. */
   const account = usePlayer().session.account;
   useEffect(() => {
-    if (!play || key === null || account === null) return;
+    if (!play || account === null) return;
     play.arm(key);
     // Armed once for each account.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -156,7 +163,7 @@ function Opened() {
 }
 
 /**
- * A thread spun from a play on #41: the instance's takeover card (the story names none) is played on #41 over the fixture's play, the
+ * A thread spun from a play on #41: the instance's takeover card (Stick Around) is played on #41 over the fixture's play, the
  * reader spins a thread from it as one of their own characters, and the story moves to that thread, whose ORIGIN box draws the play's
  * moment: #41 as it read then, the fixture's play drawn still under it.
  */
@@ -165,6 +172,10 @@ function SpunFromPlay() {
   const navigate = useNavigate();
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
   const [spun, setSpun] = useState<string | null>(null);
+  /* Looked up in render, so a key the instance lacks fails the story there and is not swallowed by the seeder's catch. */
+  const takeover = cardOf(ui.cards, TAKEOVER);
+  if (takeover.takeover !== true) throw new Error(`the card "${TAKEOVER}" is not a takeover card`);
+  const key = takeover.key;
   useEffect(() => {
     if (thread === null || spun !== null) return;
     let live = true;
@@ -173,9 +184,8 @@ function SpunFromPlay() {
       const acts = await api.acts(thread, 41, 42);
       const target = acts.find((a) => a.seq === 41);
       const caster = acts.find((a) => a.seq === 42)?.character ?? null;
-      const key = ui.cards.find((c) => c.takeover === true)?.key;
       const me = (await api.myCharacters())[0];
-      if (!target || caster === null || key === undefined || !me) throw new Error('the boards fixture has no #41 and #42, the instance no takeover card, or the reader no character');
+      if (!target || caster === null || !me) throw new Error('the boards fixture has no #41 and #42, or the reader no character');
       fake.clock.advance(MINUTE);
       const play = fake.seed.card(caster, target.id, key, { message: '' });
       const answer = await api.spin(play, me.id, 'About that hold', 'Of all the posts to be held on.');
@@ -185,7 +195,7 @@ function SpunFromPlay() {
       navigate(`/t/${answer.value.thread.id}`);
     })().catch((e: unknown) => { console.error('the spun story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, ui, thread, spun, navigate]);
+  }, [api, thread, spun, navigate, key]);
   return (
     <Frame>
       {spun !== null && thread === spun ? <LoadedThread thread={spun} /> : <div aria-busy="true" />}

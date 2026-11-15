@@ -7,15 +7,18 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
-import type { World } from '../story.tsx';
+import { cardOf, classOf, type World } from '../story.tsx';
 import { LoadedAlerts } from '../loaded.tsx';
+
+/** The card played on the post. */
+const PLAYED = '4d-chess';
 
 const utc = (day: number, hour: number, minute = 0) => Date.UTC(2026, 10, day, hour, minute);
 
 const alerts: World = (fake, instance) => {
   const { seed } = fake;
-  const cls = instance.classes[0]!.key;
-  const other = instance.classes[1]?.key ?? cls;
+  const cls = classOf(instance.classes, 'face').key;
+  const other = classOf(instance.classes, 'heel').key;
   const me = seed.account('player');
   const friend = seed.account('friend');
   const bo = seed.account('caster');
@@ -24,7 +27,8 @@ const alerts: World = (fake, instance) => {
   const spritey = seed.character(me, 'Spritey', cls);
   const gloomba = seed.character(friend, 'Gloomba', other);
   const quoter = seed.character(bo, 'Thwomp', cls);
-  const card = instance.cards[0]!.key;
+  /* The card played on the post, by key, so a card added later to the instance's list changes no row. */
+  const card = cardOf(instance.cards, PLAYED).key;
   seed.settle({ at: utc(2, 8, 17) - 60_000, ledger: [{ character: pipewrench, reason: `${cls}.story`, amount: 42 }, { character: hooligan, reason: `${other}.story`, amount: 10 }] });
   const splat = seed.thread('general', pipewrench, 'who keeps splatting my posts', 'Somebody is doing it again.', { at: utc(1, 20) });
   const ink = seed.thread('general', spritey, 'best ink color, final answer', 'Defend your answer.', { at: utc(2, 8, 40) });

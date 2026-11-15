@@ -9,7 +9,7 @@
  * - **The engine's** is the week and the stack: `landsOn` for the post, `quadrantFree` for the quadrant.
  */
 import { landsOn, ok, quadrantFree, refuse, type CardRules } from '../../../engine/rules/cards.ts';
-import { QUADRANTS, type Quadrant } from '../../../engine/rules/types.ts';
+import { QUADRANTS, type Quadrant, type Hundredths } from '../../../engine/rules/types.ts';
 
 export type MoochConfig = { readonly quadrant: Quadrant };
 
@@ -31,3 +31,6 @@ export const mooch: CardRules<MoochConfig> = {
     return QUADRANTS.includes(quadrant as Quadrant) ? ok({ quadrant: quadrant as Quadrant }) : refuse('choose the reactions to mooch');
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

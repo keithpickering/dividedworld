@@ -3,6 +3,7 @@
  * bump place by itself (the card mechanic's design, sections 7 and 8). It costs nothing more to play than its price at the machine.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const mainEvent: CardRules<Record<string, never>> = {
   key: 'main-event',
@@ -16,3 +17,6 @@ export const mainEvent: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(mainEvent, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 300;

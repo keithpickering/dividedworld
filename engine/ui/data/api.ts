@@ -2229,6 +2229,27 @@ export interface ThreadPerson {
   readonly turns: readonly TurnAnnounced[];
 }
 
+/**
+ * What the ORIGIN box draws of a spun thread, carried by the page that holds the thread's first Act (`origin` in thread_page, 0372; docs/plans/2026-11-14-origin-in-page-design.md, section 4):
+ * the origin Act, its first 20 plays (card, set, spring) oldest first and then the `card_end` of each of those, as `cardsOn` answers, whether a 21st play exists, the moment of a play on a post
+ * or a character (the spin's own where the spin was pressed at a post, else the play's), where the post a play is on can be found, and the characters the box names. The same for every caller; a
+ * reaction of the caller's, a saved state or a release is the page's own list (`tallies`, `mine`, `states`, `releases`), never a part of it.
+ */
+export interface PageOrigin {
+  /** The origin Act as everyone reads it; null where it is not there (a thread spun from an Act an import left behind). */
+  readonly act: Act | null;
+  /** The plays on it, at most 20, oldest first, then their `card_end` Acts. */
+  readonly plays: readonly Act[];
+  /** Whether a 21st play exists. */
+  readonly more: boolean;
+  /** The moment of the play the origin is, or the spin it was pressed through; null for any other origin. */
+  readonly moment: PlayMoment | null;
+  /** The post a play is on: the pressed post of a spin at a post, else the cast-from post of a play on a character, else the post a play on a post is on; null for any other origin. */
+  readonly at: { readonly thread: Id; readonly seq: number } | null;
+  /** The origin's author, each play's caster and the character a play at character reach is on, with their profiles. */
+  readonly cast: readonly Character[];
+}
+
 /** A thread's page (thread_page, 0094): the page a page number or a seq lands on, with everything it draws. */
 export interface ThreadPage {
   /** `thread(id)` */
@@ -2271,6 +2292,8 @@ export interface ThreadPage {
   readonly following: boolean;
   readonly presence: Presence;
   readonly unread: number;
+  /** The origin of a spun thread, on the page that holds its first Act; null on any other page and on a thread that was not spun (`PageOrigin`). */
+  readonly origin: PageOrigin | null;
 }
 
 /** A character's profile page (profile_page, 0096). */

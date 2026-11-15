@@ -674,7 +674,7 @@ test('Autocorrect is offered with its options in the prompt and the schema, and 
   await run(d, m);
   const offered = m.chats.find((c) => (c.schema as any).properties.card)!;
   const schema = offered.schema as any;
-  assert.deepEqual(Object.keys(schema.properties.card.properties.config.properties).sort(), ['autocorrect', 'stick-around', 'whoops']);
+  assert.deepEqual(Object.keys(schema.properties.card.properties.config.properties).sort(), ['autocorrect', 'stick-around', 'this', 'whoops']);
   assert.match(offered.system, /card\.config\.autocorrect/);
   assert.deepEqual((offered.rules as any).fields.card.fields.config, { type: 'any', optional: true }, 'and the model layer\'s rule passes the options through for the card\'s own validator');
 });

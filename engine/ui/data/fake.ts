@@ -34,7 +34,7 @@ import { emojiBase, emojiOfKey, localKey, localReaction, singleEmoji } from '../
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
 import type { HandoffFacts } from '../../system/meeting.ts';
-import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, type SignedIn, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, ReadFailure, REPORT_LIMIT, REIGNS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, type SignedIn, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, REIGNS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
@@ -49,7 +49,7 @@ import type {
   SurfaceLogRow,
   AdminReport, AdminReview, ConductLogRow, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment, PageOrigin,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct,
@@ -4176,8 +4176,29 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .sort(([a], [b]) => acts.get(a)!.at - acts.get(b)!.at || acts.get(a)!.order - acts.get(b)!.order).slice(0, 100)
         .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }));
       const played = [...plays, ...above.map((p) => p.act), ...kept.map((p) => p.act)];
-      const wanted = played.filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
-      const ids = [...shownActs, ...under.map((u) => u.act), ...played].map((a) => a.id);
+      /* The origin of a spun thread rides the page that holds the thread's first Act (thread_page, 0372): what the box read in pieces, its Act and its first 20 plays with their ends, whether there are more, the
+         moment as the box chooses it (the spin's where a play on a character was pressed at a post, else the play's), the post a play is on, and the characters it names. */
+      const origin = ((): PageOrigin | null => {
+        const id = summary.originActId;
+        if (id === null || summary.firstAct === null || !shownActs.some((a) => a.id === summary.firstAct)) return null;
+        const act = core.act(id);
+        const read = core.cardsOn(id, 21);
+        const all = read.filter((a) => a.kind !== 'card_end');
+        const shown = all.slice(0, 20);
+        const place = summary.origin;
+        const play = place?.kind === 'play' ? place : null;
+        const pressed = play !== null && play.on?.kind === 'character' && play.at !== null;
+        const moment = play === null || (play.on?.kind !== 'post' && play.on?.kind !== 'character') ? null : pressed ? core.spinMoment(summary.firstAct) : core.playMoment(id);
+        const spot = play === null ? null : play.at ?? (play.on?.kind === 'post' ? play.on : play[PLAY_FROM]);
+        const named = [act?.character ?? null, ...shown.map((a) => a.character), ...(act !== null && (act.kind === 'card' || act.kind === 'set' || act.kind === 'spring') && act.payload.reach === 'character' ? [String(act.payload.character)] : [])];
+        return {
+          act, plays: [...shown, ...read.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId))], more: all.length > 20, moment,
+          at: spot === null ? null : { thread: spot.thread, seq: spot.seq }, cast: core.characters([...new Set(named.filter((c): c is Id => c !== null))].sort()),
+        };
+      })();
+      const originPlays = origin === null ? [] : origin.plays.filter((a) => a.kind !== 'card_end');
+      const wanted = [...played, ...originPlays].filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
+      const ids = [...shownActs, ...under.map((u) => u.act), ...played, ...(origin?.act ? [origin.act] : []), ...originPlays].map((a) => a.id);
       const visits = visitsOn(shownActs.filter((a) => a.kind === 'post' || a.kind === 'spin').concat(under.map((u) => u.act)).map((a) => a.id));
       /* A visit's Mod is named on the page (`who` in thread_page, 0108), though it has no post there. */
       const who = [...new Set([...shownActs, ...under.map((u) => u.act), ...played].flatMap((a) => (a.character === null ? [] : [a.character])).concat(visits.map((v) => v.mod)))].sort();
@@ -4192,7 +4213,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         states: core.effectStates(wanted), releases: core.myReleases(wanted), spent: plays.filter((a) => spentPlays().has(a.id)).map((a) => a.id),
         visits,
         tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
-        board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(),
+        board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(), origin,
       };
     },
     profilePage(id): ProfilePage | null {

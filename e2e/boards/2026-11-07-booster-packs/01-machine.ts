@@ -1,8 +1,7 @@
 /**
  * Booster packs board 01, the machine (docs/research/2026-11-07-booster-packs/01-machine.html, 1440 by 1080), as the story `Boards/Booster packs`,
  * `Machine` (engine/ui/vending/Packs.board.stories.tsx) draws it with the Booster selected by a press, as a player does: the wallet and the hand, the
- * machine's slots in the admin's order (the Booster in A1, the card slot in A2 pulled by the Boss, E1 marked up, E2 sealed, the hidden Main Event, Graffiti, Line Cutter, Feelin' Glam and Whodunnit?
- * drawing no slot), the selected pack's price, what is in it and Buy beside the slots, and the column to the right: the pack's odds, and the Boss's moves in
+ * machine's slots in the admin's order (the Booster in A1, the machine's ten on-sale slots, the Boss's pull and mark-up on two of them, every uncommon and rarer card hidden and drawing no slot), the selected pack's price, what is in it and Buy beside the slots, and the column to the right: the pack's odds, and the Boss's moves in
  * force in plain words. The plan is docs/plans/2026-11-04-booster-packs-plan.md, Task 5.
  *
  * Departures, by decision, each named where it is set:
@@ -15,16 +14,11 @@
  *    (7 of 12 so far)". So only the bold clause that opens each is found by its words, and the rest of each is held by its place.
  *  - A sold out slot's chip says "SOLD OUT" alone: with the code beside it ("A2 · SOLD OUT"), the chip and the info control would not fit one shelf at the
  *    glass's type size, and a wrapped shelf makes every row of the machine taller. The slot's own name carries the code's place.
- *  - The kind word is the instance's (Move, Reversal, Gimmick) where the board draws Cast, Set and Use. Hall Pass (face-down moves plan) stocks the slot after Card Collector, so the slots
- *    after it stand one place later than the board draws them. You Were Saying? (its own plan) takes C1, after Autocorrect, so every slot after it stands one place later again.
- *  - Card types added four cards after the board was drawn (a record, not redrawn): Publicity Tour takes Bluff's slot (deleted), which You Were Saying? has moved to C2, and Heat Magnet,
- *    Class Clown and Good Vibes take the slots after Force Field's. So the board's C1 (Bluff) is the build's You Were Saying?, its C2 Publicity Tour, D1 Feelin' Fab, D2 Card Collector, E1
- *    Hall Pass and E2 Force Field, each held by its place, with the board's words (`name`) and the build's (`buildName`). Glitter Bomb, the one marked up (the board's mark on E1), is the
- *    build's G2, two rows under the board's empty E2 in the same column, which it is compared to, so the build is held to the board's place plus (0, 253). The wrapped grid is 253px
- *    taller (seven rows of slots where the board draws five), which nothing else on the board stands under. Below the Fold then took the slot after Glitter Bomb (H1), so no slot above it moves; the grid is one row taller again (eight rows), which nothing stands under either.
- *    Mooch, Toll, 4D Chess and Jimmy Wails, then Hype-Up and Last Word (card notes Part 4), took the slots after Below the Fold, so no slot above them moves; the grid gains rows below the board's slots, which nothing stands under, and the hidden Main Event, Off Day and Sugar Coat draw no slot.
- *    Overreaction and Blind Study (card notes Part 3) took the slots after Laugh Track's, so no slot above them moves and the grid gains rows below the board's slots, which nothing stands under; the hidden Whodunnit? draws no slot.
- *    Happy Heart and Take the Fall (card notes Part 5) took the slots after Blind Study's in the same way, and their three hidden siblings draw none.
+ *  - The kind word is the instance's (Move, Reversal, Gimmick) where the board draws Cast, Set and Use. The machine's slots are the instance's rule (instances/divided-world/machine.ts), not the
+ *    board's drawing: the Booster, then the common cards on sale by play and name (Autocorrect, Below the Fold, Feelin' Fab, Hype-Up, Overreaction, Stick Around, THIS, Whoops!, You Were Saying?),
+ *    and every uncommon, rare and legendary card hidden, which draws no slot. That is ten slots in the board's ten places, so each slot is held by its place with no shift, and what stands in a place is the
+ *    build's (`buildName`) where the board draws other cards: the board's A2 (Whoops!, pulled) is the build's Autocorrect, and the build's Whoops! stands in E1 (pulled, as the story seeds it), Stick Around, the one
+ *    marked up (the board's mark was on E1), in D1, and You Were Saying? in the board's sealed E2. The moves' words are the build's (Whoops! pulled, Stick Around marked up).
  *  - A slot's price is "orbs" and the board's "orb" (the glass's names say "1.00 orb" and "3.00 orbs", as board 07 holds them).
  *  - The wallet's name says "buying Booster", where the board draws "buying the Booster": a card's reads "buying Whoops!" and a pack is named as one.
  *  - The machine's sign is a marquee the instance picks at random, and the machine's drawing is the instance's art (`data-kb-art`): not compared.
@@ -53,15 +47,15 @@ const manifest: BoardManifest = {
 
     /* The slots: each by its button, in the admin's order. */
     { id: 'slot-a1', role: 'button', name: 'Buy Booster, 3.00 orb, a pack of 5 postcards, selected', buildName: `${PACK}, selected`, type: false, box: 'position' },
-    { id: 'slot-a2', role: 'button', name: 'Whoops!, sold out: pulled by the Boss until Nov 9', type: false, box: 'position' },
-    { id: 'slot-b1', role: 'button', name: 'Buy Stick Around, 1.00 orb, common Cast', buildName: 'Buy Stick Around, 1.00 orb, common Move', type: false, box: 'position' },
-    { id: 'slot-b2', role: 'button', name: 'Buy Autocorrect, 1.00 orb, common Cast', buildName: 'Buy Autocorrect, 1.00 orb, common Move', type: false, box: 'position' },
-    { id: 'slot-c1', role: 'button', name: 'Buy Bluff, 0.25 orb, common Set', buildName: 'Buy You Were Saying?, 1.00 orb, common Move', type: false, box: 'position' },
-    { id: 'slot-c2', role: 'button', name: 'Buy Feelin\' Fab, 0.20 orb, common Cast', buildName: 'Buy Publicity Tour, 1.50 orbs, uncommon Gimmick', type: false, box: 'position' },
-    { id: 'slot-d1', role: 'button', name: 'Buy Trap Card, 1.50 orb, uncommon Set', buildName: 'Buy Feelin\' Fab, 0.20 orbs, common Move', type: false, box: 'position' },
-    { id: 'slot-d2', role: 'button', name: 'Buy Force Field, 1.50 orb, uncommon Use', buildName: 'Buy Card Collector, 1.50 orbs, uncommon Reversal', type: false, box: 'position' },
-    { id: 'slot-e1', role: 'button', name: 'Buy Glitter Bomb, 2.25 orb, marked up from 1.50, uncommon Cast', buildName: 'Buy Hall Pass, 1.50 orbs, uncommon Reversal', type: false, box: 'position' },
-    { id: 'slot-e2', role: 'img', name: 'Empty slot E2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Glitter Bomb, 2.25 orbs, marked up from 1.50, uncommon Move', type: false, box: 'position', buildShift: { x: 0, y: 253 } },
+    { id: 'slot-a2', role: 'button', name: 'Whoops!, sold out: pulled by the Boss until Nov 9', buildName: 'Buy Autocorrect, 1.00 orb, common Move', type: false, box: 'position' },
+    { id: 'slot-b1', role: 'button', name: 'Buy Stick Around, 1.00 orb, common Cast', buildName: 'Buy Below the Fold, 1.00 orb, common Move', type: false, box: 'position' },
+    { id: 'slot-b2', role: 'button', name: 'Buy Autocorrect, 1.00 orb, common Cast', buildName: "Buy Feelin' Fab, 0.20 orbs, common Move", type: false, box: 'position' },
+    { id: 'slot-c1', role: 'button', name: 'Buy Bluff, 0.25 orb, common Set', buildName: 'Buy Hype-Up, 1.00 orb, common Move', type: false, box: 'position' },
+    { id: 'slot-c2', role: 'button', name: "Buy Feelin' Fab, 0.20 orb, common Cast", buildName: 'Buy Overreaction, 1.00 orb, common Move', type: false, box: 'position' },
+    { id: 'slot-d1', role: 'button', name: 'Buy Trap Card, 1.50 orb, uncommon Set', buildName: 'Buy Stick Around, 1.50 orbs, marked up from 1.00, common Move', type: false, box: 'position' },
+    { id: 'slot-d2', role: 'button', name: 'Buy Force Field, 1.50 orb, uncommon Use', buildName: 'Buy THIS, 0.20 orbs, common Move', type: false, box: 'position' },
+    { id: 'slot-e1', role: 'button', name: 'Buy Glitter Bomb, 2.25 orb, marked up from 1.50, uncommon Cast', buildName: 'Whoops!, sold out: pulled by the Boss until Nov 9', type: false, box: 'position' },
+    { id: 'slot-e2', role: 'img', name: 'Empty slot E2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy You Were Saying?, 1.00 orb, common Move', type: false, box: 'position' },
 
     /* Beside the slots: the pick, what is in the pack, and Buy. */
     { id: 'selected', role: 'region', name: 'Selected', buildRole: 'status', buildName: 'Selected: A1, Booster, 3.00', type: false, box: 'across' },
@@ -73,7 +67,7 @@ const manifest: BoardManifest = {
     { id: 'odds', role: 'table', name: 'Booster odds', box: 'across', type: false },
     { id: 'moves-heading', role: 'heading', name: 'The Boss\'s moves', box: 'across', type: false },
     { id: 'move-pull', role: 'text', name: 'Whoops! is pulled', box: 'across' },
-    { id: 'move-markup', role: 'text', name: 'Glitter Bomb is marked up', box: 'across' },
+    { id: 'move-markup', role: 'text', name: 'Glitter Bomb is marked up', buildName: 'Stick Around is marked up', box: 'across' },
   ],
 };
 
@@ -105,7 +99,7 @@ export default manifest;
  *    (e2e/boards/2026-11-07-booster-packs/05-admin.ts), each part from a part above it, with its departures: the board's phone has no lead under the title (the
  *    1440 board's lead does not appear on it), so the lead is not compared; the board draws "seven more slots, then Save changes" and no Save, so only the first three
  *    slots (Booster, Whoops!, Stick Around) are held. The strip's buttons are the glass's phone control (The machine 12px narrower than the board's, and standing 103px further right of the board's for the Reports button the reports plan, Task 7, put before it), the
- *    first row stands 16px lower under the strip, and the third 37px lower under the second (the Whoops! row's tag line is taller in the build), and the move
+ *    first row stands 16px lower under the strip, and the third 39px higher under the second (the board's Whoops! row draws a tag line that the build's Autocorrect row does not), and the move
  *    arrows and the price stand 18, 9 and 17px to the left of the board's, 10px lower, for the glass's control measure. Move down is 15px nearer the board's
  *    than Move up because a glass button is at least as wide as the spinner it holds in its label's cell (Button.tsx, parts.css), so the arrow before it is wider. The title stands 17px lower under the bar
  *    and the strip 178px under the title, for the lead the build draws between them. A slot's name in the build reads "Move up" as "<slot>: move up", as board 05 names it. The glass's controls are
@@ -176,12 +170,12 @@ export const phone: BoardManifest = {
         at('title', 'heading', 'THE MACHINE', 'menu', { y: 17 }, { buildName: 'The machine', originEdge: 'bottom' }),
         at('moves', 'link', 'MOVES', 'title', { y: 178 }, { buildName: 'Moves', originEdge: 'bottom' }),
         at('machine', 'link', 'THE MACHINE', 'title', { x: 91, y: 178 }, { buildName: 'The machine', originEdge: 'bottom' }),
-        ...([['a1', 'A1', 'Booster', 'moves'], ['a2', 'A2', 'Whoops!', 'a1-code'], ['b1', 'B1', 'Stick Around', 'a2-code']] as const).flatMap(([k, code, card, from], i) => [
-          at(`${k}-code`, 'text', code, from, k === 'a1' ? { y: 16 + 42.3 } : k === 'b1' ? { y: 37 } : {}, { originEdge: 'bottom' }),
-          at(`${k}-up`, 'button', 'Move up', `${k}-code`, { x: -18, y: 10 }, { buildName: `${card}: move up`, nth: i, buildNth: 0 }),
-          at(`${k}-down`, 'button', 'Move down', `${k}-code`, { x: -9, y: 10 }, { buildName: `${card}: move down`, nth: i, buildNth: 0 }),
-          at(`${k}-availability`, 'combobox', `${card}: availability`, `${k}-code`),
-          at(`${k}-price`, 'textbox', `${card}: price`, `${k}-code`, { x: -17 }),
+        ...([['a1', 'A1', 'Booster', 'moves', 'Booster'], ['a2', 'A2', 'Whoops!', 'a1-code', 'Autocorrect'], ['b1', 'B1', 'Stick Around', 'a2-code', 'Below the Fold']] as const).flatMap(([k, code, card, from, built], i) => [
+          at(`${k}-code`, 'text', code, from, k === 'a1' ? { y: 16 + 42.3 } : k === 'b1' ? { y: -39 } : {}, { originEdge: 'bottom' }),
+          at(`${k}-up`, 'button', 'Move up', `${k}-code`, { x: -18, y: 10 }, { buildName: `${built}: move up`, nth: i, buildNth: 0 }),
+          at(`${k}-down`, 'button', 'Move down', `${k}-code`, { x: -9, y: 10 }, { buildName: `${built}: move down`, nth: i, buildNth: 0 }),
+          at(`${k}-availability`, 'combobox', `${card}: availability`, `${k}-code`, {}, { buildName: `${built}: availability` }),
+          at(`${k}-price`, 'textbox', `${card}: price`, `${k}-code`, { x: -17 }, { buildName: `${built}: price` }),
         ]),
       ],
     },

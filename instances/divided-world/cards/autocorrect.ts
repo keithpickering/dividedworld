@@ -9,7 +9,7 @@
  * (autocorrect/Effect.tsx). Both find the phrase with one matcher (autocorrect/match.ts) over the post's visible text, so the
  * strips the screens lay are the occurrences the server priced.
  *
- * - **The phrase** is 4 to 100 characters with at least 4 letters or digits, so tiny words cannot be carpet-bombed cheaply.
+ * - **The phrase** is 4 to 100 characters with at least 4 letters or digits (phrase-bound.ts), so tiny words cannot be carpet-bombed cheaply.
  * - **The replacement** is one line of plain text, 1 to 100 characters, and never the phrase itself (ignoring case). BBCode in
  *   it is kept as the text it is: the strip draws it as a string and never parses it.
  * - **It lands** only where its phrase is in the post's own words (a quote, code or a link is not; a cast whose phrase is not there
@@ -25,8 +25,9 @@
  */
 import { economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import { occurrences, sameWords } from './autocorrect/match.ts';
+import { LINE_BREAK, boundedPhrase, characters } from './phrase-bound.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
-export const PHRASE = { least: 4, most: 100 } as const;
 export const REPLACEMENT = { most: 100 } as const;
 /**
  * The most occurrences a saved peel can name: a post at the instance's longest (20,000 characters) holds at most 4,000 of the
@@ -40,10 +41,6 @@ export const STUCK = { most: 2000 } as const;
 export type Stretch = readonly [from: number, to: number, edges: number];
 
 export type AutocorrectConfig = { readonly phrase: string; readonly replacement: string };
-
-const characters = (s: string) => [...s].length;
-const WORDISH = /[\p{L}\p{N}]/gu;
-const LINE_BREAK = /[\n\r\v\f\u0085\u2028\u2029]/u;
 
 export const autocorrect: CardRules<AutocorrectConfig> = {
   key: 'autocorrect',
@@ -83,10 +80,10 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     const { phrase: p, replacement: r } = typeof config === 'object' && config !== null ? (config as { phrase?: unknown; replacement?: unknown }) : {};
     if (typeof p !== 'string') return refuse('the phrase is the words to cover');
     if (typeof r !== 'string') return refuse('the replacement is the words to cover them with');
-    const [phrase, replacement] = [p.trim(), r.trim()];
-    if (characters(phrase) > PHRASE.most) return refuse(`the phrase is at most ${PHRASE.most} characters`);
-    if ((phrase.match(WORDISH) ?? []).length < PHRASE.least) return refuse(`the phrase has at least ${PHRASE.least} letters or digits`);
-    if (LINE_BREAK.test(phrase)) return refuse('the phrase is one line');
+    const bounded = boundedPhrase(p);
+    if (!bounded.ok) return refuse(bounded.why);
+    const { phrase } = bounded;
+    const replacement = r.trim();
     if (!replacement) return refuse('the replacement is some words, not nothing');
     if (characters(replacement) > REPLACEMENT.most) return refuse(`the replacement is at most ${REPLACEMENT.most} characters`);
     if (LINE_BREAK.test(replacement)) return refuse('the replacement is one line');
@@ -134,3 +131,6 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     return ok({ peeled: kept, ...(clean === undefined ? {} : { clean }), ...(keptStuck ? { stuck: keptStuck } : {}) });
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 100;

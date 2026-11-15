@@ -93,6 +93,223 @@
   opacity: 0.4;
 }
 
+/*
+ * The stamp (Reactions.tsx): a reaction this screen just left lands on its tile. One beat over --kb-stamp-t, the impact at 32% of it:
+ * the emoji leaps and swells, then slams back with a squash; the tile thuds under it; the seal (a ring in the kind's class color, at
+ * the own ring's place) drops from twice the tile's size onto it and fades into the own ring beneath; the wave rolls out from the
+ * impact, the shards burst, and the count rolls up from below. The class color is the instance's for the kind's quadrant
+ * (--kb-reaction-hue, set on the tile), else the glass's gold for the ready and earned. A kind chosen in the picker waits for the
+ * picker's exit (`data-kb-landed="after"`). Scale and translate are written as their own properties, so the tile keeps its skew.
+ */
+.kb-reaction {
+  --kb-stamp-t: 720ms;
+  --kb-stamp-delay: 0ms;
+  --kb-stamp-hue: var(--kb-reaction-hue, var(--kb-glass-ready));
+}
+
+.kb-reaction[data-kb-landed='after'] {
+  --kb-stamp-delay: var(--kb-motion-smooth-exit, 300ms);
+}
+
+:root[data-kb-motion-feel='snappy'] .kb-reaction {
+  --kb-stamp-t: 480ms;
+}
+
+:root[data-kb-motion-feel='snappy'] .kb-reaction[data-kb-landed='after'] {
+  --kb-stamp-delay: var(--kb-motion-snappy-exit, 140ms);
+}
+
+.kb-reaction .kb-reaction-emoji,
+.kb-reaction .kb-reaction-count,
+.kb-reaction .kb-reaction-count > span {
+  display: inline-block;
+}
+
+/*
+ * The count's window: the new number rises into it from below, as an odometer's does. Its digits are all one width, so a tile is as
+ * wide after a reaction as before it and the row beside it stays still; only a count that gains a digit (9 to 10) widens it.
+ */
+.kb-reaction .kb-reaction-count {
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  vertical-align: bottom;
+  padding-block: 0.1em;
+  margin-block: -0.1em;
+}
+
+/* The press: the tile gives at once, before any answer. */
+button.kb-reaction {
+  transition: scale 90ms cubic-bezier(0.3, 0, 0.4, 1);
+}
+
+button.kb-reaction:active:not([aria-disabled='true']) {
+  scale: 0.92;
+}
+
+/* A press waiting on its answer: the emoji bobs, so a slow answer reads as on its way (it starts late, so a quick one never shows it). */
+.kb-reaction[data-kb-sending] .kb-reaction-emoji {
+  animation: kb-stamp-wait 520ms 140ms cubic-bezier(0.45, 0, 0.55, 1) infinite alternate both;
+}
+
+@keyframes kb-stamp-wait {
+  from { translate: 0 0; scale: 1; }
+  to { translate: 0 -0.14em; scale: 1.12; }
+}
+
+.kb-reaction[data-kb-landed] {
+  position: relative;
+  z-index: 1;
+  animation: kb-stamp-thud var(--kb-stamp-t) var(--kb-stamp-delay) both;
+}
+
+@keyframes kb-stamp-thud {
+  0% { scale: 1; animation-timing-function: cubic-bezier(0.2, 0, 0.4, 1); }
+  24% { scale: 1.05; animation-timing-function: cubic-bezier(0.6, 0, 1, 1); }
+  32% { scale: 0.88; animation-timing-function: cubic-bezier(0.2, 0.8, 0.4, 1); }
+  48% { scale: 1.06; animation-timing-function: ease-in-out; }
+  66% { scale: 0.98; animation-timing-function: ease-out; }
+  100% { scale: 1; }
+}
+
+.kb-reaction[data-kb-landed] .kb-reaction-emoji {
+  animation: kb-stamp-leap var(--kb-stamp-t) var(--kb-stamp-delay) both;
+}
+
+/* The emoji stays lit through the beat, then settles to what its tile shows at rest (an own kind's dimmed face). */
+@keyframes kb-stamp-leap {
+  0% { translate: 0 0; scale: 1; opacity: 1; animation-timing-function: cubic-bezier(0.15, 0.6, 0.3, 1); }
+  24% { translate: 0 -0.55em; scale: 1.6; animation-timing-function: cubic-bezier(0.7, 0, 1, 0.6); }
+  32% { translate: 0 0.04em; scale: 1.35 0.7; animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1); }
+  46% { translate: 0 -0.08em; scale: 0.88 1.14; animation-timing-function: ease-in-out; }
+  62% { translate: 0 0; scale: 1.06 0.95; animation-timing-function: ease-out; }
+  80% { scale: 1; opacity: 1; }
+  100% { translate: 0 0; scale: 1; }
+}
+
+.kb-reaction[data-kb-landed] .kb-reaction-count > span {
+  animation: kb-stamp-count var(--kb-stamp-t) var(--kb-stamp-delay) both;
+}
+
+@keyframes kb-stamp-count {
+  0%, 30% { translate: 0 110%; }
+  48% { translate: 0 -12%; animation-timing-function: ease-out; }
+  60%, 100% { translate: 0 0; }
+}
+
+.kb-reaction-stamp {
+  position: absolute;
+  inset: -2px;
+  pointer-events: none;
+}
+
+.kb-reaction-seal,
+.kb-reaction-wave {
+  position: absolute;
+  inset: 0;
+}
+
+.kb-reaction-seal {
+  box-shadow: 0 0 0 2px var(--kb-glass-ground), 0 0 0 4px var(--kb-stamp-hue);
+  background: color-mix(in srgb, var(--kb-stamp-hue) 40%, transparent);
+  animation: kb-stamp-seal var(--kb-stamp-t) var(--kb-stamp-delay) both;
+}
+
+@keyframes kb-stamp-seal {
+  0% { scale: 2.2; opacity: 0; background-color: transparent; animation-timing-function: cubic-bezier(0.55, 0, 0.9, 0.5); }
+  32% { scale: 1; opacity: 1; animation-timing-function: ease-out; }
+  50% { background-color: transparent; }
+  70% { opacity: 1; animation-timing-function: ease-in; }
+  100% { scale: 1; opacity: 0; background-color: transparent; }
+}
+
+.kb-reaction-wave {
+  outline: 2px solid var(--kb-stamp-hue);
+  outline-offset: 2px;
+  opacity: 0;
+  animation: kb-stamp-wave var(--kb-stamp-t) var(--kb-stamp-delay) both;
+}
+
+@keyframes kb-stamp-wave {
+  0%, 31% { outline-offset: 2px; opacity: 0; }
+  32% { outline-offset: 3px; opacity: 0.9; animation-timing-function: cubic-bezier(0.1, 0.7, 0.3, 1); }
+  100% { outline-offset: 1.1em; opacity: 0; outline-width: 1px; }
+}
+
+/* A shard: a sliver on the tile's skew, laid by its index around the impact, the class color and the gold by turns. */
+.kb-reaction-shard {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.16em;
+  height: 0.62em;
+  margin: -0.31em 0 0 -0.08em;
+  background: var(--kb-stamp-hue);
+  rotate: calc(var(--kb-shard) * 45deg + 22.5deg);
+  opacity: 0;
+  --kb-shard-reach: 2.3em;
+  animation: kb-stamp-shard var(--kb-stamp-t) var(--kb-stamp-delay) both;
+}
+
+.kb-reaction-shard:nth-child(odd) {
+  background: var(--kb-glass-ready);
+  --kb-shard-reach: 1.7em;
+}
+
+@keyframes kb-stamp-shard {
+  0%, 31% { transform: translateY(-0.6em) scaleY(0.3); opacity: 0; }
+  33% { transform: translateY(-0.95em) scaleY(1.35); opacity: 1; animation-timing-function: cubic-bezier(0.1, 0.75, 0.25, 1); }
+  100% { transform: translateY(calc(var(--kb-shard-reach) * -1)) scaleY(0.15); opacity: 0; }
+}
+
+/* A kind pressed in the picker gives at once, and stays pressed in while its answer comes. */
+.kb-picker-kind {
+  transition: scale 90ms cubic-bezier(0.3, 0, 0.4, 1), background-color 120ms ease-out, border-color 120ms ease-out;
+}
+
+.kb-picker-kind:active:not(:disabled),
+.kb-picker-kind[data-kb-choosing] {
+  scale: 0.9;
+}
+
+.kb-picker-kind[data-kb-choosing] {
+  border-color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-glass-text-hi) 16%, transparent);
+}
+
+.kb-picker-kind[data-kb-choosing] > span {
+  display: inline-block;
+  animation: kb-stamp-wait 520ms 140ms cubic-bezier(0.45, 0, 0.55, 1) infinite alternate both;
+}
+
+/* Off (the device's reduced motion, unless the player chose full motion, or the player's own Off): nothing moves; the ring and count are simply there. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) :is(button.kb-reaction, .kb-reaction[data-kb-landed], .kb-reaction .kb-reaction-emoji, .kb-reaction .kb-reaction-count > span, .kb-reaction-stamp *, .kb-picker-kind, .kb-picker-kind > span) {
+    animation: none;
+    transition: none;
+    scale: none;
+  }
+
+  :root:not([data-kb-motion='full']) .kb-reaction-stamp {
+    display: none;
+  }
+}
+
+:root[data-kb-motion='reduce'] :is(button.kb-reaction, .kb-reaction[data-kb-landed], .kb-reaction .kb-reaction-emoji, .kb-reaction .kb-reaction-count > span, .kb-reaction-stamp *, .kb-picker-kind, .kb-picker-kind > span) {
+  animation: none;
+  transition: none;
+  scale: none;
+}
+
+:root[data-kb-motion='reduce'] .kb-reaction-stamp {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .kb-reaction-stamp {
+    display: none;
+  }
+}
+
 /* React is sweet, as the glass's action tiles are. */
 .kb-react-button {
   --kb-meta-line: var(--kb-glass-sweet);

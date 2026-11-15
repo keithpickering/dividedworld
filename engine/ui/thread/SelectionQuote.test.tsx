@@ -154,6 +154,27 @@ describe('chrome and layers are not quoted (data-kb-quotable)', () => {
   });
 });
 
+describe('a gap that holds a hidden line (a note drawn under a phrase) is not the words of the post', () => {
+  /* The shape of an instance's gap: a plain inline element with the marks, its line of text inside. */
+  const GAP = '<span data-kb-quotable="hidden">the note line</span>';
+
+  test('a selection across it quotes the words of the post without the hidden line', () => {
+    const [one] = page(`before the phrase${GAP} and after`);
+    expect(readRange(range(one!, 0, one!, one!.childNodes.length))?.text).toBe('before the phrase and after');
+    const gapText = one!.querySelector('[data-kb-quotable="hidden"]')!.firstChild!;
+    expect(readRange(range(one!.firstChild!, 3, one!.lastChild!, 4))?.text).toBe('ore the phrase and');
+    expect(gapText.textContent).toBe('the note line');
+  });
+
+  test('a selection that starts or ends inside it is no selection of the post', () => {
+    const [one] = page(`before the phrase${GAP} and after`);
+    const gapText = one!.querySelector('[data-kb-quotable="hidden"]')!.firstChild!;
+    expect(readRange(range(gapText, 2, one!.lastChild!, 4))).toBeNull();
+    expect(readRange(range(one!.firstChild!, 3, gapText, 5))).toBeNull();
+    expect(readRange(range(gapText, 0, gapText, 3))).toBeNull();
+  });
+});
+
 describe('quoteText of a selection', () => {
   const read = (text: string) => {
     const nodes = parse(quoteText('', '11111111-1111-4111-8111-111111111111', text, true));

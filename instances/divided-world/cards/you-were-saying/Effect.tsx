@@ -3,6 +3,12 @@
  * words as terminal output bleeding in after the author's, in Courier on a green ground (tail.css), typed in with a block cursor each time
  * the post comes into view, and erased by a hold.
  *
+ * The post keeps its height while the tail types or erases. The whole text is laid out from the first frame: the characters showing, the
+ * cursor, then the rest hidden in its place (`data-kb-rest`), ending in the place the cursor will stand on (`data-kb-cursor-place`). So the lines
+ * break where they will when it has typed, no word hops to the next line as it grows, and nothing under the post moves. The cursor in the
+ * middle of the run is drawn out of the flow from an empty inline (tail.css), which takes no room and opens no place to break a word. The
+ * post's height changes only when words arrive, and when a tail is erased entirely and goes.
+ *
  * One block for every play. The engine gives a card's Effect all of its plays on the post at once (`EffectProps.plays`, and `written` for
  * each), so this is one instance: the block is one run of terminal text after the post's words (`data-kb-tail`, right after `children`), each
  * play's text a span of its own in play order, one cursor at the end, one focusable control. A play whose first generation failed was
@@ -19,8 +25,8 @@
  * The hold is the same for every way to give it ("an accessible path costs what the obstacle costs"): a pointer held on the block (mouse, pen
  * or finger) or Backspace held while it has focus, through one set of holders, so a pointer and a key together are one hold. Auto-repeat of
  * the key is ignored: the clock sets the speed. On touch the page still scrolls from the tail (`touch-action`, tail.css), and a scroll the
- * browser takes over ends the hold (pointer cancel). Reduced motion changes how it looks and never what it costs: the words show at once, no
- * tear, the cursor holds still, the hold erases at the same rate and the wait to come back is the same, but it comes back at once.
+ * browser takes over ends the hold (pointer cancel). Reduced motion changes how it looks and never what it costs: the words show at once,
+ * the cursor holds still, the hold erases at the same rate and the wait to come back is the same, but it comes back at once.
  *
  * Screen readers. The block is a button named "Continued by You Were Saying?: <the text>. Hold to erase. It comes back if you stop.", from the
  * whole text and never from what has typed so far. A polite status after it says the start of an erase and its end, and nothing between;
@@ -252,8 +258,11 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
     left -= t.chars.length;
     return <span key={t.play.id} data-play={t.play.id}>{mine}</span>;
   });
-  const cursor = <span className="dw-ywst-cursor" data-kb-cursor aria-hidden="true" {...(still || reduced ? { 'data-kb-still': '' } : {})} />;
-  const typing = !still && !reduced && l.phase === 'typing';
+  /* The words not showing (not yet typed, or erased) keep their place: hidden after the cursor, with the place the cursor ends on. */
+  const hidden = still ? '' : texts.flatMap((t) => t.chars).slice(Math.max(0, l.shown)).join('');
+  const mid = hidden !== '';
+  const cursor = <span key="cursor" className="dw-ywst-cursor" data-kb-cursor aria-hidden="true" {...(still || reduced ? { 'data-kb-still': '' } : {})} {...(mid ? { 'data-kb-mid': '' } : {})} />;
+  const place = <span key="place" className="dw-ywst-place" data-kb-cursor-place aria-hidden="true" />;
 
   const onPointerDown = (e: PointerEvent<HTMLSpanElement>) => {
     if (e.button > 0) return;
@@ -288,8 +297,9 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
     <>
       {children}
       {showing && (
-        <span ref={box} className="dw-ywst" data-kb-tail="" {...(typing ? { 'data-kb-typing': '' } : {})} {...handlers}>
-          {spans}{cursor}
+        <span ref={box} className="dw-ywst" data-kb-tail="" {...handlers}>
+          {spans}
+          {mid ? [cursor, <span key="rest" className="dw-ywst-rest" data-kb-rest aria-hidden="true">{hidden}{place}</span>] : [place, cursor]}
         </span>
       )}
       {!still && <span ref={note} className={unsaved ? 'dw-ywst-note' : 'kb-visually-hidden'} role="status" aria-live="polite" tabIndex={-1} data-kb-report>{said}</span>}

@@ -1,20 +1,26 @@
 /**
  * The card types' screens (docs/plans/2026-11-11-card-types-design.md, sections 5 and 6), on the boards fixture's player, whose HUD is on Pipewrench:
  * `Ghost` (a use card armed, its ghost on the head of a thread Pipewrench started), `TakeBack` (the Lens of Pipewrench's own back, with its Take back
- * control) and `Surcharge` (a Move's play form on that thread, where a use card adds to the price). Each is found by its rules, naming no card.
+ * control) and `Surcharge` (a Move's play form on that thread, where a use card adds to the price). Each card is named by its key, so a card added to
+ * the instance later changes no board here.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useRef, useState } from 'react';
-import { playOf } from '../../rules/cards.ts';
 import type { Fake } from '../data/fake.ts';
 import { useKayfa } from '../context.tsx';
 import { Frame } from '../frame/Frame.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { usePlayer } from '../player.tsx';
+import { cardOf } from '../story.tsx';
 import { useLocation } from '../router.tsx';
 import { usePlay } from './play.tsx';
 
 type Scene = 'ghost' | 'takeback' | 'surcharge';
+
+/** The cards the scenes use: a Set card with a cast trap, a use card that adds to a price, and a salty Cast. */
+const SET = '4d-chess';
+const PRICE = 'good-vibes';
+const SALTY_CAST = 'below-the-fold';
 
 /** Seeds the scene, and answers the thread to show. */
 function useSeeded(scene: Scene, thread: string | null): string | null {
@@ -34,15 +40,15 @@ function useSeeded(scene: Scene, thread: string | null): string | null {
       if (scene === 'takeback') {
         const acts = await api.acts(thread, 43, 43);
         const own = acts.find((a) => a.seq === 43);
-        const back = instance.cards.find((c) => playOf(c) === 'set' && c.trap?.trigger.on === 'cast');
-        if (!own || !back) throw new Error('no #43 or no Set card');
+        const back = cardOf(instance.cards, SET);
+        if (!own) throw new Error('no #43');
         fake.seed.set(pipe.id, own.id, back.key, { at: Date.now() });
         if (live) setShown(thread);
         return;
       }
       const mine = fake.seed.thread('general', pipe.id, 'A thread Pipewrench started', 'The opening post.').thread;
-      const price = instance.cards.find((c) => c.gimmick?.kind === 'price');
-      if (scene === 'surcharge' && price) fake.seed.reach(pipe.id, 'thread', mine, price.key, { ends: Date.now() + 86_400_000 });
+      const price = cardOf(instance.cards, PRICE);
+      if (scene === 'surcharge') fake.seed.reach(pipe.id, 'thread', mine, price.key, { ends: Date.now() + 86_400_000 });
       if (live) setShown(mine);
     })().catch((e: unknown) => { console.error('the story could not be seeded', String(e)); });
     return () => { live = false; };
@@ -58,8 +64,8 @@ function Act({ scene }: { readonly scene: Scene }) {
   const account = usePlayer().session.account;
   useEffect(() => {
     if (!play || account === null) return;
-    const key = scene === 'ghost' ? instance.cards.find((c) => c.gimmick?.kind === 'price')?.key
-      : scene === 'surcharge' ? instance.cards.find((c) => playOf(c) === 'cast' && c.alignment === 'salty')?.key : undefined;
+    const key = scene === 'ghost' ? cardOf(instance.cards, PRICE).key
+      : scene === 'surcharge' ? cardOf(instance.cards, SALTY_CAST).key : undefined;
     if (key) play.arm(key);
     /* The a11y suite renders every story in jsdom, which has no scrollIntoView, so the scroll is optional; both timers end with the story. */
     let fold: ReturnType<typeof setTimeout> | undefined;

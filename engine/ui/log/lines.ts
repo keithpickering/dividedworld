@@ -19,7 +19,7 @@
  * character's lines together, and the summary says so beside one character's reasons.
  */
 import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pronouns.ts';
-import { playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
+import { matchWords, playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
 import type { Act, CardEvent, ConductLogRow, LogCosmetic, MyBan, SurfaceLogRow, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
@@ -194,8 +194,9 @@ export function placeOf(play: Act, data: Pick<LogData, 'names' | 'mine'> & Parti
 
 /**
  * What a card set face down waits for, in the words after "It waits": "to spring on a quote", "for a Whoops!", "for a Mod Bot's visit". A Move waits for a
- * quote (and the phrase it needs, where it was set with one); a set card waits for its trigger, and a Card Collector for the card it names. Null for a card with no trap,
- * which waits for nothing, and for a back set under a trigger that is gone (a reply, a reaction), which keeps the words it had.
+ * quote (and the phrase it needs, where it was set with one); a set card waits for its trigger: the card its row names (`catches`), or the cards its
+ * match covers; a row from before the catch was recorded, on a card with no match, says "the card it names". Null for a card with no trap, which waits
+ * for nothing, and for a back set under a trigger that is gone (a reply, a reaction), which keeps the words it had.
  */
 export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'phrase' | 'passage' | 'who' | 'whoExcept'>, words: Pick<Words, 'instance'>, nameOf: (id: Id) => string = () => 'someone'): string | null {
   if (e.springs === false) return null;
@@ -206,7 +207,8 @@ export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'ph
   if (on === 'visit') return 'for a Mod Bot\'s visit';
   if (on === 'cast') {
     const named = e.catches ? words.instance.cards.find((c) => c.key === e.catches)?.name : undefined;
-    return named ? `for ${withArticle(named)}` : 'for the card it names';
+    if (named) return `for ${withArticle(named)}`;
+    return !e.catches && rules.trap?.match ? `for ${matchWords(rules.trap.match, rules.rarity)}` : 'for the card it names';
   }
   return null;
 }

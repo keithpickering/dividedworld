@@ -3402,6 +3402,71 @@ describe('a screen in one call is what the separate calls answer', () => {
     expect(await fake.threadPage('00000000-0000-4000-8000-000000000000', { page: 1 }, 3, [])).toBeNull();
   });
 
+  test('threadPage of a spun thread carries the origin the box used to read in pieces: page 1 only, and null for another page and for a thread that was not spun', async () => {
+    const { fake, ana, anaFace, boFace, thread, opener } = world();
+    for (let i = 0; i < 3; i++) fake.seed.post(thread, boFace, `reply ${i}`);
+    /* A post with 22 plays, the first of them ended by an admin: 20 are shown, with their ends, and there is more. */
+    const plays: string[] = [];
+    for (let i = 1; i <= 22; i++) { fake.clock.advance(1000); plays.push(fake.seed.card(boFace, opener, 'whoops', { layer: i })); }
+    const boss = fake.seed.account('boss', { admin: true });
+    fake.signInAs(boss);
+    must(await fake.reverseCard(plays[0]!));
+    fake.signInAs(ana);
+    const spun = must(await fake.spin(opener, anaFace, 'About it', 'b')).thread.id;
+    fake.seed.post(spun, anaFace, 'a second post');
+    fake.seed.post(spun, anaFace, 'a third post');
+    const first = (await fake.threadPage(spun, { page: 1 }, 2, []))!;
+    const read = await fake.cardsOn(opener, 21);
+    const shown = read.filter((a) => a.kind !== 'card_end').slice(0, 20);
+    expect(first.origin).toEqual({
+      act: await fake.act(opener),
+      plays: [...shown, ...read.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId))],
+      more: true,
+      moment: null,
+      at: null,
+      cast: await fake.characters([boFace]),
+    });
+    expect(first.origin!.plays.filter((a) => a.kind === 'card')).toHaveLength(20);
+    expect(first.origin!.plays.filter((a) => a.kind === 'card_end')).toHaveLength(1);
+    /* Its Act and the plays' arrive in the tallies, as the page's own. */
+    expect(first.tallies).toEqual(await fake.tallies([...first.acts.map((a) => a.id), opener, ...shown.map((a) => a.id)]));
+    /* Another page of the same thread, and a thread nobody spun, carry none. */
+    expect((await fake.threadPage(spun, { page: 2 }, 2, []))!.origin).toBeNull();
+    expect((await fake.threadPage(thread, { page: 1 }, 2, []))!.origin).toBeNull();
+  });
+
+  test('threadPage\'s origin of a play on a post carries the play\'s moment and the post\'s place; a play on a character spun at a post carries the spin\'s moment and the pressed post\'s place', async () => {
+    const { fake, anaFace, boFace, thread } = world();
+    const mine = must(await fake.post(thread, anaFace, 'The post pressed.', null));
+    fake.clock.advance(1000);
+    const onPost = fake.seed.card(boFace, mine.id, 'whoops', { layer: 1 });
+    fake.clock.advance(1000);
+    const fromPost = (await fake.threadPage(must(await fake.spin(onPost, anaFace, 'About the play', 'b')).thread.id, { page: 1 }, 20, []))!;
+    expect(fromPost.origin?.moment).toEqual(await fake.playMoment(onPost));
+    expect(fromPost.origin?.moment).not.toBeNull();
+    expect(fromPost.origin?.at).toEqual({ thread, seq: mine.seq });
+    expect(fromPost.origin?.plays).toEqual([]);
+    expect(fromPost.origin?.cast).toEqual(await fake.characters([boFace]));
+    fake.clock.advance(1000);
+    const onAna = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine.id });
+    fake.clock.advance(1000);
+    const spunAt = must(await fake.spin(onAna, anaFace, 'Spun at', 'body', undefined, mine.id));
+    const pressed = (await fake.threadPage(spunAt.thread.id, { page: 1 }, 20, []))!;
+    expect(pressed.origin?.moment).toEqual(await fake.spinMoment(spunAt.act.id));
+    expect(pressed.origin?.moment).not.toBeNull();
+    expect(pressed.origin?.at).toEqual({ thread, seq: mine.seq });
+    expect(pressed.origin?.cast).toEqual(await fake.characters([anaFace, boFace].sort()));
+    /* Spun with no post: the play's own moment, at the cast-from post. */
+    const noAt = must(await fake.spin(onAna, anaFace, 'Spun plain', 'body'));
+    const plain = (await fake.threadPage(noAt.thread.id, { page: 1 }, 20, []))!;
+    expect(plain.origin?.moment).toEqual(await fake.playMoment(onAna));
+    expect(plain.origin?.at).toEqual({ thread, seq: mine.seq });
+    /* A play on a board has neither. */
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    const onBoard = must(await fake.spin(fake.seed.reach(boFace, 'board', general.id, 'glint'), anaFace, 'Board', 'b'));
+    expect((await fake.threadPage(onBoard.thread.id, { page: 1 }, 20, []))!.origin).toMatchObject({ moment: null, at: null });
+  });
+
   test('threadPage with no per_page is the instance\'s own postsPerPage, as the server reads it', async () => {
     const { fake, thread } = longWorld();
     const size = (await fake.settings()).postsPerPage;

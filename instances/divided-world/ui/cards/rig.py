@@ -100,10 +100,11 @@ def render(path, alpha=False):
         sc.render.image_settings.file_format = 'PNG'
         if alpha: sc.render.image_settings.color_mode = mode
     sc.render.filepath = path
-    bpy.ops.render.render(write_still=True)
+    if os.environ.get('ART_RENDER', '1') != '0':           # ART_RENDER=0 builds the scene and renders nothing: with ART_BLEND, a scene to open and change by hand
+        bpy.ops.render.render(write_still=True)
     blend = os.environ.get('ART_BLEND')
     if blend:
-        bpy.ops.wm.save_as_mainfile(filepath=blend)
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(blend))
 
 def tube(name, pts, radius, mat, res=3):
     """A round thread through the points."""
