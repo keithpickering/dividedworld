@@ -23,7 +23,7 @@
  * A gap with no boxes (the phrase is inside a closed [spoiler]) is skipped and its note is hidden; opening the spoiler resizes the wrapper, and the
  * observer places it. A play's moment (`still`) draws the same and watches the same size, since it can be mounted folded and shown later.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
 import { visibleText } from '../../../../engine/bbcode/visible.ts';
 import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
@@ -55,18 +55,22 @@ export function ThisEffect({ post, plays, show, still, children }: EffectProps) 
   const places = useMemo(() => placesOf(text, plays.filter(inForce)), [text, playsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const wedges = useMemo(() => places.filter((p): p is typeof p & { at: NonNullable<typeof p.at> } => p.at !== null), [places]);
 
+  /* A gap that mounts is measured in the commit that mounts it: an inline spoiler draws its words at another place in the tree shut and open, so pressing it remounts the gap with no height, and neither this effect's layout effect nor the observer would look before the frame is drawn. A pass over its own result writes nothing, so this cannot loop. */
+  const measureNow = useRef<() => void>(() => {});
+  const gapRef = useCallback((el: HTMLSpanElement | null) => { if (el) measureNow.current(); }, []);
+
   const runs = useMemo<TextRun[]>(() => wedges.map(({ play, at }): TextRun => {
     const line = heard(wordsOf(play));
     return {
       start: at.from, end: at.to, key: `this:${play.id}`, z: Z, mode: 'wrap', stands: true,
       render: ({ text: words, key }) => <span key={key} className="dw-this-hl" data-dw-this-piece={play.id}>{words}</span>,
       trail: (key) => (
-        <span key={key} className="dw-this-gap" data-dw-this-gap={play.id} data-kb-quotable="hidden" data-dw-aside="">
+        <span key={key} ref={gapRef} className="dw-this-gap" data-dw-this-gap={play.id} data-kb-quotable="hidden" data-dw-aside="">
           <span className="kb-visually-hidden">{line}</span>
         </span>
       ),
     };
-  }), [wedges]);
+  }), [wedges, gapRef]);
 
   /* What the Lens says: the count, and a line for each play, which names no caster. */
   const view = useMemo<CardView | null>(() => (places.length === 0 ? null : {
@@ -97,7 +101,8 @@ export function ThisEffect({ post, plays, show, still, children }: EffectProps) 
     for (const { play } of wedges) {
       const gap = gapOf.get(play.id), note = noteOf.get(play.id);
       if (!gap || !note) continue;
-      if (gap.getClientRects().length === 0) note.removeAttribute('data-placed');
+      /* No boxes, or boxes in a skipped subtree (a shut [spoiler]'s content keeps its boxes in Chromium, so its note would be drawn over the next line): not shown. */
+      if (gap.getClientRects().length === 0 || (typeof gap.checkVisibility === 'function' && !gap.checkVisibility())) note.removeAttribute('data-placed');
       else shown.add(play.id);
     }
     const read = (): Spot[] => wedges.flatMap(({ play }): Spot[] => {
@@ -135,7 +140,6 @@ export function ThisEffect({ post, plays, show, still, children }: EffectProps) 
       if (!note.hasAttribute('data-placed')) note.setAttribute('data-placed', '');
     }
   };
-  const measureNow = useRef(measure);
   measureNow.current = measure;
   const layoutKey = JSON.stringify(wedges.map(({ play, at }) => [play.id, at.from, at.to, wordsOf(play)]));
   useLayoutEffect(() => { measureNow.current(); }, [layoutKey]);
@@ -143,12 +147,20 @@ export function ThisEffect({ post, plays, show, still, children }: EffectProps) 
     let live = true;
     const again = () => { if (live) measureNow.current(); };
     /* Watched in a moment too: a still moment can be mounted folded or hidden and shown later, and looking at a size binds nothing a player can reach and saves nothing. A `<details>` opening or closing changes the wrapper's size, so this observer alone re-measures a spoiler; no `toggle` listener is needed. */
-    const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(again) : null;
+    /* Looked at in the next frame, not in the observer's own delivery: a pass that writes a height changes the wrapper's size, and a write made while the observer is delivering is the browser's "ResizeObserver loop completed with undelivered notifications" error. */
+    let queued = false;
+    let frame = 0;
+    const later = () => {
+      if (queued) return;
+      queued = true;
+      frame = requestAnimationFrame(() => { queued = false; again(); });
+    };
+    const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(later) : null;
     if (host.current) resize?.observe(host.current);
     /* The marker's face changes the notes' height when it arrives. */
     const fonts = typeof document !== 'undefined' ? document.fonts : undefined;
     void Promise.all([fonts?.load?.('1em "Permanent Marker"'), fonts?.ready]).then(again, () => {});
-    return () => { live = false; resize?.disconnect(); };
+    return () => { live = false; resize?.disconnect(); cancelAnimationFrame(frame); };
   }, [still]);
 
   const receipts = places.filter((p) => p.at === null);

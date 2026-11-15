@@ -49,6 +49,9 @@ beforeEach(() => {
   searches.n = 0;
   resizes = [];
   vi.stubGlobal('ResizeObserver', FakeResize);
+  /* The observer's callback looks in the next frame (Effect.tsx); a test's frame is the call itself. */
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 1; });
+  vi.stubGlobal('cancelAnimationFrame', () => {});
   /* Autocorrect draws its tape on canvases. */
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => null) as never);
 });
@@ -360,6 +363,24 @@ describe('THIS: the measuring', () => {
     expect(notes()[0]!.style.top).not.toBe('');
   });
 
+  test('a gap whose boxes exist but are skipped (a shut [spoiler] content in a browser that keeps its boxes) is not placed: checkVisibility says it is not shown', () => {
+    tops.clear(); unrendered.clear();
+    stand();
+    const skipped = new Set<string>(['a']);
+    Object.defineProperty(Element.prototype, 'checkVisibility', { configurable: true, value(this: Element) { return !skipped.has(this.getAttribute('data-dw-this-gap') ?? ''); } });
+    try {
+      mount();
+      expect(placed()).toEqual([false]);
+      expect(gaps()[0]!.style.height).toBe('');
+      skipped.clear();
+      resize();
+      expect(placed()).toEqual([true]);
+      skipped.add('a');
+      resize();
+      expect(placed()).toEqual([false]);
+    } finally { delete (Element.prototype as { checkVisibility?: unknown }).checkVisibility; }
+  });
+
   test('a placed note whose gap loses its boxes (the spoiler is closed) is hidden again', () => {
     tops.clear(); unrendered.clear();
     stand();
@@ -383,6 +404,21 @@ describe('THIS: the measuring', () => {
     expect(gaps().map((g) => g.style.height)).toEqual(['', `${want!.gapHeight}px`]);
     expect(one('a').style.top).toBe('');
     expect(one('b').style.top).toBe(`${want!.noteTop}px`);
+  });
+
+  test('an [ispoiler] pressed open remounts the gap, and the new gap is measured in the same commit (no frame with the note over the next line)', () => {
+    tops.clear(); unrendered.clear();
+    stand();
+    mount({ body: 'Okay. [ispoiler]People blame the engine[/ispoiler] and more words.' });
+    const was = gaps()[0]!;
+    expect(was.style.height).not.toBe('');
+    expect(placed()).toEqual([true]);
+    /* No resize is delivered: only the press. */
+    act(() => { fireEvent.click(document.querySelector('button.kb-bb-ispoiler')!); });
+    const now = gaps()[0]!;
+    expect(now, 'the gap was remounted').not.toBe(was);
+    expect(now.style.height, 'the remounted gap has its height again').toBe(was.style.height);
+    expect(placed()).toEqual([true]);
   });
 
   test('the observer measures when the wrapper goes from no width to a width (a folded post unfolds)', () => {

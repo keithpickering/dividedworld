@@ -64,6 +64,10 @@ test('Laugh Track\'s stories are listed, the thread on the Main and the Phone bo
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['main', 'phone', 'near-main', 'near-phone', 'heard-main', 'heard-phone'].map((n) => `boards-21-laugh-track--${n}`)));
 });
 
+test('THIS\'s stories are listed, each on the Main board and the Phone one', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['two-notes', 'bare', 'receipt', 'taped', 'inked', 'fab'].flatMap((n) => [`boards-23-this--${n}-main`, `boards-23-this--${n}-phone`])));
+});
+
 test('the reply cut in under its post and Feelin\' Glam\'s stories are listed, each on the light board and the dark', () => {
   expect(boardStoryIds()).toEqual(expect.arrayContaining([
     'boards-22-reply-cut-in--under-light', 'boards-22-reply-cut-in--under-dark',
