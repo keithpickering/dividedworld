@@ -17,7 +17,8 @@ import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
-import { HALF } from './body.ts';
+import { bodies, DEPTH, HALF } from './body.ts';
+import { depthOf, GIVE, INSET, K, ROOM, Z_FRONT } from './chair.ts';
 import { SteelChairEffect } from './Effect.tsx';
 
 const hub = vi.hoisted(() => ({
@@ -26,7 +27,18 @@ const hub = vi.hoisted(() => ({
   set: undefined as unknown as (on: boolean) => void,
   sound: { play: undefined as unknown as ReturnType<typeof import('vitest').vi.fn>, loop: undefined as unknown, caption: undefined as unknown },
   setPlays: (() => {}) as (plays: CardPlay[]) => void,
+  /* What the mocked body.ts saw: the steps run, and the world the last run built. */
+  steps: 0,
+  world: null as import('./body.ts').World | null,
 }));
+vi.mock('./body.ts', async (original) => {
+  const actual = await original<typeof import('./body.ts')>();
+  return {
+    ...actual,
+    step: (...a: Parameters<typeof actual.step>) => { hub.steps++; return actual.step(...a); },
+    createWorld: (...a: Parameters<typeof actual.createWorld>) => { hub.world = actual.createWorld(...a); return hub.world; },
+  };
+});
 vi.mock('../../../../engine/ui/audio/useGameSound.ts', () => ({ useGameSound: () => ({ on: hub.gameOn, set: hub.set }) }));
 vi.mock('../../../../engine/ui/audio/sound.ts', async (original) => {
   const actual = await original<typeof import('../../../../engine/ui/audio/sound.ts')>();
@@ -77,6 +89,10 @@ class FakeResize {
   disconnect() { this.entry.watching.clear(); }
 }
 let size = { h: 200 };
+/** Whether the content area is `size.h` tall plus the 28 px of room while the effect's host is in it (what the CSS does), or `size.h` always. */
+let roomAdds = false;
+/** The boxes a `Range` over a text node reports (jsdom has no `getClientRects`), in the window's px, or none. A range over an element reports that element's border box too, as a browser does (the wrapper's, 280 wide), which is not where the text is. */
+let textRects: { left: number; top: number; width: number; height: number }[] | null = null;
 /** The post comes into the middle of the view and stays for the arming wait: a run starts. */
 const arm = () => { aim(true); act(() => { vi.advanceTimersByTime(300); }); };
 /** The post's middle comes into view; a run begins and the world goes on to rest. */
@@ -100,41 +116,85 @@ const lastView = (): CardView => made.show.mock.calls.filter((c) => c[0] !== nul
 const css = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'steel-chair.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
 const ruleOf = (selector: string) => [...css.matchAll(/([^{}]+)\{([^}]*)\}/gu)].filter(([, sel]) => sel!.split(',').some((x) => x.trim() === selector)).map(([, , body]) => body).join(';');
 
+const rect = (left: number, top: number, width: number, height: number) => ({ x: left, y: top, left, top, right: left + width, bottom: top + height, width, height, toJSON: () => ({}) });
+const areaHeight = (el: Element) => size.h + (roomAdds && el.querySelector('.dw-chair') ? ROOM : 0);
+
 const host = () => document.querySelector<HTMLElement>('.dw-chair');
 const wordsEl = () => document.querySelector<HTMLElement>('.dw-chair-words')!;
 const groups = () => [...document.querySelectorAll<HTMLElement>('.dw-chair-group')];
 const dents = () => [...document.querySelectorAll<HTMLElement>('.dw-chair-dent')];
 const dentAt = () => dents().map((d) => [d.style.left, d.style.top]);
-/** A resting chair's eight corners, from the group's own transform, in the content area's px. */
+/**
+ * Where a chair's eight corners are drawn, in the content area's px: the group's transform string (translate3d, perspective, matrix3d, scale3d,
+ * left to right, as chair.ts `transformOf` writes it) carried out on each corner of the folded box, perspective divide included.
+ */
 function corners(group: HTMLElement): { x: number; y: number }[] {
-  const t = group.style.transform;
-  const [x, y, z] = /translate3d\(([-\d.e]+)px, ([-\d.e]+)px, ([-\d.e]+)px\)/u.exec(t)!.slice(1).map(Number) as [number, number, number];
-  const m = /matrix3d\(([^)]*)\)/u.exec(t)![1]!.split(',').map(Number);
+  const mulM = (a: number[], b: number[]) => { const o = new Array<number>(16).fill(0); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] = o[c * 4 + r]! + a[k * 4 + r]! * b[c * 4 + k]!; return o; };
+  let m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  for (const [, fn, args] of group.style.transform.matchAll(/([a-z0-9]+)\(([^)]*)\)/gu)) {
+    const n = args!.split(',').map(parseFloat);
+    m = mulM(m, fn === 'translate3d' ? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, n[0]!, n[1]!, n[2]!, 1]
+      : fn === 'perspective' ? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -1 / n[0]!, 0, 0, 0, 1]
+      : fn === 'scale3d' ? [n[0]!, 0, 0, 0, 0, n[1]!, 0, 0, 0, 0, n[2]!, 0, 0, 0, 0, 1]
+      : n);
+  }
   const out: { x: number; y: number }[] = [];
   for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
     const v = [sx * HALF[0], sy * HALF[1], sz * HALF[2]] as const;
-    out.push({ x: x + m[0]! * v[0] + m[4]! * v[1] + m[8]! * v[2], y: y + m[1]! * v[0] + m[5]! * v[1] + m[9]! * v[2] });
-    void z;
+    const w = m[3]! * v[0] + m[7]! * v[1] + m[11]! * v[2] + m[15]!;
+    out.push({ x: (m[0]! * v[0] + m[4]! * v[1] + m[8]! * v[2] + m[12]!) / w, y: (m[1]! * v[0] + m[5]! * v[1] + m[9]! * v[2] + m[13]!) / w });
   }
   return out;
 }
+/** How far past a border a resting chair's corner may be drawn: none (the world is inset by chair.ts `INSET` so the chair's own perspective cannot take it past), to a hundredth of a px. */
+const SLACK = 0.01;
+/**
+ * The highest a resting chair's lowest drawn point can be above the bottom border: the floor recedes up the screen, so a chair standing on a
+ * narrow face at the very back (its contact points at most 4 px in front of its middle, which is at -(DEPTH + GIVE)) is lifted by this much; a chair
+ * lying flat is lifted by at most the room, 28.
+ */
+const HIGHEST = K * (Z_FRONT + DEPTH + GIVE + HALF[2]);
+/** A resting chair is drawn on or above the content area's bottom border (within `SLACK`), and no more than `HIGHEST` above it. */
+function expectOnFloor(group: HTMLElement, floor: number): void {
+  const low = Math.max(...corners(group).map((c) => c.y));
+  expect(low, 'lowest drawn point against the bottom border').toBeLessThanOrEqual(floor + SLACK);
+  expect(low, "lowest drawn point is within the floor's depth of the border").toBeGreaterThan(floor - HIGHEST - 0.5);
+}
+
+/*
+ * Every run draws its throws from a generator seeded from `crypto.getRandomValues`. So that the file does not depend on luck, each test has
+ * the same sequence of seeds (every run a test makes gets the next one, so two runs still differ), and a test that needs one throw pins it.
+ */
+/** A seed for which sc1 and sc3 lie on the floor and not on sc2 (seed 4, for one, lands a chair on sc2: it falls when sc2 goes). */
+const PINNED_SEED = 2;
+let seeds = 0;
+let pinned: number | null = null;
+const pin = (seed: number | null) => { pinned = seed; };
 
 beforeEach(() => {
   vi.useFakeTimers();
-  queue = new Map(); nextFrame = 1; requested = 0; clock = 0; watching.length = 0; sized.length = 0; size = { h: 200 };
+  queue = new Map(); nextFrame = 1; requested = 0; clock = 0; watching.length = 0; sized.length = 0; size = { h: 200 }; roomAdds = false; textRects = null; seeds = 0; pinned = null; hub.steps = 0; hub.world = null;
+  const realRandom = crypto.getRandomValues.bind(crypto);
+  vi.spyOn(crypto, 'getRandomValues').mockImplementation(((a: ArrayBufferView) => {
+    if (a instanceof Uint32Array && a.length === 1) { a[0] = pinned ?? (Math.imul(++seeds, 2654435761) >>> 0); return a; }
+    return realRandom(a as Uint8Array);
+  }) as typeof crypto.getRandomValues);
+  (Range.prototype as unknown as { getClientRects: (this: Range) => unknown }).getClientRects = function (this: Range) {
+    if (textRects === null) return [];
+    return this.startContainer.nodeType === Node.TEXT_NODE ? textRects.map((r) => rect(r.left, r.top, r.width, r.height)) : [rect(10, 8, 280, size.h - 16 - 28)];
+  };
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { const id = nextFrame++; requested++; queue.set(id, cb); return id; });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => { queue.delete(id); });
   vi.stubGlobal('IntersectionObserver', FakeIntersection);
   vi.stubGlobal('ResizeObserver', FakeResize);
-  const rect = (left: number, top: number, width: number, height: number) => ({ x: left, y: top, left, top, right: left + width, bottom: top + height, width, height, toJSON: () => ({}) });
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
-    if (this.classList.contains('kb-act-main')) return rect(0, 0, 300, size.h);
+    if (this.classList.contains('kb-act-main')) return rect(0, 0, 300, areaHeight(this));
     if (this.classList.contains('dw-chair')) return rect(10, 8, 280, size.h - 16);
     if (this.classList.contains('dw-chair-words')) return rect(10, 8, 280, size.h - 16 - 28);
     return rect(0, 0, 0, 0);
   });
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 300 : 0; });
-  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? size.h : 0; });
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? areaHeight(this) : 0; });
   document.documentElement.setAttribute('data-kb-motion', 'full');
   hub.trusted = true;
   hub.gameOn = false;
@@ -147,6 +207,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  delete (Range.prototype as unknown as { getClientRects?: unknown }).getClientRects;
   document.documentElement.removeAttribute('data-kb-motion');
 });
 
@@ -160,18 +221,52 @@ describe('which plays, and what is drawn', () => {
     expect(made.show.mock.calls.every((c) => c[0] === null)).toBe(true);
   });
 
-  test.each([1, 2, 3])('with %i live plays a run draws that many chairs and dents, and the floor has its 28 px of room', (n) => {
+  test.each([1, 2, 3])('with %i live plays a run draws that many chairs and dents', (n) => {
     mount({ plays: Array.from({ length: n }, (_, i) => play(i + 1)) });
     expect(groups()).toHaveLength(0);
     run();
     expect(groups()).toHaveLength(n);
     expect(dents()).toHaveLength(n);
+  });
+
+  /* The room is "room inside the content area above its bottom border": the reactions row, the signature and the spun line come after the
+     effect's host in `.kb-act-main`, so a strip under the words is nowhere near the floor. The room is the content area's own last 28 px. */
+  test('inside a content area the room is its last 28 px, added by a static rule while the effect has a live play', () => {
+    expect(ruleOf('.kb-act-main:has(.dw-chair)::after')).toMatch(/content:\s*''/u);
+    expect(ruleOf('.kb-act-main:has(.dw-chair)::after')).toMatch(/display:\s*block/u);
+    expect(ruleOf('.kb-act-main:has(.dw-chair)::after')).toMatch(/height:\s*28px/u);
+    mount();
+    /* `.dw-chair` is in the page only while a play is live: the rule's condition. The strip inside the host is hidden where there is a content area. */
+    expect(host()).not.toBeNull();
+    expect(ruleOf('.kb-act-main .dw-chair-room')).toMatch(/display:\s*none/u);
+    cleanup();
+    mount({ plays: [play(1, '2000-01-01T00:00:00Z')] });
+    expect(host()).toBeNull();
+  });
+
+  test('outside a content area the room stays in the host, after the words: 28 px', () => {
+    mount({ place: 'origin', wrapped: false });
     const room = document.querySelector('.dw-chair-room')!;
-    expect(room).not.toBeNull();
     expect(ruleOf('.dw-chair-room')).toMatch(/height:\s*28px/u);
-    /* The room is after the words, inside the host, so the content area is 28 px taller while a play is live. */
     expect(wordsEl().nextElementSibling).toBe(room);
     expect(host()).toContainElement(room as HTMLElement);
+  });
+
+  test('the host carries no data-kb-chair mark: nothing reads it', () => {
+    mount();
+    expect(host()).not.toHaveAttribute('data-kb-chair');
+  });
+
+  test('the world is sized after the room: the first run starts with the content area as tall as it is with the room in it', () => {
+    roomAdds = true;
+    mount();
+    run();
+    /* The world is the content area less the inset (chair.ts `INSET`) at the sides and the floor. */
+    expect(hub.world!.width).toBeCloseTo(300 - 2 * INSET, 6);
+    expect(hub.world!.height).toBeCloseTo(200 + ROOM - INSET, 6);
+    expect(hub.world!.floorY).toBeCloseTo(200 + ROOM - INSET, 6);
+    const layer = document.querySelector<HTMLElement>('.dw-chair-layer')!;
+    expect(layer.style.height).toBe(`${200 + ROOM}px`);
   });
 
   test('a fourth play handed over with one ended draws three', () => {
@@ -182,6 +277,9 @@ describe('which plays, and what is drawn', () => {
   });
 
   test('a play whose end passes on an open page loses its chair and dent, and the others stay where they lie', () => {
+    /* Removing a body wakes the ones left, so a chair that lay on the removed one must fall; the run is seeded from `crypto`, so the seed is
+       pinned to a throw in which neither remaining chair rests on sc2 (both lie on the floor), and the others then stay exactly where they lie. */
+    pin(PINNED_SEED);
     const w = mount({ plays: [play(1), play(2, '2026-10-29T12:00:30Z'), play(3)] });
     run();
     expect(groups()).toHaveLength(3);
@@ -191,8 +289,7 @@ describe('which plays, and what is drawn', () => {
     expect(groups().map((g) => g.dataset.play).sort()).toEqual(['sc1', 'sc3']);
     expect(dents()).toHaveLength(2);
     expect(groups().every((g) => g.hasAttribute('data-rest'))).toBe(true);
-    /* The others stay where they lie: a chair that did not rest on the one that went has the very transform it had. */
-    expect([...heldAt].filter(([id, was]) => groups().find((g) => g.dataset.play === id)!.style.transform === was).length).toBeGreaterThanOrEqual(1);
+    for (const [id, was] of heldAt) expect(groups().find((g) => g.dataset.play === id)!.style.transform, `chair ${id}`).toBe(was);
   });
 
   test('a play that lands while the post is in view throws that chair alone into the standing world', () => {
@@ -233,12 +330,12 @@ describe('the layers and the world fill the content area', () => {
     run();
     const body = document.querySelector('.kb-act-main')!;
     expect(sized.some((r) => r.watching.has(body) && r.watching.has(host()!))).toBe(true);
-    expect(Math.max(...corners(groups()[0]!).map((c) => c.y))).toBeCloseTo(200, 0);
+    expectOnFloor(groups()[0]!, 200);
     size = { h: 260 };
     act(() => { for (const r of sized) r.cb(); });
     expect(queue.size).toBeGreaterThan(0);
     rest(600);
-    expect(Math.max(...corners(groups()[0]!).map((c) => c.y))).toBeCloseTo(260, 0);
+    expectOnFloor(groups()[0]!, 260);
     expect(queue.size).toBe(0);
   });
 
@@ -248,7 +345,7 @@ describe('the layers and the world fill the content area', () => {
     const layer = document.querySelector<HTMLElement>('.dw-chair-layer')!;
     expect([layer.style.left, layer.style.top, layer.style.width, layer.style.height]).toEqual(['0px', '0px', '280px', '184px']);
     expect(groups()).toHaveLength(1);
-    expect(Math.max(...corners(groups()[0]!).map((c) => c.y))).toBeCloseTo(184, 0);
+    expectOnFloor(groups()[0]!, 184);
   });
 
   test('every chair ends inside the content area, on its bottom border or on another chair, asleep, and the frame loop stops', () => {
@@ -258,9 +355,8 @@ describe('the layers and the world fill the content area', () => {
     const [g] = groups();
     expect(g).toHaveAttribute('data-rest');
     const cs = corners(g!);
-    expect(Math.max(...cs.map((c) => c.y))).toBeGreaterThan(199);
-    expect(Math.max(...cs.map((c) => c.y))).toBeLessThan(201);
-    for (const c of cs) { expect(c.x).toBeGreaterThan(-1); expect(c.x).toBeLessThan(301); }
+    expectOnFloor(g!, 200);
+    for (const c of cs) { expect(c.x).toBeGreaterThan(-SLACK); expect(c.x).toBeLessThan(300 + SLACK); }
     const asked = requested;
     act(() => { vi.advanceTimersByTime(2000); });
     expect(requested).toBe(asked);
@@ -272,7 +368,51 @@ describe('the layers and the world fill the content area', () => {
     expect(queue.size).toBe(0);
     for (const g of groups()) {
       expect(g).toHaveAttribute('data-rest');
-      for (const c of corners(g)) { expect(c.x).toBeGreaterThan(-1); expect(c.x).toBeLessThan(301); expect(c.y).toBeLessThan(201); }
+      expectOnFloor(g, 200);
+      for (const c of corners(g)) { expect(c.x).toBeGreaterThan(-SLACK); expect(c.x).toBeLessThan(300 + SLACK); }
+    }
+  });
+
+  /* The words' wrapper is as wide as the content area, so on a one-line post a throw aimed at its box lands right of the text and bends nothing.
+     The aim is the box the text really takes: the union of the client rects of a Range over the words (stubbed: jsdom has none). */
+  test("the throw aims at the box the text really occupies, not the words wrapper's: the dent lands over the text", () => {
+    textRects = [{ left: 40, top: 30, width: 60, height: 18 }, { left: 40, top: 48, width: 30, height: 18 }];
+    for (let k = 0; k < 6; k++) {
+      pin(1000 + k);
+      const w = mount();
+      run();
+      const [d] = dents();
+      const at = { x: parseFloat(d!.style.left) + parseFloat(d!.style.width) / 2, y: parseFloat(d!.style.top) + parseFloat(d!.style.height) / 2 };
+      /* The text's union is x 40 to 100, y 30 to 66 in the content area's px (it starts at the window's origin); the aim is inside it. */
+      expect(at.x, `dent x ${at.x} over the text (40 to 100)`).toBeGreaterThanOrEqual(40);
+      expect(at.x).toBeLessThanOrEqual(100);
+      expect(at.y, `dent y ${at.y} over the text (30 to 66)`).toBeGreaterThanOrEqual(30);
+      expect(at.y).toBeLessThanOrEqual(66);
+      w.unmount();
+    }
+  });
+
+  test('where a Range reports nothing (no layout), the aim falls back to the words wrapper\'s box', () => {
+    textRects = null;
+    pin(7);
+    mount();
+    run();
+    const [d] = dents();
+    const x = parseFloat(d!.style.left) + parseFloat(d!.style.width) / 2;
+    /* The wrapper is 280 wide, 10 in from the content area's edge: the aim is anywhere across it. */
+    expect(x).toBeGreaterThanOrEqual(10 + 0.15 * 280 - 0.01);
+    expect(x).toBeLessThanOrEqual(10 + 0.85 * 280 + 0.01);
+  });
+
+  test('a chair nearer the reader paints over one farther back: each group has the z-index of its depth', () => {
+    mount({ plays: [play(1), play(2), play(3)] });
+    run();
+    const z = new Map(bodies(hub.world!).map((b) => [`sc${b.id}`, b.position.z]));
+    const index = new Map(groups().map((g) => [g.dataset.play!, Number(g.style.zIndex)]));
+    expect(groups().every((g) => /^\d+$/u.test(g.style.zIndex))).toBe(true);
+    for (const [a, za] of z) {
+      expect(index.get(a)).toBe(depthOf(za));
+      for (const [b, zb] of z) if (za > zb + 0.2) expect(index.get(a)!, `${a} (z ${za}) over ${b} (z ${zb})`).toBeGreaterThan(index.get(b)!);
     }
   });
 
@@ -355,6 +495,23 @@ describe('when a run starts and ends', () => {
     expect(queue.size).toBe(0);
   });
 
+  /* body.ts's step costs from 0.02 ms to 0.12 ms and the caller must cap the steps it runs in a frame: a background tab coming back must
+     not owe hundreds of them (which makes the next frame slower still). */
+  test('a frame two seconds after the last runs at most 4 steps, and drops the rest', () => {
+    mount({ plays: [play(1), play(2), play(3)] });
+    see(true); arm();
+    for (let i = 0; i < 5; i++) frame();
+    expect(queue.size).toBeGreaterThan(0);
+    hub.steps = 0;
+    act(() => { clock += 2000; drain(); });
+    expect(hub.steps).toBeGreaterThan(0);
+    expect(hub.steps).toBeLessThanOrEqual(4);
+    /* A normal frame still runs its steps: two for 16 ms. */
+    hub.steps = 0;
+    frame(); frame(); frame();
+    expect(hub.steps).toBeGreaterThanOrEqual(5);
+  });
+
   test('throws are 350 ms apart', () => {
     mount({ plays: [play(1), play(2), play(3)] });
     see(true); arm();
@@ -372,6 +529,8 @@ describe('sound', () => {
   const heard = () => hub.sound.play.mock.calls as unknown as [string, { group?: string }][];
 
   test('on the first run a hit and one settle sound play once per chair, in the group; a replay by scroll or by Throw again is silent', () => {
+    /* A chair that lands on another never touches the floor, so it has no floor sound; the seed is pinned to a throw in which all three reach it (seed 6, for one, lands a chair on another). */
+    pin(2);
     mount({ plays: [play(1), play(2), play(3)] });
     run();
     const keys = heard().map((c) => c[0]);
@@ -392,6 +551,24 @@ describe('sound', () => {
   });
 });
 
+describe('sound and met across the effect coming and going inside one mount', () => {
+  test('after the last play ends and a new one lands, the new run is silent and the card is not met again', () => {
+    mount({ plays: [play(1)] });
+    run();
+    expect(hub.sound.play).toHaveBeenCalled();
+    expect(made.met).toHaveBeenCalledTimes(1);
+    /* The play goes: the chairs component unmounts, the words are bare. A new play lands: it mounts again, inside the same mount of the effect. */
+    act(() => { hub.setPlays([]); });
+    expect(host()).toBeNull();
+    hub.sound.play.mockClear();
+    act(() => { hub.setPlays([play(2)]); });
+    see(true); arm(); settled();
+    expect(groups()).toHaveLength(1);
+    expect(hub.sound.play).not.toHaveBeenCalled();
+    expect(made.met).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('reduced motion', () => {
   test('no frame is asked for, no flight and no shake: the dents and resting chairs are drawn at once, and no sound plays', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
@@ -402,7 +579,7 @@ describe('reduced motion', () => {
     expect(groups()).toHaveLength(2);
     expect(dents()).toHaveLength(2);
     expect(groups().every((g) => g.hasAttribute('data-rest'))).toBe(true);
-    for (const g of groups()) for (const c of corners(g)) { expect(c.y).toBeLessThan(201); expect(c.x).toBeGreaterThan(-1); expect(c.x).toBeLessThan(301); }
+    for (const g of groups()) { expectOnFloor(g, 200); for (const c of corners(g)) { expect(c.x).toBeGreaterThan(-SLACK); expect(c.x).toBeLessThan(300 + SLACK); } }
     expect(wordsEl()).not.toHaveAttribute('data-shake');
     expect(document.querySelector('[data-shake]')).toBeNull();
     expect(hub.sound.play).not.toHaveBeenCalled();
@@ -471,10 +648,31 @@ describe('the filter', () => {
     const map = filter.querySelector('feDisplacementMap')!;
     expect(map.getAttribute('xChannelSelector')).toBe('R');
     expect(map.getAttribute('yChannelSelector')).toBe('G');
-    expect(Number(map.getAttribute('scale'))).toBe(26);
+    expect(Number(map.getAttribute('scale'))).toBe(18);
     expect(filter.querySelector('feFlood')!.getAttribute('flood-color')).toBe('rgb(128,128,128)');
     expect(filter.querySelectorAll('feImage')).toHaveLength(2);
     expect(document.querySelector('svg')!).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  /* Each dent's map is an opaque square, neutral outside its circle; merged with source-over a later square overwrote the part of an earlier ring
+     it overlapped, with a hard straight edge. The offsets are added instead: 0.5 + sum of (d - 0.5), one arithmetic composite per dent. */
+  test('overlapping dents add their offsets: one arithmetic composite per dent, chained from the neutral flood, and no merge', () => {
+    mount({ plays: [play(1), play(2), play(3)] });
+    run();
+    const filter = document.querySelector('filter')!;
+    expect(filter.querySelector('feMerge')).toBeNull();
+    const adds = [...filter.querySelectorAll('feComposite[operator="arithmetic"]')];
+    expect(adds).toHaveLength(3);
+    for (const a of adds) expect(['k1', 'k2', 'k3', 'k4'].map((k) => Number(a.getAttribute(k)))).toEqual([0, 1, 1, -0.5]);
+    expect(adds[0]!.getAttribute('in')).toBe('neutral');
+    expect(adds[1]!.getAttribute('in')).toBe(adds[0]!.getAttribute('result'));
+    expect(adds[2]!.getAttribute('in')).toBe(adds[1]!.getAttribute('result'));
+    expect(filter.querySelector('feDisplacementMap')!.getAttribute('in2')).toBe(adds[2]!.getAttribute('result'));
+    /* A dent's own square is laid over neutral first, so that it adds nothing (zero offset) outside its circle. */
+    const overs = [...filter.querySelectorAll('feComposite[operator="over"]')];
+    expect(overs).toHaveLength(3);
+    for (const o of overs) expect(o.getAttribute('in2')).toBe('neutral');
+    expect(adds.map((a) => a.getAttribute('in2'))).toEqual(overs.map((o) => o.getAttribute('result')));
   });
 
   test('a dent grows from nothing to full strength over 90 ms', () => {

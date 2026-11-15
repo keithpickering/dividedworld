@@ -29,10 +29,26 @@
   80% { transform: translate(2px, 0); }
 }
 
-/* The floor's room: 28 px between the words and the content area's bottom border, where chairs come to rest, so one covers no words. */
+/*
+ * The floor's room: 28 px above the content area's bottom border where chairs come to rest, so one covers no words. After the effect's host,
+ * inside `.kb-act-main`, come the edited note, the reactions row, the signature and the spun line, so a strip right under the words would be
+ * nowhere near the floor. So while a play is live (`.dw-chair` is in the page only then) the content area itself gains 28 px at its very end,
+ * above its bottom padding: a block `::after` is the last child of a block container, and `.kb-act-main` lays its children out as blocks
+ * (engine/ui/thread/thread.css). It is static: nothing measures or sets it, and the effect's resize observer sees the area grow.
+ */
+.kb-act-main:has(.dw-chair)::after {
+  content: '';
+  display: block;
+  height: 28px;
+  pointer-events: none;
+}
+/* Where there is no content area (a moment or a preview outside a thread; the world is the host's own box) the room is a strip in the host. */
 .dw-chair-room {
   height: 28px;
   pointer-events: none;
+}
+.kb-act-main .dw-chair-room {
+  display: none;
 }
 
 /* The chairs' layer and the dents' shading layer each fill the content area, placed by `placeLayer` and marked `data-kb-effect-ink`
@@ -47,12 +63,11 @@
   pointer-events: none;
   overflow: visible;
 }
-.dw-chair-layer {
-  perspective: 700px;
-  perspective-origin: 50% 30%;
-}
+/* No perspective on the layer: the world is drawn in an oblique view (chair.ts `project`: y is drawn higher the farther back), so the side walls
+   are the content area's borders at every depth and nothing is drawn below its bottom border. Each chair has a mild perspective of its own, in
+   its group's transform (chair.ts `transformOf`), about its own center; the effect sets each group's z-index so a nearer chair paints over a farther. */
 
-/* One chair: a zero-size group at its position, each piece a child placed by its own matrix. */
+/* One chair: a zero-size group at its projected position, each piece a child placed by its own matrix. */
 .dw-chair-group {
   position: absolute;
   top: 0;

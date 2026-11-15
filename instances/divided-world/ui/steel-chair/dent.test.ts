@@ -10,9 +10,9 @@ const px = (m: Uint8ClampedArray, x: number, y: number) => { const i = (y * SIZE
 
 describe('dentMap', () => {
   const m = dentMap();
-  test('is size by size RGBA and the scale is 26', () => {
+  test('is size by size RGBA and the scale is 18', () => {
     assert.equal(m.length, SIZE * SIZE * 4);
-    assert.equal(DENT_SCALE, 26);
+    assert.equal(DENT_SCALE, 18);
   });
   test('the center (a pixel from it, so within a few steps) and the rim are neutral', () => {
     const c = px(m, 80, 80);
@@ -34,6 +34,15 @@ describe('dentMap', () => {
       if (Math.abs(dy) > 0.2) assert.equal(Math.sign(p.g - 128), Math.sign(dy));
       assert.equal(p.b, 128);
     }
+  });
+  /* The plan's bytes are 128 + 127·sin(r·π)·(1 − r), whose peak is 0.58 of the range (at r of about 0.35), not the whole range: a map
+     stretched to its peak pushed the words 1/0.58 times too far and squeezed those inside a dent near unreadable. */
+  test("the ring's peak push is the plan's, about 0.58 of 127 bytes, in every direction", () => {
+    let peak = 0;
+    for (let i = 0; i < m.length; i += 4) peak = Math.max(peak, Math.abs(m[i] - 128), Math.abs(m[i + 1] - 128));
+    assert.ok(peak >= 72 && peak <= 75, `the largest byte offset is ${peak}, not 0.58 * 127 = 73.7`);
+    const p = px(m, Math.round(80 + 80 * 0.35 - 0.5), 80);
+    assert.ok(Math.abs(p.r - 128 - 73.5) <= 2, `the ring's red offset is ${p.r - 128}`);
   });
   test('every pixel is opaque', () => {
     for (let i = 3; i < m.length; i += 4) assert.equal(m[i], 255);

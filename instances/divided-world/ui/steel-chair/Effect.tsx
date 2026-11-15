@@ -8,11 +8,13 @@
  *
  * Where. The chairs' layer and the dents' shading fill the post's content area border to border, placed the way Feelin' Fab's foil and Whoops!'s
  * ink are (engine/ui/cards/body.ts: `bodyOf`, `bodyBox`, `placeLayer`, the bare `data-kb-effect-ink` mark the thread's CSS lifts above the
- * words). That box is the physics world: its left and right borders are the walls and its bottom border the floor, so a chair at rest lies on
- * the border itself. Where there is no body (outside a thread) the effect's own box is the world. A `ResizeObserver` on the box (and the host)
- * resizes the world and places the layers again. The words are a wrapper inside the host; the throw aims at them, and since the filter is
- * applied to that wrapper its coordinates are the wrapper's, not the content area's: `geo` holds the measured offset between the two. While any
- * play is live the host holds 28 px of room after the words (`.dw-chair-room`), so a chair lying at the bottom covers no words.
+ * words). That box is the physics world: its left and right borders are the walls and its bottom border the floor; chair.ts draws the world in an
+ * oblique view (the floor recedes up the screen), so a chair at rest is drawn inside the box, never past a border. Where there is no body (outside a
+ * thread) the effect's own box is the world. A `ResizeObserver` on the box (and the host) resizes the world and places the layers again. The words
+ * are a wrapper inside the host; the throw aims at the box the text really takes (a Range's client rects: a short post's wrapper is as wide as the
+ * content area), and since the filter is applied to that wrapper its coordinates are the wrapper's, not the content area's: `geo` holds the measured
+ * offset between the two. The floor's 28 px of room is the content area's own last 28 px (steel-chair.css: a static `::after` while a play is
+ * live), so a chair lying at the bottom covers no words; only where there is no content area is it a strip in the host (`.dw-chair-room`).
  *
  * When. A run starts once the host's middle (`watchInView`, margin `-20% 0px -20% 0px`, as Glitter Bomb arms its burst) has been in view for 300 ms,
  * and is cleared when the post has wholly left the view, so coming back starts a new one. While a run is up a second observer, without a margin,
@@ -20,7 +22,8 @@
  * run stands is thrown alone into the standing world, and one that ends (`useAt`) loses its chair and dent while the others stay where they lie.
  * Reduced motion has no flight, no shake and no wait (there is nothing to time): the world is built, run to rest and drawn at once, without sound.
  *
- * Frames. The loop runs on `requestAnimationFrame` only while a body is awake (or a dent is growing) and sets each chair's and each piece's style
+ * Frames. The loop runs on `requestAnimationFrame` only while a body is awake (or a dent is growing), runs at most 4 steps a frame (a slow frame or a
+ * tab coming back drops the rest of the time it owes), and sets each chair's and each piece's style
  * straight on the DOM nodes through refs; React renders only when a chair or a dent comes or goes. The shade of a piece is taken from its normal
  * after the body's orientation turns it, since the light is fixed in the world. A dent's depth grows by moving its map's pixels from neutral
  * (128) to full, so each dent has its own growth in the one filter, and the others keep their depth when a new one lands.
@@ -41,7 +44,7 @@ import { dayAndTime } from '../../../../engine/ui/characters/format.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { STEEL_CHAIR_LASTS } from '../../cards/steel-chair.ts';
 import { addThrow, bodies, createWorld, remove, resize, rng, settle, step, STEP, throwOf, type Box, type Event as BodyEvent, type World } from './body.ts';
-import { piecesOf, shadeOf, type Piece } from './chair.ts';
+import { depthOf, INSET, piecesOf, project, shadeOf, transformOf, type Piece } from './chair.ts';
 import { DENT_SCALE, dentMapUrl, dentPrimitives, filterTrusted } from './dent.ts';
 import './steel-chair.css';
 
@@ -53,6 +56,10 @@ const ARM_MS = 300;
 /** The gap between one play's throw and the next, and how long a dent takes to reach its full depth. */
 const GAP_MS = 350;
 const GROW_MS = 90;
+/** The most time one frame adds to the clock the physics catches up to, in seconds: 4 steps of body.ts's STEP. A slower frame (a background tab coming back) loses the rest. */
+const MOST_FRAME_S = 1 / 30;
+/** And the most steps one frame runs, whatever the clock owes (body.ts: a step costs up to 0.12 ms on a desktop, several times that on a phone). */
+const MOST_STEPS = 4;
 /** The longest a run is settled for at once (reduced motion and a moment), in simulated seconds: every throw sleeps well inside it. */
 const SETTLE_S = 12;
 const GROUP = 'steel-chair';
@@ -74,12 +81,38 @@ const seedOfIds = (ids: readonly string[]): number => {
 interface Dent { readonly play: string; readonly x: number; readonly y: number; readonly full: boolean }
 /** Where the words wrapper stands in the content area, and how big it is: what the filter's coordinates are converted by. */
 interface Geo { readonly left: number; readonly top: number; readonly width: number; readonly height: number }
+/** What the effect remembers while it stays mounted: whether the next run is the first since it mounted, and whether `met` has been said. */
+interface Memory { first: boolean; met: boolean }
 /** What the run offers the views: another run, and the plays' list having changed. */
 interface Control { replay(): void; sync(): void }
 /** What a chair's group remembers between frames, so a style is written only when it changed. */
-interface Cache { pieces: HTMLElement[]; list: Piece[]; fold: number; transform: string; matrices: string[]; applied: string[]; shades: string[] }
+interface Cache { pieces: HTMLElement[]; list: Piece[]; fold: number; transform: string; depth: string; matrices: string[]; applied: string[]; shades: string[] }
 
 const sameGeo = (a: Geo | null, b: Geo): boolean => a !== null && Math.abs(a.left - b.left) < 0.01 && Math.abs(a.top - b.top) < 0.01 && Math.abs(a.width - b.width) < 0.01 && Math.abs(a.height - b.height) < 0.01;
+
+/**
+ * The box the words really occupy, in the content area's px: the union of the client rects of a `Range` over each text node under the wrapper
+ * (a line of text is as wide as its words, not as the wrapper), from the content area's top left corner at (`originX`, `originY`) in the
+ * window. A range over the wrapper's contents would not do: it also reports the border box of every element inside, as wide as the wrapper.
+ * Null where there is nothing to measure (no layout, as in jsdom), and the caller falls back to the wrapper's box.
+ */
+function textBox(words: HTMLElement, originX: number, originY: number): Box | null {
+  if (typeof document.createRange !== 'function') return null;
+  const range = document.createRange();
+  if (typeof range.getClientRects !== 'function') return null;
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  const walker = document.createTreeWalker(words, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.nodeValue?.trim()) continue;
+    range.selectNodeContents(node);
+    for (const r of Array.from(range.getClientRects())) {
+      if (!(r.width > 0 && r.height > 0)) continue;
+      left = Math.min(left, r.left); top = Math.min(top, r.top); right = Math.max(right, r.right); bottom = Math.max(bottom, r.bottom);
+    }
+  }
+  if (!(right > left && bottom > top)) return null;
+  return { left: left - originX, top: top - originY, width: right - left, height: bottom - top };
+}
 
 /** A unit quaternion as `matrix3d()`'s 16 numbers (column-major). */
 function rotation(q: { w: number; x: number; y: number; z: number }): number[] {
@@ -100,6 +133,10 @@ const turned = (m: readonly number[], n: readonly [number, number, number]): [nu
 
 /** The pieces a chair is drawn from: their size and place are fixed (the order is `piecesOf`'s at every fold), their transform and shade are the frame loop's. */
 const PIECES = piecesOf(1);
+/* The world the body simulates is the content area less INSET at each side and at the floor, drawn INSET to the right (chair.ts `INSET`): a world x is a drawn x
+   less INSET. */
+/** The px the oblique view draws a chair at the hit (z = 0) above its world y: the throw aims this much lower so the drawn chair meets the dent. */
+const HIT_LIFT = -project({ x: 0, y: 0, z: 0 }).y;
 
 export function SteelChairEffect(props: EffectProps) {
   const { plays, still, show, children } = props;
@@ -107,7 +144,10 @@ export function SteelChairEffect(props: EffectProps) {
   const now = useAt(still ? [] : ends);
   /* A moment draws its plays as they stood; a live post drops the plays whose end has passed (the engine goes on handing them over). */
   const live = useMemo(() => (still ? plays : plays.filter((p) => p.ends === undefined || Date.parse(p.ends) > now)).slice(0, MOST), [plays, still, now]);
-  return live.length > 0 ? <Chairs {...props} live={live} /> : <Bare show={show}>{children}</Bare>;
+  /* What holds for the life of the effect on the page, not of one stretch of live plays (the chairs component below unmounts when the last play ends
+     and mounts again when a new one lands): whether the next run is the first, which alone has sound, and whether the card has been met. */
+  const memory = useRef<Memory>({ first: true, met: false });
+  return live.length > 0 ? <Chairs {...props} live={live} memory={memory.current} /> : <Bare show={show}>{children}</Bare>;
 }
 
 /** No live play: the words alone, and nothing to show. */
@@ -116,7 +156,7 @@ function Bare({ show, children }: { show: EffectProps['show']; children: EffectP
   return <>{children}</>;
 }
 
-function Chairs({ live, still, place, show, met, children }: EffectProps & { live: readonly CardPlay[] }) {
+function Chairs({ live, still, place, show, met, children, memory }: EffectProps & { live: readonly CardPlay[]; memory: Memory }) {
   const reduced = useMotionReduced();
   const sound = useSound();
   const gameSound = useGameSound();
@@ -135,9 +175,6 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
   const depths = useRef(new Map<string, SVGElement[]>());
   const control = useRef<Control | null>(null);
   const paintNow = useRef<() => void>(() => {});
-  /* Whether the next run is the first since the effect mounted: only that one has sound. And whether the card has been met. */
-  const first = useRef(true);
-  const met1 = useRef(false);
   const latest = useRef({ live, sound, met });
   latest.current = { live, sound, met };
 
@@ -180,7 +217,8 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
       const g: Geo = { left: w.left - h.left - b.left, top: w.top - h.top - b.top, width: w.width, height: w.height };
       const moved = !sameBox(b, box) || !sameGeo(geoNow, g);
       box = b;
-      target = { left: g.left, top: g.top, width: g.width, height: g.height };
+      /* The throw aims at the box the text takes, which on a short post is far narrower than the wrapper (as wide as the content area). */
+      target = textBox(wordsEl, h.left + b.left, h.top + b.top) ?? { left: g.left, top: g.top, width: g.width, height: g.height };
       placeLayer(chairLayer, b);
       placeLayer(dentLayer, b);
       if (moved) { geoNow = g; setGeo(g); }
@@ -192,7 +230,7 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
       if (c) return c;
       const group = groups.current.get(play);
       if (!group) return null;
-      c = { pieces: [...group.children] as HTMLElement[], list: PIECES, fold: -1, transform: '', matrices: [], applied: [], shades: [] };
+      c = { pieces: [...group.children] as HTMLElement[], list: PIECES, fold: -1, transform: '', depth: '', matrices: [], applied: [], shades: [] };
       caches.set(play, c);
       return c;
     };
@@ -208,8 +246,11 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
         const c = play === undefined ? null : cacheOf(play);
         if (!group || !c) continue;
         const m = rotation(v.quaternion);
-        const transform = `translate3d(${v.position.x.toFixed(2)}px, ${v.position.y.toFixed(2)}px, ${v.position.z.toFixed(2)}px) scale(${v.scale.toFixed(3)}) matrix3d(${m.map((n) => n.toFixed(5)).join(', ')})`;
+        const transform = transformOf({ x: v.position.x + INSET, y: v.position.y, z: v.position.z }, v.scale, m);
         if (transform !== c.transform) { group.style.transform = transform; c.transform = transform; }
+        /* Chairs are siblings, each a stacking context: the nearer one is painted over the farther by its z-index. */
+        const depth = String(depthOf(v.position.z));
+        if (depth !== c.depth) { group.style.zIndex = depth; c.depth = depth; }
         if (Math.abs(v.fold - c.fold) > 0.002) {
           c.list = piecesOf(v.fold);
           c.fold = v.fold;
@@ -255,7 +296,7 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
       const play = playOfBody.get(e.id);
       if (play === undefined) return;
       if (e.kind === 'hit') {
-        setDents((d) => (d.some((x) => x.play === play) ? d : [...d, { play, x: e.at.x, y: e.at.y, full: false }]));
+        setDents((d) => (d.some((x) => x.play === play) ? d : [...d, { play, x: e.at.x + INSET, y: e.at.y - HIT_LIFT, full: false }]));
         growing.set(play, null);
         shake();
         if (loud) void latest.current.sound.play('steel-chair.hit', { group: GROUP });
@@ -267,22 +308,25 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
     const tick = (t: number): void => {
       raf = 0;
       if (!world) return;
-      const dt = lastT ? Math.min(0.05, Math.max(0, (t - lastT) / 1000)) : STEP;
+      const dt = lastT ? Math.min(MOST_FRAME_S, Math.max(0, (t - lastT) / 1000)) : STEP;
       lastT = t;
       acc += dt;
       let n = 0;
-      while (acc >= STEP && n < 12) { for (const e of step(world, STEP)) onEvent(e); acc -= STEP; n++; }
-      if (n === 12) acc = 0;
+      while (acc >= STEP && n < MOST_STEPS) { for (const e of step(world, STEP)) onEvent(e); acc -= STEP; n++; }
+      if (n === MOST_STEPS) acc = 0;
       grow(t);
       const awake = paint();
       if (awake || growing.size > 0) raf = requestAnimationFrame(tick); else lastT = 0;
     };
     const wake = (): void => { if (!raf && world) raf = requestAnimationFrame(tick); };
 
+    /* The box a throw aims at: the text's, lowered by the lift of the oblique view at the hit, so the drawn chair meets the dent drawn at the text. */
+    const aim = (): Box => ({ left: target.left - INSET, top: target.top + HIT_LIFT, width: target.width, height: target.height });
+
     /* A chair into the standing world, in flight. */
     const addPlay = (play: CardPlay): void => {
       if (!world || bodyOfPlay.has(play.id)) return;
-      const id = addThrow(world, throwOf(rand, target));
+      const id = addThrow(world, throwOf(rand, aim()));
       bodyOfPlay.set(play.id, id);
       playOfBody.set(id, play.id);
       setChairs((c) => (c.includes(play.id) ? c : [...c, play.id]));
@@ -299,11 +343,11 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
       const added: { play: string; x: number; y: number }[] = [];
       for (const p of plays) {
         if (bodyOfPlay.has(p.id)) continue;
-        const th = throwOf(rand, target);
+        const th = throwOf(rand, aim());
         const id = addThrow(world, th);
         bodyOfPlay.set(p.id, id);
         playOfBody.set(id, p.id);
-        added.push({ play: p.id, x: th.target.x, y: th.target.y });
+        added.push({ play: p.id, x: th.target.x + INSET, y: th.target.y - HIT_LIFT });
       }
       settle(world, SETTLE_S);
       if (added.length > 0) {
@@ -314,8 +358,8 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
     };
 
     const meet = (): void => {
-      if (still || met1.current) return;
-      met1.current = true;
+      if (still || memory.met) return;
+      memory.met = true;
       latest.current.met();
     };
 
@@ -325,7 +369,7 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
       if (typeof ResizeObserver !== 'function') return;
       size = new ResizeObserver(() => {
         if (!world || !measure()) return;
-        resize(world, box.w, box.h, box.h);
+        resize(world, box.w - 2 * INSET, box.h - INSET, box.h - INSET);
         if (reduced) { settle(world, SETTLE_S); paint(); } else wake();
       });
       size.observe(el);
@@ -337,10 +381,10 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
       measure();
       if (box.w <= 0 || box.h <= 0) return;
       running = true;
-      loud = first.current && !still && !reduced;
-      first.current = false;
+      loud = memory.first && !still && !reduced;
+      memory.first = false;
       rand = rng(still ? seedOfIds(latest.current.live.map((p) => p.id)) : freshSeed());
-      world = createWorld(box.w, box.h, box.h);
+      world = createWorld(box.w - 2 * INSET, box.h - INSET, box.h - INSET);
       const plays = latest.current.live;
       meet();
       if (!still) startWatching();
@@ -370,7 +414,7 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
     };
 
     control.current = {
-      replay: () => { clearRun(true); first.current = false; startRun(); },
+      replay: () => { clearRun(true); memory.first = false; startRun(); },
       /* Plays that came or went while the run stands: the gone lose their chair and dent, the new are thrown alone into the world. */
       sync: () => {
         if (!running || !world) return;
@@ -409,7 +453,7 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
       control.current = null;
       paintNow.current = () => {};
     };
-  }, [still, reduced, place]);
+  }, [still, reduced, place, memory]);
 
   /* Plays that came or went, after the run's own effect has run. */
   useEffect(() => { control.current?.sync(); }, [key]);
@@ -441,7 +485,7 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
   const prims = dentPrimitives(shown.map((d) => ({ x: d.x - off.left, y: d.y - off.top })), { width: off.width, height: off.height });
   const filterOn = trusted && shown.length > 0 && geo !== null;
   return (
-    <div ref={host} className="dw-chair" data-kb-chair="">
+    <div ref={host} className="dw-chair">
       {trusted ? (
         <svg width="0" height="0" aria-hidden="true" focusable="false" style={{ position: 'absolute' }}>
           <filter id={filterId} colorInterpolationFilters="sRGB" primitiveUnits="userSpaceOnUse">
@@ -453,13 +497,12 @@ function Chairs({ live, still, place, show, met, children }: EffectProps & { liv
                   <feFuncR type="linear" slope={d.full ? 1 : 0} intercept={d.full ? 0 : 0.5} />
                   <feFuncG type="linear" slope={d.full ? 1 : 0} intercept={d.full ? 0 : 0.5} />
                 </feComponentTransfer>
+                {/* The dent's square laid over neutral, so it is neutral (adds nothing) outside its circle; then its offset is added to the running map. */}
+                <feComposite in={`dent-${i}`} in2="neutral" operator="over" result={`full-${i}`} />
+                <feComposite in={i === 0 ? 'neutral' : `sum-${i - 1}`} in2={`full-${i}`} operator="arithmetic" k1="0" k2="1" k3="1" k4="-0.5" result={`sum-${i}`} />
               </Fragment>
             ))}
-            <feMerge result="map">
-              <feMergeNode in="neutral" />
-              {shown.map((d, i) => <feMergeNode key={d.play} in={`dent-${i}`} />)}
-            </feMerge>
-            <feDisplacementMap in="SourceGraphic" in2="map" scale={DENT_SCALE} xChannelSelector="R" yChannelSelector="G" />
+            <feDisplacementMap in="SourceGraphic" in2={shown.length > 0 ? `sum-${shown.length - 1}` : 'neutral'} scale={DENT_SCALE} xChannelSelector="R" yChannelSelector="G" />
           </filter>
         </svg>
       ) : null}

@@ -1,7 +1,8 @@
 /**
  * Steel Chair's dent (docs/plans/2026-11-15-steel-chair-plan.md, Task 4): the displacement map an SVG filter bends the words with, and the
  * filter's numbers. Pure TypeScript apart from `dentMapUrl`, which draws the map on a canvas once. The filter itself (a flood of neutral
- * gray, each dent's `feImage` over it, one `feDisplacementMap` on the words) is written as JSX by the effect from `dentPrimitives`.
+ * gray; each dent's `feImage` laid over neutral and added to the running map by an arithmetic `feComposite`, 0.5 + the sum of (d - 0.5), so
+ * overlapping dents add and do not cut each other; one `feDisplacementMap` on the words) is written as JSX by the effect from `dentPrimitives`.
  */
 
 /**
@@ -9,19 +10,20 @@
  * must carry `color-interpolation-filters="sRGB"`: under the default linearRGB the neutral byte 128 reads as about 0.22, not 0.5, and the
  * words would shift by several pixels everywhere.
  */
-export const DENT_SCALE = 26;
-
-/** The map's largest raw push, `sin(r·π)·(1 − r)` at its peak (r is about 0.35), so the ring can use the whole 0 to 255 range. */
-const PEAK = (() => {
-  let best = 0;
-  for (let i = 0; i <= 1000; i++) { const r = i / 1000; best = Math.max(best, Math.sin(r * Math.PI) * (1 - r)); }
-  return best;
-})();
+export const DENT_SCALE = 18;
+/*
+ * 18, and not the plan's 26: the plan's own review focus says the scale comes down if a dent makes a line unreadable, and it did. A dent is
+ * 160 px across and squeezes the words at its middle by 1 / (1 + scale·0.0196) (66% at 26, 74% at 18), and stretches them at its rim; seen in a
+ * browser at 26 the one-line post's second word was a smear, and where two dents overlap their squeezes add. At 18 every word of the long post
+ * reads at desktop and phone width, with one dent and with three overlapping, and the one-line post reads with one dent.
+ */
 
 /**
  * The displacement map, `size` by `size` RGBA pixels. At distance `r` (0 at the center, 1 at the edge) from the center the push away
  * from it is `sin(r·π)·(1 − r)`: nothing at the center and the rim, most in a ring between. Red carries x and green y, 128 is no push,
- * blue is 128 and every pixel is opaque. Outside the circle (`r` of 1 or more) the map is neutral, so a dent's square edge shows nothing.
+ * blue is 128 and every pixel is opaque. The push is the plan's bytes, 128 + 127·sin(r·π)·(1 − r), and is not stretched to fill the range: its
+ * peak (r of about 0.35) is 0.58 of 127, and a stretched map pushed the words 1/0.58 times too far.
+ * Outside the circle (`r` of 1 or more) the map is neutral, so a dent's square edge shows nothing.
  *
  * What `feDisplacementMap` does with it: it draws each pixel P from the source at P + scale·(C − 0.5), so the map's vector is where a
  * pixel is sampled FROM. With the vector pointing away from the center, a pixel on the ring shows the words from farther out, so on
@@ -36,7 +38,7 @@ export function dentMap(size = 160): Uint8ClampedArray {
       const dx = x + 0.5 - half, dy = y + 0.5 - half;
       const dist = Math.hypot(dx, dy);
       const r = dist / half;
-      const push = r >= 1 || dist === 0 ? 0 : (Math.sin(r * Math.PI) * (1 - r)) / PEAK;
+      const push = r >= 1 || dist === 0 ? 0 : Math.sin(r * Math.PI) * (1 - r);
       const i = (y * size + x) * 4;
       out[i] = 128 + Math.round(127 * push * (dist === 0 ? 0 : dx / dist));
       out[i + 1] = 128 + Math.round(127 * push * (dist === 0 ? 0 : dy / dist));
