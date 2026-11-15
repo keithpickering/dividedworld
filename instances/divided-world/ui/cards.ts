@@ -90,7 +90,7 @@ import laughTrackMark from './cards/laugh-track/mark.svg?url';
 import laughTrackArt from './cards/laugh-track/art.json';
 import { ConfigForm as LaughTrackConfigForm } from './laugh-track/ConfigForm.tsx';
 import { WORDS as THIS_WORDS, thisCard, type ThisConfig } from '../cards/this.ts';
-import thisCanvas from './cards/this/art.svg?url';
+import thisCanvas from './cards/this/art.webp?url';
 import thisMark from './cards/this/mark.svg?url';
 import thisArt from './cards/this/art.json';
 import { ConfigForm as ThisConfigForm } from './this/ConfigForm.tsx';
