@@ -22,5 +22,5 @@ export const ui: CardUi = {
   status: (plays) => (plays.length <= 1 ? 'Dented by a chair' : `Dented by ${plays.length} chairs`),
   hint: 'Someone took a chair to this post. The Lens says who.',
   describe: () =>
-  `A Salty card, ${steelChair.rarity}. A folding chair is thrown at a post and dents it: the words bend into the dent, and the chair drops to the floor under them. It covers none of the words and holds nobody. It plays again each time the post scrolls into view, somewhere else each time; with Game sounds on, it clangs the first time. Up to ${steelChair.stack} can stack on one post, each with its own dent, and each is gone ${spanWords(STEEL_CHAIR_LASTS)} after it lands. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+    `A Salty card, ${steelChair.rarity}. A folding chair is thrown at a post and dents it: the words bend into the dent, and the chair drops to the floor under them. It covers none of the words and holds nobody. It plays again each time the post scrolls into view, somewhere else each time; with Game sounds on, it clangs the first time. Up to ${steelChair.stack} can stack on one post, each with its own dent, and each is gone ${spanWords(STEEL_CHAIR_LASTS)} after it lands. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
 };
