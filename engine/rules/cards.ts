@@ -188,7 +188,7 @@ export function wardWords(wardName: string, effect: WardEffect, rules: Pick<Card
 export function matchWords(match: Match, own: Rarity): string {
   const rarity = match.upTo !== undefined && atOrBelow(match.upTo, own) ? match.upTo : own;
   const flavors = (match.flavors ?? []).map(capital);
-  const kinds = flavors.length < 2 ? flavors.join('') : `${flavors.slice(0, -1).join(', ')} or ${flavors[flavors.length - 1]}`;
+  const kinds = flavors.length < 2 ? flavors[0] ?? '' :`${flavors.slice(0, -1).join(', ')} or ${flavors[flavors.length - 1]}`;
   const card = kinds === '' ? 'a card' : `a ${kinds} card`;
   if (rarity === RARITIES[RARITIES.length - 1]) return card;
   return kinds === '' ? `${card} up to ${rarity}` : `${card}, up to ${rarity}`;

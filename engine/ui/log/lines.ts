@@ -194,8 +194,9 @@ export function placeOf(play: Act, data: Pick<LogData, 'names' | 'mine'> & Parti
 
 /**
  * What a card set face down waits for, in the words after "It waits": "to spring on a quote", "for a Whoops!", "for a Mod Bot's visit". A Move waits for a
- * quote (and the phrase it needs, where it was set with one); a set card waits for its trigger: the card its row names (`catches`), or the cards its match covers; a row from before the catch was recorded, on a card with no match, says "the card it names". Null for a card with no trap,
- * which waits for nothing, and for a back set under a trigger that is gone (a reply, a reaction), which keeps the words it had.
+ * quote (and the phrase it needs, where it was set with one); a set card waits for its trigger: the card its row names (`catches`), or the cards its
+ * match covers; a row from before the catch was recorded, on a card with no match, says "the card it names". Null for a card with no trap, which waits
+ * for nothing, and for a back set under a trigger that is gone (a reply, a reaction), which keeps the words it had.
  */
 export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'phrase' | 'passage' | 'who' | 'whoExcept'>, words: Pick<Words, 'instance'>, nameOf: (id: Id) => string = () => 'someone'): string | null {
   if (e.springs === false) return null;
