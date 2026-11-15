@@ -311,6 +311,92 @@ describe('the chips', () => {
   });
 });
 
+/* The stamp (Reactions.tsx, reactions.css): a reaction this screen left lands on its tile; nothing else does. */
+describe('the stamp', () => {
+  afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); });
+  /* One kind already on the post from a fan, as the server counts it, so a press makes two. */
+  const fanned = (kind: string) => {
+    const w = world();
+    const fan = w.fake.seed.account('fan');
+    w.fake.seed.react(fan, w.fake.seed.character(fan, 'Fan', 'face'), w.theirs, kind);
+    const v = show(w, w.theirs, w.spritey);
+    act(() => { v.tallies.merge(w.theirs, { [kind]: 1 }); });
+    return { w, v };
+  };
+
+  test('a pressed tile lands at once, in its quadrant\'s class color, with its seal, its wave and eight shards', async () => {
+    fanned('fire');
+    await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+    expect(done).toHaveAttribute('data-kb-landed', 'now');
+    expect(done.style.getPropertyValue('--kb-reaction-hue')).toBe('var(--kb-glass-class-face-large)');
+    const stamp = done.querySelector('.kb-reaction-stamp')!;
+    expect(stamp).toHaveAttribute('aria-hidden', 'true');
+    expect(stamp.querySelectorAll('.kb-reaction-seal')).toHaveLength(1);
+    expect(stamp.querySelectorAll('.kb-reaction-wave')).toHaveLength(1);
+    expect(stamp.querySelectorAll('.kb-reaction-shard')).toHaveLength(8);
+    expect(done.querySelector('.kb-reaction-count')).toHaveTextContent('2');
+  });
+
+  test('a kind whose quadrant has no class takes no color of its own (the stylesheet gives it the gold)', async () => {
+    fanned('tea');
+    await userEvent.click(await screen.findByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
+    const done = await screen.findByRole('button', { name: 'Tea, 2, including yours' });
+    expect(done).toHaveAttribute('data-kb-landed', 'now');
+    expect(done.style.getPropertyValue('--kb-reaction-hue')).toBe('');
+  });
+
+  test('a count that arrives from anyone else stamps nothing', async () => {
+    const w = world();
+    const v = show(w, w.theirs, w.spritey);
+    act(() => { v.tallies.merge(w.theirs, { fire: 1 }); });
+    const fire = await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' });
+    act(() => { v.tallies.merge(w.theirs, { fire: 2 }); });
+    await screen.findByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' });
+    expect(fire).not.toHaveAttribute('data-kb-landed');
+    expect(document.querySelector('.kb-reaction-stamp')).toBeNull();
+  });
+
+  test('a kind chosen in the picker lands on the row after the picker has gone', async () => {
+    fanned('fire');
+    const p = await open();
+    await userEvent.click(p.getByRole('button', { name: /^Fire/u }));
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+    expect(done).toHaveAttribute('data-kb-landed', 'after');
+  });
+
+  test('the stamp leaves the tile once it has played', async () => {
+    fanned('fire');
+    await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+    await waitFor(() => expect(done).not.toHaveAttribute('data-kb-landed'), { timeout: 2500 });
+    expect(done.querySelector('.kb-reaction-stamp')).toBeNull();
+  });
+
+  test('under Off the tile lands with no stamp to draw', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    fanned('fire');
+    await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+    expect(done).toHaveAttribute('data-kb-own', '');
+    expect(done.querySelector('.kb-reaction-stamp')).toBeNull();
+  });
+
+  test('a press waiting on its answer is marked sending, and the mark goes with the answer', async () => {
+    const { w } = fanned('fire');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const real = w.fake.react.bind(w.fake);
+    w.fake.react = async (...args) => { await gate; return real(...args); };
+    const fire = await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' });
+    await userEvent.click(fire);
+    expect(fire).toHaveAttribute('data-kb-sending', '');
+    release();
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+    expect(done).not.toHaveAttribute('data-kb-sending');
+  });
+});
+
 describe('who gets a React button', () => {
   test('another player\'s post does', async () => {
     const w = world();
