@@ -908,7 +908,7 @@ describe('the cosmetics art files', () => {
   });
 });
 
-describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, Task 9)', () => {
+describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card notes Part 6, Task 9)', () => {
   const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
   const play = (config: Record<string, unknown>, over: Partial<CardPlay> = {}): CardPlay => ({ id: 'k', card: 'x', layer: 1, caster: null, message: '', config, playedAt: '2026-11-12T00:00:00.000Z', post: 'p', ...over });
   /* A rule's share, retuned for one test and put back: the words are read from the rules, never restated. */
