@@ -18,35 +18,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sql } from './psql-db.ts';
+import { lit, screenPredicate, SEARCH_READS, type Query } from './screen-functions.ts';
 // @ts-expect-error the guard's lists live in a plain .mjs
 import { ALLOWED_READS, ALLOWED_RPCS, SCREEN_HELPERS } from '../../../tools/check-web-reads.mjs';
 
-/** Runs one SQL text, in one session, and returns psql's unaligned output. */
-export type Query = (text: string) => string;
-
-const lit = (xs: readonly string[]) => `array[${xs.map((x) => `'${x.replaceAll("'", "''")}'`).join(', ')}]::text[]`;
-
-/**
- * Functions that end in `_page` and are not screen functions: `standings_page` (0030) is an older security definer plpgsql function the
- * standings screen already calls, named before this convention. The plan did not account for it; it leaves this list when it is rewritten
- * as a screen function or renamed. Nothing else belongs here.
- */
-export const NOT_SCREEN_FUNCTIONS = ['standings_page'];
-
-/** The search reads (0117) are screen functions without the `_page` name: one call, plpgsql with a fixed generic plan, an invoker, stable, reading what a screen may. */
-export const SEARCH_READS = ['search_posts', 'search_threads', 'search_suggest'];
-
-/**
- * The rule that names the screen functions, as a SQL predicate over a `pg_proc` row's name: `boot`, a name ending `_page` that is not in NOT_SCREEN_FUNCTIONS, or a search
- * read. Exported so the guard below and the cold-read budget (0028-cold-read-budget.ts) read one list and not two that drift.
- */
-export const screenPredicate = (name: string): string =>
-  `(${name} = 'boot' or ${name} like '%\\_page' or ${name} = any (${lit(SEARCH_READS)})) and ${name} <> all (${lit(NOT_SCREEN_FUNCTIONS)})`;
-
-/** The names of every screen function in `public`, sorted, over the session `db` runs in. */
-export function screenNames(db: Query): string[] {
-  return db(`select p.proname from pg_proc p where p.pronamespace = 'public'::regnamespace and ${screenPredicate('p.proname')} order by 1`).split(/\r?\n/).filter(Boolean);
-}
+export type { Query };
 
 /** One line per fault, `function: predicate`, over every screen function visible to the session `db` runs in. */
 export async function screenFaults(db: Query): Promise<string[]> {
