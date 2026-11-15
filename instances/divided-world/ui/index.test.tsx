@@ -8,6 +8,7 @@ import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
 import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
+import { faceUpOnly, playOf, reachesOf } from '../../../engine/rules/cards.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
@@ -118,10 +119,16 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(t.describe).toMatch(/the one card it catches, from the cards cast on a post, uncommon or commoner/u);
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
-  test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', this: 'the quoting post', whodunnit: 'the quoting post', 'blind-study': 'the quoting post', overreaction: 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': 'the quoting post', 'main-event': "the quoting post's thread", 'feelin-glam': "the quoting post's thread" };
-    for (const [key, reach] of Object.entries(lands)) {
-      expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
+  /* Where a set card lands is its reach, said in the instance's own words for it: a post, that post's character, or that post's thread. */
+  const LANDS_ON: Readonly<Record<string, string>> = { post: 'the quoting post', character: "the quoting post's character", thread: "the quoting post's thread" };
+  const settable = instance.cards.filter((c) => playOf(c) === 'cast' && !faceUpOnly(c));
+  test('every card that can be set face down says so, landing at its own reach and no other', () => {
+    expect(settable.length, 'the rule checks a card').toBeGreaterThan(0);
+    for (const c of settable) {
+      expect(reachesOf(c), `${c.key} reaches one thing`).toHaveLength(1);
+      const reach = LANDS_ON[reachesOf(c)[0]!];
+      expect(reach, `${c.key}'s reach is one the rule has words for`).toBeDefined();
+      expect(face(c.key).describe, c.key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
     expect(face('autocorrect').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
     expect(face('this').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
