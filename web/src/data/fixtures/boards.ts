@@ -31,12 +31,12 @@
  *    as it stood, with no history behind it.
  *  - Stick Around's release sentence is the play's own setting (its `config`), seeded on #44's play.
  */
+import { cardPrice } from '../../../../engine/rules/packs.ts';
+import type { Instance } from '../../../../engine/rules/types.ts';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
 import { hudKey } from '../../../../engine/ui/player.tsx';
 import { instance } from '../../../../instances/divided-world/index.ts';
-import type { Instance } from '../../../../engine/rules/types.ts';
-import { cardPrice } from '../../../../engine/rules/packs.ts';
 import { fallbackSettings } from '../settings.ts';
 
 export type Account = 'player' | 'rival' | 'reader';
@@ -194,11 +194,11 @@ export function boardMachine(machine: Instance['machine']): Instance['machine'] 
   return [...machine.filter((s) => 'pack' in s.item), ...BOARD_SLOTS.map(slotOf)];
 }
 
-/** A fake whose clock is the moment's, for `seedBoards`. */
-export function createBoardsFake(moment: MomentName): Fake {
+/** A fake whose clock is the moment's, for `seedBoards`. The boards always draw from the default instance; `from` is there so a test can hand it an instance that has gained a card. */
+export function createBoardsFake(moment: MomentName, from: Instance = instance): Fake {
   /* The toasts board holds its toasts (ten minutes), so the match reads them whenever the run gets to it: a toast's own six seconds would race a slow runner. */
   const held = moment === '01-board-toasts' ? { toastMs: 10 * 60_000 } : {};
-  return createFake({ instance: { ...instance, machine: boardMachine(instance.machine) }, settings: { ...fallbackSettings, ...held }, now: () => MOMENTS[moment].at });
+  return createFake({ instance: { ...from, machine: boardMachine(from.machine) }, settings: { ...fallbackSettings, ...held }, now: () => MOMENTS[moment].at });
 }
 
 /** The moment a name or an address's parameter says, or an Error that lists the moments there are (a missing name included). */

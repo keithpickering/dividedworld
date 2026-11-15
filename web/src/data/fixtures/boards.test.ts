@@ -6,9 +6,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { rankIndex } from '../../../../engine/rules/ranks.ts';
+import type { Instance } from '../../../../engine/rules/types.ts';
 import { FAKE_BACKEND_MARKER, TEST_CODE, type Fake } from '../../../../engine/ui/data/fake.ts';
 import { instance } from '../../../../instances/divided-world/index.ts';
-import type { Instance } from '../../../../engine/rules/types.ts';
 import { hudKey } from '../../../../engine/ui/player.tsx';
 import { BOARD_SLOTS, boardMachine, createBoardsFake, EMAILS, MOMENTS, seedBoards, type MomentName } from './boards.ts';
 
@@ -443,5 +443,14 @@ describe('the machine the boards draw', () => {
   it('is what the fake of 07-vending sells: the Booster and the nine commons in BOARD_SLOTS order', async () => {
     const onSale = (await createBoardsFake('07-vending').machine()).filter((s) => s.availability === 'onSale');
     expect(onSale.map((s) => ('card' in s.item ? s.item.card : `pack:${s.item.pack}`))).toEqual(['pack:booster', ...BOARD_SLOTS.slice(0, 9)]);
+  });
+
+  it('stays the same when the instance has gained a card among the commons: the fake of 07-vending still answers the Booster and the nine commons of BOARD_SLOTS', async () => {
+    const at = instance.machine.findIndex((s) => 'card' in s.item);
+    const machine = [...instance.machine];
+    machine.splice(at + 2, 0, { ...sold, item: { card: 'a-new-common' }, availability: 'onSale' });
+    const grown: Instance = { ...instance, machine };
+    const onSale = (await createBoardsFake('07-vending', grown).machine()).filter((s) => s.availability === 'onSale');
+    expect(onSale.map(keyOf)).toEqual(['pack:booster', ...BOARD_SLOTS.slice(0, 9)]);
   });
 });
