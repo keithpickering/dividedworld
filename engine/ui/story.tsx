@@ -23,6 +23,7 @@ export interface WorldParameters {
   readonly moment?: string;
 }
 
+/** The entry of this key in a list; `what` is the noun the error names it by. */
 function keyed<T extends { readonly key: string }>(list: readonly T[], key: string, what: string): T {
   const found = list.find((entry) => entry.key === key);
   if (!found) throw new Error(`the instance has no ${what} "${key}", which this story names`);
