@@ -1,6 +1,6 @@
 /**
  * Autocorrect's settings in the play form (docs/plans/2026-11-03-autocorrect-design.md, section 1): the phrase to cover and the
- * words to cover it with, as two ConfigFields bounded as the card's rules bound them (autocorrect.ts), and a live ConfigHint under them
+ * words to cover it with, as two ConfigFields bounded as the card's rules bound them (phrase-bound.ts, autocorrect.ts), and a live ConfigHint under them
  * that counts the places the phrase covers in this post's own words, through the card's own matcher, so the form and the server
  * agree. The count is a preview; the server decides again, and refuses a phrase that is not there in the same words.
  */
@@ -10,7 +10,8 @@ import { visibleText } from '../../../../engine/bbcode/visible.ts';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
 import { ConfigField } from '../../../../engine/ui/cards/config/ConfigField.tsx';
 import { ConfigHint } from '../../../../engine/ui/cards/config/ConfigHint.tsx';
-import { PHRASE, REPLACEMENT } from '../autocorrect.ts';
+import { REPLACEMENT } from '../autocorrect.ts';
+import { PHRASE } from '../phrase-bound.ts';
 import { occurrences } from './match.ts';
 import './autocorrect.css';
 

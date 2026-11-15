@@ -13,8 +13,10 @@ import { GRID, cellsOf, count, type Cells } from '../../../engine/rules/surface.
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
 import { publicityTour } from './publicity-tour.ts';
-import { atOrBelow, castOnPost, giftSplit, instant, wardTurnsAway, openDrive, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { atOrBelow, castOnPost, drawnInMoment, giftSplit, instant, wardTurnsAway, openDrive, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
+import { boundedPhrase, characters } from './phrase-bound.ts';
+import { WORDS, thisCard } from './this.ts';
 import { CUES, PLACES, laughTrack, placesOf, type Cue } from './laugh-track.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
@@ -29,7 +31,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '', links: [] });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 100], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300], ['line-cutter', 'pepperoni', 300], ['feelin-glam', 'sweet', 300], ['whodunnit', 'pepperoni', 300], ['blind-study', 'pepperoni', 150], ['overreaction', 'pepperoni', 100], ['happy-heart', 'sweet', 150], ['super-happy-heart', 'sweet', 300], ['ultra-happy-heart', 'sweet', 600], ['take-the-fall', 'sweet', 150], ['tattle-tale', 'salty', 300]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 100], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300], ['line-cutter', 'pepperoni', 300], ['feelin-glam', 'sweet', 300], ['whodunnit', 'pepperoni', 300], ['blind-study', 'pepperoni', 150], ['overreaction', 'pepperoni', 100], ['happy-heart', 'sweet', 150], ['super-happy-heart', 'sweet', 300], ['ultra-happy-heart', 'sweet', 600], ['take-the-fall', 'sweet', 150], ['tattle-tale', 'salty', 300], ['this', 'pepperoni', 20]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -530,11 +532,12 @@ const answers: Record<string, Record<string, unknown>> = {
   '4d-chess': { card: 'whoops', quadrant: 'calmPositive' },
   graffiti: { stencil: 'horns', can: 'red', spot: 4 },
   'laugh-track': { cues: [{ phrase: 'the same old', sound: 'laugh' }, { phrase: 'something new', sound: 'boo' }] },
+  this: { phrase: 'the same old', words: 'again' },
 };
 
 test('each card that lets the model set options gives an object schema its own validateConfig accepts for a sample answer', () => {
   const keys = cards.filter((c) => c.staffOptions).map((c) => c.key).sort();
-  assert.deepEqual(keys, ['4d-chess', 'autocorrect', 'card-collector', 'graffiti', 'laugh-track', 'stick-around', 'whoops']);
+  assert.deepEqual(keys, ['4d-chess', 'autocorrect', 'card-collector', 'graffiti', 'laugh-track', 'stick-around', 'this', 'whoops']);
   for (const card of cards) {
     if (!card.staffOptions) continue;
     const { prompt, schema } = card.staffOptions;
@@ -609,11 +612,11 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks, Part 6, Jimmy Wails, Part 4, Laugh Track, card notes Part 2 and card notes Part 3 joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts (You Were Saying?, Below the Fold, Overreaction and Hype-Up are commons, and the hit pull takes none).
+  // The Gimmicks, Part 6, Jimmy Wails, Part 4, Laugh Track, card notes Part 2 and card notes Part 3 joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts (You Were Saying?, Below the Fold, Overreaction, Hype-Up and THIS are commons, and the hit pull takes none).
   // Card notes Part 5 added Happy Heart and Take the Fall (uncommon), Super Happy Heart and Tattle-Tale (rare) and Ultra Happy Heart (legendary), again with nothing listed in packs.ts.
   // Hype-Up (card notes, Hype-Up on a post) is now a common, so the hit pull leaves it out: seventeen uncommons share the 74. Sugar Coat, Graffiti, Line Cutter, Feelin' Glam, Whodunnit?, Super Happy Heart and Tattle-Tale are the rares that share the 24 with Main Event: eight, at 0.03 each.
   // Off Day and Ultra Happy Heart are the legendaries that share the 2: two, at 0.01 each, so Ultra Happy Heart can be pulled.
-  assert.equal(cards.length, 35);
+  assert.equal(cards.length, 36);
   const rares = cards.filter((c) => c.rarity === 'rare');
   assert.deepEqual(rares.map((c) => c.key).sort(), ['feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'whodunnit']);
   for (const c of rares) assert.ok(Math.abs(chance.get(c.key)! - 0.03) < 1e-9, `${c.name} at ${chance.get(c.key)}`);
@@ -845,6 +848,13 @@ test('Jimmy Wails cannot be set face down: it draws, runs a drive and needs a me
 
 /* ---- Laugh Track (docs/plans/2026-11-11-laugh-track-plan.md, Task 9) ---- */
 const cue = (phrase: string, sound: Cue['sound'] = 'laugh'): Cue => ({ phrase, sound });
+test('boundedPhrase is the one phrase bound: it refuses 101 characters, three letters and two lines in those words, and trims what it keeps', () => {
+  assert.deepEqual(boundedPhrase('a'.repeat(101)), { ok: false, why: 'the phrase is at most 100 characters' });
+  assert.deepEqual(boundedPhrase('abc'), { ok: false, why: 'the phrase has at least 4 letters or digits' });
+  assert.deepEqual(boundedPhrase('two\nlines'), { ok: false, why: 'the phrase is one line' });
+  assert.deepEqual(boundedPhrase('  four  '), { ok: true, phrase: 'four' });
+});
+
 const ltConfig = (cues: unknown) => laughTrack.validateConfig({ cues });
 const ltWhy = (v: unknown) => (v as { why: string }).why;
 const ltLands = (body: string, cues: Cue[], effects: { card: string; act: string }[] = []) => laughTrack.canApply(on(body), effects, { cues } as never, new Date());
@@ -1221,4 +1231,77 @@ test('Force Field and Sugar Coat are post wards, and what each does to each of t
   // The same wards put at a character's reach, which no card in the instance does: the rules alone decide.
   assert.deepEqual(FIVE.map((k) => meets(k, 'force-field', 'character')), ["this character's Force Field turns away cards up to uncommon", 'lands', 'lands', 'lands', 'lands']);
   assert.deepEqual(FIVE.map((k) => meets(k, 'sugar-coat', 'character')), ['lands', 'lands', 'lands', 'lands', "this character's Sugar Coat turns away Salty cards"]);
+});
+
+/* ---- THIS (docs/plans/2026-11-13-this-plan.md, Task 3) ---- */
+const thisConfig = (phrase: unknown, words?: unknown) => thisCard.validateConfig(words === undefined ? { phrase } : { phrase, words });
+const thisWhy = (v: unknown) => (v as { why: string }).why;
+
+test('THIS is a common Pepperoni Cast on a post that stacks three deep, free to set, and drawn in the moment', () => {
+  assert.deepEqual([thisCard.key, thisCard.name, thisCard.alignment, thisCard.rarity, thisCard.reaches, thisCard.stack, thisCard.lasts], ['this', 'THIS', 'pepperoni', 'common', ['post'], 3, undefined]);
+  assert.equal(thisCard.setPhrase?.({ phrase: 'Mario', words: 'this' }), 'Mario');
+  assert.equal(thisCard.playPrice(settings, on('Mario'), { phrase: 'Mario', words: '' }), 0);
+  assert.equal(drawnInMoment(thisCard), true);
+});
+
+test('THIS\'s configuration: no words is nothing, the words are one line of at most 60 characters, and both are trimmed', () => {
+  assert.deepEqual(thisConfig('Mario'), { ok: true, value: { phrase: 'Mario', words: '' } });
+  assert.deepEqual(thisConfig('  Mario  ', '  so true  '), { ok: true, value: { phrase: 'Mario', words: 'so true' } });
+  assert.equal(thisConfig('Mario', 'a'.repeat(WORDS.most)).ok, true);
+  assert.equal(thisWhy(thisConfig('Mario', 'a'.repeat(WORDS.most + 1))), 'the words are at most 60 characters');
+  assert.equal(thisConfig('Mario', '\u{1F600}'.repeat(60)).ok, true, 'sixty emoji are sixty characters');
+  assert.equal(thisWhy(thisConfig('Mario', '\u{1F600}'.repeat(61))), 'the words are at most 60 characters');
+  assert.equal(thisWhy(thisConfig('Mario', 'two\nlines')), 'the words are one line');
+  assert.equal(thisWhy(thisConfig('two\nlines', 'ok')), 'the phrase is one line');
+  assert.equal(thisWhy(thisConfig('a'.repeat(101))), 'the phrase is at most 100 characters');
+  assert.equal(thisWhy(thisConfig('abc')), 'the phrase has at least 4 letters or digits');
+  assert.equal(thisWhy(thisConfig(7)), 'the phrase is the words to point at');
+  assert.equal(thisWhy(thisConfig('Mario', 7)), 'the words are what the note says after THIS');
+  assert.equal(thisWhy(thisConfig('abc', 7)), 'the phrase has at least 4 letters or digits', 'the phrase is asked first');
+  assert.deepEqual(thisCard.validateConfig({ phrase: 'Mario', words: '   ' }), { ok: true, value: { phrase: 'Mario', words: '' } }, 'words of only spaces are no words');
+  assert.equal(thisWhy(thisConfig('Mario', 'one two')), 'the words are one line', 'a line separator is a line break');
+  assert.equal(thisWhy(thisConfig('Mario', null)), 'the words are what the note says after THIS');
+  assert.equal(thisCard.validateConfig(null).ok, false);
+});
+
+test('THIS lands on a post that holds its phrase, three deep, and on the caster\'s own post', () => {
+  const cfg = { phrase: 'Mario', words: 'this' };
+  const t = (n: number) => Array.from({ length: n }, (_, i) => ({ card: 'this', act: `t${i}` }));
+  assert.equal(thisCard.canApply(on('I like Mario a lot'), [], cfg, new Date()).ok, true);
+  assert.deepEqual(thisCard.canApply(on('I like Luigi'), [], cfg, new Date()), { ok: false, why: '“Mario” is not in this post\'s own words' });
+  assert.equal(thisCard.canApply(on('Mario'), t(2), cfg, new Date()).ok, true);
+  assert.deepEqual(thisCard.canApply(on('Mario'), t(3), cfg, new Date()), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
+  assert.equal(thisCard.canApply(on('my own Mario post'), [], cfg, new Date()).ok, true, 'the caster\'s own post');
+});
+
+test('THIS with no configuration answers what landsOn does', () => {
+  assert.equal(thisCard.canApply(on('anything'), [], undefined, new Date()).ok, true);
+  assert.deepEqual(thisCard.canApply(on('x'), [{ card: 'this', act: 'a' }, { card: 'this', act: 'b' }, { card: 'this', act: 'c' }], undefined, new Date()), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
+});
+
+test('THIS\'s persona options: the words are trimmed to 60 characters at a word\'s end and the trim is named; nothing else is repaired', () => {
+  const repair = (config: unknown, text = 'I like Mario a lot') => thisCard.repairStaff!(config, postTarget('p1', 'post', text), 'cast');
+  const phrase = 'Mario';
+  const sixtyOne = `${'a'.repeat(30)} ${'b'.repeat(30)}`;
+  assert.equal(characters(sixtyOne), 61);
+  assert.deepEqual(repair({ phrase, words: sixtyOne }), {
+    config: { phrase, words: 'a'.repeat(30) },
+    trims: [{ path: 'card.config.this.words', predicate: 'mostSixtyCharacters', before: 61, after: 30 }],
+  });
+  assert.deepEqual(repair({ phrase, words: 'c'.repeat(70) }), {
+    config: { phrase, words: 'c'.repeat(60) },
+    trims: [{ path: 'card.config.this.words', predicate: 'mostSixtyCharacters', before: 70, after: 60 }],
+  });
+  const sixty = { phrase, words: 'd'.repeat(60) };
+  assert.deepEqual(repair(sixty), { config: sixty, trims: [] });
+  const emoji = repair({ phrase, words: '\u{1F600}'.repeat(70) });
+  assert.equal(characters((emoji.config as { words: string }).words), 60, 'cut by characters, never through a surrogate pair');
+  assert.equal(thisConfig(phrase, (emoji.config as { words: string }).words).ok, true);
+  const missing = { phrase: 'Luigi', words: 'fine' };
+  assert.deepEqual(repair(missing), { config: missing, trims: [] });
+  const verdict = thisCard.validateConfig(missing);
+  assert.equal(verdict.ok, true);
+  assert.equal(thisCard.canApply(on('I like Mario a lot'), [], (verdict as { value: { phrase: string; words: string } }).value, new Date()).ok, false);
+  assert.deepEqual(repair({ phrase: 'ab', words: 'x' }), { config: { phrase: 'ab', words: 'x' }, trims: [] });
+  assert.deepEqual(repair('nonsense'), { config: 'nonsense', trims: [] });
 });

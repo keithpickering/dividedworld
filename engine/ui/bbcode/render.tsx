@@ -16,7 +16,7 @@
 import { Fragment, memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { colorHex, FONTS, parse, type BbNode } from '../../bbcode/parse.ts';
 import { visibleWalk } from '../../bbcode/visible.ts';
-import { stretchesOf, useTextLayers, type Stretch } from './layers.tsx';
+import { stretchesOf, useTextLayers, type Stretch, type TextRun } from './layers.tsx';
 import { inkOn as bestInk } from '../contrast.ts';
 import { CutNote } from './CutNote.tsx';
 import { HiddenNote } from '../conduct/Hidden.tsx';
@@ -61,7 +61,63 @@ interface Layered {
   readonly offsets: ReadonlyMap<BbNode, number>;
   readonly stretches: readonly Stretch[];
   readonly drawn: Set<Stretch>;
+  /** The standing trails (layers.tsx, `stands`) by the offset they are drawn at, each offset's runs in the order drawn, and the offsets ascending. */
+  readonly standing: ReadonlyMap<number, readonly TextRun[]>;
+  readonly standingAt: readonly number[];
+  /** The standing offsets no text piece ends at (they fall in a gap of the walk): drawn once, before the words of the text node that starts there, so inside whatever wraps that node (`standingTrails` says what follows from that). */
+  readonly leading: ReadonlySet<number>;
 }
+
+/**
+ * Where a standing run's trail is drawn: its end clamped to the text (the run is kept if not then empty), and then, by the text nodes' spans,
+ * at that offset where a text piece ends at it or holds it inside; where it falls in a gap (a `\n` the walk puts for a quote, an [hr] and the like)
+ * at the start of the next text node at or after it, and past the last text node, at the last one's end. At one offset the runs are by `z`
+ * ascending, then list order; that holds across how they got there, so a run whose end is the last node's end and one whose end fell in a gap
+ * after it and was moved there share the offset and are ordered the same way. Only a wrap run with a trail stands.
+ *
+ * A trail moved to the start of the next text node is drawn inside whatever wraps that node: `cats[hr][b]today[/b]` gives
+ * `<strong><trail/>today</strong>`, under a closed spoiler it is hidden with those words, and under an autolink it is inside the `<a>`.
+ * That is kept. A run whose end clamps into a text with no text node at all has nothing to draw its trail against, and the trail is dropped.
+ */
+function standingTrails(length: number, runs: readonly TextRun[], spans: readonly (readonly [number, number])[]): Pick<Layered, 'standing' | 'standingAt' | 'leading'> {
+  const standing = new Map<number, TextRun[]>();
+  const leading = new Set<number>();
+  const ends = new Set(spans.map(([, e]) => e));
+  const placed = (e: number): number => {
+    if (ends.has(e) || spans.some(([s, f]) => s < e && e < f)) return e;
+    const next = spans.find(([s]) => s >= e);
+    if (next) { leading.add(next[0]); return next[0]; }
+    return spans.length ? spans[spans.length - 1]![1] : e;
+  };
+  runs.map((run, i) => ({ run, i }))
+    .filter(({ run }) => stands(run) && Math.min(run.end, length) > Math.max(0, run.start))
+    .sort((a, b) => a.run.z - b.run.z || a.i - b.i)
+    .forEach(({ run }) => {
+      if (!spans.length) return;
+      const e = placed(Math.min(run.end, length));
+      standing.set(e, [...(standing.get(e) ?? []), run]);
+    });
+  return { standing, standingAt: [...standing.keys()].sort((a, b) => a - b), leading };
+}
+
+/** Whether a run draws a standing trail. */
+const stands = (run: TextRun): boolean => run.mode === 'wrap' && run.stands === true && run.trail !== undefined;
+
+/** What a post has when no run stands: one table for all of them, so such a post allocates nothing for it. */
+const NO_STANDING: Pick<Layered, 'standing' | 'standingAt' | 'leading'> = { standing: new Map(), standingAt: [], leading: new Set() };
+
+/** The standing offsets `e` with `lo < e < hi`. */
+function standingBetween(layered: Layered, lo: number, hi: number): number[] {
+  const at = layered.standingAt;
+  let [a, b] = [0, at.length];
+  while (a < b) { const mid = (a + b) >> 1; if (at[mid]! <= lo) a = mid + 1; else b = mid; }
+  const found: number[] = [];
+  for (; a < at.length && at[a]! < hi; a++) found.push(at[a]!);
+  return found;
+}
+
+/** The standing trails drawn at `e`, if any. */
+const trailsAt = (layered: Layered, e: number): ReactNode[] => (layered.standing.get(e) ?? []).map((r) => r.trail!(`${r.key}~trail`));
 
 /** The first stretch that ends after `at`; the stretches are in order and cover the text end to end. */
 function firstAfter(stretches: readonly Stretch[], at: number): number {
@@ -76,18 +132,29 @@ function layeredText(n: Extract<BbNode, { type: 'text' | 'noparse' | 'autolink' 
   if (at === undefined || !n.text) return n.text;
   const end = at + n.text.length;
   const out: ReactNode[] = [];
+  const trails = layered.standingAt.length > 0;
+  if (trails && layered.leading.has(at)) out.push(...trailsAt(layered, at));
   for (let i = firstAfter(layered.stretches, at); i < layered.stretches.length && layered.stretches[i]!.start < end; i++) {
     const st = layered.stretches[i]!;
     const [from, to] = [Math.max(st.start, at), Math.min(st.end, end)];
-    if (!st.run) out.push(n.text.slice(from - at, to - at));
-    else if (st.run.mode === 'wrap') {
-      out.push(st.run.render({ text: n.text.slice(from - at, to - at), key: `${st.run.key}@${from}` }));
-      // The trail follows the piece that ends the run's drawn words: the stretch ends here, and at the run's own end (not under a higher run).
-      if (st.run.trail && st.end === to && st.end === Math.min(st.run.end, layered.text.length)) out.push(st.run.trail(`${st.run.key}~trail`));
+    if (!st.run || st.run.mode === 'wrap') {
+      // Plain words and a wrap piece are cut at every standing offset inside them, each part drawn as the piece was.
+      let part = from;
+      for (const e of trails ? [...standingBetween(layered, from, to), to] : [to]) {
+        const words = n.text.slice(part - at, e - at);
+        out.push(st.run ? st.run.render({ text: words, key: `${st.run.key}@${part}` }) : words);
+        // The trail follows the piece that ends the run's drawn words: the stretch ends here, and at the run's own end (not under a higher run).
+        // A run that stands draws its trail by the standing rule, once.
+        if (e === to && st.run?.trail && !st.run.stands && st.end === to && st.end === Math.min(st.run.end, layered.text.length)) out.push(st.run.trail(`${st.run.key}~trail`));
+        if (trails) out.push(...trailsAt(layered, e));
+        part = e;
+      }
     }
     else if (!layered.drawn.has(st)) {
       layered.drawn.add(st);
       out.push(st.run.render({ text: layered.text.slice(st.start, st.end), key: `${st.run.key}@${st.start}` }));
+      // A leading trail is drawn at its own node's start, so the replace stretch passing over it does not draw it too.
+      if (trails) for (const e of standingBetween(layered, st.start, st.end + 1)) if (!layered.leading.has(e)) out.push(...trailsAt(layered, e));
     }
   }
   return <Fragment key={key}>{out}</Fragment>;
@@ -240,6 +307,16 @@ export const BbCode = memo(function BbCode({ text, quoteHead }: BbCodeProps) {
   const layeredOn = runs.length > 0;
   const walk = useMemo(() => (layeredOn ? visibleWalk(tree) : null), [tree, layeredOn]);
   const stretches = useMemo(() => (walk ? stretchesOf(walk.text.length, runs) : []), [walk, runs]);
-  const layered = walk ? { text: walk.text, offsets: walk.offsets, stretches, drawn: new Set<Stretch>() } : undefined;
+  // The text pieces' spans, in the walk's order, which is ascending: `visibleWalk` fills `offsets` as it reads the tree in order, each text node
+  // at the text's length so far, and a Map keeps insertion order, so no sort is needed. Built only where some run stands.
+  const anyStands = runs.some(stands);
+  const spans = useMemo(() => {
+    if (!walk || !anyStands) return null;
+    const out: [number, number][] = [];
+    for (const [n, o] of walk.offsets) if ((n.type === 'text' || n.type === 'noparse' || n.type === 'autolink') && n.text) out.push([o, o + n.text.length]);
+    return out;
+  }, [walk, anyStands]);
+  const standing = useMemo(() => (!walk ? null : spans ? standingTrails(walk.text.length, runs, spans) : NO_STANDING), [walk, spans, runs]);
+  const layered = walk && standing ? { text: walk.text, offsets: walk.offsets, stretches, drawn: new Set<Stretch>(), ...standing } : undefined;
   return <div className="kb-bb">{nodes(tree, quoteHead, layered)}</div>;
 });

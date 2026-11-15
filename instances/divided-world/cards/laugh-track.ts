@@ -6,7 +6,7 @@
  * Its rules here are its bounds, where it lands and its price; the sounds and the caption are the screens'. Both find a phrase with the
  * engine's one matcher (engine/bbcode/phrase.ts) over the post's visible text, so the places a screen cues are the ones the server priced.
  *
- * - **A cue** is a phrase, bounded as Autocorrect's is (4 to 100 characters, at least 4 letters or digits, one line), and a sound.
+ * - **A cue** is a phrase, bounded by the one phrase bound (phrase-bound.ts: 4 to 100 characters, at least 4 letters or digits, one line), and a sound.
  *   Two cues with the same words are one cue too many.
  * - **It lands** only where every cue's phrase is in the post's own words and outside any link (a Laugh Track never cues a bare address), no two cued places overlap and at most `PLACES.most` places are
  *   cued, on a post with no audience yet: it stacks one deep.
@@ -17,7 +17,7 @@
 import { economyOf, isLive, landsOn, ok, refuse, type CardRules, type PostTarget } from '../../../engine/rules/cards.ts';
 import { occurrences, sameWords } from '../../../engine/bbcode/phrase.ts';
 import type { Stretch } from '../../../engine/bbcode/visible.ts';
-import { PHRASE } from './autocorrect.ts';
+import { boundedPhrase } from './phrase-bound.ts';
 
 export type Sound = 'laugh' | 'cheer' | 'boo';
 export interface Cue { readonly phrase: string; readonly sound: Sound }
@@ -26,9 +26,6 @@ export const CUES = { most: 5 } as const;
 export const PLACES = { most: 30 } as const;
 
 const SOUNDS: readonly Sound[] = ['laugh', 'cheer', 'boo'];
-const WORDISH = /[\p{L}\p{N}]/gu;
-const LINE_BREAK = /[\n\r\v\f\u0085\u2028\u2029]/u;
-const characters = (s: string) => [...s].length;
 
 /** A cued place: where a cue's phrase is in the text, with the cue's index. */
 export interface Place { readonly start: number; readonly end: number; readonly cue: number }
@@ -70,15 +67,6 @@ function crosses(a: readonly { readonly start: number; readonly end: number }[],
     }
   }
   return false;
-}
-
-/** A phrase as a cue holds it (trimmed), or the reason it is out of bounds: the one list `validateConfig` refuses by and `repairCues` drops by. */
-function boundedPhrase(raw: string): { readonly ok: true; readonly phrase: string } | { readonly ok: false; readonly why: string } {
-  const phrase = raw.trim();
-  if (characters(phrase) > PHRASE.most) return { ok: false, why: `the phrase is at most ${PHRASE.most} characters` };
-  if ((phrase.match(WORDISH) ?? []).length < PHRASE.least) return { ok: false, why: `the phrase has at least ${PHRASE.least} letters or digits` };
-  if (LINE_BREAK.test(phrase)) return { ok: false, why: 'the phrase is one line' };
-  return { ok: true, phrase };
 }
 
 const cuesOf = (config: unknown): readonly Cue[] | null => {

@@ -12,7 +12,10 @@
  *
  * A wrap run may also carry a **trail**: something drawn once, right after the last piece of the run that is drawn, inside that piece's
  * formatting, so it sits in the line as the run's words do (an instance's card uses it to leave room after a stretch of words). It is
- * drawn only where the run's own end is drawn; a run whose end lies under a higher run has none.
+ * drawn only where the run's own end is drawn; a run whose end lies under a higher run has none, unless it **stands** (`stands: true`):
+ * then its trail is drawn at its end (clamped to the text) whatever run is drawn there, cutting a higher wrap run's piece in two or
+ * following what a higher replace run draws. Standing trails at one offset go by `z` ascending, then list order; the run on top's own
+ * ordinary trail at that offset comes first, and a run that stands draws its trail once, by this rule.
  *
  * Where runs overlap, a replace run wins over a wrap run, and of two of a kind the one with the higher `z` wins; the lower one is
  * drawn only where it is not covered, each uncovered stretch of it once. A run never reaches into a quote, code, a link or an
@@ -34,6 +37,8 @@ export interface TextRun {
   readonly render: (covered: { readonly text: string; readonly key: string }) => ReactNode;
   /** A wrap run's trail: drawn once after the run's last drawn piece, given React's key for it. Never drawn for a replace run. */
   readonly trail?: (key: string) => ReactNode;
+  /** Its trail is drawn at the run's end whatever run is drawn there. Only a wrap run with a `trail` may set it. */
+  readonly stands?: true;
 }
 
 const Layers = createContext<readonly TextRun[]>([]);

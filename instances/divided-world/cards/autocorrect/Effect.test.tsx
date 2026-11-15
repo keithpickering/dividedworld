@@ -13,6 +13,7 @@ import { useState } from 'react';
 import type { Act, EffectState } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { BbCode } from '../../../../engine/ui/bbcode/render.tsx';
+import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
 import * as loop from '../../../../engine/ui/shine/loop.ts';
 import { probe } from '../../../../engine/ui/shine/loop.ts';
 import css from './autocorrect.css?raw';
@@ -48,7 +49,7 @@ const playOf = (n: number, phrase: string, replacement: string): CardPlay => ({ 
 const ok = async (play: string) => ({ ok: true as const, value: { play, savedAt: '2026-11-03T11:00:00.000Z' } });
 const savedOf = (state: unknown): EffectState => ({ state, savedAt: '2026-11-03T10:30:00.000Z', savedBy: 'author' }) as unknown as EffectState;
 
-interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly states?: Record<string, EffectState>; readonly author?: boolean; readonly save?: EffectProps['save']; readonly still?: boolean }
+interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly states?: Record<string, EffectState>; readonly author?: boolean; readonly save?: EffectProps['save']; readonly still?: boolean; readonly around?: readonly TextRun[] }
 
 function mount(o: Options = {}) {
   const save = vi.fn(o.save ?? (ok as unknown as EffectProps['save']));
@@ -63,7 +64,7 @@ function mount(o: Options = {}) {
     setBody = set;
     setStates = setHeld;
     bump = () => setN((n) => n + 1);
-    return (
+    const effect = (
       <AutocorrectEffect
         post={postOf(body)} plays={o.plays ?? [playOf(1, 'mario', 'Luigi')]} states={held} released={new Set()} written={new Map()} reader={{ author: o.author ?? false, caster: false }}
         place="thread" reach="post" still={o.still ?? false} save={save} release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={(v) => { views.push(v); }} met={() => {}}
@@ -72,6 +73,7 @@ function mount(o: Options = {}) {
         <BbCode text={body} />
       </AutocorrectEffect>
     );
+    return o.around ? <TextLayer runs={o.around}>{effect}</TextLayer> : effect;
   }
   const world = renderInWorld(<Host />);
   return { ...world, save, views, edit: (b: string) => act(() => setBody(b)), setStates: (st: Record<string, EffectState>) => act(() => setStates(st)), rerender: () => act(() => bump()) };
@@ -1001,5 +1003,64 @@ describe('Autocorrect and highlight-to-quote', () => {
   test('a peeled strip quotes the author\'s words again', () => {
     mount({ body: 'I said MARIO today', states: { k1: savedOf({ peeled: [0] }) } });
     expect(quoted()).toBe('I said MARIO today');
+  });
+});
+
+describe('Autocorrect under another effect standing trail', () => {
+  /* A plain wrap run, as a note under a phrase lays one: its words are drawn by a lower layer than the tape, and its trail stands at its end. */
+  const standing = (end: number): readonly TextRun[] => [{
+    start: 0, end, key: 'standing', z: -1, mode: 'wrap', stands: true,
+    render: ({ text, key }) => <span key={key}>{text}</span>,
+    trail: (key) => <span key={key} data-test-standing="">gap</span>,
+  }];
+  /* 'say mario now': the phrase lies at 4 to 9. */
+  const BODY = 'say mario now';
+  const parts = () => [...document.querySelectorAll<HTMLElement>('[data-kb-ac-seg="4-9"]')];
+
+  test.each([[6, 'inside'], [9, 'at the end of']])('a standing run ending %s, %s the strip, leaves one strip, one anchor at its start, and both parts covered', (end) => {
+    const around = standing(end);
+    mount({ body: BODY, around });
+    expect(buttons()).toHaveLength(1);
+    expect(pieces().length).toBeGreaterThan(0);
+    const segs = parts();
+    expect(segs.map((p) => p.textContent).join('')).toBe('mario');
+    expect(segs).toHaveLength(end === 6 ? 2 : 1);
+    for (const w of segs) {
+      expect(w).toHaveAttribute('aria-hidden', 'true');
+      expect(w).toHaveAttribute('data-kb-quotable', 'hidden');
+    }
+    /* The anchor stands before the strip's first words, not between the parts. */
+    const [anchor] = anchors();
+    expect(anchor!.compareDocumentPosition(segs[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const w of segs) expect(anchor!.compareDocumentPosition(w) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.querySelectorAll('[data-test-standing]')).toHaveLength(1);
+  });
+
+  test('the room of the strip is drawn once, before the standing trail at the same end', () => {
+    mount({ body: BODY, around: standing(9) });
+    expect(rooms()).toHaveLength(1);
+    const room = rooms()[0]!;
+    const gap = document.querySelector('[data-test-standing]')!;
+    expect(room.compareDocumentPosition(gap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('a standing run inside the strip puts the room after both parts, once', () => {
+    mount({ body: BODY, around: standing(6) });
+    expect(rooms()).toHaveLength(1);
+    const [first, second] = parts();
+    const gap = document.querySelector('[data-test-standing]')!;
+    expect(first!.compareDocumentPosition(gap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(gap.compareDocumentPosition(second!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(second!.compareDocumentPosition(rooms()[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('the strip is measured as one: the tape is laid as it is with no standing run', () => {
+    const laid = () => pieces().map((p) => [p.getAttribute('data-kb-ac-piece'), p.getAttribute('data-kb-ac-line'), p.style.cssText]);
+    const withRun = mount({ body: BODY, around: standing(6) });
+    const a = laid();
+    withRun.unmount();
+    mount({ body: BODY });
+    expect(a.length).toBeGreaterThan(0);
+    expect(a).toEqual(laid());
   });
 });

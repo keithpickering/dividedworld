@@ -35,6 +35,8 @@
  *  - Happy Heart and Take the Fall (card notes Part 5) were then added after Blind Study, the end of the on-sale slots (before the hidden Main Event), and the hidden Super Happy Heart, Tattle-Tale and Ultra Happy Heart
  *    as the last three slots (after Whodunnit?), so no slot above them moves and Glitter Bomb's tag stays 272px lower; the list has two more on-sale rows (55px each) and three more hidden rows:
  *    the hidden Main Event's cell and note stand 110px lower again (935 in all), and Save changes and its note stand 110px and 165px lower again (1430 in all).
+ *  - THIS was then added beside Feelin' Fab's slot, as its plan says (the two free-to-play commons at 0.20 stand together), so every row under Feelin' Fab's stands one row (55px) lower:
+ *    Glitter Bomb's tag 327px lower in all, the hidden Main Event's cell and note 990px, and Save changes and its note 1485px.
  *  - The build's controls are the glass's own measure, so a button is compared by its place and not its size, and a field's type is the glass's.
  *  - A control's accessible name in the build says whose it is ("Whoops!: move up"), where the board's arrows are named "Move up" alone.
  *  - The note beside Save changes says what a price is held to (between 0.01 and 1,000,000.00) where the board's note says a Boss move reads the new price; the
@@ -67,11 +69,11 @@ const manifest: BoardManifest = {
     at('code-a2', 'cell', 'A2', { origin: 'head-slot', originEdge: 'bottom' }),
     at('tag-pull', 'text', 'PULLED BY THE BOSS · TO NOV 9', { origin: 'head-slot', originEdge: 'bottom' }),
     at('code-e1', 'cell', 'E1', { origin: 'head-slot', originEdge: 'bottom' }),
-    at('tag-markup', 'text', 'MARKED UP ×1.5 · 2.25 TO NOV 8', { buildName: 'Marked up ×1.5 · 2.25 · to Nov 8', buildShift: { y: 272 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('code-none', 'cell', '–', { buildShift: { y: 935 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('hidden-note', 'text', 'Only in packs. The Boss may flash-sale it.', { buildShift: { y: 935 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 1430 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 1430 } }),
+    at('tag-markup', 'text', 'MARKED UP ×1.5 · 2.25 TO NOV 8', { buildName: 'Marked up ×1.5 · 2.25 · to Nov 8', buildShift: { y: 327 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('code-none', 'cell', '–', { buildShift: { y: 990 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('hidden-note', 'text', 'Only in packs. The Boss may flash-sale it.', { buildShift: { y: 990 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 1485 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 1485 } }),
   ],
 };
 export default manifest;
