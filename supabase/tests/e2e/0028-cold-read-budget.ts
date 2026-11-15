@@ -46,8 +46,10 @@
  * posters whoever is online), and `ban_ends` and what it calls are planned only where that mask has a ban. An earlier file commits a mask's presence at `now()`, a mask
  * with a ban an Unban lifted (0003-export.ts), so index_page's figure was one or the other by how long the files between took: 5.2 MB in a run that reached this file 5
  * minutes 22 seconds after that one passed, 5.960 MB in a run that reached it after 4 minutes 20, and under 5.5 again when that job was run again (the sql job,
- * 2026-11-15, the same commit of every file under supabase/). A board's and a thread's box also name a staff persona that posted inside the window, anywhere on the
- * instance, and reading its posts runs `conceal_layer` on each: 0.06 MB of board_page's figure, there or not by when an earlier file's Mod last posted.
+ * 2026-11-15, the same commit of every file under supabase/). The ban is little of that: with the fixture's own mask online, which has none, the workflow measures
+ * 5.954. A board's and a thread's box also read every staff persona's posts inside the window, anywhere on the
+ * instance, to name those on that board or in that thread, and reading them runs `conceal_layer` on each: 0.06 MB of board_page's figure, there or not by when an
+ * earlier file's Mod last posted.
  *
  * So the fixture makes one of its own masks the one mask online, browsing its own thread, and has its own persona post in that thread, as an instance with anyone on
  * it stands; and it sets every other presence row's `seen_at` a day back (an earlier file's leftovers, and this is the last file). An Act cannot be dated back, so an
@@ -121,8 +123,9 @@ function makeFixture(): Fixture {
 let made: Fixture | undefined;
 const fixture = (): Fixture => (made ??= makeFixture());
 
-/** Who the online boxes would name now, by id, in order: every character with a presence row inside the presence window (hidden ones too, so none is waved through), and every staff persona listed for a post inside it. */
+/** What `online` answers: ids, in order. */
 export interface Online { masks: string[]; staff: string[]; }
+/** Who the online boxes would name now: every character with a presence row inside the presence window (hidden ones too, so none is waved through), and every staff persona listed for a post inside it. */
 export function online(): Online {
   const list = (q: string): string[] => { const out = sql(q); return out === '' ? [] : out.split(/\r?\n/); };
   return {
@@ -134,7 +137,8 @@ export function online(): Online {
 /**
  * One line for each way who is online is not what the fixture pinned: a mask online that is not the fixture's `mask`, `mask` not online, and the fixture's `persona`
  * not listed. Each moves which helpers a first call plans, so a figure measured then is not the one its budget was recorded for. Another persona listed beside the
- * fixture's is no fault: its post cannot be dated back, and the fixture's has the boxes read a staff post either way.
+ * fixture's is no fault: its post cannot be dated back, and the fixture's has the boxes read a staff post either way. (A post that quotes a hidden version would have `conceal_layer` plan more than the
+ * fixture's does, for as long as it is in the window; no earlier file's Mod posts one.)
  */
 export function onlineFaults(seen: Online, own: { mask: string; persona: string }): string[] {
   const out = seen.masks.filter((c) => c !== own.mask).map((c) => `${c}: it is online and is not the fixture's mask; the online boxes would call their helpers for it`);
@@ -168,15 +172,16 @@ const admin = (f: Fixture) => f.admin;
 const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: number): Budget => ({ call, as, mb });
 
 /**
- * Each screen function, one real call that answers a document. The budgets are the workflow's measurements (PR 720's sql job, 2026-11-15), each rounded up to one decimal plus 0.3 MB; a search read
+ * Each screen function, one real call that answers a document. The budgets are the workflow's measurements (PR 720's sql job, 2026-11-15; index_page's and board_page's, PR 727's, the same day,
+ * the first with who is online pinned: 5.954 and 8.498 MB, every other figure within 0.001 MB of PR 720's), each rounded up to one decimal plus 0.3 MB; a search read
  * is called with a term and no filter, since the plan it keeps does not depend on the term.
  */
 export const BUDGETS: Record<string, Budget> = {
   alerts_page: budget(() => 'public.alerts_page(null)', player, 5.7),
-  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 8.1),
+  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 8.8),
   boot: budget(() => 'public.boot()', player, 6.4),
   drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 3.0),
-  index_page: budget(() => 'public.index_page()', player, 5.5),
+  index_page: budget(() => 'public.index_page()', player, 6.3),
   log_page: budget(() => 'public.log_page(null)', player, 15.7),
   my_characters_page: budget(() => 'public.my_characters_page()', player, 4.8),
   profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 6.6),
@@ -291,8 +296,14 @@ test('onlineFaults names another mask online, the fixture\'s mask gone and its p
   } finally {
     sql(`update presence set seen_at = now() where character = '${f.theirs}'`);
   }
-  /* The fixture's persona, not the one looked for: a persona that never posted is not listed. */
-  assert.match(onlineFaults(online(), { mask: f.theirs, persona: f.mate })[0]!, /the fixture's persona is not listed/u);
+  /* The fixture's persona, no longer listed: a retired persona is in no box, as one whose post has left the window is in none. */
+  try {
+    sql(`update characters set retired_at = now() where id = '${f.persona}'`);
+    assert.deepEqual(named('unlisted'), [`${f.persona}: unlisted`]);
+    assert.match(onlineFaults(online(), mine)[0]!, /the fixture's persona is not listed/u);
+  } finally {
+    sql(`update characters set retired_at = null where id = '${f.persona}'`);
+  }
   assert.deepEqual(onlineFaults(online(), mine), []);
 });
 
