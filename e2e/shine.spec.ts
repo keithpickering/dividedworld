@@ -43,15 +43,16 @@ import { expect, test, type Page } from '@playwright/test';
  * the frame gap missed its bound on CI. The allowance was the words' box alone until a post's body was given its 22.5em floor
  * (engine/ui/thread/thread.css): a one-line post's body is then some sixteen times its words, the quarter rate it is drawn at changes
  * four times what its words would, and the words' box alone reads the designed floor as a fault (1.6 to 1.7 over this page, where the
- * allowance reads 1.02 to 1.06; each run logs both). What a frame costs is the screen it changes, and a quarter of the content areas
+ * allowance reads 1.02 to 1.06, measured on a session's machine; each run logs both). What a frame costs is the screen it changes, and a quarter of the content areas
  * in view is never more than a quarter of the window, where a window of long posts changes all of it. `redrawn` is checked on planted
  * samples below, and the run logs the share of the window the draws changed.
  *
  * And every timed run logs what it worked against, as one `shine-data` line of JSON, so a slow run can be told apart from a slow shine
  * and the shine's cost can be followed as posts grow taller and effects stack (issue #304): the scroll's distance and speed, the
  * shiny posts and canvases on screen and the share of the viewport those canvases cover (what a software compositor draws every frame
- * of a scroll, redrawn or not), the screen the draws changed (over what was allowed, and `changedCover`, as a share of the window a
- * frame), a fixed piece of work timed on the page's thread just before (how loaded
+ * of a scroll, redrawn or not), the screen the draws changed (`redrawn` over the words' boxes alone, as every run before the floor
+ * recorded it; `redrawnAllowed` over what was allowed, the figure that is asserted; `changedCover` as a share of the window a frame),
+ * a fixed piece of work timed on the page's thread just before (how loaded
  * the machine was), and a control: the same scroll of the same page with every shine canvas hidden, so the loop draws nothing and
  * nothing of the shine is composited. A control that drops frames as the run did says the machine or the layout cost them, not the
  * shine. Nothing here is asserted; it is read from CI's log.
@@ -63,7 +64,7 @@ const SHINY = 16;
 const LAG = 2;
 /**
  * The 95th percentile of the loop's own time in a frame while the page scrolls, in ms. Measured here (software-drawn headless Chromium,
- * all sixteen posts, five in view) at 11.6 to 12.5 ms over eight timed runs while the foil's render did every cell's math each frame, and
+ * all sixteen posts, five in view as it was before a body had its floor) at 11.6 to 12.5 ms over eight timed runs while the foil's render did every cell's math each frame, and
  * at 3.9 to 4.4 ms once it precomputed what the light does not move (engine/ui/shine/foil.ts): most of the loop was that render. The
  * budget is under one 16.7 ms frame: a loop that costs more than a frame cannot keep its frames, and the 25 ms poisoned draw below is far
  * past it. The same budget is the foil worker's per batch: its work is a frame's draws, which must fit a frame for the foil to keep
@@ -99,12 +100,14 @@ const BODY_FLOOR = 0.25;
 /**
  * How fast the timed scrolls move, in CSS px a second: the speed the scroll had while it was three seconds from the top of the page to
  * its bottom and a post's body had no floor (3,865 px, CI's `shine-data`). The page is longer now (a body is at least 22.5em: 7,267
- * px), and three seconds over it was 2,420 px a second: a Glitter Bomb's burst point then crossed the middle of the window (the 540 px
- * it is watched against) in about 220 ms, under the 300 ms it must stay there to fire (instances/divided-world/ui/glitter-bomb/
- * Effect.tsx `ARM_MS`), so the warm-up fired no burst and every timed run armed all four again, each drawn whole on every frame while
- * it armed (a draw in flight is never held to its share): with the floor, that read 2.41 against the words on CI. The speed is the
- * reader's, not the page's, so it is held and the scroll takes as long as the page is; at this speed the point is in the middle for
- * about 420 ms, the warm-up fires every burst as it did, and the timed runs measure the posts settled.
+ * px), and the scroll takes as long as the page is, so the loop's and the worker's time, the raster share and the frames a post is in
+ * view for are measured at the speed they always were. Three seconds over this page was 2,420 px a second, and showed a cost these
+ * runs never measured: a Glitter Bomb's burst point crossed the middle of the window (the 540 px it is watched against) in about 220
+ * ms, under the 300 ms it must stay there to fire (instances/divided-world/ui/glitter-bomb/Effect.tsx `ARM_MS`), so no burst fired
+ * and every pass armed all four again, each drawn whole on every frame while it armed (a busy draw is never held to its share): with
+ * the floor, 2.41 against the words on CI. That cost is real, a reader can scroll that fast, and it is
+ * keithpickering/dividedworld#726's; it is not measured here. The timed runs measure posts whose bursts have fired, which `fireBursts`
+ * sees to by name before them, whatever the speed.
  */
 const SCROLL_SPEED = 1290;
 /** Out of view "beyond a margin": a post this many px past the viewport's edge has freed its canvases. */
@@ -145,13 +148,13 @@ const onScreen = (b: Box1, height: number): number => Math.max(0, Math.min(b.bot
  * (its painted box, the content area), summed; and what the posts were allowed, every post in view on every frame: the larger of its
  * words' box and `BODY_FLOOR` of its painted box, each as much as is on screen. A host drawn more than once between two samples counts
  * each draw. For the log, `words` is the words' boxes alone (the allowance before a body had its floor, as the runs before it
- * recorded it) and `window` the viewport's area over the same samples (`width` times each one's height).
+ * recorded it) and `view` the viewport's area over the same samples (`width` times each one's height).
  */
-export function redrawn(samples: readonly Sample[], width = 0): { changed: number; allowed: number; words: number; window: number } {
-  let changed = 0, allowed = 0, words = 0, window = 0;
+export function redrawn(samples: readonly Sample[], width = 0): { changed: number; allowed: number; words: number; view: number } {
+  let changed = 0, allowed = 0, words = 0, view = 0;
   samples.forEach((s, k) => {
     if (k === 0) return;
-    window += width * s.height;
+    view += width * s.height;
     s.draws.forEach((d, h) => {
       const drew = d - samples[k - 1]!.draws[h]!, body = onScreen(s.painted![h]!, s.height);
       if (drew > 0) changed += drew * body;
@@ -160,7 +163,7 @@ export function redrawn(samples: readonly Sample[], width = 0): { changed: numbe
       allowed += Math.max(own, BODY_FLOOR * body);
     });
   });
-  return { changed, allowed, words, window };
+  return { changed, allowed, words, view };
 }
 
 const percentile = (xs: readonly number[], p: number): number => {
@@ -200,13 +203,31 @@ const held = (page: Page): Promise<Held[]> => page.evaluate(() => window.__kbShi
 
 interface Run { samples: Sample[]; work: number[]; workerWork: number[] }
 
-/** How long a scroll of the page from its top to its bottom takes at `SCROLL_SPEED`, in ms. */
+/**
+ * Fires every Glitter Bomb's burst, one post at a time: its burst point is brought to the middle of the window and held there until
+ * the burst is in the air (the canvas over the words has a backing store only then: instances/divided-world/ui/glitter-bomb/
+ * Effect.tsx `sizeOver`). A burst fires once per mount, so the scrolls after this pass posts that are settled, and none arms.
+ */
+async function fireBursts(page: Page): Promise<void> {
+  const bombs = page.locator('[data-kb-glitter]');
+  expect(await bombs.count(), 'the thread\'s four Glitter Bomb posts').toBe(4);
+  for (let i = 0; i < 4; i += 1) {
+    await bombs.nth(i).locator('.dw-glitter-origin').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await expect.poll(() => bombs.nth(i).locator('canvas.dw-glitter-over').evaluate((c: HTMLCanvasElement) => c.width), { message: `Glitter Bomb post ${i}'s burst is in the air` }).toBeGreaterThan(0);
+  }
+}
+
+/**
+ * How long a scroll of the page from its top to its bottom takes at `SCROLL_SPEED`, in ms. The loop and the worker keep their own
+ * time for their last 600 frames (engine/ui/shine/loop.ts `WORK_KEEP`), about ten seconds: `measure` refuses a run longer than that.
+ */
 const scrollMs = (page: Page): Promise<number> =>
   page.evaluate((speed) => Math.round(((document.documentElement.scrollHeight - window.innerHeight) / speed) * 1000), SCROLL_SPEED);
 
 /** A moving mouse, over the page's width and height, for as long as a scroll of `ms` lasts. */
 async function mouse(page: Page, ms: number): Promise<void> {
-  for (let i = 0; i < Math.ceil((ms * 0.9) / 45); i += 1) { await page.mouse.move(100 + (i * 17) % 1000, 100 + (i * 41) % 700); await page.waitForTimeout(45); }
+  const end = Date.now() + ms * 0.9;
+  for (let i = 0; Date.now() < end; i += 1) { await page.mouse.move(100 + (i * 17) % 1000, 100 + (i * 41) % 700); await page.waitForTimeout(45); }
 }
 
 /** Scrolls the page from the top to the bottom at `SCROLL_SPEED` under a moving mouse, sampling every frame, the loop's own time in the frames it ran and the foil worker's in the batches it drew. */
@@ -295,13 +316,14 @@ function conditions(r: Run): Record<string, number> {
   return {
     scrollPx: Math.round(scrolled), pxPerFrame: +(scrolled / Math.max(1, n - 1)).toFixed(1),
     postsInView: +(posts / n).toFixed(2), layersInView: +(layers / n).toFixed(2), layerCover: +(cover / n / (vw * vh)).toFixed(3),
-    redrawn: +(red.changed / Math.max(1, red.allowed)).toFixed(3), changedCover: +(red.changed / Math.max(1, red.window)).toFixed(3),
+    redrawn: +(red.changed / Math.max(1, red.words)).toFixed(3), redrawnAllowed: +(red.changed / Math.max(1, red.allowed)).toFixed(3), changedCover: +(red.changed / Math.max(1, red.view)).toFixed(3),
   };
 }
 
 /** A timed run's three measures: the 95th percentile of the gap between animation frames, of the loop's own time in a frame, and of the foil worker's own time in a batch. */
 const measure = (r: Run) => {
   /* A worker that drew nothing would read as a cheap one: the run is refused, not passed. */
+  if (r.samples.length > 600) throw new Error(`the scroll ran ${r.samples.length} frames: the loop keeps its own time for the last 600, so its 95th percentile would be of the scroll's end alone`);
   if (r.workerWork.length < 60) throw new Error(`the foil worker drew ${r.workerWork.length} batches in the run: its time was not measured`);
   const gaps = r.samples.slice(1).map((s, k) => s.t - r.samples[k]!.t);
   return {
@@ -401,8 +423,8 @@ test.describe('the planted samples, red where they should be', () => {
   });
   test('only the part of a post on screen counts, and a post out of view counts for neither', () => {
     const s = (draws: number, top: number): Sample => ({ t: 0, draws: [draws], top: [top], bottom: [top + 400], height: 900, painted: [{ top, bottom: top + 400, width: 10 }], own: [{ top, bottom: top + 400, width: 10 }] });
-    expect(redrawn([s(0, 700), s(1, 700)], 1200)).toEqual({ changed: 2000, allowed: 2000, words: 2000, window: 1200 * 900 });
-    expect(redrawn([s(0, 2000), s(0, 2000)])).toEqual({ changed: 0, allowed: 0, words: 0, window: 0 });
+    expect(redrawn([s(0, 700), s(1, 700)], 1200)).toEqual({ changed: 2000, allowed: 2000, words: 2000, view: 1200 * 900 });
+    expect(redrawn([s(0, 2000), s(0, 2000)])).toEqual({ changed: 0, allowed: 0, words: 0, view: 0 });
   });
   test('the frames of the loop\'s lag, and a post in view, are not named', () => {
     const seq = [frame([1], [800]), frame([2], [950]), frame([3], [960]), frame([3], [970]), frame([3], [980]), frame([4], [100])];
@@ -440,6 +462,8 @@ test.describe('a busy thread', () => {
     expect(visible, 'two or three shiny posts in view').toBeGreaterThanOrEqual(2);
     expect(visible).toBeLessThanOrEqual(8);
     expect(heldOutOfView(await held(page), 900).holding, 'at the top the posts in view hold their buffers (the buffer check can see one)').toBeGreaterThanOrEqual(visible);
+    /* Every Glitter Bomb's burst is fired before any run, so the timed runs measure posts that are settled (`SCROLL_SPEED`). */
+    await fireBursts(page);
     /* The first run down the page is a warm-up (the script compiled, each post's buffers and flakes made for the first time) and is not timed.
        A software-drawn headless Chromium drops a frame now and then, and a gap is a whole frame or two (16.7 or 33.3 ms), so one drop too many
        moves the 95th percentile from 16.8 to 33.3: up to three timed runs are made until one meets the gap's bound too, so a slow runner's
@@ -465,7 +489,7 @@ test.describe('a busy thread', () => {
       expect(outOfViewDraws(samples)).toEqual([]);
       if (attempt > 0) {
         const r = redrawn(samples, 1200);
-        console.log(`redrawn: the screen the shine changed, over what the posts in view are allowed (their words, or a quarter of their content area) every frame: ${(r.changed / r.allowed).toFixed(2)} (bound ${REDRAWN_SHARE}); words alone ${(r.changed / r.words).toFixed(2)}; of the window, a frame: ${(r.changed / r.window).toFixed(3)}`);
+        console.log(`redrawn: the screen the shine changed, over what the posts in view are allowed (their words, or a quarter of their content area) every frame: ${(r.changed / r.allowed).toFixed(2)} (bound ${REDRAWN_SHARE}); words alone ${(r.changed / r.words).toFixed(2)}; of the window, a frame: ${(r.changed / r.view).toFixed(3)}`);
         expect(r.changed / r.allowed, 'the screen area the scroll\'s draws change, over what the posts in view are allowed at every frame').toBeLessThan(REDRAWN_SHARE);
       }
     }
@@ -538,6 +562,7 @@ test.describe('a busy thread', () => {
   });
 
   test('poisoned: a post that ignores being freed is named by the buffer check', async ({ page }) => {
+    test.setTimeout(60_000);
     await open(page, 'full', 'keep');
     await scrollRun(page);
     await frames(page, 10);

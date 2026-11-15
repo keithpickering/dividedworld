@@ -296,3 +296,21 @@ is held by section 5.
   over it rather than added. Going brighter than the band is the owner's question, not this amendment's: section 5's
   "held everywhere" stands until the owner says otherwise. (The owner answered the same day, in issue #340: the glints
   now leave the band and are added, in their hue at full brightness; section 5's amendment.)
+
+## 12. What the redraw check allows (amended 2026-11-15)
+
+Section 10's "How it is held" counted a scroll's draws against the words' boxes alone. Since
+keithpickering/dividedworld#695 a post's body is at least 22.5em at every width, so a short post's body is many times
+its words, and such a post is redrawn at section 10's least share, a quarter: it changes a quarter of its content area
+a frame, which is more than its words' box. That is the rate section 10 chose, not a fault, so the check allows it:
+
+- **How it is held now.** `e2e/shine.spec.ts` counts the screen area a scroll's draws change against, for each post in
+  view on each frame, the larger of its words' box and a quarter of its content area (at most 1.25 times; 1.02 to 1.06
+  in that spec's thread, and 3.3 with every body redrawn at the full rate). Each run also logs the old figure, against
+  the words alone, and the share of the window its draws changed.
+- **The scroll holds its speed.** The timed scroll moves at 1,290 CSS px a second, the speed it had over the shorter
+  page, and takes as long as the page is. Every Glitter Bomb's burst is fired before the timed runs, so they measure
+  settled posts.
+- **Not measured.** A Glitter Bomb that has not fired is drawn whole on every frame while its burst point is in the
+  middle of the window, for up to 300 ms a pass, outside its share; a fast scroll past it never fires it and arms it
+  again on the next pass. That is keithpickering/dividedworld#726.
