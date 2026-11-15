@@ -2,7 +2,7 @@
  * A busy thread for the shine loop (docs/plans/2026-11-06-shine-plan.md, Task 11): seventeen posts of the boards fixture's thread at
  * the Main board's moment, #41 to #57, sixteen of them shiny (four of each Feelin' Fab level, four Glitter Bomb, in turn) and the
  * last one plain. The plan's "12 posts" does not add up with its own list (4 x 3 + 4 + 1); this story builds the list. At 1200 by 900
- * about five are in view, and the rest wait their turn below. `Still` is the same page under reduced motion.
+ * two or three are in view (a post's body is at least 22.5em, engine/ui/thread/thread.css), and the rest wait their turn below. `Still` is the same page under reduced motion.
  *
  * The story page hands e2e/shine.spec.ts the loop's probe as `window.__kbShine`: each shiny post's draws, its place on the page (in
  * document order) and its size in device px, both the box it paints (its first canvas's: the post's whole body, engine/ui/cards/body.ts), the loop's frame count and whether it runs, the size of every canvas each post holds
