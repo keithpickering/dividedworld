@@ -12,7 +12,7 @@
  *   2. A function over its budget fails, naming the figures. A budget far above what is measured guards nothing, so a measurement under its budget by more than the larger
  *      of a tenth of the budget and 0.6 MB fails too and asks for the budget to be lowered.
  *   3. Postgres 17 only: the figures differ by major version, so `requireRecorded` stops the file before the fixture and before every measurement on another, and every
- *      test fails on that one message.
+ *      test that measures fails on that one message.
  * A megabyte is 1,048,576 bytes. A budget is its measurement on Postgres 17.11 rounded up to one decimal, plus 0.3 MB of room, so ordinary run-to-run movement never fails
  * a build and the far-under gap (twice the room) never asks a freshly set budget to be lowered.
  *
