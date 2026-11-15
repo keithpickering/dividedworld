@@ -13,7 +13,7 @@
 -- The origin Act and its 20 plays join `ids`, so `tallies`, `mine` and `spun` hold their rows, and the plays whose card the instance draws an effect for join `wanted_plays`, so `states` and `releases` hold theirs. `who` is not
 -- touched, so `people` holds no caster who wrote nothing on the page.
 --
--- The `character` and `profile` objects of `people` and of `origin.cast` are one expression, in one CTE (`heads`), which `people` reads for the characters of `who` and `cast` reads for the characters of the origin: a later
+-- The `character` and `profile` objects of `people` and of `origin.cast` are one expression, in one CTE (`heads`), which reads each character of the union of `who` and the origin's cast by key (a lateral with an OFFSET 0 fence, so the plan is one index probe on characters for each, never a scan of every character, which the planner chose for the plain IN) and which `people` reads for the characters of `who` and `cast` reads for the characters of the origin: a later
 -- migration that adds a profile field adds it in one place, and the two cannot drift apart. `people` is the same document as before (the same objects, the same order).
 --
 -- origin_moment(in_thread): plpgsql, stable, security invoker. The moment functions refuse by raising ("that is no play on a post", "that spin names no post"), and a raise inside thread_page would fail the page where it used to fail only
@@ -25,7 +25,7 @@
 -- Masks (design section 6): origin holds what acts_public, reaction_tallies, characters_public, thread_open and the two moment functions already answer to any caller, by the same rows; `mine` and `releases` are the caller's own, as they are
 -- for the page's posts. Nothing is computed from who owns a character, a class, or who reacted. A veiled origin's author is the stand-in acts_public shows, so `cast` names the stand-in and never the author, and the moment is the
 -- functions' own (they read the post's author through shown_author). The document's size and the read's time vary with the origin's public plays alone: at most 21 plays by target_act_id, their ends, one Act by key, one moment by key and
--- at most 23 characters by key.
+-- at most 22 characters (the author, 20 casters and the character a play is on) by key.
 --
 -- A busy instance: a page with no origin runs none of it. o_on holds the origin's id only where the page's Acts hold the thread's first Act, and every added read joins o_on, so each is keyed on a value that is absent there; under the
 -- generic plan (0368) the joins under an empty o_on are never executed.
@@ -489,10 +489,15 @@ begin
              jsonb_build_object('character', jsonb_build_object('id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office, 'warn_points', c.warn_points, 'banned_until', c.banned_until, 'group', c."group"), 'profile', ( SELECT (jsonb_build_object('character', p."character", 'title', p.title, 'signature', p.signature, 'avatar_square', p.avatar_square, 'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns) || profile_cosmetics(p."character"))
                     FROM character_profiles p
                    WHERE (p."character" = c.id))) AS head
-            FROM characters_public c
-           WHERE ((c.id IN ( SELECT w.c
-                    FROM who w)) OR (c.id IN ( SELECT o.c
-                    FROM o_cast o)))
+            FROM (( SELECT w.c
+                    FROM who w
+                 UNION
+                  SELECT o.c
+                    FROM o_cast o) k(id)
+              CROSS JOIN LATERAL ( SELECT x.*
+                    FROM characters_public x
+                   WHERE (x.id = k.id)
+                  OFFSET 0) c)
          ), spun AS MATERIALIZED (
           SELECT l.id,
              l.board,

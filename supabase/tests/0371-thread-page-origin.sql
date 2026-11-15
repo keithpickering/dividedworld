@@ -224,7 +224,7 @@ begin
   s := pg_temp.spun_at(spn, sp, p, null);
   doc := pg_temp.page(rdr, (select thread from acts where id = s));
   o := doc -> 'origin';
-  if pg_temp.ids_of(o -> 'plays') is distinct from plays[1:20] || end2 then raise exception '2 the box lists 20 plays oldest first and the end of one of them, not the 21st nor its end: % of %', jsonb_array_length(o -> 'plays'), 22; end if;
+  if pg_temp.ids_of(o -> 'plays') is distinct from plays[1:20] || end2 then raise exception '2 the box lists 20 plays oldest first and the end of the 2nd (21 entries), not the 21st play nor its end: % entries', jsonb_array_length(o -> 'plays'); end if;
   if o -> 'more' is distinct from 'true'::jsonb then raise exception '2 more is true when a 21st play exists: %', o -> 'more'; end if;
 end $$;
 
@@ -314,4 +314,68 @@ begin
   if pg_temp.cast_ids(o) is distinct from pg_temp.ids(stand, cv) then raise exception '8 the cast names the stand-in and the veil''s caster: %', pg_temp.cast_ids(o); end if;
   if o::text like '%' || av::text || '%' then raise exception '8 the veiled author''s character is nowhere in origin: %', o; end if;
   if (doc -> 'origin')::text is distinct from (pg_temp.page(rdr, (select thread from acts where id = s)) -> 'origin')::text then raise exception '8 the same for another caller'; end if;
+end $$;
+
+-- ---- 10: an origin whose moment the functions refuse, and an origin on the Updates thread: the page is answered and the moment is null ----
+-- origin_moment catches the one refusal that can still arrive (P0002), so a raise in play_moment or spin_moment never fails the page.
+do $$
+declare
+  ann uuid := tests.account('or10-ann'); bob uuid := tests.account('or10-bob'); spn uuid := tests.account('or10-spn'); rdr uuid := tests.account('or10-rdr');
+  oa uuid := tests.character(ann, 'Or10 Author'); ca uuid := tests.character(bob, 'Or10 Caster'); sp uuid := tests.character(spn, 'Or10 Spinner');
+  t_from uuid := tests.thread('Or10 cast from'); t_at uuid := tests.thread('Or10 pressed');
+  from_post uuid; at_post uuid; k uuid; bare uuid; s_old uuid; s_bare uuid; s_upd uuid; s_onupd uuid; dev uuid; upd uuid; on_upd uuid; doc jsonb; o jsonb;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(bob, 'orglint');
+  perform tests.post(oa, t_from, 'First.');
+  from_post := tests.post(oa, t_from, 'Cast from here.');
+  perform tests.post(oa, t_at, 'First.');
+  at_post := tests.post(oa, t_at, 'Pressed here.');
+  k := (play_card(bob, 'orglint', ca, oa, '{}', 0, '', 'character', from_post) ->> 'id')::uuid;
+
+  -- A spin that names a post but has no moment row (one written before 0351 took moments, or an import that left them): spin_moment refuses.
+  s_old := pg_temp.spun_at(spn, sp, k, at_post);
+  perform set_config('session_replication_role', 'replica', true);
+  delete from spin_moment_layers where spin = s_old;
+  delete from spin_moments where spin = s_old;
+  perform set_config('session_replication_role', 'origin', true);
+  if exists (select 1 from spin_moments where spin = s_old) then raise exception '10 the fixture did not remove the spin''s moment'; end if;
+  doc := pg_temp.page(rdr, (select thread from acts where id = s_old));
+  o := doc -> 'origin';
+  if doc is null or o is null then raise exception '10 a spin with no moment row: the page is answered with an origin'; end if;
+  if jsonb_typeof(o -> 'moment') is distinct from 'null' then raise exception '10 a spin with no moment row has no moment: %', o -> 'moment'; end if;
+  if o -> 'at' is distinct from jsonb_build_object('thread', t_at, 'seq', (select seq from acts where id = at_post)) then raise exception '10 at still names the pressed post: %', o -> 'at'; end if;
+
+  -- A play on a character whose target is no post (another play): play_moment refuses.
+  alter table acts disable trigger acts_well_formed;
+  bare := tests.act(ca, 'card', t_from, jsonb_build_object('card', 'orglint', 'reach', 'character', 'character', oa), k);
+  alter table acts enable trigger acts_well_formed;
+  insert into play_reach (play, reach, character, ends_at) values (bare, 'character', oa, now() + interval '1 day');
+  s_bare := pg_temp.spun_at(spn, sp, bare, null);
+  doc := pg_temp.page(rdr, (select thread from acts where id = s_bare));
+  o := doc -> 'origin';
+  if doc is null or o is null then raise exception '10 a play on a character whose target is no post: the page is answered with an origin'; end if;
+  if jsonb_typeof(o -> 'moment') is distinct from 'null' or jsonb_typeof(o -> 'at') is distinct from 'null' then raise exception '10 a play on a character whose target is no post has no moment and no place: % %', o -> 'moment', o -> 'at'; end if;
+
+  -- An origin on the Updates thread, and a play on one: no moment, no place.
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'developer', jsonb_build_object('name', 'Or10 Gabe', 'title', 'Made this.', 'avatar', 'gabe')));
+  select id into dev from characters where staff_kind = 'developer';
+  perform set_config('kayfabb.update_writer', 'on', true);
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  upd := tests.act(dev, 'update', (select (value #>> '{}')::uuid from settings where key = 'updatesThread'), '{"title": "Or10 Headline", "body": "Body.", "changes": []}');
+  perform set_config('kayfabb.update_writer', 'off', true);
+  perform set_config('kayfabb.staff_writer', 'off', true);
+  alter table acts disable trigger acts_well_formed;
+  on_upd := tests.act(ca, 'card', (select thread from acts where id = upd), '{"card": "orplain"}', upd);
+  alter table acts enable trigger acts_well_formed;
+  s_upd := pg_temp.spun_at(spn, sp, upd, null);
+  s_onupd := pg_temp.spun_at(spn, sp, on_upd, null);
+  for i in 1..2 loop
+    doc := pg_temp.page(rdr, (select thread from acts where id = case when i = 1 then s_upd else s_onupd end));
+    o := doc -> 'origin';
+    if doc is null or o is null then raise exception '10 % : the page is answered with an origin', case when i = 1 then 'an update' else 'a play on an update' end; end if;
+    if jsonb_typeof(o -> 'moment') is distinct from 'null' or jsonb_typeof(o -> 'at') is distinct from 'null' then raise exception '10 % has no moment and no place: % %', case when i = 1 then 'an update' else 'a play on an update' end, o -> 'moment', o -> 'at'; end if;
+  end loop;
+  if (select o2 -> 'act' ->> 'kind' from (select pg_temp.page(rdr, (select thread from acts where id = s_upd)) -> 'origin' as o2) z) is distinct from 'update' then raise exception '10 the update is the origin Act'; end if;
 end $$;
