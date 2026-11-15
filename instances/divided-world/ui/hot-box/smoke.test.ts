@@ -135,7 +135,7 @@ test('puffs: the same seed gives the same puffs, another gives others, nothing r
 });
 
 test('a puff drifts and wraps at the box\'s edges; at t = 0 it is where it was made', () => {
-  const [p] = puffs(5, 600, 400);
+  const p = puffs(5, 600, 400)[0]!;
   const at0 = puffAt(p, 0, 600, 400);
   near(at0.x, p.x); near(at0.y, p.y); near(at0.r, p.r);
   assert.ok(at0.shade >= -1 && at0.shade <= 1);

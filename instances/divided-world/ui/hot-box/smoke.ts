@@ -143,10 +143,10 @@ export function sweepAt(lines: readonly SweepLine[], elapsedMs: number, boxWidth
   }
   const t = Number.isNaN(elapsedMs) ? 0 : Math.max(0, elapsedMs);
   const index = Math.floor(t / per);
-  if (index >= lines.length) {
-    const last = lines[lines.length - 1];
-    return { x: boxWidth, y: (last.top + last.bottom) / 2, finished: lines.length - 1, done: true };
-  }
   const line = lines[index];
+  if (!line) {
+    const last = lines[lines.length - 1];
+    return { x: boxWidth, y: last ? (last.top + last.bottom) / 2 : 0, finished: lines.length - 1, done: true };
+  }
   return { x: ((t - index * per) / per) * boxWidth, y: (line.top + line.bottom) / 2, finished: index - 1, done: false };
 }

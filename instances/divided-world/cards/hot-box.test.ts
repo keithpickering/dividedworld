@@ -42,12 +42,12 @@ test('every color a persona may pick is a color, and a persona is given one of t
 });
 
 test('Hot Box lands on a post with no live Hot Box, and nowhere else', () => {
-  assert.equal(hotBox.canApply(post(10), [], {}, now).ok, true);
+  assert.equal(hotBox.canApply(post(10), [], { color: 'teal' }, now).ok, true);
   const live = [effect(new Date(now.getTime() + 86_400_000))];
   const ended = [effect(new Date(now.getTime() - 1000))];
-  assert.deepEqual(hotBox.canApply(post(10), live, {}, now), { ok: false, why: 'this post already carries that card' });
-  assert.equal(hotBox.canApply(post(10), ended, {}, now).ok, true, 'a post whose Hot Box has ended');
-  assert.equal(hotBox.canApply({ reach: 'character', character: 'c1' }, [], {}, now).ok, false);
+  assert.deepEqual(hotBox.canApply(post(10), live, { color: 'teal' }, now), { ok: false, why: 'this post already carries that card' });
+  assert.equal(hotBox.canApply(post(10), ended, { color: 'teal' }, now).ok, true, 'a post whose Hot Box has ended');
+  assert.equal(hotBox.canApply({ reach: 'character', character: 'c1' }, [], { color: 'teal' }, now).ok, false);
 });
 
 test('Hot Box costs nothing more on a long post, and can be set face down', () => {
