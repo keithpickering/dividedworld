@@ -1,0 +1,115 @@
+/*
+ * Steel Chair (Effect.tsx, docs/plans/2026-11-15-steel-chair-plan.md, Tasks 4 and 5): a chair is thrown at the post, dents it and falls to
+ * the floor. The world is the post's content area, the bordered box that holds the words; its borders are the chair's walls and floor. The
+ * layer of chairs and each dent's shading fill that box border to border, placed and sized by the effect through their `style` objects
+ * the way Feelin' Fab's foil and Whoops!'s ink are (the page allows no inline style sheet), so this file holds only the static rules.
+ * Every position, size, color of a piece and transform is the effect's. The chairs and the shading are drawn in color and depth on
+ * purpose: they are game pieces on the board, while the post stays the house style. Colors here are literals, as the instance's CSS
+ * is not held to the engine's tokens.
+ */
+.dw-chair {
+  position: relative;
+}
+
+/* The words' wrapper: the filter is set on it by the effect, and the one shake of a hit (4 px, 0.25 s) runs on it. */
+.dw-chair-words {
+  position: relative;
+}
+.dw-chair-words[data-shake] {
+  animation: dw-chair-shake 0.25s linear 1;
+}
+@keyframes dw-chair-shake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-4px, 1px); }
+  40% { transform: translate(4px, -1px); }
+  60% { transform: translate(-3px, 1px); }
+  80% { transform: translate(2px, 0); }
+}
+
+/* The floor's room: 28 px between the words and the content area's bottom border, where chairs come to rest, so one covers no words. */
+.dw-chair-room {
+  height: 28px;
+  pointer-events: none;
+}
+
+/* The layer of chairs fills the content area, in perspective: the vanishing point sits high, so a chair near the floor is seen from above. */
+.dw-chair-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  perspective: 700px;
+  perspective-origin: 50% 30%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* One chair: a zero-size group at its position, each piece a child placed by its own matrix. */
+.dw-chair-group {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+/* A piece: a rectangle whose size, left, top, transform and background (the shade) the effect sets. Seen from behind it shows too. */
+.dw-chair-piece {
+  position: absolute;
+  box-sizing: border-box;
+  backface-visibility: visible;
+  pointer-events: none;
+}
+/* The back frame and the rear legs' frame: a bordered box with no bottom edge, so it reads as a hollow of tubing. */
+.dw-chair-piece[data-kind='frame'] {
+  background: transparent;
+  border: 3px solid #8d96a3;
+  border-bottom: 0;
+}
+
+/* A dent's shading: a round div over the words, dark toward the upper left and light toward the lower right, as a pressed-in plate is lit
+   from above and in front. Placed and sized by the effect around the dent's point. */
+.dw-chair-dent {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle at 70% 70%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0) 45%), radial-gradient(circle at 32% 32%, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.22) 45%, rgba(0, 0, 0, 0) 72%);
+  pointer-events: none;
+}
+/* Two thin creases across the dent, as a folded sheet of metal takes. */
+.dw-chair-dent::before,
+.dw-chair-dent::after {
+  content: '';
+  position: absolute;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+  transform-origin: 0 50%;
+}
+.dw-chair-dent::before {
+  top: 38%;
+  left: 24%;
+  width: 34%;
+  transform: rotate(28deg);
+}
+.dw-chair-dent::after {
+  top: 55%;
+  left: 40%;
+  width: 28%;
+  transform: rotate(-16deg);
+}
+
+/* No shake under reduced motion (the effect also draws the dent and the resting chairs at once and starts no frame). */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .dw-chair-words[data-shake] { animation: none; }
+}
+:root[data-kb-motion='reduce'] .dw-chair-words[data-shake] { animation: none; }
+
+/* Forced colors: the system palette would turn the shading and the steel into flat boxes, so they are hidden. The filter stays: it draws
+   nothing of its own, it only bends the words, so the dent is still seen as a dent. The room stays too, so the post does not change size. */
+@media (forced-colors: active) {
+  .dw-chair-dent,
+  .dw-chair-layer { display: none; }
+}
