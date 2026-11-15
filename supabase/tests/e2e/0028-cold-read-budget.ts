@@ -28,7 +28,9 @@
  * screen function with no budget, a budget with no function and a measurement far under its budget are each named, with cases that tell the larger of the tenth and the floor
  * from the smaller.
  *
- * The fixture (two accounts, three characters, a thread of twenty posts with five card plays, an admin) is committed once so each call answers a document and not a refusal.
+ * The fixture (two accounts, three characters, a board of its own with a thread of twenty posts with five card plays, an admin) is committed once so each call answers a document and not a refusal.
+ * Every call reads the fixture's own rows (its board, thread, characters and accounts) or something no file changes (season 1 and the open season, which fixtures.sql makes, and
+ * ids or terms that match nothing); none names 'general', which an earlier file merges away.
  * It is left in the scratch database: this is the last end-to-end file, and a later file that counted accounts or characters would see it. `drive_gifts_page` and
  * `results_page` answer empty documents (no drive, no finished season in the fixture), so a helper those pages call only for each row is not planned by these calls and its
  * plan is not in their figures.
@@ -52,7 +54,7 @@ export function requireRecorded(major: number = Math.floor(Number(sql('show serv
 }
 
 /** The ids the fixture made. */
-interface Fixture { player: string; other: string; admin: string; mine: string; mate: string; theirs: string; thread: string; post: string; }
+interface Fixture { board: string; player: string; other: string; admin: string; mine: string; mate: string; theirs: string; thread: string; post: string; }
 
 /** Makes the fixture once, committed (every measurement is a fresh connection, so it reads only what is committed), and answers its ids. */
 function makeFixture(): Fixture {
@@ -67,18 +69,22 @@ function makeFixture(): Fixture {
       c1 uuid := tests.character(pl, 'Cold ${tag} One', 'alpha', now() - interval '60 days');
       c2 uuid := tests.character(pl, 'Cold ${tag} Two', 'beta', now() - interval '60 days');
       c3 uuid := tests.character(ot, 'Cold ${tag} Three', 'alpha', now() - interval '60 days');
-      t uuid := tests.thread('Cold ${tag} thread');
+      bd uuid;
+      t uuid;
       p uuid;
       first_post uuid;
       i integer;
     begin
       insert into admins (account) values (ad);
+      -- Its own board and thread, written directly: an earlier file merges 'general' away (0021), and tests.thread writes into that board.
+      insert into boards (slug, name) values ('cold-${tag}', 'Cold ${tag}') returning id into bd;
+      insert into threads (board, title) values (bd, 'Cold ${tag} thread') returning id into t;
       for i in 1 .. 20 loop
         p := tests.post((array[c1, c2, c3])[1 + i % 3], t, 'Cold post ' || i, now() - interval '1 hour' + i * interval '1 minute');
         if i = 1 then first_post := p; end if;
         if i <= 5 then perform tests.act((array[c2, c3, c1])[1 + i % 3], 'card', t, jsonb_build_object('card', 'sweetie'), p); end if;
       end loop;
-      perform set_config('cold.ids', jsonb_build_object('player', pl, 'other', ot, 'admin', ad, 'mine', c1, 'mate', c2, 'theirs', c3, 'thread', t, 'post', first_post)::text, false);
+      perform set_config('cold.ids', jsonb_build_object('board', 'cold-${tag}', 'player', pl, 'other', ot, 'admin', ad, 'mine', c1, 'mate', c2, 'theirs', c3, 'thread', t, 'post', first_post)::text, false);
     end $fx$;
     select current_setting('cold.ids');`);
   return JSON.parse(out) as Fixture;
@@ -116,7 +122,7 @@ const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: nu
  */
 export const BUDGETS: Record<string, Budget> = {
   alerts_page: budget(() => 'public.alerts_page(null)', player, 5.7),
-  board_page: budget(() => `public.board_page('general', 1, array[]::text[])`, player, 8.0),
+  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 8.0),
   boot: budget(() => 'public.boot()', player, 5.6),
   drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 3.0),
   index_page: budget(() => 'public.index_page()', player, 5.5),
