@@ -6,6 +6,7 @@ import { KayfaProvider, type Kayfa } from './context.tsx';
 import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePendingFrom, usePrefetch, useNavigationGuard, useRouterAccount, useRouterInternals, type Location, type NavigationGuard } from './router.tsx';
 import { Routes, type Route } from './routes.tsx';
 import { ReadFailure } from './data/api.ts';
+import { resetReadAhead } from './ahead.ts';
 
 function Where() {
   const l = useLocation();
@@ -13,7 +14,7 @@ function Where() {
   return <><span data-testid="path">{l.path}{l.query.toString() ? `?${l.query}` : ''}{l.hash ? `#${l.hash}` : ''}</span><button onClick={() => navigate('/b/general?page=2')}>go</button></>;
 }
 
-beforeEach(() => window.history.replaceState(null, '', '/'));
+beforeEach(() => { window.history.replaceState(null, '', '/'); resetReadAhead(); });
 
 describe('the router', () => {
   test('a link moves without a reload and the location follows', async () => {
@@ -884,18 +885,71 @@ describe('from the Task 11 review', () => {
     expect(calls[1]!.signal.aborted).toBe(true);
     expect(calls[0]!.signal.aborted).toBe(false);
   });
-  test('prefetches are capped at twenty, the oldest dropped, and one older than thirty seconds is swept', async () => {
+  test('twenty answers are kept, the oldest dropped past them, and one older than thirty seconds is swept', async () => {
     vi.useFakeTimers();
     const { load, calls } = manualLoader();
     mount(load);
-    for (let i = 0; i < 21; i++) act(() => prefetch(`/t/p${i}`));
+    /* Each read ahead is made at once (`now`), as a press makes it; the gate would hold all but the first. */
+    for (let i = 0; i < 21; i++) act(() => { prefetch(`/t/p${i}`, { now: true }); });
     expect(calls).toHaveLength(21);
     expect(calls[0]!.signal.aborted).toBe(true);
     expect(calls[1]!.signal.aborted).toBe(false);
     await act(async () => { calls[20]!.resolve('x'); });
     await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
-    act(() => prefetch('/t/p20'));
+    act(() => { prefetch('/t/p20'); });
     expect(calls).toHaveLength(22);
+  });
+  test('the gate holds links to one read ahead: the second link waits for the first, and a link left never reads', async () => {
+    vi.useFakeTimers();
+    const { load, calls } = manualLoader();
+    window.history.replaceState(null, '', '/');
+    const routes: Route[] = [{ path: '/', render: () => <p>home</p> }, { path: '/t/:id', load, render: () => <p>t</p> }];
+    render(<KayfaProvider value={kayfa}><RouterProvider><Link to="/t/a">one</Link><Link to="/t/b">two</Link><Link to="/t/c">three</Link><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    const link = (name: string) => screen.getByRole('link', { name });
+    fireEvent.pointerEnter(link('one'));
+    act(() => { vi.advanceTimersByTime(100); });
+    fireEvent.pointerEnter(link('two'));
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(load).toHaveBeenCalledTimes(1);
+    await act(async () => { calls[0]!.resolve('A'); });
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(calls[1]!.params).toEqual({ id: 'b' });
+    /* The pointer leaves the one waiting before the one in flight answers: it is never read. */
+    fireEvent.pointerEnter(link('three'));
+    act(() => { vi.advanceTimersByTime(100); });
+    fireEvent.pointerLeave(link('three'));
+    await act(async () => { calls[1]!.resolve('B'); });
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+  test('a pointerdown on a link loads at once while another read ahead is out', () => {
+    vi.useFakeTimers();
+    const { load, calls } = manualLoader();
+    window.history.replaceState(null, '', '/');
+    const routes: Route[] = [{ path: '/', render: () => <p>home</p> }, { path: '/t/:id', load, render: () => <p>t</p> }];
+    render(<KayfaProvider value={kayfa}><RouterProvider><Link to="/t/a">one</Link><Link to="/t/b">two</Link><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    fireEvent.pointerEnter(screen.getByRole('link', { name: 'one' }));
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(load).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(screen.getByRole('link', { name: 'two' }));
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(calls[1]!.params).toEqual({ id: 'b' });
+  });
+  test('a click on a link whose read is waiting loads once on its own, and the waiting read does not start a second', async () => {
+    vi.useFakeTimers();
+    const { load, calls } = manualLoader();
+    window.history.replaceState(null, '', '/');
+    const routes: Route[] = [{ path: '/', render: () => <p>home</p> }, { path: '/t/:id', load, render: () => <p>t</p> }];
+    render(<KayfaProvider value={kayfa}><RouterProvider><Link to="/t/a">one</Link><Link to="/t/b">two</Link><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    fireEvent.pointerEnter(screen.getByRole('link', { name: 'one' }));
+    act(() => { vi.advanceTimersByTime(100); });
+    fireEvent.pointerEnter(screen.getByRole('link', { name: 'two' }));
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(load).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('link', { name: 'two' }));
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(calls[1]!.params).toEqual({ id: 'b' });
+    await act(async () => { calls[0]!.resolve('A'); });
+    expect(load).toHaveBeenCalledTimes(2);
   });
   test('a link\'s focus rests before it reads, and blur clears it; only the primary button\'s pointerdown reads', () => {
     vi.useFakeTimers();
