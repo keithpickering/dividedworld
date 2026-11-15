@@ -2,9 +2,10 @@
  * An overlay that reads opens only once its data has landed (the glass-load design, section 4): its trigger spins meanwhile, the
  * pointer's rest or focus on the trigger starts the read early, and Escape cancels. `usePrepared` is that, once:
  *
- * - `early()` starts the read and keeps its answer 30 seconds; a second `early` or an `open` within that time shares it, so a rest
- *   followed by a press makes one read.
- * - `open()` uses that answer, or starts the read, and sets `data` when it lands. The caller mounts its overlay only with `data`,
+ * - `early()` asks for the read through the document's one read-ahead gate (`readAhead`, shared with the router's links), so it may
+ *   wait for the read in flight; it returns a withdraw that gives up its place. Once started it keeps its answer 30 seconds; a second
+ *   `early` or an `open` within that time shares it, so a rest followed by a press makes one read.
+ * - `open()` never goes through the gate and never waits: it uses that answer, or starts the read at once, and sets `data` when it lands. The caller mounts its overlay only with `data`,
  *   so the entrance plays over finished content. While the read is out `busy` is true (the trigger is a `GlassButton busy`).
  * - `cancel()` (Escape does it while busy) aborts the read's signal, and nothing opens. It also clears `data`, so a caller's
  *   close is `cancel()`.
@@ -13,6 +14,7 @@
  * The answer of an `open` is not kept: the next open reads again, so an overlay reopened later never shows a stale one.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { readAhead } from '../ahead.ts';
 
 /** The plain line under a trigger whose read failed. */
 export const PREPARED_FAILED = 'That didn’t load. Try again.';
@@ -28,7 +30,8 @@ export interface Prepared<T, A = void> {
   readonly failed: boolean;
   /** Resolves with the answer, or null when it failed or was cancelled. */
   readonly open: (arg: A) => Promise<T | null>;
-  readonly early: (arg: A) => void;
+  /** Asks for the read through the read-ahead gate; the returned function withdraws the ask. */
+  readonly early: (arg: A) => () => void;
   readonly cancel: () => void;
 }
 
@@ -81,7 +84,12 @@ export function usePrepared<T, A = void>(read: (signal: AbortSignal, arg: A) => 
     return h;
   }, [drop]);
 
-  const early = useCallback((arg: A) => { start(arg).promise.catch(() => undefined); }, [start]);
+  const early = useCallback((arg: A): (() => void) => {
+    const k = keyer.current(arg);
+    /* An answer for this key is held: nothing to read, so no place in the gate. */
+    if (held.current && held.current.key === k) return () => undefined;
+    return readAhead(() => { const p = start(arg).promise; p.catch(() => undefined); return p; });
+  }, [start]);
 
   const open = useCallback(async (arg: A): Promise<T | null> => {
     const mine = ++turn.current;
@@ -129,23 +137,39 @@ export function usePrepared<T, A = void>(read: (signal: AbortSignal, arg: A) => 
  * A press (pointer down, or Enter or Space) drops both pending timers: the press starts the read itself, and a rest timer that fired
  * after it would start a second read whose landing could race the press's own (a failure note that flashes and goes).
  */
-export function useRest(early: () => void) {
+export function useRest(early: () => (() => void) | void) {
   /* The latest `early`, so a trigger may pass a closure over what it renders. */
   const latest = useRef(early);
   latest.current = early;
-  const go = useCallback(() => latest.current(), []);
+  /* The withdraw of the asks in the read-ahead gate, and which triggers still want them: the read starts if the pointer or the focus
+     is still on the trigger, so a leave or a blur gives up the place only when the other is gone as well. */
+  const withdraw = useRef<(() => void) | undefined>(undefined);
+  const resting = useRef({ pointer: false, focus: false });
+  const give = () => { const w = withdraw.current; withdraw.current = undefined; w?.(); };
+  const go = useCallback((trigger: 'pointer' | 'focus') => {
+    resting.current[trigger] = true;
+    const next = latest.current();
+    if (!next) return;
+    /* An ask that waits is kept until the new one is made, so one that asked for nothing never drops it. */
+    const old = withdraw.current;
+    withdraw.current = old ? () => { old(); next(); } : next;
+  }, []);
+  const leave = (trigger: 'pointer' | 'focus') => {
+    resting.current[trigger] = false;
+    if (!resting.current.pointer && !resting.current.focus) give();
+  };
   const pointer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const focus = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => { clearTimeout(pointer.current); clearTimeout(focus.current); }, []);
+  useEffect(() => () => { clearTimeout(pointer.current); clearTimeout(focus.current); withdraw.current?.(); }, []);
   /* A mouse press focuses the trigger after its pointer down, so that focus belongs to the press: until the blur it arms no timer. */
   const pressing = useRef(false);
-  const press = () => { clearTimeout(pointer.current); clearTimeout(focus.current); };
+  const press = () => { clearTimeout(pointer.current); clearTimeout(focus.current); resting.current = { pointer: false, focus: false }; give(); };
   return {
     onPointerDown: () => { pressing.current = true; press(); },
     onKeyDown: (e: { readonly key: string }) => { if (e.key === 'Enter' || e.key === ' ') press(); },
-    onPointerEnter: () => { clearTimeout(pointer.current); pointer.current = setTimeout(go, REST_MS); },
-    onPointerLeave: () => clearTimeout(pointer.current),
-    onFocus: () => { clearTimeout(focus.current); if (pressing.current) return; focus.current = setTimeout(go, REST_MS); },
-    onBlur: () => { pressing.current = false; clearTimeout(focus.current); },
+    onPointerEnter: () => { clearTimeout(pointer.current); pointer.current = setTimeout(() => go('pointer'), REST_MS); },
+    onPointerLeave: () => { clearTimeout(pointer.current); leave('pointer'); },
+    onFocus: () => { clearTimeout(focus.current); if (pressing.current) return; focus.current = setTimeout(() => go('focus'), REST_MS); },
+    onBlur: () => { pressing.current = false; clearTimeout(focus.current); leave('focus'); },
   } as const;
 }

@@ -760,7 +760,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /* ------------------------------------------------------------- the request layer ---- */
 
-  const transport = (r: Res) => r.error !== null && (r.status === 0 || r.status >= 500);
+  /**
+   * Whether a request failed in transport, so that sending it again may succeed: no answer at all, or a 5xx whose error carries no
+   * Postgres code. A Postgres code (SQLSTATE: five digits and capital letters, as 57014 for a statement timeout) says the database
+   * answered: that is a fact about the request, thrown at once, and a statement that timed out and is sent again only costs the
+   * database the same work twice (CLAUDE.md, "Three unrelated timeouts are not a poison pill";
+   * docs/plans/2026-11-15-warm-reads-design.md §5). PostgREST's own codes begin `PGRST` and are longer; a gateway's error has none.
+   */
+  const transport = (r: Res) => r.error !== null && (r.status === 0 || (r.status >= 500 && !/^[0-9A-Z]{5}$/.test(r.error.code ?? '')));
 
   /** A moment (play_moment, spin_moment): one read, a refusal in words read as null. */
   async function momentOf(run: () => PromiseLike<unknown>): Promise<PlayMoment | null> {
@@ -801,7 +808,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     });
     return r;
   }
-  /** A read, retried once on the request itself when it failed in transport; a second failure throws plain words. */
+  /** A read, retried once on the request itself when it failed in transport (`transport`: never a database error); a second failure throws plain words. */
   async function read(run: () => PromiseLike<unknown>, pastEnd = false): Promise<Res> {
     /* The browser says it has no network: nothing is sent. */
     if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new ReadFailure('offline');

@@ -328,7 +328,7 @@ export function BanAppeal({ character, ban }: { readonly character: Id; readonly
     if (!b) throw new Error('no ban');
     return b;
   }, () => `${character}:${ban?.ban ?? ''}`);
-  const rest = useRest(() => { if (!ban) prepared.early(); });
+  const rest = useRest(() => (ban ? undefined : prepared.early()));
   const { data: shown, busy, failed, open, cancel } = prepared;
   return (
     <>
