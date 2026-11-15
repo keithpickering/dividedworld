@@ -532,6 +532,10 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
         clearTimeout(e.timer); e.controller.abort(); prefetched.current.delete(k);
       }
       const key = prefetchKey(address);
+      /*
+       * An entry dropped while its read is in flight (the cap, a drop of the prefetches) leaves the gate held until that request settles or
+       * LOAD_LIMIT_MS: on purpose, since no signal reaches the request (the design, section 4) and its connection is still busy.
+       */
       const controller = new AbortController();
       const promise = invoke(found.route, url, found.params, controller.signal);
       /* Past the limit it is aborted and, if it never answered (a loader that ignores its signal), forgotten. */
@@ -666,25 +670,40 @@ export function Link({ to, replace, state, source, early: readEarly = true, onCl
   /* The pointer's rest and the keyboard's focus each wait REST_MS, so holding Tab through a list reads nothing. */
   const pointerRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const focusRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /*
+   * The read this link has waiting at the gate, and which triggers still want it: it starts if the pointer or the focus is still on the
+   * link (the warm-reads design, section 4), so a leave or a blur gives up the place only when the other trigger is gone as well.
+   */
+  const withdraw = useRef<() => void>(() => undefined);
+  const resting = useRef({ pointer: false, focus: false });
+  const giveUp = () => { withdraw.current(); withdraw.current = () => undefined; };
+  const leaveRest = (trigger: 'pointer' | 'focus') => {
+    resting.current[trigger] = false;
+    if (!resting.current.pointer && !resting.current.focus) giveUp();
+  };
   useEffect(() => () => { clearTimeout(pointerRest.current); clearTimeout(focusRest.current); withdraw.current(); }, []);
   /*
    * A link that would be left to the browser (a target, a download) is not read early; the router's own prefetch refuses another site. A link
    * that says `early={false}` is never read ahead: Back to the board reopens a page that changes while the reader is away, and the menu's focus
    * would have it read as the menu opens, kept thirty seconds and shown stale.
    */
-  const withdraw = useRef<() => void>(() => undefined);
-  const early = (now = false) => {
+  const early = (trigger: 'pointer' | 'focus' | 'press') => {
     if (!readEarly || rest.target || rest.download !== undefined) return;
-    /* A press gives up this link's own rest that is waiting: the press reads at once, and the rest would read a second time. */
-    if (now) { withdraw.current(); withdraw.current = () => undefined; }
-    withdraw.current = prefetch(to, now ? { now: true } : undefined);
+    if (trigger === 'press') {
+      /* A press gives up this link's own rest that is waiting: the press reads at once, and the rest would read a second time. */
+      giveUp();
+      resting.current = { pointer: false, focus: false };
+      prefetch(to, { now: true });
+      return;
+    }
+    resting.current[trigger] = true;
+    withdraw.current = prefetch(to);
   };
-  /* A rest that is left gives up its place at the gate; one that has started, or was replaced, is not touched. */
-  const giveUp = () => { withdraw.current(); withdraw.current = () => undefined; };
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
     /* A click loads on its own: a read of this link that waits at the gate is not started after it. */
     giveUp();
+    resting.current = { pointer: false, focus: false };
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || rest.target || rest.download !== undefined) return;
     if (new URL(to, window.location.href).origin !== window.location.origin) return;
     e.preventDefault();
@@ -694,11 +713,11 @@ export function Link({ to, replace, state, source, early: readEarly = true, onCl
     <a
       href={to}
       onClick={click}
-      onPointerEnter={(e) => { onPointerEnter?.(e); clearTimeout(pointerRest.current); pointerRest.current = setTimeout(() => early(), REST_MS); }}
-      onPointerLeave={(e) => { onPointerLeave?.(e); clearTimeout(pointerRest.current); giveUp(); }}
-      onPointerDown={(e) => { onPointerDown?.(e); if (e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) early(true); }}
-      onFocus={(e) => { onFocus?.(e); clearTimeout(focusRest.current); focusRest.current = setTimeout(() => early(), REST_MS); }}
-      onBlur={(e) => { onBlur?.(e); clearTimeout(focusRest.current); giveUp(); }}
+      onPointerEnter={(e) => { onPointerEnter?.(e); clearTimeout(pointerRest.current); pointerRest.current = setTimeout(() => early('pointer'), REST_MS); }}
+      onPointerLeave={(e) => { onPointerLeave?.(e); clearTimeout(pointerRest.current); leaveRest('pointer'); }}
+      onPointerDown={(e) => { onPointerDown?.(e); if (e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) early('press'); }}
+      onFocus={(e) => { onFocus?.(e); clearTimeout(focusRest.current); focusRest.current = setTimeout(() => early('focus'), REST_MS); }}
+      onBlur={(e) => { onBlur?.(e); clearTimeout(focusRest.current); leaveRest('focus'); }}
       {...rest}
     />
   );
