@@ -13,7 +13,8 @@
  *      of a tenth of the budget and 0.6 MB fails too and asks for the budget to be lowered.
  *   3. Postgres 17 only: the figures differ by major version, so `requireRecorded` stops the file before the fixture and before every measurement on another, and every
  *      test that measures fails on that one message.
- * A megabyte is 1,048,576 bytes. A budget is its measurement on Postgres 17.11 rounded up to one decimal, plus 0.3 MB of room, so ordinary run-to-run movement never fails
+ * A megabyte is 1,048,576 bytes. A budget is its measurement in the workflow (the sql job, on its Postgres 17, after the files before this one), rounded up to one decimal,
+ * plus 0.3 MB of room, so ordinary run-to-run movement never fails
  * a build and the far-under gap (twice the room) never asks a freshly set budget to be lowered.
  *
  * Seeing the figures: a passing end-to-end file's output is discarded by tools/test-sql.mjs, so a green suite hides the table. To print it for this file, on a scratch database
@@ -21,6 +22,8 @@
  *   KAYFABB_SCRATCH_URL=postgres://postgres:pg@localhost:5432/<scratch> node --experimental-strip-types --no-warnings --test supabase/tests/e2e/0028-cold-read-budget.ts
  * The budgets are the workflow's: its Postgres 17 is the one they must hold on. If a developer's 17 differs from the workflow's and a line fails, read its measured figure and
  * compare it with the budget; a difference inside the room is the minor version, not a regression, and a budget is changed only to what the workflow's own run measured.
+ * A Postgres 17.11 on Windows, on a database holding only the migrations and fixtures, measured up to 0.75 MB under the workflow (boot 5.28 against 6.02), so there the
+ * far-under line can fire on a healthy build: that is the machine, and no budget is lowered for it.
  *
  * `budgetFaults` is that judgment, pure, and each poison below is the defect it exists to catch: a function that reads `acts_public` thirty times over (thirty branches, each
  * joining it to itself twice, since a bare thirty reads of its id alone keep only about half of thread_page's figure), committed in the scratch database (each measurement is
@@ -117,26 +120,26 @@ const admin = (f: Fixture) => f.admin;
 const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: number): Budget => ({ call, as, mb });
 
 /**
- * Each screen function, one real call that answers a document. The budgets are Postgres 17.11's measurements, each rounded up to one decimal plus 0.3 MB; a search read
+ * Each screen function, one real call that answers a document. The budgets are the workflow's measurements (PR 720's sql job, 2026-11-15), each rounded up to one decimal plus 0.3 MB; a search read
  * is called with a term and no filter, since the plan it keeps does not depend on the term.
  */
 export const BUDGETS: Record<string, Budget> = {
   alerts_page: budget(() => 'public.alerts_page(null)', player, 5.7),
-  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 8.0),
-  boot: budget(() => 'public.boot()', player, 5.6),
+  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 8.1),
+  boot: budget(() => 'public.boot()', player, 6.4),
   drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 3.0),
   index_page: budget(() => 'public.index_page()', player, 5.5),
-  log_page: budget(() => 'public.log_page(null)', player, 15.1),
-  my_characters_page: budget(() => 'public.my_characters_page()', player, 4.1),
-  profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 6.0),
-  queue_page: budget(() => 'public.queue_page()', admin, 4.6),
-  record_page: budget((f) => `public.record_page('${f.mine}', 'post', 1)`, player, 6.0),
+  log_page: budget(() => 'public.log_page(null)', player, 15.7),
+  my_characters_page: budget(() => 'public.my_characters_page()', player, 4.8),
+  profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 6.6),
+  queue_page: budget(() => 'public.queue_page()', admin, 5.0),
+  record_page: budget((f) => `public.record_page('${f.mine}', 'post', 1)`, player, 6.5),
   results_page: budget(() => 'public.results_page(1, 1)', player, 1.1),
   search_posts: budget(() => `public.search_posts('post', null, null, null, null, false, null, null, 5)`, player, 5.8),
   search_suggest: budget(() => `public.search_suggest('co', null, null, false, 5)`, player, 3.7),
   search_threads: budget(() => `public.search_threads('cold', null, null, null, null, false, null, null, 5)`, player, 6.2),
-  season_page: budget(() => `public.season_page('rankings', null, null, 1)`, player, 3.4),
-  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 16.5),
+  season_page: budget(() => `public.season_page('rankings', null, null, 1)`, player, 3.5),
+  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 17.0),
   updates_page: budget(() => 'public.updates_page(null, null, null)', player, 2.8),
 };
 
