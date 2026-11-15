@@ -9,16 +9,22 @@
  * (`useAt` redraws when the soonest end passes, as Whodunnit?'s does). The first play whose end is ahead is the one drawn, so a second Hot Box cast after the first
  * ended is the one that shows. With none, the words are drawn alone.
  *
+ * The container (the owner, 2026-11-15). The smoke fills the post's whole content area, border to border, as Feelin' Fab's foil and Whoops!'s ink do: the
+ * post body (`.kb-act-main`) in the thread, found and measured with the engine's `bodyOf` and `bodyBox` (engine/ui/cards/body.ts), and this effect's own
+ * element elsewhere (the ORIGIN box). The area's borders are the container, and no smaller un-bordered box in it is. Everything below that says "the box"
+ * means that area: the canvas, the puffs, a clearing's radius, the density, where a pointer clears. Only the words' own lines are the words': the held
+ * sweep travels them (offset into the area), and under forced colors the mask is the words' (so its coordinates are theirs).
+ *
  * The model is `smoke.ts`'s (numbers, strength, clearings, the sweep) and this file draws it, in one of two ways that cost a reader the same:
- *  - the full effect: a canvas laid over the words, filled with the play's color at the fog's opacity, drifting puffs over it, and each open clearing cut out
+ *  - the full effect: a canvas laid over the content area, filled with the play's color at the fog's opacity, drifting puffs over it, and each open clearing cut out
  *    of it with a soft edge (`destination-out`). It runs a frame loop only while the post is in view, and none under reduced motion, where it draws again
  *    only when something changes (a clearing opens or closes, the box resizes, the strength has moved a hundredth, a line of the sweep finishes);
  *  - under forced colors, where the fog cannot be drawn in system colors (the amendment at the top of the plan): the words themselves are masked, a flat layer
- *    at `maskAlpha` over the box, a hard-edged circle for each open clearing (same radius, same `roll`, same `touchHold`), a rectangle for each line the sweep
+ *    at `maskAlpha` over the words, a hard-edged circle for each open clearing (same radius, same `roll`, same `touchHold`), a rectangle for each line the sweep
  *    has finished. The canvas is not drawn and no frame is requested; the mask is moved on a 50 ms timer, or on the times things change under reduced motion.
- *    A ring (system colors) shows where each clearing is, a sign says what the Lens says, and the box is outlined in `CanvasText`, because a smoked post
- *    would otherwise look blank. The outline and the ring are drawn by a frame laid over the words (`dw-hotbox-frame`), never by the words' own box, which its
- *    mask would take away with the rest. With forced colors off none of this exists, and the canvas, its fog and its soft edge are exactly as above.
+ *    A ring (system colors) shows where each clearing is, a sign says what the Lens says, and the content area is outlined in `CanvasText`, because a smoked post
+ *    would otherwise look blank. The outline and the ring are drawn by a frame laid over the content area (`dw-hotbox-frame`), never by the words' own box, which its
+ *    mask would take away with the rest; a ring may be anywhere in the area. With forced colors off none of this exists, and the canvas, its fog and its soft edge are exactly as above.
  *
  * Screen readers and the keyboard. While the play is up the words are `inert` (as Whoops! makes an inked body), so a link in a smoked post is followed after
  * a finished sweep: the control is the way through for every reader, a mouse's included, and it is never inert, never covered and drawn wherever the post is.
@@ -33,6 +39,7 @@
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
+import { bodyBox, bodyOf } from '../../../../engine/ui/cards/body.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { TIMER_MOST, useAt } from '../../../../engine/ui/cards/plays.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -55,6 +62,8 @@ const STATE_WAVED = 'Waved clear for you';
 /** The most the canvas is scaled past the screen's px, and the most px it holds (a long post's canvas is scaled down to fit, not refused). */
 const MAX_DPR = 2;
 const MAX_CANVAS_PX = 16_000_000;
+/** How far the words' offset or size may change mid-hold before the hold is let go, px. */
+const SHIFT_PX = 0.5;
 /** How often the forced-colors mask is moved while something in it is changing, ms. */
 const TICK_MS = 50;
 /** The color a smoke that names none the card can read is drawn in: `lightgray` (Whoops!'s table has no such name, so it is written out). */
@@ -125,11 +134,17 @@ function spriteOf(base: string): HTMLCanvasElement | null {
 
 /* -------------------------------------------------------------------------------- the model's state ---- */
 
-/** A held sweep: where it began, the post's lines in the box's px and their words, and when the hold was let go (null while held). */
+/**
+ * A held sweep: where it began, the post's lines (in the content area's px: the words' lines, offset by where the words stand in the area) and their words,
+ * and when the hold was let go (null while held). It travels the words' lines, so `x0` and `y0` are the words' corner in the area, `width` the words' width
+ * and `height` their height, which a reflow is told by.
+ */
 interface Sweep {
   readonly startedAt: number;
   readonly lines: readonly SweepLine[];
   readonly texts: readonly string[];
+  readonly x0: number;
+  readonly y0: number;
   readonly width: number;
   readonly height: number;
   /** ms a line takes: the box's width at Whoops!'s pace. */
@@ -148,7 +163,7 @@ interface Model {
 }
 const emptyModel = (): Model => ({ mouse: null, touch: null, rest: [], sweep: null, said: 0, wavedAt: null });
 
-interface Cuts { readonly clearings: readonly Clearing[]; readonly rects: readonly { readonly top: number; readonly bottom: number; readonly o: number }[] }
+interface Cuts { readonly clearings: readonly Clearing[]; readonly rects: readonly { readonly left: number; readonly width: number; readonly top: number; readonly bottom: number; readonly o: number }[] }
 
 const isWaved = (wavedAt: number | null, now: number): boolean => wavedAt !== null && now - wavedAt < SMOKE.waved;
 
@@ -172,14 +187,14 @@ function prune(m: Model, now: number): void {
 /** What is open at `now`: each clearing and, from the sweep, a rectangle for each finished line and (with motion) the clearing travelling along the line. */
 function cutsAt(m: Model, now: number, reduced: boolean): Cuts {
   const clearings = [m.mouse, m.touch, ...m.rest].filter((c): c is Clearing => c !== null && openness(c, now, reduced) > 0);
-  const rects: { top: number; bottom: number; o: number }[] = [];
+  const rects: { left: number; width: number; top: number; bottom: number; o: number }[] = [];
   const sw = m.sweep;
   if (sw) {
     const s = sweepAt(sw.lines, (sw.releasedAt ?? now) - sw.startedAt, sw.width, SWEEP_PX_S);
-    const lead: Clearing = { x: s.x, y: s.y, openedAt: sw.startedAt, leftAt: sw.releasedAt, hold: 0 };
+    const lead: Clearing = { x: sw.x0 + s.x, y: s.y, openedAt: sw.startedAt, leftAt: sw.releasedAt, hold: 0 };
     const o = openness(lead, now, reduced);
     if (o > 0) {
-      for (let i = 0; i <= s.finished; i++) rects.push({ top: sw.lines[i]!.top, bottom: sw.lines[i]!.bottom, o });
+      for (let i = 0; i <= s.finished; i++) rects.push({ left: sw.x0, width: sw.width, top: sw.lines[i]!.top, bottom: sw.lines[i]!.bottom, o });
       if (!reduced && !s.done) clearings.push(lead);
     }
   }
@@ -247,11 +262,20 @@ function densityFor(w: number, h: number): number {
   return Math.min(screen, Math.sqrt(MAX_CANVAS_PX / Math.max(1, w * h)));
 }
 
-interface Frame { readonly w: number; readonly h: number; readonly top: number; readonly left: number }
-const NO_FRAME: Frame = { w: 0, h: 0, top: 0, left: 0 };
+/**
+ * The boxes the effect reads, in CSS px. The content area (`w`, `h`, placed at `top` and `left` from the effect's element) is the container: the canvas, the
+ * puffs, a clearing's radius and the density are its, and a clearing's coordinates are in it. The words stand in it at (`wx`, `wy`) and are `ww` by `wh`: the
+ * sweep's lines, and the forced-colors mask's coordinates, are theirs.
+ */
+interface Frame { readonly w: number; readonly h: number; readonly top: number; readonly left: number; readonly wx: number; readonly wy: number; readonly ww: number; readonly wh: number }
+const NO_FRAME: Frame = { w: 0, h: 0, top: 0, left: 0, wx: 0, wy: 0, ww: 0, wh: 0 };
 
-/** The words' mask, forced colors only: the flat layer, a hard circle for each clearing, a rectangle for each finished line; none while the post is clear. */
-function maskFor(cuts: Cuts, s: number, g: number, now: number, reduced: boolean, w: number): CSSProperties | undefined {
+/**
+ * The words' mask, forced colors only: the flat layer, a hard circle for each clearing, a rectangle for each finished line; none while the post is clear.
+ * The cuts are in the content area's coordinates and the mask is the words' own, so each is moved by where the words stand in the area (`ox`, `oy`);
+ * the radius is the area's (`w` is its width), as on the canvas.
+ */
+function maskFor(cuts: Cuts, s: number, g: number, now: number, reduced: boolean, w: number, ox: number, oy: number): CSSProperties | undefined {
   if (g >= 1) return undefined;
   const flat = maskAlpha(s) + (1 - maskAlpha(s)) * g;
   const r = holeRadius(w);
@@ -259,14 +283,14 @@ function maskFor(cuts: Cuts, s: number, g: number, now: number, reduced: boolean
   const sizes = ['100% 100%'];
   const positions = ['0 0'];
   for (const c of cuts.clearings) {
-    images.push(`radial-gradient(circle ${r}px at ${px(c.x)}px ${px(c.y)}px, rgba(0, 0, 0, ${a4(openness(c, now, reduced))}) ${r}px, rgba(0, 0, 0, 0) ${r}px)`);
+    images.push(`radial-gradient(circle ${r}px at ${px(c.x - ox)}px ${px(c.y - oy)}px, rgba(0, 0, 0, ${a4(openness(c, now, reduced))}) ${r}px, rgba(0, 0, 0, 0) ${r}px)`);
     sizes.push('100% 100%');
     positions.push('0 0');
   }
   for (const rect of cuts.rects) {
     images.push(`linear-gradient(rgba(0, 0, 0, ${a4(rect.o)}), rgba(0, 0, 0, ${a4(rect.o)}))`);
     sizes.push(`100% ${px(rect.bottom - rect.top)}px`);
-    positions.push(`0 ${px(rect.top)}px`);
+    positions.push(`0 ${px(rect.top - oy)}px`);
   }
   const image = images.join(', ');
   return {
@@ -294,7 +318,7 @@ export function HotBoxEffect(props: EffectProps) {
   return <Smoke key={play.id} {...props} play={play} />;
 }
 
-function Smoke({ play, still, show, met, children }: EffectProps & { readonly play: CardPlay }) {
+function Smoke({ play, still, show, met, place, children }: EffectProps & { readonly play: CardPlay }) {
   const { api } = useKayfa();
   const reduced = useMotionReduced();
   const forced = useForcedColors();
@@ -310,6 +334,8 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
   const [tick, bump] = useReducer((n: number) => n + 1, 0);
   const [spoken, setSpoken] = useState('');
   const [frame, setFrame] = useState<Frame>(NO_FRAME);
+  /* The content area's element as the last measure found it (the post body, or the host in an ORIGIN box): the observers and listeners are bound to it, and move when it is replaced. */
+  const [areaEl, setAreaEl] = useState<HTMLElement | null>(null);
   /* Whether the post is on screen is unknown until the observer first reports: the canvas is kept (and painted) through that, so the words are never bare, and only a confirmed "out" releases it. */
   const [sight, setSight] = useState<'unknown' | 'in' | 'out'>('unknown');
   const inView = sight === 'in';
@@ -350,22 +376,33 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
   }, [api, refresh]);
 
   /* ---- the box ---- */
+  /*
+   * The container is the box Feelin' Fab's foil and Whoops!'s ink fill: the post body (`.kb-act-main`) in the thread, border to border (the engine's
+   * `bodyOf` and `bodyBox`, engine/ui/cards/body.ts), and this effect's own element anywhere else (the ORIGIN box). It is found again at each measure.
+   */
   const measure = useCallback(() => {
     const words = wordsRef.current, host = hostRef.current;
     if (!words || !host) return;
+    const found = bodyOf(host, place);
+    setAreaEl(found ?? host);
+    const b = bodyBox(host, found);
     const w = words.getBoundingClientRect(), h = host.getBoundingClientRect();
-    setFrame((f) => (f.w === w.width && f.h === w.height && f.top === w.top - h.top && f.left === w.left - h.left ? f : { w: w.width, h: w.height, top: w.top - h.top, left: w.left - h.left }));
-  }, []);
+    /* The words' corner from the area's corner: both from the page's. */
+    const wx = w.left - (h.left + b.left), wy = w.top - (h.top + b.top);
+    setFrame((f) => (f.w === b.w && f.h === b.h && f.top === b.top && f.left === b.left && f.wx === wx && f.wy === wy && f.ww === w.width && f.wh === w.height
+      ? f : { w: b.w, h: b.h, top: b.top, left: b.left, wx, wy, ww: w.width, wh: w.height }));
+  }, [place]);
   useLayoutEffect(() => {
     measure();
     const words = wordsRef.current, host = hostRef.current;
     if (!words || !host || typeof ResizeObserver === 'undefined') return;
-    /* The host too: the words can move in it with no change of their own size (the control's font loads or wraps), and forced colors shows a sign above them. */
+    /* The host and the area too: the words can move in them with no change of their own size (the control's font loads or wraps), and the area can change with none of the words'. */
     const watch = new ResizeObserver(measure);
     watch.observe(words);
     watch.observe(host);
+    if (areaEl && areaEl !== host) watch.observe(areaEl);
     return () => watch.disconnect();
-  }, [measure, forced]);
+  }, [measure, areaEl, forced]);
 
   /* ---- the canvas ---- */
   const paint = useCallback(() => {
@@ -429,7 +466,7 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
     }
     for (const rect of cuts.rects) {
       ctx.fillStyle = `rgba(0, 0, 0, ${a4(rect.o)})`;
-      ctx.fillRect(0, rect.top, w, rect.bottom - rect.top);
+      ctx.fillRect(rect.left, rect.top, rect.width, rect.bottom - rect.top);
     }
     ctx.globalCompositeOperation = 'source-over';
   }, [api]);
@@ -453,11 +490,10 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
 
   /* ---- in view, and met ---- */
   useEffect(() => {
-    if (still) return;
-    const host = hostRef.current;
-    /* A margin above and below, so the canvas is restored before the post scrolls into sight. */
-    return host ? watchInView(host, (seen) => setSight(seen ? 'in' : 'out'), { rootMargin: '200px 0px' }) : undefined;
-  }, [still]);
+    if (still || !areaEl) return;
+    /* The content area is what the canvas covers, so it is what is watched: a tall post's host can be far out of view while the area is still on screen. A margin above and below, so the canvas is restored before the post scrolls into sight. */
+    return watchInView(areaEl, (seen) => setSight(seen ? 'in' : 'out'), { rootMargin: '200px 0px' });
+  }, [still, areaEl]);
   useEffect(() => { if (!still) refresh(); }, [inView, still, refresh]);
   const met1 = useRef(false);
   useEffect(() => {
@@ -466,16 +502,16 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
     met();
   }, [still, inView, met]);
 
-  /* ---- the pointer: on the host, passive, never prevented, never captured ---- */
+  /* ---- the pointer: on the content area, passive, never prevented, never captured ---- */
   useEffect(() => {
-    if (still) return;
-    const host = hostRef.current, words = wordsRef.current;
-    if (!host || !words) return;
-    const place = (e: PointerEvent) => { const r = words.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-    /* The control is the way through, not the words: a press on it clears nothing. */
-    const onControl = (e: Event) => e.target instanceof Element && e.target.closest('.dw-hotbox-wave') !== null;
+    if (still || !areaEl) return;
+    /* The pointer is read on the content area, which the smoke fills (the host in an ORIGIN box), and placed in its padding box. */
+    const area = areaEl;
+    const at = (e: PointerEvent) => { const r = area.getBoundingClientRect(); return { x: e.clientX - r.left - area.clientLeft, y: e.clientY - r.top - area.clientTop }; };
+    /* The control is the way through, not the words, and so is whatever the engine lifts over the ink (a fold's bar, the reactions row): a press on one clears nothing. */
+    const onControl = (e: Event) => e.target instanceof Element && e.target.closest('.dw-hotbox-wave, [data-kb-over-ink]') !== null;
     const follow = (e: PointerEvent) => {
-      const m = model.current, { x, y } = place(e);
+      const m = model.current, { x, y } = at(e);
       m.mouse = { x, y, openedAt: m.mouse?.openedAt ?? api.now(), leftAt: null, hold: 0 };
     };
     /* The mouse's clearing closes where it is and rolls out, as when the pointer leaves the host. */
@@ -497,7 +533,7 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
       if (onControl(e)) { if (e.pointerType !== 'touch') closeMouse(); return; }
       if (e.pointerType === 'touch') {
         /* A finger cannot stay in place and scroll too: its clearing is opened where it lands and holds `touchHold`, replacing the last. */
-        const { x, y } = place(e), t = api.now();
+        const { x, y } = at(e), t = api.now();
         model.current.touch = { x, y, openedAt: t, leftAt: t, hold: SMOKE.touchHold };
       } else follow(e);
       changed();
@@ -506,29 +542,29 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
       if (e.pointerType !== 'touch') closeMouse();
     };
     const passive = { passive: true } as const;
-    host.addEventListener('pointermove', onMove, passive);
-    host.addEventListener('pointerdown', onDown, passive);
-    host.addEventListener('pointerleave', onLeave, passive);
+    area.addEventListener('pointermove', onMove, passive);
+    area.addEventListener('pointerdown', onDown, passive);
+    area.addEventListener('pointerleave', onLeave, passive);
     return () => {
-      host.removeEventListener('pointermove', onMove);
-      host.removeEventListener('pointerdown', onDown);
-      host.removeEventListener('pointerleave', onLeave);
+      area.removeEventListener('pointermove', onMove);
+      area.removeEventListener('pointerdown', onDown);
+      area.removeEventListener('pointerleave', onLeave);
     };
-  }, [still, api, changed]);
+  }, [still, api, changed, areaEl]);
 
   /* ---- the hold ---- */
   const start = useCallback(() => {
     const m = model.current, L = latest.current;
     if (L.still || (m.sweep && m.sweep.releasedAt === null) || isWaved(m.wavedAt, api.now())) return;
     const words = wordsRef.current;
-    const { w, h } = L.frame;
+    const { wx, wy, ww: w, wh: h } = L.frame;
     if (!words || w <= 0 || h <= 0) return;
-    /* The post's lines, read once: shares of the box's height, scaled to px. A browser that cannot measure a range gives none, and the post is one block. */
+    /* The words' lines, read once: shares of the words' height, scaled to px and moved to where the words stand in the content area. A browser that cannot measure a range gives none, and the post is one block. */
     const read = readLines(words, { w, h });
     const lines = read.length > 0 ? read : [{ top: 0, bottom: 1, text: words.textContent ?? '' }];
     m.sweep = {
-      startedAt: api.now(), lines: lines.map((l) => ({ top: px(l.top * h), bottom: px(l.bottom * h) })), texts: lines.map((l) => l.text),
-      width: w, height: h, per: (w / SWEEP_PX_S) * 1000, releasedAt: null,
+      startedAt: api.now(), lines: lines.map((l) => ({ top: px(l.top * h + wy), bottom: px(l.bottom * h + wy) })), texts: lines.map((l) => l.text),
+      x0: wx, y0: wy, width: w, height: h, per: (w / SWEEP_PX_S) * 1000, releasedAt: null,
     };
     m.said = 0;
     setSpoken('');
@@ -560,11 +596,13 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
     if (held && held.releasedAt === null) m.sweep = { ...held, releasedAt: t };
     refresh();
   }, [api, refresh, settle]);
-  /* A box that reflows mid-hold leaves the sweep on the old layout, so the hold is let go. */
+  /* Words that reflow, or move in the area, mid-hold leave the sweep on the old layout, so the hold is let go. */
   useEffect(() => {
     const sw = model.current.sweep;
-    if (sw && sw.releasedAt === null && (sw.width !== frame.w || sw.height !== frame.h)) stop();
-  }, [frame.w, frame.h, stop]);
+    /* Within half a px is the same layout (a float's rounding, a sign that re-wraps by a sliver), not a move. */
+    const off = (a: number, b: number) => Math.abs(a - b) > SHIFT_PX;
+    if (sw && sw.releasedAt === null && (off(sw.width, frame.ww) || off(sw.height, frame.wh) || off(sw.x0, frame.wx) || off(sw.y0, frame.wy))) stop();
+  }, [frame.ww, frame.wh, frame.wx, frame.wy, stop]);
   /* A hold ends with the effect (nothing is drawn or timed after it). */
   useEffect(() => () => {
     const m = model.current;
@@ -612,7 +650,7 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
   useEffect(() => () => show(null), [show]);
 
   const cuts = forced ? cutsAt(m, at, reduced) : null;
-  const mask = cuts ? maskFor(cuts, s, g, at, reduced, frame.w) : undefined;
+  const mask = cuts ? maskFor(cuts, s, g, at, reduced, frame.w, frame.wx, frame.wy) : undefined;
   const radius = holeRadius(frame.w);
   const key = (e: KeyboardEvent) => e.key === ' ' || e.key === 'Enter';
 
@@ -636,7 +674,7 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
       <div ref={wordsRef} className="dw-hotbox-words" inert={!still && !waved} style={mask}>{children}</div>
       <canvas ref={canvasRef} className="dw-hotbox-smoke" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }} />
       {forced && (
-        <div className="dw-hotbox-frame" aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }}>
+        <div className="dw-hotbox-frame" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }}>
           {!still && cuts!.clearings.map((c, i) => (
             <div key={i} className="dw-hotbox-ring" aria-hidden="true" style={{ left: px(c.x - radius), top: px(c.y - radius), width: radius * 2, height: radius * 2 }} />
           ))}

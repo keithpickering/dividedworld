@@ -6,7 +6,7 @@
  *
  * Under forced colors the fog cannot be drawn in system colors, so the canvas is hidden and the words themselves are masked (inline, by Effect.tsx). A mask
  * takes away everything its element paints outside its own box, outline included, so the outline and each clearing's ring are drawn by a frame laid over the
- * words (`dw-hotbox-frame`), in `CanvasText`, and a sign above the words says what the Lens says.
+ * post's content area (`dw-hotbox-frame`: the smoke's container, not the words), in `CanvasText`, and a sign above the words says what the Lens says.
  */
 .dw-hotbox {
   position: relative;
@@ -19,11 +19,16 @@
   position: relative;
 }
 
-/* Laid over the words and never in the way of them: the pointer is read on the host. Its box is set by Effect.tsx from the words'. */
+/*
+ * Laid over the post's content area, border to border, as Feelin' Fab's foil and Whoops!'s ink are (Effect.tsx sets its box inline, from the engine's
+ * `bodyBox`), and never in the way of anything: the pointer is read on the area. In the thread the engine's sheet lifts it (`data-kb-effect-ink`, z-index 1)
+ * above the words and below what it lifts over the ink (`data-kb-over-ink`, 2); outside the thread the rules here do the same.
+ */
 .dw-hotbox-smoke {
   position: absolute;
   display: block;
   pointer-events: none;
+  z-index: 1;
 }
 
 .dw-hotbox-wave {
@@ -41,6 +46,9 @@
   cursor: pointer;
   user-select: none;
   -webkit-touch-callout: none;
+  /* Above the fog, wherever the post is drawn (in the thread the engine's `data-kb-over-ink` rule says the same). */
+  position: relative;
+  z-index: 2;
 }
 
 .dw-hotbox-wave:focus-visible {

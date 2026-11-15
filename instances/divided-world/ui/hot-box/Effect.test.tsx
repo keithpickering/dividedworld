@@ -15,7 +15,7 @@ import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
 import { renderIn, testInstance } from '../../../../engine/ui/test-world.tsx';
-import { SMOKE, fogAlpha, holeRadius, maskAlpha, strength } from './smoke.ts';
+import { SMOKE, fogAlpha, holeRadius, maskAlpha, puffs, strength } from './smoke.ts';
 import { HotBoxEffect, WAVE_DESCRIBE, forgetSprites } from './Effect.tsx';
 
 /* A post's lines, as shares of the box's height, as Whoops!'s `readLines` gives them. */
@@ -58,6 +58,8 @@ let forced = false;
 let forcedListeners: (() => void)[] = [];
 let sizeWatchers: (() => void)[] = [];
 let sizes = BOX;
+/** The post's content area (`.kb-act-main`, border to border), which the smoke fills; the words' box above is inside it. By default the two are the same box. */
+let AREA = BOX;
 
 function stubCanvas() {
   const ctx = {
@@ -86,9 +88,12 @@ function stubWindow() {
   })) as unknown as typeof window.matchMedia;
   globalThis.ResizeObserver = class { constructor(cb: () => void) { sizeWatchers.push(cb); } observe(el: Element) { observed.push(el); } unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
   HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
-    const r = this.classList.contains('dw-hotbox-words') ? sizes : this.classList.contains('dw-hotbox') ? HOST : { left: 0, top: 0, width: 0, height: 0 };
+    const r = this.classList.contains('dw-hotbox-words') ? sizes : this.classList.contains('dw-hotbox') ? HOST : this.classList.contains('kb-act-main') ? AREA : { left: 0, top: 0, width: 0, height: 0 };
     return { ...r, x: r.left, y: r.top, right: r.left + r.width, bottom: r.top + r.height, toJSON: () => r } as DOMRect;
   };
+  /* The area's padding box, as the engine's `bodyBox` reads it. */
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList.contains('kb-act-main') ? AREA.width : 0; } });
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return this.classList.contains('kb-act-main') ? AREA.height : 0; } });
 }
 
 /** Runs the frames asked for so far (each asks for the next), as a browser's next frame would. */
@@ -100,7 +105,7 @@ function pass(ms: number, step = 100) {
 
 /* ---------------------------------------------------------------------------------------------- the props ---- */
 
-function setup(over: Partial<EffectProps> = {}, strict = false) {
+function setup(over: Partial<EffectProps> = {}, strict = false, bare = false) {
   const show = vi.fn<(view: CardView | null) => void>();
   const met = vi.fn();
   const save = vi.fn(async () => ({ ok: false as const, error: 'no' }));
@@ -111,12 +116,16 @@ function setup(over: Partial<EffectProps> = {}, strict = false) {
     children: <p>The words of the post. <a href="https://example.com/">A link</a></p>, ...over,
   };
   const world = createFake({ instance: testInstance, now: () => Date.now() });
-  const out = renderIn(world, strict ? <StrictMode><HotBoxEffect {...props} /></StrictMode> : <HotBoxEffect {...props} />);
+  const effect = <HotBoxEffect {...props} />;
+  /* In the thread the effect sits inside the post's content area; `bare` is a post with none (the ORIGIN box), where the area is the effect's own element. */
+  const inArea = bare ? effect : <div className="kb-act-main">{effect}</div>;
+  const out = renderIn(world, strict ? <StrictMode>{inArea}</StrictMode> : inArea);
   return { show, met, save, release, props, ...out };
 }
 type Setup = ReturnType<typeof setup>;
 
 const host = (s: Setup) => s.container.querySelector<HTMLElement>('.dw-hotbox')!;
+const area = (s: Setup) => s.container.querySelector<HTMLElement>('.kb-act-main')!;
 const words = (s: Setup) => s.container.querySelector<HTMLElement>('.dw-hotbox-words')!;
 const canvas = (s: Setup) => s.container.querySelector<HTMLCanvasElement>('canvas.dw-hotbox-smoke');
 const button = (s: Setup) => s.container.querySelector<HTMLButtonElement>('button.dw-hotbox-wave');
@@ -135,7 +144,8 @@ function pointer(el: Element, type: string, x: number, y: number, pointerType = 
   return e.defaultPrevented;
 }
 const move = (s: Setup, x = 300, y = 250) => pointer(host(s), 'pointermove', x, y);
-const leave = (s: Setup) => pointer(host(s), 'pointerleave', 0, 0);
+/* The pointer is read on the content area, and a leave does not bubble, so it is sent to the area. */
+const leave = (s: Setup) => pointer(area(s), 'pointerleave', 0, 0);
 const touch = (s: Setup, x = 200, y = 300) => pointer(host(s), 'pointerdown', x, y, 'touch');
 const press = (s: Setup) => pointer(button(s)!, 'pointerdown', 10, 10);
 const release = (s: Setup) => pointer(button(s)!, 'pointerup', 10, 10);
@@ -155,7 +165,7 @@ function layers(s: Setup): Layer[] {
   const sizes = style.maskSize ? style.maskSize.split(', ') : [];
   const positions = style.maskPosition ? style.maskPosition.split(', ') : [];
   return images.map((img, i): Layer => {
-    const circle = /radial-gradient\(circle ([\d.]+)px at ([\d.]+)px ([\d.]+)px, rgba\(0, 0, 0, ([\d.]+)\) ([\d.]+)px, rgba\(0, 0, 0, 0\) ([\d.]+)px\)/u.exec(img);
+    const circle = /radial-gradient\(circle ([\d.]+)px at (-?[\d.]+)px (-?[\d.]+)px, rgba\(0, 0, 0, ([\d.]+)\) ([\d.]+)px, rgba\(0, 0, 0, 0\) ([\d.]+)px\)/u.exec(img);
     if (circle) return { kind: 'circle', r: Number(circle[1]), x: Number(circle[2]), y: Number(circle[3]), alpha: Number(circle[4]), hard: circle[5] === circle[1] && circle[6] === circle[1] };
     const flat = /linear-gradient\(rgba\(0, 0, 0, ([\d.]+)\), rgba\(0, 0, 0, ([\d.]+)\)\)/u.exec(img)!;
     const height = /([\d.]+)px/u.exec(sizes[i] ?? '');
@@ -168,7 +178,7 @@ const rectLayers = (s: Setup) => layers(s).filter((l) => l.kind === 'rect');
 const flat = (s: Setup) => layers(s).find((l) => l.kind === 'flat');
 
 beforeEach(() => {
-  fills = []; draws = []; gradients = 0; observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX;
+  fills = []; draws = []; gradients = 0; observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX;
   vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   stubCanvas();
   stubWindow();
@@ -180,6 +190,8 @@ afterEach(() => {
   delete (window as { matchMedia?: unknown }).matchMedia;
   delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
   delete (HTMLElement.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
+  delete (HTMLElement.prototype as { clientWidth?: unknown }).clientWidth;
+  delete (HTMLElement.prototype as { clientHeight?: unknown }).clientHeight;
 });
 
 /* ================================================================================================ the tests ==== */
@@ -285,10 +297,10 @@ describe('the fog', () => {
     s.unmount();
   });
 
-  test('is drawn again, resized, when the words\' box changes', () => {
+  test('is drawn again, resized, when the content area\'s box changes', () => {
     const s = setup();
     Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
-    sizes = { ...BOX, width: 400, height: 300 };
+    AREA = { ...BOX, width: 400, height: 300 };
     act(() => { for (const cb of sizeWatchers) cb(); });
     act(() => { runFrame(); });
     expect(canvas(s)!.width).toBe(400);
@@ -298,16 +310,17 @@ describe('the fog', () => {
     delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
   });
 
-  test('watches the host as well as the words, so a move of the words without a resize is measured', () => {
+  test('watches the host and the content area as well as the words, so a move of the words without a resize is measured', () => {
     const s = setup();
     expect(observed).toContain(words(s));
     expect(observed).toContain(host(s));
+    expect(observed).toContain(area(s));
   });
 
-  test('is placed where the words are: a shift of their top without a resize is followed when the watchers fire', () => {
+  test('is placed where the content area is: a shift of its top without a resize is followed when the watchers fire', () => {
     const s = setup();
     expect(canvas(s)!.style.top).toBe('100px');
-    sizes = { ...BOX, top: 150 };
+    AREA = { ...BOX, top: 150 };
     act(() => { for (const cb of sizeWatchers) cb(); });
     expect(canvas(s)!.style.top).toBe('150px');
   });
@@ -332,7 +345,7 @@ describe('the fog', () => {
     try {
       Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
       const s = setup();
-      const see = (isIntersecting: boolean) => act(() => { watch!([{ target: host(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
+      const see = (isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
       see(true);
       expect([canvas(s)!.width, canvas(s)!.height]).toEqual([800, 600]);
       see(false);
@@ -417,14 +430,14 @@ describe('the pointer', () => {
     act(() => { runFrame(); });
     expect(circles()).toHaveLength(1);
     expect(circles()[0]).toMatchObject({ x1: 300, y1: 150 });
-    pointer(host(s), 'pointerleave', 0, 0, 'pen');
+    pointer(area(s), 'pointerleave', 0, 0, 'pen');
     pass(SMOKE.roll + 100);
     expect(circles()).toHaveLength(0);
     pointer(host(s), 'pointerdown', 120, 220, 'pen');
     act(() => { runFrame(); });
     expect(circles()).toHaveLength(1);
     expect(circles()[0]).toMatchObject({ x1: 120, y1: 120 });
-    pointer(host(s), 'pointerleave', 0, 0, 'pen');
+    pointer(area(s), 'pointerleave', 0, 0, 'pen');
     pass(SMOKE.roll + 100);
     expect(circles()).toHaveLength(0);
   });
@@ -856,11 +869,11 @@ describe('forced colors: a hard circular mask', () => {
     expect(rings(s)).toHaveLength(0);
   });
 
-  test('the frame is placed where the words are, and follows them when forced colors turn on and shift them', () => {
+  test('the frame is placed where the content area is, and follows it when forced colors turn on and shift it', () => {
     forced = false;
     const s = setup();
     expect(s.container.querySelector('.dw-hotbox-frame')).toBeNull();
-    sizes = { ...BOX, top: 140 };
+    AREA = { ...BOX, top: 140 };
     forced = true;
     act(() => { for (const l of forcedListeners) l(); });
     expect(s.container.querySelector<HTMLElement>('.dw-hotbox-frame')!.style.top).toBe('140px');
@@ -1006,6 +1019,242 @@ describe('forced colors: a hard circular mask', () => {
   });
 });
 
+/* ---------------------------------------------------------------------------- the content area is the container ---- */
+
+/*
+ * The owner, 2026-11-15: the smoke fills the whole post content area, as Whoops!'s ink and Feelin' Fab's foil do (the post body, `.kb-act-main`, border
+ * to border: engine/ui/cards/body.ts), and that area is its container. The words' box is smaller and offset inside it: here the area is 900 by 700 at
+ * left -20, top 50, and the words (800 by 600, at 0, 100 in the page) stand 20 right of and 50 below the area's corner.
+ */
+const WIDE = { left: -20, top: 50, width: 900, height: 700 };
+/** A point of the area that is outside the words' box: the area's (10, 10), in page px. */
+const OUTSIDE = { x: -10, y: 60 };
+
+describe('the content area is the container', () => {
+  beforeEach(() => { AREA = WIDE; });
+
+  test('the canvas is sized and placed to the content area\'s box, not the words\'', () => {
+    const s = setup();
+    expect(canvas(s)!.style).toMatchObject({ left: '-20px', top: '50px', width: '900px', height: '700px' });
+    expect(canvas(s)!.width).toBe(900);
+    expect(canvas(s)!.height).toBe(700);
+  });
+
+  test('the fog covers that whole box', () => {
+    setup();
+    const f = fills.find((x) => x.op === 'source-over' && typeof x.style === 'string')!;
+    expect(f.rect).toEqual([0, 0, 900, 700]);
+  });
+
+  test('puffs and a clearing\'s radius come from the area\'s width and height', () => {
+    AREA = { left: 0, top: 50, width: 400, height: 300 };
+    const s = setup();
+    expect(puffs(1, 400, 300).length).not.toBe(puffs(1, 800, 600).length);
+    expect(draws).toHaveLength(puffs(1, 400, 300).length);
+    expect(holeRadius(400)).not.toBe(holeRadius(800));
+    move(s, 100, 150);
+    act(() => { runFrame(); });
+    expect(circles()[0]).toMatchObject({ r1: holeRadius(400) });
+  });
+
+  test('a mouse move at a point in the area outside the words opens a clearing there, in the area\'s coordinates', () => {
+    const s = setup();
+    move(s, OUTSIDE.x, OUTSIDE.y);
+    act(() => { runFrame(); });
+    expect(circles()).toHaveLength(1);
+    expect(circles()[0]).toMatchObject({ x1: 10, y1: 10, r1: holeRadius(900) });
+    leave(s);
+    pass(SMOKE.roll + 100);
+    expect(circles()).toHaveLength(0);
+  });
+
+  test('a touch anywhere in the area opens a clearing, but a press on what the engine lifts over the ink (the reactions row, a fold bar) opens none', () => {
+    const s = setup();
+    touch(s, 400, 400);
+    act(() => { runFrame(); });
+    expect(circles()[0]).toMatchObject({ x1: 420, y1: 350 });
+    const lifted = document.createElement('div');
+    lifted.setAttribute('data-kb-over-ink', '');
+    area(s).appendChild(lifted);
+    pass(SMOKE.touchHold + SMOKE.roll + 100);
+    expect(circles()).toHaveLength(0);
+    pointer(lifted, 'pointerdown', 100, 100, 'touch');
+    pointer(lifted, 'pointermove', 100, 100);
+    act(() => { runFrame(); });
+    expect(circles()).toHaveLength(0);
+  });
+
+  test('the held sweep travels the words\' lines, offset into the area\'s coordinates', () => {
+    const s = setup();
+    press(s);
+    pass(LINE_MS / 2);
+    /* Half way along the words' first line (60 to 120 in the words): across the words' 800 from the words' left, down the area by the words' top. */
+    expect(circles()[0]).toMatchObject({ x1: 20 + 400, y1: 50 + 90 });
+    pass(LINE_MS / 2);
+    expect(rectCuts()).toHaveLength(1);
+    expect(rectCuts()[0]!.rect).toEqual([20, 110, 800, 60]);
+    expect(inert(s)).toBe(true);
+  });
+
+  test('words that move in the area let go of a held sweep', () => {
+    const s = setup();
+    press(s);
+    pass(LINE_MS / 2);
+    expect(last(s).state).toBe('Waving it away');
+    sizes = { ...BOX, top: 130 };
+    act(() => { for (const cb of sizeWatchers) cb(); });
+    expect(last(s).state).toBe('Smoke over the words');
+    pass(LINE_MS * 4);
+    expect(inert(s)).toBe(true);
+    /* The hold really stopped: no line is announced, the post is never waved, and the finished-line cuts roll shut. */
+    expect(readout(s)).toBe('');
+    expect(last(s).state).toBe('Smoke over the words');
+    expect(rectCuts()).toHaveLength(0);
+    expect(circles()).toHaveLength(0);
+  });
+
+  test('a sub-pixel shift of the words mid-hold keeps the hold, and a 5 px shift lets it go', () => {
+    const s = setup();
+    press(s);
+    pass(LINE_MS / 2);
+    sizes = { ...BOX, top: BOX.top + 0.3, height: BOX.height + 0.2 };
+    act(() => { for (const cb of sizeWatchers) cb(); });
+    expect(last(s).state).toBe('Waving it away');
+    sizes = { ...BOX, top: BOX.top + 5 };
+    act(() => { for (const cb of sizeWatchers) cb(); });
+    expect(last(s).state).toBe('Smoke over the words');
+  });
+
+  test('after unmount, and after the play ends, a pointer move on the content area opens nothing and throws nothing, and its listeners are all removed', () => {
+    const adds: string[] = [], removes: string[] = [];
+    const realAdd = EventTarget.prototype.addEventListener, realRemove = EventTarget.prototype.removeEventListener;
+    EventTarget.prototype.addEventListener = function (this: EventTarget, type: string, ...rest: unknown[]) {
+      if (type.startsWith('pointer') && (this as Element).classList?.contains('kb-act-main')) adds.push(type);
+      return (realAdd as (...a: unknown[]) => void).call(this, type, ...rest);
+    } as never;
+    EventTarget.prototype.removeEventListener = function (this: EventTarget, type: string, ...rest: unknown[]) {
+      if (type.startsWith('pointer') && (this as Element).classList?.contains('kb-act-main')) removes.push(type);
+      return (realRemove as (...a: unknown[]) => void).call(this, type, ...rest);
+    } as never;
+    try {
+      const moveOn = (el: Element) => expect(() => el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 250, pointerType: 'mouse', pointerId: 1 }))).not.toThrow();
+      const s = setup({ plays: [play({ ends: iso(NOW + 10_000) })] });
+      const a = area(s);
+      expect(adds.sort()).toEqual(['pointerdown', 'pointerleave', 'pointermove']);
+      pass(11_000, 1000);
+      expect(canvas(s)).toBeNull();
+      expect(removes.sort()).toEqual(adds.sort());
+      const shows = s.show.mock.calls.length;
+      moveOn(a);
+      expect(s.show.mock.calls.length).toBe(shows);
+      expect(vi.getTimerCount()).toBe(0);
+      adds.length = 0; removes.length = 0;
+      const t = setup();
+      const b = area(t);
+      expect(adds).toHaveLength(3);
+      t.unmount();
+      expect(removes.sort()).toEqual(adds.sort());
+      moveOn(b);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(frames.size).toBe(0);
+    } finally {
+      EventTarget.prototype.addEventListener = realAdd;
+      EventTarget.prototype.removeEventListener = realRemove;
+    }
+  });
+
+  test('the observers and listeners follow the post body when its node is replaced', () => {
+    const s = setup();
+    const fresh = document.createElement('div');
+    fresh.className = 'kb-act-main';
+    s.container.appendChild(fresh);
+    fresh.appendChild(host(s));
+    act(() => { for (const cb of sizeWatchers) cb(); });
+    expect(observed).toContain(fresh);
+    pointer(fresh, 'pointermove', 300, 250);
+    act(() => { runFrame(); });
+    expect(circles()).toHaveLength(1);
+  });
+
+  test('with no post body about it (the ORIGIN box) the area is the effect\'s own element', () => {
+    const s = setup({}, false, true);
+    expect(canvas(s)!.style).toMatchObject({ left: '0px', top: '0px', width: '800px', height: '700px' });
+    pointer(host(s), 'pointermove', 300, 250);
+    act(() => { runFrame(); });
+    expect(circles()[0]).toMatchObject({ x1: 300, y1: 250 });
+    pointer(host(s), 'pointerleave', 0, 0);
+    pass(SMOKE.roll + 100);
+    expect(circles()).toHaveLength(0);
+  });
+
+  test('a moment fills the same area, drawn once, with no handler', () => {
+    const s = setup({ still: true });
+    expect(canvas(s)!.style).toMatchObject({ left: '-20px', top: '50px', width: '900px', height: '700px' });
+    expect(fills.find((x) => x.op === 'source-over' && typeof x.style === 'string')!.rect).toEqual([0, 0, 900, 700]);
+    const before = [...fills];
+    pointer(area(s), 'pointermove', 100, 100);
+    pass(500);
+    expect(fills).toEqual(before);
+  });
+
+  describe('under forced colors', () => {
+    beforeEach(() => { forced = true; });
+
+    test('the frame that outlines the post is the content area\'s box, not the words\'', () => {
+      const s = setup();
+      const frame = s.container.querySelector<HTMLElement>('.dw-hotbox-frame')!;
+      expect(frame.style).toMatchObject({ left: '-20px', top: '50px', width: '900px', height: '700px' });
+      expect(words(s).style.maskImage).not.toBe('');
+    });
+
+    test('the frame takes the engine\'s ink level, so another card\'s ink cannot cover the outline and rings', () => {
+      const s = setup();
+      expect(s.container.querySelector('.dw-hotbox-frame')).toHaveAttribute('data-kb-effect-ink');
+    });
+
+    test('a ring may be anywhere in the area, outside the words\' box too', () => {
+      const s = setup();
+      move(s, OUTSIDE.x, OUTSIDE.y);
+      expect(rings(s)).toHaveLength(1);
+      expect(rings(s)[0]!.style).toMatchObject({ left: '-80px', top: '-80px', width: '180px', height: '180px' });
+    });
+
+    test('the mask\'s circle is in the words\' coordinates: the pointer at the area\'s (x, y) is the circle at (x - words left, y - words top)', () => {
+      const s = setup();
+      move(s, 320, 260);
+      /* Area (340, 210) -> words (320, 160). */
+      expect(circleLayers(s)).toHaveLength(1);
+      expect(circleLayers(s)[0]).toMatchObject({ x: 320, y: 160, r: holeRadius(900), hard: true });
+      expect(rings(s)[0]!.style).toMatchObject({ left: '250px', top: '120px' });
+    });
+
+    test('the mask\'s circle for a point outside the words has negative words coordinates', () => {
+      const s = setup();
+      move(s, OUTSIDE.x, OUTSIDE.y);
+      expect(circleLayers(s)[0]).toMatchObject({ x: -10, y: -40 });
+    });
+
+    test('the sweep\'s rectangles are in the words\' coordinates', () => {
+      const s = setup();
+      press(s);
+      pass(LINE_MS);
+      expect(rectLayers(s)).toHaveLength(1);
+      expect(rectLayers(s)[0]).toMatchObject({ top: 60, height: 60, alpha: 1 });
+    });
+  });
+
+  test('with forced colors off none of the mask, ring, sign or frame exists', () => {
+    const s = setup();
+    move(s, OUTSIDE.x, OUTSIDE.y);
+    act(() => { runFrame(); });
+    expect(words(s).getAttribute('style') ?? '').not.toContain('mask');
+    expect(rings(s)).toHaveLength(0);
+    expect(sign(s)).toBeNull();
+    expect(s.container.querySelector('.dw-hotbox-frame')).toBeNull();
+    expect(circles()).toHaveLength(1);
+  });
+});
+
 describe('what it tells the Lens', () => {
   test('its view, in the plan\'s words, with one hold control', () => {
     const s = setup();
@@ -1059,7 +1308,7 @@ describe('what it tells the Lens', () => {
     globalThis.IntersectionObserver = class { constructor(cb: (entries: unknown[]) => void) { watch = cb; } observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
     try {
       const s = setup({}, true);
-      const see = (isIntersecting: boolean) => act(() => { watch!([{ target: host(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
+      const see = (isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
       see(true);
       see(false);
       see(true);
@@ -1085,7 +1334,7 @@ describe('in view', () => {
     globalThis.IntersectionObserver = class { constructor(cb: (entries: unknown[]) => void) { watch = cb; } observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
   });
   afterEach(() => { delete (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver; });
-  const see = (s: Setup, isIntersecting: boolean) => act(() => { watch!([{ target: host(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
+  const see = (s: Setup, isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
 
   test('the loop runs only while the post is in view, and met waits for the first sight of it', () => {
     const s = setup();
@@ -1133,6 +1382,17 @@ describe('in view', () => {
     } finally {
       delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
     }
+  });
+
+  test('the element watched is the content area (the post body), and the host in an ORIGIN box', () => {
+    const targets: Element[] = [];
+    globalThis.IntersectionObserver = class { constructor(cb: (entries: unknown[]) => void) { watch = cb; } observe(el: Element) { targets.push(el); } unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
+    const s = setup();
+    expect(targets).toEqual([area(s)]);
+    s.unmount();
+    targets.length = 0;
+    const b = setup({}, false, true);
+    expect(targets).toEqual([host(b)]);
   });
 
   test('the observer is given a margin, so the canvas is back before the post shows', () => {
