@@ -6,7 +6,7 @@
 -- the caller. The nodes under the origin's own CTEs are then counted: the rows of `acts` they read (each scan node's rows, plus those its filter and its recheck removed, times its loops, as 0146-card-writes-at-scale.sql counts them).
 --
 -- Cases: a thread spun from a post that holds 400 plays, among 12,000 other posts in two threads, 6,000 plays on posts that are not the origin, and 3,000 posts each in the spun thread and a plain one.
---  1. The page that holds the first Act: the origin's plays handed on are bounded by 21 (limit 21), what is read is the origin's own plays by an index, no scan of `acts` in the origin's nodes is a sequential scan, and the document holds 20 plays, 20 ends at most, and more.
+--  1. The page that holds the first Act: the origin's plays handed on are bounded by 21 (limit 21), its plays come up in order from an index and stop at 21, no scan of `acts` in the origin's nodes is a sequential scan, and the document holds 20 plays, 20 ends at most, and more.
 --  2. Another page of the same thread, and a page of a thread with no origin: every node under the origin's CTEs that reads a relation was never executed (zero loops).
 -- The fixture is written with the append-only and warn-guard triggers off for this transaction only (the runner rolls it back), and analyzed before the plan is read.
 
@@ -27,6 +27,11 @@ $$;
 -- The rows the origin's plays CTE passed up: what the box is handed, which the limit of 21 bounds (the 21st says there is more).
 create function pg_temp.origin_plays_emitted(plan jsonb) returns numeric language sql as $$
   select coalesce(max((c ->> 'Actual Rows')::numeric), -1) from jsonb_path_query(plan, '$.**') c where jsonb_typeof(c) = 'object' and c ->> 'Subplan Name' = 'CTE o_plays'
+$$;
+
+-- The rows an index gave up under the origin's CTEs: what its scan nodes passed up, times their loops.
+create function pg_temp.origin_index_rows(plan jsonb, idx text) returns numeric language sql as $$
+  select coalesce(sum((n ->> 'Actual Rows')::numeric * (n ->> 'Actual Loops')::numeric), 0) from pg_temp.origin_nodes(plan) n where n ->> 'Index Name' = idx
 $$;
 
 -- Reads of `acts` inside the origin that are not index reads: a sequential scan of it, anywhere under the origin's CTEs.
@@ -114,11 +119,13 @@ begin
   plays_read := pg_temp.origin_rows_read(plan);
   raise notice '1 the origin read % rows of acts for 400 plays, with 24,000 other Acts about', plays_read;
   if pg_temp.origin_seq_scans(plan) > 0 then raise exception '1 the origin''s reads scan acts: %', plan; end if;
-  -- The bound: what the origin's plays hand on is 21 (limit 21), and what is read to find them is the origin's own plays through acts_target (the view's order by created_at, id is not one an index gives, so they are sorted
-  -- to 21, as cardsOn's read is), which is three times its 400 at most (the plays, their edits probed, the origin's Act) and never the instance's 24,000 other Acts.
+  -- The bound: what the origin's plays hand on is 21 (limit 21), read oldest first from acts_origin_plays (target_act_id, created_at, id), which stops at the limit: the rows that index gives up are 21 and not the
+  -- origin's 400 sorted down to 21. acts_public is two arms, though, and its concealing arm (a veiled play's own) takes the same index range with a filter that no index can serve (a set computed from post_veils),
+  -- so it reads the origin's plays to pass none of them: what is read in all is bounded by the origin's own plays (400 here) and never the instance's Acts. That is the view's cost, and it is held where it is.
   if pg_temp.origin_plays_emitted(plan) is distinct from 21::numeric then raise exception '1 the origin''s plays CTE handed on % rows for an origin of 400 plays: it must be bounded by 21 (limit 21)', pg_temp.origin_plays_emitted(plan); end if;
-  if plays_read > 1200 then raise exception '1 the origin read % rows of acts for an origin of 400 plays: its reads must be those of the origin''s own plays and not the instance''s Acts', plays_read; end if;
-  if plan::text not like '%acts_target%' then raise exception '1 the origin''s plays are not read through acts_target: %', plan; end if;
+  if plan::text not like '%acts_origin_plays%' then raise exception '1 the origin''s plays are not read through acts_origin_plays: %', plan; end if;
+  if pg_temp.origin_index_rows(plan, 'acts_origin_plays') > 21 then raise exception '1 the origin''s plays came up % rows of acts_origin_plays for an origin of 400 plays: they must be read in order and stopped at the limit of 21', pg_temp.origin_index_rows(plan, 'acts_origin_plays'); end if;
+  if plays_read > 400 + 21 + 40 then raise exception '1 the origin read % rows of acts for an origin of 400 plays: its reads must be those of the origin''s own plays and not the instance''s Acts', plays_read; end if;
   -- The document names the bound too: 20 plays drawn (and no end of theirs, none was written), and a 21st there.
   perform tests.become(rdr);
   doc := thread_page(spun_t, 1, null, 20, array['orfx']);

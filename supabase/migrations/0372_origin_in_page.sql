@@ -30,6 +30,8 @@
 -- A busy instance: a page with no origin runs none of it. o_on holds the origin's id only where the page's Acts hold the thread's first Act, and every added read joins o_on, so each is keyed on a value that is absent there; under the
 -- generic plan (0368) the joins under an empty o_on are never executed.
 --
+-- acts_origin_plays: the origin's plays are the first 21 layers on one Act in the order cardsOn gives them (created_at, id), and acts_target / acts_layers hold them by target alone, so reading 21 meant reading every play
+-- the origin has (a hot post holds hundreds) and sorting them down. This index holds them in that order, so the read stops at its limit: its cost is 21 plays, however many the origin holds.
 -- Nothing is added to a player, a character or a post, so nothing is left to end ("No player is ever stuck").
 
 create function public.origin_moment(in_thread uuid)
@@ -61,6 +63,8 @@ begin
   end;
 end
 $function$;
+create index acts_origin_plays on acts (target_act_id, created_at, id) where kind in ('card', 'set', 'spring');
+
 revoke execute on function public.origin_moment(uuid) from public, anon;
 grant execute on function public.origin_moment(uuid) to authenticated;
 
