@@ -27,20 +27,19 @@ const world: World = (fake, instance) => {
   fake.seed.wallet(me, 562);
   const [first, second] = instance.cards;
   if (first && second) fake.seed.cards(me, { [first.key]: 1, [second.key]: 1 });
-  const slot = (place: number) => instance.machine[place]?.item;
-  /* The second place is pulled (board 01's A2), Glitter Bomb marked up from its price to one and a half times it (the board's E1; Hall Pass stocks D2 now, so it stands one place later). */
-  const pulled = slot(1);
+  /* Slots are found by the card they hold, never by their place, so the story does not follow the instance's order: Whoops! is pulled (the board's A2) and Stick Around is marked up from its price to one and a half times it (the board's E1); both are commons, on sale under the machine's rule. */
+  const slotOf = (card: string) => instance.machine.find((m) => 'card' in m.item && m.item.card === card);
+  const pulled = slotOf('whoops');
   if (pulled) {
-    fake.seed.slot(pulled, {
+    fake.seed.slot(pulled.item, {
       availability: 'soldOut',
-      move: { kind: 'pullSlot', act: 'story-pull', ends: '2026-11-09T12:00:00Z', was: instance.machine[1]!.price, percent: null, hours: null, demand: { kind: 'distinctCharactersOnBoard', params: { board: 'general', count: 12 } }, progress: { done: 7, of: 12, met: false, checkedAt: '2026-11-07T10:00:00Z' } },
+      move: { kind: 'pullSlot', act: 'story-pull', ends: '2026-11-09T12:00:00Z', was: pulled.price, percent: null, hours: null, demand: { kind: 'distinctCharactersOnBoard', params: { board: 'general', count: 12 } }, progress: { done: 7, of: 12, met: false, checkedAt: '2026-11-07T10:00:00Z' } },
     });
   }
-  const bomb = Math.max(0, instance.machine.findIndex((m) => 'card' in m.item && m.item.card === 'glitter-bomb'));
-  const marked = slot(bomb);
+  const marked = slotOf('stick-around');
   if (marked) {
-    const was = instance.machine[bomb]!.price;
-    fake.seed.slot(marked, {
+    const was = marked.price;
+    fake.seed.slot(marked.item, {
       price: Math.round(was * 1.5),
       move: { kind: 'repriceSlot', act: 'story-markup', ends: '2026-11-08T20:00:00Z', was, percent: 150, hours: null, demand: { kind: 'postsOnBoard', params: { board: 'general', count: 20 } }, progress: { done: 4, of: 20, met: false, checkedAt: '2026-11-07T10:00:00Z' } },
     });
