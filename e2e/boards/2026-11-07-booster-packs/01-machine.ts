@@ -24,7 +24,7 @@
  *    taller (seven rows of slots where the board draws five), which nothing else on the board stands under. Below the Fold then took the slot after Glitter Bomb (H1), so no slot above it moves; the grid is one row taller again (eight rows), which nothing stands under either.
  *    Mooch, Toll, 4D Chess and Jimmy Wails, then Hype-Up and Last Word (card notes Part 4), took the slots after Below the Fold, so no slot above them moves; the grid gains rows below the board's slots, which nothing stands under, and the hidden Main Event, Off Day and Sugar Coat draw no slot.
  *    Overreaction and Blind Study (card notes Part 3) took the slots after Laugh Track's, so no slot above them moves and the grid gains rows below the board's slots, which nothing stands under; the hidden Whodunnit? draws no slot.
- *    Happy Heart and Take the Fall (card notes Part 5) took the slots after Blind Study's in the same way, and their three hidden siblings draw none.
+ *    Happy Heart and Take the Fall (card notes Part 5) took the slots after Blind Study's in the same way, and their three hidden siblings draw none. THIS then took the slot beside Feelin' Fab's (D2), as its plan says, so each slot after it stands one place on: the build's D2 is THIS and its E1 Card Collector, and Glitter Bomb is the build's H1, three rows under the board's empty E2 and in the left column, so it is held to the board's place plus (-176, 379).
  *  - A slot's price is "orbs" and the board's "orb" (the glass's names say "1.00 orb" and "3.00 orbs", as board 07 holds them).
  *  - The wallet's name says "buying Booster", where the board draws "buying the Booster": a card's reads "buying Whoops!" and a pack is named as one.
  *  - The machine's sign is a marquee the instance picks at random, and the machine's drawing is the instance's art (`data-kb-art`): not compared.
@@ -59,9 +59,9 @@ const manifest: BoardManifest = {
     { id: 'slot-c1', role: 'button', name: 'Buy Bluff, 0.25 orb, common Set', buildName: 'Buy You Were Saying?, 1.00 orb, common Move', type: false, box: 'position' },
     { id: 'slot-c2', role: 'button', name: 'Buy Feelin\' Fab, 0.20 orb, common Cast', buildName: 'Buy Publicity Tour, 1.50 orbs, uncommon Gimmick', type: false, box: 'position' },
     { id: 'slot-d1', role: 'button', name: 'Buy Trap Card, 1.50 orb, uncommon Set', buildName: 'Buy Feelin\' Fab, 0.20 orbs, common Move', type: false, box: 'position' },
-    { id: 'slot-d2', role: 'button', name: 'Buy Force Field, 1.50 orb, uncommon Use', buildName: 'Buy Card Collector, 1.50 orbs, uncommon Reversal', type: false, box: 'position' },
-    { id: 'slot-e1', role: 'button', name: 'Buy Glitter Bomb, 2.25 orb, marked up from 1.50, uncommon Cast', buildName: 'Buy Hall Pass, 1.50 orbs, uncommon Reversal', type: false, box: 'position' },
-    { id: 'slot-e2', role: 'img', name: 'Empty slot E2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Glitter Bomb, 2.25 orbs, marked up from 1.50, uncommon Move', type: false, box: 'position', buildShift: { x: 0, y: 253 } },
+    { id: 'slot-d2', role: 'button', name: 'Buy Force Field, 1.50 orb, uncommon Use', buildName: 'Buy THIS, 0.20 orbs, common Move', type: false, box: 'position' },
+    { id: 'slot-e1', role: 'button', name: 'Buy Glitter Bomb, 2.25 orb, marked up from 1.50, uncommon Cast', buildName: 'Buy Card Collector, 1.50 orbs, uncommon Reversal', type: false, box: 'position' },
+    { id: 'slot-e2', role: 'img', name: 'Empty slot E2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Glitter Bomb, 2.25 orbs, marked up from 1.50, uncommon Move', type: false, box: 'position', buildShift: { x: -176, y: 379 } },
 
     /* Beside the slots: the pick, what is in the pack, and Buy. */
     { id: 'selected', role: 'region', name: 'Selected', buildRole: 'status', buildName: 'Selected: A1, Booster, 3.00', type: false, box: 'across' },
