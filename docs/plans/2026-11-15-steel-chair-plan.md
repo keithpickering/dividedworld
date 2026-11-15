@@ -3,6 +3,17 @@
 Record, written 2026-11-15. Carries out section 2.3 of `docs/plans/2026-11-15-wave-1-cards-design.md`. One PR from
 `main`.
 
+**Amended 2026-11-15, after the owner's rule on an effect's container.** As first written, the chair's world was the
+words' box, with a floor strip added under the words. The owner, on Hot Box's build: "The borders of the post content
+area are meant to serve as a container for the effect, with permission to leave the container for comedic effect - we
+shouldn't treat a smaller un-bordered area within it as a container", and, asked whether this plan should change so
+its walls and floor are the content area's borders: "Yes, amend it". So the world is the post's content area, the
+bordered box that holds the words: its side walls are that box's left and right borders and its floor is that box's
+bottom border. The 28 px of room for resting chairs stays, so a chair still covers no words, but it is room inside
+the content area above its bottom border, not a strip that ends where the words do. The throw still aims at the
+words, since the dent bends them. This amendment changes the passages below that say "the words' box" or "the floor
+strip", and wins over section 2.3 of the design where they differ.
+
 **May start** after Rope Break (`docs/plans/2026-11-15-rope-break-plan.md`) merges: `rope-break` and `steel-chair`
 fall between the same two keys of the sorted lists (`docs/plans/2026-11-14-base-set-design.md`, section 2), so this
 build starts from a main that holds Rope Break's lines. It may build beside Hot Box.
@@ -136,13 +147,16 @@ The owner's words for this task: "the chair is sort of snapping back to a standa
 floor, would be nice if we could make it settle on the floor in a way that completes the movement realistically."
 So nothing in this file moves an orientation toward a chosen pose. Rest is what the contacts leave.
 
-Units are CSS pixels and seconds; x right, y down, z toward the reader. The world is the words' box: a floor (the
-plane `y = floorY`), two side walls (`x = 0`, `x = width`), and a back wall and a glass (`z = -DEPTH`, `z = DEPTH`,
+Units are CSS pixels and seconds; x right, y down, z toward the reader. The world is the post's content area, the bordered
+box that holds the words (the amendment at the top): a floor at its bottom border (the plane `y = floorY`), two side
+walls at its left and right borders (`x = 0`, `x = width`), and a back wall and a glass (`z = -DEPTH`, `z = DEPTH`,
 `DEPTH = 40`) that keep the chair in front of the post.
 
-- **The throw** (`throwOf(rand, width, height): Throw`): a target point inside the words' box, inset 15% from each
-  side and from the top, and no lower than 60% of the height; a direction of approach, any angle; a start point one
-  box-diagonal away along it; a speed of 1500 px/s; a starting spin (three angular velocities up to 600°/s) and
+- **The throw** (`throwOf(rand, words): Throw`, where `words` is the words' box inside the world, as
+  `{ left, top, width, height }`): a target point inside the words' box, inset 15% from each side and from the top,
+  and no lower than 60% of its height (the dent bends words, so the aim is the words; the world the chair then falls
+  in is the content area); a direction of approach, any angle; a start point one
+  diagonal of the world away along it; a speed of 1500 px/s; a starting spin (three angular velocities up to 600°/s) and
   orientation, random; a scale that falls from 2.2 to 1 on the way in, as the mock's did.
 - **Flight.** A straight line to the target at that speed, the spin running, the chair open (`fold = 1`).
 - **The hit**, the moment the target is reached: the event `{ kind: 'hit', at: target }` is reported once; the
@@ -234,9 +248,12 @@ Model: sonnet
   With none, `children` alone and `show(null)`.
 - **What it draws.** `<div class="dw-chair">` (position relative) holding the SVG filter (zero size, `aria-hidden`),
   the words wrapper (`filter: url(#id)` set through its `style`, only where `filterTrusted()`), the dents' shading,
-  the chairs' layer, and **the floor**: 28 px of padding under the words while any play is live, where the chairs
-  come to rest. The floor is part of the wrapper's height, so a resting chair covers no words.
-- **A run.** One `createWorld` per run, sized to the words' box (a `ResizeObserver` calls `resize`). For each live
+  the chairs' layer, and **the floor's room**: while any play is live the content area is 28 px taller, room between
+  the words and the content area's bottom border where the chairs come to rest, so a resting chair covers no words.
+  The chairs' layer and the dents' shading fill the content area border to border, sized and placed the way Feelin'
+  Fab's foil and Whoops!'s ink are (`instances/divided-world/ui/feelin-fab/`), never the words wrapper alone.
+- **A run.** One `createWorld` per run, sized to the content area, with `floorY` at its bottom border (a
+  `ResizeObserver` on that box calls `resize`). For each live
   play, 350 ms apart, a throw from a generator seeded freshly for the run (`crypto.getRandomValues`): so every run,
   and every reader, sees a different throw. On each `hit`: that play's dent appears at the point, its displacement
   growing from 0 to `DENT_SCALE` over 90 ms, and the post shakes once (a 4 px, 0.25 s CSS shake on the wrapper).
@@ -271,11 +288,12 @@ Tests, red first, in `Effect.test.tsx` (inside `renderInWorld`; stub `requestAni
 sound's `play`; fake the timers; props inline as `below-the-fold/Effect.test.tsx` builds them):
 
 - no live play: `children` alone, no floor, nothing shown; one, two and three live plays: that many chairs and
-  dents after a run, and the floor's 28 px; a fourth play handed with one ended draws three;
+  dents after a run, and the floor's 28 px of room; a fourth play handed with one ended draws three;
 - a play's `ends` passing removes its chair and dent on an open page;
 - a run starts only after the post's middle has been in view 300 ms; leaving the view clears it; returning runs
   again with a different target (two runs' dent points differ);
-- every chair ends inside the box and on the floor strip or on another chair, asleep, and the frame loop stops;
+- every chair ends inside the content area, on its bottom border or on another chair, asleep, and the frame loop
+  stops; a chair may come to rest beside the words' box where the content area is wider than the words;
 - the hit's sound and one settle sound play once per chair on the first run, and none on a replay or on
   "Throw again";
 - reduced motion: no frame is requested, the dents and resting chairs are there at once, no sound, no shake class;
@@ -324,13 +342,13 @@ line), a new `e2e/steel-chair.spec.ts`.
 - `e2e/board-stories.test.ts`: one `arrayContaining` line with the five ids.
 - `e2e/steel-chair.spec.ts`, on the model of `e2e/glitter.spec.ts` and `e2e/fold.spec.ts`:
   - `one-light`: within 6 seconds of the post being in view there is one dent and one chair, the chair's box lies
-    inside the floor strip, and no animation frame is requested after it rests;
+    inside the content area with its lowest point within 1 px of the content area's bottom border, and no animation frame is requested after it rests;
   - the post's words are all still in the page's text, selectable, and none is covered by the chair's box;
-  - `three`: three dents, three chairs at rest, none outside the words' box;
+  - `three`: three dents, three chairs at rest, none outside the content area;
   - scrolling the post out and back runs it again (the dent's place changes);
   - the Lens opens from the card's mark, shows "Dented by a chair" and "Throw again", and pressing it runs again;
   - `reduced`: the dent and the resting chair are there on first paint and nothing moves;
-  - `short-post`: the row is as tall as its words plus the floor, and the chair rests inside it;
+  - `short-post`: the row is as tall as its words plus the floor's room, and the chair rests inside it;
   - axe finds nothing on `one-light`, `one-dark` and `reduced`;
   - at phone width the chair stays inside the post and the page does not scroll sideways.
 
@@ -344,6 +362,10 @@ for the owner to judge the look and to hear.
 
 ## Review focus
 
+- **The container is the content area.** The chairs' walls and floor are the post's content area's borders, and the
+  layers fill it border to border ("An effect fills the post, border to border", once that rule is in `CLAUDE.md`).
+  Look at a narrow post in a wide row and a post whose content area is wider than its words: a chair may slide to
+  rest beside the words, against the content area's border, and never against an edge that has no border drawn.
 - **Does it settle like a thing?** The owner's one correction to the mock. Watch twenty throws: the chair must tip
   and slide to rest with no moment where it turns by itself toward a pose, and never hang on an edge. Read `body.ts`
   for any term that steers orientation.
