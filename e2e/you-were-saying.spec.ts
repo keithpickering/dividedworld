@@ -82,3 +82,56 @@ for (const story of ['taped-first', 'taped-last']) {
     });
   }
 }
+
+/*
+ * The post keeps its height while the tail types: the words not yet typed hold their place from the first frame, so nothing under the
+ * post moves and a scroll is not fought. On the story `ChainLight` (full motion, three chained plays, several lines at either width):
+ * the post is taken out of view and brought back, which types the tail in again from nothing, and every frame from then until it has
+ * typed is read. The post's height is one number throughout, and so is the line each character of the whole text stands on, so no word
+ * hops to the next line as it grows. That the typing was seen (fewer characters shown at some frame than at the end) is checked too:
+ * a tail that never typed would hold its height for the wrong reason.
+ */
+for (const [width, height] of [[1440, 1120], [390, 844]] as const) {
+  test(`the post holds its height and its lines while the tail types, at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto(STORY('chain-light'));
+    await page.waitForSelector('[data-kb-tail]');
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    const seen = await page.evaluate(async () => {
+      const frame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
+      const tail = document.querySelector<HTMLElement>('[data-kb-tail]')!;
+      const article = tail.closest('article')!;
+      tail.scrollIntoView({ block: 'center' });
+      article.style.display = 'none';
+      for (let i = 0; i < 5; i++) await frame();
+      article.style.display = '';
+      const typed = () => [...tail.querySelectorAll('[data-play]')].reduce((n, s) => n + (s.textContent ?? '').length, 0);
+      /* The top of every character of the tail's text, in order, whichever element holds it now. */
+      const lines = () => {
+        const tops: number[] = [];
+        const walk = document.createTreeWalker(tail, NodeFilter.SHOW_TEXT);
+        const range = document.createRange();
+        for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+          const n = (node.textContent ?? '').length;
+          for (let i = 0; i < n; i++) { range.setStart(node, i); range.setEnd(node, i + 1); tops.push(Math.round(range.getBoundingClientRect().top)); }
+        }
+        return tops.join(',');
+      };
+      const heights = new Set<number>();
+      const layouts = new Set<string>();
+      let least = Infinity;
+      const from = performance.now();
+      while (performance.now() - from < 7000) {
+        heights.add(article.getBoundingClientRect().height);
+        layouts.add(lines());
+        least = Math.min(least, typed());
+        await frame();
+      }
+      return { heights: [...heights], layouts: layouts.size, least, most: typed(), lineCount: new Set([...layouts][0]!.split(',')).size };
+    });
+    expect(seen.least).toBeLessThan(seen.most / 2);
+    expect(seen.lineCount).toBeGreaterThanOrEqual(2);
+    expect(seen.heights).toHaveLength(1);
+    expect(seen.layouts).toBe(1);
+  });
+}
