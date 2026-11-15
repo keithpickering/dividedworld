@@ -3,6 +3,15 @@
 Record, written 2026-11-15. Carries out section 2.2 of `docs/plans/2026-11-15-wave-1-cards-design.md`. One PR from
 `main`.
 
+**Amended 2026-11-15, after the owner's answer on forced colors.** As first written, a forced-colors reader was not
+smoked, which the plan's own Review focus called a path cheaper than the obstacle. The owner asked what an equal
+challenge would be and chose a hard circular mask: under forced colors the words themselves are masked and a
+hard-edged circle clears them, with the same radius, timings, held control and thinning as the smoke. The owner's
+condition: "I don't want to lose the soft edge on the full effect", so the mask is the forced-colors path alone and
+the canvas, its fog and its soft clearing are untouched everywhere else. This amendment changes Task 3 (one function),
+Task 4 (the forced-colors path and its tests), Task 7 (its browser checks) and the Review focus's forced-colors line,
+and wins over section 2.2 of the design where they differ.
+
 **May start** after `docs/plans/2026-11-15-wave-1-prep-plan.md` merges, beside Rope Break
 (`docs/plans/2026-11-15-rope-break-plan.md`): the two keys fall in different slots of the sorted lists.
 
@@ -118,6 +127,8 @@ The numbers, exported as one `SMOKE` object so the effect and the tests read the
 - `strength(now, playedAt, ends): number`: 1 at `playedAt`, falling in a straight line to 0 at `ends`, clamped; a
   time that is no time gives 1.
 - `fogAlpha(strength)`: `least + (full - least) * strength`.
+- `maskAlpha(strength)`: `1 - fogAlpha(strength)`, how much of the words shows away from every clearing on the
+  forced-colors path (Task 4): 0.06 as the play lands, 0.55 as it ends, so the mask thins as the fog does.
 - `holeRadius(boxWidth)`.
 - `Clearing = { x, y, openedAt, leftAt | null, hold }` and `openness(clearing, now, reduced)`: 1 while the pointer
   is there (`leftAt` null) and for `hold` after it left; then down to 0 over `roll`; under reduced motion it is 1
@@ -132,7 +143,8 @@ The numbers, exported as one `SMOKE` object so the effect and the tests read the
   left to right, then drops to the next, and reports the index of the last line it has finished, and `done` after
   the last. With no lines it is done at once.
 
-Tests, red first: each function's edges (strength at both ends and outside them; a hole radius at 200, 400 and
+Tests, red first: each function's edges (strength at both ends and outside them; `maskAlpha` at both ends and half
+way, always `1 - fogAlpha`; a hole radius at 200, 400 and
 2000 px of width; openness at each boundary, with and without reduced motion; coverage at a clearing's center, its
 rim and far away, and under two overlapping clearings; puffs wrap and their count is clamped; a sweep over three
 lines finishes each in `width / pace` seconds, and its time is the same under reduced motion).
@@ -195,8 +207,31 @@ Model: sonnet
   `release`.
 
 `hot-box.css`: the host, the canvas's place, the button (from `fold.css`'s bar: the theme's header tokens), the
-coarse-pointer height, `forced-colors` (the canvas is hidden and the words are shown plainly: a forced-colors reader
-is not smoked, since the fog cannot be drawn in system colors; the button stays), and nothing animated in CSS.
+coarse-pointer height, the forced-colors rules below, and nothing animated in CSS.
+
+**Forced colors: a hard circular mask** (the amendment at the top). The fog cannot be drawn in system colors, so
+under `forced-colors: active` the words are masked instead of covered, and everything else is the same effect:
+
+- **Knowing.** The effect reads `matchMedia('(forced-colors: active)')` and listens for its change (through the
+  engine's hook for it if `engine/ui` has one; a small `useForcedColors` beside the effect if not). Everything in
+  this list happens only while it matches. When it does not match, the effect is exactly the one above: the canvas,
+  the fog and the soft `edge` are not touched by this path.
+- **The canvas** is hidden (`display: none` under the media query) and no frame loop runs for it.
+- **The mask.** The words wrapper gets an inline `mask-image` (with its `-webkit-` twin), composed by adding:
+  a flat layer at `maskAlpha(strength)` over the whole box; one circle for each open clearing, of radius
+  `holeRadius(boxWidth)` at the clearing's place, with a **hard** edge (no `edge` fade) and an alpha of the
+  clearing's `openness`, so it closes over `roll` as the smoke's does; and, during a held sweep, one rectangle for
+  each finished line. Waved, the mask is removed for `SMOKE.waved`. The clearings, the pointer and touch handlers,
+  the hold, the sweep, the live region, `inert`, `met` and every view given to `show` are the ones above, unchanged:
+  the same model drives a mask in place of a canvas.
+- **A ring.** Each open clearing draws a `<div class="dw-hotbox-ring" aria-hidden="true">`, `pointer-events: none`,
+  a circle of the clearing's radius with a 2px `CanvasText` border, so a reader sees where the clearing is.
+- **A sign.** With no fog painted a smoked post would look blank. Under forced colors the words wrapper has a 2px
+  `CanvasText` outline, and a visible line above the words (`<p class="dw-hotbox-sign">`, hidden outside forced
+  colors) carries the same `state` and `ends` words the Lens is given, so no new copy is written.
+- **Reduced motion** is as above: a clearing's circle appears and goes with no steps between, and the sweep takes
+  as long.
+- **A moment (`still`).** The flat layer alone, drawn once; no ring, no handler.
 
 Tests, red first, in `Effect.test.tsx` (props built inline as `below-the-fold/Effect.test.tsx` builds them, inside
 `renderInWorld` from `engine/ui/test-world.tsx` since `useAt` needs the world; stub the canvas's 2D context and
@@ -212,6 +247,12 @@ Tests, red first, in `Effect.test.tsx` (props built inline as `below-the-fold/Ef
   blur and unmount stop the hold;
 - under reduced motion (`data-kb-motion='reduce'` on the root) no frame loop runs, a clearing appears and goes with
   no steps between, and the sweep takes exactly as long;
+- with `matchMedia('(forced-colors: active)')` stubbed to match: no canvas frame is requested; the words wrapper's
+  mask holds the flat layer at `maskAlpha(strength)`; a mouse move adds a circle of `holeRadius` at the pointer with
+  a hard stop and a ring, and both are gone `roll` after the pointer leaves; a touch's circle holds `touchHold`
+  first; the held sweep adds a rectangle per finished line and takes exactly as long as on the canvas path; waved
+  removes the mask for `waved`; the sign shows the view's `state` and `ends`; the words are inert as on the canvas
+  path. With it stubbed not to match, the wrapper has no mask, no ring and no sign (the full effect is untouched);
 - every view shown passes `viewProblems`, and `state` never exceeds six words;
 - with `still`, nothing is inert, no button or handler exists and no frame is requested (`still.test.tsx` holds the
   rest);
@@ -284,7 +325,13 @@ line), a new `e2e/hot-box.spec.ts`.
   - the Lens opens from the card's mark and shows "Smoke over the words", the way out and the hold control;
   - `reduced`: no animation frames after the first paint, and the hold still takes time;
   - `thinning` is visibly thinner than `fresh-light` (the fog pixel's alpha is lower);
-  - axe finds nothing on `fresh-light`, `fresh-dark` and `reduced`;
+  - under `page.emulateMedia({ forcedColors: 'active' })` on `fresh-light` and `long-post`: a screenshot of a line
+    away from the pointer shows no glyphs (every pixel of the line's box is one color, within a tolerance); with the
+    mouse over a line, the same box holds more than one color inside the circle and the ring is drawn; it closes
+    again after the pointer leaves; holding Enter to the end takes the same time as without forced colors (within a
+    tolerance) and leaves the link focusable; the sign is visible; and with forced colors off none of the mask, the
+    ring or the sign is present and the canvas's soft clearing is drawn as before;
+  - axe finds nothing on `fresh-light`, `fresh-dark` and `reduced`, and on `fresh-light` under forced colors;
   - at phone width the button is at least 44 px tall.
 
 ## Task 8. The build
@@ -313,7 +360,9 @@ phone, and the mark at three sizes (Task 2).
   THIS's notes. Each must stay usable or be plainly covered, never broken.
 - **The masks.** Nothing is saved, sent, counted or broadcast when a reader clears smoke, and nothing differs for
   the author or the caster. Confirm no call to `save`, `release` or the api is reachable from the effect.
-- **Forced colors.** A forced-colors reader is not smoked. That is a choice (the fog cannot be drawn in system
-  colors) and a path cheaper than the obstacle: the owner should see it in the PR and may ask for the words to be
-  held behind the button there instead.
+- **Forced colors.** The hard circular mask must cost what the smoke costs: the same radius, `roll`, `touchHold`,
+  sweep pace and `waved`, and words away from a clearing no more legible at `maskAlpha` than through the fog at the
+  same strength (look at both at landing, half way and near the end). Confirm the mask survives a real forced-colors
+  mode (Windows contrast themes in Edge and Firefox, not only Playwright's emulation), that the ring and the outline
+  use system colors, and that the full effect keeps its soft edge with forced colors off.
 - **The art** is the research render encoded again and a mark drawn by the build; the scene was moved, not run.
