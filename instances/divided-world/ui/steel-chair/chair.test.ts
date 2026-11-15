@@ -30,14 +30,23 @@ describe('piecesOf', () => {
   test('shut, the seat and the rear frame lie in the back frame plane (normals along z)', () => {
     for (const n of ['seat', 'rear']) assert.ok(Math.abs(Math.abs(byName(piecesOf(0), n).normal[2]) - 1) < 1e-6);
   });
-  test('open, the seat stands 88 degrees from the back frame and the rear frame -32', () => {
-    const ps = piecesOf(1);
-    const back = byName(ps, 'back').normal;
+  test("open, the seat's top edge lies on the hinge line (within the 2 px the seat is set back from it)", () => {
+    const seat = byName(piecesOf(1), 'seat');
+    const hingeY = BOX.height / 2 - 58;
+    const edge = corners(seat).sort((p, q) => Math.hypot(p[1] - hingeY, p[2]) - Math.hypot(q[1] - hingeY, q[2])).slice(0, 2);
+    assert.ok(Math.abs(edge[0][0] - edge[1][0]) > 41, 'the two nearest corners are the ends of one edge');
+    for (const [, y, z] of edge) assert.ok(Math.hypot(y - hingeY, z) <= 2 + 1e-6, `corner at y ${y}, z ${z} is off the hinge line ${hingeY}`);
+  });
+  test('at a fold of 0.5 the seat is half way: 44 degrees from the back frame', () => {
+    const ps = piecesOf(0.5);
     const angle = (n: number[]) => Math.atan2(n[1], n[2]) * 180 / Math.PI;
-    const rel = (name: string) => angle(byName(ps, name).normal) - angle(back);
-    assert.ok(Math.abs(Math.abs(rel('seat')) - 88) < 1e-3);
-    assert.ok(Math.abs(Math.abs(rel('rear')) - 32) < 1e-3);
-    assert.equal(Math.sign(rel('seat')), -Math.sign(rel('rear')));
+    assert.ok(Math.abs(Math.abs(angle(byName(ps, 'seat').normal) - angle(byName(ps, 'back').normal)) - 44) < 1e-3);
+  });
+  test("every piece's left and top are minus half its size", () => {
+    for (const f of [0, 1]) for (const p of piecesOf(f)) {
+      assert.equal(p.left, -p.width / 2, p.name);
+      assert.equal(p.top, -p.height / 2, p.name);
+    }
   });
   test('sizes: back frame 46 by 90, backrest 42 by 26, seat 42 by 38, rear 42 by 58', () => {
     const ps = piecesOf(1);

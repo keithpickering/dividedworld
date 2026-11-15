@@ -1,8 +1,11 @@
 /*
  * Steel Chair (Effect.tsx, docs/plans/2026-11-15-steel-chair-plan.md, Tasks 4 and 5): a chair is thrown at the post, dents it and falls to
  * the floor. The world is the post's content area, the bordered box that holds the words; its borders are the chair's walls and floor. The
- * layer of chairs and each dent's shading fill that box border to border, placed and sized by the effect through their `style` objects
- * the way Feelin' Fab's foil and Whoops!'s ink are (the page allows no inline style sheet), so this file holds only the static rules.
+ * layer of chairs and the layer of dents' shading fill that box border to border the way Feelin' Fab's foil and Whoops!'s ink do: the
+ * effect calls `placeLayer(layer, bodyBox(host, body))` (engine/ui/cards/body.ts) for each layer's inline left, top, width and height
+ * (the page allows no inline style sheet), and marks each layer `data-kb-effect-ink`, which the engine's thread CSS (`.kb-act-main
+ * [data-kb-effect-ink]`) lifts above the words. So this file holds only the static rules, and a layer's 100% size is just the fallback
+ * for the moment before the first measure, as in fab.css.
  * Every position, size, color of a piece and transform is the effect's. The chairs and the shading are drawn in color and depth on
  * purpose: they are game pieces on the board, while the post stays the house style. Colors here are literals, as the instance's CSS
  * is not held to the engine's tokens.
@@ -32,17 +35,21 @@
   pointer-events: none;
 }
 
-/* The layer of chairs fills the content area, in perspective: the vanishing point sits high, so a chair near the floor is seen from above. */
-.dw-chair-layer {
+/* The layer of chairs fills the content area, placed by `placeLayer` and marked `data-kb-effect-ink` (see the header); in perspective:
+   the vanishing point sits high, so a chair near the floor is seen from above. */
+.dw-chair-layer,
+.dw-chair-dents {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  perspective: 700px;
-  perspective-origin: 50% 30%;
   pointer-events: none;
   overflow: visible;
+}
+.dw-chair-layer {
+  perspective: 700px;
+  perspective-origin: 50% 30%;
 }
 
 /* One chair: a zero-size group at its position, each piece a child placed by its own matrix. */
@@ -70,6 +77,8 @@
   border-bottom: 0;
 }
 
+/* The dents' shading layer: one container that fills the content area like the chairs' layer (placed by `placeLayer`, marked
+   `data-kb-effect-ink`), each `.dw-chair-dent` positioned inside it. */
 /* A dent's shading: a round div over the words, dark toward the upper left and light toward the lower right, as a pressed-in plate is lit
    from above and in front. Placed and sized by the effect around the dent's point. */
 .dw-chair-dent {
@@ -111,5 +120,6 @@
    nothing of its own, it only bends the words, so the dent is still seen as a dent. The room stays too, so the post does not change size. */
 @media (forced-colors: active) {
   .dw-chair-dent,
+  .dw-chair-dents,
   .dw-chair-layer { display: none; }
 }

@@ -4,7 +4,11 @@
  * gray, each dent's `feImage` over it, one `feDisplacementMap` on the words) is written as JSX by the effect from `dentPrimitives`.
  */
 
-/** The displacement at full strength, in px: `feDisplacementMap`'s `scale`. The map's strongest push is half of it either way. */
+/**
+ * The displacement at full strength, in px: `feDisplacementMap`'s `scale`. The map's strongest push is half of it either way. The filter
+ * must carry `color-interpolation-filters="sRGB"`: under the default linearRGB the neutral byte 128 reads as about 0.22, not 0.5, and the
+ * words would shift by several pixels everywhere.
+ */
 export const DENT_SCALE = 26;
 
 /** The map's largest raw push, `sin(r·π)·(1 − r)` at its peak (r is about 0.35), so the ring can use the whole 0 to 255 range. */
@@ -18,6 +22,11 @@ const PEAK = (() => {
  * The displacement map, `size` by `size` RGBA pixels. At distance `r` (0 at the center, 1 at the edge) from the center the push away
  * from it is `sin(r·π)·(1 − r)`: nothing at the center and the rim, most in a ring between. Red carries x and green y, 128 is no push,
  * blue is 128 and every pixel is opaque. Outside the circle (`r` of 1 or more) the map is neutral, so a dent's square edge shows nothing.
+ *
+ * What `feDisplacementMap` does with it: it draws each pixel P from the source at P + scale·(C − 0.5), so the map's vector is where a
+ * pixel is sampled FROM. With the vector pointing away from the center, a pixel on the ring shows the words from farther out, so on
+ * screen the words around the ring are drawn in toward the middle, the way print sinks into a dent. This direction is the plan's; the
+ * owner judges the look in review.
  */
 export function dentMap(size = 160): Uint8ClampedArray {
   const out = new Uint8ClampedArray(size * size * 4);

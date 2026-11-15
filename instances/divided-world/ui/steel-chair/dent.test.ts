@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { DENT_SCALE, dentMap, dentPrimitives, filterTrusted } from './dent.ts';
+import { DENT_SCALE, dentMap, dentMapUrl, dentPrimitives, filterTrusted } from './dent.ts';
 
 const SIZE = 160;
 const px = (m: Uint8ClampedArray, x: number, y: number) => { const i = (y * SIZE + x) * 4; return { r: m[i], g: m[i + 1], b: m[i + 2], a: m[i + 3] }; };
@@ -23,7 +23,9 @@ describe('dentMap', () => {
       assert.deepEqual([p.r, p.g, p.b], [128, 128, 128]);
     }
   });
-  test('the ring pushes outward in every direction, with blue neutral', () => {
+  /* The map's VECTOR points away from the center (the plan's direction). feDisplacementMap samples the source at P + scale·(C − 0.5), so
+     on screen the words around the ring are drawn in toward the middle; the owner judges that look in review. */
+  test("the map's vector points outward from the center all around the ring, with blue neutral", () => {
     for (let k = 0; k < 16; k++) {
       const a = (k / 16) * Math.PI * 2;
       const dx = Math.cos(a), dy = Math.sin(a);
@@ -35,6 +37,13 @@ describe('dentMap', () => {
   });
   test('every pixel is opaque', () => {
     for (let i = 3; i < m.length; i += 4) assert.equal(m[i], 255);
+  });
+});
+
+describe('dentMapUrl', () => {
+  test('is empty where there is no document to draw a canvas on', () => {
+    assert.equal(typeof document, 'undefined');
+    assert.equal(dentMapUrl(), '');
   });
 });
 
