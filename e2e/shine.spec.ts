@@ -43,7 +43,7 @@ import { expect, test, type Page } from '@playwright/test';
  * the frame gap missed its bound on CI. The allowance was the words' box alone until a post's body was given its 22.5em floor
  * (engine/ui/thread/thread.css): a one-line post's body is then some sixteen times its words, the quarter rate it is drawn at changes
  * four times what its words would, and the words' box alone reads the designed floor as a fault (1.6 to 1.7 over this page, where the
- * allowance reads 1.02 to 1.06, measured on a session's machine; each run logs both). What a frame costs is the screen it changes, and a quarter of the content areas
+ * allowance reads 0.99 to 1.06, measured on a session's machine; each run logs both). What a frame costs is the screen it changes, and a quarter of the content areas
  * in view is never more than a quarter of the window, where a window of long posts changes all of it. `redrawn` is checked on planted
  * samples below, and the run logs the share of the window the draws changed.
  *
@@ -212,8 +212,11 @@ async function fireBursts(page: Page): Promise<void> {
   const bombs = page.locator('[data-kb-glitter]');
   expect(await bombs.count(), 'the thread\'s four Glitter Bomb posts').toBe(4);
   for (let i = 0; i < 4; i += 1) {
-    await bombs.nth(i).locator('.dw-glitter-origin').evaluate((el) => el.scrollIntoView({ block: 'center' }));
-    await expect.poll(() => bombs.nth(i).locator('canvas.dw-glitter-over').evaluate((c: HTMLCanvasElement) => c.width), { message: `Glitter Bomb post ${i}'s burst is in the air` }).toBeGreaterThan(0);
+    /* The point is centered again at each look (the post's first draw moves it to its seeded place), and looked at often: a burst is in the air for a second or two. */
+    await expect.poll(async () => {
+      await bombs.nth(i).locator('.dw-glitter-origin').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+      return bombs.nth(i).locator('canvas.dw-glitter-over').evaluate((c: HTMLCanvasElement) => c.width);
+    }, { message: `Glitter Bomb post ${i}'s burst is in the air`, intervals: [50] }).toBeGreaterThan(0);
   }
 }
 
@@ -528,6 +531,8 @@ test.describe('a busy thread', () => {
   test('scrolled with a moving mouse, the page rasters only what the light changes: a small share of the shiny posts in view a frame', async ({ page }) => {
     test.setTimeout(60_000);
     await open(page, 'full');
+    /* Settled posts here too: a Glitter Bomb arming is drawn whole on every frame (`SCROLL_SPEED`). */
+    await fireBursts(page);
     await scrollRun(page);
     const counted = await rasterRun(page);
     const frames = counted.frames;

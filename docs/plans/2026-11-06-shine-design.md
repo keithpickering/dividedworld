@@ -305,7 +305,7 @@ its words, and such a post is redrawn at section 10's least share, a quarter: it
 a frame, which is more than its words' box. That is the rate section 10 chose, not a fault, so the check allows it:
 
 - **How it is held now.** `e2e/shine.spec.ts` counts the screen area a scroll's draws change against, for each post in
-  view on each frame, the larger of its words' box and a quarter of its content area (at most 1.25 times; 1.02 to 1.06
+  view on each frame, the larger of its words' box and a quarter of its content area (at most 1.25 times; 0.99 to 1.06
   in that spec's thread, and 3.3 with every body redrawn at the full rate). Each run also logs the old figure, against
   the words alone, and the share of the window its draws changed.
 - **The scroll holds its speed.** The timed scroll moves at 1,290 CSS px a second, the speed it had over the shorter
