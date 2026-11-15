@@ -16,6 +16,7 @@ import { useKayfa } from '../context.tsx';
 import type { Fake } from '../data/fake.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { usePlayer } from '../player.tsx';
+import { cardOf } from '../story.tsx';
 import { useLocation, useNavigate } from '../router.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { usePlay } from './play.tsx';
@@ -28,12 +29,6 @@ const EXTRA_PLAYS = ['stick-around', 'card-collector', 'hall-pass', 'force-field
 /** The card the armed story arms (the instance's Whoops!), and the takeover card the spun story plays. */
 const ARMED = 'whoops';
 const TAKEOVER = 'stick-around';
-
-/** The key, once it is known to name one of the instance's cards. */
-function known(cards: readonly { readonly key: string }[], key: string): string {
-  if (!cards.some((c) => c.key === key)) throw new Error(`the instance has no card "${key}", which this story names`);
-  return key;
-}
 
 type Kinds = 1 | 6;
 /** An admin looking at #41's play: its Lens offers "End this card" (`admin`), or the play was ended already and its Lens says so (`ended`). */
@@ -56,7 +51,7 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: 
         if (!target || casters.some((c) => c === null)) throw new Error('the boards fixture has no #41, or no author for a post around it');
         /* The fixture's play is one kind; the cards named above are the next, then keys no card has. */
         const have = new Set((await api.cardsOn(target.id, 8)).map((a) => String(a.currentPayload.card)));
-        const keys = [...EXTRA_PLAYS.map((k) => known(instance.cards, k)), ...Array.from({ length: kinds }, (_, i) => `story-kind-${i + 1}`)].filter((k) => !have.has(k)).slice(0, kinds - have.size);
+        const keys = [...EXTRA_PLAYS.map((k) => cardOf(instance.cards, k).key), ...Array.from({ length: kinds }, (_, i) => `story-kind-${i + 1}`)].filter((k) => !have.has(k)).slice(0, kinds - have.size);
         keys.forEach((card, i) => {
           fake.clock.advance(MINUTE);
           fake.seed.card(casters[i]!, target.id, card, { layer: 2 + i, message: '' });
@@ -87,7 +82,7 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: 
 function Arm() {
   const { ui } = useKayfa();
   const play = usePlay();
-  const key = known(ui.cards, ARMED);
+  const key = cardOf(ui.cards, ARMED).key;
   /* A card is armed for an account and put back when the account changes (play.tsx), so it is armed once the account is known. */
   const account = usePlayer().session.account;
   useEffect(() => {
