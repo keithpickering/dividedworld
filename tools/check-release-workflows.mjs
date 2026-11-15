@@ -35,11 +35,12 @@
  * `defaults.run.shell` and `--debug` in a backend job. R14 (the design's D8): the seed job goes red on
  * anything but a 200, so its curl writes the status (`-w '%{http_code}'`), the step compares it to 200,
  * and `--fail`, `--fail-with-body` and `-f` never decide, since they pass any 2xx or 3xx and a 302 would
- * seed nothing and let `promote` move the site. R15 (docs/plans/2026-11-15-warm-reads-design.md, section 3): `release.yml`
- * runs `tools/check-data-api.mjs` exactly once, with `--set` and a `--declared` file that exists, in a job that names
- * `environment: production`, and no other workflow runs it. Without the step the Data API's pool drifts back to
- * automatic unnoticed and a page's kept plan has no connection to be used again on; without `--set` the step only
- * reads; a second runner would write the pool from a workflow that holds no secret.
+ * seed nothing and let `promote` move the site. R15 (docs/plans/2026-11-15-warm-reads-design.md, section 3):
+ * `release.yml` runs `tools/check-data-api.mjs` exactly once (in a job with no `strategy`), with `--set` and a
+ * `--declared <file>` that exists (the one spelling the tool parses, read after a trailing comment is cut off), in a
+ * job that names `environment: production`, and no other workflow runs it. Without the step the Data API's pool
+ * drifts back to automatic unnoticed and a page's kept plan has no connection to be used again on; without `--set`
+ * the step only reads; a second runner would write the pool from a workflow that holds no secret.
  *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
  * alive check and cockpit reference stay behind.
@@ -385,9 +386,11 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
       const env = job?.environment;
       const named = typeof env === 'string' ? env : isObj(env) ? env.name : undefined;
       if (named !== 'production') bad15.push(`job ${jobName} runs it without naming environment: production`);
-      if (!/(^|\s)--set(\s|$)/.test(line)) bad15.push(`job ${jobName} runs it without --set (${line.trim()})`);
-      const declared = line.match(/(?:^|\s)--declared(?:=|\s+)["']?([^\s"']+)/)?.[1];
-      if (!declared) bad15.push(`job ${jobName} runs it with no --declared file`);
+      if (job?.strategy !== undefined) bad15.push(`job ${jobName} has a strategy, so it would run the tool more than once`);
+      const code = line.replace(/\s#.*$/, '');
+      if (!/(^|\s)--set(\s|$)/.test(code)) bad15.push(`job ${jobName} runs it without --set (${line.trim()})`);
+      const declared = code.match(/(?:^|\s)--declared\s+["']?([^\s"']+)/)?.[1];
+      if (!declared) bad15.push(`job ${jobName} runs it with no --declared <file> (the tool parses only that spelling, not --declared=<file>)`);
       else if (!exists(declared)) bad15.push(`job ${jobName} names --declared ${declared}, which does not exist`);
     }
     if (bad15.length) out.push(`${RELEASE}: R15 ${bad15.join('; ')}`);

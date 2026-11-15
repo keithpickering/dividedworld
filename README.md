@@ -353,7 +353,7 @@ the first account is opened with registration briefly open.
 - Every later deploy is the Release workflow's (`.github/workflows/release.yml`,
   `docs/plans/2026-11-12-release-backend-design.md`), once a night or when you dispatch it. Once main's head has
   passed every test, it applies the new migrations (`supabase db push`), sets the Data API's pool to the declared
-  one (step 2.5), deploys every Edge Function, runs the seed,
+  one (step 2, item 5), deploys every Edge Function, runs the seed,
   and only then moves the site. A red step stops everything after it, the site stays where it is, and the run's
   summary names the step; the fix goes forward, and every step is safe to run again. It needs three things from you,
   once, in this order:

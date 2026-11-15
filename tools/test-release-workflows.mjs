@@ -361,6 +361,24 @@ red('the Data API step names a --declared file that does not exist', edit(RELEAS
   st.run = st.run.replace(/instances\/divided-world\/data-api\.json/, 'instances/divided-world/no-such-file.json');
 }), /R15.*does not exist/);
 
+red('the Data API step hides its --set behind a trailing comment', edit(RELEASE, (d) => {
+  const st = dataApiStep(d);
+  st.run = `${st.run.replace(/\s--set\b/, '')} # --set`;
+}), /R15.*without --set/);
+red('the Data API step hides its --declared behind a trailing comment', edit(RELEASE, (d) => {
+  const st = dataApiStep(d);
+  st.run = `${st.run.replace(/\s--declared\s+\S+/, '')} # --declared instances/divided-world/data-api.json`;
+}), /R15.*no --declared/);
+red('the Data API step is in a job with a strategy', edit(RELEASE, (d) => {
+  const job = Object.values(d.jobs).find((j) => list(j.steps).some((x) => /check-data-api\.mjs/.test(x.run ?? '')));
+  if (!job) throw new Error('release.yml has no step that runs tools/check-data-api.mjs');
+  job.strategy = { matrix: { n: [1, 2] } };
+}), /R15.*strategy/);
+red('the Data API step spells --declared=<file>, which the tool refuses', edit(RELEASE, (d) => {
+  const st = dataApiStep(d);
+  st.run = st.run.replace(/--declared\s+/, '--declared=');
+}), /R15.*--declared <file>/);
+
 /* ---- a file that does not parse ---- */
 red('a workflow that does not parse is named', { ...REAL, [BUILD]: 'on: [unclosed\n  - : :' }, /build\.yml/);
 
