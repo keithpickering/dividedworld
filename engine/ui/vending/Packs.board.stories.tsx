@@ -6,7 +6,7 @@
  * (select the Booster, Buy, turn cards), which the manifests list.
  *
  * What the story chooses, since the fake rolls with its own fixed generator: the answer the machine gives to a pack is set here, four commons and then
- * the first rare, so the hit is a rare as board 03 draws it; the cards are picked by rarity and place in the instance's order, never by name. The
+ * Main Event, so the hit is the rare board 03 draws; the commons are picked by rarity and place in the instance's order, the hit by its key. The
  * hand holds what the fake rolled; only the story's answer says what was shown. Nothing here acts: it is a specimen for the board match and the
  * owner's review.
  */
@@ -44,9 +44,9 @@ const world: World = (fake, instance) => {
       move: { kind: 'repriceSlot', act: 'story-markup', ends: '2026-11-08T20:00:00Z', was, percent: 150, hours: null, demand: { kind: 'postsOnBoard', params: { board: 'general', count: 20 } }, progress: { done: 4, of: 20, met: false, checkedAt: '2026-11-07T10:00:00Z' } },
     });
   }
-  /* The pack's answer: four commons in the instance's order, then its first rare. */
+  /* The pack's answer: four commons in the instance's order, then Main Event, the rare the board draws, found by its key so the story does not follow the instance's order. */
   const commons = instance.cards.filter((c) => c.rarity === 'common').map((c) => c.key);
-  const hit = instance.cards.find((c) => c.rarity === 'rare')?.key ?? instance.cards[instance.cards.length - 1]!.key;
+  const hit = (instance.cards.find((c) => c.key === 'main-event') ?? instance.cards.find((c) => c.rarity === 'rare') ?? instance.cards[instance.cards.length - 1]!).key;
   const shown = [0, 1, 2, 3].map((i) => commons[i % Math.max(1, commons.length)] ?? hit).concat(hit);
   const real = fake.buyPack.bind(fake);
   fake.buyPack = async (s) => {
