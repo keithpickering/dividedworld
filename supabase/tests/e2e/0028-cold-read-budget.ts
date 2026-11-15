@@ -31,12 +31,33 @@
  * screen function with no budget, a budget with no function and a measurement far under its budget are each named, with cases that tell the larger of the tenth and the floor
  * from the smaller.
  *
- * The fixture (two accounts, three characters, a board of its own with a thread of twenty posts with five card plays, an admin) is committed once so each call answers a document and not a refusal.
- * Every call reads the fixture's own rows (its board, thread, characters and accounts) or something no file changes (season 1 and the open season, which fixtures.sql makes, and
- * ids or terms that match nothing); none names 'general', which an earlier file merges away.
- * It is left in the scratch database: this is the last end-to-end file, and a later file that counted accounts or characters would see it. `drive_gifts_page` and
- * `results_page` answer empty documents (no drive, no finished season in the fixture), so a helper those pages call only for each row is not planned by these calls and its
- * plan is not in their figures.
+ * The fixture (two accounts, three characters, a staff persona, a board of its own with a thread of twenty posts with five card plays and one post by the persona, an admin) is committed once so
+ * each call answers a document and not a refusal. A call reads the fixture's own rows (its board, thread, characters and accounts), or something no file changes (season 1 and
+ * the open season, which fixtures.sql makes, and ids or terms that match nothing), or the whole instance as the files before this one left it (index_page's boards, the queue,
+ * a season's rankings, a search, the updates): the same rows in every run of the suite, which is why a budget is the workflow's figure after those files and a run of this
+ * file alone on a database holding only the fixtures measures another state. None names 'general', which an earlier file merges away.
+ * It is left in the scratch database: this is the last end-to-end file, and a later file that counted accounts or characters would see it, and would find every mask an
+ * earlier file left online a day stale (below). `drive_gifts_page` and `results_page` answer empty documents (no drive, no finished season in the fixture), so a helper those
+ * pages call only for each row is not planned by these calls and its plan is not in their figures.
+ *
+ * Who is online is pinned, because it is what decides, by the clock, whether a helper is planned. The online box (`presence_box`, which index_page, board_page and
+ * thread_page each call) names every mask seen inside the presence window (five minutes) and calls `banned_until` and `group_now` once for each name. A first call plans
+ * only what it runs, so for index_page and board_page neither helper is planned with nobody online and both are with one mask online (thread_page plans them for its
+ * posters whoever is online), and `ban_ends` and what it calls are planned only where that mask has a ban. An earlier file commits a mask's presence at `now()`, a mask
+ * with a ban an Unban lifted (0003-export.ts), so index_page's figure was one or the other by how long the files between took: 5.2 MB in a run that reached this file 5
+ * minutes 22 seconds after that one passed, 5.960 MB in a run that reached it after 4 minutes 20, and under 5.5 again when that job was run again (the sql job,
+ * 2026-11-15, the same commit of every file under supabase/). The ban is little of that: with the fixture's own mask online, which has none, the workflow measures
+ * 5.954. A board's and a thread's box also read every staff persona's posts inside the window, anywhere on the
+ * instance, to name those on that board or in that thread, and reading them runs `conceal_layer` on each: 0.06 MB of board_page's figure, there or not by when an
+ * earlier file's Mod last posted.
+ *
+ * So the fixture makes one of its own masks the one mask online, browsing its own thread, and has its own persona post in that thread, as an instance with anyone on
+ * it stands; and it sets every other presence row's `seen_at` a day back (an earlier file's leftovers, and this is the last file). An Act cannot be dated back, so an
+ * earlier file's Mod may still be named beside the fixture's; the fixture's is always there, so `conceal_layer` is always planned. The fixture's mask has no ban (one is
+ * written only through `infract`, which needs an instance's settings a database holding only the fixtures does not have), so `ban_ends` is outside index_page's and
+ * board_page's figures as a row's helper is outside drive_gifts_page's. `onlineFaults` holds the pin before the first measurement and after the last: a mask online
+ * that is not the fixture's, or the fixture's mask or persona gone from the window (a machine that took five minutes over this file), fails by that name and not as a
+ * budget.
  * Reads only the scratch database tools/test-sql.mjs made (scratchUrl refuses any other); run by tools/test-sql.mjs.
  */
 import { test } from 'node:test';
@@ -57,7 +78,7 @@ export function requireRecorded(major: number = Math.floor(Number(sql('show serv
 }
 
 /** The ids the fixture made. */
-interface Fixture { board: string; player: string; other: string; admin: string; mine: string; mate: string; theirs: string; thread: string; post: string; }
+interface Fixture { board: string; player: string; other: string; admin: string; mine: string; mate: string; theirs: string; persona: string; thread: string; post: string; }
 
 /** Makes the fixture once, committed (every measurement is a fresh connection, so it reads only what is committed), and answers its ids. */
 function makeFixture(): Fixture {
@@ -72,6 +93,7 @@ function makeFixture(): Fixture {
       c1 uuid := tests.character(pl, 'Cold ${tag} One', 'alpha', now() - interval '60 days');
       c2 uuid := tests.character(pl, 'Cold ${tag} Two', 'beta', now() - interval '60 days');
       c3 uuid := tests.character(ot, 'Cold ${tag} Three', 'alpha', now() - interval '60 days');
+      mod uuid;
       bd uuid;
       t uuid;
       p uuid;
@@ -87,13 +109,43 @@ function makeFixture(): Fixture {
         if i = 1 then first_post := p; end if;
         if i <= 5 then perform tests.act((array[c2, c3, c1])[1 + i % 3], 'card', t, jsonb_build_object('card', 'sweetie'), p); end if;
       end loop;
-      perform set_config('cold.ids', jsonb_build_object('board', 'cold-${tag}', 'player', pl, 'other', ot, 'admin', ad, 'mine', c1, 'mate', c2, 'theirs', c3, 'thread', t, 'post', first_post)::text, false);
+      -- Who is online, pinned (the header): every presence row an earlier file left is set a day back, one of the fixture's masks browses the fixture's thread, and the
+      -- fixture's own persona has just posted in it (a staff character acts only through write_staff_act).
+      update presence set seen_at = now() - interval '1 day';
+      insert into presence (character, place_kind, place, board, place_since, online_since, seen_at) values (c3, 'thread', t, bd, now(), now(), now());
+      insert into characters (name, staff, staff_kind, debuted_at) values ('Cold ${tag} Mod', 'cold-${tag}', 'persona', now() - interval '60 days') returning id into mod;
+      perform write_staff_act('cold-${tag}', 'post', t, null, '{"body": "Cold post by the persona."}');
+      perform set_config('cold.ids', jsonb_build_object('board', 'cold-${tag}', 'player', pl, 'other', ot, 'admin', ad, 'mine', c1, 'mate', c2, 'theirs', c3, 'persona', mod, 'thread', t, 'post', first_post)::text, false);
     end $fx$;
     select current_setting('cold.ids');`);
   return JSON.parse(out) as Fixture;
 }
 let made: Fixture | undefined;
 const fixture = (): Fixture => (made ??= makeFixture());
+
+/** What `online` answers: ids, in order. */
+export interface Online { masks: string[]; staff: string[]; }
+/** Who the online boxes would name now: every character with a presence row inside the presence window (hidden ones too, so none is waved through), and every staff persona listed for a post inside it. */
+export function online(): Online {
+  const list = (q: string): string[] => { const out = sql(q); return out === '' ? [] : out.split(/\r?\n/); };
+  return {
+    masks: list(`select p.character from presence p where p.seen_at >= now() - span_interval(setting('presenceWindow')) order by 1`),
+    staff: list(`select distinct l.id from presence_listed l where l.staff and l.seen_at >= now() - span_interval(setting('presenceWindow')) order by 1`),
+  };
+}
+
+/**
+ * One line for each way who is online is not what the fixture pinned: a mask online that is not the fixture's `mask`, `mask` not online, and the fixture's `persona`
+ * not listed. Each moves which helpers a first call plans, so a figure measured then is not the one its budget was recorded for. Another persona listed beside the
+ * fixture's is no fault: its post cannot be dated back, and the fixture's has the boxes read a staff post either way. (A post that quotes a hidden version would have `conceal_layer` plan more than the
+ * fixture's does, for as long as it is in the window; no earlier file's Mod posts one.)
+ */
+export function onlineFaults(seen: Online, own: { mask: string; persona: string }): string[] {
+  const out = seen.masks.filter((c) => c !== own.mask).map((c) => `${c}: it is online and is not the fixture's mask; the online boxes would call their helpers for it`);
+  if (!seen.masks.includes(own.mask)) out.push(`${own.mask}: the fixture's mask is not online; the online boxes would name nobody and plan no helper`);
+  if (!seen.staff.includes(own.persona)) out.push(`${own.persona}: the fixture's persona is not listed for a post inside the window; a board's box would read no staff post`);
+  return out;
+}
 
 /**
  * One cold read: one `sql()` call, so one fresh connection. It reads what the connection's contexts hold as the harness's superuser (the view needs it), then in one
@@ -120,15 +172,16 @@ const admin = (f: Fixture) => f.admin;
 const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: number): Budget => ({ call, as, mb });
 
 /**
- * Each screen function, one real call that answers a document. The budgets are the workflow's measurements (PR 720's sql job, 2026-11-15), each rounded up to one decimal plus 0.3 MB; a search read
+ * Each screen function, one real call that answers a document. The budgets are the workflow's measurements (PR 720's sql job, 2026-11-15; index_page's and board_page's, PR 727's, the same day,
+ * the first with who is online pinned: 5.954 and 8.498 MB, every other figure within 0.001 MB of PR 720's), each rounded up to one decimal plus 0.3 MB; a search read
  * is called with a term and no filter, since the plan it keeps does not depend on the term.
  */
 export const BUDGETS: Record<string, Budget> = {
   alerts_page: budget(() => 'public.alerts_page(null)', player, 5.7),
-  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 8.1),
+  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 8.8),
   boot: budget(() => 'public.boot()', player, 6.4),
   drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 3.0),
-  index_page: budget(() => 'public.index_page()', player, 5.5),
+  index_page: budget(() => 'public.index_page()', player, 6.3),
   log_page: budget(() => 'public.log_page(null)', player, 15.7),
   my_characters_page: budget(() => 'public.my_characters_page()', player, 4.8),
   profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 6.6),
@@ -182,10 +235,13 @@ test('every screen function keeps within its budget on a cold read, and no budge
   const f = fixture();
   const names = screenNames(sql);
   const measured: Record<string, number> = {};
+  const own = { mask: f.theirs, persona: f.persona };
+  assert.deepEqual(onlineFaults(online(), own), [], 'who is online is not what the fixture pinned, before the first measurement');
   for (const n of names) {
     const b = BUDGETS[n];
     if (b) measured[n] = mb(kept(b.call(f), b.as(f)));
   }
+  assert.deepEqual(onlineFaults(online(), own), [], 'who is online is not what the fixture pinned, after the last measurement');
   const table = names.map((n) => `${n}: ${n in measured ? measured[n]!.toFixed(3) : 'not measured'} MB`).join('\n');
   const budgets = Object.fromEntries(Object.entries(BUDGETS).map(([n, b]) => [n, b.mb]));
   const faults = budgetFaults(names, budgets, measured);
@@ -208,6 +264,47 @@ test('the guard names a function that reads acts_public thirty times as over thr
   } finally {
     sql('drop function if exists public.cold_poison_page()');
   }
+});
+
+test('onlineFaults names another mask online, the fixture\'s mask gone and its persona gone, and sees each in the database', () => {
+  const own = { mask: 'a', persona: 'm' };
+  const other = `b: it is online and is not the fixture's mask; the online boxes would call their helpers for it`;
+  const gone = `a: the fixture's mask is not online; the online boxes would name nobody and plan no helper`;
+  const unlisted = `m: the fixture's persona is not listed for a post inside the window; a board's box would read no staff post`;
+  assert.deepEqual(onlineFaults({ masks: ['a'], staff: ['m'] }, own), []);
+  assert.deepEqual(onlineFaults({ masks: ['a'], staff: ['m', 'n'] }, own), [], 'another persona listed beside the fixture\'s is no fault');
+  assert.deepEqual(onlineFaults({ masks: ['a', 'b'], staff: ['m'] }, own), [other]);
+  assert.deepEqual(onlineFaults({ masks: [], staff: ['m'] }, own), [gone]);
+  assert.deepEqual(onlineFaults({ masks: ['a'], staff: ['n'] }, own), [unlisted]);
+  assert.deepEqual(onlineFaults({ masks: ['b'], staff: [] }, own), [other, gone, unlisted]);
+  /* The poisons, each committed as an earlier file or a slow machine would leave it and taken back in its `finally`. */
+  const f = fixture(), mine = { mask: f.theirs, persona: f.persona };
+  const named = (what: string) => onlineFaults(online(), mine).map((x) => x.replace(/:.*$/u, `: ${what}`));
+  assert.deepEqual(onlineFaults(online(), mine), []);
+  /* An earlier file's mask, reached inside the window. */
+  try {
+    sql(`insert into presence (character, place_kind, place_since, online_since, seen_at) values ('${f.mate}', 'index', now(), now(), now())`);
+    assert.deepEqual(onlineFaults(online(), mine), [`${f.mate}: it is online and is not the fixture's mask; the online boxes would call their helpers for it`]);
+  } finally {
+    sql(`delete from presence where character = '${f.mate}'`);
+  }
+  /* The fixture's mask, out of the window. */
+  try {
+    sql(`update presence set seen_at = now() - interval '1 day' where character = '${f.theirs}'`);
+    assert.deepEqual(named('gone'), [`${f.theirs}: gone`]);
+    assert.match(onlineFaults(online(), mine)[0]!, /the fixture's mask is not online/u);
+  } finally {
+    sql(`update presence set seen_at = now() where character = '${f.theirs}'`);
+  }
+  /* The fixture's persona, no longer listed: a retired persona is in no box, as one whose post has left the window is in none. */
+  try {
+    sql(`update characters set retired_at = now() where id = '${f.persona}'`);
+    assert.deepEqual(named('unlisted'), [`${f.persona}: unlisted`]);
+    assert.match(onlineFaults(online(), mine)[0]!, /the fixture's persona is not listed/u);
+  } finally {
+    sql(`update characters set retired_at = null where id = '${f.persona}'`);
+  }
+  assert.deepEqual(onlineFaults(online(), mine), []);
 });
 
 test('budgetFaults names a function with no budget, a budget with no function and a measurement far under its budget', () => {
