@@ -41,6 +41,7 @@ describe('Rope Break catches a Salty common cast on its post', () => {
     fake.signInAs(bo);
     const caught = must(await fake.playCard('whoops', boFace, opener, { color: 'red' }, ''));
     expect(caught.payload.caught).toBe(set.id);
+    expect((await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ set: set.id, caught: caught.id });
     fake.signInAs(ana);
     expect(await held(fake, 'whoops')).toBe(1);
     fake.signInAs(bo);
@@ -71,13 +72,12 @@ describe('Rope Break catches a Salty common cast on its post', () => {
 
   test('a Salty card above common lands on the post and the back stays', async () => {
     expect([mooch?.alignment, mooch?.rarity]).toEqual(['salty', 'uncommon']);
-    const card = 'mooch';
     const { fake, bo, anaFace, boFace, opener } = setup();
     const set = must(await fake.setCard('rope-break', anaFace, opener, {}));
     fake.signInAs(bo);
-    const landed = must(await fake.playCard(card, boFace, opener, { quadrant: 'excitedPositive' }, ''));
+    const landed = must(await fake.playCard('mooch', boFace, opener, { quadrant: 'excitedPositive' }, ''));
     expect(landed.payload.caught).toBeUndefined();
-    expect(await layersOf(fake, opener, card)).toHaveLength(1);
+    expect(await layersOf(fake, opener, 'mooch')).toHaveLength(1);
     expect((await fake.cardsOn(opener, 8)).some((a) => a.id === set.id)).toBe(true);
     expect((await fake.cardsOn(opener, 8)).some((a) => a.kind === 'spring')).toBe(false);
   });
