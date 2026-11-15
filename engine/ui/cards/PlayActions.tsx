@@ -48,7 +48,7 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const target = useTarget(act);
   const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
   /* Rest or focus on the mark reads the post early, so the press that follows opens the form at once (glass/prepared.ts). */
-  const rest = useRest(() => { if (play && rules && target) play.readyForm(rules.key, target); });
+  const rest = useRest(() => (play && rules && target ? play.readyForm(rules.key, target) : undefined));
   if (!play || !hudCharacter || !target || act.seq === null || !rules) return null;
   /* While a compose is open on another post, this post offers nothing: the picked post stands alone. `compose` is the signed-in account's own, so an ended one hides nothing. */
   if (play.compose !== null && play.compose.target.post?.id !== act.id) return null;
@@ -141,7 +141,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   const onThread = usePlays(at.plays, at.thread ?? '');
   const onBoard = usePlays(at.plays, at.board ?? '');
   const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
-  const rest = useRest(() => { if (play && rules) play.readyForm(rules.key, { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know }); });
+  const rest = useRest(() => (play && rules ? play.readyForm(rules.key, { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know }) : undefined));
   if (!play || !hudCharacter || !rules || !reachesOf(rules).includes(at.reach)) return null;
   /* A compose is open on a post, which is never this target: it offers nothing until the compose ends. */
   if (play.compose !== null) return null;

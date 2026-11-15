@@ -6,6 +6,7 @@ import { KayfaProvider, type Kayfa } from './context.tsx';
 import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePendingFrom, usePrefetch, useNavigationGuard, useRouterAccount, useRouterInternals, type Location, type NavigationGuard } from './router.tsx';
 import { Routes, type Route } from './routes.tsx';
 import { ReadFailure } from './data/api.ts';
+import { resetReadAhead } from './ahead.ts';
 
 function Where() {
   const l = useLocation();
@@ -13,7 +14,7 @@ function Where() {
   return <><span data-testid="path">{l.path}{l.query.toString() ? `?${l.query}` : ''}{l.hash ? `#${l.hash}` : ''}</span><button onClick={() => navigate('/b/general?page=2')}>go</button></>;
 }
 
-beforeEach(() => window.history.replaceState(null, '', '/'));
+beforeEach(() => { window.history.replaceState(null, '', '/'); resetReadAhead(); });
 
 describe('the router', () => {
   test('a link moves without a reload and the location follows', async () => {
@@ -884,18 +885,132 @@ describe('from the Task 11 review', () => {
     expect(calls[1]!.signal.aborted).toBe(true);
     expect(calls[0]!.signal.aborted).toBe(false);
   });
-  test('prefetches are capped at twenty, the oldest dropped, and one older than thirty seconds is swept', async () => {
+  test('twenty answers are kept, the oldest dropped past them, and one older than thirty seconds is swept', async () => {
     vi.useFakeTimers();
     const { load, calls } = manualLoader();
     mount(load);
-    for (let i = 0; i < 21; i++) act(() => prefetch(`/t/p${i}`));
+    /* Each read ahead is made at once (`now`), as a press makes it; the gate would hold all but the first. */
+    for (let i = 0; i < 21; i++) act(() => { prefetch(`/t/p${i}`, { now: true }); });
     expect(calls).toHaveLength(21);
     expect(calls[0]!.signal.aborted).toBe(true);
     expect(calls[1]!.signal.aborted).toBe(false);
     await act(async () => { calls[20]!.resolve('x'); });
     await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
-    act(() => prefetch('/t/p20'));
+    act(() => { prefetch('/t/p20'); });
     expect(calls).toHaveLength(22);
+  });
+  /* Links one to three to /t/a, /t/b and /t/c under one router, over a loader the test answers by hand. */
+  function aheadLinks() {
+    const { load, calls } = manualLoader();
+    window.history.replaceState(null, '', '/');
+    const routes: Route[] = [{ path: '/', render: () => <p>home</p> }, { path: '/t/:id', load, render: () => <p>t</p> }];
+    let setId: (id: string) => void = () => undefined;
+    let setShown: (shown: boolean) => void = () => undefined;
+    function Shell({ names }: { readonly names: readonly string[] }) {
+      const [id, set] = useState('p1');
+      const [on, show] = useState(true);
+      setId = set;
+      setShown = show;
+      useRouterAccount(id);
+      return <>{on && names.map((n, i) => <Link key={n} to={`/t/${'abc'[i]}`}>{n}</Link>)}<Routes routes={routes} /></>;
+    }
+    const names = ['one', 'two', 'three'];
+    const view = render(<KayfaProvider value={kayfa}><RouterProvider><Shell names={names} /></RouterProvider></KayfaProvider>);
+    const link = (name: string) => screen.getByRole('link', { name });
+    const rest = (name: string) => { fireEvent.pointerEnter(link(name)); act(() => { vi.advanceTimersByTime(100); }); };
+    const settle = (i: number) => act(async () => { calls[i]!.resolve('x'); });
+    return { load, calls, link, rest, settle, view, changeAccount: (id: string) => act(() => setId(id)), hideLinks: () => act(() => setShown(false)) };
+  }
+
+  test('the gate holds links to one read ahead: the second link waits for the first, and a link left never reads', async () => {
+    vi.useFakeTimers();
+    const { load, calls, link, rest, settle } = aheadLinks();
+    rest('one');
+    rest('two');
+    expect(load).toHaveBeenCalledTimes(1);
+    await settle(0);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(calls[1]!.params).toEqual({ id: 'b' });
+    /* The pointer leaves the one waiting before the one in flight answers: it is never read. */
+    rest('three');
+    fireEvent.pointerLeave(link('three'));
+    await settle(1);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+  test('a pointerdown on a link loads at once while another read ahead is out', () => {
+    vi.useFakeTimers();
+    const { load, calls, link, rest } = aheadLinks();
+    rest('one');
+    expect(load).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(link('two'));
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(calls[1]!.params).toEqual({ id: 'b' });
+  });
+  test('a click on a link whose read is waiting loads once on its own, and the waiting read does not start a second', async () => {
+    vi.useFakeTimers();
+    const { load, calls, link, rest, settle } = aheadLinks();
+    rest('one');
+    rest('two');
+    expect(load).toHaveBeenCalledTimes(1);
+    fireEvent.click(link('two'));
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(calls[1]!.params).toEqual({ id: 'b' });
+    await settle(0);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+  test('a link that the pointer and the focus both rest on keeps its waiting read until both have left', async () => {
+    vi.useFakeTimers();
+    const { load, calls, link, rest, settle } = aheadLinks();
+    rest('one');
+    fireEvent.focus(link('two'));
+    act(() => { vi.advanceTimersByTime(100); });
+    rest('two');
+    fireEvent.pointerLeave(link('two'));
+    await settle(0);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(calls[1]!.params).toEqual({ id: 'b' });
+  });
+  test('the same with blur: the pointer still rests on the link', async () => {
+    vi.useFakeTimers();
+    const { load, calls, link, rest, settle } = aheadLinks();
+    rest('one');
+    fireEvent.focus(link('two'));
+    act(() => { vi.advanceTimersByTime(100); });
+    rest('two');
+    fireEvent.blur(link('two'));
+    await settle(0);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(calls[1]!.params).toEqual({ id: 'b' });
+  });
+  test('a link that both have left never reads', async () => {
+    vi.useFakeTimers();
+    const { load, link, rest, settle } = aheadLinks();
+    rest('one');
+    fireEvent.focus(link('two'));
+    act(() => { vi.advanceTimersByTime(100); });
+    rest('two');
+    fireEvent.pointerLeave(link('two'));
+    fireEvent.blur(link('two'));
+    await settle(0);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+  test('a link unmounted while its read waits never reads', async () => {
+    vi.useFakeTimers();
+    const { load, rest, settle, hideLinks } = aheadLinks();
+    rest('one');
+    rest('two');
+    hideLinks();
+    await settle(0);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+  test('an account change while a read waits means it never starts', async () => {
+    vi.useFakeTimers();
+    const { load, rest, settle, changeAccount } = aheadLinks();
+    rest('one');
+    rest('two');
+    changeAccount('p2');
+    await settle(0);
+    expect(load).toHaveBeenCalledTimes(1);
   });
   test('a link\'s focus rests before it reads, and blur clears it; only the primary button\'s pointerdown reads', () => {
     vi.useFakeTimers();
