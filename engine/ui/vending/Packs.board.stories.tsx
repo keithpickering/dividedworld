@@ -67,7 +67,7 @@ function MachinePage() {
 const meta: Meta<typeof MachinePage> = {
   title: 'Boards/Booster packs',
   component: MachinePage,
-  parameters: { world, path: '/vending', layout: 'fullscreen' },
+  parameters: { world, boardsMachine: true, path: '/vending', layout: 'fullscreen' },
 };
 export default meta;
 

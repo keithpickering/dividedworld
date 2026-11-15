@@ -31,11 +31,12 @@
  *    as it stood, with no history behind it.
  *  - Stick Around's release sentence is the play's own setting (its `config`), seeded on #44's play.
  */
+import { cardPrice } from '../../../../engine/rules/packs.ts';
+import type { Instance } from '../../../../engine/rules/types.ts';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
 import { hudKey } from '../../../../engine/ui/player.tsx';
 import { instance } from '../../../../instances/divided-world/index.ts';
-import { cardPrice } from '../../../../engine/rules/packs.ts';
 import { fallbackSettings } from '../settings.ts';
 
 export type Account = 'player' | 'rival' | 'reader';
@@ -138,11 +139,66 @@ function armToasts(fake: Fake, account: string, alerts: readonly ToastAlert[]): 
   };
 }
 
-/** A fake whose clock is the moment's, for `seedBoards`. */
-export function createBoardsFake(moment: MomentName): Fake {
+/**
+ * The machine the boards were drawn against: the card keys of the instance's machine as it stood when they were drawn, in the
+ * machine's order, one per line (the Booster's slot is not listed; it is always first). A card added to the instance later is
+ * not on this list, on purpose, so no board moves (docs/plans/2026-11-15-wave-1-cards-design.md, section 1); the real
+ * machine's rule is held by instances/divided-world/machine.test.ts.
+ */
+export const BOARD_SLOTS: readonly string[] = [
+  'autocorrect',
+  'below-the-fold',
+  'feelin-fab',
+  'hype-up',
+  'overreaction',
+  'stick-around',
+  'this',
+  'whoops',
+  'you-were-saying',
+  '4d-chess',
+  'blind-study',
+  'card-collector',
+  'class-clown',
+  'force-field',
+  'glitter-bomb',
+  'good-vibes',
+  'hall-pass',
+  'happy-heart',
+  'heat-magnet',
+  'jimmy-wails',
+  'last-word',
+  'laugh-track',
+  'mooch',
+  'publicity-tour',
+  'take-the-fall',
+  'toll',
+  'feelin-glam',
+  'graffiti',
+  'line-cutter',
+  'main-event',
+  'sugar-coat',
+  'super-happy-heart',
+  'tattle-tale',
+  'whodunnit',
+  'off-day',
+  'ultra-happy-heart',
+];
+
+/** The machine the boards draw: `machine`'s pack slots, then `BOARD_SLOTS`' cards, each as the instance has it (availability and price). */
+export function boardMachine(machine: Instance['machine']): Instance['machine'] {
+  const slotOf = (key: string) => {
+    const slot = machine.find((s) => 'card' in s.item && s.item.card === key);
+    if (!slot) throw new Error(`the boards' machine names "${key}", and the instance sells no such card`);
+    return slot;
+  };
+  return [...machine.filter((s) => 'pack' in s.item), ...BOARD_SLOTS.map(slotOf)];
+}
+
+/** A fake whose clock is the moment's, for `seedBoards`. The boards always draw from the default instance; `from` is there so a test can hand it an instance that has gained a card. */
+export function createBoardsFake(moment: MomentName, from: Instance = instance): Fake {
   /* The toasts board holds its toasts (ten minutes), so the match reads them whenever the run gets to it: a toast's own six seconds would race a slow runner. */
   const held = moment === '01-board-toasts' ? { toastMs: 10 * 60_000 } : {};
-  return createFake({ instance, settings: { ...fallbackSettings, ...held }, now: () => MOMENTS[moment].at });
+  return createFake({ instance: { ...from, machine: boardMachine(from.machine) }, settings: { ...fallbackSettings, ...held }, now: () => MOMENTS[moment].at });
 }
 
 /** The moment a name or an address's parameter says, or an Error that lists the moments there are (a missing name included). */

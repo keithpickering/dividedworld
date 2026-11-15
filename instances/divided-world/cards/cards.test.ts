@@ -26,7 +26,45 @@ import { by, jimmy, on, post, surf } from './test-kit.ts';
 const priceOf = (key: string): number => instance.machine.find((m) => 'card' in m.item && m.item.card === key)!.price;
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['4d-chess', 'salty', 150], ['autocorrect', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['blind-study', 'pepperoni', 150], ['card-collector', 'salty', 150], ['class-clown', 'pepperoni', 150], ['feelin-fab', 'sweet', 20], ['feelin-glam', 'sweet', 300], ['force-field', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['graffiti', 'pepperoni', 300], ['hall-pass', 'sweet', 150], ['happy-heart', 'sweet', 150], ['heat-magnet', 'salty', 150], ['hype-up', 'sweet', 100], ['jimmy-wails', 'sweet', 200], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['line-cutter', 'pepperoni', 300], ['main-event', 'sweet', 300], ['mooch', 'salty', 150], ['off-day', 'salty', 500], ['overreaction', 'pepperoni', 100], ['publicity-tour', 'sweet', 150], ['stick-around', 'sweet', 100], ['sugar-coat', 'sweet', 300], ['super-happy-heart', 'sweet', 300], ['take-the-fall', 'sweet', 150], ['tattle-tale', 'salty', 300], ['this', 'pepperoni', 20], ['toll', 'pepperoni', 150], ['ultra-happy-heart', 'sweet', 600], ['whodunnit', 'pepperoni', 300], ['whoops', 'salty', 100], ['you-were-saying', 'pepperoni', 100]]);
+  // One card per line, sorted by key, as `cards/index.ts`: a new card's line goes to its place in key order.
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [
+    ['4d-chess', 'salty', 150],
+    ['autocorrect', 'pepperoni', 100],
+    ['below-the-fold', 'salty', 100],
+    ['blind-study', 'pepperoni', 150],
+    ['card-collector', 'salty', 150],
+    ['class-clown', 'pepperoni', 150],
+    ['feelin-fab', 'sweet', 20],
+    ['feelin-glam', 'sweet', 300],
+    ['force-field', 'sweet', 150],
+    ['glitter-bomb', 'pepperoni', 150],
+    ['good-vibes', 'sweet', 150],
+    ['graffiti', 'pepperoni', 300],
+    ['hall-pass', 'sweet', 150],
+    ['happy-heart', 'sweet', 150],
+    ['heat-magnet', 'salty', 150],
+    ['hype-up', 'sweet', 100],
+    ['jimmy-wails', 'sweet', 200],
+    ['last-word', 'salty', 150],
+    ['laugh-track', 'pepperoni', 150],
+    ['line-cutter', 'pepperoni', 300],
+    ['main-event', 'sweet', 300],
+    ['mooch', 'salty', 150],
+    ['off-day', 'salty', 500],
+    ['overreaction', 'pepperoni', 100],
+    ['publicity-tour', 'sweet', 150],
+    ['stick-around', 'sweet', 100],
+    ['sugar-coat', 'sweet', 300],
+    ['super-happy-heart', 'sweet', 300],
+    ['take-the-fall', 'sweet', 150],
+    ['tattle-tale', 'salty', 300],
+    ['this', 'pepperoni', 20],
+    ['toll', 'pepperoni', 150],
+    ['ultra-happy-heart', 'sweet', 600],
+    ['whodunnit', 'pepperoni', 300],
+    ['whoops', 'salty', 100],
+    ['you-were-saying', 'pepperoni', 100],
+  ]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -359,7 +397,6 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   // Card notes Part 5 added Happy Heart and Take the Fall (uncommon), Super Happy Heart and Tattle-Tale (rare) and Ultra Happy Heart (legendary), again with nothing listed in packs.ts.
   // Hype-Up (card notes, Hype-Up on a post) is now a common, so the hit pull leaves it out: seventeen uncommons share the 74. Sugar Coat, Graffiti, Line Cutter, Feelin' Glam, Whodunnit?, Super Happy Heart and Tattle-Tale are the rares that share the 24 with Main Event: eight, at 0.03 each.
   // Off Day and Ultra Happy Heart are the legendaries that share the 2: two, at 0.01 each, so Ultra Happy Heart can be pulled.
-  assert.equal(cards.length, 36);
   const rares = cards.filter((c) => c.rarity === 'rare');
   assert.deepEqual(rares.map((c) => c.key).sort(), ['feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'whodunnit']);
   for (const c of rares) assert.ok(Math.abs(chance.get(c.key)! - 0.03) < 1e-9, `${c.name} at ${chance.get(c.key)}`);

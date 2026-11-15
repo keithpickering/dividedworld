@@ -26,7 +26,7 @@ function MachineStory() {
 const meta: Meta<typeof MachineStory> = {
   title: 'Boards/00 Admin machine',
   component: MachineStory,
-  parameters: { world: machine, path: '/admin/machine', layout: 'fullscreen' },
+  parameters: { world: machine, boardsMachine: true, path: '/admin/machine', layout: 'fullscreen' },
 };
 export default meta;
 
