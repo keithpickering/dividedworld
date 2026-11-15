@@ -24,7 +24,10 @@
 import { DEPTH, HALF } from './body.ts';
 
 /** A column-major 4 by 4, 16 numbers: what `matrix3d()` and `DOMMatrix` take. */
-export type Matrix = number[];
+export type Matrix = [
+  number, number, number, number, number, number, number, number,
+  number, number, number, number, number, number, number, number,
+];
 
 export interface Piece {
   /** `back`, `backrest`, `seat`, `rear`, or a tube strip's name (`back-leg-left-a` and so on). */
@@ -53,8 +56,14 @@ const TUBE = 3;
 const IDENTITY: Matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 function mul(a: Matrix, b: Matrix): Matrix {
-  const out = new Array<number>(16).fill(0);
-  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) out[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
+  const out: Matrix = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) sum += a[k * 4 + r]! * b[c * 4 + k]!;
+      out[c * 4 + r] = sum;
+    }
+  }
   return out;
 }
 const translate = (x: number, y: number, z: number): Matrix => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
@@ -69,7 +78,7 @@ function rotateY(deg: number): Matrix {
 
 function piece(name: string, kind: Piece['kind'], width: number, height: number, matrix: Matrix): Piece {
   /* The rectangle's normal is its local z axis through the matrix: the third column. The matrices here are rotations and translations. */
-  const [x, y, z] = [matrix[8], matrix[9], matrix[10]];
+  const x = matrix[8], y = matrix[9], z = matrix[10];
   const len = Math.hypot(x, y, z) || 1;
   return { name, kind, width, height, left: -width / 2, top: -height / 2, matrix, normal: [x / len, y / len, z / len] };
 }

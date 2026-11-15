@@ -725,11 +725,11 @@ function separation(a: Body, b: Body): { n: Vec3; depth: number; reach: number }
   tx = a.pos[0] - b.pos[0]; ty = a.pos[1] - b.pos[1]; tz = a.pos[2] - b.pos[2];
   sepDepth = Infinity; sepX = 0; sepY = 1; sepZ = 0; sepReach = 0;
   // the face axes first: one of them that separates the boxes ends it (the least overlap is then at most zero, whatever the rest say)
-  for (let k = 0; k < 3; k++) if (axisOverlap(A, B, A[k], A[3 + k], A[6 + k], false) <= 0) return APART;
-  for (let k = 0; k < 3; k++) if (axisOverlap(A, B, B[k], B[3 + k], B[6 + k], false) <= 0) return APART;
+  for (let k = 0; k < 3; k++) if (axisOverlap(A, B, A[k]!, A[3 + k]!, A[6 + k]!, false) <= 0) return APART;
+  for (let k = 0; k < 3; k++) if (axisOverlap(A, B, B[k]!, B[3 + k]!, B[6 + k]!, false) <= 0) return APART;
   for (let i = 0; i < 3; i++) {
     for (let j = 0; j < 3; j++) {
-      const ux = A[i], uy = A[3 + i], uz = A[6 + i], vx = B[j], vy = B[3 + j], vz = B[6 + j];
+      const ux = A[i]!, uy = A[3 + i]!, uz = A[6 + i]!, vx = B[j]!, vy = B[3 + j]!, vz = B[6 + j]!;
       axisOverlap(A, B, uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx, true);
     }
   }
@@ -772,10 +772,10 @@ function apart(owner: Body, box: Body, reach: number): boolean {
   const limit = reach + 1e-6;
   let sphere = 0;
   for (let i = 0; i < 3; i++) {
-    const c = Math.abs(Q[i] * dx + Q[3 + i] * dy + Q[6 + i] * dz);
+    const c = Math.abs(Q[i]! * dx + Q[3 + i]! * dy + Q[6 + i]! * dz);
     // the extent of the owner's box along box axis i: the sum over its own axes of half size times the axes' alignment
     let extent = 0;
-    for (let j = 0; j < 3; j++) extent += (HALF[j] as number) * Math.abs(Q[i] * R[j] + Q[3 + i] * R[3 + j] + Q[6 + i] * R[6 + j]);
+    for (let j = 0; j < 3; j++) extent += (HALF[j] as number) * Math.abs(Q[i]! * R[j]! + Q[3 + i]! * R[3 + j]! + Q[6 + i]! * R[6 + j]!);
     const out = c - extent - (HALF[i] as number);
     if (out > limit) return true;
     const past = Math.max(c - (HALF[i] as number), 0);
@@ -816,7 +816,7 @@ function probeNear(owner: Body, local: Vec3, box: Body, reach: number): { p: Vec
     const sign = l >= 0 ? 1 : -1;
     return {
       p: [px, py, pz],
-      n: [Q[axis] * sign, Q[3 + axis] * sign, Q[6 + axis] * sign],
+      n: [Q[axis]! * sign, Q[3 + axis]! * sign, Q[6 + axis]! * sign],
       gap: 0,
     };
   }

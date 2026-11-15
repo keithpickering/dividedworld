@@ -6,7 +6,7 @@ import { describe, test } from 'node:test';
 import { DENT_SCALE, dentMap, dentMapUrl, dentPrimitives, filterTrusted } from './dent.ts';
 
 const SIZE = 160;
-const px = (m: Uint8ClampedArray, x: number, y: number) => { const i = (y * SIZE + x) * 4; return { r: m[i], g: m[i + 1], b: m[i + 2], a: m[i + 3] }; };
+const px = (m: Uint8ClampedArray, x: number, y: number) => { const i = (y * SIZE + x) * 4; return { r: m[i]!, g: m[i + 1]!, b: m[i + 2]!, a: m[i + 3]! }; };
 
 describe('dentMap', () => {
   const m = dentMap();
@@ -18,7 +18,7 @@ describe('dentMap', () => {
     const c = px(m, 80, 80);
     assert.ok(Math.abs(c.r - 128) <= 8);
     assert.ok(Math.abs(c.g - 128) <= 8);
-    for (const [x, y] of [[0, 80], [159, 80], [80, 0], [80, 159], [0, 0], [159, 159]]) {
+    for (const [x, y] of [[0, 80], [159, 80], [80, 0], [80, 159], [0, 0], [159, 159]] as [number, number][]) {
       const p = px(m, x, y);
       assert.deepEqual([p.r, p.g, p.b], [128, 128, 128]);
     }
@@ -39,7 +39,7 @@ describe('dentMap', () => {
      stretched to its peak pushed the words 1/0.58 times too far and squeezed those inside a dent near unreadable. */
   test("the ring's peak push is the plan's, about 0.58 of 127 bytes, in every direction", () => {
     let peak = 0;
-    for (let i = 0; i < m.length; i += 4) peak = Math.max(peak, Math.abs(m[i] - 128), Math.abs(m[i + 1] - 128));
+    for (let i = 0; i < m.length; i += 4) peak = Math.max(peak, Math.abs(m[i]! - 128), Math.abs(m[i + 1]! - 128));
     assert.ok(peak >= 72 && peak <= 75, `the largest byte offset is ${peak}, not 0.58 * 127 = 73.7`);
     const p = px(m, Math.round(80 + 80 * 0.35 - 0.5), 80);
     assert.ok(Math.abs(p.r - 128 - 73.5) <= 2, `the ring's red offset is ${p.r - 128}`);
@@ -74,9 +74,9 @@ describe('filterTrusted', () => {
 
 describe('dentPrimitives', () => {
   test('a dent is 160 px centered on its point, and never wider than 60% of the box', () => {
-    const [a] = dentPrimitives([{ x: 300, y: 100 }], { width: 600, height: 300 });
+    const a = dentPrimitives([{ x: 300, y: 100 }], { width: 600, height: 300 })[0]!;
     assert.deepEqual(a, { x: 220, y: 20, size: 160 });
-    const [b] = dentPrimitives([{ x: 100, y: 50 }], { width: 200, height: 100 });
+    const b = dentPrimitives([{ x: 100, y: 50 }], { width: 200, height: 100 })[0]!;
     assert.ok(Math.abs(b.size - 120) < 1e-6);
     assert.ok(Math.abs(b.x - 40) < 1e-6);
   });

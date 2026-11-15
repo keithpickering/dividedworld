@@ -5,12 +5,12 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, rng, settle, throwOf } from './body.ts';
-import { BOX, depthOf, drawn, GIVE, INSET, K, PERSPECTIVE, piecesOf, project, REACH, ROOM, shadeOf, transformOf, Z_FRONT, type Piece } from './chair.ts';
+import { BOX, depthOf, drawn, GIVE, INSET, K, PERSPECTIVE, piecesOf, project, REACH, ROOM, shadeOf, transformOf, Z_FRONT, type Matrix, type Piece } from './chair.ts';
 
 /** A piece's corners in the chair's frame: its centered rectangle through its column-major matrix. */
 function corners(p: Piece): [number, number, number][] {
   const m = p.matrix;
-  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => {
+  return ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as [number, number][]).map(([sx, sy]) => {
     const x = (sx * p.width) / 2;
     const y = (sy * p.height) / 2;
     return [m[0] * x + m[4] * y + m[12], m[1] * x + m[5] * y + m[13], m[2] * x + m[6] * y + m[14]] as [number, number, number];
@@ -35,12 +35,12 @@ describe('piecesOf', () => {
     const seat = byName(piecesOf(1), 'seat');
     const hingeY = BOX.height / 2 - 58;
     const edge = corners(seat).sort((p, q) => Math.hypot(p[1] - hingeY, p[2]) - Math.hypot(q[1] - hingeY, q[2])).slice(0, 2);
-    assert.ok(Math.abs(edge[0][0] - edge[1][0]) > 41, 'the two nearest corners are the ends of one edge');
+    assert.ok(Math.abs(edge[0]![0] - edge[1]![0]) > 41, 'the two nearest corners are the ends of one edge');
     for (const [, y, z] of edge) assert.ok(Math.hypot(y - hingeY, z) <= 2 + 1e-6, `corner at y ${y}, z ${z} is off the hinge line ${hingeY}`);
   });
   test('at a fold of 0.5 the seat is half way: 44 degrees from the back frame', () => {
     const ps = piecesOf(0.5);
-    const angle = (n: number[]) => Math.atan2(n[1], n[2]) * 180 / Math.PI;
+    const angle = (n: [number, number, number]) => Math.atan2(n[1], n[2]) * 180 / Math.PI;
     assert.ok(Math.abs(Math.abs(angle(byName(ps, 'seat').normal) - angle(byName(ps, 'back').normal)) - 44) < 1e-3);
   });
   test("every piece's left and top are minus half its size", () => {
@@ -61,7 +61,7 @@ describe('piecesOf', () => {
     const tubes = piecesOf(1).filter((p) => p.kind === 'tube');
     assert.equal(tubes.length % 2, 0);
     assert.ok(tubes.length > 0);
-    const [a, b] = tubes;
+    const a = tubes[0]!, b = tubes[1]!;
     const dot = a.normal[0] * b.normal[0] + a.normal[1] * b.normal[1] + a.normal[2] * b.normal[2];
     assert.ok(Math.abs(dot) < 1e-9);
   });
@@ -183,19 +183,19 @@ describe('the projection', () => {
   });
 });
 
-/** Numbers indexed without an `undefined` (the matrices below are always 16 long). */
-type Dense = number[] & { [i: number]: number };
+/** The matrices below are always 16 long, so they are the chair's own tuple type. */
+type Dense = Matrix;
 
 /** A tiny evaluator for the group's transform string: translate3d, perspective, matrix3d and scale3d, left to right. */
 function evaluate(transform: string): Dense {
-  const mulM = (a: Dense, b: Dense): Dense => { const o = new Array<number>(16).fill(0) as Dense; for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k]; return o; };
+  const mulM = (a: Dense, b: Dense): Dense => { const o = new Array<number>(16).fill(0) as Dense; for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r]! += a[k * 4 + r]! * b[c * 4 + k]!; return o; };
   let m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] as Dense;
   for (const [, fn, args] of transform.matchAll(/([a-z0-9]+)\(([^)]*)\)/gu)) {
     const n = args!.split(',').map((x) => parseFloat(x)) as Dense;
     let t: Dense;
-    if (fn === 'translate3d') t = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, n[0], n[1], n[2], 1] as Dense;
-    else if (fn === 'perspective') t = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -1 / n[0], 0, 0, 0, 1] as Dense;
-    else if (fn === 'scale3d') t = [n[0], 0, 0, 0, 0, n[1], 0, 0, 0, 0, n[2], 0, 0, 0, 0, 1] as Dense;
+    if (fn === 'translate3d') t = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, n[0]!, n[1]!, n[2]!, 1] as Dense;
+    else if (fn === 'perspective') t = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -1 / n[0]!, 0, 0, 0, 1] as Dense;
+    else if (fn === 'scale3d') t = [n[0]!, 0, 0, 0, 0, n[1]!, 0, 0, 0, 0, n[2]!, 0, 0, 0, 0, 1] as Dense;
     else if (fn === 'matrix3d') t = n;
     else throw new Error(`unknown ${fn}`);
     m = mulM(m, t);
