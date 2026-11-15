@@ -2883,6 +2883,46 @@ describe('a screen in one call', () => {
     expect(await once('thread_page', answer).api.threadPage('not-an-id', { page: 1 }, null, [])).toBeNull();
   });
 
+  it('thread_page: maps the origin a spun thread\'s page carries (its Act, plays, moment, place and cast), asks the tallies of the origin and its plays, and a page without the key has none', async () => {
+    const ORIGIN = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const PLAY1 = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const END1 = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const DOC = { summary: THREAD_ROW, page: 1, acts: [ACT_ROW], plays: [], above: [], people: [], tallies: [{ act: ORIGIN, kind: 'fire', count: 2 }, { act: PLAY1, kind: 'tea', count: 1 }] };
+    const origin = {
+      act: { ...ACT_ROW, id: ORIGIN, kind: 'post', thread: C, seq: 5, payload: { body: 'the origin' }, current_payload: { body: 'the origin' } },
+      plays: [{ ...PLAY_ROW, id: PLAY1, target_act_id: ORIGIN }, { ...ACT_ROW, id: END1, kind: 'card_end', target_act_id: PLAY1, seq: null, payload: { why: 'reversed' } }],
+      more: true,
+      moment: {
+        version: { ...ACT_ROW, id: ORIGIN, current_payload: { body: 'then' } },
+        layers: [{ act: { ...ACT_ROW, id: PLAY1, kind: 'card' }, state: { washed: 0.4 }, savedAt: '2026-10-01T10:00:00+00:00' }],
+        above: [ABOVE_ROW], recorded: true, at: '2026-10-01T09:30:00+00:00',
+      },
+      at: { thread: C, seq: 5 },
+      cast: [{ character: CHAR, profile: PROFILE }],
+    };
+    const page = await once('thread_page', { ...DOC, origin }).api.threadPage(T, { page: 1 }, 20, []);
+    expect(page?.origin?.act).toMatchObject({ id: ORIGIN, kind: 'post', thread: C, seq: 5, currentPayload: { body: 'the origin' } });
+    expect(page?.origin?.plays.map((a) => [a.id, a.kind, a.targetActId])).toEqual([[PLAY1, 'card', ORIGIN], [END1, 'card_end', PLAY1]]);
+    expect(page?.origin?.more).toBe(true);
+    /* The moment is what playMoment reads of the same document. */
+    expect(page?.origin?.moment?.version.currentPayload).toEqual({ body: 'then' });
+    expect(page?.origin?.moment?.layers.map((l) => [l.act.id, l.state])).toEqual([[PLAY1, { state: { washed: 0.4 }, savedAt: '2026-10-01T10:00:00+00:00' }]]);
+    expect(page?.origin?.moment?.above).toMatchObject([{ play: SPRING, reach: 'thread', target: T }]);
+    expect(page?.origin?.moment).toMatchObject({ recorded: true, at: '2026-10-01T09:30:00+00:00' });
+    expect(page?.origin?.at).toEqual({ thread: C, seq: 5 });
+    expect(page?.origin?.cast).toEqual([BEA]);
+    /* The tallies are asked for the origin's Act and its plays (not the ends'). */
+    expect(page?.tallies).toEqual({ [A]: {}, [ORIGIN]: { fire: 2 }, [PLAY1]: { tea: 1 } });
+    /* An origin with no moment and no place, and one the instance no longer holds. */
+    const bare = await once('thread_page', { ...DOC, origin: { act: null, plays: [], more: false, moment: null, at: null, cast: [] } }).api.threadPage(T, { page: 1 }, 20, []);
+    expect(bare?.origin).toEqual({ act: null, plays: [], more: false, moment: null, at: null, cast: [] });
+    /* A moment without `at` reads its first layer's time, as playMoment's does. */
+    const old = await once('thread_page', { ...DOC, origin: { ...origin, moment: { ...origin.moment, at: undefined } } }).api.threadPage(T, { page: 1 }, 20, []);
+    expect(old?.origin?.moment?.at).toBe(ACT.createdAt);
+    /* A document without the key (another page, a thread that was not spun) has no origin. */
+    expect((await once('thread_page', DOC).api.threadPage(T, { page: 2 }, 20, []))?.origin).toBeNull();
+  });
+
   it('thread_page: maps `under`, `cut` and `kept`, and asks the tallies of the nested replies and the kept plays too', async () => {
     const REPLY = '99999999-9999-4999-8999-999999999999';
     const KEPT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
