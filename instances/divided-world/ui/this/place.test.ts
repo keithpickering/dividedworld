@@ -11,7 +11,7 @@ const play = (id: string, phrase: string, words = '') => ({ id, config: { phrase
 describe('standsAt', () => {
   test('is the first of the phrase\'s occurrences', () => {
     const text = 'Stop asking for slopes. Then stop asking for slopes again.';
-    assert.deepEqual(standsAt(text, 'stop asking for slopes'), { from: 0, to: 22 });
+    assert.deepEqual(standsAt(text, 'stop asking for slopes'), { start: 0, end: 22 });
   });
   test('is null where the phrase is not in the text', () => {
     assert.equal(standsAt('Nothing here at all.', 'stop asking for slopes'), null);
@@ -24,17 +24,17 @@ describe('placesOf', () => {
     const text = 'Stop asking for slopes. Then stop asking for slopes again.';
     const [only] = placesOf(text, [A]);
     assert.equal(only!.play, A);
-    assert.deepEqual(only!.at, { from: 5, to: 22 });
+    assert.deepEqual(only!.at, { start: 5, end: 22 });
   });
   test('a receipt when the phrase is gone, and a wedge again when a later text holds it', () => {
     assert.equal(placesOf('Stop asking about slopes.', [A])[0]!.at, null);
-    assert.deepEqual(placesOf('Please keep asking for slopes.', [A])[0]!.at, { from: 12, to: 29 });
+    assert.deepEqual(placesOf('Please keep asking for slopes.', [A])[0]!.at, { start: 12, end: 29 });
   });
   test('an edit elsewhere moves the offsets and not the choice', () => {
     const before = placesOf('Stop asking for slopes. Then stop asking for slopes again.', [A])[0]!.at!;
     const after = placesOf('A new first sentence. Stop asking for slopes. Then stop asking for slopes again.', [A])[0]!.at!;
-    assert.equal(after.from - before.from, 'A new first sentence. '.length);
-    assert.equal(after.to - after.from, before.to - before.from);
+    assert.equal(after.start - before.start, 'A new first sentence. '.length);
+    assert.equal(after.end - after.start, before.end - before.start);
   });
   test('one changed word is a receipt', () => {
     assert.equal(placesOf('Stop asking for slope.', [A])[0]!.at, null);

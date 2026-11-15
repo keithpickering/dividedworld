@@ -2,13 +2,13 @@
  * Where each THIS note stands on a post (docs/plans/2026-11-13-this-design.md, sections 2 and 3; plan Task 7). Pure: the search over a post's
  * visible text, and the measuring's arithmetic over plain numbers, so the effect's tests need no layout.
  *
- * - **The search** is the engine's one matcher (`occurrences`), and a phrase that is in the text more than once points at the first, so the
+ * - **The search** is the card's own (`pointsAt`, over the engine's one matcher), and a phrase that is in the text more than once points at the first, so the
  *   one rule holds at a cast, at a spring and after any edit. A play whose phrase is not found is a receipt (`at: null`).
  * - **The measuring** (`layOut`) is given each note's line and boxes and answers each gap's height, each note's top and each arrow's path.
  *   A gap's height is made of the line's height, the notes' heights and two constants, never of where anything is, so it is the same whatever
  *   the gaps above it did: that is what lets the effect write every height once and place the notes in the same pass.
  */
-import { occurrences, type Occurrence } from '../../cards/autocorrect/match.ts';
+import { pointsAt, type Stretch } from '../../cards/this.ts';
 
 /** The most a note may stand over what it points at: the arrow's room, between the line's foot and the note's top (px). */
 export const ROOM = 22;
@@ -26,12 +26,12 @@ export interface PlayLike {
 /** A wedge (`at` the phrase's first place in the text) or a receipt (`at` null). */
 export interface Place<P extends PlayLike = PlayLike> {
   readonly play: P;
-  readonly at: Occurrence | null;
+  readonly at: Stretch | null;
 }
 
 /** The first place `phrase` is in `text`, or null. */
-export function standsAt(text: string, phrase: string): Occurrence | null {
-  return occurrences(text, phrase)[0] ?? null;
+export function standsAt(text: string, phrase: string): Stretch | null {
+  return pointsAt(text, phrase);
 }
 
 /**

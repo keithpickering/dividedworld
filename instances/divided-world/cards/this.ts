@@ -18,6 +18,18 @@ export const WORDS = { most: 60 } as const;
 
 export type ThisConfig = { readonly phrase: string; readonly words: string };
 
+/** A stretch of a post's visible text, as the engine's text runs name one. */
+export type Stretch = { readonly start: number; readonly end: number };
+
+/**
+ * Where THIS points: the first place `phrase` is in `text` by the card's one matcher, or null. A phrase that is there more than once points at
+ * the first, so one rule holds at a cast, at a spring and after any edit.
+ */
+export function pointsAt(text: string, phrase: string): Stretch | null {
+  const first = occurrences(text, phrase)[0];
+  return first ? { start: first.from, end: first.to } : null;
+}
+
 /**
  * A persona's words repaired (design, section 4): words past 60 characters are cut to the longest stretch that ends at a word's end (the last white
  * space within the first 61 characters; with none, the first 60), counted and cut by characters, so no surrogate pair is split (a joined emoji may be). The cut is at the white space even where that keeps one short word, since the first 60

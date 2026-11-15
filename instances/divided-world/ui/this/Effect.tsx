@@ -62,7 +62,7 @@ export function ThisEffect({ post, plays, show, still, children }: EffectProps) 
   const runs = useMemo<TextRun[]>(() => wedges.map(({ play, at }): TextRun => {
     const line = heard(wordsOf(play));
     return {
-      start: at.from, end: at.to, key: `this:${play.id}`, z: Z, mode: 'wrap', stands: true,
+      start: at.start, end: at.end, key: `this:${play.id}`, z: Z, mode: 'wrap', stands: true,
       render: ({ text: words, key }) => <span key={key} className="dw-this-hl" data-dw-this-piece={play.id}>{words}</span>,
       trail: (key) => (
         <span key={key} ref={gapRef} className="dw-this-gap" data-dw-this-gap={play.id} data-kb-quotable="hidden" data-dw-aside="">
@@ -141,7 +141,7 @@ export function ThisEffect({ post, plays, show, still, children }: EffectProps) 
     }
   };
   measureNow.current = measure;
-  const layoutKey = JSON.stringify(wedges.map(({ play, at }) => [play.id, at.from, at.to, wordsOf(play)]));
+  const layoutKey = JSON.stringify(wedges.map(({ play, at }) => [play.id, at.start, at.end, wordsOf(play)]));
   useLayoutEffect(() => { measureNow.current(); }, [layoutKey]);
   useEffect(() => {
     let live = true;
