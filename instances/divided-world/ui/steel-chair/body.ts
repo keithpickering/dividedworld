@@ -28,7 +28,8 @@
  * overlap anyway (one landing where another lies) are separated along the axis of least overlap of the two boxes.
  *
  * Sleep: a body slower than 6 px/s and 12 degrees a second for 0.4 s sleeps and becomes a static obstacle. A body moving into a
- * sleeper faster than 200 px/s at a contact wakes it with the equal and opposite impulse. Two awake chairs also push each other
+ * sleeper faster than 200 px/s at a contact wakes it with the equal and opposite impulse, whether that contact is met before the move
+ * (a chair stopped on arrival) or after it (one that overlapped anyway). Two awake chairs also push each other
  * apart (the plan names sleepers as the obstacles; two chairs falling together must not pass through each other either).
  */
 
@@ -130,6 +131,8 @@ const SLEEP_SPEED = 6;
 const SLEEP_SPIN = 12 * Math.PI / 180;
 const SLEEP_TIME = 0.4;
 const WAKE_SPEED = 200;
+/** How deep a point may be inside another chair's box and still be a touching contact solved before the move, px. */
+const TOUCH = 0.5;
 const PASSES = 16;
 /** The hinge: a critically damped spring from open to closed that is 98 percent shut in about 0.15 s. */
 const HINGE = 40;
@@ -345,7 +348,11 @@ export function bodies(world: World): BodyView[] {
   });
 }
 
-/** Steps until every body sleeps or maxSeconds of simulated time have passed; for reduced motion and a moment. True if all slept. */
+/**
+ * Steps until every body sleeps or maxSeconds of simulated time have passed; for reduced motion and a moment. The return value says
+ * which of the two ended it: true if every body is asleep, false if the time ran out first with at least one still moving (or still in
+ * the air), in which case the world is left where the last step put it and the caller may settle again or go on stepping.
+ */
 export function settle(world: World, maxSeconds: number): boolean {
   for (let t = 0; t < maxSeconds && !world.list.every((b) => b.asleep); t += STEP) step(world, STEP);
   return world.list.every((b) => b.asleep);
@@ -363,6 +370,8 @@ export function settle(world: World, maxSeconds: number): boolean {
 export function step(world: World, dt: number): Event[] {
   const events: Event[] = [];
   const fresh = new Set<Body>();
+  // the sleepers a contact knocked awake this step: they stay static for the rest of it and are awake for the next
+  const woken = new Set<Body>();
   // the energy of every chair at the start of the step, before gravity (a sleeper's is its height alone: it might be woken)
   const before = new Map<Body, number>();
   for (const b of world.list) if (b.phase === 'tumbling') before.set(b, energyOf(world, b));
@@ -404,19 +413,26 @@ export function step(world: World, dt: number): Event[] {
         // a sleeper's points near this chair too (an awake chair's own points are its own contacts): the sleeper cannot give way
         if (b.asleep) {
           const back = probeNear(b, sample, a, reach);
-          if (back) early.push(makeContact(a, null, back.p, [-back.n[0], -back.n[1], -back.n[2]], FLOOR_BOUNCE, false, dt, back.gap, `t${a.id}.${b.id}.${si}`));
+          if (back) {
+          const c = makeContact(a, null, back.p, [-back.n[0], -back.n[1], -back.n[2]], FLOOR_BOUNCE, false, dt, back.gap, `t${a.id}.${b.id}.${si}`);
+          c.sleeper = b;
+          c.sleeperR = sub(back.p, b.pos);
+          early.push(c);
+        }
         }
       }
     }
   }
   reportFloor(early, events);
   solve(early, world);
+  // a fast chair is stopped here before it reaches a sleeper, so this is where it knocks it: the rule is on the contact, not on the overlap
+  knock(early, woken);
   for (const b of moving) {
     limitLift(b, before.get(b) ?? 0, world, dt);
     move(b, dt);
   }
   // after the move: another chair's box, and what the turn left past a wall
-  const touching = late(world, awake, dt, events);
+  const touching = late(world, awake, dt, events, woken);
   pushOut(world, awake);
   // A contact may take energy from a chair and never give it: whatever push out is left lifts a body by a few hundredths of a
   // pixel, which is energy from nowhere. The velocities are scaled down (never turned) by what that cost, so no step raises it. Chairs
@@ -429,6 +445,7 @@ export function step(world: World, dt: number): Event[] {
     const keep = kinetic > excess ? Math.sqrt((kinetic - excess) / kinetic) : 0;
     for (const b of group) { b.vel = mul(b.vel, keep); b.w = mul(b.w, keep); }
   }
+  for (const b of woken) { b.asleep = false; b.quiet = 0; }
   world.warm = world.warming;
   world.warming = new Map();
   for (const b of awake) {
@@ -454,7 +471,7 @@ function limitLift(b: Body, start: number, world: World, dt: number): void {
   const a = kineticOf(b);
   const lift = -b.vel[1] * dt * GRAVITY;
   const c = GRAVITY * (world.floorY - b.pos[1]) - start;
-  if (a * 1 + lift + c <= 0) return;
+  if (a + lift + c <= 0) return;
   let s: number;
   if (a < 1e-12) s = lift > 0 ? Math.max(-c / lift, 0) : 1;
   else s = (-lift + Math.sqrt(lift * lift - 4 * a * c)) / (2 * a);
@@ -546,6 +563,9 @@ interface Contact {
   j: [number, number, number];
   /** Everything applied to a, so a woken sleeper can be given the opposite. */
   total: Vec3;
+  /** The sleeping chair this contact pushes against, if any (whether b is it or the contact is a wall-like one made from its point), and its lever arm. */
+  sleeper: Body | null;
+  sleeperR: Vec3;
 }
 
 /** The floor and the two side walls: how far a point is from each, and its normal and bounce. */
@@ -585,6 +605,7 @@ function makeContact(a: Body, b: Body | null, p: Vec3, n: Vec3, e: number, floor
   ];
   const c: Contact = {
     key, a, b, bMoves, floor, d, rxa, rxb, wa, wb, k, ra, rb, closing: 0, reaches: false, target: 0, j: [0, 0, 0], total: [0, 0, 0],
+    sleeper: b && b.asleep ? b : null, sleeperR: rb,
   };
   const closing = -along(c, 0);
   c.closing = closing;
@@ -681,7 +702,24 @@ function probeNear(owner: Body, local: Vec3, box: Body, reach: number): { p: Vec
   const o1 = l1 > HALF[1] ? l1 - HALF[1] : l1 < -HALF[1] ? l1 + HALF[1] : 0;
   const o2 = l2 > HALF[2] ? l2 - HALF[2] : l2 < -HALF[2] ? l2 + HALF[2] : 0;
   const gap = Math.hypot(o0, o1, o2);
-  if (gap === 0 || gap > reach) return null;
+  if (gap > reach) return null;
+  if (gap === 0) {
+    // On the surface or just inside it: the way out is the nearest face. This is a contact at gap zero, not no contact: a chair that is
+    // resting has its points exactly here (the push out leaves them on the surface to rounding), and a contact that was only taken when
+    // the point was outside let a resting chair fall a step's gravity into the other and be stopped after the fact, so it started every
+    // step at 16 px/s and never slept. A point deeper than TOUCH is a collision, which is the late pass's, along the pair's own axis.
+    const r0 = HALF[0] - Math.abs(l0), r1 = HALF[1] - Math.abs(l1), r2 = HALF[2] - Math.abs(l2);
+    const depth = Math.min(r0, r1, r2);
+    if (depth > TOUCH) return null;
+    const axis = r0 <= r1 && r0 <= r2 ? 0 : r1 <= r2 ? 1 : 2;
+    const l = axis === 0 ? l0 : axis === 1 ? l1 : l2;
+    const sign = l >= 0 ? 1 : -1;
+    return {
+      p: [px, py, pz],
+      n: [Q[axis] * sign, Q[3 + axis] * sign, Q[6 + axis] * sign],
+      gap: 0,
+    };
+  }
   const n0 = o0 / gap, n1 = o1 / gap, n2 = o2 / gap;
   return {
     p: [px, py, pz],
@@ -701,7 +739,7 @@ function reportFloor(list: Contact[], events: Event[]): void {
  * The contacts after the move: a point of one chair inside another's box (a sleeper is static; an awake one takes its share), and
  * a corner a turn carried past the floor or a wall. Returns the bodies that touched another chair, whose energy is traded.
  */
-function late(world: World, awake: Body[], dt: number, events: Event[]): Array<[Body, Body]> {
+function late(world: World, awake: Body[], dt: number, events: Event[], woken: Set<Body>): Array<[Body, Body]> {
   const touching: Array<[Body, Body]> = [];
   const live = world.list.filter((b) => b.phase === 'tumbling');
   const list: Contact[] = [];
@@ -736,15 +774,24 @@ function late(world: World, awake: Body[], dt: number, events: Event[]): Array<[
   for (const c of list) if (c.b) touching.push([c.a, c.b]);
   reportFloor(list, events);
   solve(list, world);
-  // a sleeper hit hard enough wakes with the opposite of what the mover got
-  for (const c of list) {
-    if (!c.b || c.bMoves || c.closing <= WAKE_SPEED) continue;
-    const woken = c.b;
-    applyImpulse(woken, mul(c.total, -1), c.rb);
-    woken.asleep = false;
-    woken.quiet = 0;
-  }
+  knock(list, woken);
   return touching;
+}
+
+/**
+ * A sleeper that a contact meets at a closing speed over WAKE_SPEED wakes, and is handed the equal and opposite of what the contacts
+ * with it gave the chair that hit it (every contact of the pair, not only the fast ones: the impulse is the pair's, however many points
+ * carried it). The contact has to reach the sleeper this step; a point that is near and fast but has not arrived has taken nothing yet.
+ */
+function knock(list: Contact[], woken: Set<Body>): void {
+  const hit = new Set<Body>();
+  for (const c of list) if (c.sleeper && c.reaches && c.closing > WAKE_SPEED) hit.add(c.sleeper);
+  if (hit.size === 0) return;
+  for (const c of list) {
+    if (!c.sleeper || !hit.has(c.sleeper)) continue;
+    applyImpulse(c.sleeper, mul(c.total, -1), c.sleeperR);
+    woken.add(c.sleeper);
+  }
 }
 
 /** The awake chairs as groups: those that touched one another this step together, every other chair alone. */

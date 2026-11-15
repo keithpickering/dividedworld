@@ -342,6 +342,96 @@ test('three throws into one world all sleep, none overlaps another by more than 
   assert.ok(knocked >= 1, 'no seed woke a sleeping body');
 });
 
+/** The chairs of a post that throws up to three at once (the effect's stack): 350 ms apart, into a content area the size of a roomy post. */
+const BUSY = { width: 600, height: 300, floorY: 300 };
+const BUSY_WORDS: Box = { left: 16, top: 16, width: 568, height: 240 };
+const BUSY_GAP = 0.35;
+/** The latest any seed of the three-at-350-ms test fell asleep after the last throw, seconds; printed so the number is on record. */
+let latestBusy = 0;
+
+test('three throws 350 ms apart (the effect stack) all sleep within 8 s of the last, overlap by at most 1 px, and stay inside the floor and walls', () => {
+  for (let seed = 0; seed < SEEDS; seed++) {
+    const world = worldOf(BUSY);
+    const rand = rng(5000 + seed);
+    let thrown = 0, t = 0, lastAt = 0, allSleptAt = Infinity, past = 0;
+    for (let i = 0; i < 20 * 120; i++) {
+      while (thrown < 3 && t >= thrown * BUSY_GAP - 1e-9) { addThrow(world, throwOf(rand, BUSY_WORDS)); lastAt = t; thrown++; }
+      step(world, STEP);
+      t += STEP;
+      const now = bodies(world);
+      for (const b of now) if (b.phase === 'tumbling') for (const c of cornersOf(b)) past = Math.max(past, c[1] - BUSY.floorY, -c[0], c[0] - BUSY.width);
+      if (thrown === 3 && allSleptAt === Infinity && now.every((b) => b.asleep)) allSleptAt = t - lastAt;
+      if (t > lastAt + 8) break;
+    }
+    const all = bodies(world);
+    assert.ok(all.every((b) => b.asleep), `seed ${seed}: still moving 8 s after the last throw: ${all.filter((b) => !b.asleep).map((b) => `body ${b.id} at ${b.speed.toFixed(1)} px/s, ${b.omega.toFixed(2)} rad/s`).join('; ')}`);
+    latestBusy = Math.max(latestBusy, allSleptAt);
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+      assert.ok(overlap(at(all, i), at(all, j)) <= 1, `seed ${seed} bodies ${i} and ${j} overlap by ${overlap(at(all, i), at(all, j))}`);
+    }
+    assert.ok(past <= 0.5, `seed ${seed} a corner went ${past} px past the floor or a wall`);
+  }
+  console.log(`# the latest any of the ${SEEDS} seeds fell asleep after the last throw: ${latestBusy.toFixed(2)} s`);
+});
+
+/**
+ * Puts a body where a test wants it: thrown through addThrow like any other (so it is a real body of the world), then made a folded
+ * chair at a position, with an orientation and a velocity. The test reaches into the world's list for it, since the effect never needs to.
+ */
+function placed(world: World, seed: number, pos: V3, flat: boolean, vel: V3, asleep: boolean) {
+  const id = addThrow(world, throwOf(rng(seed), WORDS));
+  const b = world.list.find((x) => x.id === id)!;
+  b.phase = 'tumbling';
+  b.pos = pos;
+  // lying flat: a quarter turn about x, so the thin axis is the vertical one (a box 46 wide, 8 tall, 90 deep)
+  b.q = flat ? [Math.SQRT1_2, Math.SQRT1_2, 0, 0] : [1, 0, 0, 0];
+  b.R = flat ? [1, 0, 0, 0, 0, -1, 0, 1, 0] : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  b.vel = vel;
+  b.w = [0, 0, 0];
+  b.foldT = 1;
+  b.scale = 1;
+  b.floored = true;
+  b.asleep = asleep;
+  return b;
+}
+
+/** A chair lies asleep on the floor; another comes down on it standing on its end, with a gap of `gap` px and a speed of `v` px/s down. */
+function dropOnSleeper(gap: number, v: number) {
+  const world = worldOf(WORLD);
+  const lying = placed(world, 1, [300, WORLD.floorY - 4, 0], true, [0, 0, 0], true);
+  const mover = placed(world, 2, [300, WORLD.floorY - 8 - 45 - gap, 0], false, [0, v, 0], false);
+  return { world, lying, mover };
+}
+
+test('a corner contact on a sleeper closing faster than 200 px/s wakes it with the equal and opposite impulse, wherever the contact is solved', () => {
+  const { world, lying, mover } = dropOnSleeper(20, 600);
+  let woke = false;
+  for (let i = 0; i < 60 && !woke; i++) {
+    const before = mover.vel[1];
+    step(world, STEP);
+    if (lying.asleep) continue;
+    woke = true;
+    // what the mover lost in the step is what the sleeper has gained (gravity's 16 px/s added to the mover is not the contact's)
+    const lost = before + 1900 * STEP - mover.vel[1];
+    assert.ok(lost > 200, `the mover lost only ${lost} px/s`);
+    assert.ok(Math.abs(lying.vel[1] - lost) <= 0.05 * lost + 15, `the sleeper gained ${lying.vel[1]} where the mover lost ${lost}`);
+    assert.ok(Math.abs(lying.vel[0]) < 0.05 * lost + 15 && Math.abs(lying.vel[2]) < 0.05 * lost + 15, `sideways ${lying.vel}`);
+  }
+  assert.ok(woke, 'the sleeper was never woken by a chair landing on it at 600 px/s');
+});
+
+test('a contact on a sleeper closing slower than 200 px/s leaves it asleep', () => {
+  const { world, lying, mover } = dropOnSleeper(1, 100);
+  let hit = false;
+  for (let i = 0; i < 240; i++) {
+    const before = mover.vel[1];
+    step(world, STEP);
+    hit = hit || mover.vel[1] < before;
+    assert.ok(lying.asleep, `woken at step ${i}`);
+  }
+  assert.ok(hit, 'the mover never met the sleeper');
+});
+
 test('settle gives the same final state as stepping by hand, and returns whether everything slept', () => {
   for (let seed = 0; seed < 20; seed++) {
     const a = worldOf(WORLD), b = worldOf(WORLD);
