@@ -46,7 +46,7 @@ import type {
   SurfaceAct, SurfaceNow, SurfaceWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PlayMoment, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -768,7 +768,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const x = (await run()) as Res;
       return x.error?.hint === 'kayfabb.refusal' ? { data: null, error: null, status: 200 } : x;
     });
-    const m = r.data as Row | null;
+    return toMoment(r.data);
+  }
+  /** A moment as play_moment and spin_moment answer it, and as a thread's page carries it in `origin.moment`; null for none. */
+  function toMoment(data: unknown): PlayMoment | null {
+    const m = data as Row | null;
     if (!m) return null;
     const layers = (m['layers'] as Row[]).map((l) => ({ act: toAct(l['act']), state: l['savedAt'] == null ? null : { state: l['state'], savedAt: l['savedAt'] } }));
     return {
@@ -1822,8 +1826,20 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const cut = rowsOf(d['cut']).map((c) => ({ seq: num(c['seq']), parentSeq: num(c['parent_seq']) }));
       const kept = rowsOf(d['kept']).map(toPlayAbove);
       const summary = toThread(d['summary'] as Row);
-      /* The ids the page's tallies were asked for: its Acts, then the plays on its posts and above them, the nested replies and the kept plays. */
-      const asked = [...acts.map((a) => a.id), ...plays.map((a) => a.id), ...above.map((x) => x.act.id), ...under.map((u) => u.act.id), ...kept.map((x) => x.act.id)];
+      /* The origin of a spun thread, on the page that holds its first Act (0372); a document without the key, or with a null one, has none. */
+      const o = d['origin'];
+      const origin: PageOrigin | null = isObject(o)
+        ? {
+            act: isObject(o['act']) ? toAct(o['act']) : null, plays: rowsOf(o['plays']).map(toAct), more: o['more'] === true, moment: toMoment(o['moment']),
+            at: isObject(o['at']) && typeof o['at']['thread'] === 'string' ? { thread: o['at']['thread'], seq: num(o['at']['seq']) } : null,
+            cast: rowsOf(o['cast']).map((p) => toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined)),
+          }
+        : null;
+      /* The ids the page's tallies were asked for: its Acts, then the plays on its posts and above them, the nested replies and the kept plays, and the origin's Act and plays (the plays' ends are no plays). */
+      const asked = [
+        ...acts.map((a) => a.id), ...plays.map((a) => a.id), ...above.map((x) => x.act.id), ...under.map((u) => u.act.id), ...kept.map((x) => x.act.id),
+        ...(origin === null ? [] : [...(origin.act === null ? [] : [origin.act.id]), ...origin.plays.filter((a) => a.kind !== 'card_end').map((a) => a.id)]),
+      ];
       const reading: Record<Id, number> = typeof d['reading'] === 'number' ? { [thread]: d['reading'] } : {};
       return {
         thread: summary, page: num(d['page'], 1), acts,
@@ -1839,7 +1855,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         spent: (Array.isArray(d['spent']) ? d['spent'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
         board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
-        presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']),
+        presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']), origin,
       };
     },
     async visitStory(thread, visit, _post): Promise<VisitStory> {

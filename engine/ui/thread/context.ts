@@ -1,7 +1,7 @@
 /** What a post reads of the thread it is in. */
 import { createContext, useContext } from 'react';
 import type { PronounSet } from '../../rules/pronouns.ts';
-import type { Act, Id, ThreadSummary, Visit } from '../data/api.ts';
+import type { Act, Id, PageOrigin, ThreadSummary, Visit } from '../data/api.ts';
 import type { Plays } from '../cards/plays.ts';
 import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from './tallies.ts';
@@ -20,6 +20,13 @@ export interface ThreadContext {
   readonly mine: Mine;
   /** The card plays on the posts on screen, with what their effects keep (engine/ui/cards/plays.ts). */
   readonly plays: Plays;
+  /**
+   * The origin of a spun thread as the newest page read carried it (`ThreadPage.origin`): what the ORIGIN box draws from, with no read of its own. Absent where a post is drawn outside the thread
+   * screen (a story's lone post); null where no page read has held the thread's first Act yet.
+   */
+  readonly origin?: PageOrigin | null;
+  /** The ORIGIN box's own store of plays, which the thread screen gives the saved states and releases the page carried for the origin's plays. Absent outside the thread screen. */
+  readonly originPlays?: Plays;
   /** The post a reply is drawn under, by the reply's id, or undefined for a post of the thread's own: what a card that replies reads to leave itself off a reply. Stable; a reply is drawn only after it is known. A thread drawn with none has no replies. */
   readonly underOf?: (act: Id) => Id | undefined;
   /** Each post's latest visit, by the post's id, as the pages read carried it. */

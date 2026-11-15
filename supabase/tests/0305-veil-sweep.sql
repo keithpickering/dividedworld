@@ -325,6 +325,7 @@ select 'function', n, m, w from (values
   ('update_payload_problem', 'no author', 'a pure function of its argument'),
   ('updates', 'no author', 'the developer''s updates: public, written by an admin'),
   ('updates_page', 'no author', 'the developer''s updates: public, written by an admin'),
+  ('origin_moment', 'no author', 'a spun thread''s origin moment (0372): decided from the thread''s origin place and answered by play_moment and spin_moment, which read the post''s author as shown_author; it names no character itself'),
   ('visit_quiz', 'no author', 'a visit''s quiz: no character'),
   ('warn_points', 'no author', 'a character''s warn points: a public fact of the character'),
   ('whoami', 'no author', 'the caller''s own account'),

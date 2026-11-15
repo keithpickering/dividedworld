@@ -97,6 +97,11 @@ export interface LensStore {
    * the moment was hidden meanwhile. A failed read keeps nothing, and the promise rejects, so it can be asked again.
    */
   readMoment(play: Id, load: () => Promise<PlayMoment | null>): Promise<void>;
+  /**
+   * Keep a moment the page already carried (the ORIGIN box's, `PageOrigin.moment`) as `readMoment` would keep one it read, so `useMomentRead` finds it kept and reads nothing. It never replaces a moment
+   * already kept, and it wakes no one: it is called before the readers of the key are drawn, so none has seen the key unkept.
+   */
+  seedMoment(key: Id, moment: PlayMoment | null): void;
 }
 
 function createLensStore(): LensStore {
@@ -122,6 +127,7 @@ function createLensStore(): LensStore {
     moment: () => shown,
     showMoment(play) { if (play !== shown) { shown = play; wake(); } },
     kept: (play) => moments.get(play),
+    seedMoment(key, moment) { if (!moments.has(key)) moments.set(key, moment); },
     readMoment(play, load) {
       if (moments.has(play)) return Promise.resolve();
       const was = reading.get(play);

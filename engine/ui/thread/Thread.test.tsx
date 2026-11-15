@@ -503,6 +503,36 @@ describe('Acts that are not posts', () => {
     expect(within(origin).getByRole('link', { name: /#2 in A long thread/u })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
     expect(first).toHaveTextContent('Taking this elsewhere.');
   });
+
+  test('the origin rides the page: its words are in the first frame the thread draws, and no read of the Act is made', async () => {
+    const w = world(3);
+    const spun = await w.fake.spin(w.ids[1]!, (await w.fake.myCharacters())[0]!.id, 'Spun off', 'Taking this elsewhere.');
+    if (!spun.ok) throw new Error(spun.error);
+    const reads = [vi.spyOn(w.fake, 'act'), vi.spyOn(w.fake, 'cardsOn'), vi.spyOn(w.fake, 'characters'), vi.spyOn(w.fake, 'effectStates')];
+    renderIn(w.fake, <LoadedThread thread={spun.value.thread.id} />, { path: `/t/${spun.value.thread.id}` });
+    const origin = await screen.findByRole('group', { name: 'Origin' });
+    expect(origin).toHaveTextContent('post 2');
+    expect(origin).not.toHaveTextContent('Loading the origin');
+    expect(reads.map((r) => r.mock.calls.length)).toEqual([0, 0, 0, 0]);
+  });
+
+  test('a page read again that carries no origin leaves the box as it was', async () => {
+    const w = world(3);
+    const spun = await w.fake.spin(w.ids[1]!, (await w.fake.myCharacters())[0]!.id, 'Spun off', 'Taking this elsewhere.');
+    if (!spun.ok) throw new Error(spun.error);
+    const thread = spun.value.thread.id;
+    renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}` });
+    const origin = await screen.findByRole('group', { name: 'Origin' });
+    const real = w.fake.threadPage.bind(w.fake);
+    const page = vi.spyOn(w.fake, 'threadPage').mockImplementation(async (...a) => {
+      const got = await real(...a);
+      return got ? { ...got, origin: null } : got;
+    });
+    await act(async () => { w.fake.broadcast.rejoin(); await new Promise((r) => setTimeout(r, 50)); });
+    expect(page).toHaveBeenCalled();
+    expect(origin).toHaveTextContent('post 2');
+    expect(origin).not.toHaveTextContent('is not there');
+  });
 });
 
 /* ------------------------------------------------------------------------------ quoting ---- */
@@ -2037,6 +2067,38 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
       expect(await within(head()).findByRole('button', { name: beyond })).toBeInTheDocument();
       await act(async () => { first.open(); await pause(30); });
       expect(within(head()).getByRole('button', { name: beyond })).toBeInTheDocument();
+    });
+
+    test('an origin carried by a read asked earlier, answered after a newer one, is not taken', async () => {
+      const w = world(3);
+      const spun = await w.fake.spin(w.ids[1]!, (await w.fake.myCharacters())[0]!.id, 'Spun off', 'Taking this elsewhere.');
+      if (!spun.ok) throw new Error(spun.error);
+      const thread = spun.value.thread.id;
+      for (let i = 0; i < 30; i++) w.fake.seed.post(thread, w.pipe, `later ${i}`);
+      const doc = (await w.fake.threadPage(thread, { page: 1 }, 20, []))!;
+      const real = w.fake.threadPage.bind(w.fake);
+      const first = gate();
+      /* The catch-up's read of page 1 is asked first and answered last, carrying an origin that reads "stale words"; the read of page 1 again, asked after it, is answered at once. */
+      const page = vi.spyOn(w.fake, 'threadPage').mockImplementation(async (...a) => {
+        const mine = page.mock.calls.length;
+        const got = await real(...a);
+        if (mine !== 1) return got;
+        await first.promise;
+        return got?.origin?.act ? { ...got, origin: { ...got.origin, act: { ...got.origin.act, currentPayload: { body: 'stale words' } } } } : got;
+      });
+      renderIn(w.fake, <ThreadScreen thread={thread} doc={doc} />, { path: `/t/${thread}?page=1` });
+      await article(1);
+      await waitFor(() => expect(page).toHaveBeenCalledTimes(1));
+      await userEvent.click(screen.getAllByRole('link', { name: 'Page 2' })[0]!);
+      await article(21);
+      await userEvent.click(screen.getAllByRole('link', { name: 'Page 1' })[0]!);
+      await article(1);
+      await act(async () => { await pause(50); });
+      const box = screen.getByRole('group', { name: 'Origin' });
+      expect(box).toHaveTextContent('post 2');
+      await act(async () => { first.open(); await pause(30); });
+      expect(box).not.toHaveTextContent('stale words');
+      expect(box).toHaveTextContent('post 2');
     });
 
     test('a page the reader continues to, read before the join and answered during the catch-up, is caught up too', async () => {

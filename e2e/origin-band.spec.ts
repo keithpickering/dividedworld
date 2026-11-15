@@ -92,6 +92,23 @@ test.describe('the band', () => {
   });
 });
 
+test.describe('the box arrives with the page', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test('after the thread_page response no request to rest/v1 is made before the words of the box are visible', async ({ page }) => {
+    /* Requests and responses in the order the browser saw them: the spun thread's own page is the last thread_page answer before the box shows. With the in-memory backend there is no request at all, so this holds trivially here; against Supabase (a request is a read the box made of its own) it is the assertion. */
+    const seen: { readonly kind: 'answer' | 'request'; readonly url: string }[] = [];
+    page.on('response', (r) => { if (r.url().includes('/rest/v1/rpc/thread_page')) seen.push({ kind: 'answer', url: r.url() }); });
+    page.on('request', (r) => { if (r.url().includes('/rest/v1/')) seen.push({ kind: 'request', url: r.url() }); });
+    await spunThread(page);
+    await expect(origin(page)).not.toContainText('Loading the origin');
+    await expect(origin(page).locator('.kb-origin-head ~ *').first()).toBeVisible();
+    const lastAnswer = seen.map((e) => e.kind).lastIndexOf('answer');
+    const after = lastAnswer < 0 ? [] : seen.slice(lastAnswer + 1).filter((e) => e.kind === 'request').map((e) => e.url);
+    expect(after, 'requests to rest/v1 after the page of the spun thread').toEqual([]);
+  });
+});
+
 test.describe('forced colors', () => {
   test.use({ viewport: { width: 1280, height: 900 }, forcedColors: 'active' });
 
