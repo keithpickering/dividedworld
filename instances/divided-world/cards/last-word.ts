@@ -4,6 +4,7 @@
  * used on a post that holds a card face down, since a back springs on a quote, and no card is set face down there while it is up.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const lastWord: CardRules<Record<string, never>> = {
   key: 'last-word',
@@ -17,3 +18,6 @@ export const lastWord: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(lastWord, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

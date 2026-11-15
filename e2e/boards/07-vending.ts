@@ -81,14 +81,16 @@ const manifest: BoardManifest = {
        its name and role still are, and they say which card stocks it. */
     { id: 'slot-a1', role: 'button', name: 'Buy Stick Around, 1.00 orb', buildName: 'Buy Stick Around, 1.00 orb, common Move', type: false, box: 'none' },
     { id: 'slot-a2', role: 'button', name: 'Buy Whoops!, 1.00 orb, selected', buildName: 'Buy Whoops!, 1.00 orb, common Move, selected', type: false, box: 'none' },
-    { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Card Collector, 1.50 orbs, uncommon Reversal', type: false, box: 'none' },
-    { id: 'slot-b2', role: 'img', name: 'Empty slot B2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Force Field, 1.50 orbs, uncommon Gimmick', type: false, box: 'none' },
-    { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Publicity Tour, 1.50 orbs, uncommon Gimmick', type: false, box: 'none' },
-    { id: 'slot-c2', role: 'img', name: 'Empty slot C2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Glitter Bomb, 1.50 orbs, uncommon Move', type: false, box: 'none' },
+    /* The machine is now computed by rule (docs/plans/2026-11-14-base-set-design.md, section 4.3): the Booster, then the commons by name, and every uncommon and rarer card hidden, which draws no slot.
+       So the build's slots after Stick Around and Whoops! are the commons Autocorrect, Below the Fold, Feelin' Fab and Hype-Up, held by name, and Whoops! stands at E1 where the board draws A2. */
+    { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Autocorrect, 1.00 orb, common Move', type: false, box: 'none' },
+    { id: 'slot-b2', role: 'img', name: 'Empty slot B2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Below the Fold, 1.00 orb, common Move', type: false, box: 'none' },
+    { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', buildRole: 'button', buildName: "Buy Feelin' Fab, 0.20 orbs, common Move", type: false, box: 'none' },
+    { id: 'slot-c2', role: 'img', name: 'Empty slot C2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Hype-Up, 1.00 orb, common Move', type: false, box: 'none' },
 
     /* The control panel: the price display, the buy button and the note under it. The display's lit words are the machine's
        printing (`data-kb-art`) and the text a reader gets is visually hidden, so its box is compared and its type is not. */
-    { id: 'price', role: 'status', name: 'Selected: A2, Whoops!, 1.00', type: false, box: 'across' },
+    { id: 'price', role: 'status', name: 'Selected: A2, Whoops!, 1.00', buildName: 'Selected: E1, Whoops!, 1.00', type: false, box: 'across' },
     { id: 'buy', role: 'button', name: 'Buy Whoops! · 1.00', box: 'across' },
     { id: 'price-note', role: 'text', name: 'Playing it on a long post costs up to 2.00 more, never more than 3.00 in all.', box: 'none' },
 

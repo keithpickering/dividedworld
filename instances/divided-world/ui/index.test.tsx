@@ -8,6 +8,7 @@ import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
 import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
+import { faceUpOnly, playOf, reachesOf } from '../../../engine/rules/cards.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
@@ -18,7 +19,7 @@ import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
-import { spanWords } from './cards.ts';
+import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearUi } from './cosmetics.ts';
 import { mooch } from '../cards/mooch.ts';
@@ -118,10 +119,16 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(t.describe).toMatch(/the one card it catches, from the cards cast on a post, uncommon or commoner/u);
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
-  test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', this: 'the quoting post', whodunnit: 'the quoting post', 'blind-study': 'the quoting post', overreaction: 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': 'the quoting post', 'main-event': "the quoting post's thread", 'feelin-glam': "the quoting post's thread" };
-    for (const [key, reach] of Object.entries(lands)) {
-      expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
+  /* Where a set card lands is its reach, said in the instance's own words for it: a post, that post's character, or that post's thread. */
+  const LANDS_ON: Readonly<Record<string, string>> = { post: 'the quoting post', character: "the quoting post's character", thread: "the quoting post's thread" };
+  const settable = instance.cards.filter((c) => playOf(c) === 'cast' && !faceUpOnly(c));
+  test('every card that can be set face down says so, landing at its own reach and no other', () => {
+    expect(settable.length, 'the rule checks a card').toBeGreaterThan(0);
+    for (const c of settable) {
+      expect(reachesOf(c), `${c.key} reaches one thing`).toHaveLength(1);
+      const reach = LANDS_ON[reachesOf(c)[0]!];
+      expect(reach, `${c.key}'s reach is one the rule has words for`).toBeDefined();
+      expect(face(c.key).describe, c.key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
     expect(face('autocorrect').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
     expect(face('this').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
@@ -320,6 +327,11 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       if (holdsNumber(said(key, economy))) expect(wordsRead[key]?.length ?? 0, `${key}: "${said(key, economy)}"`).toBeGreaterThan(0);
     }
   });
+  test('the screen entries are listed in key order, one for each card and none spare', () => {
+    const keys = cardsUi.map((c) => c.key);
+    expect(keys).toEqual([...keys].sort());
+    expect(keys).toEqual(instance.cards.map((c) => c.key));
+  });
   test('every card has a face and rules in plain words, true to the settings it is told', () => {
     expect(instanceUi.cards.map((c) => c.key).sort()).toEqual(instance.cards.map((c) => c.key).sort());
     for (const c of instance.cards) {
@@ -398,9 +410,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(laughTrack.alignment).toBe('pepperoni');
     expect(laughTrack.setPhrase!({ cues: [{ phrase: 'first one', sound: 'boo' }, { phrase: 'second', sound: 'cheer' }] })).toBe('first one');
     const at = instance.machine.findIndex((m) => 'card' in m.item && m.item.card === 'laugh-track');
-    expect(instance.machine[at]).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
-    // Laugh Track was the last on-sale slot; card notes Part 3's Overreaction and Blind Study follow it, then card notes Part 5's Happy Heart and Take the Fall, and nothing else on sale does.
-    expect(instance.machine.slice(at + 1).filter((m) => m.availability === 'onSale').map((m) => ('card' in m.item ? m.item.card : 'pack'))).toEqual(['overreaction', 'blind-study', 'happy-heart', 'take-the-fall']);
+    expect(instance.machine[at]).toEqual({ item: { card: 'laugh-track' }, availability: 'hidden', price: 150 });
+    // The machine's rule (machine.test.ts) hides every uncommon, so Laugh Track is not drawn: the commons are the only cards on sale.
+    expect(instance.machine.filter((m) => 'card' in m.item && m.availability === 'onSale').every((m) => instance.cards.find((c) => c.key === (m.item as { card: string }).card)!.rarity === 'common')).toBe(true);
   });
   test('THIS has its face, its words and its handwriting, each the plan\'s, and its numbers are the rules\'', () => {
     const ui = instanceUi.cards.find((c) => c.key === 'this')!;
@@ -497,20 +509,6 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.logSave!({ peeled: [], stuck: { '1': one, '2': one } })).toEqual({ what: 'Strips peeled', said: 'You started peeling 2 of its strips.' });
     expect(ac.logSave!({ peeled: [0, 2], stuck: {} })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
     expect(ac.logSave!({ peeled: [], stuck: {} })).toBeUndefined();
-  });
-  /* The card that writes, in the log (the design's section 13): the caster's length, the author's clear, and what it did to the author's post. */
-  test('You Were Saying? says the length its play recorded, the author\'s clear as theirs, and what it did in its own words', () => {
-    const ywsCard = instanceUi.cards.find((c) => c.key === 'you-were-saying')!;
-    /* The line is the recorded number, whatever the configuration or the economy now say; a play with no record says nothing of a length. */
-    expect(ywsCard.logPlay!({ steps: 0 }, { tokens: 100 })).toBe('It was played for 100 tokens.');
-    expect(ywsCard.logPlay!({ steps: 3 }, { tokens: 1 })).toBe('It was played for 1 token.');
-    expect(ywsCard.logPlay!({ steps: 99 }, { tokens: 400 })).toBe('It was played for 400 tokens.');
-    expect(ywsCard.logPlay!({ steps: 1 }, {})).toBeUndefined();
-    expect(ywsCard.logSave!({ cleared: 'v1' })).toEqual({ what: 'Tail erased', verb: 'erased' });
-    expect(ywsCard.logSave!({})).toBeUndefined();
-    expect(ywsCard.logWritten!.continued).toBe('continued it');
-    expect(ywsCard.logWritten!.again('You Were Saying?')).toBe('made its You Were Saying? again');
-    expect(ywsCard.logWritten!.failed).toBe('didn\'t take');
   });
   test('the three lines of the author and the caster\'s length are said whole, from the instance\'s own words', () => {
     const at = '2026-11-09T10:00:00.000Z';

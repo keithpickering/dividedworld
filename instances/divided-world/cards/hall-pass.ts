@@ -4,6 +4,7 @@
  * back shows on the post like any other, so a reader cannot tell it from a Card Collector.
  */
 import { ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const hallPass: CardRules<Record<string, never>> = {
   key: 'hall-pass',
@@ -16,3 +17,6 @@ export const hallPass: CardRules<Record<string, never>> = {
   canApply: () => ok(undefined),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

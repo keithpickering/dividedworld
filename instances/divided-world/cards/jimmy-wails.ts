@@ -11,6 +11,7 @@
  *   banners never keep a fourth from opening another.
  */
 import { landsOn, openDrive, refuse, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 /** The plate keys, which ui/jimmy-wails/plates.ts draws; a test holds the two lists together (the card module takes no `?url` import, since node loads it). */
 const PLATE_KEYS = ['blue-shirt', 'close-up', 'dark-logo', 'black-shirt', 'gray-jacket', 'looking-away', 'red-wall', 'full-length', 'pinstripe'] as const;
@@ -47,3 +48,6 @@ export const jimmyWails: CardRules<Record<string, never>> = {
     return empty ? ok({}) : refuse('Jimmy Wails has nothing to set');
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 200;

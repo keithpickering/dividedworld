@@ -4,6 +4,7 @@
  * the warn bar is not touched. It is over the moment it lands, and refused on a character that is not banned. A banned character plays no card, so another character plays it.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const ultraHappyHeart: CardRules<Record<string, never>> = {
   key: 'ultra-happy-heart',
@@ -16,3 +17,6 @@ export const ultraHappyHeart: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(ultraHappyHeart, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 600;

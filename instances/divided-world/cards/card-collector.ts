@@ -9,6 +9,7 @@
  * - **Its staff options** give a persona the card as an enum of the instance's cards cast on a post, which `cards/index.ts` builds once the list exists.
  */
 import { ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export type CardCollectorConfig = { readonly card: string };
 
@@ -31,3 +32,6 @@ export const cardCollector: CardRules<CardCollectorConfig> = {
     return ok({ card });
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

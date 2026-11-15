@@ -6,7 +6,7 @@
  */
 import { landsOn, type CardRules } from '../../../engine/rules/cards.ts';
 import { localReaction } from '../../../engine/rules/emoji.ts';
-import type { Quadrant } from '../../../engine/rules/types.ts';
+import type { Quadrant, Hundredths } from '../../../engine/rules/types.ts';
 import { reactions } from '../reactions.ts';
 
 export const overreaction: CardRules<{ emoji: string; quadrant: Quadrant }> = {
@@ -20,3 +20,6 @@ export const overreaction: CardRules<{ emoji: string; quadrant: Quadrant }> = {
   canApply: (target, effects, _config, now) => landsOn(overreaction, target, effects, now),
   validateConfig: (config) => localReaction(config, reactions),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 100;

@@ -10,6 +10,7 @@
  */
 import { landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import { classes } from '../classes/index.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export type OffDayConfig = { readonly class: string };
 
@@ -29,3 +30,6 @@ export const offDay: CardRules<OffDayConfig> = {
     return typeof named === 'string' && classes.some((c) => c.key === named) ? ok({ class: named }) : refuse('choose the class to name');
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 500;

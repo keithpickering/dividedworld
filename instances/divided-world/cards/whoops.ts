@@ -22,6 +22,7 @@
 import { decodePoints, encodePoints } from './whoops/points.ts';
 import type { Drops } from './whoops/scrub.ts';
 import { color, economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const STROKES = { most: 200, points: 500, totalPoints: 40_000, widest: 1, deepest: 1 } as const;
 const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
@@ -98,3 +99,6 @@ export const whoops: CardRules<{ color: string }> = {
     return ok(clean === undefined ? { strokes: out } : { strokes: out, clean });
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 100;

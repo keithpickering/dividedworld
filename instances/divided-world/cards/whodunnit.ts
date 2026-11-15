@@ -5,6 +5,7 @@
  * its price at the machine (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 9).
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const whodunnit: CardRules<Record<string, never>> = {
   key: 'whodunnit',
@@ -17,3 +18,6 @@ export const whodunnit: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(whodunnit, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 300;

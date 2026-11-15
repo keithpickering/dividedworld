@@ -3,6 +3,7 @@
  * by itself (the card types design).
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const goodVibes: CardRules<Record<string, never>> = {
   key: 'good-vibes',
@@ -17,3 +18,6 @@ export const goodVibes: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(goodVibes, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

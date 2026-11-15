@@ -6,6 +6,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import { HYPE, PUBLICITY_LASTS } from './publicity.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const hypeUp: CardRules<Record<string, never>> = {
   key: 'hype-up',
@@ -19,3 +20,6 @@ export const hypeUp: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(hypeUp, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 100;

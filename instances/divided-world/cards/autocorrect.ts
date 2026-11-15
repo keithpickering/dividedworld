@@ -26,6 +26,7 @@
 import { economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import { occurrences, sameWords } from './autocorrect/match.ts';
 import { LINE_BREAK, boundedPhrase, characters } from './phrase-bound.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const REPLACEMENT = { most: 100 } as const;
 /**
@@ -130,3 +131,6 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     return ok({ peeled: kept, ...(clean === undefined ? {} : { clean }), ...(keptStuck ? { stuck: keptStuck } : {}) });
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 100;

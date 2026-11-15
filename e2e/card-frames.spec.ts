@@ -1,13 +1,30 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /**
  * A card's type is said by its frame, and every type's frame has one outline (docs/plans/2026-11-12-card-frame-outline.md): a Cast's
  * solid ring, a Set's double ring and a Use's dashed ring all end on the same outer edge, with the same corner, so three cards of one
- * size side by side are one size to the eye. Read in the browser from what is drawn, on the Vending Machine's moment, whose slots hold every type:
+ * size side by side are one size to the eye. Read in the browser from what is drawn, on the Vending Machine (the demo world's, with a Reversal and a Gimmick put on sale, since the machine's rule sells commons only), whose slots hold every type:
  * each card's outermost line (its own ring, or its ::before's border or ring), how far that line reaches past the card's box, and
  * the radius of that line's outer corner. What makes each type its own is inside that edge: a Use's line is dashed and it has no
  * solid ring, and a Set's second line is inside the card's box.
  */
+/**
+ * The machine of the demo world, with a Reversal and a Gimmick put on sale: the machine's rule (docs/plans/2026-11-14-base-set-design.md, section 4.3)
+ * sells the commons only, and none is a Set or a Use yet, so this stocks Hall Pass and Force Field the way an admin can, to have a card of every type to read.
+ */
+async function openMachine(page: Page): Promise<void> {
+  await page.goto('/b/general');
+  await page.waitForFunction(() => '__kbFake' in globalThis);
+  /* Stocked before the machine page loads its slots, then reached in the app, so it reads them as seeded. */
+  await page.evaluate(() => {
+    const fake = (globalThis as unknown as { __kbFake: { seed: { slot(item: { card: string }, change: { availability: 'onSale' }): void } } }).__kbFake;
+    for (const card of ['hall-pass', 'force-field']) fake.seed.slot({ card }, { availability: 'onSale' });
+    history.pushState(null, '', '/vending');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page.locator(".kb-postcard[data-kb-play='use']").first()).toBeVisible({ timeout: 10_000 });
+}
+
 test.use({ bypassCSP: true, viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
 
 interface Frame {
@@ -27,7 +44,7 @@ interface Frame {
 }
 
 test('every card type has the same outline at a size, and its own line inside it', async ({ page }) => {
-  await page.goto('/?fixture=boards&moment=07-vending');
+  await openMachine(page);
   await expect(page.locator('.kb-postcard[data-kb-play]').first()).toBeVisible({ timeout: 10_000 });
 
   const frames = await page.locator('.kb-postcard[data-kb-play]').evaluateAll((cards): Frame[] => {
@@ -97,7 +114,7 @@ test.describe('under forced colors', () => {
 
   /* Shadows are dropped there, so a Set's second line is a border: it stays where the shadow drew it, inside the card's border and clear of the canvas. */
   test('a Set\'s second line stays on the card\'s border', async ({ page }) => {
-    await page.goto('/?fixture=boards&moment=07-vending');
+    await openMachine(page);
     const set = page.locator(".kb-postcard[data-kb-play='set']").first();
     await expect(set).toBeVisible({ timeout: 10_000 });
     const line = await set.evaluate((card) => {
@@ -156,7 +173,7 @@ function drawn(card: Element): Drawn {
 }
 
 test('an armed card keeps its type\'s frame: the outline\'s width, and a Use still dashed with no solid ring under it', async ({ page }) => {
-  await page.goto('/?fixture=boards&moment=07-vending');
+  await openMachine(page);
   await expect(page.locator('.kb-postcard[data-kb-play]').first()).toBeVisible({ timeout: 10_000 });
   const read = async (play: string, armed: boolean) => page.locator(`.kb-postcard[data-kb-play='${play}']`).first().evaluate((card, [fn, on]) => {
     if (on) card.setAttribute('data-armed', ''); else card.removeAttribute('data-armed');
@@ -177,7 +194,7 @@ test('an armed card keeps its type\'s frame: the outline\'s width, and a Use sti
 });
 
 test('a hit pull turns the ring gold and nothing else of the frame: a Set\'s second line keeps the card\'s color, a Use\'s dashes are its ring', async ({ page }) => {
-  await page.goto('/?fixture=boards&moment=07-vending');
+  await openMachine(page);
   await expect(page.locator('.kb-postcard[data-kb-play]').first()).toBeVisible({ timeout: 10_000 });
   const read = async (play: string) => page.locator(`.kb-postcard[data-kb-play='${play}']`).first().evaluate((card, fn) => {
     /* The reveal's spot around a sheet-size copy of the card, inside the glass so its tokens resolve; removed once read. */
