@@ -10,7 +10,7 @@ import { act, cleanup } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { useState } from 'react';
+import { StrictMode, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
@@ -89,6 +89,10 @@ class FakeResize {
   disconnect() { this.entry.watching.clear(); }
 }
 let size = { h: 200 };
+/** The content area's width: 300 unless a test narrows the post. */
+let areaWidth = 300;
+/** Whether the words wrapper's client rect is moved 4 px by the hit's shake (a transform moves `getBoundingClientRect` and not `offsetLeft`). */
+let shaking = false;
 /** Whether the content area is `size.h` tall plus the 28 px of room while the effect's host is in it (what the CSS does), or `size.h` always. */
 let roomAdds = false;
 /** The boxes a `Range` over a text node reports (jsdom has no `getClientRects`), in the window's px, or none. A range over an element reports that element's border box too, as a browser does (the wrapper's, 280 wide), which is not where the text is. */
@@ -113,8 +117,23 @@ function Host({ o }: { o: Options }) {
 }
 const mount = (o: Options = {}) => renderInWorld(<Host o={o} />);
 const lastView = (): CardView => made.show.mock.calls.filter((c) => c[0] !== null).at(-1)![0]!;
-const css = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'steel-chair.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
-const ruleOf = (selector: string) => [...css.matchAll(/([^{}]+)\{([^}]*)\}/gu)].filter(([, sel]) => sel!.split(',').some((x) => x.trim() === selector)).map(([, , body]) => body).join(';');
+const sheet = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'steel-chair.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+/** The text inside the braces of the first at-rule that starts with `head`, or null (braces matched, so nested rules are inside it), and the sheet with that at-rule taken out. */
+function atRule(source: string, head: string): { inner: string | null; rest: string } {
+  const at = source.indexOf(head);
+  if (at < 0) return { inner: null, rest: source };
+  const open = source.indexOf('{', at);
+  let depth = 0, end = open;
+  for (; end < source.length; end++) { if (source[end] === '{') depth++; else if (source[end] === '}' && --depth === 0) break; }
+  return { inner: source.slice(open + 1, end), rest: source.slice(0, at) + source.slice(end + 1) };
+}
+const SUPPORTS_HAS = '@supports selector(:has(a))';
+const guarded = atRule(sheet, SUPPORTS_HAS);
+const rulesOf = (source: string, selector: string) => [...source.matchAll(/([^{}]+)\{([^}]*)\}/gu)].filter(([, sel]) => sel!.split(',').some((x) => x.trim() === selector)).map(([, , body]) => body).join(';');
+/** The rules outside the `@supports` block. */
+const ruleOf = (selector: string) => rulesOf(guarded.rest, selector);
+/** The rules that only apply where `:has()` does. */
+const ruleWithHas = (selector: string) => rulesOf(guarded.inner ?? '', selector);
 
 const rect = (left: number, top: number, width: number, height: number) => ({ x: left, y: top, left, top, right: left + width, bottom: top + height, width, height, toJSON: () => ({}) });
 const areaHeight = (el: Element) => size.h + (roomAdds && el.querySelector('.dw-chair') ? ROOM : 0);
@@ -168,15 +187,17 @@ function expectOnFloor(group: HTMLElement, floor: number): void {
 /** A seed for which sc1 and sc3 lie on the floor and not on sc2 (seed 4, for one, lands a chair on sc2: it falls when sc2 goes). */
 const PINNED_SEED = 2;
 let seeds = 0;
+/** The seed the nth unpinned run gets. */
+const seedAt = (n: number) => Math.imul(n, 2654435761) >>> 0;
 let pinned: number | null = null;
 const pin = (seed: number | null) => { pinned = seed; };
 
 beforeEach(() => {
   vi.useFakeTimers();
-  queue = new Map(); nextFrame = 1; requested = 0; clock = 0; watching.length = 0; sized.length = 0; size = { h: 200 }; roomAdds = false; textRects = null; seeds = 0; pinned = null; hub.steps = 0; hub.world = null;
+  queue = new Map(); nextFrame = 1; requested = 0; clock = 0; watching.length = 0; sized.length = 0; size = { h: 200 }; areaWidth = 300; shaking = false; roomAdds = false; textRects = null; seeds = 0; pinned = null; hub.steps = 0; hub.world = null;
   const realRandom = crypto.getRandomValues.bind(crypto);
   vi.spyOn(crypto, 'getRandomValues').mockImplementation(((a: ArrayBufferView) => {
-    if (a instanceof Uint32Array && a.length === 1) { a[0] = pinned ?? (Math.imul(++seeds, 2654435761) >>> 0); return a; }
+    if (a instanceof Uint32Array && a.length === 1) { a[0] = pinned ?? seedAt(++seeds); return a; }
     return realRandom(a as Uint8Array);
   }) as typeof crypto.getRandomValues);
   (Range.prototype as unknown as { getClientRects: (this: Range) => unknown }).getClientRects = function (this: Range) {
@@ -188,12 +209,18 @@ beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', FakeIntersection);
   vi.stubGlobal('ResizeObserver', FakeResize);
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
-    if (this.classList.contains('kb-act-main')) return rect(0, 0, 300, areaHeight(this));
+    if (this.classList.contains('kb-act-main')) return rect(0, 0, areaWidth, areaHeight(this));
     if (this.classList.contains('dw-chair')) return rect(10, 8, 280, size.h - 16);
-    if (this.classList.contains('dw-chair-words')) return rect(10, 8, 280, size.h - 16 - 28);
+    if (this.classList.contains('dw-chair-words')) return shaking ? rect(14, 7, 280, size.h - 16 - 28) : rect(10, 8, 280, size.h - 16 - 28);
     return rect(0, 0, 0, 0);
   });
-  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 300 : 0; });
+  /* The words wrapper's layout box inside its offset parent (the host), which a transform does not move: where the host's box is 10 and 8 in from the content area. */
+  const layoutBox = (el: HTMLElement) => (el.classList.contains('dw-chair-words') ? { left: 0, top: 0, width: 280, height: size.h - 16 - 28 } : { left: 0, top: 0, width: 0, height: 0 });
+  vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).left; });
+  vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).top; });
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).width; });
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).height; });
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? areaWidth : 0; });
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? areaHeight(this) : 0; });
   document.documentElement.setAttribute('data-kb-motion', 'full');
   hub.trusted = true;
@@ -232,13 +259,19 @@ describe('which plays, and what is drawn', () => {
   /* The room is "room inside the content area above its bottom border": the reactions row, the signature and the spun line come after the
      effect's host in `.kb-act-main`, so a strip under the words is nowhere near the floor. The room is the content area's own last 28 px. */
   test('inside a content area the room is its last 28 px, added by a static rule while the effect has a live play', () => {
-    expect(ruleOf('.kb-act-main:has(.dw-chair)::after')).toMatch(/content:\s*''/u);
-    expect(ruleOf('.kb-act-main:has(.dw-chair)::after')).toMatch(/display:\s*block/u);
-    expect(ruleOf('.kb-act-main:has(.dw-chair)::after')).toMatch(/height:\s*28px/u);
+    /* Both rules sit inside `@supports selector(:has(a))`: a browser without `:has()` never applies the `::after`, so it must not hide the strip in the host either. */
+    expect(guarded.inner, 'the :has() rules are inside an @supports block').not.toBeNull();
+    expect(ruleOf('.kb-act-main:has(.dw-chair)::after'), 'the ::after is not outside the @supports block').toBe('');
+    expect(ruleOf('.kb-act-main .dw-chair-room'), 'hiding the strip is not outside the @supports block').toBe('');
+    expect(ruleWithHas('.kb-act-main:has(.dw-chair)::after')).toMatch(/content:\s*''/u);
+    expect(ruleWithHas('.kb-act-main:has(.dw-chair)::after')).toMatch(/display:\s*block/u);
+    expect(ruleWithHas('.kb-act-main:has(.dw-chair)::after')).toMatch(/height:\s*28px/u);
     mount();
     /* `.dw-chair` is in the page only while a play is live: the rule's condition. The strip inside the host is hidden where there is a content area. */
     expect(host()).not.toBeNull();
-    expect(ruleOf('.kb-act-main .dw-chair-room')).toMatch(/display:\s*none/u);
+    expect(ruleWithHas('.kb-act-main .dw-chair-room')).toMatch(/display:\s*none/u);
+    /* The strip itself is a plain rule, so without `:has()` it stays, 28 px, in the host. */
+    expect(ruleOf('.dw-chair-room')).toMatch(/height:\s*28px/u);
     cleanup();
     mount({ plays: [play(1, '2000-01-01T00:00:00Z')] });
     expect(host()).toBeNull();
@@ -426,6 +459,75 @@ describe('the layers and the world fill the content area', () => {
   });
 });
 
+describe('what a re-arm and a reflow leave behind', () => {
+  /* The run's effect re-arms when reduced motion, the place or the moment changes. Its cleanup used to keep the drawn chairs and dents (clearing
+     only the run's own state), and the reduced path skips a play that already has a dent, so the old dent stayed where it was while the new chair
+     was aimed elsewhere. */
+  test("turning reduced motion on while a run stands re-arms with no ghosts: one dent per live play, at the new run's hit", async () => {
+    mount({ plays: [play(1), play(2)] });
+    run();
+    const before = dentAt();
+    expect(before).toHaveLength(2);
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    await act(async () => { await Promise.resolve(); });
+    /* The old chairs and dents are gone with the run that drew them, and nothing is drawn until the post's middle is seen again. */
+    expect(groups()).toHaveLength(0);
+    expect(dents()).toHaveLength(0);
+    aim(true);
+    expect(groups()).toHaveLength(2);
+    expect(dents(), 'exactly one dent per live play').toHaveLength(2);
+    const after = dentAt();
+    expect(after).not.toEqual(before);
+    /* The same seed in a fresh reduced mount draws the same hits: the dents are where this run's chairs were aimed. */
+    cleanup();
+    pin(seedAt(2));
+    mount({ plays: [play(1), play(2)] });
+    see(true); aim(true);
+    expect(dentAt()).toEqual(after);
+  });
+
+  /* A transform (the hit's 4 px shake) moves getBoundingClientRect but not the layout box, so a size callback that fires mid-shake must not
+     read the shake as a new place for the words, store it, and wake the world. */
+  test("a size callback mid-shake measures the words' layout, not their shaken box: nothing moves and no frame is asked for", () => {
+    mount();
+    run();
+    expect(wordsEl()).toHaveAttribute('data-shake');
+    const asked = requested;
+    const filterBefore = document.querySelector('filter')!.getAttribute('x');
+    shaking = true;
+    act(() => { for (const r of sized) r.cb(); });
+    expect(requested, 'frames asked for after a callback that changed nothing').toBe(asked);
+    expect(queue.size).toBe(0);
+    expect(document.querySelector('filter')!.getAttribute('x')).toBe(filterBefore);
+  });
+
+  /* A dent keeps its px in the content area; after the post narrows, the shading (an overflow-visible layer) of one that no longer fits would
+     poke out of the post. The dent is decoration: it goes, and its play and chair are unchanged. */
+  test('a dent that no longer fits the narrowed post is dropped, and its chair and play stay', () => {
+    pin(PINNED_SEED);
+    mount({ plays: [play(1), play(2)] });
+    run();
+    expect(dents()).toHaveLength(2);
+    const centers = dents().map((d) => parseFloat(d.style.left) + parseFloat(d.style.width) / 2);
+    const radius = parseFloat(dents()[0]!.style.width) / 2;
+    /* The post narrows until the right edge of the box cuts the farther dent's circle, and not the nearer one's. */
+    const farther = Math.max(...centers), nearer = Math.min(...centers);
+    expect(farther - nearer, 'the seed puts the two dents apart').toBeGreaterThan(2);
+    areaWidth = Math.ceil((farther + nearer) / 2 + radius);
+    expect(nearer + radius).toBeLessThanOrEqual(areaWidth);
+    expect(farther + radius).toBeGreaterThan(areaWidth);
+    const chairsBefore = groups().map((g) => g.dataset.play).sort();
+    act(() => { for (const r of sized) r.cb(); });
+    rest(400);
+    const left = dents().map((d) => [parseFloat(d.style.left), parseFloat(d.style.width)] as const);
+    expect(left, 'only the dent that no longer fits is gone').toHaveLength(1);
+    for (const [x, w] of left) expect(x + w, 'the remaining dent lies inside the post').toBeLessThanOrEqual(areaWidth + 0.01);
+    expect(groups().map((g) => g.dataset.play).sort()).toEqual(chairsBefore);
+    expect(lastView().state).toBe('Dented by 2 chairs');
+    expect(document.querySelector('filter')!.querySelectorAll('feImage')).toHaveLength(1);
+  });
+});
+
 describe('when a run starts and ends', () => {
   test('a run starts only after the post\'s middle has been in view for 300 ms, and not if it leaves first', () => {
     mount();
@@ -483,16 +585,37 @@ describe('when a run starts and ends', () => {
     expect(watching.filter((o) => o.seen.size > 0)[0]!.opts?.rootMargin).toBe('-20% 0px -20% 0px');
   });
 
-  test('unmounting stops everything: observers, frames and timers of the run', () => {
-    const w = mount({ plays: [play(1), play(2)] });
+  /* The second chair's throw waits 350 ms on a timer. Its callback ignores a stopped run, so only the timer count (and not what the page then
+     does) tells whether the timer was cleared. */
+  test('unmounting stops everything: observers, frames and timers of the run, and nothing is requested or heard afterward', () => {
+    const w = mount({ plays: [play(1), play(2), play(3)] });
     see(true); arm();
     frame();
+    expect(vi.getTimerCount(), 'the staggered throws are waiting on timers').toBeGreaterThan(0);
     w.unmount();
     expect(watched()).toBe(0);
     expect(sized.every((r) => r.watching.size === 0)).toBe(true);
     expect(queue.size).toBe(0);
-    act(() => { vi.advanceTimersByTime(5000); });
-    expect(queue.size).toBe(0);
+    expect(vi.getTimerCount(), 'timers left after unmount').toBe(0);
+    const asked = requested;
+    hub.sound.play.mockClear();
+    act(() => { vi.advanceTimersByTime(5000); drain(); });
+    expect(requested, 'frames requested after unmount').toBe(asked);
+    expect(hub.sound.play).not.toHaveBeenCalled();
+    expect(document.querySelector('.dw-chair')).toBeNull();
+  });
+
+  test('under StrictMode (effects run, are cleaned up and run again) there is still one run: one chair, one hit sound, one met', () => {
+    pin(PINNED_SEED);
+    renderInWorld(<StrictMode><Host o={{ plays: [play(1), play(2), play(3)] }} /></StrictMode>);
+    run();
+    expect(groups()).toHaveLength(3);
+    expect(dents()).toHaveLength(3);
+    const keys = (hub.sound.play.mock.calls as unknown as [string][]).map((c) => c[0]);
+    expect(keys.filter((k) => k === 'steel-chair.hit'), 'one hit sound per chair').toHaveLength(3);
+    expect(keys.filter((k) => k.startsWith('steel-chair.settle-')), 'one settle sound per chair').toHaveLength(3);
+    expect(made.met).toHaveBeenCalledTimes(1);
+    expect(watched(), 'one arming and one leaving observer, not a pair left by the first effect').toBe(2);
   });
 
   /* body.ts's step costs from 0.02 ms to 0.12 ms and the caller must cap the steps it runs in a frame: a background tab coming back must
@@ -573,8 +696,10 @@ describe('reduced motion', () => {
   test('no frame is asked for, no flight and no shake: the dents and resting chairs are drawn at once, and no sound plays', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     mount({ plays: [play(1), play(2)] });
+    const timers = vi.getTimerCount();
     see(true); aim(true);
-    act(() => { vi.advanceTimersByTime(300); });
+    /* No timer is advanced: reduced motion has no wait, so the picture is there the moment the post's middle is in view. */
+    expect(vi.getTimerCount(), 'no arming wait was started').toBe(timers);
     expect(requested).toBe(0);
     expect(groups()).toHaveLength(2);
     expect(dents()).toHaveLength(2);
@@ -652,6 +777,25 @@ describe('the filter', () => {
     expect(filter.querySelector('feFlood')!.getAttribute('flood-color')).toBe('rgb(128,128,128)');
     expect(filter.querySelectorAll('feImage')).toHaveLength(2);
     expect(document.querySelector('svg')!).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  /* Without a region the filter gets the default (-10% and 120% of the wrapper's box), and a displacement of up to DENT_SCALE / 2 px moves the
+     glyphs of a one-line post outside it, clipping them above and below. The region is the wrapper's box plus DENT_SCALE on every side, in the
+     wrapper's own px (the same units the primitives use). */
+  test("the filter's region is the words wrapper's box plus DENT_SCALE on every side, in user space, so no displaced glyph is clipped", () => {
+    mount({ plays: [play(1)] });
+    run();
+    const filter = document.querySelector('filter')!;
+    expect(filter.getAttribute('filterUnits')).toBe('userSpaceOnUse');
+    expect(Number(filter.getAttribute('x'))).toBe(-18);
+    expect(Number(filter.getAttribute('y'))).toBe(-18);
+    /* The wrapper is 280 wide and size.h - 16 - 28 tall in the stub. */
+    expect(Number(filter.getAttribute('width'))).toBe(280 + 36);
+    expect(Number(filter.getAttribute('height'))).toBe(200 - 16 - 28 + 36);
+    /* The region follows the wrapper when it is resized. */
+    size = { h: 260 };
+    act(() => { for (const r of sized) r.cb(); });
+    expect(Number(filter.getAttribute('height'))).toBe(260 - 16 - 28 + 36);
   });
 
   /* Each dent's map is an opaque square, neutral outside its circle; merged with source-over a later square overwrote the part of an earlier ring

@@ -35,20 +35,26 @@
  * nowhere near the floor. So while a play is live (`.dw-chair` is in the page only then) the content area itself gains 28 px at its very end,
  * above its bottom padding: a block `::after` is the last child of a block container, and `.kb-act-main` lays its children out as blocks
  * (engine/ui/thread/thread.css). It is static: nothing measures or sets it, and the effect's resize observer sees the area grow.
+ *
+ * Both rules that depend on `:has()` are inside one `@supports selector(:has(a))`: a browser without it (older Firefox and Safari) never
+ * applies the `::after`, so it must not hide the host's strip either, or there would be no room at all. There the chairs rest in the strip
+ * under the words, as they do outside a content area, and a post's last lines stay clear of them.
  */
-.kb-act-main:has(.dw-chair)::after {
-  content: '';
-  display: block;
-  height: 28px;
-  pointer-events: none;
+@supports selector(:has(a)) {
+  .kb-act-main:has(.dw-chair)::after {
+    content: '';
+    display: block;
+    height: 28px;
+    pointer-events: none;
+  }
+  .kb-act-main .dw-chair-room {
+    display: none;
+  }
 }
-/* Where there is no content area (a moment or a preview outside a thread; the world is the host's own box) the room is a strip in the host. */
+/* Where there is no content area (a moment or a preview outside a thread; the world is the host's own box), or `:has()` is not understood, the room is a strip in the host. */
 .dw-chair-room {
   height: 28px;
   pointer-events: none;
-}
-.kb-act-main .dw-chair-room {
-  display: none;
 }
 
 /* The chairs' layer and the dents' shading layer each fill the content area, placed by `placeLayer` and marked `data-kb-effect-ink`
