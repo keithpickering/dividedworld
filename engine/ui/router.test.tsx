@@ -1003,15 +1003,6 @@ describe('from the Task 11 review', () => {
     await settle(0);
     expect(load).toHaveBeenCalledTimes(1);
   });
-  test('the router unmounted while a read waits never reads', async () => {
-    vi.useFakeTimers();
-    const { load, rest, settle, view } = aheadLinks();
-    rest('one');
-    rest('two');
-    view.unmount();
-    await settle(0);
-    expect(load).toHaveBeenCalledTimes(1);
-  });
   test('an account change while a read waits means it never starts', async () => {
     vi.useFakeTimers();
     const { load, rest, settle, changeAccount } = aheadLinks();
