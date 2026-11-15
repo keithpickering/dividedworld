@@ -17,11 +17,12 @@
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as checkModule from './check-data-api.mjs';
 
-const { validateDeclared, problems, patchBody, isRetryable, retrying, run } = checkModule;
+const { validateDeclared, problems, patchBody, isRetryable, retrying, run, main } = checkModule;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, 'check-data-api.mjs');
@@ -80,7 +81,9 @@ refused('5g. a non-object is refused', [2, 60]);
 
 /* ----------------------------------------------------------------------- the command ---- */
 
+/** @param {string[]} argv @param {Record<string, string>} [env] */
 function cli(argv, env = {}) {
+  /** @type {Record<string, string | undefined>} */
   const e = { ...process.env, ...env };
   if (!('SUPABASE_ACCESS_TOKEN' in env)) delete e.SUPABASE_ACCESS_TOKEN;
   return spawnSync(process.execPath, [script, ...argv], { encoding: 'utf8', timeout: 10_000, env: e });
@@ -110,9 +113,10 @@ check('8b. 400, 401, 403 and 404 are not', [400, 401, 403, 404].every((s) => !is
 const noSleep = async () => {};
 
 /** A fake fetch answering from a script of [status, body] steps; it records each request. */
+/** @param {any[]} steps */
 function fakeFetch(steps) {
   const calls = [];
-  const f = async (url, init = {}) => {
+  const f = async (url, init = /** @type {any} */ ({})) => {
     calls.push({ url, method: init.method ?? 'GET', body: init.body, auth: init.headers?.Authorization });
     const step = steps[Math.min(calls.length - 1, steps.length - 1)];
     if (step instanceof Error) throw step;
@@ -123,7 +127,7 @@ function fakeFetch(steps) {
   return f;
 }
 const config = (pool, idle) => [200, { db_pool: pool, db_pool_max_idletime: idle }];
-const go = (fetch, opts = {}) => run({ project: 'abcdefghij', declared, set: false, token: TOKEN, fetch, sleep: noSleep, ...opts });
+const go = (fetch, opts = {}) => run({ project: 'abcdefghij', declared, set: false, token: TOKEN, ...opts }, { fetch, sleep: noSleep });
 
 {
   const f = fakeFetch([[500, { message: 'oops' }], config(2, 60)]);
@@ -155,7 +159,7 @@ for (const status of [400, 401, 403, 404]) {
 {
   let calls = 0;
   let err = null;
-  try { await retrying(() => { calls++; if (calls > 5) throw new Error('past the cap'); const e = new Error('x'); e.status = 502; throw e; }, { sleep: noSleep }); } catch (e) { err = e; }
+  try { await retrying(() => { calls++; if (calls > 5) throw new Error('past the cap'); throw Object.assign(new Error('x'), { status: 502 }); }, { sleep: noSleep }); } catch (e) { err = e; }
   check('9f. the retry stops at three attempts', calls === 3 && !/past the cap/.test(err?.message), `${calls}`);
 }
 
@@ -194,6 +198,69 @@ for (const status of [400, 401, 403, 404]) {
   const f = fakeFetch([config(5, 60)]);
   const r = await go(f);
   check('11b. the lines a run reports never hold the token and name the project and both values', !r.log.join('\n').includes(TOKEN) && r.log.join('\n').includes('abcdefghij') && /5/.test(r.log.join('\n')) && /60/.test(r.log.join('\n')), r.log.join('|'));
+}
+
+/* ----------------------------------------------------------------------- the answer's shape ---- */
+
+for (const [name, answer] of [['null', null], ['a string', 'ok'], ['an array', []], ['missing db_pool', { db_pool_max_idletime: 60 }], ['missing db_pool_max_idletime', { db_pool: 2 }]]) {
+  const f = fakeFetch([[200, answer]]);
+  let err = null;
+  try { await go(f, { declared: { pool: null, idleSeconds: null } }); } catch (e) { err = e; }
+  check(`12. an answer that is ${name} is an error naming the answer, not a pass`, err instanceof Error && /answer/.test(err.message) && !(err instanceof TypeError), String(err));
+}
+{
+  const f = fakeFetch([[200, { db_pool: 2, db_pool_max_idletime: 60, extra: TOKEN }]]);
+  let err = null;
+  try { await go(f, { declared: { pool: null, idleSeconds: null } }); } catch (e) { err = e; }
+  check('12b. a null in the answer is a value, not a missing field', err === null, String(err));
+  const g = fakeFetch([[200, { db_pool: null, db_pool_max_idletime: null }]]);
+  const r = await go(g, { declared: { pool: null, idleSeconds: null } });
+  check('12c. null for both against null declared is no problem', r.problems.length === 0);
+}
+
+/* ----------------------------------------------------------------------- main, driven ---- */
+
+/** Runs main with a fake API and collects what it printed. */
+/** @param {string[]} argv @param {any[]} steps @param {Record<string, string | undefined>} [env] */
+async function drive(argv, steps, env = { SUPABASE_ACCESS_TOKEN: TOKEN }) {
+  const out = [];
+  const err = [];
+  const f = fakeFetch(steps);
+  const code = await main(argv, env, { fetch: f, sleep: noSleep, out: (l) => out.push(l), err: (l) => err.push(l) });
+  return { code, text: [...out, ...err].join('\n'), f };
+}
+const args = ['--project', 'abcdefghij', '--declared', goodFile];
+{
+  const d = await drive(args, [[403, { message: `forbidden, token ${TOKEN} is wrong` }]]);
+  check('13a. a thrown API error carrying the token exits 1 and prints it nowhere', d.code === 1 && d.text.includes('forbidden') && !d.text.includes(TOKEN), `${d.code} ${d.text}`);
+}
+{
+  const d = await drive(args, [[200, { db_pool: 5, db_pool_max_idletime: 60, note: TOKEN }]]);
+  check('13b. the problems path exits 1, names the values and prints no token', d.code === 1 && /problem/.test(d.text) && d.text.includes('5') && !d.text.includes(TOKEN), `${d.code} ${d.text}`);
+}
+{
+  const d = await drive(args, [[200, { db_pool: 2, db_pool_max_idletime: 60 }]]);
+  check('13c. equal values exit 0', d.code === 0 && !d.text.includes(TOKEN), `${d.code} ${d.text}`);
+}
+{
+  const d = await drive(args, [[200, null]]);
+  check('13d. a malformed answer exits 1 naming the answer', d.code === 1 && /answer/.test(d.text), `${d.code} ${d.text}`);
+}
+{
+  const d = await drive(['--project', 'abcdefghij', '--declared', goodFile], [[200, {}]], {});
+  check('13e. no token exits 2 through main and makes no request', d.code === 2 && d.f.calls.length === 0, `${d.code} ${d.text}`);
+}
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'data-api-'));
+  const bad = path.join(dir, 'bad.json');
+  const broken = path.join(dir, 'broken.json');
+  fs.writeFileSync(bad, '{ "pool": 0, "idleSeconds": 60 }');
+  fs.writeFileSync(broken, '{ not json');
+  refuses('13f. a declared file out of range exits 2 on the command', ['--project', 'abcdefghij', '--declared', bad], { SUPABASE_ACCESS_TOKEN: TOKEN }, /pool/);
+  refuses('13g. a declared file that does not parse exits 2 on the command', ['--project', 'abcdefghij', '--declared', broken], { SUPABASE_ACCESS_TOKEN: TOKEN }, /declared/);
+  const d = await drive(['--project', 'abcdefghij', '--declared', bad], [[200, {}]]);
+  check('13h. through main the out-of-range file exits 2 with no request', d.code === 2 && d.f.calls.length === 0, `${d.code}`);
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 /* ----------------------------------------------------------------------- the tail ---- */

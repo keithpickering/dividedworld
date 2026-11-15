@@ -64,7 +64,7 @@ export function problems(declared, deployed) {
   const out = [];
   for (const [key, field] of FIELDS) {
     const want = declared[key];
-    const have = deployed[field] ?? null;
+    const have = deployed[field];
     if (want !== have) out.push(`${key === 'pool' ? 'pool' : 'idle time'} (${field}) is ${show(have)} on the project and ${show(want)} in the declaration`);
   }
   return out;
@@ -73,7 +73,7 @@ export function problems(declared, deployed) {
 /** The body a --set sends: only the fields that differ, under the API's names. */
 export function patchBody(declared, deployed) {
   const body = {};
-  for (const [key, field] of FIELDS) if (declared[key] !== (deployed[field] ?? null)) body[field] = declared[key];
+  for (const [key, field] of FIELDS) if (declared[key] !== (deployed[field])) body[field] = declared[key];
   return body;
 }
 
@@ -90,6 +90,14 @@ export async function retrying(fn, { attempts = 3, baseMs = 1000, sleep = (ms) =
       await sleep(baseMs * 2 ** (attempt - 1));
     }
   }
+}
+
+/** The API's answer, checked: an object that holds both fields (null is a value, absent is not). Throws naming the answer. */
+export function expectConfig(answer) {
+  const shown = scrub(JSON.stringify(answer) ?? String(answer)).slice(0, 200);
+  if (answer === null || typeof answer !== 'object' || Array.isArray(answer)) throw new Error(`the API's answer is not an object with db_pool and db_pool_max_idletime: ${shown}`);
+  for (const [, field] of FIELDS) if (!(field in answer)) throw new Error(`the API's answer has no ${field}, so the response shape may have changed: ${shown}`);
+  return answer;
 }
 
 /** One request to the project's postgrest config; a status outside 2xx, or no answer, throws with `status` (0 for none). */
@@ -110,7 +118,8 @@ async function call({ project, token, fetch, sleep }, method, body) {
       try { message = await res.text(); } catch { /* the status is what matters */ }
       throw Object.assign(new Error(`${method} answered ${res.status}: ${message}`), { status: res.status });
     }
-    return res.json();
+    const answer = await res.json();
+    return method === 'GET' ? expectConfig(answer) : answer;
   }, { sleep });
 }
 
@@ -118,10 +127,10 @@ async function call({ project, token, fetch, sleep }, method, body) {
  * Reads, and with `set` writes what differs and reads again. Returns the problems left and the lines
  * to print; fetch and sleep are injected.
  */
-export async function run({ project, declared, set, token, fetch, sleep }) {
+export async function run({ project, declared, set, token }, { fetch, sleep }) {
   const ctx = { project, token, fetch, sleep };
   const log = [`reading the Data API config of project ${project}`];
-  const describe = (d) => `pool ${show(d.db_pool ?? null)}, idle time ${show(d.db_pool_max_idletime ?? null)} s`;
+  const describe = (d) => `pool ${show(d.db_pool)}, idle time ${show(d.db_pool_max_idletime)} s`;
   let deployed = await call(ctx, 'GET');
   log.push(`  deployed: ${describe(deployed)}; declared: pool ${show(declared.pool)}, idle time ${show(declared.idleSeconds)} s`);
   let found = problems(declared, deployed);
@@ -158,25 +167,36 @@ export function parseArgs(argv, env = process.env) {
   return { project, declared: value, set, token };
 }
 
-async function main() {
-  const a = parseArgs(process.argv.slice(2));
+/**
+ * The command, with its argv, environment and I/O handed in so the test can drive it: resolves to the
+ * exit status (0 no problems, 1 problems or a failed request, 2 refused). Everything it prints passes
+ * through redact().
+ * @param {string[]} argv
+ * @param {Record<string, string | undefined>} env
+ * @param {{ fetch: any, sleep?: (ms: number) => Promise<void>, out?: (line: string) => void, err?: (line: string) => void }} io
+ */
+export async function main(argv, env, { fetch, sleep, out = console.log, err = console.error }) {
+  const a = parseArgs(argv, env);
   if (a.refusal) {
-    console.error(`  data-api: refused: ${redact(a.refusal, process.env.SUPABASE_ACCESS_TOKEN)}`);
-    process.exit(2);
+    err(`  data-api: refused: ${redact(a.refusal, env.SUPABASE_ACCESS_TOKEN)}`);
+    return 2;
   }
-  const r = await run({ ...a, fetch: globalThis.fetch });
-  for (const line of r.log) console.log(redact(line, a.token));
-  if (r.problems.length) {
-    console.error(`  data-api: ${r.problems.length} problem(s):`);
-    for (const f of r.problems) console.error(`    ${redact(f, a.token)}`);
-    process.exit(1);
+  try {
+    const r = await run(/** @type {any} */ (a), { fetch, sleep });
+    for (const line of r.log) out(redact(line, a.token));
+    if (r.problems.length) {
+      err(`  data-api: ${r.problems.length} problem(s):`);
+      for (const f of r.problems) err(`    ${redact(f, a.token)}`);
+      return 1;
+    }
+    out('  data-api: the project holds what the instance declares');
+    return 0;
+  } catch (e) {
+    err(`  data-api: ${redact(e?.message ?? e, a.token)}`);
+    return 1;
   }
-  console.log('  data-api: the project holds what the instance declares');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((e) => {
-    console.error(`  data-api: ${redact(e?.message ?? e, process.env.SUPABASE_ACCESS_TOKEN)}`);
-    process.exit(1);
-  });
+  process.exitCode = await main(process.argv.slice(2), process.env, { fetch: globalThis.fetch });
 }
