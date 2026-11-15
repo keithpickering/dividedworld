@@ -118,7 +118,7 @@ order:
    | work done per player, character, thread, Act, reaction or viewer | its cost at a busy instance's scale ("Weigh a design at the scale of a busy instance") | |
    | a fallback, rescue or retry | it retries transport failures only ("Three unrelated timeouts are not a poison pill") | |
    | a validator on a model's output | it trims a bound overshot and rejects only what cannot be repaired ("A validator tighter than the schema") | |
-   | an effect drawn on a post | it fills the post's content area border to border, or leaves it on purpose; the words' box alone is never its container ("An effect fills the post, border to border") | |
+   | an effect drawn on a post | it fills the content area the post is shown in border to border (the post's body in a thread, the ORIGIN box under its band), or leaves it on purpose; the words' box alone is never its container ("An effect fills the post, border to border") | |
    | a card or game effect meant to be tough to get through | its accessible path costs about what the effect costs; the forum around it meets the usual standards ("An accessible path costs what the obstacle costs") | |
    | words a player reads | in character they may bluff; in the player's own log and out of character they are true and plain ("The fiction may lie; the log never does") | |
 4. **Across tasks.** Where one task's code calls or relies on another's, each holds to what the other assumes; each

@@ -123,9 +123,9 @@ wash control is timed like a scrub, and reduced motion makes Stick Around's snap
 
 ## An effect fills the post, border to border
 
-**An effect drawn on a post is designed against the post's content area, the bordered box that holds the words: it
-fills that box border to border, and may leave it where leaving is the joke; the words' own unbordered box is never
-its container.**
+**An effect drawn on a post is designed against the content area the post is shown in, the bordered box that holds the
+words, in a thread and in a spun thread's ORIGIN box alike: it fills that box border to border, and may leave it where
+leaving is the joke; the words' own unbordered box is never its container.**
 
 The content area's borders are the frame the game draws on. Whoops!'s ink and Feelin' Fab's foil fill it, and an
 effect that breaks out of it is funny because there is a frame to break. An effect sized to the block of text draws a
@@ -135,6 +135,12 @@ What it fills is the content area. An effect that marks particular words (a note
 is placed against those words and fills nothing; this rule is about what covers or fills. A plan that adds an effect on
 a post says which box it fills and, where it leaves the content area, why that is funny. Whatever a reader presses
 inside the area stays pressable or is plainly covered.
+
+A post is shown in more than one place, and each has a content area. In a thread it is the post's body, between its
+bars and borders. In a spun thread's ORIGIN box it is the box under its band, out to the box's other three borders,
+whether the box shows the post live or as it was at a moment. An effect on the post shown there fills that area as it
+fills the post's body in its own thread, and its floor and walls are that box's borders. A place added later that shows
+a post in a bordered box says where its content area is, and the effects fill it.
 
 ## A response never proves a private fact
 
