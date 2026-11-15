@@ -36,6 +36,9 @@ export function cardOf<T extends { readonly key: string }>(cards: readonly T[], 
 /** The instance's class of this key, the same way. */
 export function classOf<T extends { readonly key: string }>(classes: readonly T[], key: string): T { return keyed(classes, key, 'class'); }
 
+/** The card the ordinary player holds: any card would do for the HUD, and naming one keeps the hand still when a card is added. */
+const HELD = '4d-chess';
+
 /** A player with two characters that can act, a wallet, cards and an estimate: the ordinary signed-in HUD. */
 export const playerWorld: World = (fake, instance) => {
   const [a, b] = instance.classes;
@@ -43,7 +46,7 @@ export const playerWorld: World = (fake, instance) => {
   fake.seed.character(me, 'Pipewrench', a!.key);
   fake.seed.character(me, 'Mrs. Hooligan', (b ?? a)!.key);
   fake.seed.settle({ wallet: { [me]: 240 } });
-  fake.seed.cards(me, { [instance.cards[0]?.key ?? 'card']: 2 });
+  fake.seed.cards(me, { [cardOf(instance.cards, HELD).key]: 2 });
   fake.seed.estimate(me, { entries: [{ character: 'x', reason: `${a!.key}.story`, amount: 85 }] });
   fake.signInAs(me);
 };

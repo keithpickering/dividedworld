@@ -172,6 +172,10 @@ function SpunFromPlay() {
   const navigate = useNavigate();
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
   const [spun, setSpun] = useState<string | null>(null);
+  /* Looked up in render, so a key the instance lacks fails the story there and is not swallowed by the seeder's catch. */
+  const takeover = cardOf(ui.cards, TAKEOVER);
+  if (takeover.takeover !== true) throw new Error(`the card "${TAKEOVER}" is not a takeover card`);
+  const key = takeover.key;
   useEffect(() => {
     if (thread === null || spun !== null) return;
     let live = true;
@@ -180,9 +184,8 @@ function SpunFromPlay() {
       const acts = await api.acts(thread, 41, 42);
       const target = acts.find((a) => a.seq === 41);
       const caster = acts.find((a) => a.seq === 42)?.character ?? null;
-      const key = ui.cards.find((c) => c.key === TAKEOVER && c.takeover === true)?.key;
       const me = (await api.myCharacters())[0];
-      if (!target || caster === null || key === undefined || !me) throw new Error('the boards fixture has no #41 and #42, the instance no takeover card, or the reader no character');
+      if (!target || caster === null || !me) throw new Error('the boards fixture has no #41 and #42, or the reader no character');
       fake.clock.advance(MINUTE);
       const play = fake.seed.card(caster, target.id, key, { message: '' });
       const answer = await api.spin(play, me.id, 'About that hold', 'Of all the posts to be held on.');
@@ -192,7 +195,7 @@ function SpunFromPlay() {
       navigate(`/t/${answer.value.thread.id}`);
     })().catch((e: unknown) => { console.error('the spun story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, ui, thread, spun, navigate]);
+  }, [api, thread, spun, navigate, key]);
   return (
     <Frame>
       {spun !== null && thread === spun ? <LoadedThread thread={spun} /> : <div aria-busy="true" />}

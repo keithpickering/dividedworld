@@ -3,31 +3,36 @@
  * story finds: `AHeart` (the heart's mark on the post it was played from: what it took off the warn bar and when), `AFallWaiting` (a fall on the fixture's #41: whom a filing
  * would land on, whom it spares, and how it ends), `AFallTaken` (the same fall after a Mod's visit filed: "Took the fall" and where the points landed) and `ToldOn` (a watch on the
  * reader's own character: how heavily a patrol weighs its posts, and until when). Each opens the Lens from the card's mark with Who unfolded, as a reader would.
- * Each card is found by its rules (`discipline.kind`), naming no card and no instance, and the mask the reader acts as is the one the player loads (player.tsx).
+ * Each card is named by key (the map below), so a new card cannot change a story, and the mask the reader acts as is the one the player loads (player.tsx).
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
-import type { CardRules } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Fake } from '../data/fake.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { hudKey } from '../player.tsx';
 import { useLocation } from '../router.tsx';
 import { LoadedThread } from '../loaded.tsx';
+import { cardOf } from '../story.tsx';
 
 type Scene = 'heart' | 'fallWaiting' | 'fallTaken' | 'toldOn';
 
 const DAY = 86_400_000;
-/** The card each scene is about, by what its rules say it does. */
-const found = (cards: readonly CardRules[], scene: Scene): CardRules | undefined => {
-  const kind = scene === 'heart' ? 'relief' : scene === 'toldOn' ? 'watch' : 'fall';
-  return cards.find((c) => c.discipline?.kind === kind);
+/** The card each scene is about, by key: the heart (relief), the tattle (watch) and the fall. */
+const keyOf = (scene: Scene): string => {
+  switch (scene) {
+    case 'heart': return 'happy-heart';
+    case 'toldOn': return 'tattle-tale';
+    case 'fallWaiting': case 'fallTaken': return 'take-the-fall';
+  }
 };
 
 /** Seeds the scene on the thread the fixture opens, and says when it is ready to be read. */
 function useSeeded(scene: Scene, thread: string | null): boolean {
   const { api, instance } = useKayfa();
   const [ready, setReady] = useState(false);
+  /* Looked up in render, so a key the instance lacks fails the story there and is not swallowed by the seeder's catch. */
+  const card = cardOf(instance.cards, keyOf(scene));
   useEffect(() => {
     if (thread === null) return;
     let live = true;
@@ -41,8 +46,7 @@ function useSeeded(scene: Scene, thread: string | null): boolean {
       try { chosen = localStorage.getItem(hudKey(session.account)); } catch { chosen = null; }
       const acting = (await api.myCharacters()).filter((c) => c.debutedAt !== null && c.retiredAt === null);
       const mask = acting.find((c) => c.id === chosen) ?? acting[0];
-      const card = found(instance.cards, scene);
-      if (!mask || !card) throw new Error('the boards fixture has no mask to act as, or the instance has no such card');
+      if (!mask) throw new Error('the boards fixture has no mask to act as');
       const clerk = fake.seed.staff('story-clerk', 'The Clerk', 'mod');
       const first = (await api.acts(thread, 41, 41))[0];
       if (!first) throw new Error('the boards fixture has no #41');
@@ -70,7 +74,7 @@ function useSeeded(scene: Scene, thread: string | null): boolean {
       if (live) setReady(true);
     })().catch((e: unknown) => { console.error('the story could not be seeded', String(e)); });
     return () => { live = false; };
-  }, [api, instance, scene, thread]);
+  }, [api, instance, scene, thread, card]);
   return ready;
 }
 
@@ -78,7 +82,7 @@ function useSeeded(scene: Scene, thread: string | null): boolean {
 function Opened({ scene }: { readonly scene: Scene }) {
   const { instance } = useKayfa();
   useEffect(() => {
-    const key = found(instance.cards, scene)?.key ?? '';
+    const key = cardOf(instance.cards, keyOf(scene)).key;
     let step = 0;
     const timer = setInterval(() => {
       if (step === 0) {

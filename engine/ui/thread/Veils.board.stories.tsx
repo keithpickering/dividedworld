@@ -1,7 +1,7 @@
 /**
  * A post under an author veil and a post under a totals veil (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 8), on the boards fixture's
- * thread at the Main board's moment: `VeiledAndBlind` has #41 under the first card the instance has that hides an author, which its postbit shows
- * as the stand-in, and #42 under the first that hides reaction totals, with the row's one plain line, and a reaction a card added to it. Open it at
+ * thread at the Main board's moment: `VeiledAndBlind` has #41 under the card that hides an author, which its postbit shows
+ * as the stand-in, and #42 under the one that hides reaction totals, with the row's one plain line, and a reaction a card added to it. Open it at
  * 1440 by 1120, and its `Phone` twin at 390 by 844: the Main board and the Phone board are the two boards, and each is matched in light and dark.
  *
  * The same posts are drawn for the others who meet them (card notes Part 3, Task 12). The player of the `01-main` moment owns both posts' authors, so `VeiledAndBlind`
@@ -10,7 +10,7 @@
  * added; `Caster` is #42 as the player who cast the blind card on it reads it (the totals, and the line that says the author sees them too); and `StandInProfile` is the
  * stand-in's own profile, as it is opened from a veiled post's name. The board's size is the window's: open each at 1440 by 1120, and again at 390 by 844 for the Phone board.
  *
- * The story names no instance: the cards are found by their rules (`veil`, `reaction`). An instance with none of them draws the posts plain.
+ * The story names its cards by key (the constants below), so a new card cannot change it.
  * The plays are made through the fake backend as a player's own (a caster's hand, signed in as her, then back), so what the page shows is what
  * the server would say; the fake's clock is brought to the present first, so a veil lasts from now and not from the fixture's day.
  */
@@ -22,8 +22,16 @@ import type { Fake } from '../data/fake.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { LoadedProfile, LoadedThread } from '../loaded.tsx';
 import { useLocation } from '../router.tsx';
+import { cardOf } from '../story.tsx';
 
 type Scene = 'author' | 'reader' | 'caster' | 'standIn';
+
+/** The card that hides a post's author behind a stand-in. */
+const AUTHOR_VEIL = 'whodunnit';
+/** The card that hides a post's reaction totals. */
+const TOTALS_VEIL = 'blind-study';
+/** The card that adds a reaction to a post. */
+const REACTION = 'overreaction';
 
 /** The post each scene looks at: the veiled one, or the one the caster cast the blind card on. */
 const LOOK: Readonly<Record<Scene, number | null>> = { author: 41, reader: 41, caster: 42, standIn: null };
@@ -33,6 +41,10 @@ function useSeeded(thread: string | null, scene: Scene): { readonly ready: boole
   const { api, instance } = useKayfa();
   const [ready, setReady] = useState(false);
   const [standIn, setStandIn] = useState<string | null>(null);
+  /* Looked up in render, so a key the instance lacks fails the story there and is not swallowed by the seeder's catch. */
+  const author = cardOf(instance.cards, AUTHOR_VEIL);
+  const totals = cardOf(instance.cards, TOTALS_VEIL);
+  const reaction = cardOf(instance.cards, REACTION);
   useEffect(() => {
     if (thread === null) return;
     let live = true;
@@ -44,28 +56,25 @@ function useSeeded(thread: string | null, scene: Scene): { readonly ready: boole
       const second = acts.find((a) => a.seq === 42);
       const me = (await api.session()).account;
       if (!first || !second || me === null) throw new Error('the boards fixture has no #41 and #42 to play on, or no one signed in');
-      const author = instance.cards.find((c) => c.veil === 'author');
-      const totals = instance.cards.find((c) => c.veil === 'totals');
-      const reaction = instance.cards.find((c) => c.reaction === true);
       /* A veil lasts from the fake's now: bring it to this screen's, so the plays are not over before they are drawn. */
       const gap = Date.now() - fake.clock.now();
       if (gap > 0) fake.clock.advance(gap);
       const caster = fake.seed.account('story-caster');
       const face = fake.seed.character(caster, 'Story Caster', instance.classes[0]!.key);
-      fake.seed.cards(caster, Object.fromEntries([author, totals, reaction].flatMap((c) => (c ? [[c.key, 1]] : []))));
+      fake.seed.cards(caster, Object.fromEntries([author, totals, reaction].map((c) => [c.key, 1])));
       fake.signInAs(caster);
       try {
-        if (author) await api.playCard(author.key, face, first.id, {}, '');
-        if (totals) await api.playCard(totals.key, face, second.id, {}, '');
-        if (reaction) await api.playCard(reaction.key, face, second.id, { emoji: '\u{1F480}', quadrant: 'excitedPositive' }, '');
+        await api.playCard(author.key, face, first.id, {}, '');
+        await api.playCard(totals.key, face, second.id, {}, '');
+        await api.playCard(reaction.key, face, second.id, { emoji: '\u{1F480}', quadrant: 'excitedPositive' }, '');
       } finally { if (scene !== 'caster') fake.signInAs(me); }
-      if (reaction) fake.seed.tally(second.id, { [localKey('\u{1F480}')]: 2 });
+      fake.seed.tally(second.id, { [localKey('\u{1F480}')]: 2 });
       /* The stand-in's id is the character a veiled post is read under. */
       const veiled = (await api.acts(thread, 41, 41))[0]?.character ?? null;
       if (live) { setStandIn(veiled); setReady(true); }
     })().catch((e: unknown) => { console.error('the veil story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, instance, thread, scene]);
+  }, [api, instance, thread, scene, author, totals, reaction]);
   return { ready, standIn };
 }
 

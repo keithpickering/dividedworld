@@ -1,7 +1,7 @@
 /**
  * The play form of a card that adds a reaction to one post (card notes Part 3, Task 12), on the boards fixture's player, opened as a player opens it:
  * the card is armed and the ghost on Pipewrench's own post #43 is pressed. `Form` is at the Main board's size and `FormPhone` its twin at 390 by 844.
- * The card is found by its rules (`reaction`), naming no card and no instance, and its form is the instance's own: whatever it draws in the form's place.
+ * The card is named by key (the constant below), so a new card cannot change the story, and its form is the instance's own: whatever it draws in the form's place.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
@@ -12,6 +12,10 @@ import { LoadedThread } from '../loaded.tsx';
 import { usePlayer } from '../player.tsx';
 import { useLocation } from '../router.tsx';
 import { usePlay } from './play.tsx';
+import { cardOf } from '../story.tsx';
+
+/** The card whose play form this draws: a card that adds a reaction to one post. */
+const REACTION = 'overreaction';
 
 /** Does what a player does once the card is in her hand: arms it, then presses the ghost on #43 to open its play form (inside the frame, where the play controls are). */
 function Act() {
@@ -19,9 +23,9 @@ function Act() {
   const play = usePlay();
   const player = usePlayer();
   const account = player.session.account;
-  const key = instance.cards.find((c) => c.reaction === true)?.key;
+  const key = cardOf(instance.cards, REACTION).key;
   useEffect(() => {
-    if (!play || account === null || !key || !player.cards.some((c) => c.card === key && c.held > 0)) return;
+    if (!play || account === null || !player.cards.some((c) => c.card === key && c.held > 0)) return;
     /* Armed once (a second press of the armed card puts it back); the ghost is found in the page, as its own player finds it. */
     if (play.armed !== key) play.arm(key);
     const timer = setInterval(() => {
@@ -41,10 +45,10 @@ function Scene() {
   const player = usePlayer();
   const account = player.session.account;
   const [ready, setReady] = useState(false);
-  const key = instance.cards.find((c) => c.reaction === true)?.key;
+  const key = cardOf(instance.cards, REACTION).key;
   /* The hand holds one of the card, and the player has met it, as a player who has bought it has; her rows are read again to say so. */
   useEffect(() => {
-    if (thread === null || account === null || !key) return;
+    if (thread === null || account === null) return;
     void (async () => {
       await Promise.all(instance.cards.map((c) => api.meetCard(c.key)));
       (api as Fake).seed.cards(account, { [key]: 1 });

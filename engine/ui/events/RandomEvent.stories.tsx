@@ -4,7 +4,7 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
-import type { World } from '../story.tsx';
+import { cardOf, type World } from '../story.tsx';
 import { RandomEvent } from './RandomEvent.tsx';
 
 function EventPage() {
@@ -16,13 +16,16 @@ export default meta;
 
 type Story = StoryObj<typeof EventPage>;
 
-/** A player with one mask, and the roll that the story names: the instance's first line of that outcome, and its first gear or card. */
+/** The card the found-card roll names. */
+const FOUND_CARD = '4d-chess';
+
+/** A player with one mask, and the roll that the story names: the instance's first line of that outcome, and its first gear or the named card. */
 const finds = (outcome: 'line' | 'gear' | 'card'): World => (fake, instance) => {
   const me = fake.seed.account('story-player');
   fake.seed.character(me, 'Pipewrench', instance.classes[0]!.key);
   fake.signInAs(me);
   const line = instance.events.lines.find((l) => l.outcome === outcome)?.key;
-  const item = outcome === 'gear' ? instance.gear[0]?.key : outcome === 'card' ? instance.cards.find((c) => c.rarity !== 'common')?.key ?? instance.cards[0]?.key : undefined;
+  const item = outcome === 'gear' ? instance.gear[0]?.key : outcome === 'card' ? cardOf(instance.cards, FOUND_CARD).key : undefined;
   fake.seed.nextEvent({ outcome, ...(item === undefined ? {} : { item }), ...(line === undefined ? {} : { line }) });
 };
 

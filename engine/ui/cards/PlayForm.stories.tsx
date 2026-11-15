@@ -4,27 +4,31 @@
  * settings, "Ends by itself in N days."), and a set card with a cast trap (`SetCard`: opens as Set with no choice, and its picker of the cards
  * cast on a post), and the Move set with its optional Only when group open (`Conditions`). Each has its `Phone` twin at 390 by 844; open the others at 1440 by 1120.
  *
- * The story names no instance: the Move is the instance's first cast card with a settings form, the set card its first one with one.
+ * The story names its cards by key (the constants below), so a new card cannot change it: the Move and the conditions scene open one card, the set card with a cast trap another.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect } from 'react';
-import { playOf } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import { Frame } from '../frame/Frame.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { useLocation } from '../router.tsx';
 import { usePlayer } from '../player.tsx';
 import { usePlay } from './play.tsx';
+import { cardOf } from '../story.tsx';
 
 type Scene = 'play' | 'set' | 'gimmick' | 'conditions';
 
+/** The Move the scenes `play`, `set` and `conditions` open: a cast card with a settings form. */
+const MOVE = 'autocorrect';
+/** The set card the `gimmick` scene opens: a card with a cast trap and a settings form. */
+const GIMMICK = '4d-chess';
+
 /** Arms the card, presses its mark on #41 once the thread has drawn it, and (for Set) chooses Set face down. */
 function Open({ scene }: { readonly scene: Scene }) {
-  const { instance, ui } = useKayfa();
+  const { instance } = useKayfa();
   const play = usePlay();
   const account = usePlayer().session.account;
-  const withForm = (key: string) => ui.cards.some((c) => c.key === key && c.ConfigForm);
-  const key = instance.cards.find((c) => playOf(c) === (scene === 'gimmick' ? 'set' : 'cast') && withForm(c.key) && (scene !== 'gimmick' || c.trap?.trigger.on === 'cast'))?.key ?? null;
+  const key = cardOf(instance.cards, scene === 'gimmick' ? GIMMICK : MOVE).key;
   /* The conditions scene opens the Only when group once the form is up. */
   useEffect(() => {
     if (scene !== 'conditions') return;
@@ -37,7 +41,7 @@ function Open({ scene }: { readonly scene: Scene }) {
     return () => clearInterval(timer);
   }, [scene]);
   useEffect(() => {
-    if (!play || key === null || account === null) return;
+    if (!play || account === null) return;
     play.arm(key);
     if (scene === 'set' || scene === 'conditions') play.choose(true);
     const timer = setInterval(() => {

@@ -80,6 +80,8 @@ export const STEPS = [
   'node tools/check-edge-functions.mjs',
   'node tools/test-engine-boundary.mjs',
   'node tools/check-engine-boundary.mjs',
+  'node tools/test-story-picks.mjs',
+  'node tools/check-story-picks.mjs',
   'node tools/test-ui-tokens.mjs',
   'node tools/check-ui-tokens.mjs',
   'node tools/test-css-classes.mjs',
