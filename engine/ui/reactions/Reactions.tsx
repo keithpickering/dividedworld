@@ -9,8 +9,14 @@
  * On a staged page (staged.ts: the front door's sample thread) the reader needs no character: React is on every post, a press is
  * answered on their screen alone (the kind is theirs in `mine`, its count grows by one), nothing is sent or estimated, and the
  * words name no mask.
+ *
+ * A reaction this screen just left lands with the stamp (reactions.css): the tile gives under the press, the emoji leaps and slams
+ * back, a ring in its quadrant's class color stamps down onto the tile and settles into the player's own ring, shards burst from it
+ * and the count rolls up. It plays on the reactor's screen alone, for their own press, and never for a reaction that arrives from
+ * anyone else, so it says nothing about who reacted. A reaction chosen in the picker lands on the row once the picker has gone.
+ * Under Off (the player's Motion setting, or the device's reduced motion) nothing moves: the ring and the count are simply there.
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { blindPlaysOf, createPlays, localKindsOf, useAt, usePlays, type LocalKind, type Plays } from '../cards/plays.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { emojiOfKey } from '../../rules/emoji.ts';
@@ -26,6 +32,8 @@ import '../glass/meta-tile.css';
 import './reactions.css';
 import { Layers } from '../glass/layer.tsx';
 import { useStaged } from '../staged.ts';
+import { useMotionReduced } from '../appearance.ts';
+import type { Quadrant } from '../../rules/types.ts';
 
 /** A reaction's name for a reader: its key made readable ("raised-hands" is "Raised hands"). */
 export const readable = (key: string): string => {
@@ -72,8 +80,19 @@ const stagedSend = (act: Id, tallies: Tallies, mine: Mine, cap: number) => async
 /** The tab stop of the React tile; a kind's is its key. */
 const REACT_STOP = ' react'; /* a space: no reaction key has one */
 
-/** One chip of the row: the kind's key, its words, its emoji, its count (none where the totals are hidden from the reader), and whether a press can still count. */
-interface Chip { readonly key: string; readonly name: string; readonly emoji: string; readonly count: number | null; readonly open: boolean }
+/** One chip of the row: the kind's key, its words, its emoji, its quadrant, its count (none where the totals are hidden from the reader), and whether a press can still count. */
+interface Chip { readonly key: string; readonly name: string; readonly emoji: string; readonly quadrant: Quadrant | null; readonly count: number | null; readonly open: boolean }
+
+/** The shards a stamp throws, one every 360/SHARDS degrees (reactions.css lays each by its index). */
+const SHARDS = 8;
+/**
+ * How long a stamp's marks stay on the tile: the longest the stamp runs (reactions.css: the Smooth feel's, after the picker's exit at
+ * its longest), and a margin. Clearing it later than it ends costs nothing; the marks are spent by then.
+ */
+const STAMP_MS = 1400;
+
+/** The kind that just landed on this screen, and whether it waits for the picker to leave first. */
+interface Landed { readonly key: string; readonly after: boolean }
 
 export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject, pickerAt = 'row', plays = NO_PLAYS }: Props) {
   const { instance, ui, settings } = useKayfa();
@@ -107,11 +126,11 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   /* What is drawn: for a reader the totals are hidden from, only their own kinds and no count; else every kind the tally holds, the instance's first and then the kinds a card added. */
   const chipOf = (key: string, count: number | null): Chip | null => {
     const known = instance.reactions.find((r) => r.key === key);
-    if (known) return { key, name: readable(key), emoji: known.emoji, count, open: true };
+    if (known) return { key, name: readable(key), emoji: known.emoji, quadrant: known.quadrant, count, open: true };
     const emoji = emojiOfKey(key);
     if (emoji === null) return null;
     const kind = kindOf(key);
-    return { key, name: localName(emoji, label(kind)), emoji, count, open: kind?.ended !== true };
+    return { key, name: localName(emoji, label(kind)), emoji, quadrant: kind?.quadrant ?? null, count, open: kind?.ended !== true };
   };
   const counted = Object.keys(tally).filter((k) => (tally[k] ?? 0) > 0);
   const shownKeys = hidden ? ownKinds : [...instance.reactions.map((r) => r.key).filter((k) => counted.includes(k)), ...counted.filter((k) => !instance.reactions.some((r) => r.key === k)).sort()];
@@ -123,13 +142,33 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   const canReact = !theirs && (staged || as !== null);
   /* One send for the row and its picker: one lock for the Act (send.ts). A staged page's is answered here, and sends nothing. */
   const sent = useReactionSend({ act, as, tallies, mine });
-  const { send, busy } = staged ? { send: stagedSend(act, tallies, mine, settings.reactionCap), busy: false } : sent;
+  const { send: sendNow, busy } = staged ? { send: stagedSend(act, tallies, mine, settings.reactionCap), busy: false } : sent;
+  /* The stamp: the kind this screen just left (and whether the picker was open as it was chosen), and the kind a press is waiting on. */
+  const reduced = useMotionReduced();
+  const [landed, setLanded] = useState<Landed | null>(null);
+  const [sending, setSending] = useState<string | null>(null);
+  const stamped = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(stamped.current), []);
+  const openNow = useRef(open);
+  openNow.current = open;
   /* A picker is for the character it was opened for: another character in the HUD closes it, and what was said of a reaction as the last one goes. */
   const asId = as?.id;
   useEffect(() => { setOpen(false); setSaid(''); }, [asId]);
   /* What an answer that comes back late is checked against: the HUD character and whether a press is possible now. */
   const live = useRef({ asId, canReact });
   live.current = { asId, canReact };
+  /* Every send the row and its picker make: a reaction that counts, for the character it was made as, lands with the stamp. */
+  const send = async (kind: string): Promise<SendAnswer> => {
+    const madeAs = asId;
+    const after = openNow.current;
+    const answer = await sendNow(kind);
+    if (answer === 'sent' && live.current.asId === madeAs && live.current.canReact) {
+      clearTimeout(stamped.current);
+      setLanded({ key: kind, after });
+      stamped.current = setTimeout(() => setLanded(null), STAMP_MS);
+    }
+    return answer;
+  };
   if (shown.length === 0 && !canReact && line === null) return null;
 
   const kinds = new Set(own.map((o) => o.kind));
@@ -141,7 +180,10 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   const press = async (key: string) => {
     if (left === 0 || kinds.has(key)) return;
     const pressedAs = asId;
-    const answer = await send(key);
+    /* A press dropped for one in flight leaves the one in flight marked as it is. */
+    const marks = !busy;
+    if (marks) setSending(key);
+    const answer = await send(key).finally(() => { if (marks) setSending(null); });
     if (answer === 'busy') return;
     /* The press was for the character it was made as: another in the HUD, or no right to react now, and its answer is dropped. */
     if (live.current.asId !== pressedAs || !live.current.canReact) return;
@@ -179,9 +221,16 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
             const n = r.count;
             const yours = kinds.has(r.key);
             const face = (
-              <span className="kb-meta-tile-in" aria-hidden="true"><span className="kb-reaction-emoji">{r.emoji}</span>{n === null ? '' : ` ${n}`}</span>
+              <span className="kb-meta-tile-in" aria-hidden="true">
+                <span className="kb-reaction-emoji">{r.emoji}</span>
+                {n === null ? '' : <>{' '}<span className="kb-reaction-count"><span key={n}>{n}</span></span></>}
+              </span>
             );
             const common = { 'data-kb-reaction': r.key, 'data-kb-own': yours ? '' : undefined } as const;
+            /* The stamp's color: the class the instance gives the kind's quadrant, else the glass's ready gold (reactions.css). */
+            const cls = r.quadrant === null ? undefined : ui.quadrantClasses?.[r.quadrant];
+            const hue = cls === undefined ? undefined : ({ '--kb-reaction-hue': `var(--kb-glass-class-${cls}-large)` } as CSSProperties);
+            const stamp = landed?.key === r.key ? (landed.after ? 'after' : 'now') : undefined;
             /* Where the totals are hidden the chip is the reader's own kind with no number; its name says so, as an own kind's does. */
             const said = n === null ? `${r.name}, yours` : `${r.name}, ${n}${yours ? ', including yours' : ''}`;
             if (!canReact || !r.open) {
@@ -203,8 +252,18 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
                 <button
                   type="button" className="kb-meta-tile kb-reaction" {...common} aria-label={name} aria-disabled={yours || left === 0 ? 'true' : undefined}
                   data-kb-stop={r.key} tabIndex={current === r.key ? 0 : -1} onClick={() => void press(r.key)}
+                  data-kb-landed={stamp} data-kb-sending={sending === r.key ? '' : undefined} style={hue}
                 >
                   {face}
+                  {stamp !== undefined && !reduced && (
+                    <span className="kb-reaction-stamp" aria-hidden="true">
+                      <span className="kb-reaction-seal" />
+                      <span className="kb-reaction-wave" />
+                      {Array.from({ length: SHARDS }, (_, i) => (
+                        <span key={i} className="kb-reaction-shard" style={{ '--kb-shard': i } as CSSProperties} />
+                      ))}
+                    </span>
+                  )}
                 </button>
               </li>
             );
