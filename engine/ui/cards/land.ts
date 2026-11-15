@@ -6,7 +6,7 @@
  * the play (`decidePlay`), whatever this said.
  */
 import { QUADRANTS } from '../../rules/types.ts';
-import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarget, playOf as playOfRules, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
+import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarget, matchWords, playOf as playOfRules, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
@@ -114,13 +114,17 @@ export const landsWords = (rules: Pick<CardRules, 'reaches'>): string => LANDS_O
 
 /**
  * What a card set face down does, in one plain sentence, from the card's rules and never its name: a Move springs on a quote and lands on
- * what its first reach says; a set card waits for the card it names to be cast on the post (and takes it), or for a Mod Bot's visit to the
- * post to start (and ends it), or does nothing.
+ * what its first reach says; a set card waits for the card it names, or the cards its match covers, to be cast on the post (and takes it), or for a
+ * Mod Bot's visit to the post to start (and ends it), or does nothing.
  */
-export function springWords(rules: Pick<CardRules, 'play' | 'reaches' | 'trap'>): string {
+export function springWords(rules: Pick<CardRules, 'play' | 'reaches' | 'trap' | 'rarity'>): string {
   if (playOfRules(rules) === 'cast') return `Springs when someone quotes this post, and lands on ${landsWords(rules)}.`;
   const on = rules.trap?.trigger.on;
-  if (on === 'cast') return 'Waits for the card it names to be cast on this post, and takes it.';
+  if (on === 'cast') {
+    /* A match said with a rarity ("a Salty card, up to common") closes its comma before the verb, as an aside does. */
+    const waits = rules.trap?.match ? matchWords(rules.trap.match, rules.rarity) : 'the card it names';
+    return `Waits for ${waits}${waits.includes(', up to ') ? ',' : ''} to be cast on this post, and takes it.`;
+  }
   if (on === 'visit') return 'Ends the next Mod Bot visit to this post when the visit starts.';
   return 'Does nothing.';
 }

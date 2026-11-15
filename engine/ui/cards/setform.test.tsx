@@ -21,6 +21,8 @@ const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty'
 const spark: CardRules = { ...base, key: 'spark', name: 'Spark', alignment: 'sweet', rarity: 'common', reaches: ['character'], canApply: (t, e, _config, now) => landsOn({ key: 'spark', reaches: ['character'] }, t, e, now) };
 const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: (c) => (c as { card?: string }).card ?? '', canApply: () => ok(undefined),
   validateConfig: (c) => (typeof (c as { card?: unknown } | undefined)?.card === 'string' ? ok(c) : refuse('the card is the key of the card to catch')) };
+/** A set card that waits for a match and not a named card: it has no `catches`. */
+const lure: CardRules = { ...base, key: 'lure', name: 'Lure', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' }, match: { flavors: ['salty'], upTo: 'common' } }, canApply: () => ok(undefined) };
 const pass: CardRules = { ...base, key: 'pass', name: 'Pass', alignment: 'sweet', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
 const dud: CardRules = { ...base, key: 'dud', name: 'Dud', alignment: 'pepperoni', rarity: 'common', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
 const shield: CardRules = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'common', play: 'use', canApply: () => ok(undefined) };
@@ -55,6 +57,7 @@ const cards: CardUi[] = [
   { key: 'blot', art: art('pink'), describe: () => 'Splats.', ConfigForm: Ink },
   { key: 'spark', art: art('cyan'), describe: () => 'Sparkles.' },
   { key: 'snare', art: art('red'), describe: () => 'Catches.', ConfigForm: Pick },
+  { key: 'lure', art: art('red'), describe: () => 'Lures.' },
   { key: 'pass', art: art('blue'), describe: () => 'Passes.' },
   { key: 'dud', art: art('orange'), describe: () => 'Nothing.' },
   { key: 'shield', art: art('green'), describe: () => 'Shields.' },
@@ -282,6 +285,15 @@ describe('a set card', () => {
     /* Only the cards cast on a post: no Use (Shield), no set card (Snare, Pass, Dud), no card beyond a post (Spark). */
     expect(within(dialog).getAllByRole('radio').map((r) => r.getAttribute('aria-label'))).toEqual(['Blot']);
     expect(within(post(2)).queryByRole('button', { name: /face down on post/u })).toBeNull();
+  });
+
+  test('a set card that waits for a match says what it matches, not a card it names', async () => {
+    const user = userEvent.setup();
+    const played: Instance = { ...instance, cards: [...instance.cards, lure] };
+    const w = world({ lure: 1 }, played);
+    await open(w, played);
+    const dialog = await armAndOpen(user, 'Lure', 'Set Lure face down on post 3', 3);
+    expect(dialog.querySelector('[data-kb-sets]')).toHaveTextContent('Waits for a Salty card, up to common, to be cast on this post, and takes it.');
   });
 
   test('an untouched picker chooses nothing: Set waits, said in words the button is tied to, until the card\'s settings are accepted', async () => {

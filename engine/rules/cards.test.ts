@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, instant, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, instant, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -820,4 +820,20 @@ test('a second instant play lands where a first was, and a fall or a watch still
 test('a persona is never offered a discipline card', () => {
   for (const card of [relief, unban, fall, watch]) assert.equal(staffOffers(card), false, card.key);
   assert.equal(staffOffers(plain), true);
+});
+
+test('matchWords says what a match takes, with the lower of its rarity and the rarity of the set card itself, left out at the rarest', () => {
+  assert.equal(matchWords({ flavors: ['salty'], upTo: 'common' }, 'uncommon'), 'a Salty card, up to common');
+  assert.equal(matchWords({ flavors: ['salty', 'pepperoni'], upTo: 'uncommon' }, 'rare'), 'a Salty or Pepperoni card, up to uncommon');
+  assert.equal(matchWords({ flavors: ['sweet', 'salty', 'pepperoni'], upTo: 'rare' }, 'legendary'), 'a Sweet, Salty or Pepperoni card, up to rare');
+  assert.equal(matchWords({ flavors: ['pepperoni'], upTo: 'legendary' }, 'legendary'), 'a Pepperoni card');
+  assert.equal(matchWords({ upTo: 'common' }, 'rare'), 'a card up to common');
+  assert.equal(matchWords({ upTo: 'legendary' }, 'legendary'), 'a card');
+  assert.equal(matchWords({ flavors: ['salty'] }, 'uncommon'), 'a Salty card, up to uncommon');
+  assert.equal(matchWords({}, 'legendary'), 'a card');
+});
+
+test('matchWords: a match up to rare on a common card says up to common, since a back never takes a card rarer than itself', () => {
+  assert.equal(matchWords({ flavors: ['salty'], upTo: 'rare' }, 'common'), 'a Salty card, up to common');
+  assert.equal(matchWords({ upTo: 'legendary' }, 'common'), 'a card up to common');
 });

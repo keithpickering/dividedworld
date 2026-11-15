@@ -180,6 +180,20 @@ export function wardWords(wardName: string, effect: WardEffect, rules: Pick<Card
   return `${head} ${rules.name}`;
 }
 
+/**
+ * What a cast set card's `match` takes, as a noun phrase: "a Salty or Pepperoni card, up to uncommon". The rarity said is the lower of the match's
+ * `upTo` and the set card's own (`own`), since a back never takes a card rarer than itself (`spring_facts`); it is left out when that is the rarest, which
+ * takes every card. A match with no flavors takes a card of any flavor.
+ */
+export function matchWords(match: Match, own: Rarity): string {
+  const rarity = match.upTo !== undefined && atOrBelow(match.upTo, own) ? match.upTo : own;
+  const flavors = (match.flavors ?? []).map(capital);
+  const kinds = flavors.length < 2 ? flavors.join('') : `${flavors.slice(0, -1).join(', ')} or ${flavors[flavors.length - 1]}`;
+  const card = kinds === '' ? 'a card' : `a ${kinds} card`;
+  if (rarity === RARITIES[RARITIES.length - 1]) return card;
+  return kinds === '' ? `${card} up to ${rarity}` : `${card}, up to ${rarity}`;
+}
+
 /** The live no-quote effect on a post, if it has one: the play that stops quotes of it. */
 export const quoteStop = (effects: readonly CardEffect[], now: Date = new Date()): CardEffect | undefined =>
   effects.find((e) => e.gimmick?.kind === 'noQuote' && (e.reach ?? 'post') === 'post' && isLive(e, now));
