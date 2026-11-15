@@ -36,6 +36,7 @@ import { ui as moochUi } from './cards/mooch/ui.ts';
 import { ui as offDayUi } from './cards/off-day/ui.ts';
 import { ui as overreactionUi } from './cards/overreaction/ui.ts';
 import { ui as publicityTourUi } from './cards/publicity-tour/ui.ts';
+import { ui as ropeBreakUi } from './cards/rope-break/ui.ts';
 import { ui as stickAroundUi } from './cards/stick-around/ui.ts';
 import { ui as sugarCoatUi } from './cards/sugar-coat/ui.ts';
 import { ui as superHappyHeartUi } from './cards/super-happy-heart/ui.ts';
@@ -76,6 +77,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   offDayUi,
   overreactionUi,
   publicityTourUi,
+  ropeBreakUi,
   stickAroundUi,
   sugarCoatUi,
   superHappyHeartUi,
