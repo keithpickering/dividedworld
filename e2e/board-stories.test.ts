@@ -66,7 +66,7 @@ test('Laugh Track\'s stories are listed, the thread on the Main and the Phone bo
 });
 
 test('Steel Chair\'s stories are listed, one chair on the light board and the dark, three, a short post and reduced motion', () => {
-  expect(boardStoryIds()).toEqual(expect.arrayContaining(['one-light', 'one-dark', 'three', 'short-post', 'reduced'].map((n) => `boards-25-steel-chair--${n}`)));
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['one-light', 'one-dark', 'three', 'short-post', 'short-three', 'reduced'].map((n) => `boards-25-steel-chair--${n}`)));
 });
 
 test('THIS\'s stories are listed, each on the Main board and the Phone one', () => {

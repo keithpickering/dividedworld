@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, rng, settle, throwOf } from './body.ts';
-import { BOX, depthOf, drawn, GIVE, INSET, K, PERSPECTIVE, piecesOf, project, REACH, ROOM, shadeOf, transformOf, Z_FRONT, type Matrix, type Piece } from './chair.ts';
+import { BOX, depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, PERSPECTIVE, piecesOf, project, REACH, REST_TILT, ROOM_HEIGHT, shadeOf, tallestRise, transformOf, Z_FRONT, type Matrix, type Piece } from './chair.ts';
 
 /** A piece's corners in the chair's frame: its centered rectangle through its column-major matrix. */
 function corners(p: Piece): [number, number, number][] {
@@ -90,14 +90,14 @@ describe('shadeOf', () => {
 const REACH_OF_CHAIR = Math.hypot(...HALF);
 
 describe('the projection', () => {
-  test("its constants come from body.ts: Z_FRONT is the glass, its give and the chair's reach; K lifts a flat chair at the very back by the room", () => {
+  test("its constants come from body.ts: Z_FRONT is the glass, its give and the chair's reach; K lifts a flat chair at the very back by the floor's depth", () => {
     assert.ok(GIVE > 0);
     assert.equal(Z_FRONT, DEPTH + GIVE + REACH_OF_CHAIR);
-    assert.equal(ROOM, 28);
+    assert.equal(FLOOR_DEPTH, 28);
     /* A chair lying flat at the very back, turned so that its short side (46) runs along z, the worst case: its center is at -(DEPTH + give) and
        its front edge 23 forward. (Turned with its long side, 90, along z the front edge is 45 forward and the lift is less.) */
     const front = -(DEPTH + GIVE) + HALF[0];
-    assert.ok(Math.abs(K * (Z_FRONT - front) - ROOM) < 1e-9);
+    assert.ok(Math.abs(K * (Z_FRONT - front) - FLOOR_DEPTH) < 1e-9);
     assert.ok(K > 0 && K < 1);
   });
 
@@ -107,7 +107,7 @@ describe('the projection', () => {
     const back = project({ x: 17, y: 300, z: -(DEPTH + GIVE) });
     assert.ok(mid.y < 300 && back.y < mid.y, 'the farther back, the higher');
     /* A flat chair at the very back is lifted by no more than the room, whichever way it is turned about the vertical: its front edge is at least 23 forward of its middle. */
-    for (let half = HALF[0]; half <= HALF[1]; half += 2) assert.ok(300 - project({ x: 0, y: 300, z: -(DEPTH + GIVE) + half }).y <= ROOM + 1e-9, `half-depth ${half}`);
+    for (let half = HALF[0]; half <= HALF[1]; half += 2) assert.ok(300 - project({ x: 0, y: 300, z: -(DEPTH + GIVE) + half }).y <= FLOOR_DEPTH + 1e-9, `half-depth ${half}`);
   });
 
   test('the side walls are drawn exactly on the left and right borders at every depth', () => {
@@ -180,6 +180,67 @@ describe('the projection', () => {
     }
     assert.ok(rests >= 200, `${rests} rests`);
     assert.ok(worst <= 0.01, `a corner is drawn ${worst} px past a border`);
+  });
+});
+
+/* ---------- the room: the height of the tallest rest ---------- */
+
+/** Which way a resting chair stands: its thin side (z), its width (x) or its length (y) is the most nearly vertical, and how far from square. */
+function stance(q: { w: number; x: number; y: number; z: number }): { on: 'flat' | 'face' | 'end'; tilt: number } {
+  const { w, x, y, z } = q;
+  /* The y components of the chair's three axes in the world, from the quaternion. */
+  const up = [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)].map(Math.abs) as [number, number, number];
+  const best = up.indexOf(Math.max(...up));
+  return { on: (['face', 'end', 'flat'] as const)[best]!, tilt: (Math.acos(Math.min(1, up[best]!)) * 180) / Math.PI };
+}
+/** The highest a chair's drawn box reaches above the content area's bottom border (area height , the world inset as the effect insets it). */
+function riseOf(b: ReturnType<typeof bodies>[number], h: number): number {
+  const centre = { x: b.position.x + INSET, y: b.position.y, z: b.position.z };
+  return h - Math.min(...cornersOf(b).map((c) => drawn([c[0] + INSET, c[1], c[2]], centre).y));
+}
+
+describe('the room', () => {
+  test('two named numbers: the floor is 28 px deep, and the room is the tallest rest: a chair on its 90 px end at the back, tipped REST_TILT', () => {
+    assert.equal(FLOOR_DEPTH, 28);
+    assert.ok(ROOM_HEIGHT > 90 + 28 && ROOM_HEIGHT <= 130, `${ROOM_HEIGHT}`);
+    const worst = Math.max(tallestRise(0), tallestRise(REST_TILT), tallestRise(-REST_TILT));
+    assert.ok(ROOM_HEIGHT >= worst && ROOM_HEIGHT - worst < 3, `the room ${ROOM_HEIGHT} against the tallest rise ${worst}`);
+    /* A chair upright on its 46 px face reaches less, which is why the end sizes the room. */
+    assert.ok(tallestRise(0) > 90 + K * (Z_FRONT + DEPTH + GIVE) - 2);
+  });
+
+  test('over 600 seeded throws (every fifth a run of three), every chair at rest on a face, an end or flat is drawn under the room, and a leaning one by at most 10 px more', () => {
+    const seen: Record<string, { n: number; max: number }> = {};
+    let leanOver = 0;
+    const take = (key: string, rise: number) => { const r = (seen[key] ??= { n: 0, max: 0 }); r.n++; r.max = Math.max(r.max, rise); };
+    for (const w of [600, 340]) {
+      const h = 8 + 120 + 8 + ROOM_HEIGHT;
+      const aim = { left: 10 - INSET, top: 8 - project({ x: 0, y: 0, z: 0 }).y, width: w - 20, height: 120 };
+      for (let s = 1; s <= 300; s++) {
+        const r = rng(s * 2654435761 + w);
+        const world = createWorld(w - 2 * INSET, h - INSET, h - INSET);
+        const three = s % 5 === 0;
+        for (let i = 0; i < (three ? 3 : 1); i++) { addThrow(world, throwOf(r, aim)); if (three) settle(world, 0.35); }
+        settle(world, 12);
+        for (const b of bodies(world)) {
+          assert.ok(b.asleep);
+          const { on, tilt } = stance(b.quaternion);
+          const rise = riseOf(b, h);
+          if (tilt <= REST_TILT) {
+            take(on, rise);
+            assert.ok(rise <= ROOM_HEIGHT, `a chair on its ${on} is drawn ${rise} above the border, past the room ${ROOM_HEIGHT} (seed ${s}, width ${w})`);
+          } else {
+            take('leaning', rise);
+            leanOver = Math.max(leanOver, rise - ROOM_HEIGHT);
+          }
+        }
+      }
+    }
+    /* What the sample holds, so that a body that stopped making a class of rest is noticed: lying flat is the bulk, the face and the end occur. */
+    assert.ok(seen.flat!.n > 300, JSON.stringify(seen));
+    assert.ok(seen.flat!.max <= 63, `flat chairs reach ${seen.flat!.max}`);
+    assert.ok((seen.face?.max ?? 0) <= 90, `chairs on the narrow face reach ${seen.face?.max}`);
+    assert.ok(leanOver <= 10, `a leaning chair is drawn ${leanOver} px past the room`);
   });
 });
 

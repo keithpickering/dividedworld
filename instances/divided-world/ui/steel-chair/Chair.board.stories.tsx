@@ -1,7 +1,8 @@
 /**
  * Steel Chair as stories for the owner's word (docs/plans/2026-11-15-steel-chair-plan.md, Task 7): a post of a thread with one chair thrown at it
  * (`OneLight`, `OneDark`), three chairs from three characters (`Three`), a post of one line of words (`ShortPost`, the worst case for the room under
- * the words) and the one chair with motion reduced (`Reduced`, `data-kb-motion="reduce"`, where the chair is at rest and the dent drawn at once).
+ * the words), the same one line with three chairs from three characters (`ShortThree`, where the dents must leave the line readable) and the
+ * one chair with motion reduced (`Reduced`, `data-kb-motion="reduce"`, where the chair is at rest and the dent drawn at once).
  * Each throw is drawn on the reader's own screen when the post's middle has been in view for 300 ms, and differs every time; e2e/steel-chair.spec.ts
  * waits for it to rest. Open them at 1440 by 1120.
  */
@@ -65,4 +66,6 @@ export const OneLight: Story = { args: { mode: 'light' } };
 export const OneDark: Story = { args: { mode: 'dark' } };
 export const Three: Story = { args: { mode: 'light' }, parameters: { world: worldOf(WORDS, 3) } };
 export const ShortPost: Story = { args: { mode: 'light' }, parameters: { world: worldOf('Luigi wins.', 1) } };
+/** One line of words, three plays by three characters: the hard case for the dents, which must leave the line readable (e2e/steel-chair.spec.ts). */
+export const ShortThree: Story = { args: { mode: 'light' }, parameters: { world: worldOf('Luigi wins.', 3) } };
 export const Reduced: Story = { args: { mode: 'light', reduced: true } };

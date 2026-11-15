@@ -7,7 +7,7 @@
  * The view is oblique, the way a 2D game shows a floor from above, and not a perspective of the whole layer: a point of the world at
  * (x, y, z) (z toward the reader) is drawn at x' = x, y' = y - K (Z_FRONT - z). So the side walls are drawn exactly on the content area's
  * left and right borders at every depth, a point of the floor at the front (z = Z_FRONT) is drawn on its bottom border, and the floor
- * recedes UP the screen, by at most the room under the words (ROOM, 28 px), so a resting chair is always drawn inside the content area.
+ * recedes UP the screen, by at most the floor's depth (FLOOR_DEPTH, 28 px), so a resting chair is always drawn inside the content area.
  * A layer-wide perspective could not give that: whatever is near the reader is projected down and outward, past the borders.
  *
  * The chair's frame: x right, y down, z toward the reader, the origin at the center of the folded 46 by 90 by 8 box the body simulates.
@@ -122,8 +122,12 @@ export function shadeOf(normal: readonly [number, number, number]): string {
 
 /* ---------- the oblique projection ---------- */
 
-/** The room above the content area's bottom border that a chair lying flat at the very back is lifted into: the floor's room (steel-chair.css). */
-export const ROOM = 28;
+/**
+ * How deep the floor is drawn, px: the height above the content area's bottom border that a chair lying flat at the very back is lifted by
+ * (the depth lift K below derives from it). It is the floor's DRAWN DEPTH, not the room the content area keeps for resting chairs: that is
+ * ROOM_HEIGHT, below, which is taller, since a chair standing on an edge reaches higher than one lying flat.
+ */
+export const FLOOR_DEPTH = 28;
 /**
  * How far past `DEPTH` a chair's middle may go before the glass's spring (body.ts `GLASS_SPRING`, not exported) has pushed it back, px. The
  * rests measure at most about 6; 12 leaves room for the overshoot of a hard landing, and chair.test.ts proves over 200 seeded rests that no
@@ -136,10 +140,10 @@ const CHAIR_REACH = Math.hypot(...HALF);
 export const Z_FRONT = DEPTH + GIVE + CHAIR_REACH;
 /**
  * The px a point is drawn higher for each px it lies farther back. Chosen so that a chair lying flat at the very back (its middle at
- * -(DEPTH + GIVE)) has its lowest point lifted by at most ROOM, turned any way about the vertical: the worst is its short side, 46, along z,
+ * -(DEPTH + GIVE)) has its lowest point lifted by at most FLOOR_DEPTH, turned any way about the vertical: the worst is its short side, 46, along z,
  * which puts its front edge only 23 (HALF[0]) forward of its middle; with its long side along z the front edge is 45 forward and the lift less.
  */
-export const K = ROOM / (Z_FRONT - (-(DEPTH + GIVE) + HALF[0]));
+export const K = FLOOR_DEPTH / (Z_FRONT - (-(DEPTH + GIVE) + HALF[0]));
 
 /** Where a point of the world is drawn, in the content area's px. */
 export function project(p: { x: number; y: number; z: number }): { x: number; y: number } {
@@ -160,6 +164,38 @@ export const REACH = (CHAIR_REACH * CHAIR_REACH * (0.5 + K)) / (PERSPECTIVE - CH
  * corner on a wall or the floor is then drawn at most REACH from it, which is at most INSET. The walls and floor are the borders to within this.
  */
 export const INSET = REACH;
+
+/**
+ * How far from square a chair can rest on a face or an end and still be told from one leaning, degrees: the classification chair.test.ts
+ * makes of a sample of rests, and the allowance the room is sized with. Sleeping needs the chair nearly still, not level.
+ */
+export const REST_TILT = 12;
+
+/**
+ * The highest a chair at rest on its 46 by 8 END (90 tall, the tallest rest the body makes: about one rest in 300) is drawn above the content
+ * area's bottom border, px: its middle at the very back of the floor (-(DEPTH + GIVE)), tipped `tilt` degrees toward or away from the reader,
+ * drawn by `drawn` as the effect draws it, plus the INSET the border lies below the world's floor. A rest on the long narrow face (46 tall)
+ * and one lying flat (at most about 50, and 62 stacked three deep) reach less, so the room that covers this one covers them.
+ */
+export function tallestRise(tilt: number): number {
+  const t = (tilt * Math.PI) / 180, c = Math.cos(t), s = Math.sin(t);
+  const local: [number, number, number][] = [];
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) local.push([sx * HALF[0], sy * HALF[1], sz * HALF[2]]);
+  /* Tipped about the x axis: y' = y cos - z sin, z' = y sin + z cos. The lowest corner is on the floor (world y 0, the floor line). */
+  const turned = local.map(([x, y, z]) => [x, y * c - z * s, y * s + z * c] as [number, number, number]);
+  const lowest = Math.max(...turned.map((p) => p[1]));
+  const centre = { x: 0, y: -lowest, z: -(DEPTH + GIVE) };
+  const top = Math.min(...turned.map((p) => drawn([p[0], p[1] + centre.y, p[2] + centre.z], centre).y));
+  return INSET - top;
+}
+/**
+ * The height of the room the content area keeps above its bottom border while a chair is live, px, so that a resting chair reaches neither
+ * the reactions row nor the last line of words: the tallest rise (a chair on its end, tipped REST_TILT either way), rounded up. The CSS
+ * (steel-chair.css: the `::after` and the strip in the host) carries the same number, and Effect.test.tsx holds the two equal.
+ */
+export const ROOM_HEIGHT = Math.ceil(Math.max(tallestRise(0), tallestRise(REST_TILT), tallestRise(-REST_TILT))) + 1;
+/* The extra px: a rest measures up to 0.5 px above the figure (the body's contact tolerance, body.ts TOUCH) and the sample's tallest, 125.3, was a
+   little over the tipped chair's 124.9; chair.test.ts holds every sampled rest under the constant. */
 
 /**
  * Where a corner of a chair is drawn, the whole picture: `corner` is a point of the world on the chair whose middle is `centre`. The

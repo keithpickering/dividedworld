@@ -14,9 +14,18 @@
  * there is no body (outside a thread) the effect's own box is the world. A `ResizeObserver` on the box (and the host) resizes the world and
  * places the layers again. The words are a wrapper inside the host; the throw aims at the box the text really takes (a Range's client
  * rects: a short post's wrapper is as wide as the content area), and since the filter is applied to that wrapper its coordinates are the
- * wrapper's, not the content area's: `geo` holds the measured offset between the two. The floor's 28 px of room is the content area's own
- * last 28 px (steel-chair.css: a static `::after` while a play is live), so a chair lying at the bottom covers no words; only where there
- * is no content area is it a strip in the host (`.dw-chair-room`).
+ * wrapper's, not the content area's: `geo` holds the measured offset between the two. The floor's room is the content area's own
+ * last ROOM_HEIGHT px (chair.ts, the height of the tallest rest; steel-chair.css: a static `::after` while a play is live), so a resting chair
+ * reaches neither the reactions row nor the words; only where there is no content area is it a strip in the host (`.dw-chair-room`). Nothing
+ * here assumes the content area is as tall as its words plus the room: the world, the layers and the dents' coordinates are all measured boxes
+ * (`bodyBox`, the wrapper's offsets, the text's client rects), the room is the content area's last child so it stays at the floor however tall
+ * the body is, and the floor is the area's bottom border.
+ *
+ * The dents. Each is an ellipse (within 15% of round) with an uneven edge, its light, shade and creases turned by an angle, all from its play's
+ * id alone (dent.ts `dentShape`): the same for every reader and on every replay, while where it lands is the run's. The displacement's
+ * `feImage` is stretched to the ellipse's axis-aligned box; only the shading turns. A dent that overlaps another has no creases, and the
+ * shading of overlapping dents is the darkest (and the lightest) of them, not their sum (steel-chair.css). Where the text is shorter than a dent
+ * the throw aims at a box grown around it (dent.ts `hitZone`), so three dents do not stack on one line.
  *
  * When. A run starts once the host's middle (`watchInView`, margin `-20% 0px -20% 0px`, as Glitter Bomb arms its burst) has been in view
  * for 300 ms, and is cleared when the post has wholly left the view, so coming back starts a new one. While a run is up a second observer,
@@ -50,7 +59,7 @@ import {
   addThrow, bodies, createWorld, remove, resize, rng, settle, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
 import { depthOf, INSET, piecesOf, project, shadeOf, transformOf, type Piece } from './chair.ts';
-import { DENT_SCALE, dentMapUrl, dentPrimitives, filterTrusted } from './dent.ts';
+import { DENT_SCALE, dentMapUrl, dentPrimitives, dentShape, dentsOverlap, filterTrusted, hitZone, seedOfIds } from './dent.ts';
 import './steel-chair.css';
 
 /** The most chairs one post draws (the card's stack). */
@@ -84,12 +93,6 @@ const freshSeed = (): number => {
   const c = globalThis.crypto;
   if (c?.getRandomValues) return c.getRandomValues(new Uint32Array(1))[0]!;
   return Math.floor(Math.random() * 2 ** 32);
-};
-/** A moment's seed: the plays' ids (public), hashed (FNV-1a), so it is the same each time it is opened. */
-const seedOfIds = (ids: readonly string[]): number => {
-  let h = 2166136261;
-  for (const ch of ids.join('|')) { h ^= ch.codePointAt(0)!; h = Math.imul(h, 16777619); }
-  return h >>> 0;
 };
 
 /**
@@ -214,6 +217,8 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
   const words = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const shading = useRef<HTMLDivElement>(null);
+  const glows = useRef<HTMLDivElement>(null);
+  const creases = useRef<HTMLDivElement>(null);
   const [chairs, setChairs] = useState<readonly string[]>([]);
   const [dents, setDents] = useState<readonly Dent[]>([]);
   const [geo, setGeo] = useState<Geo | null>(null);
@@ -241,11 +246,15 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
   const key = live.map((p) => p.id).join('|');
   useEffect(() => {
     const el = host.current, wordsEl = words.current, chairLayer = layer.current, dentLayer = shading.current;
-    if (!el || !wordsEl || !chairLayer || !dentLayer) return;
+    const glowLayer = glows.current, creaseLayer = creases.current;
+    if (!el || !wordsEl || !chairLayer || !dentLayer || !glowLayer || !creaseLayer) return;
     let world: World | null = null;
     let running = false;
     let loud = false;
     let rand: () => number = rng(0);
+    /* The settle sound's pick has a generator of its own: a floor event comes at a real time, and drawing it from the throws' generator would
+       move where a later throw lands with the timing of an earlier one's settle (and so with the machine), which a pinned seed cannot allow. */
+    let soundRand: () => number = rng(0);
     let box: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
     let geoNow: Geo | null = null;
     let body: HTMLElement | null = null;
@@ -291,6 +300,8 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
         ?? { left: g.left, top: g.top, width: g.width, height: g.height };
       placeLayer(chairLayer, b);
       placeLayer(dentLayer, b);
+      placeLayer(glowLayer, b);
+      placeLayer(creaseLayer, b);
       if (moved) { geoNow = g; setGeo(g); }
       return moved;
     };
@@ -377,7 +388,7 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
         shake();
         if (loud) void latest.current.sound.play('steel-chair.hit', { group: GROUP });
       } else if (e.kind === 'floor' && loud) {
-        void latest.current.sound.play(`steel-chair.settle-${1 + Math.floor(rand() * SETTLE_SOUNDS)}`, { group: GROUP });
+        void latest.current.sound.play(`steel-chair.settle-${1 + Math.floor(soundRand() * SETTLE_SOUNDS)}`, { group: GROUP });
       }
     };
 
@@ -397,15 +408,22 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
     const wake = (): void => { if (!raf && world) raf = requestAnimationFrame(tick); };
 
     /*
-     * The box a throw aims at: the text's, lowered by the lift of the oblique view at the hit, so the drawn chair meets the dent drawn at
-     * the text.
+     * The box a throw aims at (throwOf aims inside it, 15% in from its sides): the text's, where the text is a dent's diameter tall or more;
+     * where it is shorter, one line or a few, grown around the text within the content area (dent.ts `hitZone`), so that three throws do not
+     * stack on one line and a dent may land beside it, as far as the dent's own circle (its shape, from its play's id) fits the area. Then lowered
+     * by the lift of the oblique view at the hit, so the drawn chair meets the dent drawn at the text. Where it lands inside the box is the
+     * run's own generator's, as before.
      */
-    const aim = (): Box => ({ left: target.left - INSET, top: target.top + HIT_LIFT, width: target.width, height: target.height });
+    const aim = (play: string): Box => {
+      const dent = dentPrimitives([{ x: 0, y: 0, shape: dentShape(play) }], { width: geoNow?.width ?? box.w, height: box.h })[0]!;
+      const zone = hitZone(target, { width: box.w, height: box.h }, dent);
+      return { left: zone.left - INSET, top: zone.top + HIT_LIFT, width: zone.width, height: zone.height };
+    };
 
     /* A chair into the standing world, in flight. */
     const addPlay = (play: CardPlay): void => {
       if (!world || bodyOfPlay.has(play.id)) return;
-      const id = addThrow(world, throwOf(rand, aim()));
+      const id = addThrow(world, throwOf(rand, aim(play.id)));
       bodyOfPlay.set(play.id, id);
       playOfBody.set(id, play.id);
       setChairs((c) => (c.includes(play.id) ? c : [...c, play.id]));
@@ -422,7 +440,7 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
       const added: { play: string; x: number; y: number }[] = [];
       for (const p of plays) {
         if (bodyOfPlay.has(p.id)) continue;
-        const th = throwOf(rand, aim());
+        const th = throwOf(rand, aim(p.id));
         const id = addThrow(world, th);
         bodyOfPlay.set(p.id, id);
         playOfBody.set(id, p.id);
@@ -473,7 +491,9 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
       running = true;
       loud = memory.first && !still && !reduced;
       memory.first = false;
-      rand = rng(still ? seedOfIds(latest.current.live.map((p) => p.id)) : freshSeed());
+      const seed = still ? seedOfIds(latest.current.live.map((p) => p.id)) : freshSeed();
+      rand = rng(seed);
+      soundRand = rng(seedOfIds([String(seed), 'settle']));
       world = createWorld(box.w - 2 * INSET, box.h - INSET, box.h - INSET);
       const plays = latest.current.live;
       meet();
@@ -582,15 +602,28 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
   /* The filter and the shading, from the dents in the content area's px: the filter's coordinates are the words wrapper's. */
   const shown = dents.filter((d) => live.some((p) => p.id === d.play));
   const off = geo ?? { left: 0, top: 0, width: 0, height: 0 };
-  const prims = dentPrimitives(shown.map((d) => ({ x: d.x - off.left, y: d.y - off.top })), { width: off.width, height: off.height });
+  /* Each dent's own shape and turn come from its play's id alone (dent.ts `dentShape`): the same for every reader and on every replay. */
+  const shapes = shown.map((d) => dentShape(d.play));
+  const prims = dentPrimitives(shown.map((d, i) => ({ x: d.x - off.left, y: d.y - off.top, shape: shapes[i]! })), { width: off.width, height: off.height });
+  /* A dent that overlaps another draws no creases: where they met they would strike through the words. A lone dent keeps its two. */
+  const lone = prims.map((p, i) => !prims.some((o, j) => j !== i && dentsOverlap(p, o)));
   const filterOn = trusted && shown.length > 0 && geo !== null;
   /* The filter's region: the wrapper's box plus DENT_SCALE on every side, in the wrapper's px (as `primitiveUnits` is). The default region
      (-10% to 120% of the box) is too small for a one-line post, where a displacement of up to DENT_SCALE / 2 px moves the glyphs out of it
      and clips them. */
   const region = { x: -DENT_SCALE, y: -DENT_SCALE, width: off.width + 2 * DENT_SCALE, height: off.height + 2 * DENT_SCALE };
-  const dentStyle = (i: number): CSSProperties => {
-    const p = prims[i]!;
-    return { left: `${p.x + off.left}px`, top: `${p.y + off.top}px`, width: `${p.size}px`, height: `${p.size}px` };
+  /* A dent's box (the ellipse the displacement's `feImage` is stretched to), its uneven edge, and where its shade and its light sit: the
+     light from the direction of its turn, the shade opposite, as a pressed-in plate lit from one side. */
+  const dentStyle = (i: number, round = true): CSSProperties => {
+    const p = prims[i]!, sh = shapes[i]!;
+    const a = (sh.turn * Math.PI) / 180, [o0, o1, o2, o3] = sh.outline;
+    const style: Record<string, string> = {
+      left: `${p.x + off.left}px`, top: `${p.y + off.top}px`, width: `${p.width}px`, height: `${p.height}px`,
+      '--dark-x': `${(50 + 25 * Math.cos(a)).toFixed(1)}%`, '--dark-y': `${(50 + 25 * Math.sin(a)).toFixed(1)}%`,
+      '--glow-x': `${(50 - 28 * Math.cos(a)).toFixed(1)}%`, '--glow-y': `${(50 - 28 * Math.sin(a)).toFixed(1)}%`,
+    };
+    if (round) style.borderRadius = `${o0}% ${100 - o0}% ${o2}% ${100 - o2}% / ${o1}% ${o3}% ${100 - o3}% ${100 - o1}%`;
+    return style as CSSProperties;
   };
   const last = shown.length - 1;
   return (
@@ -602,7 +635,7 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
             {shown.map((d, i) => (
               <Fragment key={d.play}>
                 <feImage
-                  href={mapUrl} x={prims[i]!.x} y={prims[i]!.y} width={prims[i]!.size} height={prims[i]!.size}
+                  href={mapUrl} x={prims[i]!.x} y={prims[i]!.y} width={prims[i]!.width} height={prims[i]!.height}
                   preserveAspectRatio="none" result={`map-${i}`}
                 />
                 <feComponentTransfer in={`map-${i}`} result={`dent-${i}`} ref={depthRef(d.play)}>
@@ -626,8 +659,19 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
       ) : null}
       <div ref={words} className="dw-chair-words" style={filterOn ? { filter: `url("#${filterId}")` } : undefined}>{children}</div>
       <div className="dw-chair-room" aria-hidden="true" />
-      <div ref={shading} className="dw-chair-dents" data-kb-effect-ink="" aria-hidden="true">
-        {shown.map((d, i) => <div key={d.play} className="dw-chair-dent" style={dentStyle(i)} />)}
+      {/* The dents' shading, in three layers that each fill the content area: the shade (darkest of the overlapping dents, multiplied onto the
+          words), the light (brightest, screened on), and the creases (lone dents only). Each is its own stacking context, so a blend inside
+          it is among its own dents and the layer as a whole blends with the words (steel-chair.css). */}
+      <div ref={shading} className="dw-chair-dents dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
+        {shown.map((d, i) => <div key={d.play} className="dw-chair-dent" data-play={d.play} style={dentStyle(i)} />)}
+      </div>
+      <div ref={glows} className="dw-chair-glows dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
+        {shown.map((d, i) => <div key={d.play} className="dw-chair-glow" data-play={d.play} style={dentStyle(i)} />)}
+      </div>
+      <div ref={creases} className="dw-chair-crease-layer dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
+        {shown.map((d, i) => (lone[i]
+          ? <div key={d.play} className="dw-chair-creases" data-play={d.play} style={{ ...dentStyle(i, false), transform: `rotate(${shapes[i]!.turn.toFixed(1)}deg)` }} />
+          : null))}
       </div>
       <div ref={layer} className="dw-chair-layer" data-kb-effect-ink="" aria-hidden="true">
         {chairs.filter((id) => live.some((p) => p.id === id)).map((id) => (

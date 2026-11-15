@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
+import { FLOOR_DEPTH, ROOM_HEIGHT } from '../instances/divided-world/ui/steel-chair/chair.ts';
+import { DENT_SCALE } from '../instances/divided-world/ui/steel-chair/dent.ts';
 import { pageViolations } from './axe.ts';
 
 /**
@@ -12,10 +14,12 @@ import { pageViolations } from './axe.ts';
  * The geometry (chair.ts): the world is drawn in an oblique view, so the floor recedes UP the screen the farther back it is. A chair is
  * therefore always inside the content area's padding box (the side walls are the borders at every depth, and the floor's front is the bottom
  * border), and its lowest drawn point is on the border only when it rests at the very front. A chair lying flat (its big face down) on the
- * floor is at most the floor's room, 28 px, above the border. A chair standing on a narrow face is not bounded by the room: its contact edge
- * is at most 4 px in front of its middle, which is at most DEPTH + GIVE = 52 px behind the front, so it may be drawn up to
+ * floor is at most the floor's depth (FLOOR_DEPTH, 28 px) above the border. A chair standing on a narrow face is not bounded by it: its
+ * contact edge is at most 4 px in front of its middle, which is at most DEPTH + GIVE = 52 px behind the front, so it may be drawn up to
  * K·(Z_FRONT + 52 + 4) = 33.7 px above the border, and that is what is asserted for it (34, and a pixel's rounding). A chair lying on another
- * chair is held to resting on a chair that is itself held (see `onTheFloor`), and to the border and the top of the content area.
+ * chair is held to resting on a chair that is itself held (see `onTheFloor`), and to the border and the top of the content area. The room the
+ * content area keeps above its bottom border is taller than the floor is deep: ROOM_HEIGHT, the height of the tallest rest (chair.ts), so that
+ * a chair at rest in any pose, whole box included, covers no line of words and does not reach the reactions row.
  *
  * Why the seed is pinned. Each run draws its throws from a generator seeded by `crypto.getRandomValues` (Effect.tsx `freshSeed`), and the
  * geometric bounds above have a tail: a chair that comes to rest almost flat (|m[9]| near the 0.98 threshold of `flat`), and the rare lean
@@ -29,8 +33,11 @@ test.use({ bypassCSP: true });
 
 const STORY = (name: string) => `/?fixture=boards&story=boards-25-steel-chair--${name}`;
 
-/** The floor's room, and the highest a chair standing on a narrow face may be drawn above the bottom border (see above). */
-const ROOM = 28;
+/**
+ * The floor's drawn depth (the most a chair lying flat is lifted above the bottom border), and the highest a chair standing on a narrow face may
+ * be drawn with its lowest point above the border (see above). The room the content area keeps is ROOM_HEIGHT, the height of the tallest rest.
+ */
+const ROOM = FLOOR_DEPTH;
 const HIGHEST_STANDING = 34;
 /** A pixel's rounding, and the half pixel the plan allows at a border. */
 const ROUND = 1;
@@ -46,10 +53,18 @@ const SEEDS = {
   'one-dark': [101, 104],
   reduced: [101],
   'short-post': [101],
+  /* One-light with a chair that rests standing on its long narrow face (46 tall): found by running seeds, see the test that uses it. */
+  standing: [45],
+  /* Three dents on one line, found by running seeds 1 to 40 on the widened hit zone (dent.ts `hitZone`): the tight case (this one) has
+     two dents over the line and overlapping each other (their centres 13 px apart at the closest); the spread case (SPREAD_SEED) has the
+     dents' centres 69 px apart at the closest, one of them over the line and shading it. See the two tests. */
+  'short-three': [1],
   three: [101],
   phone: [113],
 } as const;
-type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'three';
+/** The short-three layout's second pinned seed: the spread case. */
+const SPREAD_SEED = 36;
+type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three';
 
 /** The post that wears the card: its content area (the world) and its parts. */
 const area = (page: Page) => page.locator('.kb-act-main:has(.dw-chair)').first();
@@ -154,7 +169,7 @@ function inside(m: Measure) {
 
 /**
  * Each chair's lowest drawn point is no lower than the border, and every chair is held to a real height: it meets the floor bound (the
- * room's 28 px for one lying flat, `HIGHEST_STANDING` for one on a narrow face), or it rests on a chair that is itself held. "Rests on" is
+ * floor's 28 px for one lying flat, `HIGHEST_STANDING` for one on a narrow face), or it rests on a chair that is itself held. "Rests on" is
  * drawn geometry: the two overlap across, and its lowest point is no higher than the other's top (within `STACK_TOL`), so a chair floating
  * above another's top fails too. Held chairs are found from the floor up, so at least one chair of every overlapping group meets the floor bound.
  */
@@ -183,28 +198,23 @@ function onTheFloor(m: Measure) {
 }
 
 /**
- * The room is the content area's last 28 px above its bottom padding: a block `::after` of that height, with at least that much between
+ * The room is the content area's last ROOM_HEIGHT px above its bottom padding: a block `::after` of that height, with at least that much between
  * the last box and the content's end.
  */
 function roomIsLast(m: Measure) {
   expect(m.room.display).toBe('block');
-  expect(m.room.height).toBeCloseTo(ROOM, 0);
-  expect(m.room.gap, 'room left between the last box and the bottom of the content').toBeGreaterThanOrEqual(ROOM - ROUND);
+  expect(m.room.height).toBeCloseTo(ROOM_HEIGHT, 0);
+  expect(m.room.gap, 'room left between the last box and the bottom of the content').toBeGreaterThanOrEqual(ROOM_HEIGHT - ROUND);
 }
 
 /**
- * No word is under a chair. One lying flat is checked against its own drawn box. One that is not flat (standing on a narrow face) may be
- * drawn up to `HIGHEST_STANDING` above the border, which is more than the room, so for it the slab from the bottom border up to that bound,
- * across the chair's x-range, must cover no line of words: the words end at least the room above the border, plus the content area's own
- * bottom padding. A chair standing on a narrow face may therefore reach above the room where the padding is thinner than the 6 px between
- * the room and the bound; the card does not claim otherwise, and that is recorded in the PR for the owner.
+ * No word is under a chair: each chair's whole drawn box, whichever way it rests (flat, on a narrow face, on its end), covers no line of words.
+ * The room is the height of the tallest rest (chair.ts ROOM_HEIGHT), so the words end above the tallest chair's top.
  */
 function noWordsUnderChairs(m: Measure) {
-  const slabTop = m.area.bottom - HIGHEST_STANDING;
   for (const c of m.chairs) {
-    const reach = c.flat ? c : { ...c, top: slabTop, bottom: m.area.bottom };
-    const covered = m.lines.filter((l) => l.left < reach.right && l.right > reach.left && l.top < reach.bottom && l.bottom > reach.top);
-    expect(covered, `lines under the ${c.flat ? 'flat chair\'s box' : 'standing chair\'s slab'} ${JSON.stringify(reach)}`).toEqual([]);
+    const covered = m.lines.filter((l) => l.left < c.right && l.right > c.left && l.top < c.bottom && l.bottom > c.top);
+    expect(covered, `lines under the chair's box ${JSON.stringify(c)}`).toEqual([]);
   }
 }
 
@@ -251,7 +261,7 @@ test('one-light: a dent and a chair, the chair inside the content area, on or ju
   onTheFloor(m);
 });
 
-test('one-light: the room is the last 28 px of the content area, above its bottom padding', async ({ page }) => {
+test('one-light: the room is the last ROOM_HEIGHT px of the content area, above its bottom padding', async ({ page }) => {
   await open(page, 'one-light');
   await atRest(page, 1);
   roomIsLast(await measure(page));
@@ -352,7 +362,7 @@ test('reduced: the dent and the resting chair are there on first paint and nothi
   onTheFloor(m);
 });
 
-test('short-post: the host is as tall as its words, the content area holds the room, the chair rests inside it and the dent is over the text', async ({ page }) => {
+test('short-post: the host is as tall as its words, the content area holds the room, the chair rests inside it and the dent is within a diameter of the text', async ({ page }) => {
   await open(page, 'short-post');
   await atRest(page, 1);
   expect(await framesAfterRest(page, 1), 'frames asked for after the chair rests').toBe(0);
@@ -374,7 +384,7 @@ test('short-post: the host is as tall as its words, the content area holds the r
     const d = dent.getBoundingClientRect();
     return {
       words: words.height, host: host.height, hostStrip: box.querySelector('.dw-chair-room')!.getBoundingClientRect().height,
-      text: { left, right, top, bottom }, dent: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
+      text: { left, right, top, bottom }, dent: { left: d.left, right: d.right, top: d.top, bottom: d.bottom },
       wordsWidth: words.width, areaLeft: inner.left, areaWidth: inner.width,
     };
   });
@@ -383,18 +393,18 @@ test('short-post: the host is as tall as its words, the content area holds the r
   expect(rows.hostStrip, 'the strip in the host is hidden inside a content area').toBe(0);
   /* The words wrapper is as wide as the content area but the text is one short line: the dent is over the text and not beside it. */
   expect(rows.text.right - rows.text.left, 'the text is narrower than its wrapper').toBeLessThan(rows.wordsWidth / 2);
-  const dx = `dent x ${rows.dent.x} over the text ${rows.text.left} to ${rows.text.right}`;
-  expect(rows.dent.x, dx).toBeGreaterThanOrEqual(rows.text.left - 2);
-  expect(rows.dent.x, dx).toBeLessThanOrEqual(rows.text.right + 2);
-  const dy = `dent y ${rows.dent.y} over the text ${rows.text.top} to ${rows.text.bottom}`;
-  expect(rows.dent.y, dy).toBeGreaterThanOrEqual(rows.text.top - 2);
-  expect(rows.dent.y, dy).toBeLessThanOrEqual(rows.text.bottom + 2);
+  /* The throw aims at a box grown around the short line (dent.ts `hitZone`): the dent's centre may be up to a dent's diameter beside the line
+     (so the dent may lie wholly next to it) or below it, and not above its top by more than a radius. */
+  const reach = `dent ${JSON.stringify(rows.dent)} against the text ${JSON.stringify(rows.text)}`;
+  const dw = rows.dent.right - rows.dent.left, dh = rows.dent.bottom - rows.dent.top;
+  const cx = (rows.dent.left + rows.dent.right) / 2, cy = (rows.dent.top + rows.dent.bottom) / 2;
+  expect(cx >= rows.text.left - dw - ROUND && cx <= rows.text.right + dw + ROUND && cy >= rows.text.top - dh / 2 - ROUND && cy <= rows.text.bottom + dh + ROUND, reach).toBe(true);
   const m = await measure(page);
   roomIsLast(m);
   inside(m);
   onTheFloor(m);
   /* The row is as tall as the author column makes it, as for any post: the room does not stretch it, it is part of what the content holds. */
-  expect(m.area.bottom - m.area.top).toBeGreaterThan(rows.words + ROOM);
+  expect(m.area.bottom - m.area.top).toBeGreaterThan(rows.words + ROOM_HEIGHT);
 });
 
 /**
@@ -481,6 +491,289 @@ test('short-post: the filter\'s region covers the wrapper and its displacement, 
   expect(shipped, 'the words are in the picture').toBeGreaterThan(50);
   expect(shipped, `ink with the shipped region against a region 100 px larger: ${inks}`).toBeGreaterThanOrEqual(larger * 0.99);
 });
+
+/**
+ * A chair that rests standing on its long narrow face (46 tall, the seed is pinned to one) stands higher than the room under flat chairs: the
+ * room is the height of the tallest rest, so such a chair's whole drawn box covers no line of words (the post is one whose words reach the end of
+ * the content) and does not touch the reactions row. The row is found, and the chair is checked to really be standing, so this cannot pass by
+ * measuring nothing.
+ */
+test('one-light: a chair standing on its narrow face covers no words and does not reach the reactions row', async ({ page }) => {
+  await open(page, 'one-light', undefined, SEEDS.standing);
+  await atRest(page, 1);
+  const m = await measure(page);
+  const standing = await chairs(page).first().evaluate((g) => {
+    const mat = [...g.style.transform.matchAll(/matrix3d\(([^)]*)\)/gu)].at(-1)![1]!.split(',').map(Number);
+    /* The first column of the rotation is where the chair's width points: straight up or down when it stands on its long narrow face. */
+    return Math.abs(mat[1]!);
+  });
+  expect(standing, 'the chair stands on its long narrow face (its width points up)').toBeGreaterThan(0.95);
+  const row = await area(page).locator('.kb-reactions').first().evaluate((el, m) => {
+    const r = el.getBoundingClientRect();
+    /* The row's band: its own height across the whole content area (the row is only as wide as its tiles, but a chair reaching its height anywhere is in its way). */
+    return { left: m.area.left, top: r.top, right: m.area.right, bottom: r.bottom, height: r.height };
+  }, m);
+  expect(row.height, 'the reactions row (the + React tile and the others, full width) was found').toBeGreaterThan(0);
+  noWordsUnderChairs(m);
+  for (const c of m.chairs) {
+    const touches = c.left < row.right && c.right > row.left && c.top < row.bottom && c.bottom > row.top;
+    expect(touches, `the chair's box ${JSON.stringify(c)} against the reactions row ${JSON.stringify(row)}`).toBe(false);
+  }
+  inside(m);
+});
+
+/** Opens a clip of the page as RGBA pixels (the screenshot is decoded in the page, which has a canvas). */
+async function pixelsOf(page: Page, clip: { x: number; y: number; width: number; height: number }): Promise<{ width: number; height: number; px: number[] }> {
+  const png = (await page.screenshot({ clip })).toString('base64');
+  return page.evaluate(async (data) => {
+    const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${data}`)).blob());
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(bitmap, 0, 0);
+    return { width: canvas.width, height: canvas.height, px: [...ctx.getImageData(0, 0, canvas.width, canvas.height).data] };
+  }, png);
+}
+const luma = (px: number[], i: number) => 0.2126 * px[i]! + 0.7152 * px[i + 1]! + 0.0722 * px[i + 2]!;
+/** WCAG's relative luminance of an sRGB pixel. */
+const relative = (px: number[], i: number) => {
+  const f = (v: number) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * f(px[i]!) + 0.7152 * f(px[i + 1]!) + 0.0722 * f(px[i + 2]!);
+};
+
+/** Each dent's box (the shading's ellipse) and the text's line box, in the window, and each dent's crease elements. */
+async function shading(page: Page) {
+  return area(page).evaluate((box) => {
+    const dentRects = [...box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent')].map((d, i) => {
+      const r = d.getBoundingClientRect();
+      const play = d.dataset.play ?? String(i);
+      /* A crease is drawn by a pseudo-element of the dent or by an element of its own, in the dents' layer. */
+      const pseudo = ['::before', '::after'].filter((p) => getComputedStyle(d, p).content !== 'none').length;
+      const own = box.querySelectorAll(`.dw-chair-creases[data-play="${play}"]`).length;
+      return { left: r.left, top: r.top, width: r.width, height: r.height, creases: pseudo + own };
+    });
+    const walker = document.createTreeWalker(box.querySelector('.dw-chair-words')!, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    range.selectNodeContents(walker.nextNode()!);
+    const t = range.getBoundingClientRect();
+    const a = box.getBoundingClientRect();
+    return {
+      dents: dentRects, text: { left: t.left, top: t.top, right: t.right, bottom: t.bottom },
+      area: { left: a.left + box.clientLeft, top: a.top + box.clientTop, right: a.left + box.clientLeft + box.clientWidth, bottom: a.top + box.clientTop + box.clientHeight },
+      scale: Number(box.querySelector('feDisplacementMap')!.getAttribute('scale')),
+    };
+  });
+}
+type Dent = Awaited<ReturnType<typeof shading>>['dents'][number];
+const centre = (d: Dent) => ({ x: d.left + d.width / 2, y: d.top + d.height / 2 });
+/** How far the ellipses overlap, by the mean radii: negative where the footprints are apart (a test of its own: the effect's rule is in dent.ts). */
+const gap = (a: Dent, b: Dent) => Math.hypot(centre(a).x - centre(b).x, centre(a).y - centre(b).y) - ((a.width + a.height) / 4 + (b.width + b.height) / 4);
+
+/** The shaded picture of a clip, and the same clip with the dents' layer hidden (the chairs are hidden in both: the line is what is measured). */
+async function pair(page: Page, clip: { x: number; y: number; width: number; height: number }) {
+  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-layer')) el.style.visibility = 'hidden'; });
+  const shaded = await pixelsOf(page, clip);
+  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents')) el.style.visibility = 'hidden'; });
+  const bare = await pixelsOf(page, clip);
+  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents')) el.style.visibility = ''; });
+  return { shaded, bare };
+}
+/**
+ * Whether each pixel of the BARE picture is plain background: one of the lumas (rounded) that at least 5% of the picture has. A glyph is a few
+ * percent of a one-line clip and is thinly spread over many lumas; the post's background (and the page's, where a clip leaves the post) is not.
+ */
+function plain(px: number[]): boolean[] {
+  const count = new Map<number, number>();
+  const key = (i: number) => Math.round(luma(px, i) / 2);
+  for (let i = 0; i < px.length; i += 4) count.set(key(i), (count.get(key(i)) ?? 0) + 1);
+  const pixels = px.length / 4;
+  return Array.from({ length: pixels }, (_, p) => (count.get(key(p * 4)) ?? 0) >= 0.05 * pixels);
+}
+/** The darkest the shading makes a pixel of plain background (one with no glyph in the bare picture), in levels of 255. */
+function darkest(p: { shaded: { px: number[] }; bare: { px: number[] } }): number {
+  let most = 0;
+  const bg = plain(p.bare.px);
+  for (let i = 0; i < p.bare.px.length; i += 4) if (bg[i / 4]) most = Math.max(most, luma(p.bare.px, i) - luma(p.shaded.px, i));
+  return most;
+}
+
+/**
+ * How dark the shading makes plain background at its deepest, as a fraction of the background: the lowest shaded luma over the bare luma of
+ * the same pixel. One disc is 128 of 255 at its darkest (a fraction of 0.50 of the post's own color, `multiply`), two added would be 0.00 to
+ * 0.25, so this does not depend on the post's own color, as a difference in levels does.
+ */
+function deepest(p: { shaded: { px: number[] }; bare: { px: number[] } }): number {
+  let low = 1;
+  const bg = plain(p.bare.px);
+  for (let i = 0; i < p.bare.px.length; i += 4) if (bg[i / 4] && luma(p.bare.px, i) > 100) low = Math.min(low, luma(p.shaded.px, i) / luma(p.bare.px, i));
+  return low;
+}
+
+/**
+ * The hard case: one line of words with three dents on it, run on two pinned throws. The tight one has two dents over the line and
+ * overlapping each other; the spread one has the dents' centres far apart (the hit zone is wide on a short post, so the dents land beside
+ * and below the line as well as on it) with at least one over the line, so the line still has shading to be read through. What is held in
+ * both: (i) a dent that overlaps another draws no creases (a lone one does), (ii) the shading over the line is capped at what one lone dent
+ * gives at its darkest (measured in the same test, from the one-dent story), however many overlap, (iii) the glyphs keep a contrast of
+ * 4.5:1 against the shaded background, and the displacement keeps the ink within its line box plus what the filter's scale and the dents
+ * allow. A tolerance of 6 levels of 255 is allowed on the cap, for the gradient's and the screenshot's rounding.
+ */
+async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'spread') {
+  await open(page, 'short-three', undefined, [seed]);
+  await atRest(page, 3);
+  await page.evaluate(() => document.fonts.ready);
+  const s = await shading(page);
+  expect(s.dents).toHaveLength(3);
+  const overlapping = s.dents.map((d, i) => s.dents.some((o, j) => j !== i && gap(d, o) < -8));
+  const alone = s.dents.map((d, i) => s.dents.every((o, j) => j === i || gap(d, o) > 8));
+  const closest = Math.min(...s.dents.flatMap((d, i) => s.dents.slice(i + 1).map((o) => Math.hypot(centre(d).x - centre(o).x, centre(d).y - centre(o).y))));
+  const overText = s.dents.map((d) => d.left < s.text.right && d.left + d.width > s.text.left && d.top < s.text.bottom && d.top + d.height > s.text.top);
+  test.info().annotations.push({ type: kind, description: `closest two dent centres ${closest.toFixed(0)} px apart, ${overText.filter(Boolean).length} over the line` });
+  if (kind === 'tight') {
+    expect(overlapping.filter(Boolean).length, 'the tight seed has at least two dents overlapping').toBeGreaterThanOrEqual(2);
+    expect(overText.filter(Boolean).length, 'the tight seed has at least two dents over the line').toBeGreaterThanOrEqual(2);
+  } else {
+    expect(closest, 'the spread seed keeps every pair of dent centres well apart').toBeGreaterThanOrEqual(60);
+    expect(overText.filter(Boolean).length, 'the spread seed still has a dent over the line').toBeGreaterThanOrEqual(1);
+  }
+  s.dents.forEach((d, i) => {
+    /* (i) */
+    if (overlapping[i]) expect(d.creases, `dent ${i} overlaps another and draws creases`).toBe(0);
+    if (alone[i]) expect(d.creases, `dent ${i} is alone and keeps its creases`).toBeGreaterThan(0);
+  });
+  /* The line's box and its picture: a little air above and below, and as wide as the text. */
+  const lineClip = { x: Math.floor(s.text.left), y: Math.floor(s.text.top - 2), width: Math.ceil(s.text.right - s.text.left) + 2, height: Math.ceil(s.text.bottom - s.text.top) + 4 };
+  const three = await pair(page, lineClip);
+  const peak3 = darkest(three);
+  /* The line may sit at the rim of the dents (it is a thin strip at the top of a tall area), where one disc gives little and two added give
+     little more, so the cap is also read where the dents are deepest: over the union of their boxes, inside the content area, with the
+     light and the creases hidden so that only the shade layer (the discs combined by `darken`) is measured. Where two discs overlap their
+     middles the darkness must still be one disc's darkest, and not the sum of two. */
+  const onlyShade = (hide: boolean) => area(page).evaluate((box, h) => {
+    for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-glows, .dw-chair-crease-layer')) el.style.visibility = h ? 'hidden' : '';
+  }, hide);
+  await onlyShade(true);
+  const ux0 = Math.max(s.area.left + 1, Math.floor(Math.min(...s.dents.map((d) => d.left))));
+  const uy0 = Math.max(s.area.top + 1, Math.floor(Math.min(...s.dents.map((d) => d.top))));
+  const ux1 = Math.min(s.area.right - 1, Math.ceil(Math.max(...s.dents.map((d) => d.left + d.width))));
+  const uy1 = Math.min(s.area.bottom - 1, Math.ceil(Math.max(...s.dents.map((d) => d.top + d.height))));
+  const unionClip = { x: ux0, y: uy0, width: ux1 - ux0, height: uy1 - uy0 };
+  const union = await pair(page, unionClip);
+  const deepDents = deepest(union);
+  /* Each dent alone (the others hidden): where discs overlap, the shade must be the darker of the discs there, pixel for pixel (`darken`),
+     which an opaque disc laid over another (a lighter rim over a darker middle: 0.38 off) or two added would not give; with `darken` the
+     worst pixel is 0.07 off (the antialiased rim), so the bound is 0.12. */
+  const alone1: number[][] = [];
+  for (let k = 0; k < s.dents.length; k++) {
+    await area(page).evaluate((box, keep) => {
+      box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent').forEach((el, i) => { el.style.visibility = i === keep ? '' : 'hidden'; });
+    }, k);
+    alone1.push((await pixelsOf(page, unionClip)).px);
+  }
+  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent')) el.style.visibility = ''; });
+  let worstGap = 0, overlapPixels = 0;
+  const flat = plain(union.bare.px);
+  for (let i = 0; i < union.bare.px.length; i += 4) {
+    if (!flat[i / 4] || luma(union.bare.px, i) <= 100) continue;
+    const ratio = (px: number[]) => luma(px, i) / luma(union.bare.px, i);
+    const each = alone1.map(ratio);
+    if (each.filter((r) => r < 0.97).length >= 2) overlapPixels++;
+    worstGap = Math.max(worstGap, Math.abs(ratio(union.shaded.px) - Math.min(...each)));
+  }
+  await onlyShade(false);
+
+  /* One lone dent, from the one-dent story: the darkest the shading ever makes plain background (the whole dent is in the picture). */
+  await open(page, 'short-post');
+  await atRest(page, 1);
+  await page.evaluate(() => document.fonts.ready);
+  const one = await shading(page);
+  expect(one.dents).toHaveLength(1);
+  const d1 = one.dents[0]!;
+  const clip1 = { x: Math.floor(Math.max(0, d1.left)), y: Math.floor(Math.max(0, d1.top)), width: Math.ceil(d1.width), height: Math.ceil(d1.height) };
+  const pr1 = await pair(page, clip1);
+  const lone = darkest(pr1);
+  test.info().annotations.push({ type: 'darkness', description: `darkest background pixel over the three-dent line ${peak3.toFixed(0)}, deepest shade under all three dents ${deepDents.toFixed(2)} of the post's color, worst gap from the darker disc ${worstGap.toFixed(3)} over ${overlapPixels} overlapping pixels, one lone dent's darkest ${lone.toFixed(0)}` });
+  expect(lone, 'a lone dent really darkens its background').toBeGreaterThan(40);
+  /* (ii) */
+  expect(peak3, 'the dents do shade the line (a cap on nothing proves nothing)').toBeGreaterThan(25);
+  /* One disc takes the post to 0.50 of its color; the tolerance is the gradient's and the screenshot's rounding. Added, two discs would be 0.25 or less. */
+  expect(deepDents, 'the dents do shade the post where they lie').toBeLessThan(0.62);
+  expect(worstGap, `where discs overlap the shade is the darker of them (the worst pixel is ${worstGap.toFixed(3)} off, over ${overlapPixels} overlapping pixels)`).toBeLessThanOrEqual(0.12);
+  if (kind === 'tight') expect(overlapPixels, 'the tight seed has overlapping discs to compare').toBeGreaterThan(500);
+  expect(deepDents, `the deepest shade under the three dents is ${deepDents.toFixed(2)} of the post's color: overlapping discs do not add (one disc is 0.50)`).toBeGreaterThanOrEqual(0.46);
+  expect(peak3, `the darkest background on the three-dent line (${peak3.toFixed(0)}) against one lone dent's darkest (${lone.toFixed(0)})`).toBeLessThanOrEqual(lone + 6);
+
+  /* (iii) the contrast of the glyphs against the shaded background, from the three-dent pictures. */
+  let darkestGlyph = Infinity;
+  const backgrounds: number[] = [];
+  const bg3 = plain(three.bare.px);
+  for (let i = 0; i < three.bare.px.length; i += 4) {
+    darkestGlyph = Math.min(darkestGlyph, relative(three.shaded.px, i));
+    if (bg3[i / 4]) backgrounds.push(relative(three.shaded.px, i));
+  }
+  backgrounds.sort((x, y) => x - y);
+  const median = backgrounds[Math.floor(backgrounds.length / 2)]!;
+  const ratio = (median + 0.05) / (darkestGlyph + 0.05);
+  test.info().annotations.push({ type: 'contrast', description: `darkest glyph vs median shaded background ${ratio.toFixed(2)}:1` });
+  expect(backgrounds.length, 'there is background between the glyphs').toBeGreaterThan(50);
+  expect(ratio, `the darkest glyph against the median shaded background: ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+  /* And against the very darkest background pixel between the glyphs. */
+  const worst = (backgrounds[0]! + 0.05) / (darkestGlyph + 0.05);
+  expect(worst, `the darkest glyph against the darkest shaded background: ${worst.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+
+  /* The displacement: each dent pushes at most scale/2 px either way, and they add, so the ink of the bare picture lies within the line's box
+     plus 3 * scale / 2 px (and a pixel's rounding). */
+  await open(page, 'short-three', undefined, [seed]);
+  await atRest(page, 3);
+  await page.evaluate(() => document.fonts.ready);
+  const again = await shading(page);
+  const reach = 3 * again.scale / 2 + 1;
+  /* Inside the content area, with its other children (the reactions row) hidden: the line alone is in the picture. */
+  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>(':scope > :not(.dw-chair)')) el.style.visibility = 'hidden'; });
+  const x0 = Math.max(again.area.left + 1, Math.floor(again.text.left - reach - 12)), y0 = Math.max(again.area.top + 1, Math.floor(again.text.top - reach - 12));
+  const wide = { x: x0, y: y0, width: Math.ceil(Math.min(again.area.right - 1, again.text.right + reach + 12) - x0), height: Math.ceil(Math.min(again.area.bottom - 1, again.text.bottom + reach + 12) - y0) };
+  const bare = (await pair(page, wide)).bare;
+  let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+  const bareLuma = Math.max(...bare.px.filter((_, k) => k % 4 === 0));
+  for (let i = 0; i < bare.px.length; i += 4) {
+    if (luma(bare.px, i) >= bareLuma - 100) continue;
+    const x = wide.x + ((i / 4) % bare.width), y = wide.y + Math.floor(i / 4 / bare.width);
+    l = Math.min(l, x); r = Math.max(r, x + 1); t = Math.min(t, y); b = Math.max(b, y + 1);
+  }
+  expect(r, 'the line has ink').toBeGreaterThan(l);
+  const box = `ink ${l},${t} to ${r},${b} in the line's box ${again.text.left.toFixed(0)},${again.text.top.toFixed(0)} to ${again.text.right.toFixed(0)},${again.text.bottom.toFixed(0)} plus ${reach}`;
+  expect(l, box).toBeGreaterThanOrEqual(again.text.left - reach);
+  expect(r, box).toBeLessThanOrEqual(again.text.right + reach);
+  expect(t, box).toBeGreaterThanOrEqual(again.text.top - reach);
+  expect(b, box).toBeLessThanOrEqual(again.text.bottom + reach);
+  expect(DENT_SCALE, 'the filter carries the scale this test reads').toBe(again.scale);
+}
+
+test('short-three, tight: the one line can be read: no creases on overlapping dents, shading capped at one dent\'s, glyphs keep 4.5:1, ink stays near its line', async ({ page }) => {
+  await theLineCanBeRead(page, SEEDS['short-three'][0], 'tight');
+});
+
+test('short-three, spread: dents land beside and below the line, and the line can still be read', async ({ page }) => {
+  await theLineCanBeRead(page, SPREAD_SEED, 'spread');
+});
+
+/** On a post of little text the throws are spread beyond the line, and every dent's circle is inside the content area. */
+for (const [kind, seed] of [['tight', SEEDS['short-three'][0]], ['spread', SPREAD_SEED]] as const) {
+  test(`short-three, ${kind}: every dent lies inside the content area`, async ({ page }) => {
+    await open(page, 'short-three', undefined, [seed]);
+    await atRest(page, 3);
+    const s = await shading(page);
+    expect(s.dents).toHaveLength(3);
+    s.dents.forEach((d, i) => {
+      const where = `dent ${i} ${JSON.stringify(d)} in the area ${JSON.stringify(s.area)}`;
+      expect(d.left, where).toBeGreaterThanOrEqual(s.area.left - 1);
+      expect(d.top, where).toBeGreaterThanOrEqual(s.area.top - 1);
+      expect(d.left + d.width, where).toBeLessThanOrEqual(s.area.right + 1);
+      expect(d.top + d.height, where).toBeLessThanOrEqual(s.area.bottom + 1);
+    });
+  });
+}
 
 for (const name of ['one-light', 'one-dark', 'reduced'] as const) {
   test(`axe finds nothing on ${name}`, async ({ page }) => {

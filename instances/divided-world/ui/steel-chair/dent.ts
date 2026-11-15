@@ -1,3 +1,5 @@
+import { rng } from './body.ts';
+
 /**
  * Steel Chair's dent (docs/plans/2026-11-15-steel-chair-plan.md, Task 4): the displacement map an SVG filter bends the words with, and the
  * filter's numbers. Pure TypeScript apart from `dentMapUrl`, which draws the map on a canvas once. The filter itself (a flood of neutral
@@ -10,12 +12,16 @@
  * must carry `color-interpolation-filters="sRGB"`: under the default linearRGB the neutral byte 128 reads as about 0.22, not 0.5, and the
  * words would shift by several pixels everywhere.
  */
-export const DENT_SCALE = 18;
+export const DENT_SCALE = 14;
 /*
- * 18, and not the plan's 26: the plan's own review focus says the scale comes down if a dent makes a line unreadable, and it did. A dent is
+ * 14, and not the plan's 26 or the 18 an earlier build shipped: the plan's own review focus says the scale comes down if a dent makes a line unreadable, and it did. A dent is
  * 160 px across and squeezes the words at its middle by 1 / (1 + scale·0.0196) (66% at 26, 74% at 18), and stretches them at its rim; seen in a
  * browser at 26 the one-line post's second word was a smear, and where two dents overlap their squeezes add. At 18 every word of the long post
  * reads at desktop and phone width, with one dent and with three overlapping, and the one-line post reads with one dent.
+ * Dents are now smaller (a dent's larger axis is its base, its smaller within 26% of it; an average dent is 87% of the old 160 px), and a smaller
+ * dent at the same scale bends its words more steeply, by the ratio of the sizes, so the scale came down by the same: 18 / 1.23 is about 14.6,
+ * taken as 14. The owner asked that the one-line post's three dents leave the line readable; the dents still read as dents on the long post,
+ * where the shading and the bend of a ring of words around each are plain at 14 (e2e/steel-chair.spec.ts).
  */
 
 /**
@@ -85,14 +91,111 @@ export function filterTrusted(env: FilterEnv = {}): boolean {
   return true;
 }
 
-/** One dent's `feImage`: its top left corner and its (square) size, in the box's px. */
-export interface DentPrimitive { x: number; y: number; size: number }
+/* ---------- a dent's own shape and turn ---------- */
+
+/** The range a dent's two axes are scaled within, as a fraction of round: within about 15% of round (owner's answer, 2026-11-15). */
+export const AXIS_MIN = 0.85;
+export const AXIS_MAX = 1.15;
+/**
+ * A hash (FNV-1a) of ids, so a play's id (public) gives the same number for every reader and on every replay. A moment's seed is made the same
+ * way from the plays' ids (Effect.tsx).
+ */
+export function seedOfIds(ids: readonly string[]): number {
+  let h = 2166136261;
+  for (const ch of ids.join('|')) { h ^= ch.codePointAt(0)!; h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
 
 /**
- * Each dent's `feImage` numbers, in order: 160 px square centered on the dent's point, scaled down so that a dent is never wider than
- * 60% of the box (a narrow post would otherwise be mostly dent).
+ * One dent's shape: `rx` and `ry`, how far its two axes are scaled from round (0.85 to 1.15); `turn`, how many degrees its light and creases
+ * are turned (0 up to 360); `outline`, four points (42 to 58, percent) that make the edge of the shading uneven (CSS `border-radius`'s four
+ * corners, each split at its own point instead of at 50%).
  */
-export function dentPrimitives(dents: readonly { x: number; y: number }[], box: { width: number; height: number }): DentPrimitive[] {
-  const size = Math.min(160, 0.6 * box.width);
-  return dents.map((d) => ({ x: d.x - size / 2, y: d.y - size / 2, size }));
+export interface DentShape { readonly rx: number; readonly ry: number; readonly turn: number; readonly outline: readonly [number, number, number, number] }
+
+/**
+ * A dent's shape, from its play's id alone, through the seeded generator of body.ts: nothing about the reader and not the run's own seed, so a
+ * given play's dent has the same shape and turn for every reader and on every replay, and three plays' dents are not copies. (Where it lands is
+ * the run's, and changes each run.) The id is salted with `dent|` so the shape does not move in step with a moment's seed from the same id.
+ */
+export function dentShape(playId: string): DentShape {
+  const rand = rng(seedOfIds(['dent', playId]));
+  const axis = () => AXIS_MIN + (AXIS_MAX - AXIS_MIN) * rand();
+  const rx = axis(), ry = axis();
+  const turn = rand() * 360;
+  const point = () => 42 + 16 * rand();
+  return { rx, ry, turn, outline: [point(), point(), point(), point()] };
+}
+
+/**
+ * Two dents' footprints intersect: the ellipses, each centered in its box (`x`, `y` its top left corner, with its width and height), are
+ * closer than the sum of their radii along the line between the centers. Exact for circles; for ellipses a close approximation, which is
+ * enough to decide whether the creases are drawn.
+ */
+export function dentsOverlap(a: DentBox, b: DentBox): boolean {
+  const ax = a.x + a.width / 2, ay = a.y + a.height / 2, bx = b.x + b.width / 2, by = b.y + b.height / 2;
+  const dx = bx - ax, dy = by - ay;
+  const dist = Math.hypot(dx, dy);
+  if (dist === 0) return true;
+  const reach = (e: DentBox) => {
+    const rx = e.width / 2, ry = e.height / 2;
+    const c = dx / dist, s = dy / dist;
+    return (rx * ry) / Math.hypot(ry * c, rx * s);
+  };
+  return dist < reach(a) + reach(b);
+}
+
+/** One dent's `feImage`, and the box of its shading: its top left corner, its width and height, and the larger of the two, in the box's px. */
+export interface DentBox { x: number; y: number; width: number; height: number }
+export interface DentPrimitive extends DentBox { size: number }
+
+/**
+ * Each dent's `feImage` numbers, in order. A dent's larger axis is at most 160 px and at most 60% of the box (a narrow post would otherwise
+ * be mostly dent); a dent with a `shape` has its two axes scaled by it, divided by `AXIS_MAX` so that the larger can never pass that limit. The
+ * dent's box is centered on its point. The displacement map is a circle: the `feImage` stretches it to this (axis-aligned) box, which is the
+ * ellipse the shading draws too, so the bend and the shading agree; only the shading's light, creases and uneven edge turn, which the map
+ * cannot (an `feImage` cannot be rotated).
+ */
+export function dentPrimitives(dents: readonly { x: number; y: number; shape?: DentShape }[], box: { width: number; height: number }): DentPrimitive[] {
+  const base = Math.min(160, 0.6 * box.width);
+  return dents.map((d) => {
+    const width = d.shape ? (base * d.shape.rx) / AXIS_MAX : base;
+    const height = d.shape ? (base * d.shape.ry) / AXIS_MAX : base;
+    return { x: d.x - width / 2, y: d.y - height / 2, size: Math.max(width, height), width, height };
+  });
+}
+
+/* ---------- the hit zone of a short post ---------- */
+
+/** Where throwOf (body.ts) lets a throw's target fall in the box it is given: this fraction of the way across, and down. */
+export const THROW_X = [0.15, 0.85] as const;
+export const THROW_Y = [0.15, 0.6] as const;
+
+/**
+ * The box to hand `throwOf` for a dent of `dent`'s size, from the box the text takes (`text`, in the content area's px) in an area of `area`
+ * size. Where the text is at least a dent's diameter (its larger axis) tall, the box is the text's, as it was. Where it is shorter (one
+ * line, a few), a throw aimed only at it would stack every dent on the line, so the box grows (owner, 2026-11-15: widen the
+ * zone so the dents can land outside the single line, which looks more natural than tightly packed dents with perfect aim): the dent's center
+ * may fall up to one full dent diameter (its extent on that axis) beyond the text's box to the left, to the right and below, so a dent may land
+ * wholly beside the text, and up to its radius above it (the area's top is close above the first line anyway). Its circle is kept inside the
+ * area (its center between one radius from each border); where the area is smaller than the dent the zone is the area's middle on that axis.
+ * The floor's room at the content area's foot is not kept clear: in a short post's area (a line or two of words plus the room) a dent whose
+ * circle fits the area has its center at or below the room's top edge by construction, so keeping out of it would collapse the zone to a
+ * line; a chair that comes to rest on a dent is the game's own picture.
+ * `throwOf` takes a target 15% to
+ * 85% across and 15% to 60% down the box it gets, so the box is sized and placed so that this range is exactly the zone of centers wanted.
+ */
+export function hitZone(text: DentBox | { left: number; top: number; width: number; height: number }, area: { width: number; height: number }, dent: { width: number; height: number }): { left: number; top: number; width: number; height: number } {
+  const t = 'left' in text ? text : { left: text.x, top: text.y, width: text.width, height: text.height };
+  const diameter = Math.max(dent.width, dent.height);
+  if (t.height >= diameter) return t;
+  const span = (lo: number, hi: number, radius: number, extent: number): [number, number] => {
+    if (extent <= 2 * radius) return [extent / 2, extent / 2];
+    const clamp = (v: number) => Math.min(extent - radius, Math.max(radius, v));
+    return [clamp(lo), clamp(hi)];
+  };
+  const [x0, x1] = span(t.left - dent.width, t.left + t.width + dent.width, dent.width / 2, area.width);
+  const [y0, y1] = span(t.top - dent.height / 2, t.top + t.height + dent.height, dent.height / 2, area.height);
+  const width = (x1 - x0) / (THROW_X[1] - THROW_X[0]), height = (y1 - y0) / (THROW_Y[1] - THROW_Y[0]);
+  return { left: x0 - THROW_X[0] * width, top: y0 - THROW_Y[0] * height, width, height };
 }
