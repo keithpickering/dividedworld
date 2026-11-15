@@ -21,6 +21,11 @@ export interface WorldParameters {
    * season the board match holds the app to. The engine names the moment and never the fixture's data.
    */
   readonly moment?: string;
+  /**
+   * The fake's machine is the composition root's fixed one for the boards, not the instance's computed one, so a story a
+   * board is matched against does not move when the instance gains a card. The engine names the flag and never the list.
+   */
+  readonly boardsMachine?: true;
 }
 
 /** The entry of this key in a list; `what` is the noun the error names it by. */

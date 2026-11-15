@@ -8,8 +8,9 @@ import { describe, expect, it } from 'vitest';
 import { rankIndex } from '../../../../engine/rules/ranks.ts';
 import { FAKE_BACKEND_MARKER, TEST_CODE, type Fake } from '../../../../engine/ui/data/fake.ts';
 import { instance } from '../../../../instances/divided-world/index.ts';
+import type { Instance } from '../../../../engine/rules/types.ts';
 import { hudKey } from '../../../../engine/ui/player.tsx';
-import { createBoardsFake, EMAILS, MOMENTS, seedBoards, type MomentName } from './boards.ts';
+import { BOARD_SLOTS, boardMachine, createBoardsFake, EMAILS, MOMENTS, seedBoards, type MomentName } from './boards.ts';
 
 const NAMES = Object.keys(MOMENTS) as MomentName[];
 const iso = (d: number, h: number, m: number) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
@@ -412,5 +413,35 @@ describe('the log (the log shares plan, Task 4)', () => {
   it('at 07-vending, a minute before the buy, the log holds no purchase that day yet', async () => {
     const { fake } = await load('07-vending');
     expect((await fake.log()).cards.filter((c) => c.kind === 'bought').map((c) => c.at)).toEqual([iso(20, 19, 0)]);
+  });
+});
+
+describe('the machine the boards draw', () => {
+  const keyOf = (slot: Instance['machine'][number]) => ('card' in slot.item ? slot.item.card : `pack:${slot.item.pack}`);
+  const sold = instance.machine.find((s) => 'card' in s.item)!;
+
+  it('holds the Booster first and then exactly BOARD_SLOTS, in order', () => {
+    const slots = boardMachine(instance.machine);
+    expect(keyOf(slots[0]!)).toBe('pack:booster');
+    expect(slots.slice(1).map(keyOf)).toEqual(BOARD_SLOTS);
+  });
+
+  it('does not move when the instance gains a card: one more on sale among the commons and one more hidden', () => {
+    const before = boardMachine(instance.machine).map(keyOf);
+    const at = instance.machine.findIndex((s) => 'card' in s.item);
+    const grown = [...instance.machine];
+    grown.splice(at + 2, 0, { ...sold, item: { card: 'a-new-common' }, availability: 'onSale' });
+    grown.push({ ...sold, item: { card: 'a-new-hidden' }, availability: 'hidden' });
+    expect(boardMachine(grown).map(keyOf)).toEqual(before);
+  });
+
+  it('throws, naming the key, when the machine has no slot for one of BOARD_SLOTS', () => {
+    const lacking = instance.machine.filter((s) => !('card' in s.item && s.item.card === 'whoops'));
+    expect(() => boardMachine(lacking)).toThrow(`the boards' machine names "whoops", and the instance sells no such card`);
+  });
+
+  it('is what the fake of 07-vending sells: the Booster and the nine commons in BOARD_SLOTS order', async () => {
+    const onSale = (await createBoardsFake('07-vending').machine()).filter((s) => s.availability === 'onSale');
+    expect(onSale.map((s) => ('card' in s.item ? s.item.card : `pack:${s.item.pack}`))).toEqual(['pack:booster', ...BOARD_SLOTS.slice(0, 9)]);
   });
 });
