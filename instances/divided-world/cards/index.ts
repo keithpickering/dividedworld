@@ -17,46 +17,46 @@
  * Part 5 (docs/plans/2026-11-11-card-notes-part-5-plan.md): the three Happy Hearts take points off a warn bar or end a ban, Take the Fall moves a filing to the caster, and Tattle-Tale makes a Mod Bot patrol likelier to look at a character.
  * THIS, Pepperoni's arrow at a phrase of a post, with a few words after it (docs/plans/2026-11-13-this-design.md).
  */
-import { QUADRANTS } from '../../../engine/rules/types.ts';
+import { QUADRANTS, type Hundredths } from '../../../engine/rules/types.ts';
 import { atOrBelow, castOnPost, type CardRules } from '../../../engine/rules/cards.ts';
-import { fourDChess as fourDChessBase } from './4d-chess.ts';
-import { autocorrect } from './autocorrect.ts';
-import { blindStudy } from './blind-study.ts';
-import { belowTheFold } from './below-the-fold.ts';
-import { cardCollector as cardCollectorBase } from './card-collector.ts';
-import { classClown } from './class-clown.ts';
-import { feelinFab } from './feelin-fab.ts';
-import { feelinGlam } from './feelin-glam.ts';
-import { forceField } from './force-field.ts';
-import { glitterBomb } from './glitter-bomb.ts';
-import { graffiti } from './graffiti.ts';
-import { goodVibes } from './good-vibes.ts';
-import { happyHeart } from './happy-heart.ts';
-import { hallPass } from './hall-pass.ts';
-import { heatMagnet } from './heat-magnet.ts';
-import { hypeUp } from './hype-up.ts';
-import { jimmyWails } from './jimmy-wails.ts';
-import { laughTrack } from './laugh-track.ts';
-import { lastWord } from './last-word.ts';
-import { lineCutter } from './line-cutter.ts';
-import { mainEvent } from './main-event.ts';
-import { mooch } from './mooch.ts';
-import { offDay } from './off-day.ts';
-import { overreaction } from './overreaction.ts';
-import { publicityTour } from './publicity-tour.ts';
-import { toll } from './toll.ts';
-import { stickAround } from './stick-around.ts';
-import { sugarCoat } from './sugar-coat.ts';
-import { superHappyHeart } from './super-happy-heart.ts';
-import { thisCard } from './this.ts';
-import { takeTheFall } from './take-the-fall.ts';
-import { tattleTale } from './tattle-tale.ts';
-import { ultraHappyHeart } from './ultra-happy-heart.ts';
-import { whodunnit } from './whodunnit.ts';
-import { whoops } from './whoops.ts';
-import { youWereSaying } from './you-were-saying.ts';
+import { fourDChess as fourDChessBase, price as fourDChessPrice } from './4d-chess.ts';
+import { autocorrect, price as autocorrectPrice } from './autocorrect.ts';
+import { blindStudy, price as blindStudyPrice } from './blind-study.ts';
+import { belowTheFold, price as belowTheFoldPrice } from './below-the-fold.ts';
+import { cardCollector as cardCollectorBase, price as cardCollectorPrice } from './card-collector.ts';
+import { classClown, price as classClownPrice } from './class-clown.ts';
+import { feelinFab, price as feelinFabPrice } from './feelin-fab.ts';
+import { feelinGlam, price as feelinGlamPrice } from './feelin-glam.ts';
+import { forceField, price as forceFieldPrice } from './force-field.ts';
+import { glitterBomb, price as glitterBombPrice } from './glitter-bomb.ts';
+import { graffiti, price as graffitiPrice } from './graffiti.ts';
+import { goodVibes, price as goodVibesPrice } from './good-vibes.ts';
+import { happyHeart, price as happyHeartPrice } from './happy-heart.ts';
+import { hallPass, price as hallPassPrice } from './hall-pass.ts';
+import { heatMagnet, price as heatMagnetPrice } from './heat-magnet.ts';
+import { hypeUp, price as hypeUpPrice } from './hype-up.ts';
+import { jimmyWails, price as jimmyWailsPrice } from './jimmy-wails.ts';
+import { laughTrack, price as laughTrackPrice } from './laugh-track.ts';
+import { lastWord, price as lastWordPrice } from './last-word.ts';
+import { lineCutter, price as lineCutterPrice } from './line-cutter.ts';
+import { mainEvent, price as mainEventPrice } from './main-event.ts';
+import { mooch, price as moochPrice } from './mooch.ts';
+import { offDay, price as offDayPrice } from './off-day.ts';
+import { overreaction, price as overreactionPrice } from './overreaction.ts';
+import { publicityTour, price as publicityTourPrice } from './publicity-tour.ts';
+import { toll, price as tollPrice } from './toll.ts';
+import { stickAround, price as stickAroundPrice } from './stick-around.ts';
+import { sugarCoat, price as sugarCoatPrice } from './sugar-coat.ts';
+import { superHappyHeart, price as superHappyHeartPrice } from './super-happy-heart.ts';
+import { thisCard, price as thisCardPrice } from './this.ts';
+import { takeTheFall, price as takeTheFallPrice } from './take-the-fall.ts';
+import { tattleTale, price as tattleTalePrice } from './tattle-tale.ts';
+import { ultraHappyHeart, price as ultraHappyHeartPrice } from './ultra-happy-heart.ts';
+import { whodunnit, price as whodunnitPrice } from './whodunnit.ts';
+import { whoops, price as whoopsPrice } from './whoops.ts';
+import { youWereSaying, price as youWereSayingPrice } from './you-were-saying.ts';
 
-const listed: readonly CardRules[] = [stickAround as CardRules, whoops as CardRules, cardCollectorBase as CardRules, hallPass as CardRules, forceField as CardRules, publicityTour as CardRules, heatMagnet as CardRules, classClown as CardRules, goodVibes as CardRules, glitterBomb as CardRules, mainEvent as CardRules, feelinFab as CardRules, autocorrect as CardRules, youWereSaying as CardRules, belowTheFold as CardRules, mooch as CardRules, toll as CardRules, fourDChessBase as CardRules, offDay as CardRules, jimmyWails as CardRules, sugarCoat as CardRules, hypeUp as CardRules, lastWord as CardRules, laughTrack as CardRules, graffiti as CardRules, lineCutter as CardRules, feelinGlam as CardRules, whodunnit as CardRules, blindStudy as CardRules, overreaction as CardRules, happyHeart as CardRules, superHappyHeart as CardRules, ultraHappyHeart as CardRules, takeTheFall as CardRules, tattleTale as CardRules, thisCard as CardRules];
+const listed: readonly (readonly [CardRules, Hundredths])[] = [[stickAround as CardRules, stickAroundPrice], [whoops as CardRules, whoopsPrice], [cardCollectorBase as CardRules, cardCollectorPrice], [hallPass as CardRules, hallPassPrice], [forceField as CardRules, forceFieldPrice], [publicityTour as CardRules, publicityTourPrice], [heatMagnet as CardRules, heatMagnetPrice], [classClown as CardRules, classClownPrice], [goodVibes as CardRules, goodVibesPrice], [glitterBomb as CardRules, glitterBombPrice], [mainEvent as CardRules, mainEventPrice], [feelinFab as CardRules, feelinFabPrice], [autocorrect as CardRules, autocorrectPrice], [youWereSaying as CardRules, youWereSayingPrice], [belowTheFold as CardRules, belowTheFoldPrice], [mooch as CardRules, moochPrice], [toll as CardRules, tollPrice], [fourDChessBase as CardRules, fourDChessPrice], [offDay as CardRules, offDayPrice], [jimmyWails as CardRules, jimmyWailsPrice], [sugarCoat as CardRules, sugarCoatPrice], [hypeUp as CardRules, hypeUpPrice], [lastWord as CardRules, lastWordPrice], [laughTrack as CardRules, laughTrackPrice], [graffiti as CardRules, graffitiPrice], [lineCutter as CardRules, lineCutterPrice], [feelinGlam as CardRules, feelinGlamPrice], [whodunnit as CardRules, whodunnitPrice], [blindStudy as CardRules, blindStudyPrice], [overreaction as CardRules, overreactionPrice], [happyHeart as CardRules, happyHeartPrice], [superHappyHeart as CardRules, superHappyHeartPrice], [ultraHappyHeart as CardRules, ultraHappyHeartPrice], [takeTheFall as CardRules, takeTheFallPrice], [tattleTale as CardRules, tattleTalePrice], [thisCard as CardRules, thisCardPrice]];
 
 /**
  * Card Collector, with the card a persona may name as an enum of the instance's cards cast on a post at or below its own rarity (the only
@@ -66,7 +66,7 @@ const cardCollector = {
   ...cardCollectorBase,
   staffOptions: {
     prompt: 'Choose the card this Card Collector catches: the first play of it on this post is caught.',
-    schema: { type: 'object', properties: { card: { type: 'string', enum: listed.filter((c) => castOnPost(c) && atOrBelow(c.rarity, cardCollectorBase.rarity)).map((c) => c.key) } }, required: ['card'], additionalProperties: false },
+    schema: { type: 'object', properties: { card: { type: 'string', enum: listed.filter(([c]) => castOnPost(c) && atOrBelow(c.rarity, cardCollectorBase.rarity)).map(([c]) => c.key) } }, required: ['card'], additionalProperties: false },
   },
 } as CardRules;
 
@@ -78,7 +78,7 @@ const fourDChess = {
     schema: {
       type: 'object',
       properties: {
-        card: { type: 'string', enum: listed.filter((c) => castOnPost(c) && atOrBelow(c.rarity, fourDChessBase.rarity)).map((c) => c.key) },
+        card: { type: 'string', enum: listed.filter(([c]) => castOnPost(c) && atOrBelow(c.rarity, fourDChessBase.rarity)).map(([c]) => c.key) },
         quadrant: { type: 'string', enum: [...QUADRANTS] },
       },
       required: ['card', 'quadrant'],
@@ -89,4 +89,7 @@ const fourDChess = {
 
 const staffed = new Map([cardCollector, fourDChess].map((c) => [c.key, c]));
 
-export const cards: readonly CardRules[] = Object.freeze(listed.map((c) => staffed.get(c.key) ?? c));
+export const cards: readonly CardRules[] = Object.freeze(listed.map(([c]) => staffed.get(c.key) ?? c));
+
+/** What the Vending Machine sells each card for, from the same list as `cards`, so the two cannot disagree. */
+export const prices: ReadonlyMap<string, Hundredths> = new Map(listed.map(([c, p]) => [c.key, p]));

@@ -4,6 +4,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import { PUBLICITY, PUBLICITY_LASTS } from './publicity.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const publicityTour: CardRules<Record<string, never>> = {
   key: 'publicity-tour',
@@ -18,3 +19,6 @@ export const publicityTour: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(publicityTour, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

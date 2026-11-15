@@ -13,6 +13,7 @@
 import { economyOf, landsOn, ok, refuse, WRITE_TOKENS_MOST, writeTokensMost, type CardRules } from '../../../engine/rules/cards.ts';
 import { defaults } from '../settings.ts';
 import { BAN, youWereSayingFrame } from './you-were-saying/frame.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export type YouWereSayingConfig = { readonly steps: number };
 
@@ -84,3 +85,6 @@ export const youWereSaying: CardRules<YouWereSayingConfig> = {
     return ok({ cleared });
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 100;

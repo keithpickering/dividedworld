@@ -14,8 +14,8 @@
  * the phone, which is board 36's 40px).
  *
  * Departures by decision:
- *  - The eyebrow says the slot and the card's kind, "Slot A2 · Move" (the instance's word for how the card is played, from the card's face), where the board draws
- *    the card's alignment ("SLOT A2 · SALTY"): the alignment is on the face's badge already.
+ *  - The eyebrow says the slot and the card's kind, "Slot E1 · Move" (the instance's word for how the card is played, from the card's face), where the board draws
+ *    the card's alignment ("SLOT A2 · SALTY"): the alignment is on the face's badge already. The build's slot is E1, where the machine's rule puts Whoops! (the Booster, then the commons by name, docs/plans/2026-11-14-base-set-design.md, section 4.3), so the code is not the board's.
  *  - The title is the frame's heading in the glass's display face at 52px, as the play form's is, where the board draws 60px (see above for where its size is held).
  *  - The frame's bar holds the eyebrow, the title and Close at the top and the body (the face beside the price and the rules) starts under it, so the face stands
  *    where the bar ends and not beside the eyebrow as the board draws it: `BAR` and `FACE`.
@@ -46,7 +46,7 @@ const manifest: BoardManifest = {
   press: [{ role: 'button', name: 'About Whoops!' }],
   landmarks: [
     { id: 'dialog', role: 'dialog', name: 'Whoops!', type: false, box: 'across' },
-    part('eyebrow', 'text', 'SLOT A2 · SALTY', { buildName: 'Slot A2 · Move', buildShift: BAR }),
+    part('eyebrow', 'text', 'SLOT A2 · SALTY', { buildName: 'Slot E1 · Move', buildShift: BAR }),
     part('title', 'heading', 'WHOOPS!', { buildShift: BAR }),
     part('close', 'button', 'Close', { box: 'size' }),
     part('face', 'figure', 'Whoops!, Salty, Cast, Common', { buildRole: 'article', buildName: 'Whoops!, Salty, Move, common postcard', box: 'full', buildShift: FACE }),

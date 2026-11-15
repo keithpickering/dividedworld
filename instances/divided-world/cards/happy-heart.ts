@@ -4,6 +4,7 @@
  * no time up, and the filings it took points from stay on the record. It is refused on an empty bar, in the same words for every caster, since a warn bar is on every postbit.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const happyHeart: CardRules<Record<string, never>> = {
   key: 'happy-heart',
@@ -16,3 +17,6 @@ export const happyHeart: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(happyHeart, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

@@ -4,6 +4,7 @@
  * it waits, with no time up, until a filing spends it, or an admin ends it. It holds nobody meanwhile, and the character that took the fall can appeal the filing.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const takeTheFall: CardRules<Record<string, never>> = {
   key: 'take-the-fall',
@@ -15,3 +16,6 @@ export const takeTheFall: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(takeTheFall, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

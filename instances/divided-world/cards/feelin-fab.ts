@@ -4,6 +4,7 @@
  * lasts as long as the post does. It costs nothing more to play than its price at the machine, which is the lowest in the shop.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const feelinFab: CardRules<Record<string, never>> = {
   key: 'feelin-fab',
@@ -16,3 +17,6 @@ export const feelinFab: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(feelinFab, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 20;

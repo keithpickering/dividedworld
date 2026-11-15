@@ -4,6 +4,7 @@
  * how often one character can be picked. One is live on a character at a time. The weight is the rules' (`discipline.weight`), and the words that say "double" read it.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const tattleTale: CardRules<Record<string, never>> = {
   key: 'tattle-tale',
@@ -17,3 +18,6 @@ export const tattleTale: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(tattleTale, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 300;

@@ -8,6 +8,7 @@
  * - **The engine's** is the week, the one-live-per-post stack and that the post is the player's own (SQL reads who wrote it).
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const toll: CardRules<Record<string, never>> = {
   key: 'toll',
@@ -21,3 +22,6 @@ export const toll: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(toll, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

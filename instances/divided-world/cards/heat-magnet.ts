@@ -3,6 +3,7 @@
  * posts earn counts 0.2 more, then it ends by itself (the card types design). It only raises what is earned; it never deepens a loss.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const heatMagnet: CardRules<Record<string, never>> = {
   key: 'heat-magnet',
@@ -17,3 +18,6 @@ export const heatMagnet: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(heatMagnet, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

@@ -9,7 +9,7 @@
  * - **Its staff options** give a persona the Move as an enum of the instance's cards, which `cards/index.ts` builds once the list exists.
  */
 import { ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
-import { QUADRANTS, type Quadrant } from '../../../engine/rules/types.ts';
+import { QUADRANTS, type Quadrant, type Hundredths } from '../../../engine/rules/types.ts';
 
 export type FourDChessConfig = { readonly card: string; readonly quadrant: Quadrant };
 
@@ -32,3 +32,6 @@ export const fourDChess: CardRules<FourDChessConfig> = {
     return ok({ card: c.card, quadrant: c.quadrant as Quadrant });
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

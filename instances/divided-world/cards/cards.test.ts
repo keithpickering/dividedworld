@@ -206,9 +206,9 @@ test('Whodunnit? and Blind Study are Pepperoni Moves on a post for three days, t
   const named = cards.find((c) => c.key === 'card-collector')!.staffOptions!.schema as { properties: { card: { enum: string[] } } };
   assert.ok(named.properties.card.enum.includes('blind-study') && !named.properties.card.enum.includes('whodunnit'), 'Card Collector may name the uncommon, not the rare');
   assert.ok(named.properties.card.enum.includes('overreaction'), 'Card Collector may name the common');
-  // New slots end their run, so the Vending Machine's rows above them never move: the on-sale ones after Last Word, the hidden one after Part 2's two (and card notes Part 5's after it, in the same way).
-  const slotCards = instance.machine.map((m) => ('card' in m.item ? m.item.card : 'pack'));
-  assert.deepEqual(slotCards.slice(slotCards.indexOf('last-word')), ['last-word', 'laugh-track', 'overreaction', 'blind-study', 'happy-heart', 'take-the-fall', 'main-event', 'off-day', 'sugar-coat', 'graffiti', 'line-cutter', 'feelin-glam', 'whodunnit', 'super-happy-heart', 'tattle-tale', 'ultra-happy-heart']);
+  // The machine's rule (machine.test.ts) puts the uncommon Blind Study among the hidden slots and the common Overreaction on sale.
+  const availabilityOf = (k: string) => instance.machine.find((m) => 'card' in m.item && m.item.card === k)?.availability;
+  assert.deepEqual([availabilityOf('blind-study'), availabilityOf('overreaction')], ['hidden', 'onSale']);
 });
 
 test('Overreaction is a common Pepperoni Move on a post, three to a post, that adds a reaction of its own and does not end', async () => {
@@ -374,9 +374,9 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
 test('Mooch, Toll, 4D Chess and Off Day are in the instance, sold as the plan says, and the instance stays whole', () => {
   const rows = ['mooch', 'toll', '4d-chess', 'off-day'].map((k) => [k, by(k).alignment, by(k).rarity, by(k).play ?? 'cast', instance.machine.find((m) => 'card' in m.item && m.item.card === k)?.availability, instance.machine.find((m) => 'card' in m.item && m.item.card === k)?.price]);
   assert.deepEqual(rows, [
-    ['mooch', 'salty', 'uncommon', 'cast', 'onSale', 150],
-    ['toll', 'pepperoni', 'uncommon', 'use', 'onSale', 150],
-    ['4d-chess', 'salty', 'uncommon', 'set', 'onSale', 150],
+    ['mooch', 'salty', 'uncommon', 'cast', 'hidden', 150],
+    ['toll', 'pepperoni', 'uncommon', 'use', 'hidden', 150],
+    ['4d-chess', 'salty', 'uncommon', 'set', 'hidden', 150],
     ['off-day', 'salty', 'legendary', 'cast', 'hidden', 500],
   ]);
   assert.deepEqual(by('mooch').skim, { share: 0.1 });
@@ -427,7 +427,7 @@ test('Sugar Coat, Hype-Up and Last Word are in the instance, sold as the plan sa
   assert.deepEqual(['sugar-coat', 'hype-up', 'last-word'].map((k) => [k, by(k).rarity, by(k).play ?? 'cast', by(k).alignment, slot(k)?.availability, slot(k)?.price]), [
     ['sugar-coat', 'rare', 'use', 'sweet', 'hidden', 300],
     ['hype-up', 'common', 'cast', 'sweet', 'onSale', 100],
-    ['last-word', 'uncommon', 'use', 'salty', 'onSale', 150],
+    ['last-word', 'uncommon', 'use', 'salty', 'hidden', 150],
   ]);
   assert.deepEqual(by('sugar-coat').gimmick, { kind: 'ward', flavors: ['salty', 'pepperoni'] });
   assert.deepEqual(by('last-word').gimmick, { kind: 'noQuote' });
@@ -482,8 +482,8 @@ test('Jimmy Wails is a Sweet uncommon Cast on a post, sold for 2.00, with a driv
   assert.equal(j.stack, 3);
   assert.equal(j.play ?? 'cast', 'cast');
   assert.deepEqual(j.reaches ?? ['post'], ['post']);
-  assert.equal(priceOf('jimmy-wails'), 200, 'the machine slot, onSale');
-  assert.equal(instance.machine.find((m) => 'card' in m.item && m.item.card === 'jimmy-wails')!.availability, 'onSale');
+  assert.equal(priceOf('jimmy-wails'), 200, 'the machine slot, hidden as every uncommon is');
+  assert.equal(instance.machine.find((m) => 'card' in m.item && m.item.card === 'jimmy-wails')!.availability, 'hidden');
   assert.deepEqual(j.draws, ['blue-shirt', 'close-up', 'dark-logo', 'black-shirt', 'gray-jacket', 'looking-away', 'red-wall', 'full-length', 'pinstripe']);
   assert.deepEqual(j.drive, { lasts: { unit: 'day', count: 7 }, gifts: ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4'], overhead: 'jimmyWails.overhead' });
   assert.deepEqual(['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4', 'jimmyWails.overhead'].map((k) => settings.economy[k]), [10, 25, 50, 100, 25]);
@@ -551,9 +551,10 @@ test("Line Cutter and Feelin' Glam are rares in the instance, hidden at 300 afte
     ['feelin-glam', 'rare', 'cast', 'sweet', ['thread'], 1, 'hidden', 300],
   ]);
   assert.deepEqual([by('line-cutter').replies, by('line-cutter').lasts, by('feelin-glam').keeps, by('feelin-glam').lasts], [true, undefined, true, { unit: 'day', count: 7 }]);
-  // The boards hold slots by place: a hidden slot is never among the on-sale run, and these three were the machine's last (Whodunnit?, card notes Part 3, after the other two) until card notes Part 5 stocked three more hidden slots after them.
-  assert.deepEqual([at('line-cutter'), at('feelin-glam'), at('whodunnit')], [instance.machine.length - 6, instance.machine.length - 5, instance.machine.length - 4]);
-  assert.deepEqual(instance.machine.slice(at('line-cutter')).map((m) => m.availability), ['hidden', 'hidden', 'hidden', 'hidden', 'hidden', 'hidden']);
+  // The boards hold slots by place: a hidden slot is never among the on-sale run, and the rares come after every on-sale slot.
+  const lastOnSale = instance.machine.map((m) => m.availability).lastIndexOf('onSale');
+  assert.ok(at('line-cutter') > lastOnSale && at('feelin-glam') > lastOnSale);
+  assert.ok(instance.machine.slice(at('feelin-glam')).every((m) => m.availability === 'hidden'));
   assert.deepEqual(settings.reachLasts.thread, { unit: 'day', count: 7 }, "a thread's effect lasts at most a week, Feelin' Glam's");
   assert.deepEqual(instanceProblems(instance), []);
 });
@@ -603,15 +604,11 @@ test('the three Happy Hearts, Take the Fall and Tattle-Tale are in the instance,
   assert.deepEqual(instanceProblems(instance), []);
 });
 
-test('the five are sold as the plan says: the two uncommons on sale at the end of the on-sale run, the three hidden slots last of all', () => {
+test("the five are sold as the machine rule gives: every one hidden, at the plan's prices, after every on-sale slot", () => {
   const row = (k: string) => [k, instance.machine[slotOf(k)]?.availability, instance.machine[slotOf(k)]?.price];
-  assert.deepEqual(FIVE.map(row), [['happy-heart', 'onSale', 150], ['super-happy-heart', 'hidden', 300], ['ultra-happy-heart', 'hidden', 600], ['take-the-fall', 'onSale', 150], ['tattle-tale', 'hidden', 300]]);
-  const onSale = instance.machine.map((m, i) => [m, i] as const).filter(([m]) => m.availability === 'onSale').map(([, i]) => i);
-  assert.deepEqual(onSale.at(-3), slotOf('blind-study'), 'Blind Study (card notes Part 3) was the last on-sale slot, and the two follow it');
-  assert.deepEqual([slotOf('happy-heart'), slotOf('take-the-fall')], onSale.slice(-2), 'the two on sale end the on-sale run');
-  assert.ok(slotOf('take-the-fall') < slotOf('main-event'), 'so no hidden slot moves down the run\'s end, and the two come before the hidden ones');
-  assert.deepEqual(['super-happy-heart', 'tattle-tale', 'ultra-happy-heart'].map(slotOf), [instance.machine.length - 3, instance.machine.length - 2, instance.machine.length - 1], 'the three hidden are the machine\'s last');
-  assert.deepEqual(instance.machine.slice(slotOf('main-event')).map((m) => m.availability), instance.machine.slice(slotOf('main-event')).map(() => 'hidden'), 'every slot from Main Event on is hidden');
+  assert.deepEqual(FIVE.map(row), [['happy-heart', 'hidden', 150], ['super-happy-heart', 'hidden', 300], ['ultra-happy-heart', 'hidden', 600], ['take-the-fall', 'hidden', 150], ['tattle-tale', 'hidden', 300]]);
+  const lastOnSale = instance.machine.map((m) => m.availability).lastIndexOf('onSale');
+  assert.ok(FIVE.every((k) => slotOf(k) > lastOnSale), 'all five come after every on-sale slot');
 });
 
 test('no one of the five is ever set face down, a persona never plays one, and only Take the Fall is cast on a post', () => {

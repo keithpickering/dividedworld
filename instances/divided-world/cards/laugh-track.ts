@@ -18,6 +18,7 @@ import { economyOf, isLive, landsOn, ok, refuse, type CardRules, type PostTarget
 import { occurrences, sameWords } from '../../../engine/bbcode/phrase.ts';
 import type { Stretch } from '../../../engine/bbcode/visible.ts';
 import { boundedPhrase } from './phrase-bound.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export type Sound = 'laugh' | 'cheer' | 'boo';
 export interface Cue { readonly phrase: string; readonly sound: Sound }
@@ -202,3 +203,6 @@ export const laughTrack: CardRules<LaughTrackConfig> = {
     return ok({ cues, ...(Number.isSafeInteger(seed) ? { seed: seed as number } : {}) });
   },
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 150;

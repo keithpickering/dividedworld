@@ -398,9 +398,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(laughTrack.alignment).toBe('pepperoni');
     expect(laughTrack.setPhrase!({ cues: [{ phrase: 'first one', sound: 'boo' }, { phrase: 'second', sound: 'cheer' }] })).toBe('first one');
     const at = instance.machine.findIndex((m) => 'card' in m.item && m.item.card === 'laugh-track');
-    expect(instance.machine[at]).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
-    // Laugh Track was the last on-sale slot; card notes Part 3's Overreaction and Blind Study follow it, then card notes Part 5's Happy Heart and Take the Fall, and nothing else on sale does.
-    expect(instance.machine.slice(at + 1).filter((m) => m.availability === 'onSale').map((m) => ('card' in m.item ? m.item.card : 'pack'))).toEqual(['overreaction', 'blind-study', 'happy-heart', 'take-the-fall']);
+    expect(instance.machine[at]).toEqual({ item: { card: 'laugh-track' }, availability: 'hidden', price: 150 });
+    // The machine's rule (machine.test.ts) hides every uncommon, so Laugh Track is not drawn: the commons are the only cards on sale.
+    expect(instance.machine.filter((m) => 'card' in m.item && m.availability === 'onSale').every((m) => instance.cards.find((c) => c.key === (m.item as { card: string }).card)!.rarity === 'common')).toBe(true);
   });
   test('THIS has its face, its words and its handwriting, each the plan\'s, and its numbers are the rules\'', () => {
     const ui = instanceUi.cards.find((c) => c.key === 'this')!;

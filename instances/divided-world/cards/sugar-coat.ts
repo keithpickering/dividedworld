@@ -4,6 +4,7 @@
  * passes, and it never blocks a card set face down.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
+import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const sugarCoat: CardRules<Record<string, never>> = {
   key: 'sugar-coat',
@@ -17,3 +18,6 @@ export const sugarCoat: CardRules<Record<string, never>> = {
   canApply: (target, effects, _config, now) => landsOn(sugarCoat, target, effects, now),
   validateConfig: () => ok({}),
 };
+
+/** What the Vending Machine sells it for, in hundredths of an orb. */
+export const price: Hundredths = 300;

@@ -136,7 +136,7 @@ export const phone: BoardManifest = {
       press: [{ role: 'button', name: 'About Whoops!' }],
       landmarks: [
         { id: 'sheet', role: 'figure', name: 'Card info, as a sheet', buildRole: 'dialog', buildName: 'Whoops!', type: false, box: 'none' },
-        at('eyebrow', 'text', 'SLOT A2 · SALTY', { y: -30 }, { within: 'sheet', origin: 'sheet', buildName: 'Slot A2 · Move' }),
+        at('eyebrow', 'text', 'SLOT A2 · SALTY', { y: -30 }, { within: 'sheet', origin: 'sheet', buildName: 'Slot E1 · Move' }),
         at('title', 'heading', 'WHOOPS!', { y: 14 }, { within: 'sheet', origin: 'sheet' }),
         at('face', 'figure', 'Whoops!, Salty, Cast, Common', { x: -8, y: 32 }, { within: 'sheet', origin: 'sheet', buildRole: 'article', buildName: 'Whoops!, Salty, Move, common postcard', box: 'center' }),
         at('price', 'text', '1.00 to buy · more on a long post', { y: 209 }, { within: 'sheet', origin: 'sheet', buildName: '1.00 to buy · more to play on a long post' }),
