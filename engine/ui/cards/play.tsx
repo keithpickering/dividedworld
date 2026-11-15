@@ -86,7 +86,7 @@ export interface PlayControls {
    */
   readonly openForm: (card: string, target: PlayTarget) => void;
   /** The pointer's rest or focus on a trigger: read the post early, so the press that follows opens the form at once. */
-  readonly readyForm: (card: string, target: PlayTarget) => void;
+  readonly readyForm: (card: string, target: PlayTarget) => () => void;
   /** Whether the form this trigger would open is being read for now. */
   readonly opening: (card: string, target: PlayTarget) => boolean;
   /** The play being made on a post itself, or null; the post's effect slot mounts the card's `Compose` for it. */

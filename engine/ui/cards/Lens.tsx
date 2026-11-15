@@ -356,7 +356,7 @@ function AsItLanded({ play }: { readonly play: Id }) {
   const pressed = useSyncExternalStore(store.subscribe, () => store.moment() === play, () => false);
   /* The moment is read before it shows (the glass-load design, section 4): the button is busy over `playMoment`, and the post's body changes once it is in. */
   const read = usePrepared<true>(async () => { await store.readMoment(play, () => api.playMoment(play)); return true; }, () => play);
-  const rest = useRest(() => { if (!pressed && store.kept(play) === undefined) read.early(); });
+  const rest = useRest(() => (!pressed && store.kept(play) === undefined ? read.early() : undefined));
   const press = () => {
     if (read.busy) return;
     if (pressed) { store.showMoment(null); return; }
@@ -680,7 +680,7 @@ const PreparedTab = forwardRef<HTMLButtonElement, {
   readonly id: string; readonly kind: string; readonly selected: boolean; readonly controls: string | undefined; readonly children: ReactNode; readonly onChoose: () => void;
   readonly read: { readonly data: unknown; readonly busy: boolean; readonly early: () => void } | null;
 }>(function PreparedTab({ id, kind, selected, controls, children, onChoose, read }, ref) {
-  const rest = useRest(() => { if (read && read.data === null) read.early(); });
+  const rest = useRest(() => (read && read.data === null ? read.early() : undefined));
   const busy = read?.busy === true;
   return (
     <button
