@@ -13,13 +13,14 @@
   --dw-ywst-ground: #eaf4ed;
   font-family: 'Courier New', Courier, 'Liberation Mono', monospace;
   color: var(--dw-ywst-ink);
-  background: var(--dw-ywst-ground);
-  position: relative;
   /* The model's text can hold paragraph breaks and a word longer than the column: both are kept and broken here (the block is no part of .kb-bb). */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
+}
+/* The ground lies under the words showing and the cursor's place at the end, never under the words still to come. */
+.dw-ywst > [data-play],
+.dw-ywst-place {
+  background: var(--dw-ywst-ground);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-kb-mode='light']) .dw-ywst {
@@ -46,17 +47,45 @@
   outline-offset: 2px;
 }
 
-/* The block cursor, one at the end of the run: it blinks, and holds still where it is told to (a moment, reduced motion). */
-.dw-ywst-cursor {
+/*
+ * The words not showing (not yet typed, or erased by a hold) are laid out all the same, hidden in their place after the cursor, so the post
+ * has its full height from the first frame and every line breaks where it will when the tail has typed. Nothing under the post moves.
+ */
+.dw-ywst-rest {
+  visibility: hidden;
+}
+/* The place the cursor stands on at the end of the run: there from the first frame (inside the hidden rest until the typing reaches it), so the last line is too. */
+.dw-ywst-place {
   display: inline-block;
+  width: calc(0.55em + 1px);
+  height: 1.05em;
+  vertical-align: -0.15em;
+}
+
+/*
+ * The block cursor, one in the run: it blinks, and holds still where it is told to (a moment, reduced motion). Its element is an empty
+ * inline, a point in the run that takes no room and gives a word no place to break; the block is drawn from that point, out of the flow.
+ * At the end of the run it is drawn back over its place; in the middle (`data-kb-mid`) it is drawn forward, over the next hidden character.
+ * The offsets put the block where the place is in Courier New and Liberation Mono, whose line descends 0.3em: 0.15em below the baseline.
+ */
+.dw-ywst-cursor {
+  position: relative;
+}
+.dw-ywst-cursor::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0.15em;
   width: 0.55em;
   height: 1.05em;
-  margin-left: 1px;
-  vertical-align: -0.15em;
   background: currentColor;
   animation: dw-ywst-blink 1s steps(1) infinite;
 }
-.dw-ywst-cursor[data-kb-still] {
+.dw-ywst-cursor[data-kb-mid]::before {
+  right: auto;
+  left: 1px;
+}
+.dw-ywst-cursor[data-kb-still]::before {
   animation: none;
 }
 @keyframes dw-ywst-blink {
@@ -65,37 +94,12 @@
   }
 }
 
-/* A horizontal tear, like a vsync slip, while it types: a short jolt and a red and cyan split, then at rest again. It stops when the typing does. */
-.dw-ywst[data-kb-typing] {
-  animation: dw-ywst-tear 0.42s steps(1) infinite;
-}
-@keyframes dw-ywst-tear {
-  0%,
-  60% {
-    left: 0;
-    text-shadow: none;
-  }
-  70% {
-    left: 6px;
-    text-shadow: -2px 0 rgb(255 0 60 / 0.7), 2px 0 rgb(0 200 255 / 0.7);
-  }
-  85% {
-    left: -3px;
-    text-shadow: none;
-  }
-  100% {
-    left: 0;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-kb-motion='full']) .dw-ywst[data-kb-typing],
-  :root:not([data-kb-motion='full']) .dw-ywst-cursor {
+  :root:not([data-kb-motion='full']) .dw-ywst-cursor::before {
     animation: none;
   }
 }
-:root[data-kb-motion='reduce'] .dw-ywst[data-kb-typing],
-:root[data-kb-motion='reduce'] .dw-ywst-cursor {
+:root[data-kb-motion='reduce'] .dw-ywst-cursor::before {
   animation: none;
 }
 

@@ -73,6 +73,9 @@ const blocks = () => [...document.querySelectorAll<HTMLElement>('[data-kb-tail]'
 const spans = () => [...document.querySelectorAll<HTMLElement>('[data-kb-tail] [data-play]')];
 const shownText = () => spans().map((s) => s.textContent).join('');
 const cursor = () => document.querySelector<HTMLElement>('[data-kb-cursor]');
+/** The words not yet typed (or erased), hidden in their place after the cursor; and the place kept for the cursor at the run's end. */
+const rest = () => document.querySelector<HTMLElement>('[data-kb-tail] [data-kb-rest]');
+const place = () => document.querySelector<HTMLElement>('[data-kb-tail] [data-kb-cursor-place]');
 const UNSAVED = 'It\'s erased on your screen, but it didn\'t save. Hold to try again.';
 const status = () => document.querySelector<HTMLElement>('[role="status"][data-kb-report]')?.textContent?.replace(/ /gu, '') ?? '';
 /** The pointer held on the block, and the same through Backspace on it. */
@@ -118,16 +121,76 @@ describe('the tail', () => {
     expect(shownText()).toBe(SIXTY.slice(0, 20));
   });
 
-  test('a tear shows while it types and stops when it is done; the cursor stays at the end', async () => {
+  test('nothing tears while it types: the block carries no mark of typing and the stylesheet no tear; the cursor stays at the end', async () => {
     mount();
     await see(true);
     await tick(250);
-    expect(block()!.hasAttribute('data-kb-typing')).toBe(true);
-    expect(cursor()).not.toBeNull();
-    await tick(2000);
     expect(block()!.hasAttribute('data-kb-typing')).toBe(false);
     expect(cursor()).not.toBeNull();
+    await tick(2000);
+    expect(cursor()).not.toBeNull();
     expect(block()!.lastElementChild).toBe(cursor());
+    const css = read('./tail.css');
+    expect(css).not.toMatch(/tear|text-shadow|data-kb-typing/u);
+    /* The blink is the only animation left. */
+    expect([...css.matchAll(/@keyframes\s+([\w-]+)/gu)].map((m) => m[1])).toEqual(['dw-ywst-blink']);
+  });
+
+  test('the words not yet typed hold their place from the first frame: whole in the block, the rest hidden after the cursor', async () => {
+    mount();
+    await see(true);
+    expect(shownText()).toBe('');
+    expect(rest()!.textContent).toBe(SIXTY);
+    expect(block()!.textContent).toBe(SIXTY);
+    await tick(250);
+    expect(shownText()).toBe(SIXTY.slice(0, 10));
+    expect(rest()!.textContent).toBe(SIXTY.slice(10));
+    expect(block()!.textContent).toBe(SIXTY);
+    /* The order of the run: the typed words, the cursor, the rest; the rest is no one's to read. */
+    expect(spans()[0]!.nextElementSibling).toBe(cursor());
+    expect(cursor()!.nextElementSibling).toBe(rest());
+    expect(rest()!.getAttribute('aria-hidden')).toBe('true');
+    expect(cursor()!.hasAttribute('data-kb-mid')).toBe(true);
+    await tick(2000);
+    expect(rest()).toBeNull();
+    expect(cursor()!.hasAttribute('data-kb-mid')).toBe(false);
+    expect(block()!.textContent).toBe(SIXTY);
+  });
+
+  test('a hold keeps the erased words\' place, and a chain\'s rest runs across its plays', async () => {
+    mount({ plays: [playOf(1), playOf(2)], written: { y1: text('a'.repeat(30)), y2: text('b'.repeat(30)) } });
+    await seenAndTyped();
+    expect(rest()).toBeNull();
+    pointer.down(block()!);
+    await tick(6000);
+    expect(shownText()).toBe('a'.repeat(24));
+    expect(rest()!.textContent).toBe('a'.repeat(6) + 'b'.repeat(30));
+    expect(block()!.textContent).toBe('a'.repeat(30) + 'b'.repeat(30));
+  });
+
+  test('the cursor has a place kept for it at the end of the run, so the last line is there before it is reached', async () => {
+    mount();
+    await see(true);
+    await tick(250);
+    /* While it types the place is inside the hidden rest, after the words; when typed it is the block's own, right before the cursor. */
+    expect(place()!.parentElement).toBe(rest());
+    expect(rest()!.lastElementChild).toBe(place());
+    await tick(2000);
+    expect(place()!.parentElement).toBe(block());
+    expect(place()!.nextElementSibling).toBe(cursor());
+    expect(place()!.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  test('the stylesheet hides the rest in place, and draws the cursor out of the run so it moves no word', () => {
+    const css = read('./tail.css');
+    const rule = (sel: string) => css.match(new RegExp(`(?:^|\\n)${sel}\\s*\\{[^}]*\\}`, 'u'))?.[0] ?? '';
+    expect(rule('\\.dw-ywst-rest')).toMatch(/visibility:\s*hidden/u);
+    expect(rule('\\.dw-ywst-rest')).not.toMatch(/display:\s*none|position:\s*absolute/u);
+    /* The cursor's element is an empty inline, a point in the run; what is seen is drawn from it, out of the flow. */
+    expect(rule('\\.dw-ywst-cursor')).not.toMatch(/display:\s*inline-block|width:/u);
+    expect(rule('\\.dw-ywst-cursor::before')).toMatch(/position:\s*absolute/u);
+    /* The ground is under the typed words and the cursor's place, never under the rest. */
+    expect(rule('\\.dw-ywst')).not.toMatch(/background:/u);
   });
 
   test('stops every timer when it is full, when it is out of view and when it unmounts', async () => {
@@ -154,7 +217,6 @@ describe('the tail', () => {
     await tick(1000);
     expect(shownText()).toBe('');
     expect(cursor()).not.toBeNull();
-    expect(block()!.hasAttribute('data-kb-typing')).toBe(false);
     m.redraw({ y1: text(SIXTY) });
     expect(shownText()).toBe('');
     await tick(250);
@@ -449,12 +511,11 @@ describe('a clear', () => {
 describe('reduced motion', () => {
   beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
 
-  test('the text shows at once, with no tear and a cursor that holds still', async () => {
+  test('the text shows at once, with nothing held back, and a cursor that holds still', async () => {
     mount();
     expect(shownText()).toBe(SIXTY);
     await see(true);
     expect(shownText()).toBe(SIXTY);
-    expect(block()!.hasAttribute('data-kb-typing')).toBe(false);
     expect(cursor()!.hasAttribute('data-kb-still')).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
   });
