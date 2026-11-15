@@ -100,6 +100,18 @@ instead (`docs/plans/2026-11-02-api-keys-design.md`).
 4. Stay on the `<ref>.supabase.co` address. A custom Supabase domain would be refused by the site's
    Content-Security-Policy, which allows `https://*.supabase.co` and `wss://*.supabase.co` alone (`netlify.toml`, kept
    equal to `web/headers.ts`); adding one means changing both in a pull request first.
+5. **The Data API's pool.** PostgREST, which answers every read, keeps a pool of database connections, and a page's
+   query plan is kept on the connection that made it. A plan is only used again if the same connection is used
+   again, so the pool is kept small and its connections are kept alive. Each connection holds about 26 MB of kept
+   plans once it has served every kind of page, and a planning needs about 105 MB for a moment. Divided World
+   declares a pool of 2 and an idle time of 60 seconds in `instances/divided-world/data-api.json`, and the release
+   (step 9) sets the project to that every night, writing only when the deployed value differs, so a night with
+   nothing to change does not restart the API's pool. Nothing is set by hand. To choose a pool on a larger compute
+   size, add up the pool times 26 MB, plus 105 MB for each connection that could plan at once, and keep the sum
+   inside the memory Postgres leaves free; with room to spare, declare a bigger `pool`, or `null` for Supabase's
+   automatic pool. A self-hosted Supabase has no management API for this: set PostgREST's `db-pool` and
+   `db-pool-max-idletime` to the same two values instead. `tools/check-data-api.mjs` is the tool the release runs,
+   and `docs/plans/2026-11-15-warm-reads-design.md` has the reasoning.
 
 ### 3. Supabase: the schema
 
@@ -340,7 +352,8 @@ the first account is opened with registration briefly open.
   lives.
 - Every later deploy is the Release workflow's (`.github/workflows/release.yml`,
   `docs/plans/2026-11-12-release-backend-design.md`), once a night or when you dispatch it. Once main's head has
-  passed every test, it applies the new migrations (`supabase db push`), deploys every Edge Function, runs the seed,
+  passed every test, it applies the new migrations (`supabase db push`), sets the Data API's pool to the declared
+  one (step 2.5), deploys every Edge Function, runs the seed,
   and only then moves the site. A red step stops everything after it, the site stays where it is, and the run's
   summary names the step; the fix goes forward, and every step is safe to run again. It needs three things from you,
   once, in this order:

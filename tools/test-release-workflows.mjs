@@ -335,6 +335,32 @@ red('functions checks out main', edit(RELEASE, (d) => {
   for (const s of d.jobs.functions.steps) if (String(s.uses ?? '').startsWith('actions/checkout')) s.with = { ref: 'main' };
 }), /R13.*functions.*check out/);
 
+/* ---- R15: the release sets the Data API's pool, once, and nothing else does ---- */
+const dataApiStep = (d) => {
+  const st = Object.values(d.jobs).flatMap((j) => list(j.steps)).find((x) => /check-data-api\.mjs/.test(x.run ?? ''));
+  if (!st) throw new Error('release.yml has no step that runs tools/check-data-api.mjs');
+  return st;
+};
+red('the Data API step is removed', edit(RELEASE, (d) => {
+  for (const j of Object.values(d.jobs)) j.steps = list(j.steps).filter((x) => !/check-data-api\.mjs/.test(x.run ?? ''));
+}), /R15.*0 times/);
+red('the Data API step runs without --set', edit(RELEASE, (d) => {
+  const st = dataApiStep(d);
+  st.run = st.run.replace(/\s--set\b/, '');
+}), /R15.*without --set/);
+red('a second workflow runs the Data API tool', edit(WEB, (d) => {
+  Object.values(d.jobs)[0].steps.push({ run: 'node tools/check-data-api.mjs --project x --declared instances/divided-world/data-api.json' });
+}), /web\.yml.*R15/);
+red('the Data API step is in a job that does not name production', edit(RELEASE, (d) => {
+  const job = Object.values(d.jobs).find((j) => list(j.steps).some((x) => /check-data-api\.mjs/.test(x.run ?? '')));
+  if (!job) throw new Error('release.yml has no step that runs tools/check-data-api.mjs');
+  delete job.environment;
+}), /R15.*environment: production/);
+red('the Data API step names a --declared file that does not exist', edit(RELEASE, (d) => {
+  const st = dataApiStep(d);
+  st.run = st.run.replace(/instances\/divided-world\/data-api\.json/, 'instances/divided-world/no-such-file.json');
+}), /R15.*does not exist/);
+
 /* ---- a file that does not parse ---- */
 red('a workflow that does not parse is named', { ...REAL, [BUILD]: 'on: [unclosed\n  - : :' }, /build\.yml/);
 
