@@ -148,7 +148,8 @@ export type OnMove = (from: Location | null, to: Location) => void;
 
 /** How long the pointer rests on a link before its page is read early. */
 const REST_MS = 100;
-export const LOAD_LIMIT_MS = 20_000;
+import { LOAD_LIMIT_MS } from './ahead.ts';
+export { LOAD_LIMIT_MS };
 const PREFETCH_KEPT_MS = 30_000;
 const ENTRY_KEPT_MS = 5 * 60_000;
 const ENTRIES_MAX = 20;
