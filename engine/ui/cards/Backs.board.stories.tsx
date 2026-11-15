@@ -5,7 +5,7 @@
  * mark is dimmed); a ward used on it (`Ward`); and a Set card armed (`ArmedSet`: its ghost mark only on the reader's own posts). Each
  * has its `Phone` twin at 390 by 844; open the others at 1440 by 1120.
  *
- * The story names no instance: the cards are the instance's first Set card, first ward and first Cast, found by their rules.
+ * The cards are the instance's own, each named by its key (a card added later changes no board here): a Set card with a cast trap, a ward and a Cast.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
@@ -21,6 +21,18 @@ import { LoadedThread } from '../loaded.tsx';
 
 type Scene = 'back' | 'caught' | 'ward' | 'armed';
 
+/** The cards the boards show, by key. */
+const SET = '4d-chess';
+const WARD = 'force-field';
+const CAST = 'autocorrect';
+
+/** The instance's card of this key; the story fails, naming it, when the instance has none. */
+function card<T extends { readonly key: string }>(cards: readonly T[], key: string): T {
+  const found = cards.find((c) => c.key === key);
+  if (!found) throw new Error(`the instance has no card "${key}", which this story names`);
+  return found;
+}
+
 /** Lay #41's scene, then say the thread is ready to be read. */
 function useSeeded(thread: string | null, scene: Scene): boolean {
   const { api, instance } = useKayfa();
@@ -35,18 +47,18 @@ function useSeeded(thread: string | null, scene: Scene): boolean {
       const target = acts.find((a) => a.seq === 41);
       const caster = acts.find((a) => a.seq === 42)?.character;
       if (!target?.character || !caster) throw new Error('the boards fixture has no #41 and #42 with authors');
-      const setCard = instance.cards.find((c) => playOf(c) === 'set' && c.trap?.trigger.on === 'cast');
-      const ward = instance.cards.find((c) => c.gimmick?.kind === 'ward');
-      const cast = instance.cards.find((c) => playOf(c) === 'cast');
+      const setCard = card(instance.cards, SET);
+      const ward = card(instance.cards, WARD);
+      const cast = card(instance.cards, CAST);
       if (scene === 'back' || scene === 'caught') {
-        if (!setCard) throw new Error('the instance has no Set card with a cast trap');
+        if (playOf(setCard) !== 'set' || setCard.trap?.trigger.on !== 'cast') throw new Error('the story names a Set card with a cast trap, and this is not one');
         const set = fake.seed.set(target.character, target.id, setCard.key);
-        if (scene === 'caught' && cast) {
+        if (scene === 'caught') {
           const caught = fake.seed.card(caster, target.id, cast.key, { message: '', caught: set });
           fake.seed.spring(set, { caught });
         }
       }
-      if (scene === 'ward' && ward) {
+      if (scene === 'ward') {
         fake.seed.card(target.character, target.id, ward.key, { message: '', layer: 1, ends: new Date(Date.now() + 5 * 86_400_000).toISOString() });
       }
       if (live) setReady(true);
@@ -56,14 +68,14 @@ function useSeeded(thread: string | null, scene: Scene): boolean {
   return ready;
 }
 
-/** Arms the instance's first Set card, as the player's press in the hand does. */
+/** Arms the story's Set card, as the player's press in the hand does. */
 function ArmSet() {
   const { instance } = useKayfa();
   const play = usePlay();
   const account = usePlayer().session.account;
-  const key = instance.cards.find((c) => playOf(c) === 'set')?.key ?? null;
+  const key = card(instance.cards, SET).key;
   useEffect(() => {
-    if (!play || key === null || account === null) return;
+    if (!play || account === null) return;
     play.arm(key);
     // Armed once for each account.
     // eslint-disable-next-line react-hooks/exhaustive-deps

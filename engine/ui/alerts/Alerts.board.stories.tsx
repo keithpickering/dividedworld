@@ -24,7 +24,9 @@ const alerts: World = (fake, instance) => {
   const spritey = seed.character(me, 'Spritey', cls);
   const gloomba = seed.character(friend, 'Gloomba', other);
   const quoter = seed.character(bo, 'Thwomp', cls);
-  const card = instance.cards[0]!.key;
+  /* The card played on the post, by key, so a card added later to the instance's list changes no row. */
+  const card = instance.cards.find((c) => c.key === '4d-chess')?.key;
+  if (card === undefined) throw new Error('the instance has no card "4d-chess", which this story names');
   seed.settle({ at: utc(2, 8, 17) - 60_000, ledger: [{ character: pipewrench, reason: `${cls}.story`, amount: 42 }, { character: hooligan, reason: `${other}.story`, amount: 10 }] });
   const splat = seed.thread('general', pipewrench, 'who keeps splatting my posts', 'Somebody is doing it again.', { at: utc(1, 20) });
   const ink = seed.thread('general', spritey, 'best ink color, final answer', 'Defend your answer.', { at: utc(2, 8, 40) });
