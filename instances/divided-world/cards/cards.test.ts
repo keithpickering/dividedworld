@@ -1280,7 +1280,7 @@ test('THIS with no configuration answers what landsOn does', () => {
 });
 
 test('THIS\'s persona options: the words are trimmed to 60 characters at a word\'s end and the trim is named; nothing else is repaired', () => {
-  const repair = (config: unknown, text = 'I like Mario a lot') => thisCard.repairStaff!(config, on(text), 'cast');
+  const repair = (config: unknown, text = 'I like Mario a lot') => thisCard.repairStaff!(config, postTarget('p1', 'post', text), 'cast');
   const phrase = 'Mario';
   const sixtyOne = `${'a'.repeat(30)} ${'b'.repeat(30)}`;
   assert.equal(characters(sixtyOne), 61);
