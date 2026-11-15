@@ -1031,6 +1031,16 @@ describe('failures', () => {
     expect(err).not.toContain('down');
   });
 
+  it('a database error on a read is not sent again; a 5xx with no Postgres code is', async () => {
+    const timedOut = harness(() => json({ code: '57014', message: 'canceling statement due to statement timeout', details: null, hint: null }, 500));
+    expect(failureKind(await timedOut.api.act(A).catch((e: unknown) => e))).toBe('server');
+    expect(timedOut.to('acts_public')).toHaveLength(1);
+
+    const noConnection = harness(() => json({ code: 'PGRST003', message: 'Timed out acquiring connection from connection pool.', details: null, hint: null }, 504));
+    expect(failureKind(await noConnection.api.act(A).catch((e: unknown) => e))).toBe('server');
+    expect(noConnection.to('acts_public')).toHaveLength(2);
+  });
+
   it('a failed read says which kind it was: silent, server, a 4xx that is not a refusal, or offline', async () => {
     const silent = harness(() => new TypeError('network'));
     expect(failureKind(await silent.api.act(A).catch((e: unknown) => e))).toBe('silent');
