@@ -1,8 +1,8 @@
 /**
  * A reply cut in under its post (docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 9), drawn as a story for the owner: a thread of six posts with a
  * reply nested under its second post, with the rail down its left edge and its own heading, and its own number left out of the line, on the light board
- * and the dark. The card is the instance's first card that carries a reply (`CardRules.replies`), found by its flag and never by name; a world with none
- * says so on the page. The reply is written by the play itself, as the game writes it. The page is the thread screen itself, as the route /t/:thread
+ * and the dark. The card that carries a reply is named by key (the constant below), so a new card cannot change the story; a fixture whose thread is
+ * missing says so on the page. The reply is written by the play itself, as the game writes it. The page is the thread screen itself, as the route /t/:thread
  * draws it, signed in as the player.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -10,11 +10,13 @@ import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Fake } from '../data/fake.ts';
 import { LoadedThread } from '../loaded.tsx';
-import type { World } from '../story.tsx';
+import { cardOf, type World } from '../story.tsx';
 
 const T0 = Date.UTC(2026, 9, 20, 12);
 const MIN = 60_000;
 const TITLE = 'Who is cutting the line?';
+/** The card that carries a reply, played on the thread's second post. */
+const REPLY = 'line-cutter';
 
 const under: World = (fake, instance) => {
   const me = fake.seed.account('story-player');
@@ -41,11 +43,11 @@ function Cut({ mode }: Args) {
     root.setAttribute('data-kb-mode', mode);
     return () => root.removeAttribute('data-kb-mode');
   }, [mode]);
+  /* Looked up in render, so a key the instance lacks fails the story there and is not swallowed by the seeder's catch. */
+  const card = cardOf(instance.cards, REPLY);
   useEffect(() => {
     let live = true;
     void (async () => {
-      const card = instance.cards.find((c) => c.replies === true);
-      if (!card) { if (live) setThread('missing'); return; }
       for (const board of await api.boards()) {
         const found = (await api.threads(board.id, { offset: 0, limit: 200 })).threads.find((x) => x.title === TITLE);
         if (!found) continue;
@@ -61,8 +63,8 @@ function Cut({ mode }: Args) {
       if (live) setThread('missing');
     })();
     return () => { live = false; };
-  }, [api, instance]);
-  if (thread === 'missing') return <p role="alert">The story's world has no card that carries a reply, or no thread titled for it.</p>;
+  }, [api, card]);
+  if (thread === 'missing') return <p role="alert">The story's world has no thread titled for it, with a second post and a third to cast it.</p>;
   return thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />;
 }
 

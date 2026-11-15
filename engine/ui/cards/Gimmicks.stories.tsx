@@ -11,6 +11,7 @@ import { useKayfa } from '../context.tsx';
 import { Frame } from '../frame/Frame.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { usePlayer } from '../player.tsx';
+import { cardOf } from '../story.tsx';
 import { useLocation } from '../router.tsx';
 import { usePlay } from './play.tsx';
 
@@ -20,13 +21,6 @@ type Scene = 'ghost' | 'takeback' | 'surcharge';
 const SET = '4d-chess';
 const PRICE = 'good-vibes';
 const SALTY_CAST = 'below-the-fold';
-
-/** The instance's card of this key; the story fails, naming it, when the instance has none. */
-function card<T extends { readonly key: string }>(cards: readonly T[], key: string): T {
-  const found = cards.find((c) => c.key === key);
-  if (!found) throw new Error(`the instance has no card "${key}", which this story names`);
-  return found;
-}
 
 /** Seeds the scene, and answers the thread to show. */
 function useSeeded(scene: Scene, thread: string | null): string | null {
@@ -46,14 +40,14 @@ function useSeeded(scene: Scene, thread: string | null): string | null {
       if (scene === 'takeback') {
         const acts = await api.acts(thread, 43, 43);
         const own = acts.find((a) => a.seq === 43);
-        const back = card(instance.cards, SET);
+        const back = cardOf(instance.cards, SET);
         if (!own) throw new Error('no #43');
         fake.seed.set(pipe.id, own.id, back.key, { at: Date.now() });
         if (live) setShown(thread);
         return;
       }
       const mine = fake.seed.thread('general', pipe.id, 'A thread Pipewrench started', 'The opening post.').thread;
-      const price = card(instance.cards, PRICE);
+      const price = cardOf(instance.cards, PRICE);
       if (scene === 'surcharge') fake.seed.reach(pipe.id, 'thread', mine, price.key, { ends: Date.now() + 86_400_000 });
       if (live) setShown(mine);
     })().catch((e: unknown) => { console.error('the story could not be seeded', String(e)); });
@@ -70,8 +64,8 @@ function Act({ scene }: { readonly scene: Scene }) {
   const account = usePlayer().session.account;
   useEffect(() => {
     if (!play || account === null) return;
-    const key = scene === 'ghost' ? card(instance.cards, PRICE).key
-      : scene === 'surcharge' ? card(instance.cards, SALTY_CAST).key : undefined;
+    const key = scene === 'ghost' ? cardOf(instance.cards, PRICE).key
+      : scene === 'surcharge' ? cardOf(instance.cards, SALTY_CAST).key : undefined;
     if (key) play.arm(key);
     /* The a11y suite renders every story in jsdom, which has no scrollIntoView, so the scroll is optional; both timers end with the story. */
     let fold: ReturnType<typeof setTimeout> | undefined;

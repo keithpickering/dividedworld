@@ -14,6 +14,7 @@ import type { Fake } from '../data/fake.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { useLocation } from '../router.tsx';
 import { usePlayer } from '../player.tsx';
+import { cardOf } from '../story.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { playOf } from '../../rules/cards.ts';
 import { usePlay } from './play.tsx';
@@ -25,13 +26,6 @@ type Scene = 'back' | 'caught' | 'ward' | 'armed';
 const SET = '4d-chess';
 const WARD = 'force-field';
 const CAST = 'autocorrect';
-
-/** The instance's card of this key; the story fails, naming it, when the instance has none. */
-function card<T extends { readonly key: string }>(cards: readonly T[], key: string): T {
-  const found = cards.find((c) => c.key === key);
-  if (!found) throw new Error(`the instance has no card "${key}", which this story names`);
-  return found;
-}
 
 /** Lay #41's scene, then say the thread is ready to be read. */
 function useSeeded(thread: string | null, scene: Scene): boolean {
@@ -47,9 +41,9 @@ function useSeeded(thread: string | null, scene: Scene): boolean {
       const target = acts.find((a) => a.seq === 41);
       const caster = acts.find((a) => a.seq === 42)?.character;
       if (!target?.character || !caster) throw new Error('the boards fixture has no #41 and #42 with authors');
-      const setCard = card(instance.cards, SET);
-      const ward = card(instance.cards, WARD);
-      const cast = card(instance.cards, CAST);
+      const setCard = cardOf(instance.cards, SET);
+      const ward = cardOf(instance.cards, WARD);
+      const cast = cardOf(instance.cards, CAST);
       if (scene === 'back' || scene === 'caught') {
         if (playOf(setCard) !== 'set' || setCard.trap?.trigger.on !== 'cast') throw new Error('the story names a Set card with a cast trap, and this is not one');
         const set = fake.seed.set(target.character, target.id, setCard.key);
@@ -73,7 +67,7 @@ function ArmSet() {
   const { instance } = useKayfa();
   const play = usePlay();
   const account = usePlayer().session.account;
-  const key = card(instance.cards, SET).key;
+  const key = cardOf(instance.cards, SET).key;
   useEffect(() => {
     if (!play || account === null) return;
     play.arm(key);

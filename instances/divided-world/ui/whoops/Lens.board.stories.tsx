@@ -14,8 +14,9 @@
  * one state and stays there.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
+import { cardOf } from '../../../../engine/ui/story.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { useLocation } from '../../../../engine/ui/router.tsx';
@@ -29,6 +30,13 @@ const MINUTE = 60_000;
 const ORANGE = '#ff9f43';
 const YELLOW = '#ffd93d';
 const LONG_NAME = 'Professor Hootenanny McGillicuddy III';
+
+/** The layered card: Whoops!. */
+const WHOOPS = 'whoops';
+/** The takeover card: Stick Around. */
+const STICK_AROUND = 'stick-around';
+/** The other three kinds of the five-kinds scene, in the order they are played: Force Field, Autocorrect, Glitter Bomb. */
+const OTHER_KINDS = ['force-field', 'autocorrect', 'glitter-bomb'];
 
 /** `as-is` keeps the moment's own signed-in player (the Hold board's, a reader who is held). */
 type Viewer = 'reader' | 'author' | 'as-is';
@@ -52,6 +60,10 @@ const PARTLY = Array.from({ length: ROWS * PASSES }, (_, n) => {
 function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAround: boolean, clean = false, five = false): boolean {
   const { api, instance } = useKayfa();
   const [ready, setReady] = useState(false);
+  /* Looked up in render, so a key the instance lacks fails the story there and is not swallowed by the seeder's catch. */
+  const whoops = cardOf(instance.cards, WHOOPS).key;
+  const hold = cardOf(instance.cards, STICK_AROUND).key;
+  const others = useMemo(() => (five ? OTHER_KINDS.map((k) => cardOf(instance.cards, k)) : []), [instance, five]);
   useEffect(() => {
     if (thread === null) return;
     let live = true;
@@ -64,9 +76,6 @@ function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAro
       const pipewrench = by(43);
       const gloomba = by(45) ?? by(38);
       if (!target || !pipewrench || !gloomba) throw new Error('the boards fixture has no post to play on, or no #43, and no #45 or #38');
-      const whoops = instance.cards.find((c) => c.name === 'Whoops!')?.key;
-      const hold = instance.cards.find((c) => c.name === 'Stick Around')?.key;
-      if (!whoops || !hold) throw new Error('the instance has no Whoops! or Stick Around');
       const played = (await api.cardsOn(target.id, 8)).filter((a) => a.currentPayload.card === whoops);
       let bottom = played[0]?.id ?? null;
       const kinds = instance.reactions.map((r) => r.key);
@@ -95,9 +104,7 @@ function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAro
        * most drawn kind first (Whoops!) and then the newest, so these are played oldest first and Stick Around, below, last: the tabs stand in the board's order.
        */
       if (five) {
-        for (const name of ['Force Field', 'Autocorrect', 'Glitter Bomb']) {
-          const key = instance.cards.find((c) => c.name === name)?.key;
-          if (!key) throw new Error(`the instance has no ${name}`);
+        for (const { key, name } of others) {
           fake.clock.advance(MINUTE);
           fake.seed.card(pipewrench, target.id, key, { message: `${name}, as one of five kinds` });
         }
@@ -124,7 +131,7 @@ function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAro
       /* A seed refused leaves the story loading (aria-busy), and says why, rather than drawing a state its name does not. */
     })().catch((e: unknown) => { console.error('the Lens story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, instance, thread, viewer, post, stickAround, clean, five]);
+  }, [api, instance, thread, viewer, post, stickAround, clean, five, whoops, hold, others]);
   return ready;
 }
 
@@ -155,7 +162,7 @@ function Post({ viewer, open, who, landed = false, five = false }: Props) {
   const { instance } = useKayfa();
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
   const ready = useSeeded(thread, viewer, 41, true, landed, five);
-  const card = open === 'none' ? null : instance.cards.find((c) => c.name === (open === 'whoops' ? 'Whoops!' : 'Stick Around'))?.key ?? null;
+  const card = open === 'none' ? null : cardOf(instance.cards, open === 'whoops' ? WHOOPS : STICK_AROUND).key;
   const stage: HoldStageValue = { mode: 'thread' };
   return (
     <Frame>

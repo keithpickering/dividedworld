@@ -6,7 +6,7 @@
  * (select the Booster, Buy, turn cards), which the manifests list.
  *
  * What the story chooses, since the fake rolls with its own fixed generator: the answer the machine gives to a pack is set here, four commons and then
- * Main Event, so the hit is the rare board 03 draws; the commons are picked by rarity and place in the instance's order, the hit by its key. The
+ * Main Event, so the hit is the rare board 03 draws; each of the five is named by its key. The
  * hand holds what the fake rolled; only the story's answer says what was shown. Nothing here acts: it is a specimen for the board match and the
  * owner's review.
  */
@@ -14,19 +14,25 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Page } from '../glass/Page.tsx';
-import type { World } from '../story.tsx';
+import { cardOf, type World } from '../story.tsx';
 import { PackArt } from './PackArt.tsx';
 import { Vending } from './Vending.tsx';
 import testPicture from './pack-test-art.webp?url';
 import testRelief from './pack-test-relief.webp?url';
+
+/** The two cards in the player's hand, one of each. */
+const HELD = ['4d-chess', 'autocorrect'] as const;
+/** The pack's answer: four cards in this order (to the story, four commons), then the hit. */
+const SHOWN = ['autocorrect', 'below-the-fold', 'feelin-fab', 'hype-up'] as const;
+/** The rare the board's hit draws. */
+const HIT = 'main-event';
 
 /** The world of the boards: the machine as the instance seeds it, a wallet of 5.62, a hand of two, and two of the Boss's moves in force. */
 const world: World = (fake, instance) => {
   const me = fake.seed.account('story-player');
   fake.seed.character(me, 'Pipewrench', instance.classes[0]!.key);
   fake.seed.wallet(me, 562);
-  const [first, second] = instance.cards;
-  if (first && second) fake.seed.cards(me, { [first.key]: 1, [second.key]: 1 });
+  fake.seed.cards(me, Object.fromEntries(HELD.map((key) => [cardOf(instance.cards, key).key, 1])));
   /* Slots are found by the card they hold, never by their place, so the story does not follow the instance's order: Whoops! is pulled (the board's A2) and Stick Around is marked up from its price to one and a half times it (the board's E1); both are commons, on sale under the machine's rule. */
   const slotOf = (card: string) => instance.machine.find((m) => 'card' in m.item && m.item.card === card);
   const pulled = slotOf('whoops');
@@ -44,10 +50,8 @@ const world: World = (fake, instance) => {
       move: { kind: 'repriceSlot', act: 'story-markup', ends: '2026-11-08T20:00:00Z', was, percent: 150, hours: null, demand: { kind: 'postsOnBoard', params: { board: 'general', count: 20 } }, progress: { done: 4, of: 20, met: false, checkedAt: '2026-11-07T10:00:00Z' } },
     });
   }
-  /* The pack's answer: four commons in the instance's order, then Main Event, the rare the board draws, found by its key so the story does not follow the instance's order. */
-  const commons = instance.cards.filter((c) => c.rarity === 'common').map((c) => c.key);
-  const hit = (instance.cards.find((c) => c.key === 'main-event') ?? instance.cards.find((c) => c.rarity === 'rare') ?? instance.cards[instance.cards.length - 1]!).key;
-  const shown = [0, 1, 2, 3].map((i) => commons[i % Math.max(1, commons.length)] ?? hit).concat(hit);
+  /* The pack's answer: four commons, then Main Event, the rare the board draws, each found by its key so the story does not follow the instance's order. */
+  const shown = [...SHOWN, HIT].map((key) => cardOf(instance.cards, key).key);
   const real = fake.buyPack.bind(fake);
   fake.buyPack = async (s) => {
     const answer = await real(s);

@@ -9,9 +9,9 @@
  *   - `Pinned`: a thread card that pins, on the board's list: the thread above page 1's rows, with its mark.
  * Each has its `Phone` twin at 390 by 844; open the others at 1440 by 1120.
  *
- * The story names no instance: the cards are the instance's first character card and its first thread card (one that pins, for
- * `Pinned`), found by their rules; the board card is the engine's own, since no instance ships one yet (Minus World waits for its own
- * screen design).
+ * The story names its cards by key (the constants below), so a new card cannot change it: the character card is one key (another for the
+ * first-time scene, whose card has a hint) and the thread card one key (another for `Pinned`, which pins); the board card is the engine's own,
+ * since no instance ships one yet (Minus World waits for its own screen design).
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
@@ -22,10 +22,11 @@ import { BoardScreen } from '../board/Board.tsx';
 import { useLocation } from '../router.tsx';
 import { usePlayer } from '../player.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
-import { landsOn, ok, reachesOf, type CardRules } from '../../rules/cards.ts';
+import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import { usePlay } from './play.tsx';
 import type { CardUi } from './types.ts';
 import { LoadedBoard, LoadedThread } from '../loaded.tsx';
+import { cardOf } from '../story.tsx';
 
 type Scene = 'character' | 'first' | 'still' | 'armed' | 'thread' | 'banner' | 'pinned';
 
@@ -38,10 +39,25 @@ const RUMBLE_UI: CardUi = { key: 'kb-test-rumble', art: { color: 'var(--kb-glass
 
 const DAY = 86_400_000;
 
+/** The character card cast on #41's author, and the one armed (also the one the character scenes cast). */
+const CHARACTER = 'class-clown';
+/** The character card the first-time scene casts: one with a hint, so its callout hangs from the postbit's mark. */
+const CHARACTER_FIRST = 'happy-heart';
+/** The thread card cast on the thread, for the thread scene. */
+const THREAD = 'feelin-glam';
+/** The thread card that pins, for the pinned scene. */
+const THREAD_PINNED = 'main-event';
+
+/** The card each scene draws, by key; the banner scene draws the story's own Rumble and names none. */
+const KEY_OF: Record<Scene, string | null> = { character: CHARACTER, still: CHARACTER, first: CHARACTER_FIRST, armed: CHARACTER, thread: THREAD, pinned: THREAD_PINNED, banner: null };
+
 /** Lay the scene on the fixture's thread, then say which board it is on, for a scene drawn on the board. */
 function useSeeded(thread: string | null, scene: Scene): { readonly ready: boolean; readonly board: string | null } {
-  const { api, instance, ui } = useKayfa();
+  const { api, instance } = useKayfa();
   const [state, setState] = useState<{ ready: boolean; board: string | null }>({ ready: false, board: null });
+  /* Looked up in render, so a key the instance lacks fails the story there and is not swallowed by the seeder's catch. */
+  const named = KEY_OF[scene];
+  const cardKey = named === null ? null : cardOf(instance.cards, named).key;
   useEffect(() => {
     if (thread === null) return;
     let live = true;
@@ -55,31 +71,29 @@ function useSeeded(thread: string | null, scene: Scene): { readonly ready: boole
       if (!target?.character || !caster) throw new Error('the boards fixture has no #41 and #42 with authors');
       const summary = await api.thread(thread);
       const slug = (await api.boards()).find((b) => b.id === summary?.board)?.slug ?? null;
-      const onCharacter = instance.cards.find((c) => reachesOf(c).includes('character') && (scene !== 'first' || ui.cards.find((u) => u.key === c.key)?.hint !== undefined));
-      const onThread = instance.cards.find((c) => reachesOf(c).includes('thread') && (scene !== 'pinned' || c.pins));
       const ends = Date.now() + 5 * DAY;
-      if ((scene === 'character' || scene === 'still' || scene === 'first') && onCharacter) fake.seed.reach(caster, 'character', target.character, onCharacter.key, { post: target.id, ends, message: 'Shine on.' });
-      if ((scene === 'thread' || scene === 'pinned') && onThread) fake.seed.reach(caster, 'thread', thread, onThread.key, { ends: Date.now() + 20 * 3_600_000, message: 'Everyone, look.' });
+      if (cardKey !== null && (scene === 'character' || scene === 'still' || scene === 'first')) fake.seed.reach(caster, 'character', target.character, cardKey, { post: target.id, ends, message: 'Shine on.' });
+      if (cardKey !== null && (scene === 'thread' || scene === 'pinned')) fake.seed.reach(caster, 'thread', thread, cardKey, { ends: Date.now() + 20 * 3_600_000, message: 'Everyone, look.' });
       if (scene === 'banner' && summary) fake.seed.reach(caster, 'board', summary.board, RUMBLE.key, { ends: Date.now() + 20 * 3_600_000 });
-      if (scene === 'armed' && onCharacter) {
+      if (cardKey !== null && scene === 'armed') {
         const me = (await api.session()).account;
-        if (me) fake.seed.cards(me, { [onCharacter.key]: 1 });
+        if (me) fake.seed.cards(me, { [cardKey]: 1 });
       }
       if (live) setState({ ready: true, board: slug });
     })().catch((e: unknown) => { console.error('the reach story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, instance, ui, thread, scene]);
+  }, [api, instance, thread, scene, cardKey]);
   return state;
 }
 
-/** Arms the instance's first character card, as the player's press in the hand does. */
+/** Arms the character card, as the player's press in the hand does. */
 function ArmCharacter() {
   const { instance } = useKayfa();
   const play = usePlay();
   const account = usePlayer().session.account;
-  const key = instance.cards.find((c) => reachesOf(c).includes('character'))?.key ?? null;
+  const key = cardOf(instance.cards, CHARACTER).key;
   useEffect(() => {
-    if (!play || key === null || account === null) return;
+    if (!play || account === null) return;
     play.arm(key);
     // Armed once for each account.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -18,14 +18,18 @@ import { useLocation } from '../router.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { usePlay } from './play.tsx';
 import { LoadedThread } from '../loaded.tsx';
+import { cardOf } from '../story.tsx';
 
-/** The card the board arms: the instance's Whoops!, by its key (the story names no instance, so it is the card whose name is Whoops!). */
+/** The card the board arms: Whoops!. */
+const ARMED = 'whoops';
+
+/** Arms Whoops!, as pressing its card in the hand does. */
 function Arm({ reopen }: { readonly reopen: boolean }) {
   const { instance } = useKayfa();
   const play = usePlay();
-  const key = instance.cards.find((c) => c.name === 'Whoops!')?.key ?? null;
+  const key = cardOf(instance.cards, ARMED).key;
   useEffect(() => {
-    if (!play || key === null) return;
+    if (!play) return;
     play.arm(key);
     if (reopen) play.setHandOpen(true);
     // Armed once, as the player's press does.

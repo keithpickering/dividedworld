@@ -2,12 +2,16 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { ThreadSummary } from '../data/api.ts';
-import type { World } from '../story.tsx';
+import { cardOf, type World } from '../story.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { SpinForm } from './SpinForm.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
 const TITLE = 'Where it began';
+/** The card played on the first post, for the spin from a play. */
+const PLAYED = '4d-chess';
+/** The card that reaches a character, cast from the first post and spun from. */
+const REACHING = 'class-clown';
 
 /** The thread with this title, once the world has it. */
 function useThread(title: string): ThreadSummary | null {
@@ -73,25 +77,24 @@ const world: World = (fake, instance) => {
   /* The fake does its work before it answers, so the spun thread is there when the story reads. */
   fake.signInAs(me);
   void fake.spin(t.act, mine, 'Spun from the start', 'Carrying on over here.');
-  const play = fake.seed.card(other, t.act, instance.cards[0]!.key, { message: 'Oops.' });
+  const play = fake.seed.card(other, t.act, cardOf(instance.cards, PLAYED).key, { message: 'Oops.' });
   void fake.spin(play, mine, 'Spun from the play', 'About that card.');
 };
 
 /**
- * A card that reaches a character (the instance's own: the engine names none) cast from the first post of one thread, and two threads
- * spun from it: one pressed on a later post by that character, one with no post pressed. With no such card in the instance, nothing is spun.
+ * A card that reaches a character, named by key, cast from the first post of one thread, and two threads
+ * spun from it: one pressed on a later post by that character, one with no post pressed.
  */
 const reachWorld: World = (fake, instance) => {
   const me = fake.seed.account('story-player');
   const mine = fake.seed.character(me, 'Pipewrench', instance.classes[0]!.key);
   const other = fake.seed.character(fake.seed.account('story-other'), 'Spritey', (instance.classes[1] ?? instance.classes[0]!).key);
   const general = instance.boards.find((b) => !b.system)!.slug;
-  const card = instance.cards.find((c) => c.reaches?.includes('character'));
+  const card = cardOf(instance.cards, REACHING);
   const cast = fake.seed.thread(general, other, 'Where the card was cast', 'The post the card was cast from.');
   const shiny = fake.seed.thread(general, mine, 'Why are my posts shiny', 'A post of mine.');
   const pressed = fake.seed.post(shiny.thread, other, 'The post it was pressed on.');
   fake.signInAs(me);
-  if (!card) return;
   const play = fake.seed.reach(mine, 'character', other, card.key, { post: cast.act });
   void fake.spin(play, mine, 'Spun at the shine', 'About that post.', undefined, pressed);
   void fake.spin(play, mine, 'Spun from the shine', 'About that card.');

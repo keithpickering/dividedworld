@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { World } from '../story.tsx';
+import { cardOf, type World } from '../story.tsx';
 import { ProfileScreen } from './Profile.tsx';
 import { RecordScreen } from './Record.tsx';
 import { LoadedProfile, LoadedRecord } from '../loaded.tsx';
@@ -13,6 +13,9 @@ type Story = StoryObj<typeof ProfileScreen>;
 
 const T0 = Date.UTC(2026, 9, 1, 12);
 
+/** The card Spritey plays on the profile's record. */
+const PLAYED = '4d-chess';
+
 /** Spritey has posted, played a card and revealed its class; Pipewrench is the visitor. */
 const full: World = (fake, instance) => {
   const cls = instance.classes[0]!.key;
@@ -22,7 +25,7 @@ const full: World = (fake, instance) => {
   const general = instance.boards.find((b) => !b.system)!.slug;
   const { thread, act } = fake.seed.thread(general, spritey, 'A thread', 'Hello.', { at: T0 + 86_400_000 });
   for (let i = 0; i < 25; i++) fake.seed.post(thread, spritey, `Post ${i + 2}`, { at: T0 + 2 * 86_400_000 + i * 60_000 });
-  fake.seed.card(spritey, act, instance.cards[0]!.key, { at: T0 + 3 * 86_400_000 });
+  fake.seed.card(spritey, act, cardOf(instance.cards, PLAYED).key, { at: T0 + 3 * 86_400_000 });
   fake.seed.reveal(spritey, thread, { class: cls, at: T0 + 4 * 86_400_000 });
   fake.seed.settle({ standings: { [spritey]: 350 } });
   fake.signInAs(me);
