@@ -19,7 +19,7 @@ import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
-import { spanWords } from './cards.ts';
+import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearUi } from './cosmetics.ts';
 import { mooch } from '../cards/mooch.ts';
@@ -326,6 +326,11 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     for (const key of [...instance.classes.map((c) => c.key), ...REASON_KEYS]) {
       if (holdsNumber(said(key, economy))) expect(wordsRead[key]?.length ?? 0, `${key}: "${said(key, economy)}"`).toBeGreaterThan(0);
     }
+  });
+  test('the screen entries are listed in key order, one for each card and none spare', () => {
+    const keys = cardsUi.map((c) => c.key);
+    expect(keys).toEqual([...keys].sort());
+    expect(keys).toEqual(instance.cards.map((c) => c.key));
   });
   test('every card has a face and rules in plain words, true to the settings it is told', () => {
     expect(instanceUi.cards.map((c) => c.key).sort()).toEqual(instance.cards.map((c) => c.key).sort());

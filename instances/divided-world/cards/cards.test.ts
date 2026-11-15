@@ -26,9 +26,14 @@ import { by, jimmy, on, post, surf } from './test-kit.ts';
 const priceOf = (key: string): number => instance.machine.find((m) => 'card' in m.item && m.item.card === key)!.price;
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 100], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300], ['line-cutter', 'pepperoni', 300], ['feelin-glam', 'sweet', 300], ['whodunnit', 'pepperoni', 300], ['blind-study', 'pepperoni', 150], ['overreaction', 'pepperoni', 100], ['happy-heart', 'sweet', 150], ['super-happy-heart', 'sweet', 300], ['ultra-happy-heart', 'sweet', 600], ['take-the-fall', 'sweet', 150], ['tattle-tale', 'salty', 300], ['this', 'pepperoni', 20]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['4d-chess', 'salty', 150], ['autocorrect', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['blind-study', 'pepperoni', 150], ['card-collector', 'salty', 150], ['class-clown', 'pepperoni', 150], ['feelin-fab', 'sweet', 20], ['feelin-glam', 'sweet', 300], ['force-field', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['graffiti', 'pepperoni', 300], ['hall-pass', 'sweet', 150], ['happy-heart', 'sweet', 150], ['heat-magnet', 'salty', 150], ['hype-up', 'sweet', 100], ['jimmy-wails', 'sweet', 200], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['line-cutter', 'pepperoni', 300], ['main-event', 'sweet', 300], ['mooch', 'salty', 150], ['off-day', 'salty', 500], ['overreaction', 'pepperoni', 100], ['publicity-tour', 'sweet', 150], ['stick-around', 'sweet', 100], ['sugar-coat', 'sweet', 300], ['super-happy-heart', 'sweet', 300], ['take-the-fall', 'sweet', 150], ['tattle-tale', 'salty', 300], ['this', 'pepperoni', 20], ['toll', 'pepperoni', 150], ['ultra-happy-heart', 'sweet', 600], ['whodunnit', 'pepperoni', 300], ['whoops', 'salty', 100], ['you-were-saying', 'pepperoni', 100]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
+});
+
+test('the cards are listed in key order, so a new card has one place to go', () => {
+  const keys = cards.map((c) => c.key);
+  assert.deepEqual(keys, [...keys].sort());
 });
 
 test('what a play adds is a setting: an override reaches what it costs to play', () => {

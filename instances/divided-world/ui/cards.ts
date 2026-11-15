@@ -4,84 +4,87 @@
  * rules themselves are `instances/divided-world/cards/`, whose settings these read, so a number said here is the one the instance runs
  * on. The words more than one entry says are `ui/cards/words.ts`.
  *
+ * The imports and the list below hold one card per line, sorted by key, with nothing between the lines; a new card takes one line in
+ * each, at its place in key order (`cards/index.ts` says how a card is added, and a test holds the order).
+ *
  * The faces' colors are the Cards board's: Sweet is the cyan, Salty the pink, each with the dark
  * ink the board sets on it (docs/research/2026-10-29-two-worlds/05-cards.html).
  */
 import type { CardUi } from '../../../engine/ui/cards/types.ts';
-import { ui as jimmyWailsUi } from './cards/jimmy-wails/ui.ts';
-import { ui as stickAroundUi } from './cards/stick-around/ui.ts';
-import { ui as whoopsUi } from './cards/whoops/ui.ts';
-import { ui as belowTheFoldUi } from './cards/below-the-fold/ui.ts';
-import { ui as whodunnitUi } from './cards/whodunnit/ui.ts';
-import { ui as blindStudyUi } from './cards/blind-study/ui.ts';
-import { ui as overreactionUi } from './cards/overreaction/ui.ts';
-import { ui as lineCutterUi } from './cards/line-cutter/ui.ts';
-import { ui as laughTrackUi } from './cards/laugh-track/ui.ts';
-import { ui as thisUi } from './cards/this/ui.ts';
-import { ui as cardCollectorUi } from './cards/card-collector/ui.ts';
-import { ui as forceFieldUi } from './cards/force-field/ui.ts';
-import { ui as sugarCoatUi } from './cards/sugar-coat/ui.ts';
-import { ui as lastWordUi } from './cards/last-word/ui.ts';
-import { ui as publicityTourUi } from './cards/publicity-tour/ui.ts';
-import { ui as hypeUpUi } from './cards/hype-up/ui.ts';
-import { ui as heatMagnetUi } from './cards/heat-magnet/ui.ts';
-import { ui as classClownUi } from './cards/class-clown/ui.ts';
-import { ui as goodVibesUi } from './cards/good-vibes/ui.ts';
+import { ui as fourDChessUi } from './cards/4d-chess/ui.ts';
 import { ui as autocorrectUi } from './cards/autocorrect/ui.ts';
-import { ui as youWereSayingUi } from './cards/you-were-saying/ui.ts';
-import { ui as glitterBombUi } from './cards/glitter-bomb/ui.ts';
-import { ui as mainEventUi } from './cards/main-event/ui.ts';
+import { ui as belowTheFoldUi } from './cards/below-the-fold/ui.ts';
+import { ui as blindStudyUi } from './cards/blind-study/ui.ts';
+import { ui as cardCollectorUi } from './cards/card-collector/ui.ts';
+import { ui as classClownUi } from './cards/class-clown/ui.ts';
 import { ui as feelinFabUi } from './cards/feelin-fab/ui.ts';
 import { ui as feelinGlamUi } from './cards/feelin-glam/ui.ts';
+import { ui as forceFieldUi } from './cards/force-field/ui.ts';
+import { ui as glitterBombUi } from './cards/glitter-bomb/ui.ts';
+import { ui as goodVibesUi } from './cards/good-vibes/ui.ts';
+import { ui as graffitiUi } from './cards/graffiti/ui.ts';
+import { ui as hallPassUi } from './cards/hall-pass/ui.ts';
 import { ui as happyHeartUi } from './cards/happy-heart/ui.ts';
+import { ui as heatMagnetUi } from './cards/heat-magnet/ui.ts';
+import { ui as hypeUpUi } from './cards/hype-up/ui.ts';
+import { ui as jimmyWailsUi } from './cards/jimmy-wails/ui.ts';
+import { ui as lastWordUi } from './cards/last-word/ui.ts';
+import { ui as laughTrackUi } from './cards/laugh-track/ui.ts';
+import { ui as lineCutterUi } from './cards/line-cutter/ui.ts';
+import { ui as mainEventUi } from './cards/main-event/ui.ts';
+import { ui as moochUi } from './cards/mooch/ui.ts';
+import { ui as offDayUi } from './cards/off-day/ui.ts';
+import { ui as overreactionUi } from './cards/overreaction/ui.ts';
+import { ui as publicityTourUi } from './cards/publicity-tour/ui.ts';
+import { ui as stickAroundUi } from './cards/stick-around/ui.ts';
+import { ui as sugarCoatUi } from './cards/sugar-coat/ui.ts';
 import { ui as superHappyHeartUi } from './cards/super-happy-heart/ui.ts';
-import { ui as ultraHappyHeartUi } from './cards/ultra-happy-heart/ui.ts';
 import { ui as takeTheFallUi } from './cards/take-the-fall/ui.ts';
 import { ui as tattleTaleUi } from './cards/tattle-tale/ui.ts';
-import { ui as hallPassUi } from './cards/hall-pass/ui.ts';
-import { ui as moochUi } from './cards/mooch/ui.ts';
+import { ui as thisUi } from './cards/this/ui.ts';
 import { ui as tollUi } from './cards/toll/ui.ts';
-import { ui as graffitiUi } from './cards/graffiti/ui.ts';
-import { ui as fourDChessUi } from './cards/4d-chess/ui.ts';
-import { ui as offDayUi } from './cards/off-day/ui.ts';
+import { ui as ultraHappyHeartUi } from './cards/ultra-happy-heart/ui.ts';
+import { ui as whodunnitUi } from './cards/whodunnit/ui.ts';
+import { ui as whoopsUi } from './cards/whoops/ui.ts';
+import { ui as youWereSayingUi } from './cards/you-were-saying/ui.ts';
 
 export { spanWords } from './cards/words.ts';
 
 export const cardsUi: readonly CardUi[] = Object.freeze([
-  jimmyWailsUi,
-  stickAroundUi,
-  whoopsUi,
-  belowTheFoldUi,
-  whodunnitUi,
-  blindStudyUi,
-  overreactionUi,
-  lineCutterUi,
-  laughTrackUi,
-  thisUi,
-  cardCollectorUi,
-  forceFieldUi,
-  sugarCoatUi,
-  lastWordUi,
-  publicityTourUi,
-  hypeUpUi,
-  heatMagnetUi,
-  classClownUi,
-  goodVibesUi,
+  fourDChessUi,
   autocorrectUi,
-  youWereSayingUi,
-  glitterBombUi,
-  mainEventUi,
+  belowTheFoldUi,
+  blindStudyUi,
+  cardCollectorUi,
+  classClownUi,
   feelinFabUi,
   feelinGlamUi,
+  forceFieldUi,
+  glitterBombUi,
+  goodVibesUi,
+  graffitiUi,
+  hallPassUi,
   happyHeartUi,
+  heatMagnetUi,
+  hypeUpUi,
+  jimmyWailsUi,
+  lastWordUi,
+  laughTrackUi,
+  lineCutterUi,
+  mainEventUi,
+  moochUi,
+  offDayUi,
+  overreactionUi,
+  publicityTourUi,
+  stickAroundUi,
+  sugarCoatUi,
   superHappyHeartUi,
-  ultraHappyHeartUi,
   takeTheFallUi,
   tattleTaleUi,
-  hallPassUi,
-  moochUi,
+  thisUi,
   tollUi,
-  graffitiUi,
-  fourDChessUi,
-  offDayUi,
+  ultraHappyHeartUi,
+  whodunnitUi,
+  whoopsUi,
+  youWereSayingUi,
 ] satisfies CardUi[]);
