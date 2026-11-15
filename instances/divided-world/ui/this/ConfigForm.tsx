@@ -51,10 +51,12 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const report = (nextPhrase: string, nextWords: string) => onChange({ phrase: nextPhrase.trim(), words: nextWords.trim() });
   const changePhrase = (next: string) => { setPhrase(next); report(next, words); };
   const sayCount = (spoken: string) => setSaid((was) => ({ words: spoken, n: spoken === '' ? was.n : was.n + 1 }));
-  const changeWords = (next: string) => {
+  const changeWords = (typed: string) => {
+    /* The field bounds itself, by characters as the rules count them, so 60 emoji fit: an input's own maxlength counts UTF-16 units. What is typed or pasted past the limit is cut at a character, never inside one. */
+    const next = characters(typed) > WORDS.most ? [...typed].slice(0, WORDS.most).join('') : typed;
     const was = characters(words);
     const now = characters(next);
-    /* Said politely and seldom: never on every key, only as the words near their limit, or fill it (the field stops typing at the limit, and the form is only ever given words within it, so nothing runs past). */
+    /* Said politely and seldom: never on every key, only as the words near their limit, or fill it (the field stops at the limit, above, and the form is only ever given words within it, so nothing runs past). */
     if (now === WORDS.most && was < WORDS.most) sayCount(`${WORDS.most} of ${WORDS.most} characters: the words are full.`);
     else if (now >= NEAR && was < NEAR) sayCount(`${WORDS.most - now} characters left.`);
     else if (now < NEAR || (now < WORDS.most && was === WORDS.most)) sayCount('');
@@ -79,7 +81,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
       />
       {line && <ConfigHint id={lineId} live>{line}</ConfigHint>}
       <ConfigField
-        id={`${id}-words`} label="After THIS (optional)" value={words} maxLength={WORDS.most}
+        id={`${id}-words`} label="After THIS (optional)" value={words}
         onChange={changeWords} describedBy={`${id}-words-count`}
       />
       <p className="kb-play-fine" id={`${id}-words-count`}>

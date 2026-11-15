@@ -74,12 +74,26 @@ describe('THIS\'s play form', () => {
 
   test('the count follows the words, and 60 emoji read 60 / 60', () => {
     form({ phrase: 'the same old', words: '' });
-    expect(words()).toHaveAttribute('maxlength', '60');
+    /* The field bounds itself by characters, as the rules count them; an input's own maxlength counts UTF-16 units and would stop at 30 emoji. */
+    expect(words()).not.toHaveAttribute('maxlength');
     expect(screen.getByText('0 / 60')).toBeInTheDocument();
     type(words(), 'again');
     expect(screen.getByText('5 / 60')).toBeInTheDocument();
     type(words(), '😀'.repeat(60));
     expect(screen.getByText('60 / 60')).toBeInTheDocument();
+  });
+
+  test('the words field stops at 60 characters, counted as the rules count them: what is typed or pasted past them is cut, and no emoji is split', () => {
+    const { onChange } = form({ phrase: 'the same old', words: '' });
+    type(words(), '😀'.repeat(61));
+    expect(words().value).toBe('😀'.repeat(60));
+    expect(screen.getByText('60 / 60')).toBeInTheDocument();
+    expect(onChange).toHaveBeenLastCalledWith({ phrase: 'the same old', words: '😀'.repeat(60) });
+    type(words(), `${'a'.repeat(59)}😀b`);
+    expect(words().value).toBe(`${'a'.repeat(59)}😀`);
+    type(words(), 'a'.repeat(75));
+    expect(words().value).toBe('a'.repeat(60));
+    expect(onChange).toHaveBeenLastCalledWith({ phrase: 'the same old', words: 'a'.repeat(60) });
   });
 
   test('the count is spoken politely and seldom: not on every key, but as the words near the limit and fill it', () => {
