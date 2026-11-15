@@ -121,6 +121,21 @@ meet the usual standards: contrast, focus, keyboard and labels. A card or a game
 get through has an accessible path that takes about as long and costs about as much as the one it replaces: Whoops!'s
 wash control is timed like a scrub, and reduced motion makes Stick Around's snap-back instant, but it still snaps back.
 
+## An effect fills the post, border to border
+
+**An effect drawn on a post is designed against the post's content area, the bordered box that holds the words: it
+fills that box border to border, and may leave it where leaving is the joke; the words' own unbordered box is never
+its container.**
+
+The content area's borders are the frame the game draws on. Whoops!'s ink and Feelin' Fab's foil fill it, and an
+effect that breaks out of it is funny because there is a frame to break. An effect sized to the block of text draws a
+rectangle with no border of its own inside the post, which reads as a fault and leaves the frame meaning nothing. What
+an effect acts on may still be the words alone: it may hide, dent or clear them, and a sweep may travel their lines.
+What it fills is the content area. An effect that marks particular words (a note that points at a phrase, a highlight)
+is placed against those words and fills nothing; this rule is about what covers or fills. A plan that adds an effect on
+a post says which box it fills and, where it leaves the content area, why that is funny. Whatever a reader presses
+inside the area stays pressable or is plainly covered.
+
 ## A response never proves a private fact
 
 **No page, payload, Realtime event, presence update or timing may be computed from a private fact, so nothing the
