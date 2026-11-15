@@ -29,6 +29,7 @@ import { feelinGlam } from '../cards/feelin-glam.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
+import { ropeBreak } from '../cards/rope-break.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
 import { WORDS as THIS_WORDS, thisCard } from '../cards/this.ts';
 import { LOG_DRAW, LOG_WASH, describeDraw } from '../cards/graffiti/words.ts';
@@ -975,6 +976,22 @@ describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, T
     expect(say()).toBe(`A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name one Move, uncommon or commoner, and one of the four kinds of reaction. When that Move is cast on your post, this springs and shows itself; the Move lands as usual and its caster keeps everything it earns, and from then on each vote of your kind on that Move pays you a vote. A Move cast by one of your own characters springs it and pays you nothing. It springs once, or comes back to your hand after ${instance.settings.setLasts.count} ${instance.settings.setLasts.unit}s if nothing springs it. It costs nothing more to set.`);
     retuned(fourDChess, 'trap', { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 0.5 } }, () => expect(say()).toContain('pays you half a vote.'));
     expect(ui('4d-chess').describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day if nothing');
+  });
+
+  test('Rope Break is a face-down Reversal with the same status as every one, its Sweet colors, no form and no effect, and its words say what it catches', () => {
+    const rope = ui('rope-break');
+    expect(rope.status).toBe('Set, face down to everyone else');
+    expect(rope.status).toBe(ui('card-collector').status);
+    expect(rope.art.color).toBe('#2ee6ff');
+    expect(rope.art.ink).toBe('#03141a');
+    expect(rope.art.tagline).toBe('Reach the ropes.');
+    expect(rope.summary).toBe('Set face down on your post. Catches the first Salty common cast there, and takes it into your hand.');
+    expect(rope.Effect).toBeUndefined();
+    expect(rope.ConfigForm).toBeUndefined();
+    const said = rope.describe(instance.settings);
+    expect(said).toBe(`A Sweet card, ${ropeBreak.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Salty common card cast on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
+    expect(said).not.toContain('names');
+    expect(rope.describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day.');
   });
 
   test('Off Day says the class it names and when, before its window opens and from then', () => {
