@@ -83,9 +83,11 @@ describe('the read-ahead gate', () => {
     readAhead(c.start);
     a.resolve();
     await flush();
-    const d = manual();
-    readAhead(d.start);
-    assert.equal(d.start.mock.callCount(), 0);
+    /* b holds the gate, c waits: a's late answer let nothing go. */
+    assert.equal(c.start.mock.callCount(), 0);
+    b.resolve();
+    await flush();
+    assert.equal(c.start.mock.callCount(), 1);
   });
   test('a start that throws does not jam the gate', async () => {
     const boom = mock.fn((): Promise<unknown> => { throw new Error('sync'); });
