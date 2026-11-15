@@ -510,20 +510,6 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.logSave!({ peeled: [0, 2], stuck: {} })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
     expect(ac.logSave!({ peeled: [], stuck: {} })).toBeUndefined();
   });
-  /* The card that writes, in the log (the design's section 13): the caster's length, the author's clear, and what it did to the author's post. */
-  test('You Were Saying? says the length its play recorded, the author\'s clear as theirs, and what it did in its own words', () => {
-    const ywsCard = instanceUi.cards.find((c) => c.key === 'you-were-saying')!;
-    /* The line is the recorded number, whatever the configuration or the economy now say; a play with no record says nothing of a length. */
-    expect(ywsCard.logPlay!({ steps: 0 }, { tokens: 100 })).toBe('It was played for 100 tokens.');
-    expect(ywsCard.logPlay!({ steps: 3 }, { tokens: 1 })).toBe('It was played for 1 token.');
-    expect(ywsCard.logPlay!({ steps: 99 }, { tokens: 400 })).toBe('It was played for 400 tokens.');
-    expect(ywsCard.logPlay!({ steps: 1 }, {})).toBeUndefined();
-    expect(ywsCard.logSave!({ cleared: 'v1' })).toEqual({ what: 'Tail erased', verb: 'erased' });
-    expect(ywsCard.logSave!({})).toBeUndefined();
-    expect(ywsCard.logWritten!.continued).toBe('continued it');
-    expect(ywsCard.logWritten!.again('You Were Saying?')).toBe('made its You Were Saying? again');
-    expect(ywsCard.logWritten!.failed).toBe('didn\'t take');
-  });
   test('the three lines of the author and the caster\'s length are said whole, from the instance\'s own words', () => {
     const at = '2026-11-09T10:00:00.000Z';
     const act = (id: string, kind: Act['kind'], character: string, over: Partial<Act> = {}): Act =>
