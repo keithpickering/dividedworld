@@ -34,6 +34,7 @@ import { lowerFirst } from '../copy-words.ts';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
+import { takeInOrigin } from '../spin/Origin.tsx';
 import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurfaces, TIMER_MOST, usePlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
@@ -264,7 +265,9 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces, page.spent ?? []);
     /* The origin of a spun thread, on the page that holds its first Act: the newer read's is kept (an answer asked before the one held is not taken, as for `above`), and a page without one leaves what is held.
        Its plays' saved states and releases are in the page's own lists; the box's store is given those of its plays. */
+    let tookOrigin: PageOrigin | null = null;
     if (page.origin && ticket > originTicket.current) {
+      tookOrigin = page.origin;
       originTicket.current = ticket;
       const ours = new Set(page.origin.plays.map((a) => a.id));
       originPlays.setStates(Object.fromEntries(Object.entries(page.states).filter(([id]) => ours.has(id))) as Record<Id, EffectState>);
@@ -311,6 +314,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     for (const t of page.spun) if (t.originActId !== null) from.set(t.originActId, [...(from.get(t.originActId) ?? []), t]);
     const spun = new Map<Id, Spun>();
     for (const id of ids) { loader.seed(id, from.get(id) ?? []); spun.set(id, loader.peek(id)!); }
+    /* The origin's plays join the box's store and are billed here, once for this read and outside any render, from the tallies and spins this page just put in the thread's stores. */
+    if (tookOrigin && page.thread.originActId) takeInOrigin(tookOrigin, page.thread.originActId, originPlays, tallies, spun);
     for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
     let moved = false;
     for (const v of page.visits) {

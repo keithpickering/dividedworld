@@ -797,11 +797,29 @@ describe('the ORIGIN box arrives with the page', () => {
     await settle();
     const calls = (name: (typeof BOX_READS)[number]) => spies.find((s) => s.name === name)!.spy.mock.calls;
     expect(calls('effectStates').map(([ids]) => ids)).toEqual([[played.id]]);
+    expect(calls('myReleases').map(([ids]) => ids)).toEqual([[played.id]]);
     expect(calls('characters')).toHaveLength(1);
     expect(calls('characters')[0]![0]).toEqual([stranger]);
-    expect(readsMade(spies).filter((r) => !/^(effectStates|myReleases|characters)\(/u.test(r))).toEqual([]);
+    expect(readsMade(spies)).toEqual(['effectStates(1)', 'myReleases(1)', 'characters(1)']);
     await userEvent.click(within(box).getByRole('button', { name: /^Whoops!, 2 plays/u }));
     expect(await screen.findByRole('dialog', { name: 'Cards on this post' })).toHaveTextContent('Strangerhood');
+  });
+
+  test('an edit heard live is not undone by a page read again that carries the older Act', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    const listeners = tap(w);
+    openWith(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
+    const [original] = await w.fake.acts(w.thread, 2, 2);
+    await act(async () => { for (const l of listeners) l.onAct?.({ ...original!, currentPayload: { body: 'post 2, fixed' }, editedAt: '2026-10-29T13:00:00Z', shownEditedAt: '2026-10-29T13:00:00Z' }); });
+    await waitFor(() => expect(box).toHaveTextContent('post 2, fixed'));
+    /* The fake still holds the unedited Act: the page read again carries it. */
+    const page = vi.spyOn(w.fake, 'threadPage');
+    await act(async () => { w.fake.broadcast.rejoin(); await new Promise((r) => setTimeout(r, 50)); });
+    expect(page).toHaveBeenCalled();
+    expect(box).toHaveTextContent('post 2, fixed');
   });
 
   test('a page read again with an edited origin and one more play shows both, and a tag already drawn has not moved', async () => {
@@ -1120,24 +1138,25 @@ describe('a thread spun from a card on a character', () => {
     const thread = await spun(w, w.pressed);
     const page = (await w.fake.threadPage(thread, { page: 1 }, 20, []))!;
     vi.spyOn(w.fake, 'threadPage').mockResolvedValue({ ...page, thread: { ...page.thread, firstAct: null } });
+    const moment = vi.spyOn(w.fake, 'playMoment');
     open(w, thread);
     const box = await origin();
     await within(box).findByRole('group', { name: /^As it landed/u });
     expect(headText(box)).toMatch(/ · as it landed$/u);
     expect(within(box).queryByText(/Cast from/u)).toBeNull();
     expect(within(box).queryByRole('group', { name: /^As it was spun/u })).toBeNull();
+    /* The moment the page carried is kept under the play's key: no read. */
+    expect(moment).not.toHaveBeenCalled();
   });
 
   test('the box shows the pressed post as it was spun with no read after the page: the moment, the place and the cast came with it', async () => {
     const w = world();
     const thread = await spun(w, w.pressed);
-    const reads = ['act', 'cardsOn', 'tallies', 'myReactions', 'spunFromMany', 'spunFrom', 'effectStates', 'myReleases', 'characters', 'actsById', 'playMoment', 'spinMoment'] as const;
-    const table = w.fake as unknown as Record<string, (...args: unknown[]) => unknown>;
-    const spies = reads.map((name) => ({ name, spy: vi.spyOn(table, name) }));
+    const spies = spyOnBoxReads(w.fake);
     open(w, thread);
     const frame = await within(await origin()).findByRole('group', { name: /^As it was spun/u });
     expect(await within(frame).findByText('pressed words')).toBeInTheDocument();
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
-    expect(spies.filter(({ spy }) => spy.mock.calls.length > 0).map(({ name }) => name)).toEqual([]);
+    expect(readsMade(spies)).toEqual([]);
   });
 });

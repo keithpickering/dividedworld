@@ -38,7 +38,7 @@ import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { ChangedList, Prose, updateOf } from '../updates/UpdateWords.tsx';
 import type { Tallies } from '../thread/tallies.ts';
-import { spunCount, spunLoader, takeOrigin, type Spun } from './spun.ts';
+import { spunCount, takeOrigin, type Spun } from './spun.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
 import { OriginLink } from './OriginLink.tsx';
 import { placeHref, placeParts } from './place.ts';
@@ -52,11 +52,23 @@ const CARDS_SHOWN = 20;
 const NOT_THERE: PageOrigin = { act: null, plays: [], more: false, moment: null, at: null, cast: [] };
 
 /**
+ * Take a page's origin into the box's store of plays: the shown plays and their ends (and the Act, when it is a card play: the box's one mark; the store ignores any other Act), then the billing,
+ * once for this page read, from the tallies and the spins of the plays that the page put in the thread's stores (`spun` holds those it counted). The plays join the store only here, so their tags are first drawn
+ * in billing order and never move. Called by the thread screen's `absorb`, outside any render.
+ */
+export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: Tallies, spun: ReadonlyMap<Id, Spun>): void {
+  const shown = origin.plays.filter((a) => a.kind !== 'card_end').slice(0, CARDS_SHOWN);
+  const ends = origin.plays.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId));
+  plays.add([...shown, ...ends, ...(origin.act ? [origin.act] : [])]);
+  billPost(plays, id, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
+}
+
+/**
  * The origin Act and the card plays on it, kept current: the plays are in a store of the box's own (the thread screen's `originPlays`, engine/ui/cards/plays.ts), the one the thread keeps for its posts
  * in kind, so the post's effects draw here as they do there. The page's origin is taken in as it arrives (`takeIn`, before the box's first frame and again for each page read); a play, an edit, a saved
  * state and a tally are heard on the origin thread's channel. `more` says there were more plays than the box lists.
  */
-function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies): { readonly act: Act | null; readonly more: boolean } {
+function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies, shared: boolean): { readonly act: Act | null; readonly more: boolean } {
   const { api, ui } = useKayfa();
   const [act, setAct] = useState<Act | null>(from.act);
   const [more, setMore] = useState(from.more);
@@ -67,18 +79,8 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
     setAct((was) => (was && from.act ? newer(was, from.act) : from.act ?? was));
     setMore(from.more);
   }
-  /* The plays join the store before the box's first frame, so its tags are drawn with it; once per page read, since a new read is a new object. Idempotent, as the thread screen's own take-in of a page is. */
-  useMemo(() => {
-    const shown = from.plays.filter((a) => a.kind !== 'card_end').slice(0, CARDS_SHOWN);
-    const ends = from.plays.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId));
-    /* The Act joins too, when it is a card play (a spin of a play): the box's one mark. Any other Act is ignored by the store. */
-    plays.add([...shown, ...ends, ...(from.act ? [from.act] : [])]);
-    /* Their tallies and spins came with the page into the thread's stores; they are billed as the thread bills a post's plays, once for this read, from the spun loader's `peek`. A count that is not held leaves the tag in the order it came. */
-    const loader = spunLoader(api);
-    const spun = new Map<Id, Spun>();
-    for (const a of shown) { const s = loader.peek(a.id); if (s) spun.set(a.id, s); }
-    billPost(plays, origin, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
-  }, [api, from, origin, plays, tallies]);
+  /* The thread screen takes the page's origin into its store of the box's plays as it takes a page in (`takeInOrigin`, called by `absorb`), so the box's first frame has its tags. A box drawn without that store (a story) takes its own in here. */
+  useEffect(() => { if (!shared) takeInOrigin(from, origin, plays, tallies, new Map()); }, [shared, from, origin, plays, tallies]);
   useEffect(() => {
     const cards = effectCards(ui);
     return api.subscribeThread(thread, {
@@ -158,7 +160,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   /* The box's store is the thread screen's, which gives it the saved states and releases the page carried; a box drawn without one keeps a store of its own. */
   const own = useMemo(() => createPlays(), []);
   const plays = originPlays ?? own;
-  const { act, more } = useOrigin(from, originId, summary.originThread!, plays, tallies);
+  const { act, more } = useOrigin(from, originId, summary.originThread!, plays, tallies, originPlays !== undefined);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { if (takeOrigin(summary.id)) box.current?.focus(); }, [summary.id]);
   const played = usePlays(plays, originId).plays;
@@ -183,11 +185,11 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const castFrom = play && onCharacter ? postOf(play, PLAY_FROM, cardName, perPage) : null;
   /* The spin whose moment the box shows, or null: one value, so the head and the frame cannot disagree about "as it was spun". */
   const spinAt = pressed && summary.firstAct ? summary.firstAct : null;
-  /* The moment the page carried is kept under the key the frame reads it by, before the frame is drawn: a spin's own where the box shows the pressed post, else the play's. A spin pressed on a post whose row names no first Act is the frame's to read. */
+  /* The moment the page carried is kept under the key the frame reads it by, before the frame is drawn: a spin's own where the box shows the pressed post, else the play's. A spin pressed on a post whose row names no first Act is read by the frame under the play's key, so the moment the page carried is kept there. */
   const lens = useLensStore();
   useMemo(() => {
-    if (cardPlay && (onCharacter || !cardPlay.reach) && !(pressed && spinAt === null)) lens.seedMoment(onCharacter ? spinAt ?? cardPlay.id : cardPlay.id, from.moment);
-  }, [lens, cardPlay, onCharacter, pressed, spinAt, from.moment]);
+    if (cardPlay && (onCharacter || !cardPlay.reach)) lens.seedMoment(onCharacter ? spinAt ?? cardPlay.id : cardPlay.id, from.moment);
+  }, [lens, cardPlay, onCharacter, spinAt, from.moment]);
   const link = <OriginLink place={summary.origin} perPage={perPage} {...(onCharacter ? { faces: characterOf } : {})} />;
 
   /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
