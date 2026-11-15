@@ -73,7 +73,7 @@ export function problems(declared, deployed) {
 /** The body a --set sends: only the fields that differ, under the API's names. */
 export function patchBody(declared, deployed) {
   const body = {};
-  for (const [key, field] of FIELDS) if (declared[key] !== (deployed[field])) body[field] = declared[key];
+  for (const [key, field] of FIELDS) if (declared[key] !== deployed[field]) body[field] = declared[key];
   return body;
 }
 
@@ -93,8 +93,9 @@ export async function retrying(fn, { attempts = 3, baseMs = 1000, sleep = (ms) =
 }
 
 /** The API's answer, checked: an object that holds both fields (null is a value, absent is not). Throws naming the answer. */
-export function expectConfig(answer) {
-  const shown = scrub(JSON.stringify(answer) ?? String(answer)).slice(0, 200);
+export function expectConfig(answer, token) {
+  // Redacted before it is cut: a token across the cut would otherwise print as a prefix of itself.
+  const shown = redact(JSON.stringify(answer) ?? String(answer), token).slice(0, 200);
   if (answer === null || typeof answer !== 'object' || Array.isArray(answer)) throw new Error(`the API's answer is not an object with db_pool and db_pool_max_idletime: ${shown}`);
   for (const [, field] of FIELDS) if (!(field in answer)) throw new Error(`the API's answer has no ${field}, so the response shape may have changed: ${shown}`);
   return answer;
@@ -119,7 +120,7 @@ async function call({ project, token, fetch, sleep }, method, body) {
       throw Object.assign(new Error(`${method} answered ${res.status}: ${message}`), { status: res.status });
     }
     const answer = await res.json();
-    return method === 'GET' ? expectConfig(answer) : answer;
+    return method === 'GET' ? expectConfig(answer, token) : answer;
   }, { sleep });
 }
 

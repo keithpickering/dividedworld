@@ -263,6 +263,12 @@ const args = ['--project', 'abcdefghij', '--declared', goodFile];
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+{
+  // The token straddles character 200 of the answer: cutting before redacting would leave a prefix of it.
+  const d = await drive(args, [[200, { pad: 'x'.repeat(172), note: TOKEN }]]);
+  check('13i. a malformed answer with the token across character 200 prints no part of it', d.code === 1 && /answer/.test(d.text) && !d.text.includes(TOKEN.slice(0, 8)) && !d.text.includes(TOKEN.slice(-8)), `${d.code} ${d.text}`);
+}
+
 /* ----------------------------------------------------------------------- the tail ---- */
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
