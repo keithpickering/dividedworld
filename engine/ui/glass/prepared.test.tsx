@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { StrictMode } from 'react';
+import { StrictMode, useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { renderInWorld } from '../test-world.tsx';
 import { GlassButton } from './Button.tsx';
@@ -306,11 +306,90 @@ describe('usePrepared reads ahead through the shared gate', () => {
     vi.useFakeTimers();
     const button = screen.getByRole('button', { name: 'Card' });
     await rest(button);
+    expect(a).toHaveBeenCalledTimes(1);
     fireEvent.pointerLeave(button);
+    const out = gate();
+    readAhead(() => out.promise);
+    const waiting = vi.fn(() => Promise.resolve('w'));
+    readAhead(waiting);
     await rest(button);
     expect(a).toHaveBeenCalledTimes(1);
-    const other = vi.fn(() => Promise.resolve('o'));
-    readAhead(other);
-    expect(other).toHaveBeenCalledTimes(1);
+    await act(async () => { out.resolve('x'); await out.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(waiting).toHaveBeenCalledTimes(1);
+  });
+
+  test('the pointer leaving a waiting trigger the focus still rests on keeps its place, and the reverse', async () => {
+    for (const leave of ['pointer', 'focus'] as const) {
+      cleanup(); resetReadAhead(); vi.useRealTimers();
+      const g = gate();
+      const b = vi.fn(() => Promise.resolve('b'));
+      const { first, second } = two(() => g.promise, b);
+      await rest(first);
+      fireEvent.pointerEnter(second);
+      fireEvent.focus(second);
+      await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+      if (leave === 'pointer') fireEvent.pointerLeave(second); else fireEvent.blur(second);
+      await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+      expect(b).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test('both the pointer and the focus leaving a waiting trigger means it never reads', async () => {
+    const g = gate();
+    const b = vi.fn(() => Promise.resolve('b'));
+    const { first, second } = two(() => g.promise, b);
+    await rest(first);
+    fireEvent.pointerEnter(second);
+    fireEvent.focus(second);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    fireEvent.pointerLeave(second);
+    fireEvent.blur(second);
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).not.toHaveBeenCalled();
+  });
+
+  test('a later rest that asks for nothing does not lose the withdraw of the read still waiting', async () => {
+    const g = gate();
+    const b = vi.fn(() => Promise.resolve('b'));
+    let guard = false;
+    function Guarded() {
+      const p = usePrepared(() => b());
+      const r = useRest(() => (guard ? undefined : p.early()));
+      return <button type="button" {...r}>Guarded</button>;
+    }
+    renderInWorld(<><Trigger read={() => g.promise} label="First" /><Guarded /></>, { path: '/characters' });
+    vi.useFakeTimers();
+    await rest(screen.getByRole('button', { name: 'First' }));
+    const button = screen.getByRole('button', { name: 'Guarded' });
+    await rest(button);
+    guard = true;
+    fireEvent.focus(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    fireEvent.pointerDown(button);
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).not.toHaveBeenCalled();
+  });
+
+  test('a trigger unmounted while its read waits never reads', async () => {
+    const g = gate();
+    const b = vi.fn(() => Promise.resolve('b'));
+    function Hider() {
+      const [shown, setShown] = useState(true);
+      return (
+        <>
+          <button type="button" onClick={() => setShown(false)}>Hide</button>
+          {shown && <Trigger read={b} label="Second" />}
+        </>
+      );
+    }
+    renderInWorld(<><Trigger read={() => g.promise} label="First" /><Hider /></>, { path: '/characters' });
+    vi.useFakeTimers();
+    await rest(screen.getByRole('button', { name: 'First' }));
+    await rest(screen.getByRole('button', { name: 'Second' }));
+    expect(b).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).not.toHaveBeenCalled();
   });
 });

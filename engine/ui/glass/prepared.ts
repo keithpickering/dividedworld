@@ -141,22 +141,35 @@ export function useRest(early: () => (() => void) | void) {
   /* The latest `early`, so a trigger may pass a closure over what it renders. */
   const latest = useRef(early);
   latest.current = early;
-  /* The withdraw of the ask in the read-ahead gate, if one is waiting or out. */
+  /* The withdraw of the asks in the read-ahead gate, and which triggers still want them: the read starts if the pointer or the focus
+     is still on the trigger, so a leave or a blur gives up the place only when the other is gone as well. */
   const withdraw = useRef<(() => void) | undefined>(undefined);
-  const go = useCallback(() => { withdraw.current = latest.current() ?? undefined; }, []);
+  const resting = useRef({ pointer: false, focus: false });
   const give = () => { const w = withdraw.current; withdraw.current = undefined; w?.(); };
+  const go = useCallback((trigger: 'pointer' | 'focus') => {
+    resting.current[trigger] = true;
+    const next = latest.current();
+    if (!next) return;
+    /* An ask that waits is kept until the new one is made, so one that asked for nothing never drops it. */
+    const old = withdraw.current;
+    withdraw.current = old ? () => { old(); next(); } : next;
+  }, []);
+  const leave = (trigger: 'pointer' | 'focus') => {
+    resting.current[trigger] = false;
+    if (!resting.current.pointer && !resting.current.focus) give();
+  };
   const pointer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const focus = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => { clearTimeout(pointer.current); clearTimeout(focus.current); withdraw.current?.(); }, []);
   /* A mouse press focuses the trigger after its pointer down, so that focus belongs to the press: until the blur it arms no timer. */
   const pressing = useRef(false);
-  const press = () => { clearTimeout(pointer.current); clearTimeout(focus.current); give(); };
+  const press = () => { clearTimeout(pointer.current); clearTimeout(focus.current); resting.current = { pointer: false, focus: false }; give(); };
   return {
     onPointerDown: () => { pressing.current = true; press(); },
     onKeyDown: (e: { readonly key: string }) => { if (e.key === 'Enter' || e.key === ' ') press(); },
-    onPointerEnter: () => { clearTimeout(pointer.current); pointer.current = setTimeout(go, REST_MS); },
-    onPointerLeave: () => { clearTimeout(pointer.current); give(); },
-    onFocus: () => { clearTimeout(focus.current); if (pressing.current) return; focus.current = setTimeout(go, REST_MS); },
-    onBlur: () => { pressing.current = false; clearTimeout(focus.current); give(); },
+    onPointerEnter: () => { clearTimeout(pointer.current); pointer.current = setTimeout(() => go('pointer'), REST_MS); },
+    onPointerLeave: () => { clearTimeout(pointer.current); leave('pointer'); },
+    onFocus: () => { clearTimeout(focus.current); if (pressing.current) return; focus.current = setTimeout(() => go('focus'), REST_MS); },
+    onBlur: () => { pressing.current = false; clearTimeout(focus.current); leave('focus'); },
   } as const;
 }
