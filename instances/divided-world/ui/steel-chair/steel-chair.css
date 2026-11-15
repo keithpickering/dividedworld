@@ -35,8 +35,8 @@
   pointer-events: none;
 }
 
-/* The layer of chairs fills the content area, placed by `placeLayer` and marked `data-kb-effect-ink` (see the header); in perspective:
-   the vanishing point sits high, so a chair near the floor is seen from above. */
+/* The chairs' layer and the dents' shading layer each fill the content area, placed by `placeLayer` and marked `data-kb-effect-ink`
+   (see the header); each `.dw-chair-dent` is positioned inside the dents' layer. */
 .dw-chair-layer,
 .dw-chair-dents {
   position: absolute;
@@ -77,8 +77,6 @@
   border-bottom: 0;
 }
 
-/* The dents' shading layer: one container that fills the content area like the chairs' layer (placed by `placeLayer`, marked
-   `data-kb-effect-ink`), each `.dw-chair-dent` positioned inside it. */
 /* A dent's shading: a round div over the words, dark toward the upper left and light toward the lower right, as a pressed-in plate is lit
    from above and in front. Placed and sized by the effect around the dent's point. */
 .dw-chair-dent {
