@@ -38,7 +38,7 @@ import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurf
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
-import type { Act, Id, ThreadListener, ThreadPage, ThreadSummary, Visit } from '../data/api.ts';
+import type { Act, EffectState, Id, PageOrigin, ThreadListener, ThreadPage, ThreadSummary, Visit } from '../data/api.ts';
 import { pageList, useIsAdmin } from '../mini.tsx';
 import { useBoot } from '../boot.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
@@ -118,6 +118,14 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const mine = useMemo(() => createMine(), []);
   /* The card plays on the posts on screen (engine/ui/cards/plays.ts), and which cards the instance draws an effect for: only theirs have a state to read. */
   const plays = useMemo(() => createPlays(), []);
+  /*
+   * The ORIGIN box's own store of plays (docs/plans/2026-11-14-origin-in-page-design.md, section 5): the box's plays are Acts of another thread, so they are not in `plays`, and the page's
+   * saved states and releases for them are given to this store, here, so `ThreadPage` stays a plain mirror of the document. `origin` is the newest origin the pages read carried
+   * (the ticket of the read that carried it is `originTicket`).
+   */
+  const originPlays = useMemo(() => createPlays(), []);
+  const originTicket = useRef(-1);
+  const [origin, setOrigin] = useState<PageOrigin | null>(() => doc.origin);
   const effects = useMemo(() => effectCards(ui), [ui]);
   const effectList = useMemo(() => [...effects], [effects]);
   /* The cards whose plays veil a post's author or totals: a play of one arriving, or ending, means the page is read again (feed.ts). */
@@ -254,6 +262,15 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     /* The plays a thread-reach card keeps on this page's posts after its time came with it, as the plays above them do. */
     const played = [...page.plays, ...page.above.map((x) => x.act), ...page.kept.map((x) => x.act)];
     hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces, page.spent ?? []);
+    /* The origin of a spun thread, on the page that holds its first Act: the newer read's is kept (an answer asked before the one held is not taken, as for `above`), and a page without one leaves what is held.
+       Its plays' saved states and releases are in the page's own lists; the box's store is given those of its plays. */
+    if (page.origin && ticket > originTicket.current) {
+      originTicket.current = ticket;
+      const ours = new Set(page.origin.plays.map((a) => a.id));
+      originPlays.setStates(Object.fromEntries(Object.entries(page.states).filter(([id]) => ours.has(id))) as Record<Id, EffectState>);
+      originPlays.setReleased(page.releases.filter((id) => ours.has(id)));
+      if (mounted.current) setOrigin(page.origin);
+    }
     /* A wall whose Acts are drawn and whose live list this page says has changed (a read again after a rejoin) reads them again. */
     void rereadSurfaces(api, plays, page.surfaces);
     /* A play leaves a page's `above` when an admin ended it, when its thread moved, or when its time ran out (the server drops a play past its
@@ -285,7 +302,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     }
     const under = page.under.map((u) => u.act);
     const posts = [...page.acts, ...under].filter((a) => a.kind === 'post').map((a) => a.id);
-    const ids = [...new Set([...page.acts.map((a) => a.id), ...under.map((a) => a.id), ...played.map((a) => a.id)])];
+    /* The origin's Act and its plays are Acts of the page's document too: their reactions and spins are the page's, which the box reads from the same stores. */
+    const ids = [...new Set([...page.acts.map((a) => a.id), ...under.map((a) => a.id), ...played.map((a) => a.id), ...(page.origin?.act ? [page.origin.act.id] : []), ...(page.origin?.plays ?? []).filter((a) => a.kind !== 'card_end').map((a) => a.id)])];
     for (const [id, t] of Object.entries(page.tallies)) tallies.merge(id, t);
     for (const id of ids) mine.merge(id, page.mine.filter((r) => r.act === id));
     const loader = spunLoader(api);
@@ -324,7 +342,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     if (back.size === 0) return page;
     const acts = [...page.acts, ...[...back.values()].filter((a) => !onPage.has(a.id))].sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0));
     return { ...page, acts, cut: page.cut.filter((c) => !back.has(c.seq)) };
-  }, [api, tallies, mine, plays, veils, putNested, dropNested]);
+  }, [api, tallies, mine, plays, originPlays, veils, putNested, dropNested]);
 
   /* The first page: from the document, before the first render, so the first frame is whole. */
   /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first page only. */
@@ -869,8 +887,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const veiled = useMemo<ReadonlyMap<Id, Veiled>>(() => new Map(veiledHeld.current), [veilTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, mine, plays, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, origin, originPlays, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, mine, plays, origin, originPlays, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   const quotableAt = useCallback((seq: number) => {

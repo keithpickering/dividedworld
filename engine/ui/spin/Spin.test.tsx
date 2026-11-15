@@ -208,7 +208,7 @@ describe('the ORIGIN box', () => {
     openSpun(w, fromCard);
     const box = await origin();
     const head = box.querySelector('.kb-origin-head-text') as HTMLElement;
-    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from Whoops! on #2 in A short thread$/u));
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from Whoops! on #2 in A short thread · as it landed$/u));
     expect(head).not.toHaveTextContent('an Act');
     expect(within(head).getByRole('link', { name: 'Whoops! on #2 in A short thread' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
   });
@@ -273,7 +273,7 @@ describe('the ORIGIN box', () => {
     openSpun(w, spun);
     const box = await origin();
     const head = box.querySelector('.kb-origin-head-text') as HTMLElement;
-    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from Whoops!$/u));
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from Whoops! · as it landed$/u));
     expect(within(head).queryByRole('link')).toBeNull();
   });
 
@@ -402,39 +402,13 @@ describe('the ORIGIN box', () => {
     expect(open).toBe(0);
   });
 
-  test('an origin that is not there says so, with the way back, and does not stay on "Loading"', async () => {
+  test('bills its plays the way the thread does, from the tallies and reactions the page carried, with no read of its own', async () => {
     const w = threadWorld(3);
-    const spun = await spinFrom(w, w.ids[1]!);
-    const real = w.fake.act.bind(w.fake);
-    vi.spyOn(w.fake, 'act').mockImplementation(async (id) => (id === w.ids[1] ? null : real(id)));
-    openSpun(w, spun);
-    const box = await origin();
-    await waitFor(() => expect(box).toHaveTextContent('The Act this thread was spun from is not there.'));
-    expect(box).not.toHaveTextContent('Loading the origin');
-    expect(within(box).getByRole('link', { name: /#2 in A short thread/u })).toBeInTheDocument();
-  });
-
-  test('an origin that fails to load says so and offers Try again', async () => {
-    const w = threadWorld(3);
-    const spun = await spinFrom(w, w.ids[1]!);
-    const real = w.fake.act.bind(w.fake);
-    const failing = vi.spyOn(w.fake, 'act').mockImplementation(async (id) => { if (id === w.ids[1]) throw new Error('down'); return real(id); });
-    openSpun(w, spun);
-    const box = await origin();
-    await waitFor(() => expect(box).toHaveTextContent('could not be read'));
-    failing.mockImplementation(real);
-    await userEvent.click(within(box).getByRole('button', { name: 'Try again' }));
-    await waitFor(() => expect(box).toHaveTextContent('post 2'));
-    expect(box).not.toHaveTextContent('could not be read');
-  });
-
-  test('reads its plays\' tallies and the player\'s own reactions to them in one read each, and bills them the way the thread does', async () => {
-    const w = threadWorld(3);
-    const early = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'early' });
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'early' });
     w.fake.clock.advance(60_000);
     const middle = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'middle', layer: 2 });
     w.fake.clock.advance(60_000);
-    const late = w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'late' });
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'late' });
     w.fake.seed.react(w.me, w.pipe, middle, 'fire');
     const spun = await spinFrom(w, w.ids[1]!);
     const tallies = vi.spyOn(w.fake, 'tallies');
@@ -444,11 +418,9 @@ describe('the ORIGIN box', () => {
     await waitFor(() => expect(box.querySelectorAll('.kb-mark')).toHaveLength(2));
     /* The middle play has drawn a reaction, so it is billed first, then the newest: the card of the middle play leads, with the early one behind it, and the newest card is second. */
     expect(marks(box)).toEqual(['whoops:2', 'stick-around:1']);
-    const forPlays = (spy: typeof tallies | typeof own) => spy.mock.calls.filter(([ids]) => ids.includes(early));
-    expect(forPlays(tallies)).toHaveLength(1);
-    expect(forPlays(tallies)[0]![0]).toContain(late);
-    expect(forPlays(own)).toHaveLength(1);
-    expect(forPlays(own)[0]![0]).toContain(late);
+    /* The page held them: nothing was asked for. */
+    expect(tallies).not.toHaveBeenCalled();
+    expect(own).not.toHaveBeenCalled();
   });
 
   test('a reaction to a play on the origin counts on its mark here, live, and moves no mark', async () => {
@@ -576,11 +548,9 @@ describe('the ORIGIN box', () => {
     const w = threadWorld(3);
     for (let i = 0; i < 22; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });
     const spun = await spinFrom(w, w.ids[1]!);
-    const asked = vi.spyOn(w.fake, 'cardsOn');
     openSpun(w, spun);
     const box = await origin();
     await waitFor(() => expect(box).toHaveTextContent('More than 20 cards were played'));
-    expect(asked).toHaveBeenCalledWith(w.ids[1], 21);
     await waitFor(() => expect(box.querySelector('.kb-mark')).not.toBeNull());
     expect(Number(box.querySelector('.kb-mark')!.getAttribute('data-kb-plays'))).toBeLessThanOrEqual(20);
     /* The rest are in the origin's place, linked as the head links it. */
@@ -651,19 +621,7 @@ describe('the ORIGIN box of a play-spun thread', () => {
     w.fake.seed.effect(w.thread, wash);
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4');
-    expect(read).toHaveBeenCalledTimes(1);
-  });
-
-  test('a moment that does not load says so in the box, with Try again, and no way out is needed: the mark still leads to the post', async () => {
-    const { w, spun } = await spunFromHold();
-    const read = vi.spyOn(w.fake, 'playMoment').mockRejectedValueOnce(new Error('offline'));
-    openWith(w, spun);
-    const box = await origin();
-    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
-    expect(await within(frame).findByText('The moment did not load.')).toBeInTheDocument();
-    await userEvent.click(within(frame).getByRole('button', { name: 'Try again' }));
-    await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
-    expect(read).toHaveBeenCalledTimes(2);
+    expect(read).not.toHaveBeenCalled();
   });
 
   test('a thread spun from a play on a thread keeps today\'s box: no mark, with no moment read or drawn and no second head line', async () => {
@@ -703,6 +661,169 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect(document.querySelector('[inert]')).toBeNull();
     expect(within(lens).queryByRole('button', { name: 'As it landed' })).toBeNull();
     expect(within(lens).getByRole('button', { name: 'React' })).toBeEnabled();
+  });
+});
+
+/*
+ * The box arrives with the page (docs/plans/2026-11-14-origin-in-page-design.md, section 5): the page's document holds the origin Act, its
+ * plays, their ends, the moment and the characters, so the box reads nothing after the page, is never "Loading the origin…", and takes in
+ * a page read again.
+ */
+const BOX_READS = ['act', 'cardsOn', 'tallies', 'myReactions', 'spunFromMany', 'spunFrom', 'effectStates', 'myReleases', 'characters', 'actsById', 'playMoment', 'spinMoment'] as const;
+/** A spy on each read the box made before it arrived with the page, on the fake the screen is drawn from. */
+function spyOnBoxReads(fake: object) {
+  const table = fake as Record<string, (...args: unknown[]) => unknown>;
+  return BOX_READS.map((name) => ({ name, spy: vi.spyOn(table, name) }));
+}
+const readsMade = (spies: ReturnType<typeof spyOnBoxReads>) => spies.filter(({ spy }) => spy.mock.calls.length > 0).map(({ name, spy }) => `${name}(${spy.mock.calls.length})`);
+const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+
+describe('the ORIGIN box arrives with the page', () => {
+  const momentInstance = { ...testInstance, cards: [{ ...testInstance.cards[0]!, stack: 3 }, { ...testInstance.cards[0]!, key: 'stick-around', name: 'Stick Around' }] };
+  const Still = ({ children }: EffectProps) => <div>{children}</div>;
+  const cards: CardUi[] = [
+    { key: 'whoops', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'x', Effect: Still },
+    { key: 'stick-around', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'x', Effect: Still, takeover: true },
+  ];
+  const openWith = (w: ReturnType<typeof threadWorld>, thread: string) =>
+    renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: momentInstance, cards });
+  /** The listeners of the origin thread's channel: what the box hears. */
+  function tap(w: ReturnType<typeof threadWorld>) {
+    const listeners: ThreadListener[] = [];
+    const real = w.fake.subscribeThread.bind(w.fake);
+    w.fake.subscribeThread = (t, l) => { if (t === w.thread) listeners.push(l); return real(t, l); };
+    return listeners;
+  }
+  const playAct = async (w: ReturnType<typeof threadWorld>, id: string, caster: string, card = 'whoops'): Promise<Act> => {
+    const [original] = await w.fake.acts(w.thread, 2, 2);
+    return { ...original!, id, kind: 'card', character: caster, targetActId: w.ids[1]!, seq: null, payload: { card, layer: 2, message: 'again' }, currentPayload: { card, layer: 2, message: 'again' } };
+  };
+
+  test('a thread spun from a post with plays draws its words, its tags and no read after the page', async () => {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'early' });
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'late' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    const spies = spyOnBoxReads(w.fake);
+    openWith(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(marks(box)).toEqual(['stick-around:1', 'whoops:1']));
+    expect(box).toHaveTextContent('post 2');
+    await settle();
+    expect(readsMade(spies)).toEqual([]);
+  });
+
+  test('a thread spun from a play on a character draws its moment and no read after the page', async () => {
+    const w = threadWorld(3);
+    const zedPost = w.fake.seed.post(w.thread, w.zed, 'zed words');
+    const play = w.fake.seed.reach(w.spritey, 'character', w.zed, 'whoops', { post: zedPost, ends: Date.now() + 86_400_000, message: 'Shine.' });
+    const spun = await spinFrom(w, play, 'About the shine');
+    const spies = spyOnBoxReads(w.fake);
+    openWith(w, spun);
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it (landed|was spun)/u });
+    expect(await within(frame).findByText('zed words')).toBeInTheDocument();
+    await settle();
+    expect(readsMade(spies)).toEqual([]);
+  });
+
+  test('a thread spun from a play on a post draws its moment and no read after the page', async () => {
+    const w = threadWorld(3);
+    const play = w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'read it' });
+    const spun = await spinFrom(w, play, 'About that hold');
+    const spies = spyOnBoxReads(w.fake);
+    openWith(w, spun);
+    const frame = await within(await origin()).findByRole('group', { name: /^As it landed/u });
+    expect(await within(frame).findByText('post 2')).toBeInTheDocument();
+    await settle();
+    expect(readsMade(spies)).toEqual([]);
+  });
+
+  test('is never "Loading the origin…", from the first frame the box exists in', async () => {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'early' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    let loading = false;
+    let words = false;
+    const watch = new MutationObserver(() => {
+      const box = document.querySelector('[role="group"][aria-label="Origin"]');
+      if (!box) return;
+      if (box.textContent?.includes('Loading the origin') || box.querySelector('[aria-busy="true"]')) loading = true;
+      if (box.textContent?.includes('post 2')) words = true;
+    });
+    watch.observe(document.body, { subtree: true, childList: true, characterData: true });
+    try {
+      openWith(w, spun);
+      await origin();
+      await waitFor(() => expect(words).toBe(true));
+    } finally { watch.disconnect(); }
+    expect(loading).toBe(false);
+  });
+
+  test('a page whose origin has no Act says the Act is not there, with the way back', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
+      const got = await real(id, ...rest);
+      return id === spun && got?.origin ? { ...got, origin: { ...got.origin, act: null, plays: [] } } : got;
+    });
+    openWith(w, spun);
+    const box = await origin();
+    expect(box).toHaveTextContent('The Act this thread was spun from is not there.');
+    expect(box).not.toHaveTextContent('Loading the origin');
+    expect(within(box).getByRole('link', { name: /#2 in A short thread/u })).toBeInTheDocument();
+  });
+
+  test('an edit of the origin, a play on it and a tally heard on its thread show in the box; the play reads its own state once, and a caster the page did not name is read once', async () => {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'early' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    const listeners = tap(w);
+    openWith(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(marks(box)).toEqual(['whoops:1']));
+    await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
+    const spies = spyOnBoxReads(w.fake);
+    const [original] = await w.fake.acts(w.thread, 2, 2);
+    await act(async () => { for (const l of listeners) l.onAct?.({ ...original!, currentPayload: { body: 'post 2, fixed' }, editedAt: '2026-10-29T13:00:00Z', shownEditedAt: '2026-10-29T13:00:00Z' }); });
+    await waitFor(() => expect(box).toHaveTextContent('post 2, fixed'));
+    const stranger = w.fake.seed.character(w.fake.seed.account('stranger'), 'Strangerhood', 'face');
+    const played = await playAct(w, '99999999-0000-4000-8000-000000000001', stranger);
+    await act(async () => { for (const l of listeners) l.onAct?.(played); });
+    await waitFor(() => expect(box.querySelector('[data-kb-card="whoops"]')).toHaveAttribute('data-kb-plays', '2'));
+    await act(async () => { for (const l of listeners) l.onTally?.(played.id, { fire: 3 }); });
+    await settle();
+    const calls = (name: (typeof BOX_READS)[number]) => spies.find((s) => s.name === name)!.spy.mock.calls;
+    expect(calls('effectStates').map(([ids]) => ids)).toEqual([[played.id]]);
+    expect(calls('characters')).toHaveLength(1);
+    expect(calls('characters')[0]![0]).toEqual([stranger]);
+    expect(readsMade(spies).filter((r) => !/^(effectStates|myReleases|characters)\(/u.test(r))).toEqual([]);
+    await userEvent.click(within(box).getByRole('button', { name: /^Whoops!, 2 plays/u }));
+    expect(await screen.findByRole('dialog', { name: 'Cards on this post' })).toHaveTextContent('Strangerhood');
+  });
+
+  test('a page read again with an edited origin and one more play shows both, and a tag already drawn has not moved', async () => {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'early' });
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'late' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    openWith(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(marks(box)).toEqual(['stick-around:1', 'whoops:1']));
+    const real = w.fake.threadPage.bind(w.fake);
+    const first = (await real(spun, { page: 1 }, 20, []))!;
+    const more = await playAct(w, '99999999-0000-4000-8000-000000000002', w.spritey);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
+      const got = await real(id, ...rest);
+      if (id !== spun || !got?.origin?.act) return got;
+      return { ...got, origin: { ...got.origin, act: { ...got.origin.act, currentPayload: { body: 'post 2, rewritten' }, editedAt: '2026-10-29T13:00:00Z', shownEditedAt: '2026-10-29T13:00:00Z' }, plays: [...first.origin!.plays, more] } };
+    });
+    await act(async () => { w.fake.broadcast.rejoin(); });
+    await waitFor(() => expect(box).toHaveTextContent('post 2, rewritten'));
+    await waitFor(() => expect(marks(box)).toEqual(['stick-around:1', 'whoops:2']));
   });
 });
 
@@ -1005,5 +1126,18 @@ describe('a thread spun from a card on a character', () => {
     expect(headText(box)).toMatch(/ · as it landed$/u);
     expect(within(box).queryByText(/Cast from/u)).toBeNull();
     expect(within(box).queryByRole('group', { name: /^As it was spun/u })).toBeNull();
+  });
+
+  test('the box shows the pressed post as it was spun with no read after the page: the moment, the place and the cast came with it', async () => {
+    const w = world();
+    const thread = await spun(w, w.pressed);
+    const reads = ['act', 'cardsOn', 'tallies', 'myReactions', 'spunFromMany', 'spunFrom', 'effectStates', 'myReleases', 'characters', 'actsById', 'playMoment', 'spinMoment'] as const;
+    const table = w.fake as unknown as Record<string, (...args: unknown[]) => unknown>;
+    const spies = reads.map((name) => ({ name, spy: vi.spyOn(table, name) }));
+    open(w, thread);
+    const frame = await within(await origin()).findByRole('group', { name: /^As it was spun/u });
+    expect(await within(frame).findByText('pressed words')).toBeInTheDocument();
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(spies.filter(({ spy }) => spy.mock.calls.length > 0).map(({ name }) => name)).toEqual([]);
   });
 });

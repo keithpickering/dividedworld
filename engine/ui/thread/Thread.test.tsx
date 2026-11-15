@@ -503,6 +503,35 @@ describe('Acts that are not posts', () => {
     expect(within(origin).getByRole('link', { name: /#2 in A long thread/u })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
     expect(first).toHaveTextContent('Taking this elsewhere.');
   });
+
+  test('the origin rides the page: its words are in the first frame the thread draws, and no read of the Act is made', async () => {
+    const w = world(3);
+    const spun = await w.fake.spin(w.ids[1]!, (await w.fake.myCharacters())[0]!.id, 'Spun off', 'Taking this elsewhere.');
+    if (!spun.ok) throw new Error(spun.error);
+    const reads = [vi.spyOn(w.fake, 'act'), vi.spyOn(w.fake, 'cardsOn'), vi.spyOn(w.fake, 'characters'), vi.spyOn(w.fake, 'effectStates')];
+    renderIn(w.fake, <LoadedThread thread={spun.value.thread.id} />, { path: `/t/${spun.value.thread.id}` });
+    const origin = await screen.findByRole('group', { name: 'Origin' });
+    expect(origin).toHaveTextContent('post 2');
+    expect(origin).not.toHaveTextContent('Loading the origin');
+    expect(reads.map((r) => r.mock.calls.length)).toEqual([0, 0, 0, 0]);
+  });
+
+  test('a page read again that carries no origin leaves the box as it was', async () => {
+    const w = world(3);
+    const spun = await w.fake.spin(w.ids[1]!, (await w.fake.myCharacters())[0]!.id, 'Spun off', 'Taking this elsewhere.');
+    if (!spun.ok) throw new Error(spun.error);
+    const thread = spun.value.thread.id;
+    renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}` });
+    const origin = await screen.findByRole('group', { name: 'Origin' });
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (...a) => {
+      const got = await real(...a);
+      return got ? { ...got, origin: null } : got;
+    });
+    await act(async () => { w.fake.broadcast.rejoin(); await new Promise((r) => setTimeout(r, 50)); });
+    expect(origin).toHaveTextContent('post 2');
+    expect(origin).not.toHaveTextContent('is not there');
+  });
 });
 
 /* ------------------------------------------------------------------------------ quoting ---- */
