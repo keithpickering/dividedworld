@@ -31,10 +31,22 @@ const lit = (xs: readonly string[]) => `array[${xs.map((x) => `'${x.replaceAll("
  * standings screen already calls, named before this convention. The plan did not account for it; it leaves this list when it is rewritten
  * as a screen function or renamed. Nothing else belongs here.
  */
-const NOT_SCREEN_FUNCTIONS = ['standings_page'];
+export const NOT_SCREEN_FUNCTIONS = ['standings_page'];
 
 /** The search reads (0117) are screen functions without the `_page` name: one call, plpgsql with a fixed generic plan, an invoker, stable, reading what a screen may. */
 export const SEARCH_READS = ['search_posts', 'search_threads', 'search_suggest'];
+
+/**
+ * The rule that names the screen functions, as a SQL predicate over a `pg_proc` row's name: `boot`, a name ending `_page` that is not in NOT_SCREEN_FUNCTIONS, or a search
+ * read. Exported so the guard below and the cold-read budget (0028-cold-read-budget.ts) read one list and not two that drift.
+ */
+export const screenPredicate = (name: string): string =>
+  `(${name} = 'boot' or ${name} like '%\\_page' or ${name} = any (${lit(SEARCH_READS)})) and ${name} <> all (${lit(NOT_SCREEN_FUNCTIONS)})`;
+
+/** The names of every screen function in `public`, sorted, over the session `db` runs in. */
+export function screenNames(db: Query): string[] {
+  return db(`select p.proname from pg_proc p where p.pronamespace = 'public'::regnamespace and ${screenPredicate('p.proname')} order by 1`).split(/\r?\n/).filter(Boolean);
+}
 
 /** One line per fault, `function: predicate`, over every screen function visible to the session `db` runs in. */
 export async function screenFaults(db: Query): Promise<string[]> {
@@ -42,7 +54,7 @@ export async function screenFaults(db: Query): Promise<string[]> {
     with screens as (
       select p.oid, p.proname, p.prosqlbody, p.prosecdef, p.provolatile
       from pg_proc p
-      where p.pronamespace = 'public'::regnamespace and (p.proname = 'boot' or p.proname like '%\\_page' or p.proname = any (${lit(SEARCH_READS)})) and p.proname <> all (${lit(NOT_SCREEN_FUNCTIONS)})
+      where p.pronamespace = 'public'::regnamespace and ${screenPredicate('p.proname')}
     ),
     deps as (
       select distinct s.oid as screen, d.refclassid::regclass::text as kind, d.refobjid
