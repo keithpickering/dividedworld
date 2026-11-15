@@ -68,7 +68,20 @@ To change a scene by hand, save it as a Blender file and open that: `ART_RENDER=
 scene, renders nothing and writes the file, with the camera, lights and render settings the picture shipped at. A
 scene pasted into Blender's Scripting tab does not run, since it finds `rig.py` from its own path and takes the
 picture's name from the command line. The repository ignores `.blend` files, and a change made by hand is not in the
-scene: to keep it, write it back into `scene.py`.
+scene: to keep it, write it back into `scene.py`, or, where the change cannot be written as rig calls, commit the
+Blender file in place of the script.
+
+Hot Box is the one card whose scene is a Blender file. Its picture was changed by hand past what the rig builds (the
+eyes remodeled, the camera moved, the smoke rearranged), so its folder holds `scene.blend`, saved with the settings the
+picture shipped at, and no `scene.py`; the repository's ignore rule makes an exception for that one file. To make its
+picture again, from its folder:
+
+```
+blender -b scene.blend --python-expr "import bpy; bpy.ops.render.render(write_still=True)"
+```
+
+That writes `art.webp` beside the file, the output path saved in it. To change the scene, open `scene.blend`, save it,
+render again and commit both.
 
 Each scene's defaults are the settings its shipped picture was rendered at (the samples, Whoops!'s mesh, Heat Magnet's
 simulation), so a scene run as above makes its picture again as it shipped.

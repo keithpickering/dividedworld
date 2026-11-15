@@ -25,3 +25,5 @@ supabase/.temp/
 # a card scene saved to open by hand (instances/divided-world/ui/cards/README.md)
 *.blend
 *.blend1
+# Hot Box's scene is a Blender file, changed by hand past what its script built (the same README)
+!instances/divided-world/ui/cards/hot-box/scene.blend
