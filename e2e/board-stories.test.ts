@@ -34,6 +34,7 @@ test('a title in double quotes, as one with an apostrophe must be, is read, and 
   expect(boardStoryIds(instanceUis(repo))).toEqual(['boards-98-feelin-quoted--seen']);
   expect(boardStoryIds()).toContain('boards-10-feelin-fab--twenty-light');
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['boards-20-below-the-fold--folded-light', 'boards-20-below-the-fold--folded-dark', 'boards-20-below-the-fold--opened-light', 'boards-20-below-the-fold--opened-dark', 'boards-20-below-the-fold--reduced']));
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['fresh-light', 'fresh-dark', 'thinning', 'long-post', 'reduced'].map((n) => `boards-24-hot-box--${n}`)));
 });
 
 test('an instance with no ui folder adds none, and the real repository lists the Hold stories', () => {

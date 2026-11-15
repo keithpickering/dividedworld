@@ -1,0 +1,5 @@
+# An effect fills the post, border to border
+
+Incident. In the Wave 1 build of Hot Box on 2026-11-15 (docs/plans/2026-11-15-hot-box-plan.md, PR #713), the plan drew the smoke on a canvas sized to the wrapper around the post's words, so the fog covered the text and stopped short of the post's borders, where Whoops!'s ink and Feelin' Fab's foil fill the whole content area. The owner saw it while the build was running, had the build told to fill the content area, and asked for a rule so that later effects are not planned the same way.
+
+The owner's words. "For Hot Box let's instruct the build to fill the whole post content area with the effect (like whoops, fab, etc) and also add a rule so future effects stop defaulting to this 'cover the text only' mode. The borders of the post content area are meant to serve as a container for the effect, with permission to leave the container for comedic effect - we shouldn't treat a smaller un-bordered area within it as a container." (the owner, 2026-11-15).

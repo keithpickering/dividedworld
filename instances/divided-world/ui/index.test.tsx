@@ -33,6 +33,8 @@ import { ropeBreak } from '../cards/rope-break.ts';
 import { STEEL_CHAIR_LASTS } from '../cards/steel-chair.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
 import { WORDS as THIS_WORDS, thisCard } from '../cards/this.ts';
+import { HOT_BOX_LASTS, hotBox } from '../cards/hot-box.ts';
+import { setMoveWords } from './cards/words.ts';
 import { LOG_DRAW, LOG_WASH, describeDraw } from '../cards/graffiti/words.ts';
 import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
 import type { CardPlay } from '../../../engine/ui/cards/types.ts';
@@ -432,6 +434,22 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(said).toBe(`A Pepperoni card, ${thisCard.rarity}. You choose words in a post, and the post gets a note under them: THIS, an arrow, and up to ${THIS_WORDS.most} characters of your own after it, or none. The note names nobody; the Lens says who played it. Up to ${thisCard.stack} fit on a post, and they stay. If the author edits the words out, the note moves to the foot of the post and quotes them. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. A set one lands only when the quote's own words hold its phrase. It costs nothing more to play than its price at the machine.`);
     expect(THIS_WORDS.most).toBe(60);
     expect(thisCard.stack).toBe(3);
+  });
+  test('Hot Box has its face, its words and its log line, each the plan\'s, and its span is the rules\'', () => {
+    const ui = instanceUi.cards.find((c) => c.key === 'hot-box')!;
+    expect(ui).toBeDefined();
+    expect(ui.art.color).toBe('#ff3d7f');
+    expect(ui.art.ink).toBe('#14030a');
+    expect(ui.art.tagline).toBe('Smoke out a post.');
+    expect(ui.summary).toBe('Fills a post with smoke in your color. Readers wave it away to read, and it rolls back in.');
+    expect(ui.status).toBe('Smoke on this post');
+    expect(ui.hint).toBe('Point at the words to part the smoke.');
+    expect(ui.Effect).toBeDefined();
+    expect(ui.ConfigForm).toBeDefined();
+    expect(ui.describe(instance.settings)).toBe(`A Salty card, ${hotBox.rarity}. It fills a post with smoke in the color you choose. Under the smoke the words can't be read: a reader points at them to clear a patch, or holds Wave the smoke to clear the post line by line, and the smoke rolls back in. It is the same for every reader, the post's author and you included. It lasts ${spanWords(HOT_BOX_LASTS)}, thinning as it goes, then clears by itself. One fits on a post at a time. ${setMoveWords('the quoting post')} It costs nothing more to play.`);
+    expect(ui.describe(instance.settings)).toContain('It lasts 3 days, thinning');
+    expect(ui.logPlay!({ color: '#19e3ff' }, {} as never)).toBe('It smoked the post in cyan.');
+    expect(ui.logPlay!({ color: 'not a color' }, {} as never)).toBeUndefined();
   });
   test('THIS\'s handwriting is vendored with its license, and its stylesheet names no font outside its own folder', () => {
     const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'this');
