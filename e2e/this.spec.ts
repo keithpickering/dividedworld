@@ -143,7 +143,7 @@ for (const size of SIZES) {
       const heard = listen(page);
       await open(page, size, { notes: NOTES });
       await expect.poll(async () => (await read(page)).every((r) => r.placed)).toBe(true);
-      /* A thread page with no THIS on it already gets one "ResizeObserver loop" report as it loads (some other observer of the board; measured with no note on the page), so the count is taken here and what THIS must add is none. */
+      /* A thread page with no THIS on it already gets one "ResizeObserver loop" report as it loads (some other observer of the board; seen on a thread with no note on it), so the count is taken here, once the notes are placed, and what THIS must add while the window is resized is none. A report THIS made as it first mounted would be in this count; the page errors below are held empty over the whole test. */
       await page.waitForTimeout(1500);
       const errors = () => page.evaluate(() => (window as unknown as { __errs: string[] }).__errs.filter((m) => /ResizeObserver/iu.test(m)).length);
       const atLoad = await errors();
@@ -285,7 +285,6 @@ for (const size of SIZES) {
     test('a phrase in an [ispoiler]: pressing it open leaves the gap its height and the note under the phrase, with no flash over the next line', async ({ page }) => {
       const body = 'Before this the [ispoiler]answer[/ispoiler] is here and there are more words that go on for a good while so that the line wraps at least once around the end.\n\nNext paragraph of the post, which must not be covered by anything at all.';
       await open(page, size, { body, notes: [{ phrase: 'answer', words: 'is that so' }] });
-      /* The phrase is shorter than the 4-letter minimum? "answer" has six. */
       await expect.poll(async () => (await read(page)).every((r) => r.placed), { timeout: 5000 }).toBe(true);
       const before = await read(page);
       expect(before[0]!.gapHeight, 'shut: the gap has a height').not.toBe('');
