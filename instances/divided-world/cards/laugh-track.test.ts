@@ -4,8 +4,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CUES, PLACES, laughTrack, placesOf, type Cue } from './laugh-track.ts';
-import { decidePlay, postTarget } from '../../../engine/rules/cards.ts';
+import { castOnPost, decidePlay, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
+import { on } from './test-kit.ts';
 
 const WORDS = ['alpha', 'bravo', 'charlie', 'delta', 'echoes', 'foxtrot', 'golfing', 'hotel'];
 const target = (text: string) => postTarget('p1', 'post', text);
@@ -207,4 +209,79 @@ test('repairStaff (cast) trims a cue that is only inside a link as phraseNotInPo
   const out = laughTrack.repairStaff!({ cues: [cue(ADDRESS), cue('great')] }, linkedTarget(), 'cast');
   assert.deepEqual(out.config, { cues: [cue('great')] });
   assert.deepEqual(out.trims, [{ path: PATH, predicate: 'phraseNotInPost', before: 2, after: 1 }]);
+});
+
+const ltConfig = (cues: unknown) => laughTrack.validateConfig({ cues });
+const ltWhy = (v: unknown) => (v as { why: string }).why;
+const ltLands = (body: string, cues: Cue[], effects: { card: string; act: string }[] = []) => laughTrack.canApply(on(body), effects, { cues } as never, new Date());
+
+test('Laugh Track is an uncommon Pepperoni Cast, seeded, that takes one director', () => {
+  assert.deepEqual([laughTrack.key, laughTrack.name, laughTrack.alignment, laughTrack.rarity, laughTrack.play ?? 'cast', laughTrack.stack ?? 1, laughTrack.seeded], ['laugh-track', 'Laugh Track', 'pepperoni', 'uncommon', 'cast', 1, true]);
+  assert.equal(castOnPost(laughTrack as CardRules), true);
+  assert.deepEqual([CUES.most, PLACES.most], [5, 30]);
+  assert.equal(laughTrack.staffConfigs, undefined, 'a fallback cannot know the post');
+});
+
+test('Laugh Track\'s configuration is one to five cues, each a bounded phrase and a sound', () => {
+  assert.deepEqual(ltConfig([{ phrase: '  Mario  ', sound: 'cheer' }]), { ok: true, value: { cues: [{ phrase: 'Mario', sound: 'cheer' }] } });
+  assert.equal(ltConfig(Array.from({ length: 5 }, (_, i) => cue(`word${'abcde'[i]}x`))).ok, true, 'five');
+  assert.equal(ltWhy(ltConfig([])), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(ltConfig(Array.from({ length: 6 }, (_, i) => cue(`word${'abcdef'[i]}x`)))), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(ltConfig('cats')), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(laughTrack.validateConfig({})), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(ltConfig([{ phrase: 'Mario', sound: 'gasp' }])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.equal(ltWhy(ltConfig([{ phrase: 'Mario' }])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.equal(ltWhy(ltConfig([{ phrase: 4, sound: 'boo' }])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.equal(ltWhy(ltConfig([null])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.match(ltWhy(ltConfig([cue('cat')])), /at least 4 letters or digits/);
+  assert.match(ltWhy(ltConfig([cue('x'.repeat(101))])), /at most 100 characters/);
+  assert.match(ltWhy(ltConfig([cue('two\nlines')])), /one line/);
+  assert.equal(ltWhy(ltConfig([cue('Mario Kart'), cue('mario  kart!', 'boo')])), 'two cues have the same phrase');
+});
+
+test('Laugh Track keeps the seed the server adds and no other key', () => {
+  assert.deepEqual(laughTrack.validateConfig({ cues: [cue('Mario')], seed: 12345, extra: 1 }), { ok: true, value: { cues: [cue('Mario')], seed: 12345 } });
+});
+
+test('placesOf is every occurrence of each cue in the text\'s order, with its cue\'s index', () => {
+  const text = 'Mario met Luigi, then Mario hit Luigi again';
+  const places = placesOf(text, [cue('Luigi'), cue('Mario', 'boo')], []);
+  assert.deepEqual(places.map((p) => [text.slice(p.start, p.end), p.cue]), [['Mario', 1], ['Luigi', 0], ['Mario', 1], ['Luigi', 0]]);
+  assert.deepEqual(placesOf('nothing here', [cue('Luigi')], []), []);
+});
+
+test('Laugh Track lands with one cue and with five', () => {
+  assert.equal(ltLands('Mario is here', [cue('Mario')]).ok, true);
+  const body = 'alpha beta gamma delta epsilon';
+  assert.equal(ltLands(body, ['alpha', 'beta', 'gamma', 'delta', 'epsilon'].map((p) => cue(p))).ok, true);
+  assert.equal(decidePlay(laughTrack as CardRules, settings, on('Mario is here'), [], { cues: [cue('Mario')] }, '').ok, true);
+});
+
+test('Laugh Track refuses what is not in the post, what overlaps, and what is too many places', () => {
+  assert.equal(ltWhy(ltLands('Mario is here', [cue('Mario'), cue('Luigi')])), '“Luigi” is not in this post\'s own words');
+  assert.equal(ltWhy(ltLands('Mario Kart is here', [cue('Mario Kart'), cue('Kart is')])), 'two cues cover the same words');
+  const many = Array(31).fill('word').join(' ');
+  assert.equal(ltWhy(ltLands(many, [cue('word')])), 'these cues cover 31 places in this post; a play covers at most 30');
+  assert.equal(ltLands(Array(30).fill('word').join(' '), [cue('word')]).ok, true, 'thirty is the most');
+});
+
+test('Laugh Track is refused where the post already has an audience, in its own words', () => {
+  const live = [{ card: 'laugh-track', act: 'k1' }];
+  assert.equal(ltWhy(ltLands('Mario is here', [cue('Mario')], live)), 'this post already has an audience');
+  assert.equal(ltWhy(laughTrack.canApply(on('Mario'), live, undefined as never, new Date())), 'this post already has an audience', 'with no cues yet too');
+  assert.equal(ltWhy(decidePlay(laughTrack as CardRules, settings, on('Mario'), live, { cues: [cue('Mario')] }, '')), 'this post already has an audience');
+  assert.equal(laughTrack.canApply(on('Mario'), [{ card: 'laugh-track', act: 'k1', ends: '2000-01-01T00:00:00Z' }], { cues: [cue('Mario')] } as never, new Date()).ok, true, 'an ended one holds no place');
+  assert.equal(laughTrack.canApply(on('Mario'), [{ card: 'whoops', act: 'k1' }], { cues: [cue('Mario')] } as never, new Date()).ok, true);
+});
+
+test('Laugh Track\'s price is 0.05 a place past five, at most 1.00, and a face asks the most', () => {
+  const price = (places: number) => laughTrack.playPrice(settings, on(Array(places).fill('word').join(' ')), { cues: [cue('word')] });
+  assert.equal(price(5), 0);
+  assert.equal(price(6), 5);
+  assert.equal(price(20), 75);
+  assert.equal(price(40), 100, 'capped');
+  assert.equal(laughTrack.playPrice(settings, on('word'), {} as never), 100, 'a face asks the most');
+  assert.equal(laughTrack.playPrice(settings, { reach: 'character', character: 'c' }, { cues: [cue('word')] }), 0);
+  const tuned = withOverrides(settings, { economy: { 'laughTrack.perPlace': 10, 'laughTrack.freePlaces': 1 } });
+  assert.equal(laughTrack.playPrice(tuned, on('word word word'), { cues: [cue('word')] }), 20, 'its numbers are the settings\'');
 });
