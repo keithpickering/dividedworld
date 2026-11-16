@@ -356,7 +356,7 @@ function AsItLanded({ play }: { readonly play: Id }) {
   const pressed = useSyncExternalStore(store.subscribe, () => store.moment() === play, () => false);
   /* The moment is read before it shows (the glass-load design, section 4): the button is busy over `playMoment`, and the post's body changes once it is in. */
   const read = usePrepared<true>(async () => { await store.readMoment(play, () => api.playMoment(play)); return true; }, () => play);
-  const rest = useRest(() => { if (!pressed && store.kept(play) === undefined) read.early(); });
+  const rest = useRest(() => (!pressed && store.kept(play) === undefined ? read.early() : undefined));
   const press = () => {
     if (read.busy) return;
     if (pressed) { store.showMoment(null); return; }
@@ -678,9 +678,9 @@ export interface LensProps {
 /** One tab of the Lens. A tab that reads before it shows is busy while its read is out, and a rest or focus on it starts the read early. */
 const PreparedTab = forwardRef<HTMLButtonElement, {
   readonly id: string; readonly kind: string; readonly selected: boolean; readonly controls: string | undefined; readonly children: ReactNode; readonly onChoose: () => void;
-  readonly read: { readonly data: unknown; readonly busy: boolean; readonly early: () => void } | null;
+  readonly read: { readonly data: unknown; readonly busy: boolean; readonly early: () => () => void } | null;
 }>(function PreparedTab({ id, kind, selected, controls, children, onChoose, read }, ref) {
-  const rest = useRest(() => { if (read && read.data === null) read.early(); });
+  const rest = useRest(() => (read && read.data === null ? read.early() : undefined));
   const busy = read?.busy === true;
   return (
     <button
@@ -719,7 +719,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   useEffect(() => { if (onVisit && visitP.data === null) void visitP.open(); }, [onVisit]); // eslint-disable-line react-hooks/exhaustive-deps
   /* The story is the panel's once it has been drawn from: leaving the tab drops it, so the tab read again is not a story from before a try. */
   useEffect(() => { if (!onVisit && visitP.data !== null) visitP.cancel(); }, [onVisit]); // eslint-disable-line react-hooks/exhaustive-deps
-  const readOf = (kind: string): { readonly data: unknown; readonly busy: boolean; readonly open: () => Promise<unknown>; readonly early: () => void } | null =>
+  const readOf = (kind: string): { readonly data: unknown; readonly busy: boolean; readonly open: () => Promise<unknown>; readonly early: () => () => void } | null =>
     onForm ? (kind === form.kind ? formP : null) : kind === VISIT_KIND && visit ? visitP : null;
   /* The latest press on a tab: a read that lands after another tab was pressed does not take the reader back. */
   const pressed = useRef(0);

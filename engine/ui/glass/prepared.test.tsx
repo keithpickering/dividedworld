@@ -1,9 +1,10 @@
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { StrictMode } from 'react';
+import { StrictMode, useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { renderInWorld } from '../test-world.tsx';
 import { GlassButton } from './Button.tsx';
+import { readAhead, resetReadAhead } from '../ahead.ts';
 import { PREPARED_FAILED, usePrepared, useRest } from './prepared.ts';
 
 interface Gate { readonly promise: Promise<string>; readonly resolve: (v: string) => void; readonly reject: (e: unknown) => void }
@@ -13,19 +14,19 @@ const gate = (): Gate => {
   return { promise, resolve, reject };
 };
 
-function Trigger({ read }: { readonly read: (s: AbortSignal) => Promise<string> }) {
+function Trigger({ read, label = 'Open it' }: { readonly read: (s: AbortSignal) => Promise<string>; readonly label?: string }) {
   const p = usePrepared(read);
   const rest = useRest(p.early);
   return (
     <>
-      <GlassButton busy={p.busy} onClick={() => void p.open()} {...rest}>Open it</GlassButton>
+      <GlassButton busy={p.busy} onClick={() => void p.open()} {...rest}>{label}</GlassButton>
       {p.failed && <p>{PREPARED_FAILED}</p>}
       {p.data !== null && <div role="dialog" aria-label="The overlay">{p.data}</div>}
     </>
   );
 }
 
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); resetReadAhead(); });
 
 describe('usePrepared', () => {
   test('early, then open, makes one read and opens at once', async () => {
@@ -209,5 +210,186 @@ describe('usePrepared', () => {
     fireEvent.focus(button);
     await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     expect(read).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('usePrepared reads ahead through the shared gate', () => {
+  const rest = async (button: HTMLElement) => {
+    fireEvent.pointerEnter(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+  };
+  const two = (a: () => Promise<string>, b: () => Promise<string>) => {
+    renderInWorld(<><Trigger read={a} label="First" /><Trigger read={b} label="Second" /></>, { path: '/characters' });
+    vi.useFakeTimers();
+    return { first: screen.getByRole('button', { name: 'First' }), second: screen.getByRole('button', { name: 'Second' }) };
+  };
+
+  test('a second trigger rested on while the first read is out waits, and starts when the first lands', async () => {
+    const g = gate();
+    const a = vi.fn(() => g.promise);
+    const b = vi.fn(() => Promise.resolve('b'));
+    const { first, second } = two(a, b);
+    await rest(first);
+    await rest(second);
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(b).not.toHaveBeenCalled();
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).toHaveBeenCalledTimes(1);
+  });
+
+  test('leaving the waiting trigger before the first lands means it never reads', async () => {
+    const g = gate();
+    const b = vi.fn(() => Promise.resolve('b'));
+    const { first, second } = two(() => g.promise, b);
+    await rest(first);
+    await rest(second);
+    fireEvent.pointerLeave(second);
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).not.toHaveBeenCalled();
+  });
+
+  test('blurring the waiting trigger gives up its place too', async () => {
+    const g = gate();
+    const b = vi.fn(() => Promise.resolve('b'));
+    const { first, second } = two(() => g.promise, b);
+    await rest(first);
+    fireEvent.focus(second);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    fireEvent.blur(second);
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).not.toHaveBeenCalled();
+  });
+
+  test('a press on the waiting trigger gives up its place, and open reads at once', async () => {
+    const g = gate();
+    const b = vi.fn(() => Promise.resolve('b'));
+    const { first, second } = two(() => g.promise, b);
+    await rest(first);
+    await rest(second);
+    expect(b).not.toHaveBeenCalled();
+    fireEvent.pointerDown(second);
+    fireEvent.click(second);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(b).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog', { name: 'The overlay' })).toHaveTextContent('b');
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).toHaveBeenCalledTimes(1);
+  });
+
+  test('a link’s read ahead in flight makes a card trigger’s rest wait, and it starts when the link’s lands', async () => {
+    const link = gate();
+    readAhead(() => link.promise);
+    const b = vi.fn(() => Promise.resolve('b'));
+    renderInWorld(<Trigger read={b} label="Card" />, { path: '/characters' });
+    vi.useFakeTimers();
+    await rest(screen.getByRole('button', { name: 'Card' }));
+    expect(b).not.toHaveBeenCalled();
+    await act(async () => { link.resolve('x'); await link.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).toHaveBeenCalledTimes(1);
+  });
+
+  test('a card trigger’s read ahead in flight makes a link’s read wait', async () => {
+    const g = gate();
+    renderInWorld(<Trigger read={() => g.promise} label="Card" />, { path: '/characters' });
+    vi.useFakeTimers();
+    await rest(screen.getByRole('button', { name: 'Card' }));
+    const linkStart = vi.fn(() => Promise.resolve('link'));
+    readAhead(linkStart);
+    expect(linkStart).not.toHaveBeenCalled();
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(linkStart).toHaveBeenCalledTimes(1);
+  });
+
+  test('a trigger whose answer is held does not take the gate for a second rest', async () => {
+    const a = vi.fn(() => Promise.resolve('a'));
+    renderInWorld(<Trigger read={a} label="Card" />, { path: '/characters' });
+    vi.useFakeTimers();
+    const button = screen.getByRole('button', { name: 'Card' });
+    await rest(button);
+    expect(a).toHaveBeenCalledTimes(1);
+    fireEvent.pointerLeave(button);
+    const out = gate();
+    readAhead(() => out.promise);
+    const waiting = vi.fn(() => Promise.resolve('w'));
+    readAhead(waiting);
+    await rest(button);
+    expect(a).toHaveBeenCalledTimes(1);
+    await act(async () => { out.resolve('x'); await out.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(waiting).toHaveBeenCalledTimes(1);
+  });
+
+  test('the pointer leaving a waiting trigger the focus still rests on keeps its place, and the reverse', async () => {
+    for (const leave of ['pointer', 'focus'] as const) {
+      cleanup(); resetReadAhead(); vi.useRealTimers();
+      const g = gate();
+      const b = vi.fn(() => Promise.resolve('b'));
+      const { first, second } = two(() => g.promise, b);
+      await rest(first);
+      fireEvent.pointerEnter(second);
+      fireEvent.focus(second);
+      await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+      if (leave === 'pointer') fireEvent.pointerLeave(second); else fireEvent.blur(second);
+      await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+      expect(b).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test('both the pointer and the focus leaving a waiting trigger means it never reads', async () => {
+    const g = gate();
+    const b = vi.fn(() => Promise.resolve('b'));
+    const { first, second } = two(() => g.promise, b);
+    await rest(first);
+    fireEvent.pointerEnter(second);
+    fireEvent.focus(second);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    fireEvent.pointerLeave(second);
+    fireEvent.blur(second);
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).not.toHaveBeenCalled();
+  });
+
+  test('a later rest that asks for nothing does not lose the withdraw of the read still waiting', async () => {
+    const g = gate();
+    const b = vi.fn(() => Promise.resolve('b'));
+    let guard = false;
+    function Guarded() {
+      const p = usePrepared(() => b());
+      const r = useRest(() => (guard ? undefined : p.early()));
+      return <button type="button" {...r}>Guarded</button>;
+    }
+    renderInWorld(<><Trigger read={() => g.promise} label="First" /><Guarded /></>, { path: '/characters' });
+    vi.useFakeTimers();
+    await rest(screen.getByRole('button', { name: 'First' }));
+    const button = screen.getByRole('button', { name: 'Guarded' });
+    await rest(button);
+    guard = true;
+    fireEvent.focus(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    fireEvent.pointerDown(button);
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).not.toHaveBeenCalled();
+  });
+
+  test('a trigger unmounted while its read waits never reads', async () => {
+    const g = gate();
+    const b = vi.fn(() => Promise.resolve('b'));
+    function Hider() {
+      const [shown, setShown] = useState(true);
+      return (
+        <>
+          <button type="button" onClick={() => setShown(false)}>Hide</button>
+          {shown && <Trigger read={b} label="Second" />}
+        </>
+      );
+    }
+    renderInWorld(<><Trigger read={() => g.promise} label="First" /><Hider /></>, { path: '/characters' });
+    vi.useFakeTimers();
+    await rest(screen.getByRole('button', { name: 'First' }));
+    await rest(screen.getByRole('button', { name: 'Second' }));
+    expect(b).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { g.resolve('a'); await g.promise; await vi.advanceTimersByTimeAsync(0); });
+    expect(b).not.toHaveBeenCalled();
   });
 });

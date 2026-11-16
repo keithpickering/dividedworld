@@ -35,7 +35,12 @@
  * `defaults.run.shell` and `--debug` in a backend job. R14 (the design's D8): the seed job goes red on
  * anything but a 200, so its curl writes the status (`-w '%{http_code}'`), the step compares it to 200,
  * and `--fail`, `--fail-with-body` and `-f` never decide, since they pass any 2xx or 3xx and a 302 would
- * seed nothing and let `promote` move the site.
+ * seed nothing and let `promote` move the site. R15 (docs/plans/2026-11-15-warm-reads-design.md, section 3):
+ * `release.yml` runs `tools/check-data-api.mjs` exactly once (in a job with no `strategy`), with `--set` and a
+ * `--declared <file>` that exists (the one spelling the tool parses, read after a trailing comment is cut off), in a
+ * job that names `environment: production`, and no other workflow runs it. Without the step the Data API's pool
+ * drifts back to automatic unnoticed and a page's kept plan has no connection to be used again on; without `--set`
+ * the step only reads; a second runner would write the pool from a workflow that holds no secret.
  *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
  * alive check and cockpit reference stay behind.
@@ -87,7 +92,7 @@ const shellLines = (step) =>
 // A shell named with an x among its single-dash flags, in any flag group: `bash -x {0}`, `bash --noprofile -e -x {0}`, `sh -eux {0}`.
 const TRACING_SHELL = /\b(ba)?sh\b(\s+\S+)*?\s+-[a-z]*x[a-z]*(\s|$)/;
 
-export function problems(files) {
+export function problems(files, exists = (p) => fs.existsSync(p)) {
   const out = [];
   const docs = {};
   const paths = Object.keys(files).filter((p) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p)).sort();
@@ -362,6 +367,33 @@ export function problems(files) {
     if (curls.length && !lines.some((l) => /=\s*"?200"?\s*\]/.test(l) && /\$\{?code\b/.test(l))) bad14.push('never compares the status to 200 ([ "$code" = 200 ])');
     if (curls.length && !curls.some((l) => /-w\s+'%\{http_code\}'/.test(l))) bad14.push('its curl does not write the status (-w \'%{http_code}\')');
     if (bad14.length) out.push(`${RELEASE}: R14 seed ${bad14.join('; ')}`);
+  }
+
+  // R15: the Data API's pool is set by the release, once, and by nothing else.
+  const runsDataApi = (l) => /\bcheck-data-api\.mjs\b/.test(l);
+  for (const [path, doc] of Object.entries(docs)) {
+    const hits = [];
+    for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
+      for (const step of list(job?.steps)) for (const l of shellLines(step)) if (runsDataApi(l)) hits.push({ jobName, job, line: l });
+    }
+    if (path !== RELEASE) {
+      if (hits.length) out.push(`${path}: R15 runs tools/check-data-api.mjs; only release.yml does`);
+      continue;
+    }
+    const bad15 = [];
+    if (hits.length !== 1) bad15.push(`runs tools/check-data-api.mjs ${hits.length} times, not exactly once`);
+    for (const { jobName, job, line } of hits) {
+      const env = job?.environment;
+      const named = typeof env === 'string' ? env : isObj(env) ? env.name : undefined;
+      if (named !== 'production') bad15.push(`job ${jobName} runs it without naming environment: production`);
+      if (job?.strategy !== undefined) bad15.push(`job ${jobName} has a strategy, so it would run the tool more than once`);
+      const code = line.replace(/\s#.*$/, '');
+      if (!/(^|\s)--set(\s|$)/.test(code)) bad15.push(`job ${jobName} runs it without --set (${line.trim()})`);
+      const declared = code.match(/(?:^|\s)--declared\s+["']?([^\s"']+)/)?.[1];
+      if (!declared) bad15.push(`job ${jobName} runs it with no --declared <file> (the tool parses only that spelling, not --declared=<file>)`);
+      else if (!exists(declared)) bad15.push(`job ${jobName} names --declared ${declared}, which does not exist`);
+    }
+    if (bad15.length) out.push(`${RELEASE}: R15 ${bad15.join('; ')}`);
   }
   return out;
 }

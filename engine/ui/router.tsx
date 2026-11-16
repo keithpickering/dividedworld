@@ -8,10 +8,12 @@
  *
  * A route may load before it moves (the forum-load design, sections 1, 5, 6): the router starts the route's
  * loader and leaves the page, and the address bar, as they are until the answer lands, then changes them together.
- * It also holds the prefetch answers and the history cache of loaded pages, both in memory only.
+ * It also holds the prefetch answers and the history cache of loaded pages, both in memory only. A rest or a focus reads a page
+ * ahead only when no other read ahead is in flight (engine/ui/ahead.ts, the warm-reads design, section 4); a press reads at once.
  */
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode, type Ref } from 'react';
 import { failureKind } from './data/api.ts';
+import { LOAD_LIMIT_MS, readAhead } from './ahead.ts';
 
 export interface Location {
   readonly path: string;
@@ -89,7 +91,8 @@ interface Router {
   readonly shown: Shown;
   readonly navigate: (to: string, options?: NavigateOptions) => void;
   readonly retry: () => void;
-  readonly prefetch: (to: string) => void;
+  /** Reads an address early through the gate and returns its withdraw; with `now` it reads at once, as a press does. */
+  readonly prefetch: (to: string, options?: PrefetchOptions) => () => void;
   readonly navigation: Navigation;
   readonly attach: (routes: readonly RouteLike[]) => void;
   readonly setAccount: (id: string | null) => void;
@@ -104,6 +107,8 @@ interface Router {
  * One guard at a time; a move to the address already shown, and one the account change makes, are never asked.
  */
 export type NavigationGuard = (proceed: () => void) => boolean;
+
+export interface PrefetchOptions { readonly now?: boolean }
 
 export interface NavigateOptions { readonly replace?: boolean; readonly state?: unknown; readonly afterAccountChange?: boolean; readonly source?: string }
 
@@ -146,9 +151,13 @@ const read = (w: Window, popped = false): Location => ({ path: w.location.pathna
  */
 export type OnMove = (from: Location | null, to: Location) => void;
 
-/** How long the pointer rests on a link before its page is read early. */
+/**
+ * How long the pointer rests on a link before its page is read early. A rest reads through the gate in ahead.ts, which lets one
+ * read ahead be in flight at a time in the document, so the connection that is left serves a click (the warm-reads design,
+ * section 4); a press reads at once and never waits.
+ */
 const REST_MS = 100;
-export const LOAD_LIMIT_MS = 20_000;
+export { LOAD_LIMIT_MS };
 const PREFETCH_KEPT_MS = 30_000;
 const ENTRY_KEPT_MS = 5 * 60_000;
 const ENTRIES_MAX = 20;
@@ -195,6 +204,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   const accountRef = useRef<string | null | undefined>(undefined);
   const told = useRef(false);
   const prefetched = useRef(new Map<string, Prefetched>());
+  /* The withdraw of the read most recently left waiting at the gate, so a drop of the prefetches leaves nothing waiting. */
+  const waitingWithdraw = useRef<() => void>(() => undefined);
   const cache = useRef(new Map<string, Entry>());
   const restore = useRef<number | null>(null);
   const sequence = useRef(0);
@@ -496,35 +507,54 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
 
   retryRef.current = retry;
 
-  const prefetch = useCallback((to: string) => {
+  const prefetch = useCallback((to: string, options?: PrefetchOptions): (() => void) => {
+    const none = () => undefined;
     const url = new URL(to, w.location.href);
-    if (url.origin !== w.location.origin) return;
+    if (url.origin !== w.location.origin) return none;
     const found = routeFor(url.pathname);
-    if (!found?.route.load) return;
+    if (!found?.route.load) return none;
     /* An address that is the document already shown (a move the router makes without a read) needs nothing read ahead. */
     const sh = shownRef.current;
-    if (sh.ready && !sh.failure && sameRoute(sh.route, found.route) && sh.key === keyOf(found.route, found.params, url.searchParams, url.pathname)) return;
+    if (sh.ready && !sh.failure && sameRoute(sh.route, found.route) && sh.key === keyOf(found.route, found.params, url.searchParams, url.pathname)) return none;
     const address = url.pathname + url.search;
-    if (takePrefetch(address)) return;
-    /* Entries answered and left unused for the kept time go, and the oldest past the cap are given up. */
-    for (const [k, e] of prefetched.current) {
-      if (e.settledAt !== null && Date.now() - e.settledAt >= PREFETCH_KEPT_MS) { clearTimeout(e.timer); prefetched.current.delete(k); }
-    }
-    while (prefetched.current.size >= PREFETCHES_MAX) {
-      const [k, e] = prefetched.current.entries().next().value as [string, Prefetched];
-      clearTimeout(e.timer); e.controller.abort(); prefetched.current.delete(k);
-    }
-    const key = prefetchKey(address);
-    const controller = new AbortController();
-    const promise = invoke(found.route, url, found.params, controller.signal);
-    /* Past the limit it is aborted and, if it never answered (a loader that ignores its signal), forgotten. */
-    const timer = setTimeout(() => { controller.abort(); if (prefetched.current.get(key) === entry && entry.settledAt === null) prefetched.current.delete(key); }, LOAD_LIMIT_MS);
-    const entry: Prefetched = { promise, controller, timer, settledAt: null };
-    prefetched.current.set(key, entry);
-    promise.then(() => { clearTimeout(timer); entry.settledAt = Date.now(); }, () => { clearTimeout(timer); if (prefetched.current.get(key) === entry) prefetched.current.delete(key); });
+    if (takePrefetch(address)) return none;
+    /* The read itself. The entry is made when it starts, never while it waits at the gate, so a waiting address is not held. */
+    const begin = (): Promise<unknown> => {
+      /* Held by the time a waiting read gets its turn (a press read it): nothing is read twice. */
+      const held = prefetched.current.get(prefetchKey(address));
+      if (held) return held.promise;
+      /* Entries answered and left unused for the kept time go, and the oldest past the cap are given up. */
+      for (const [k, e] of prefetched.current) {
+        if (e.settledAt !== null && Date.now() - e.settledAt >= PREFETCH_KEPT_MS) { clearTimeout(e.timer); prefetched.current.delete(k); }
+      }
+      while (prefetched.current.size >= PREFETCHES_MAX) {
+        const [k, e] = prefetched.current.entries().next().value as [string, Prefetched];
+        clearTimeout(e.timer); e.controller.abort(); prefetched.current.delete(k);
+      }
+      const key = prefetchKey(address);
+      /*
+       * An entry dropped while its read is in flight (the cap, a drop of the prefetches) leaves the gate held until that request settles or
+       * LOAD_LIMIT_MS: on purpose, since no signal reaches the request (the design, section 4) and its connection is still busy.
+       */
+      const controller = new AbortController();
+      const promise = invoke(found.route, url, found.params, controller.signal);
+      /* Past the limit it is aborted and, if it never answered (a loader that ignores its signal), forgotten. */
+      const timer = setTimeout(() => { controller.abort(); if (prefetched.current.get(key) === entry && entry.settledAt === null) prefetched.current.delete(key); }, LOAD_LIMIT_MS);
+      const entry: Prefetched = { promise, controller, timer, settledAt: null };
+      prefetched.current.set(key, entry);
+      promise.then(() => { clearTimeout(timer); entry.settledAt = Date.now(); }, () => { clearTimeout(timer); if (prefetched.current.get(key) === entry) prefetched.current.delete(key); });
+      return promise;
+    };
+    if (options?.now) { begin().catch(() => undefined); return none; }
+    const withdraw = readAhead(begin);
+    waitingWithdraw.current = withdraw;
+    return withdraw;
   }, [w, routeFor, takePrefetch]);
 
   const dropPrefetches = useCallback((except?: string | null) => {
+    /* The read that waits at the gate was asked for before the drop (and perhaps another account): it is given up. */
+    waitingWithdraw.current();
+    waitingWithdraw.current = () => undefined;
     for (const [k, e] of prefetched.current) {
       if (k === except) continue;
       clearTimeout(e.timer); e.controller.abort(); prefetched.current.delete(k);
@@ -640,18 +670,40 @@ export function Link({ to, replace, state, source, early: readEarly = true, onCl
   /* The pointer's rest and the keyboard's focus each wait REST_MS, so holding Tab through a list reads nothing. */
   const pointerRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const focusRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => { clearTimeout(pointerRest.current); clearTimeout(focusRest.current); }, []);
+  /*
+   * The read this link has waiting at the gate, and which triggers still want it: it starts if the pointer or the focus is still on the
+   * link (the warm-reads design, section 4), so a leave or a blur gives up the place only when the other trigger is gone as well.
+   */
+  const withdraw = useRef<() => void>(() => undefined);
+  const resting = useRef({ pointer: false, focus: false });
+  const giveUp = () => { withdraw.current(); withdraw.current = () => undefined; };
+  const leaveRest = (trigger: 'pointer' | 'focus') => {
+    resting.current[trigger] = false;
+    if (!resting.current.pointer && !resting.current.focus) giveUp();
+  };
+  useEffect(() => () => { clearTimeout(pointerRest.current); clearTimeout(focusRest.current); withdraw.current(); }, []);
   /*
    * A link that would be left to the browser (a target, a download) is not read early; the router's own prefetch refuses another site. A link
    * that says `early={false}` is never read ahead: Back to the board reopens a page that changes while the reader is away, and the menu's focus
    * would have it read as the menu opens, kept thirty seconds and shown stale.
    */
-  const early = () => {
+  const early = (trigger: 'pointer' | 'focus' | 'press') => {
     if (!readEarly || rest.target || rest.download !== undefined) return;
-    prefetch(to);
+    if (trigger === 'press') {
+      /* A press gives up this link's own rest that is waiting: the press reads at once, and the rest would read a second time. */
+      giveUp();
+      resting.current = { pointer: false, focus: false };
+      prefetch(to, { now: true });
+      return;
+    }
+    resting.current[trigger] = true;
+    withdraw.current = prefetch(to);
   };
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
+    /* A click loads on its own: a read of this link that waits at the gate is not started after it. */
+    giveUp();
+    resting.current = { pointer: false, focus: false };
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || rest.target || rest.download !== undefined) return;
     if (new URL(to, window.location.href).origin !== window.location.origin) return;
     e.preventDefault();
@@ -661,11 +713,11 @@ export function Link({ to, replace, state, source, early: readEarly = true, onCl
     <a
       href={to}
       onClick={click}
-      onPointerEnter={(e) => { onPointerEnter?.(e); clearTimeout(pointerRest.current); pointerRest.current = setTimeout(early, REST_MS); }}
-      onPointerLeave={(e) => { onPointerLeave?.(e); clearTimeout(pointerRest.current); }}
-      onPointerDown={(e) => { onPointerDown?.(e); if (e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) early(); }}
-      onFocus={(e) => { onFocus?.(e); clearTimeout(focusRest.current); focusRest.current = setTimeout(early, REST_MS); }}
-      onBlur={(e) => { onBlur?.(e); clearTimeout(focusRest.current); }}
+      onPointerEnter={(e) => { onPointerEnter?.(e); clearTimeout(pointerRest.current); pointerRest.current = setTimeout(() => early('pointer'), REST_MS); }}
+      onPointerLeave={(e) => { onPointerLeave?.(e); clearTimeout(pointerRest.current); leaveRest('pointer'); }}
+      onPointerDown={(e) => { onPointerDown?.(e); if (e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) early('press'); }}
+      onFocus={(e) => { onFocus?.(e); clearTimeout(focusRest.current); focusRest.current = setTimeout(() => early('focus'), REST_MS); }}
+      onBlur={(e) => { onBlur?.(e); clearTimeout(focusRest.current); leaveRest('focus'); }}
       {...rest}
     />
   );
@@ -681,8 +733,8 @@ export function usePendingFrom(source: string | undefined): boolean {
   return source !== undefined && pending !== null && pending.source === source;
 }
 
-/** Starts the load of an address without moving; a click on it soon after finds the answer. */
-export function usePrefetch(): (to: string) => void {
+/** Starts the load of an address without moving, through the one-at-a-time gate (or at once with `now`); a click on it soon after finds the answer. Returns its withdraw. */
+export function usePrefetch(): Router['prefetch'] {
   return useRouter().prefetch;
 }
 
