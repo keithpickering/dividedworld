@@ -229,15 +229,34 @@
    * of its own, so the ink is in this one.
    */
   isolation: isolate;
+  /* A column, so the reactions row can stand at the foot of the body (below). */
+  display: flex;
+  flex-direction: column;
 }
 
 /*
  * A post's body is never so short that a card played on it is wasted (the owner, 2026-11-06: "posts should have a min-height so it's
- * never a waste of time to play a card even if someone wrote a single line with no avatar/sig"): 8em, whether a postbit stands beside it
- * or the post is stacked. A line of the game's (an unmask, a move's end) is no post and keeps its own height.
+ * never a waste of time to play a card even if someone wrote a single line with no avatar/sig"). The height is the body's beside a
+ * desktop postbit with a 1:2 avatar (the owner, 2026-11-14): name, title, rank, the 7.5em by 15em slot, group and counts make a row
+ * about 26.8em tall, less the line above and the actions, so 22.5em. It holds at every width, so a phone's body is never shorter than
+ * the postbit band over it. A line of the game's (an unmask, a move's end) is no post and keeps its own height. The selector reads the
+ * post by descent, not as a parent: the cells are in `.kb-act-grid`, and e2e/post-room.spec.ts holds that it finds them.
  */
-.kb-act:is([data-kb-kind="post"], [data-kb-kind="spin"]) > .kb-act-main {
-  min-height: 8em;
+.kb-act:is([data-kb-kind="post"], [data-kb-kind="spin"]) .kb-act-main {
+  min-height: 22.5em;
+}
+
+/*
+ * The reactions row stands at the foot of the body, with the signature under it, and the room a short post is given lies between the
+ * words and the row, where an effect has it. The margin before the row is its own (reactions.css), kept on what comes before it, since
+ * an automatic margin replaces the row's.
+ */
+.kb-act-main > .kb-reactions {
+  margin-top: auto;
+}
+
+.kb-act-main > :has(+ .kb-reactions) {
+  margin-bottom: 0.6em;
 }
 
 .kb-act-main [data-kb-effect-ink] {

@@ -112,7 +112,9 @@ const paint = (page: Page, post: number): Promise<{ lum: number; painted: number
 async function onScreen(page: Page, post: number, thresh = 24): Promise<number> {
   const cv = page.locator(FAB).nth(post).locator('canvas.dw-fab-foil');
   const box = (await cv.boundingBox())!;
-  const clip = { x: box.x, y: Math.max(0, box.y), width: Math.floor(box.width / 2), height: Math.floor(Math.min(box.height, (page.viewportSize()?.height ?? 720) - Math.max(0, box.y))) };
+  /* The HUD is fixed over the foot of the window, so a post body taller than what is left above it would put HUD in the shot: the shot stops at the HUD's top. */
+  const floor = await page.evaluate(() => Math.min(window.innerHeight, document.querySelector('.kb-hud')?.getBoundingClientRect().top ?? Infinity));
+  const clip = { x: box.x, y: Math.max(0, box.y), width: Math.floor(box.width / 2), height: Math.floor(Math.min(box.height, floor - Math.max(0, box.y))) };
   const shown = (await page.screenshot({ clip })).toString('base64');
   const style = await page.addStyleTag({ content: '.dw-fab-foil { visibility: hidden !important }' });
   const ground = (await page.screenshot({ clip })).toString('base64');
