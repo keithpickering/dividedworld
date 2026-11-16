@@ -26,7 +26,7 @@
 -- ---- 1. post_kind ----
 --
 -- Whether an Act's kind is a post for the purposes of a card: a post, or a spin (a spun thread's opening Act, which has words of its own and is drawn as a post). No client calls it, and a definer's
--- body calls it with its owner's rights, so the API roles keep no right to it (supabase/tests/0005-default-deny.sql holds every function to that). A single expression, so Postgres inlines it.
+-- body calls it with its owner's rights, so the API roles keep no right to it (supabase/tests/0005-default-deny.sql holds every function to that). An immutable one-expression function, called per row it filters; the planner does not inline it, because its search_path is pinned. The reads that ask it find their rows by thread and seq (or by id) first, so it filters a page's rows, never a table's.
 create function post_kind(kind text) returns boolean
 language sql immutable set search_path = public, pg_temp as $$
   select kind in ('post', 'spin')

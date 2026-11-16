@@ -11,7 +11,7 @@
 --  5. The log's views: an admin's end of a play on Ann's opening post is hers as `onMine`, a written tail on it is hers, and Bob reads neither.
 --  6. The counts: an author veil on the opening post moves one spin, and no post, from Ann's character to the stand-in, and back when the veil ends.
 --  7. claim_card_writes for a writing play on Bob's reply in S holds the opening post's words in `before`.
---  8. post_kind is no API role's except where a security invoker reads it (thread_page runs as the signed-in player).
+--  8. post_kind: authenticated may execute it (thread_page and the log's two views call it as the signed-in player); anon may not.
 -- The read budget (plan, Task 2): this file's fixture is a handful of Acts, smaller than 0372-origin-scale.sql's, so that file's counts are the budget and are not repeated here.
 
 create function pg_temp.cards() returns void language plpgsql as $$
@@ -263,7 +263,7 @@ do $$
 declare
   ppl jsonb := pg_temp.people(); ann uuid := (ppl ->> 'ann')::uuid; bob uuid := (ppl ->> 'bob')::uuid; cat uuid := (ppl ->> 'cat')::uuid; c uuid := (ppl ->> 'c')::uuid; a uuid := (ppl ->> 'a')::uuid;
   adm uuid := tests.account('rd-admin-' || left(gen_random_uuid()::text, 8));
-  w jsonb; ended uuid; written uuid; n integer;
+  w jsonb; ended uuid; n integer;
 begin
   perform pg_temp.cards();
   w := pg_temp.thread_of(true, ppl);
@@ -349,7 +349,7 @@ begin
 end $$;
 
 -- ---- 8. post_kind: where it may be called ----
--- thread_page is a security invoker, so the signed-in player's role runs post_kind in it: authenticated may execute it, and so no visitor may, and no one may write through it (it reads nothing).
+-- thread_page is a security invoker, and my_cards_ended and my_posts_written_on call post_kind as the role that reads them, so authenticated may execute it. The block asserts that authenticated may and that anon may not; the function reads nothing and takes one text.
 do $$
 begin
   if not has_function_privilege('authenticated', 'post_kind(text)', 'execute') then raise exception '8 thread_page runs as the signed-in player, so authenticated may execute post_kind'; end if;

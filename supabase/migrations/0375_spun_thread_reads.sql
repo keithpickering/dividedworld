@@ -8,7 +8,7 @@
 --
 -- The rule (section 3), as 0374 stated it: the opening post is a post for every card, and "is a post" is the one predicate post_kind. Each of these reads asks it. Nothing here writes a row.
 --
---   1. post_kind          granted to authenticated, where thread_page (a security invoker) runs it.
+--   1. post_kind          granted to authenticated, the role that runs it where thread_page (a security invoker) and the two views below call it.
 --   2. thread_page        page_posts takes post_kind. The `cut` list (replies cut from the page, `d.kind = 'post'`) stays.
 --   3. play_moment        a play on a post asks post_kind.
 --   4. card_target_reach  the character branch's pressed post asks post_kind.
@@ -17,7 +17,7 @@
 --   7. claim_card_writes  the `before` read asks post_kind.
 -- Each function and view is copied whole from its latest body, with only the named lines changed. Their owners, options and grants are stated again.
 --
--- A busy instance: nothing is added to a read's cost. post_kind is one inlined expression (`kind in ('post', 'spin')`) where each read had `kind = 'post'`; the three reads that probe by index (the page's Acts by
+-- A busy instance: a read's cost grows by one function call per row it filters. post_kind is an immutable one-expression function (`kind in ('post', 'spin')`) called where each read had `kind = 'post'`; the planner does not inline it, because its search_path is pinned. The reads find their rows by thread and seq (or by id) first, so it filters a page's rows, never a table's; the three reads that probe by index (the page's Acts by
 -- thread and seq, the caller's posts by character) still do, with a two-value filter on the kind.
 --
 -- Ways out: no state is added. Masks: a spin's author is as public as a post's (acts_public shows both under the stand-in while a veil is up), and the counts move what acts_public shows, for every reader alike.
@@ -25,7 +25,7 @@
 
 -- ---- 1. post_kind, where a security invoker runs it ----
 --
--- thread_page is a security invoker (0094), so post_kind below runs as the signed-in player's role, and 0374 revoked it from that role (no client calls it as an RPC). It is granted to authenticated and to no
+-- thread_page is a security invoker (0094), so post_kind below runs as the signed-in player's role, as it does where my_cards_ended and my_posts_written_on call it (a function a view calls is run as the role that reads the view, whatever the view's own options), and 0374 revoked it from that role (no client calls it as an RPC). It is granted to authenticated and to no
 -- other API role, and is added to supabase/tests/0005-default-deny.sql's list with this reason. It reads nothing and takes one text, so it says nothing about anyone. It is not made a definer: a definer runs with its
 -- owner's rights, and nothing here needs them.
 
@@ -707,7 +707,7 @@ grant execute on function public.play_moment(uuid) to authenticated, service_rol
 
 -- ---- 4. card_target_reach ----
 --
--- The character branch reads the post a character card is cast from: `post_kind(a.kind)` where 0357 wrote `a.kind = 'post'`. Everything else as 0357_post_veils.sql wrote it.
+-- The character branch reads the post a character card is cast from: `post_kind(a.kind)` where 0361 wrote `a.kind = 'post'`. Everything else as 0361_discipline_cards.sql wrote it.
 CREATE OR REPLACE FUNCTION public.card_target_reach(reach text, target uuid, from_post uuid DEFAULT NULL::uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -754,7 +754,7 @@ grant execute on function public.card_target_reach(text, uuid, uuid) to authenti
 --
 -- Each joins the caller's own posts: `post_kind(p.kind)` where each wrote `p.kind = 'post'`, so a play on the opening post of a spun thread the caller's character wrote is an `onMine` line of the log, and a text
 -- written on it a tail in the log. Everything else as 0357_post_veils.sql (my_cards_ended) and 0344_writes_start_from_the_caller.sql (my_posts_written_on) wrote them. Neither view is a security invoker (0357 made
--- my_cards_ended one that is not), so post_kind runs as the view's owner. create or replace keeps each view's owner and options; the grants are stated again.
+-- my_cards_ended one that is not), so their tables are read with the view's owner's rights; post_kind, a function the view calls, is run as the role that reads the view (0357 says the same of its functions), which is why section 1 grants it to authenticated. create or replace keeps each view's owner, options and grants, so none is stated again.
 create or replace view my_cards_ended as
   with mine as (select c.id from characters c where c.owner = auth.uid()),
   plays as (
@@ -813,8 +813,6 @@ create or replace view my_posts_written_on as
   cross join lateral (select k.id, k.kind, k.target_act_id as post from acts k where k.target_act_id = p.id and k.kind in ('card', 'set', 'spring') and coalesce(k.payload ->> 'reach', 'post') = 'post' offset 0) k
   cross join lateral (select x.* from card_texts x where x.play = k.id offset 0) x
   where c.owner = auth.uid() and k.kind = 'card';
-revoke all on my_cards_ended, my_posts_written_on from public, anon, authenticated, service_role;
-grant select on my_cards_ended, my_posts_written_on to authenticated, service_role;
 
 -- ---- 6. the counts ----
 --
