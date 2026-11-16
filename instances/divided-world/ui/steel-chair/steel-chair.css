@@ -32,29 +32,23 @@
 /*
  * The floor's room: 77 px (chair.ts `ROOM_HEIGHT`, held equal by Effect.test.tsx: CSS cannot read it) above the content area's bottom border
  * where chairs come to rest: a bound on how high any rest is drawn (a chair never rests on its end; it lies flat, or stacked on another),
- * so a resting chair reaches neither the reactions row nor the words. After the effect's host,
- * inside `.kb-act-main`, come the edited note, the reactions row, the signature and the spun line, so a strip right under the words would be
- * nowhere near the floor. So while a play is live (`.dw-chair` is in the page only then) the content area itself gains the room at its very end,
- * above its bottom padding: a block `::after` is the last child of a block container, and `.kb-act-main` lays its children out as blocks
- * (engine/ui/thread/thread.css). It is static: nothing measures or sets it, and the effect's resize observer sees the area grow.
- *
- * Both rules that depend on `:has()` are inside one `@supports selector(:has(a))`: a browser without it (older Firefox and Safari) never
- * applies the `::after`, so it must not hide the host's strip either, or there would be no room at all. There the chairs rest in the strip
- * under the words, as they do outside a content area, and a post's last lines stay clear of them.
+ * so a resting chair reaches neither the reactions row nor the words. After the effect's host come the edited note, the reactions row, the
+ * signature and the spun line, so a strip right under the words would be nowhere near the floor. So the effect marks the content area it found
+ * (`data-dw-chair-room`, the nearest one, which a selector reading `:has()` could not tell from an outer one) while a play is live, and the room
+ * is that area's last block: at the foot of whichever content area the chairs are in. In a thread post that area is a flex column (PR #695)
+ * and the room is its last item; in a spun thread's ORIGIN box it is the area's last block. It is static: nothing measures or sets it, and the
+ * effect's resize observer sees the area grow. The host is `data-kb-bleed` where a body was found, and then its own strip is hidden.
  */
-@supports selector(:has(a)) {
-  .kb-act-main:has(.dw-chair)::after {
-    content: '';
-    display: block;
-    height: 77px;
-    pointer-events: none;
-  }
-  .kb-act-main .dw-chair-room {
-    display: none;
-  }
+[data-dw-chair-room]::after {
+  content: '';
+  display: block;
+  height: 77px;
+  pointer-events: none;
 }
-/* Where there is no content area (a moment or a preview outside a thread; the world is the host's own box), or `:has()` is not understood,
-   the room is a strip in the host. */
+.dw-chair[data-kb-bleed] .dw-chair-room {
+  display: none;
+}
+/* Where there is no content area (a moment or a preview outside a thread; the world is the host's own box), the room is a strip in the host. */
 .dw-chair-room {
   height: 77px;
   pointer-events: none;

@@ -11,12 +11,14 @@
  * Whoops!'s ink are (engine/ui/cards/body.ts: `bodyOf`, `bodyBox`, `placeLayer`, the bare `data-kb-effect-ink` mark the thread's CSS lifts
  * above the words). That box is the physics world: its left and right borders are the walls and its bottom border the floor; chair.ts draws
  * the world in an oblique view (the floor recedes up the screen), so a chair at rest is drawn inside the box, never past a border. Where
- * there is no body (outside a thread) the effect's own box is the world. A `ResizeObserver` on the box (and the host) resizes the world and
+ * there is no body (no content area above the effect) the effect's own box is the world. A `ResizeObserver` on the box (and the host) resizes the world and
  * places the layers again. The words are a wrapper inside the host; the throw aims at the box the text really takes (a Range's client
  * rects: a short post's wrapper is as wide as the content area), and since the filter is applied to that wrapper its coordinates are the
  * wrapper's, not the content area's: `geo` holds the measured offset between the two. The floor's room is the content area's own
- * last ROOM_HEIGHT px (chair.ts, the height of the tallest rest; steel-chair.css: a static `::after` while a play is live), so a resting chair
- * reaches neither the reactions row nor the words; only where there is no content area is it a strip in the host (`.dw-chair-room`). Nothing
+ * last ROOM_HEIGHT px (chair.ts, the height of the tallest rest), so a resting chair reaches neither the reactions row nor the words: the
+ * effect marks the body it found (`data-dw-chair-room`, the nearest content area, so a chair in a spun thread's ORIGIN box makes room in the
+ * box and not in the opening post's body around it) and steel-chair.css draws the room at the foot of whatever is marked; only where there
+ * is no content area is it a strip in the host (`.dw-chair-room`, hidden where the host is `data-kb-bleed`). Nothing
  * here assumes the content area is as tall as its words plus the room: the world, the layers and the dents' coordinates are all measured boxes
  * (`bodyBox`, the wrapper's offsets, the text's client rects), the room is the content area's last child so it stays at the floor however tall
  * the body is, and the floor is the area's bottom border.
@@ -85,6 +87,8 @@ function shapeOf(play: string): DentShape {
 }
 
 /** The most chairs one post draws (the card's stack). */
+/** The attribute the effect puts on the body it found, where steel-chair.css draws the floor's room. */
+const ROOM_MARK = 'data-dw-chair-room';
 const MOST = 3;
 /**
  * The middle of the view the post must be in for a run to start (the top and bottom fifths do not count), and how long it stays there
@@ -293,6 +297,16 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     const growing = new Map<string, number | null>();
     const caches = new Map<string, Cache>();
 
+    /* The room is the body's, marked on it and on the host (steel-chair.css): the nearest content area the host is in, so a chair in the ORIGIN
+       box makes room in the box and not in the opening post's body around it. One effect draws all of a post's chairs, so the mark has one
+       owner, and the cleanup below takes both marks off. */
+    const giveRoom = (next: HTMLElement | null): void => {
+      next?.setAttribute(ROOM_MARK, '');
+      el.toggleAttribute('data-kb-bleed', next !== null);
+    };
+    /* The room is there from the moment a play is live, as the old `:has(.dw-chair)` rule gave it, so the post does not grow when a run starts. */
+    giveRoom(bodyOf(el));
+
     /*
      * The box to paint and its words: the content area's padding box (or the host's own), the layers placed over it, and where the words
      * stand in it.
@@ -301,9 +315,10 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       const next = bodyOf(el);
       if (next !== body || !found) {
         found = true;
-        if (body) size?.unobserve(body);
+        if (body) { size?.unobserve(body); if (body !== next) body.removeAttribute(ROOM_MARK); }
         if (next) size?.observe(next);
         body = next;
+        giveRoom(next);
       }
       const b = bodyBox(el, body);
       const w = wordsEl.getBoundingClientRect(), h = el.getBoundingClientRect();
@@ -588,6 +603,9 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     return () => {
       stopArm();
       clearTimeout(armTimer);
+      body?.removeAttribute(ROOM_MARK);
+      bodyOf(el)?.removeAttribute(ROOM_MARK);
+      el.removeAttribute('data-kb-bleed');
       /* The drawn chairs and dents go with the run that drew them: kept through a re-arm (reduced motion or the moment changing), an old
          dent would stand at its old place while the new run's chair is aimed elsewhere, and the reduced path skips a play that has a dent. */
       clearRun(true);
