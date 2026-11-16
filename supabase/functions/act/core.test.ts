@@ -144,6 +144,25 @@ test('strokes are checked by the card that was played, and saved by the service'
   assert.equal(stateless.status, 400, 'Stick Around keeps no state');
 });
 
+test('an autocorrect save is refused while its play is held, and saves once the hold has passed', async () => {
+  const state = { peeled: [] };
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const held = pair({ whoami, card_of_play: 'autocorrect', play_landed_at: hoursAgo(1), save_effect_state: { play: target } });
+  const out = await runAction(held.dbs, instance, { action: 'saveEffect', play: target, character: id, state });
+  assert.equal(out.status, 400);
+  assert.match(String((out.body as { error: string }).error), /^This tape is stuck on until .+\. It can be peeled after that\.$/);
+  assert.ok(!held.calls.some((c) => c.includes('save_effect_state')), held.calls.join('\n'));
+  const old = pair({ whoami, card_of_play: 'autocorrect', play_landed_at: hoursAgo(25), save_effect_state: { play: target } });
+  assert.equal((await runAction(old.dbs, instance, { action: 'saveEffect', play: target, character: id, state })).status, 200);
+  assert.ok(old.calls.at(-1)!.startsWith('service:save_effect_state:'));
+  const gone = pair({ whoami, card_of_play: 'autocorrect', play_landed_at: null });
+  const none = await runAction(gone.dbs, instance, { action: 'saveEffect', play: target, character: id, state });
+  assert.deepEqual(none.body, { field: 'play', error: 'there is no such card on a post' });
+  const whoops = pair({ whoami, card_of_play: 'whoops', save_effect_state: { play: target } });
+  await runAction(whoops.dbs, instance, { action: 'saveEffect', play: target, character: id, state: { strokes: [] } });
+  assert.ok(!whoops.calls.some((c) => c.includes('play_landed_at')), 'a card with no hold reads no landing time');
+});
+
 test('what an action wrote is broadcast as its public projection, on its thread\'s or board\'s channel; a purchase never is', async () => {
   const thread = '44444444-4444-4444-8444-444444444444';
   const board = '55555555-5555-4555-8555-555555555555';

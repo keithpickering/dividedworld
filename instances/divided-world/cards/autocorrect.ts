@@ -22,11 +22,13 @@
  *   half-peeled: for a strip's place (a decimal string), the stretches of it still stuck, each `[from, to, edges]` in shares of
  *   the strip's length (to 4 places) with `edges` = `startKind * 3 + endKind`, a kind being 0 the strip's own end (only at share
  *   0 or 1), 1 a peel line where the roll waits, 2 a tear. A place is in `peeled` or in `stuck`, never both.
+ *   The author's saves are held for `autocorrect.holdHours` after the play lands (`stateHeldUntil`; the act function refuses them
+ *   before then, and the screens show the author the tape as a reader sees it); 0 holds none.
  */
 import { economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import { occurrences, sameWords } from './autocorrect/match.ts';
 import { LINE_BREAK, boundedPhrase, characters } from './phrase-bound.ts';
-import type { Hundredths } from '../../../engine/rules/types.ts';
+import type { Hundredths, Settings } from '../../../engine/rules/types.ts';
 
 export const REPLACEMENT = { most: 100 } as const;
 /**
@@ -57,7 +59,7 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     { key: 'autocorrect.peekStayMs', whole: true, min: 0, max: 5000 },
     { key: 'autocorrect.peekSettle', whole: true, min: 20, max: 2000 },
   ],
-  reads: [{ key: 'autocorrect.perVolume', whole: true, min: 0 }, { key: 'autocorrect.volumeStep', whole: true, min: 1 }, { key: 'autocorrect.mostAdded', whole: true, min: 1 }],
+  reads: [{ key: 'autocorrect.perVolume', whole: true, min: 0 }, { key: 'autocorrect.volumeStep', whole: true, min: 1 }, { key: 'autocorrect.mostAdded', whole: true, min: 1 }, { key: 'autocorrect.holdHours', whole: true, min: 0, max: 168 }],
   playPrice: (settings, target, config) => {
     if (target.reach !== 'post') return 0;
     const room = economyOf(settings, 'autocorrect.mostAdded');
@@ -90,6 +92,8 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     if (sameWords(phrase, replacement)) return refuse('the replacement is other words, not the phrase itself');
     return ok({ phrase, replacement });
   },
+  stateHeldUntil: (settings, landed) => holdEnds(economyOf(settings, 'autocorrect.holdHours'), landed),
+  stateHeldWords: (until) => `This tape is stuck on until ${until}. It can be peeled after that.`,
   validateState: (state) => {
     const { peeled, clean, stuck } = typeof state === 'object' && state !== null ? (state as { peeled?: unknown; clean?: unknown; stuck?: unknown }) : {};
     if (!Array.isArray(peeled)) return refuse('peeled is a list of places');
@@ -131,6 +135,20 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     return ok({ peeled: kept, ...(clean === undefined ? {} : { clean }), ...(keptStuck ? { stuck: keptStuck } : {}) });
   },
 };
+
+/** When a hold of `hours` on a play that landed at `landed` ends; undefined for no hold (0). The server's rule and the screens' preview both read it. */
+function holdEnds(hours: number, landed: Date): Date | undefined {
+  return hours > 0 ? new Date(landed.getTime() + hours * 3_600_000) : undefined;
+}
+
+/**
+ * When the author's hold on a play that landed at `playedAt` (an ISO time) ends, for the screens, which hold only the economy of the settings;
+ * undefined for no hold, an unparsable time, or an economy without the setting (the screens only preview; the act function refuses the save).
+ */
+export function heldUntil(settings: { readonly economy: Readonly<Record<string, number>> }, playedAt: string): Date | undefined {
+  const landed = new Date(playedAt), hours = settings.economy['autocorrect.holdHours'];
+  return Number.isNaN(landed.getTime()) || typeof hours !== 'number' || !Number.isFinite(hours) ? undefined : holdEnds(hours, landed);
+}
 
 /** What the Vending Machine sells it for, in hundredths of an orb. */
 export const price: Hundredths = 100;

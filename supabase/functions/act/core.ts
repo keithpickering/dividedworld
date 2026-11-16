@@ -14,7 +14,7 @@
  */
 import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
-import { casterMessage, decideDraw, decidePlay, decideSet, decideUse, decideWash, effectsOnTarget, postTarget, type CardEffect, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
+import { casterMessage, refusalTime, decideDraw, decidePlay, decideSet, decideUse, decideWash, effectsOnTarget, postTarget, type CardEffect, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, barredAnswer, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -239,6 +239,17 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       if (!rules.validateState) return refused('play', 'this card keeps no state');
       const state = rules.validateState(decision.args.state);
       if (!state.ok) return refused('state', state.why);
+      // A hold on the author's saves (a play's own rules name it): refused with no write, before any other card's path is touched.
+      if (rules.stateHeldUntil) {
+        const landed = await dbs.player.rpc<string | null>('play_landed_at', { play: decision.args.on_play });
+        if (!landed) return refused('play', 'there is no such card on a post');
+        const held = await withDatabaseSettings(instance, dbs.service);
+        const until = rules.stateHeldUntil(held.settings, new Date(landed));
+        if (until && Date.now() < until.getTime()) {
+          const when = refusalTime(until.toISOString());
+          return refused('play', rules.stateHeldWords?.(when) ?? `This card's effect can't be changed by its post's author until ${when}.`);
+        }
+      }
       args = { ...args, state: state.value };
     }
     if (decision.needsSurface) {
