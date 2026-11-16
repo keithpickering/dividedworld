@@ -252,7 +252,8 @@ test('6. Hot Box fills the area, History stands over it, and a clearing opens on
   await run(page, 150);
   /* Soft, so that the panel's checks below are still read when the clearing is not there yet. */
   await expect.soft.poll(() => fogAt(line.x, line.y), { message: 'a pointer over the byline opens a clearing (the canvas\'s alpha there drops)', timeout: 3000 }).toBeLessThanOrEqual(2);
-  /* A press on History opens the panel, and the panel is on an opaque ground that covers it whole. */
+  /* A press on History opens the panel, and the panel is on an opaque ground that covers its list whole, first row to last, margins included.
+     The smoke may show between the History line and the panel: each is lifted on a ground of its own (design, section 3). */
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
   await page.mouse.up();
@@ -262,7 +263,6 @@ test('6. Hot Box fills the area, History stands over it, and a clearing opens on
     const lift = wrapper.firstElementChild as HTMLElement;
     const g = getComputedStyle(lift);
     const l = lift.getBoundingClientRect();
-    const p = wrapper.previousElementSibling!.getBoundingClientRect();
     const px = (v: string) => parseFloat(v) || 0;
     const outside: string[] = [];
     for (const e of lift.querySelectorAll<HTMLElement>('*')) {
@@ -270,14 +270,13 @@ test('6. Hot Box fills the area, History stands over it, and a clearing opens on
       if (r.width === 0 && r.height === 0) continue;
       if (r.top - px(c.marginTop) < l.top - 0.5 || r.bottom + px(c.marginBottom) > l.bottom + 0.5) outside.push(`${e.tagName.toLowerCase()}.${String(e.className).split(' ')[0]} ${(r.top - px(c.marginTop)).toFixed(1)}..${(r.bottom + px(c.marginBottom)).toFixed(1)} against ${l.top.toFixed(1)}..${l.bottom.toFixed(1)}`);
     }
-    return { bg: g.backgroundColor, rows: lift.querySelectorAll('*').length, gap: l.top - p.bottom, outside };
+    return { bg: g.backgroundColor, rows: lift.querySelectorAll('*').length, outside };
   });
   expect(panel.rows, 'the panel has content').toBeGreaterThan(0);
   const alpha = /^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/.exec(panel.bg);
   expect(alpha, `the panel's background is a color (${panel.bg})`).not.toBeNull();
   expect(Number(alpha![4] ?? 1), `the panel's background is opaque (${panel.bg})`).toBe(1);
   expect(panel.outside, 'the panel\'s ground covers its whole list, margins included: no strip of smoke between a row and the ground\'s edge').toEqual([]);
-  expect(panel.gap, 'no strip of smoke between the History button and the panel').toBeLessThanOrEqual(1);
 });
 
 /* ------------------------------------------------------------------------------------------ 7. Steel Chair ---- */

@@ -71,6 +71,14 @@ describe('the ORIGIN box', () => {
     expect(ground).toMatch(/display:\s*flow-root/u);
   });
 
+  test('the box lifted over the opening post\'s ink is as wide as its place, not as wide as its content', () => {
+    expect(rules(thread, '[data-kb-content-area] .kb-origin[data-kb-over-ink]').join(';')).toMatch(/width:\s*auto/u);
+  });
+
+  test('the History wrapper lifted over the ORIGIN area\'s ink is as wide as its place, not as wide as its content', () => {
+    expect(rules(spin, '.kb-origin-area .kb-origin-lift[data-kb-over-ink]').join(';')).toMatch(/width:\s*auto/u);
+  });
+
   test('bright ink: no rule in spin.css or thread.css whose selector names data-kb-bright-ink names .kb-origin-head, so the bright ink never reaches the band', () => {
     let seen = 0;
     for (const css of [spin, thread]) {
