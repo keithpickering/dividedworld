@@ -69,6 +69,11 @@ const COUNT_LEFT = 67;
  * shorter than it stands with the room. Its parts are measured from its own corner, so only its height moves.
  */
 const GROUP_BAR_ROOM = 17.8;
+/**
+ * The reactions row stands at the foot of the post's body, which is at least 22.5em tall (engine/ui/thread/thread.css; the owner, 2026-11-14), where the
+ * board draws it straight under the words: the row, and the picker under it, stand 118.8px lower, so the picker fills that much less room above the foot.
+ */
+const ROW_AT_FOOT = 118.8;
 
 const buttons: Landmark[] = KINDS.map(([name, quadrant, built]) => ({
   id: `kind-${name.toLowerCase().replace(/\W+/g, '-')}`, role: 'button', name, buildName: `${(built ?? name).replace('-', ' ')}, ${quadrant}`, within: 'picker', origin: 'picker', type: false, buildShift: { y: LOWER },
@@ -80,7 +85,7 @@ const manifest: BoardManifest = {
   build: { story: 'boards-03-react--board' },
   press: [{ role: 'button', name: 'React' }],
   landmarks: [
-    { id: 'picker', role: 'dialog', name: 'React to Mrs. Hooligan\'s post', box: 'size', buildShift: { height: LOWER - 12 - GROUP_BAR_ROOM } },
+    { id: 'picker', role: 'dialog', name: 'React to Mrs. Hooligan\'s post', box: 'size', buildShift: { height: LOWER - 12 - GROUP_BAR_ROOM - ROW_AT_FOOT } },
     { id: 'heading', role: 'heading', name: 'React', within: 'picker', origin: 'picker' },
     { id: 'left', role: 'text', name: '2 of 3 left', within: 'picker', origin: 'picker', buildShift: { x: -COUNT_LEFT } },
     { id: 'excited', role: 'text', name: 'Excited', within: 'picker', origin: 'picker', buildShift: { y: LOWER } },

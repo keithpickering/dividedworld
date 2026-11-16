@@ -435,8 +435,27 @@ test('a mouse dab washes the ink where the pointer pressed, not offset by the fr
   await expect.poll(() => inked(page)).toBeGreaterThan(1000);
   await page.locator('#post-41 .kb-whoops-ink').evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await built(page);
-  const at = await solidInk(page, '#post-41 .kb-whoops-ink', 150, 900);
-  expect(at.len).toBeGreaterThan(100);
+  /*
+   * A dab thins the field under it, and where the splat is deep (its core) the ink is still fully opaque after one dab, so nothing on the
+   * canvas would move. The press is put where a dab shows: on solid ink, clear of what stands over it, as near the splat's edge as solid
+   * ink comes, so the thinned patch is the dab's disc cut by that edge. The splat is drawn to the body's size, and the longest solid run
+   * (solidInk) lands in the core of a body as tall as thread.css's min-height makes it.
+   */
+  const at = await page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
+    const r = c.getBoundingClientRect(), k = c.width / r.width, d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    const post = c.closest('.kb-act-main')!;
+    const alpha = (x: number, y: number) => (x < r.left || x >= r.right || y < r.top || y >= r.bottom ? 0 : d[(Math.floor((y - r.top) * k) * c.width + Math.floor((x - r.left) * k)) * 4 + 3]!);
+    const inked = (x: number, y: number) => { for (let dx = -12; dx <= 12; dx += 6) for (let dy = -12; dy <= 12; dy += 6) if (alpha(x + dx, y + dy) <= 40) return false; return true; };
+    const clear = (x: number, y: number) => { const e = document.elementFromPoint(x, y); return e !== null && e.closest('.kb-callout, [data-kb-over-ink]') === null && post.contains(e); };
+    /* How much of the ring 20px around a point is bare: the more, the nearer the edge. */
+    const bare = (x: number, y: number) => { let n = 0; for (let a = 0; a < 32; a++) if (alpha(x + 20 * Math.cos((a * Math.PI) / 16), y + 20 * Math.sin((a * Math.PI) / 16)) <= 40) n++; return n; };
+    const found: { x: number; y: number; score: number }[] = [];
+    for (let y = Math.max(r.top, 150); y < Math.min(r.bottom, 900); y += 4) for (let x = r.left; x < r.right; x += 4) if (inked(x, y)) found.push({ x, y, score: bare(x, y) });
+    found.sort((a, b) => b.score - a.score);
+    return found.find((p) => clear(p.x, p.y)) ?? { x: 0, y: 0, score: -1 };
+  });
+  expect(at.score, 'a point of solid ink near the edge of the splat').toBeGreaterThan(0);
   /* The ink's pixels before and after, and the press in the canvas's own CSS px. */
   const alphas = () => page.evaluate(() => {
     const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
@@ -451,7 +470,15 @@ test('a mouse dab washes the ink where the pointer pressed, not offset by the fr
   /* A dab takes some of the field under it, so the ink there is thinned (its alpha falls) and not necessarily gone. */
   const THINNED = 12;
   const total = (a: readonly number[]) => a.reduce((n, v) => n + v, 0);
-  await expect.poll(async () => total((await alphas()).a)).toBeLessThan(total(before.a));
+  /* Summed in the page: the canvas is a whole post body's, and carrying every alpha out on each poll is slower than the poll's own wait. */
+  const sum = () => page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) n += d[i]!;
+    return n;
+  });
+  await expect.poll(sum).toBeLessThan(total(before.a));
   const after = await alphas();
   const k = before.w / before.css;
   let n = 0, sx = 0, sy = 0;
