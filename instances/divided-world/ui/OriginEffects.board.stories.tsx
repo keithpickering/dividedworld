@@ -20,7 +20,6 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useRef, useState } from 'react';
 import { Frame } from '../../../engine/ui/frame/Frame.tsx';
 import { useKayfa } from '../../../engine/ui/context.tsx';
-import type { Fake } from '../../../engine/ui/data/fake.ts';
 import type { ThreadSummary } from '../../../engine/ui/data/api.ts';
 import { LoadedThread } from '../../../engine/ui/loaded.tsx';
 import { foilProbe } from '../../../engine/ui/shine/foilClient.ts';
@@ -92,7 +91,8 @@ const worldOf = (shown: Case): World => (fake, instance) => {
           : ONE;
   const post = fake.seed.post(made.thread, author, words);
   if (shown === 'whoops' || shown === 'landed') fake.seed.edit(post, author, THREE_EDITED);
-  /* The seed is one whose splat holds the byline's middle and the area's bottom-left corner at both the Main board's width and the phone's (found by running `makeSplat`/`fieldAt` over seeds against the measured areas: field 1.97 at the four points, the ink's threshold being 0.42), so that e2e/origin-effects.spec.ts case 2 reads solid ink in parts of the area that are not the words' box, on both. A splat is only where its seed put it. */
+  /* The seed (2591) holds the area's bottom-left corner at both widths (field about 2 at 2px in, over the ink's threshold of 0.42, at every area from 300 to 1000 wide and 180 to 400 tall that was tried) and ink along the byline at 965 by 220 and at 348 by 328 (found by running `makeSplat`/`fieldAt` over seeds against the measured areas).
+     A search over 60000 seeds for one that clears the threshold over a whole byline band and the corner at every size of that spread found none (a splat is centered, and the byline is a thin strip at the top-left), so the spec reads along the byline's own row for a run of solid ink and does not rely on one point. A splat is only where its seed put it. */
   const whoops = () => ({ layer: 1, live: true, config: { color: CYAN, seed: 2591 }, message: 'cyan, obviously' });
   fake.signInAs(player);
   /*

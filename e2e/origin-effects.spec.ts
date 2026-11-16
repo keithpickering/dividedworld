@@ -3,7 +3,7 @@ import { fogAlpha } from '../instances/divided-world/ui/hot-box/smoke.ts';
 import { ROOM_HEIGHT } from '../instances/divided-world/ui/steel-chair/chair.ts';
 import { inflateSync } from 'node:zlib';
 import { settled } from './settled.ts';
-import { REDRAWN_SHARE, redrawn, type Sample } from './shine-share.ts';
+import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.ts';
 
 /**
  * Card effects in a spun thread's ORIGIN box, as a browser lays them out (docs/plans/2026-11-15-origin-box-effects-plan.md, Task 3; design, sections 2 to 7).
@@ -105,6 +105,30 @@ const inkAlpha = (page: Page, selector: string, x: number, y: number) => page.ev
   return best;
 }, [selector, x, y] as const);
 
+/**
+ * The longest stretch of solid ink (alpha over 40) along any of the horizontal lines at `ys`, between `from` and `to`, sampled every `step` px, as [from, to, y]; null when no line has any.
+ * The fonts and the line heights of a machine move a line a few px, so a caller offers a band of lines and takes the best, not one it measured on its own.
+ */
+const solidRun = (page: Page, selector: string, ys: readonly number[], from: number, to: number, step = 6) => page.evaluate(([sel, lines, a, b, st]) => {
+  const cvs = [...document.querySelectorAll<HTMLCanvasElement>(sel as string)];
+  const solid = (px: number, py: number) => cvs.some((c) => {
+    const r = c.getBoundingClientRect();
+    if (px < r.left || px >= r.right || py < r.top || py >= r.bottom || c.width === 0) return false;
+    const k = c.width / r.width;
+    return c.getContext('2d')!.getImageData(Math.floor((px - r.left) * k), Math.floor((py - r.top) * k), 1, 1).data[3]! > 40;
+  });
+  let best: [number, number, number] | null = null;
+  for (const y of lines as number[]) {
+    let at: number | null = null;
+    for (let x = a as number; x <= (b as number); x += st as number) {
+      if (solid(x, y)) { at ??= x; if (best === null || x - at > best[1] - best[0]) best = [at, x, y]; } else at = null;
+    }
+  }
+  return best;
+}, [selector, ys, from, to, step] as const);
+/** `n` lines evenly across a span (the middle of each of n equal parts of it). */
+const linesIn = (top: number, bottom: number, n: number): number[] => Array.from({ length: n }, (_, i) => top + ((i + 0.5) / n) * (bottom - top));
+
 /** The sum of the alpha of every canvas the selector names, in whole pixels' worth: it falls with every wash (e2e/whoops.spec.ts). */
 const inked = (page: Page, selector: string) => page.evaluate((sel) => {
   let n = 0;
@@ -151,9 +175,10 @@ for (const [name, size] of [['whoops', { width: 1440, height: 1120 }], ['whoops-
     const a = await padBox(area(page));
     const line = await borderBox(byline(page));
     const inkAt = (x: number, y: number) => inkAlpha(page, '.kb-origin canvas.kb-whoops-ink', x, y);
-    const atByline = await inkAt((line.left + line.right) / 2, (line.top + line.bottom) / 2);
-    expect(atByline, 'the ink at a point in the byline').not.toBeNull();
-    expect(atByline!, 'the ink is solid in the byline').toBeGreaterThan(40);
+    /* Ink in the byline, which stands outside the words' box: a stretch of solid ink along its own rows (five across its height, every 3 px across its width). Its width and line height are the machine's fonts', so no one point of it is read. */
+    const along = await solidRun(page, '.kb-origin canvas.kb-whoops-ink', linesIn(line.top, line.bottom, 5), line.left, line.right, 3);
+    expect(along, 'the ink has a stretch of solid ink along the byline').not.toBeNull();
+    expect(along![1] - along![0], `the ink is solid along a stretch of the byline (${along})`).toBeGreaterThanOrEqual(24);
     const atCorner = await inkAt(a.left + 2, a.bottom - 2);
     expect(atCorner, 'the ink at a point 2px inside the area\'s bottom-left corner').not.toBeNull();
     expect(atCorner!, 'the ink is solid in the corner').toBeGreaterThan(40);
@@ -193,15 +218,12 @@ test('4. Feelin\' Fab fills the area at the density its words cost, and lies und
   });
   expect(want.area, 'the effect\'s body is the box\'s area').toBe(true);
   await expect.poll(() => page.evaluate(() => window.__kbOriginFab?.size(0) ?? null), { message: 'the foil\'s backing size is the area\'s at the density the words cost' }).toEqual({ w: want.w, h: want.h });
-  /* Under the words: the canvas is below them in z-order and a hit test at a word is not the canvas. */
+  /* Under the words: the canvas is below them in z-order (a hit test could not say so: the foil takes no pointer). */
   const z = await box(page).evaluate((b) => {
     const cv = b.querySelector<HTMLElement>('canvas.dw-fab-foil')!, w = b.querySelector<HTMLElement>('.dw-fab-words')!;
-    const r = w.getBoundingClientRect();
-    const over = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(8, r.height / 2));
-    return { canvas: Number(getComputedStyle(cv).zIndex), words: Number(getComputedStyle(w).zIndex), over: over === cv };
+    return { canvas: Number(getComputedStyle(cv).zIndex), words: Number(getComputedStyle(w).zIndex) };
   });
   expect(z.canvas, 'the foil is under the words (z-index)').toBeLessThan(z.words);
-  expect(z.over, 'a hit test at a word is the canvas').toBe(false);
 });
 
 /* ------------------------------------------------------------------------------------------ 5. bright ink ---- */
@@ -217,7 +239,10 @@ test('5. under Brighter effects the box\'s words, byline and quote wear the brig
   expect(await color(byline(page), 'color'), 'the byline\'s color').toBe(bright);
   expect(await color(box(page).locator('.kb-quote'), 'borderTopColor'), 'the quote\'s border color').toBe(bright);
   expect(await color(history(page), 'color'), 'the History button\'s color is the board\'s').toBe(await token(page, '--kb-button-fg'));
-  expect(await color(history(page), 'textShadow'), 'the History button wears no bright outline').not.toContain(await token(page, '--kb-bright-outline'));
+  /* The control: the words wear the bright outline in their text-shadow, so its absence on History is a difference and not a property that never carries it. */
+  const outline = await token(page, '--kb-bright-outline');
+  expect(await color(box(page).locator('.dw-fab-words'), 'textShadow'), "the words wear the bright outline (the control for History's)").toContain(outline);
+  expect(await color(history(page), 'textShadow'), 'the History button wears no bright outline').not.toContain(outline);
   const head = await page.locator('.kb-acts-head > span').first().evaluate((e) => getComputedStyle(e).color);
   expect(await color(band(page), 'color'), 'the band\'s color is the thread\'s column head\'s').toBe(head);
 });
@@ -226,7 +251,8 @@ test('5. under Brighter effects the box\'s words, byline and quote wear the brig
 
 test('6. Hot Box fills the area, History stands over it, and a clearing opens on the byline and not on History', async ({ page }) => {
   /* Poison: the History `<p>` loses its `data-kb-over-ink` mark (the smoke is then over the button, and a pointer on it opens a clearing). */
-  await open(page, 'hot-box', { frozen: true });
+  /* The smoke's canvas is sized (its picture made on a frame the paused clock would not give) before the clock stops. */
+  await open(page, 'hot-box', { frozen: true, ready: () => expect.poll(() => page.evaluate(() => (document.querySelector<HTMLCanvasElement>('.kb-origin canvas.dw-hotbox-smoke')?.width ?? 0) > 0), { message: 'the smoke is sized', timeout: 15_000 }).toBe(true) });
   const smoke = box(page).locator('canvas.dw-hotbox-smoke');
   await fills(smoke, area(page), 'the smoke');
   const fogAt = (x: number, y: number) => page.evaluate(([px, py]) => {
@@ -355,7 +381,8 @@ for (const name of ['chair', 'chair-short'] as const) {
         expect(c.bottom, `chair ${i} bottom: no lower than the area's bottom`).toBeLessThanOrEqual(m.area.bottom + 0.5);
         /* On the floor: no higher than the room above the bottom border. */
         expect(m.area.bottom - c.top, `chair ${i}: top above the area's bottom, the room being ${ROOM_HEIGHT}`).toBeLessThanOrEqual(ROOM_HEIGHT + 1);
-        const covered = m.lines.filter((l) => l.left < c.right && l.right > c.left && l.top < c.bottom && l.bottom > c.top);
+        /* Overlap by more than a pixel: a line's rect and a piece's meet at an edge by a rounding, and a font's own leading differs. */
+        const covered = m.lines.filter((l) => l.left < c.right - 1 && l.right > c.left + 1 && l.top < c.bottom - 1 && l.bottom > c.top + 1);
         expect(covered, `no word is under the chair's box ${JSON.stringify(c)}`).toEqual([]);
       }
       expect.soft(m.room.display, 'the area\'s ::after is the room (a block)').toBe('block');
@@ -374,6 +401,9 @@ for (const name of ['chair', 'chair-short'] as const) {
  * lone pixel has none). A canvas that takes no pointer is never in `elementsFromPoint`, so a hit test cannot say which of two things is painted over the other: what is painted can.
  */
 async function pixelAt(page: Page, x: number, y: number): Promise<readonly [number, number, number]> {
+  /* `animations: 'allow'`: nothing runs under the box in these stories that `disabled` would stop. The one animation of this page that is keyed on the motion setting forced on <html> and could run in a
+     post is a new act's slide-in (thread.css `.kb-act[data-kb-arrived]`), which is inside `prefers-reduced-motion: no-preference`, and the cases that read a pixel emulate reduced motion; the rest keyed on it
+     (the sheet, the HUD, reactions, the postcard) are outside the box and the opening post. And `disabled` finishes and cancels animations through the page's animation timeline, which the paused clock does not move. */
   const png = await page.screenshot({ clip: { x: Math.floor(x), y: Math.floor(y), width: 1, height: 1 }, animations: 'allow' });
   let kind = 0;
   const idat: Buffer[] = [];
@@ -441,13 +471,14 @@ test('8. the box stands above the opening post\'s effects, and its presses are i
   await open(page, 'under', { frozen: true, ready: async () => {
     await expect(opening.locator('canvas.kb-whoops-ink').first(), "the opening post's Whoops! ink").toBeAttached({ timeout: 15_000 });
     await expect(opening.locator('canvas.dw-hotbox-smoke').first(), "the opening post's Hot Box smoke").toBeAttached({ timeout: 15_000 });
+    /* Built before the clock stops: a paused clock freezes the animation frames and the timers the pictures are made on, so a wait for them after it could never end. */
+    await built(page, 'article:has(.kb-origin) .kb-whoops');
   } });
-  await built(page, 'article:has(.kb-origin) .kb-whoops');
   const OPENING_INK = 'article:has(.kb-origin) canvas.kb-whoops-ink';
-  /** The strongest alpha of the opening post's ink and smoke at a viewport point. */
-  const outerAlpha = (x: number, y: number) => page.evaluate(([px, py]) => {
+  /** The strongest alpha of the opening post's canvases the selector names (its ink and smoke by default) at a viewport point. */
+  const outerAlpha = (x: number, y: number, sel = 'article:has(.kb-origin) canvas.kb-whoops-ink, article:has(.kb-origin) canvas.dw-hotbox-smoke') => page.evaluate(([px, py, which]) => {
     let best = 0;
-    for (const c of document.querySelectorAll<HTMLCanvasElement>('article:has(.kb-origin) canvas.kb-whoops-ink, article:has(.kb-origin) canvas.dw-hotbox-smoke')) {
+    for (const c of document.querySelectorAll<HTMLCanvasElement>(which!)) {
       if (c.closest('.kb-origin')) continue;
       const r = c.getBoundingClientRect();
       if (px! < r.left || px! >= r.right || py! < r.top || py! >= r.bottom || c.width === 0) continue;
@@ -455,43 +486,31 @@ test('8. the box stands above the opening post\'s effects, and its presses are i
       best = Math.max(best, c.getContext('2d')!.getImageData(Math.floor((px! - r.left) * k), Math.floor((py! - r.top) * k), 1, 1).data[3]!);
     }
     return best;
-  }, [x, y] as const);
+  }, [x, y, sel] as const);
   const points = await boxPoints(page);
   const words = await borderBox(area(page).locator(':scope > .kb-bb'));
-  /* Five points in the box: an element of the box answers at each, and what is painted there is the box's and not the opening post's effects'. That is read as a pixel twice, with every canvas
-     of the opening post shown and then hidden: the box over them gives the same pixel. It can only fail where an effect has ink, so the effect is asserted at each point first. */
+  /* Five points in the box, one in each of its parts: an element of the box answers at each (the mark is pressable, which is all that is read of it: its own layer puts it over the opening post's
+     canvases whether or not the box is lifted, so its order and its pixel would pass either way). At the other four, what is painted is the box's and not the opening post's effects': that is read as a pixel
+     twice, with every canvas of the opening post shown and then hidden, and the box over them gives the same pixel. It can only fail where an effect has ink, so each point is asserted to have some: the
+     Hot Box smoke's, which is a fog over the whole post (the Whoops! splat does not reach the band, so it cannot be what is asserted at every point; it is what the scrubs below begin on). */
   for (const [name, p] of Object.entries(points).flatMap(([k, v]) => (v === null ? [] : [[k, v] as const]))) {
     const answers = await page.evaluate(([px, py]) => document.querySelector('.kb-origin')!.contains(document.elementFromPoint(px!, py!)), [p.x, p.y] as const);
     expect(answers, `${name}: an element of the box answers at its point`).toBe(true);
+    if (name === 'mark') continue;
     const order = await stacking(page, p.x, p.y);
     expect(order.canvas, `${name}: the opening post has canvases at the point`).toBeGreaterThanOrEqual(0);
     expect(order.inBox, `${name}: the box is painted over the opening post's canvases (box at ${order.inBox}, canvas at ${order.canvas}: ${order.top})`).toBeLessThan(order.canvas);
-    expect(await outerAlpha(p.x, p.y), `${name}: the opening post's effects have ink at the point, or the pixel below proves nothing`).toBeGreaterThan(40);
+    expect(await outerAlpha(p.x, p.y), `${name}: the opening post's ink or smoke has ink at the point, or the pixel below proves nothing`).toBeGreaterThan(40);
     const shown = await pixelAt(page, p.x, p.y);
     const hidden = await withoutOuterEffects(page, () => pixelAt(page, p.x, p.y));
     expect(apart(shown, hidden), `${name}: the pixel painted at the point is the box's, the same with the opening post's ink and smoke hidden (${shown} shown, ${hidden} hidden)`).toBeLessThanOrEqual(2);
   }
-  /* The opening post's own body, under the box. */
+  /* The opening post's own body, under the box: where its words are, from the box's bottom edge to the post's own. */
   const body = await page.evaluate(() => {
     const b = document.querySelector('.kb-origin')!.getBoundingClientRect();
     const m = document.querySelector('.kb-origin')!.closest('.kb-act-main')!.getBoundingClientRect();
-    return { left: m.left, right: m.right, y: b.bottom + 14 };
+    return { left: m.left, right: m.right, top: b.bottom + 8, bottom: m.bottom - 4 };
   });
-  /* The longest stretch of solid ink along a line of the opening post's, as [from, to]: a press has to begin on ink, or the page has it (nothing is washed with or without the box lifted). */
-  const inkRun = (y: number, from: number, to: number) => page.evaluate(([sel, py, a, b]) => {
-    const cvs = [...document.querySelectorAll<HTMLCanvasElement>(sel as string)];
-    const solid = (px: number) => cvs.some((c) => {
-      const r = c.getBoundingClientRect();
-      if (px < r.left || px >= r.right || (py as number) < r.top || (py as number) >= r.bottom || c.width === 0) return false;
-      const k = c.width / r.width;
-      return c.getContext('2d')!.getImageData(Math.floor((px - r.left) * k), Math.floor(((py as number) - r.top) * k), 1, 1).data[3]! > 40;
-    });
-    let best: [number, number] | null = null, at: number | null = null;
-    for (let x = a as number; x <= (b as number); x += 6) {
-      if (solid(x)) { at ??= x; if (best === null || x - at > best[1] - best[0]) best = [at, x]; } else at = null;
-    }
-    return best;
-  }, [OPENING_INK, y, from, to] as const);
   /** A scrub: a press `amp` px left of `x`, drawn back and forth across the stretch. */
   const scrub = async (x: number, y: number, amp: number) => {
     await page.mouse.move(x - amp, y);
@@ -500,30 +519,33 @@ test('8. the box stands above the opening post\'s effects, and its presses are i
     await page.mouse.up();
     await run(page, 300);
   };
-  const stretch = async (y: number, from: number, to: number, what: string) => {
-    const r = await inkRun(y, from, to);
-    expect(r, `${what}: a stretch of solid ink along the line`).not.toBeNull();
+  /* A press has to begin on ink, or the page has it (nothing is washed with or without the box lifted). The longest stretch of solid ink is looked for on a band of lines (every 4 px across 60), within the
+     element the press is for, since a machine's fonts move the lines the words stand on and the splat is only where its seed put it. */
+  const stretch = async (top: number, bottom: number, from: number, to: number, what: string) => {
+    const ys: number[] = [];
+    for (let y = top; y <= Math.min(bottom, top + 60); y += 4) ys.push(y);
+    const r = await solidRun(page, OPENING_INK, ys, from, to);
+    expect(r, `${what}: a stretch of solid ink on a line of the band ${top.toFixed(0)} to ${Math.min(bottom, top + 60).toFixed(0)}`).not.toBeNull();
     expect(r![1] - r![0], `${what}: the stretch is long enough to scrub across (${r})`).toBeGreaterThanOrEqual(160);
-    return { x: (r![0] + r![1]) / 2, amp: Math.min(90, (r![1] - r![0]) / 2 - 10) };
+    return { x: (r![0] + r![1]) / 2, y: r![2], amp: Math.min(90, (r![1] - r![0]) / 2 - 10) };
   };
   /* The control: below the box the opening post's ink is painted over its own words, so the same read there finds a pixel that differs. Without it a read that never saw ink would pass. */
-  const own = await stretch(body.y, body.left, body.right, 'below the box, in the opening post\'s own words');
-  const control = await pixelAt(page, own.x, body.y);
-  const controlHidden = await withoutOuterEffects(page, () => pixelAt(page, own.x, body.y));
+  const own = await stretch(body.top, body.bottom, body.left, body.right, 'below the box, in the opening post\'s own words');
+  const control = await pixelAt(page, own.x, own.y);
+  const controlHidden = await withoutOuterEffects(page, () => pixelAt(page, own.x, own.y));
   expect(apart(control, controlHidden), `the control: below the box the pixel painted is the effects' (${control} shown, ${controlHidden} hidden)`).toBeGreaterThan(8);
 
   /* A scrub across the box's words washes nothing of the opening post's ink; the same scrub over the opening post's own words washes it. Each press begins on ink, found along the line
      it is drawn on (the splat is only where its seed put it): a press with no ink under it starts nothing, lifted box or not. */
   const before = await inked(page, OPENING_INK);
   expect(before, 'the opening post has ink').toBeGreaterThan(1000);
-  const wordsLine = words.top + 8;
-  const inBox = await stretch(wordsLine, words.left, words.right, 'under the box\'s words');
-  expect(await outerAlpha(inBox.x - inBox.amp, wordsLine), 'the scrub across the box begins on ink').toBeGreaterThan(40);
-  await scrub(inBox.x, wordsLine, inBox.amp);
+  const inBox = await stretch(words.top + 8, words.bottom - 4, words.left, words.right, 'under the box\'s words');
+  expect(await outerAlpha(inBox.x - inBox.amp, inBox.y), 'the scrub across the box begins on ink').toBeGreaterThan(40);
+  await scrub(inBox.x, inBox.y, inBox.amp);
   await run(page, 300);
   expect(await inked(page, OPENING_INK), 'a scrub across the box\'s words leaves the opening post\'s ink as it was').toBe(before);
-  expect(await outerAlpha(own.x - own.amp, body.y), 'the scrub over the opening post\'s own words begins on ink').toBeGreaterThan(40);
-  await scrub(own.x, body.y, own.amp);
+  expect(await outerAlpha(own.x - own.amp, own.y), 'the scrub over the opening post\'s own words begins on ink').toBeGreaterThan(40);
+  await scrub(own.x, own.y, own.amp);
   expect(await inked(page, OPENING_INK), 'the same scrub over the opening post\'s own words lowers its ink').toBeLessThan(before);
   /* A pointer over the box opens no clearing in the opening post's smoke. */
   const smokeAt = (x: number, y: number) => page.evaluate(([px, py]) => {
@@ -639,35 +661,46 @@ test('11. under a glittered opening post the box is painted over the glitter, an
 const frames = (page: Page, n: number): Promise<void> =>
   page.evaluate((count) => new Promise<void>((done) => { let left = count; const tick = () => (--left <= 0 ? done() : requestAnimationFrame(tick)); requestAnimationFrame(tick); }), n);
 
-/** Every Feelin' Fab's loop draws and boxes on each of `n` animation frames, in the shape e2e/shine-share.ts reads (a sample a frame, a host a column), and which hosts are the box's. */
-const sampleFrames = (page: Page, n: number) => page.evaluate((count) => new Promise<{ samples: Sample[]; inBox: boolean[] }>((done) => {
+/** Every Feelin' Fab's loop draws and boxes on each of `n` animation frames, in the shape e2e/shine-share.ts reads (a sample a frame, a host a column), and which hosts are the box's and the share each is registered at. */
+const sampleFrames = (page: Page, n: number) => page.evaluate((count) => new Promise<{ samples: Sample[]; inBox: boolean[]; shares: number[] }>((done) => {
   const kb = window.__kbOriginShine!, out: Sample[] = [];
   const tick = (t: number) => {
     const hs = kb.hosts();
     out.push({ t, draws: hs.map((h) => h.draws), top: hs.map((h) => h.top), bottom: hs.map((h) => h.bottom), height: window.innerHeight, painted: hs.map((h) => ({ top: h.top, bottom: h.bottom, width: h.width })), own: hs.map((h) => h.own) });
-    if (out.length > count) done({ samples: out, inBox: hs.map((h) => h.inBox) }); else requestAnimationFrame(tick);
+    if (out.length > count) done({ samples: out, inBox: hs.map((h) => h.inBox), shares: hs.map((h) => h.share) }); else requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
 }), n);
 /** The samples of one host only. */
 const only = (samples: readonly Sample[], h: number): Sample[] => samples.map((s) => ({ ...s, draws: [s.draws[h]!], top: [s.top[h]!], bottom: [s.bottom[h]!], painted: [s.painted![h]!], own: [s.own![h]!] }));
-/** The light eases to the pointer and settles; only then is a draw the idle cadence's (e2e/shine.spec.ts, "at rest"). */
+/** The draws every Feelin' Fab on the page makes over the next `n` animation frames, summed. */
+const drawsOver = (page: Page, n: number): Promise<number> => page.evaluate((count) => new Promise<number>((done) => {
+  const kb = window.__kbOriginShine!, total = () => kb.hosts().reduce((a, h) => a + h.draws, 0), from = total();
+  let left = count;
+  const tick = () => (--left <= 0 ? done(total() - from) : requestAnimationFrame(tick));
+  requestAnimationFrame(tick);
+}), n);
+/** The light eases to the pointer and settles; only then is a draw the idle cadence's (e2e/shine.spec.ts, "at rest"). It has settled when two windows of 20 frames, one after the other, draw the same count. */
 async function atRest(page: Page) {
   await page.mouse.move(5, 5);
-  await page.waitForTimeout(1500);
+  let before = -1;
+  await expect.poll(async () => { const now = await drawsOver(page, 20); const same = now === before; before = now; return same; }, { message: 'the light has settled: two windows of 20 frames draw the same count', timeout: 20_000 }).toBe(true);
 }
 const AT_REST_FRAMES = 240;
 const wordsArea = (s: Sample, h: number) => Math.round(s.own![h]!.width * (s.own![h]!.bottom - s.own![h]!.top));
 const paintedArea = (s: Sample, h: number) => Math.round(s.painted![h]!.width * (s.painted![h]!.bottom - s.painted![h]!.top));
+/** The share of the loop's rate a host is registered at, as engine/ui/cards/body.ts `paintShare` gives it: its words' box over its painted box, between `BODY_FLOOR` (its `LEAST_SHARE`) and 1. */
+const shareOf = (s: Sample, h: number) => Math.min(1, Math.max(BODY_FLOOR, wordsArea(s, h) / paintedArea(s, h)));
 
 test('12. at rest the box\'s foil is redrawn within what its words and its area allow, by the bound e2e/shine.spec.ts holds a post to', async ({ page }) => {
   /* Poison: `share` forced to 1 in Feelin' Fab's `register` call (instances/divided-world/ui/feelin-fab/Effect.tsx): the area is then redrawn at the words' rate, over what it is allowed. */
   await open(page, 'fab');
   await expect.poll(() => page.evaluate(() => window.__kbOriginShine!.hosts().length)).toBe(1);
   await atRest(page);
-  const { samples, inBox } = await sampleFrames(page, AT_REST_FRAMES);
+  const { samples, inBox, shares } = await sampleFrames(page, AT_REST_FRAMES);
   expect(inBox, 'the one foil on the page is the box\'s').toEqual([true]);
   const r = redrawn(samples, 1440), last = samples.at(-1)!;
+  expect(Math.abs(shares[0]! - shareOf(last, 0)), `the box's foil is registered at the share its words and its area give (${shares[0]} against ${shareOf(last, 0).toFixed(3)})`).toBeLessThanOrEqual(0.02);
   console.log(`origin box at rest: ${(r.changed / r.allowed).toFixed(2)} of what it is allowed (bound ${REDRAWN_SHARE}); words ${wordsArea(last, 0)} px squared, area ${paintedArea(last, 0)}, draws ${last.draws[0]! - samples[0]!.draws[0]!} in ${AT_REST_FRAMES} frames`);
   expect(r.changed, 'the box\'s foil is drawn at rest, or the bound below proves nothing').toBeGreaterThan(0);
   expect(r.changed / r.allowed, 'the screen area the box\'s draws change at rest, over the larger of its words\' box and a quarter of its area').toBeLessThan(REDRAWN_SHARE);
@@ -684,12 +717,13 @@ test('13. scrolled out of view, nothing is drawn for the box and its canvas hold
   expect(shown!.w * shown!.h, `in view, the foil's backing store is not empty (${shown!.w} by ${shown!.h})`).toBeGreaterThan(0);
   /* A tall page, as e2e/shine.spec.ts makes one: room below, and the box scrolled away from the viewport. */
   await page.evaluate(() => { const s = document.createElement('div'); s.style.height = '4000px'; document.body.append(s); window.scrollTo(0, document.documentElement.scrollHeight); });
-  /* The scroll's own frame, the observer's word after it, and two more. */
-  await frames(page, 4);
   expect(await page.evaluate(() => document.querySelector('.kb-origin')!.getBoundingClientRect().bottom < 0), 'the box is scrolled fully out of view').toBe(true);
+  /* The backing store is freed on the in-view observer's word and the worker's message after it, neither on a frame count: polled until it is 0. */
+  await expect.poll(async () => { const z = await size(); return z === null ? 'no canvas' : z.w * z.h; }, { message: "out of view the foil's canvas holds no backing store", timeout: 10_000 }).toBe(0);
+  await frames(page, 4);
   const gone = await size();
   expect(gone, 'out of view the foil still has a canvas').not.toBeNull();
-  expect(gone!.w * gone!.h, `out of view the foil's canvas holds no backing store (${gone!.w} by ${gone!.h})`).toBe(0);
+  expect(gone!.w * gone!.h, `out of view the foil's canvas still holds no backing store (${gone!.w} by ${gone!.h})`).toBe(0);
   const at = await draws();
   await frames(page, 20);
   expect(await draws(), 'nothing is drawn for the box out of view').toBe(at);
@@ -701,11 +735,11 @@ test('13. scrolled out of view, nothing is drawn for the box and its canvas hold
 });
 
 test('14. with the opening post\'s foil and the box\'s both on the page, two hosts are registered and each is held to its own allowance', async ({ page }) => {
-  /* Poison: `share` forced to 1 for the opening post's host alone (`el.closest('.kb-origin') ? share : 1` in Feelin' Fab's `register` call): the opening post's bound fails and the box's holds, so each is read against its own. (Forced for the box alone it reads 1.22 here, its words being two fifths of its area and the allowance the larger of the two: under the bound, so that is not the poison.) */
+  /* Poison: `share` forced to 1 in Feelin' Fab's `register` call for the box's host (`el.closest('.kb-origin') ? 1 : share`), which the box's registered share fails; for the opening post's host alone (`el.closest('.kb-origin') ? share : 1`), the opening post's bound fails as well. */
   await open(page, 'fab-bright');
   await expect.poll(() => page.evaluate(() => window.__kbOriginShine!.hosts().length), { message: 'two Feelin\' Fabs are registered with the loop' }).toBe(2);
   await atRest(page);
-  const { samples, inBox } = await sampleFrames(page, AT_REST_FRAMES);
+  const { samples, inBox, shares } = await sampleFrames(page, AT_REST_FRAMES);
   expect(inBox.filter(Boolean).length, 'one of the two is the box\'s').toBe(1);
   expect(inBox.filter((b) => !b).length, 'and one is the opening post\'s').toBe(1);
   const last = samples.at(-1)!, over: string[] = [];
@@ -714,6 +748,9 @@ test('14. with the opening post\'s foil and the box\'s both on the page, two hos
     const r = redrawn(only(samples, h), 1440);
     console.log(`${name} at rest: ${(r.changed / r.allowed).toFixed(2)} of what it is allowed (bound ${REDRAWN_SHARE}); words ${wordsArea(last, h)} px squared, painted ${paintedArea(last, h)}, draws ${last.draws[h]! - samples[0]!.draws[h]!} in ${AT_REST_FRAMES} frames`);
     expect.soft(r.changed, `${name} is drawn at rest, or its bound proves nothing`).toBeGreaterThan(0);
+    /* The registered share is read as it is, not through the cost it makes: a box share of 1 costs under the bound here (1.22 of 1.25), so only the share itself fails on it. */
+    const want = shareOf(last, h);
+    if (Math.abs(shares[h]! - want) > 0.02) over.push(`${name}: registered at share ${shares[h]!.toFixed(3)}, where its words (${wordsArea(last, h)} px squared) over its area (${paintedArea(last, h)}) give ${want.toFixed(3)}`);
     if (!(r.changed / r.allowed < REDRAWN_SHARE)) over.push(`${name}: ${(r.changed / r.allowed).toFixed(2)} of what it is allowed, over the bound ${REDRAWN_SHARE}`);
   }
   expect(over, 'each host\'s redrawn area, over what that host is allowed, is within the bound').toEqual([]);
