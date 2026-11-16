@@ -279,7 +279,11 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
   const { gw, gh, cell } = field;
   const dt = clamp(Number.isFinite(dtMs) ? dtMs : 0, 0, FOG.maxStep) / 1000;
   const R = input.radius, rc = (R * FOG.reach) / cell, rr = R / cell;
-  const modeled = input.clearings.length > 0 || input.trail.length > 0;
+  /* A point whose place is not a number reaches nothing, and neither does anything when the radius is not one. */
+  const real = (p: { readonly x: number; readonly y: number }): boolean => Number.isFinite(p.x) && Number.isFinite(p.y);
+  const clearings = !Number.isFinite(R) ? [] : input.clearings.every(real) ? input.clearings : input.clearings.filter(real);
+  const trail = !Number.isFinite(R) ? [] : input.trail.every(real) ? input.trail : input.trail.filter(real);
+  const modeled = clearings.length > 0 || trail.length > 0;
   const prev = field.box;
   if (!prev && !modeled) return 0;
   if (prev && !modeled && field.quiet && field.store) return ease(field, prev, field.store, dt);
@@ -287,11 +291,11 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
   /* This step's box: the last one's, grown by the reach of a frame's flow, and what each clearing and trail point reaches. */
   let x0 = gw, x1 = 0, y0 = gh, y1 = 0;
   if (prev) { x0 = prev.x0 - FOG.grow; x1 = prev.x1 + FOG.grow; y0 = prev.y0 - FOG.grow; y1 = prev.y1 + FOG.grow; }
-  for (const c of input.clearings) {
+  for (const c of clearings) {
     const cx = c.x / cell + PAD, cy = c.y / cell + PAD;
     x0 = Math.min(x0, Math.floor(cx - rc)); x1 = Math.max(x1, Math.ceil(cx + rc)); y0 = Math.min(y0, Math.floor(cy - rc)); y1 = Math.max(y1, Math.ceil(cy + rc));
   }
-  for (const p of input.trail) {
+  for (const p of trail) {
     const cx = p.x / cell + PAD, cy = p.y / cell + PAD;
     x0 = Math.min(x0, Math.floor(cx - rr)); x1 = Math.max(x1, Math.ceil(cx + rr)); y0 = Math.min(y0, Math.floor(cy - rr)); y1 = Math.max(y1, Math.ceil(cy + rr));
   }
@@ -305,8 +309,8 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
 
   /* What moves it: each clearing that is moving drags the fog around it along, and a tap pushes it outward. */
   let bursting = false;
-  for (const c of input.clearings) {
-    const vx = c.vx ?? 0, vy = c.vy ?? 0, moving = vx !== 0 || vy !== 0, burst = c.burst === true;
+  for (const c of clearings) {
+    const vx = Number.isFinite(c.vx) ? c.vx! : 0, vy = Number.isFinite(c.vy) ? c.vy! : 0, moving = vx !== 0 || vy !== 0, burst = c.burst === true;
     if (burst) bursting = true;
     if (!moving && !burst) continue;
     const cx = c.x / cell + PAD, cy = c.y / cell + PAD;
@@ -328,7 +332,7 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
   D0.set(D);
   /* The cells the model can reach: it is asked about no other, and they are whole fog to it. */
   let mx0 = gw, mx1 = 0, my0 = gh, my1 = 0;
-  for (const p of [...input.clearings, ...input.trail]) {
+  for (const p of [...clearings, ...trail]) {
     const cx = p.x / cell + PAD, cy = p.y / cell + PAD;
     mx0 = Math.min(mx0, Math.floor(cx - rr) - 1); mx1 = Math.max(mx1, Math.ceil(cx + rr) + 1); my0 = Math.min(my0, Math.floor(cy - rr) - 1); my1 = Math.max(my1, Math.ceil(cy + rr) + 1);
   }

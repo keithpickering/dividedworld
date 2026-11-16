@@ -274,3 +274,75 @@ test('a post reads the page\'s one cloud at its own offset', () => {
   const field = makeField(W, H);
   assert.notDeepEqual(picture(field, { phase: { x: 0, y: 0 } }), picture(field, { phase: { x: 411, y: 77 } }));
 });
+
+test('a clearing moving down a tall post: the store is reallocated as it goes, the fog under it is driven clear, and what was thinned behind it survives each reallocation', () => {
+  const field = makeField(760, 6000), RT = holeRadius(760);
+  let trail: TrailPoint[] = [], now = 0, y = 300, lastY0 = -1, moves = 0, kept = 0;
+  while (y < 3000) {
+    now += FRAME;
+    y += (600 * FRAME) / 1000;
+    trail = extendTrail(trail, 380, y, now, RT);
+    /* The reader follows it down the post, so the box (and with it the store) is clipped to what is seen, and its first row moves too. */
+    const clearings = [at(380, y)], store = field.store, behind = fogAt(field, 380, y - 40).d;
+    stepField(field, FRAME, { clearings: [{ x: 380, y, vx: 0, vy: 600 }], trail, radius: RT, view: { top: y - 400, bottom: y + 400 }, target: (px, py) => covered(px, py, clearings, RT, now, false, trail) });
+    const s = field.store!;
+    if (lastY0 >= 0 && s.y0 !== lastY0) moves++;
+    lastY0 = s.y0;
+    if (now > 300) assert.ok(fogAt(field, 380, y).d < 0.2, `at ${now.toFixed(0)} ms: ${fogAt(field, 380, y).d} under the clearing`);
+    if (store && s !== store && now > 300) {
+      kept++;
+      const after = fogAt(field, 380, y - 40).d;
+      assert.ok(behind < 0.5, `the cell behind was thinned before the step: ${behind}`);
+      assert.ok(Math.abs(after - behind) < 0.15, `at ${now.toFixed(0)} ms the store was reallocated and the cell behind went from ${behind} to ${after}`);
+    }
+  }
+  assert.ok(moves >= 2, `the store's first row changed ${moves} times`);
+  assert.ok(kept >= 5, `${kept} reallocations checked`);
+});
+
+test('the picture of fog that has not been carried is the same as the picture of fog carried by nothing', () => {
+  const run = (carry: boolean): Uint8ClampedArray => {
+    const field = makeField(W, H);
+    /* A clearing that reaches every row, with a model that thins the fog a little, leaves a store over the whole field. */
+    stepField(field, FRAME, { clearings: [{ x: 380, y: 150 }], trail: [], radius: 2000, target: () => 0.99 });
+    const s = field.store!;
+    assert.ok(s.y0 === 0 && s.rows === field.gh, 'the store covers the whole field');
+    if (carry) s.OX.fill(1e-30);
+    return picture(field, { t: 777, phase: { x: 13, y: 29 } });
+  };
+  assert.deepEqual(run(false), run(true));
+});
+
+test('a clearing, trail point, radius or step that is not a number does nothing harmful, and the field works after it', () => {
+  const field = makeField(W, H), ok = (x: number, y: number): FogInput => ({ clearings: [{ x, y }], trail: [], radius: R, target: (px, py) => covered(px, py, [at(x, y)], R, 1, false) });
+  const target = (): number => 1;
+  for (const input of [
+    { clearings: [{ x: NaN, y: 150 }], trail: [], radius: R, target },
+    { clearings: [{ x: 300, y: Infinity }], trail: [], radius: R, target },
+    { clearings: [], trail: [{ x: NaN, y: 150 }], radius: R, target },
+    { clearings: [], trail: [{ x: 300, y: -Infinity }], radius: R, target },
+    { clearings: [{ x: 300, y: 150 }], trail: [], radius: NaN, target },
+    { clearings: [{ x: 300, y: 150 }], trail: [], radius: Infinity, target },
+  ] as FogInput[]) {
+    assert.equal(stepField(field, FRAME, input), 0, JSON.stringify(input.clearings) + JSON.stringify(input.trail) + input.radius);
+    assert.equal(field.box, null);
+    assert.equal(field.store, null);
+  }
+  assert.equal(stepField(field, NaN, ok(300, 150)) >= 0, true);
+  const fresh = makeField(W, H);
+  assert.equal(stepField(fresh, FRAME, ok(300, 150)) > 0, true);
+  assert.ok(fresh.store !== null && fogAt(fresh, 300, 150).d < 1);
+});
+
+test('stepField uses its rounds: the same drag with none and with the default leaves different flow', () => {
+  const run = (rounds?: number): FogField => {
+    const field = makeField(W, H);
+    sweep(field, { x0: 300, y: 150, speed: 400, until: 100, total: 100, ...(rounds === undefined ? {} : { rounds }) });
+    return field;
+  };
+  const none = run(0), some = run(), box = none.box!;
+  const flow = (f: FogField): number[] => { const out: number[] = []; for (let py = 150 - 60; py <= 150 + 60; py += 10) for (let px = 200; px <= 460; px += 10) out.push(fogAt(f, px, py).v); return out; };
+  const a = flow(none), b = flow(some);
+  assert.ok(a.some((v, i) => Math.abs(v - b[i]!) > 0.5), 'the flow beside the path is the same');
+  assert.ok(divergence(some, box) < divergence(none, box), `${divergence(some, box)} against ${divergence(none, box)}`);
+});
