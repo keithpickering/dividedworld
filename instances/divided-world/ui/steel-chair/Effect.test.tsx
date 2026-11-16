@@ -34,7 +34,7 @@ const hub = vi.hoisted(() => ({
   /** Puts every body to sleep after each step (a world that is quiet whatever was thrown), for the test that a due throw keeps the loop going. */
   sleepAll: false,
   /** What the mocked `dentImages` calls (a spy made in `beforeEach`, so the effect's arguments can be read): fixed addresses from the play's id. */
-  images: undefined as unknown as ReturnType<typeof import('vitest').vi.fn>,
+  images: undefined as unknown as import('vitest').Mock<(play: string, ...rest: unknown[]) => { bend: string; shade: string; light: string }>,
 }));
 vi.mock('./body.ts', async (original) => {
   const actual = await original<typeof import('./body.ts')>();
@@ -56,7 +56,7 @@ vi.mock('../../../../engine/ui/audio/sound.ts', async (original) => {
 });
 vi.mock('./dent.ts', async (original) => {
   const actual = await original<typeof import('./dent.ts')>();
-  return { ...actual, filterTrusted: () => hub.trusted, dentImages: (...args: unknown[]) => hub.images(...args),
+  return { ...actual, filterTrusted: () => hub.trusted, dentImages: (play: string, ...rest: unknown[]) => hub.images(play, ...rest),
   };
 });
 

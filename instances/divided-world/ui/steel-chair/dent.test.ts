@@ -101,7 +101,7 @@ describe('dentShade: lit from the upper left, in front', () => {
     const [w, h] = [160, 140] as const;
     for (const id of IDS) {
       const s = dentShade(mapOf(id, w, h), w, h);
-      let x0 = w, x1 = -1, y0 = h, y1 = -1;
+      let x0: number = w, x1 = -1, y0: number = h, y1 = -1;
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (s[(y * w + x) * 4]! <= 250) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
       assert.ok((x1 - x0 + 1) / w >= 0.7 && (y1 - y0 + 1) / h >= 0.7, `${id}: shade spans ${(x1 - x0 + 1) / w} of the width, ${(y1 - y0 + 1) / h} of the height`);
     }
