@@ -340,9 +340,9 @@ function velocityOf(m: Model, now: number): { x: number; y: number } {
 
 /**
  * When the model next needs to be looked at (an epoch ms), or null: a line of the sweep finishing, a post's wave ending, a clearing closing, a trail point
- * shutting, the strength moving a hundredth. `animate` is the forced-colors mask in view, which is moved by this timer and nothing else.
+ * shutting (where no frame draws the trail: `frames` is false), the strength moving a hundredth. `animate` is the forced-colors mask in view, which is moved by this timer and nothing else.
  */
-function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonly animate: boolean; readonly still: boolean; readonly playedAt: number; readonly ends: number }): number | null {
+function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonly animate: boolean; readonly still: boolean; readonly frames: boolean; readonly playedAt: number; readonly ends: number }): number | null {
   const at: number[] = [];
   const ticks = o.animate && !o.reduced;
   const sw = m.sweep;
@@ -364,7 +364,8 @@ function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonl
     const half = closing + SMOKE.roll * (1 - SMOKE.trailHard);
     if (o.animate && now <= half) at.push(half + 1);
   }
-  for (const p of m.trail) {
+  /* Where frames repaint the trail (`frames`: the full effect), it needs no wake of its own: each point's end is drawn by the frame it passes in. */
+  if (!o.frames) for (const p of m.trail) {
     /* A trail point is a hard disc, and open under reduced motion, until `trailHard` of its wake; then it is gone from both. */
     const shut = p.leftAt + SMOKE.wake * SMOKE.trailHard;
     if (now < shut) at.push(shut);
@@ -511,7 +512,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
     clearTimeout(timer.current);
     timer.current = undefined;
     const L = latest.current;
-    const wake = nextWake(model.current, seen.current, { reduced: L.reduced, animate: L.forced && L.inView, still: L.still, playedAt: L.playedAt, ends: L.ends });
+    const wake = nextWake(model.current, seen.current, { reduced: L.reduced, animate: L.forced && L.inView, still: L.still, frames: L.loop, playedAt: L.playedAt, ends: L.ends });
     if (wake === null) return;
     timer.current = setTimeout(() => stepRef.current(), Math.min(TIMER_MOST, Math.max(1, Math.ceil(wake - api.now()))));
   }, [api]);
@@ -591,7 +592,8 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
       /* Only what the layer holds is stepped: the rows of its tiles, which are the ones near the window. */
       let top = Number.POSITIVE_INFINITY, bottom = Number.NEGATIVE_INFINITY;
       for (const tile of layer?.held() ?? []) { top = Math.min(top, tile.top); bottom = Math.max(bottom, tile.top + tile.h); }
-      stepField(field, dt, {
+      /* A field at rest is not stepped: with no box disturbed and nothing open to disturb one, the step would do nothing. */
+      if (field.box || clearings.length > 0 || m.trail.length > 0) stepField(field, dt, {
         clearings, trail: m.trail, radius, rounds, ...(bottom > top ? { view: { top, bottom } } : {}),
         target: (x, y) => covered(x, y, cuts.clearings, radius, t, false, m.trail),
       });
@@ -687,10 +689,13 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
   }, [forced, place, paintTile, take]);
   /* A commit that turns the fog's motion on paints once itself, so no frame shows the words bare while the frame it asked for waits; from then the page's timer marks the fog at rest stale. */
   useLayoutEffect(() => {
-    if (!loop) return;
-    layerRef.current?.paintNow();
-    return joinRest(() => { layerRef.current?.stale(); });
+    if (loop) layerRef.current?.paintNow();
   }, [loop, forced, place, paintTile, take]);
+  /* Only a post in view joins the page's rest timer: one out of view holds no tiles that need to be drawn again, and a page of smoked posts would otherwise wake every 50 ms for them all. */
+  useLayoutEffect(() => {
+    if (!loop || !inView) return;
+    return joinRest(() => { layerRef.current?.stale(); });
+  }, [loop, inView, forced, place, paintTile, take]);
   /* Without motion the tiles are drawn after every render: a render is how a change reaches them. */
   useLayoutEffect(() => { if (!loop) layerRef.current?.paintNow(); });
 

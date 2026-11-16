@@ -559,4 +559,49 @@ describe('markOf', () => {
     expect(first.post.querySelector('button.kb-mark[data-kb-card="some-card"]')).not.toBe(mine);
     expect(markOf(second.words, 'some-card')).toBe(mine);
   });
+
+  /** An ORIGIN box as Origin.tsx writes it: a head holding the strip, then the content area the words sit in, all in `div.kb-origin`; inside `outer` (the opening post) when given. */
+  function origin(kinds: readonly string[], outer?: HTMLElement): { box: HTMLElement; words: HTMLElement } {
+    const box = document.createElement('div');
+    box.className = 'kb-origin';
+    const head = document.createElement('p');
+    head.className = 'kb-origin-head';
+    const strip = document.createElement('span');
+    strip.className = 'kb-marks';
+    for (const kind of kinds) {
+      const mark = document.createElement('button');
+      mark.type = 'button';
+      mark.className = 'kb-mark';
+      mark.setAttribute('data-kb-card', kind);
+      strip.append(mark);
+    }
+    head.append(strip);
+    const area = document.createElement('div');
+    area.className = 'kb-origin-area';
+    const words = document.createElement('p');
+    area.append(words);
+    box.append(head, area);
+    if (outer) outer.querySelector('.kb-act-body')!.append(box);
+    else { document.body.append(box); mounted.push(box); }
+    return { box, words };
+  }
+
+  test('a host in an ORIGIN box inside the opening post finds the own mark of the box, never that of the opening post, of the same kind', () => {
+    const opening = post(['some-card']);
+    const inBox = origin(['some-card'], opening.post);
+    const found = markOf(inBox.words, 'some-card');
+    expect(found).toBe(inBox.box.querySelector('button.kb-mark[data-kb-card="some-card"]'));
+    expect(found).not.toBe(opening.post.querySelector('header button.kb-mark[data-kb-card="some-card"]'));
+  });
+
+  test('an ORIGIN box with no mark of the kind gives null, though the opening post it sits in has one', () => {
+    const opening = post(['some-card']);
+    const inBox = origin(['other-card'], opening.post);
+    expect(markOf(inBox.words, 'some-card')).toBeNull();
+  });
+
+  test('an ORIGIN box outside any post finds its own mark', () => {
+    const inBox = origin(['some-card']);
+    expect(markOf(inBox.words, 'some-card')).toBe(inBox.box.querySelector('button.kb-mark[data-kb-card="some-card"]'));
+  });
 });

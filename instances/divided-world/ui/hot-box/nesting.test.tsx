@@ -131,6 +131,8 @@ const buttonsUnderInert = (p: Page) => [...p.container.querySelectorAll<HTMLButt
 beforeEach(() => {
   frames = new Map(); frameId = 0;
   forgetScratch(); resetFogLadder();
+  /* The painter's cost is read from `performance.now`: here time stands still unless a test moves it, so how loaded the run is never steps a post down a rung. */
+  vi.spyOn(performance, 'now').mockImplementation(() => 0);
   vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   stubBrowser();
 });

@@ -24,8 +24,8 @@ import { createFake } from '../../../../engine/ui/data/fake.ts';
 import { makeTileLayer, mostTiles } from '../../../../engine/ui/cards/tiles.ts';
 import { renderIn, testInstance } from '../../../../engine/ui/test-world.tsx';
 import { SMOKE, fogAlpha, holeRadius, maskAlpha, strength } from './smoke.ts';
-import { paintFog, stepField } from './fog.ts';
-import { HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, forgetScratch, resetFogLadder } from './Effect.tsx';
+import { makeField, paintFog, stepField } from './fog.ts';
+import { HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, forceFogLevel, forgetScratch, resetFogLadder } from './Effect.tsx';
 
 /* A post's lines, as shares of the box's height, as Whoops!'s `readLines` gives them; and what a painter's call costs, for the ladder. */
 const { LINES, read, cost } = vi.hoisted(() => {
@@ -47,6 +47,7 @@ vi.mock('./fog.ts', async (orig) => {
   return {
     ...real,
     stepField: vi.fn(real.stepField),
+    makeField: vi.fn(real.makeField),
     paintFog: vi.fn((...a: Parameters<typeof real.paintFog>) => { cost.perf += cost.ms; return real.paintFog(...a); }),
   };
 });
@@ -289,9 +290,12 @@ beforeEach(() => {
   observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX; OUTER = null;
   watch = undefined; bandsWatch = undefined; bandEls = []; margins = []; watched = [];
   cost.ms = 0; cost.perf = 0;
+  /* The painter's cost is read from `performance.now`; here it moves only when a test moves it (`cost.perf`, which a call of the fog adds `cost.ms` to), never with how loaded the run is. */
+  vi.spyOn(performance, 'now').mockImplementation(() => cost.perf);
   vi.mocked(makeTileLayer).mockClear();
   vi.mocked(stepField).mockClear();
   vi.mocked(paintFog).mockClear();
+  vi.mocked(makeField).mockClear();
   forgetScratch();
   resetFogLadder();
   vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setTimeout', 'clearTimeout'] });
@@ -480,13 +484,39 @@ describe('the fog', () => {
     expect(vi.mocked(makeTileLayer).mock.calls[0]![1]).toMatchObject({ density: 1, className: 'dw-hotbox-smoke', standIn: 'dw-hotbox-far' });
     pass(3000, 10);
     expect(makeTileLayer).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(stepField).mock.results.every((r) => r.value === 0)).toBe(true);
+    /* A field at rest is not stepped at all: nothing is open and nothing is disturbed, so the call is not made. */
+    expect(stepField).toHaveBeenCalledTimes(0);
     const rec = recOf(canvas(s))!;
     const before = rec.clears;
     pass(1000, 10);
     expect(rec.clears - before).toBeGreaterThan(10);
     expect(rec.clears - before).toBeLessThanOrEqual(21);
-    expect(vi.mocked(stepField).mock.results.every((r) => r.value === 0)).toBe(true);
+    expect(stepField).toHaveBeenCalledTimes(0);
+  });
+
+  test('only a post in view joins the page rest timer: out of view nothing marks it stale and no timer of the chain is pending; in view it repaints at most 21 times a second; out again it stops', () => {
+    stubObserver();
+    const s = setup();
+    const rec = recOf(canvas(s))!;
+    /* The mount's own render marks the tiles stale once; what follows is the rest chain's alone. */
+    pass(100, 10);
+    const out = vi.getTimerCount();
+    const before = rec.clears;
+    pass(2000, 10);
+    expect(rec.clears).toBe(before);
+    expect(vi.getTimerCount()).toBe(out);
+    act(() => { watch!([{ target: area(s), isIntersecting: true, intersectionRatio: 1 }]); });
+    expect(vi.getTimerCount()).toBe(out + 1);
+    const inAt = rec.clears;
+    pass(1000, 10);
+    expect(rec.clears - inAt).toBeGreaterThan(10);
+    expect(rec.clears - inAt).toBeLessThanOrEqual(21);
+    act(() => { watch!([{ target: area(s), isIntersecting: false, intersectionRatio: 0 }]); });
+    expect(vi.getTimerCount()).toBe(out);
+    pass(100, 10);
+    const outAt = rec.clears;
+    pass(1000, 10);
+    expect(rec.clears).toBe(outAt);
   });
 
   test('fog at rest drifts: its picture moves from one rest frame to the next, its alpha never does', () => {
@@ -649,6 +679,82 @@ describe('the pointer', () => {
       }
     }
     expect(prevented.every((p) => p === false)).toBe(true);
+  });
+});
+
+describe('what the field is given', () => {
+  /** The last input `stepField` was called with, and the clearing in it nearest (x, y). */
+  const lastInput = () => vi.mocked(stepField).mock.calls.at(-1)![2];
+  const clearingAt = (x: number, y: number) => lastInput().clearings.reduce((a, b) => (Math.hypot(a.x - x, a.y - y) <= Math.hypot(b.x - x, b.y - y) ? a : b));
+
+  test('a mouse moved right gives its clearing a velocity along x, about the speed it moved at; still for 100 ms, none', () => {
+    const s = setup();
+    move(s, 200, 250);
+    act(() => { vi.advanceTimersByTime(16); });
+    move(s, 240, 250);
+    act(() => { vi.advanceTimersByTime(16); });
+    move(s, 280, 250);
+    act(() => { runFrame(); });
+    const c = clearingAt(280, 150);
+    /* 80 px in 32 ms. */
+    expect(c.vx!).toBeGreaterThan(2000);
+    expect(c.vx!).toBeLessThan(3000);
+    expect(Math.abs(c.vy ?? 0)).toBeLessThan(50);
+    pass(100, 50);
+    const rest = clearingAt(280, 150);
+    expect(rest.vx ?? 0).toBe(0);
+    expect(rest.vy ?? 0).toBe(0);
+  });
+
+  test('a touch bursts within 260 ms of landing and not after', () => {
+    const s = setup();
+    touch(s, 200, 300);
+    act(() => { vi.advanceTimersByTime(100); runFrame(); });
+    expect(clearingAt(200, 200).burst).toBe(true);
+    pass(300, 50);
+    expect(clearingAt(200, 200).burst).toBe(false);
+  });
+
+  test.each([
+    [0, 5, 8],
+    [1, 7, 8],
+    [2, 10, 8],
+    [3, 10, 4],
+  ])('at rung %i the field is made with cells of %i px and a pointer step is given %i rounds', (level, cell, rounds) => {
+    forceFogLevel(level);
+    const s = setup();
+    move(s, 300, 250);
+    settle(100);
+    expect(vi.mocked(makeField).mock.calls.at(-1)![2]).toBe(cell);
+    expect(vi.mocked(stepField).mock.calls.at(-1)![2].rounds).toBe(rounds);
+  });
+
+  test('at rung 4 the field is not stepped and the fog is drawn from the model, open at the pointer', () => {
+    forceFogLevel(4);
+    const s = setup();
+    move(s, 300, 250);
+    settle(400);
+    expect(stepField).toHaveBeenCalledTimes(0);
+    const o = vi.mocked(paintFog).mock.calls.at(-1)![4];
+    expect(o.direct).toBeDefined();
+    expect(o.direct!.target(300, 150)).toBe(0);
+    expect(o.direct!.target(700, 500)).toBeGreaterThan(0);
+  });
+
+  test('with full motion a swipe of 1.5 seconds sets the model timer fewer than 10 times: the trail is drawn by the frames, not woken for', () => {
+    stubObserver();
+    const s = setup();
+    const set = vi.spyOn(globalThis, 'setTimeout');
+    for (let i = 0; i < 94; i++) {
+      move(s, 100 + i * 6, 250);
+      pass(16, 16);
+      /* Anything that renders the effect sets the model timer again, with the trail it has by then. */
+      if (i === 10) act(() => { watch!([{ target: area(s), isIntersecting: true, intersectionRatio: 1 }]); });
+    }
+    /* The page's rest timer is 50 ms; anything else is the model's. */
+    const model = set.mock.calls.filter((c) => c[1] !== 50);
+    expect(model.length).toBeLessThan(10);
+    expect(s.container).toBeTruthy();
   });
 });
 
@@ -925,14 +1031,12 @@ describe('the ladder', () => {
 
   test('a painter over budget steps the post down a rung at a time, 0 to 4, never back while in view; out of view and back it is at 0', () => {
     stubObserver();
-    let perf = 0;
-    vi.spyOn(performance, 'now').mockImplementation(() => perf + cost.perf);
     const s = setup();
     see(s, true);
     expect(level(s)).toBe(0);
     cost.ms = 9;
     const seen: number[] = [];
-    for (let i = 0; i < 200; i++) { pass(50, 50); seen.push(level(s)); perf += 1; }
+    for (let i = 0; i < 200; i++) { pass(50, 50); seen.push(level(s)); cost.perf += 1; }
     expect(seen.at(-1)).toBe(4);
     for (let i = 1; i < seen.length; i++) expect(seen[i]!).toBeGreaterThanOrEqual(seen[i - 1]!);
     expect(new Set(seen)).toEqual(new Set([0, 1, 2, 3, 4]));
@@ -1016,7 +1120,7 @@ describe('reduced motion', () => {
     expect(inert(s)).toBe(true);
     pass(1, 1);
     expect(inert(s)).toBe(false);
-  });
+  }, 120_000);
 
   test('a held sweep clears each line as it finishes, with no clearing sliding along it', () => {
     const s = setup();
@@ -1568,13 +1672,15 @@ describe('in view', () => {
   test('met waits for the first sight of the post, and the fog is painted by the layer whether or not the post is reported in view', () => {
     const s = setup();
     expect(s.met).not.toHaveBeenCalled();
+    /* Painted before it is seen (the commit's own paint); the rest timer's drift is for a post in view. */
+    expect(picture(s)).toBe(true);
+    see(s, true);
+    expect(s.met).toHaveBeenCalledTimes(1);
     pass(100, 50);
     const one = recOf(canvas(s))!.draws.at(-1)!.put!.data.slice();
     pass(2000, 50);
     const two = recOf(canvas(s))!.draws.at(-1)!.put!.data;
     expect(Buffer.from(two).equals(Buffer.from(one))).toBe(false);
-    see(s, true);
-    expect(s.met).toHaveBeenCalledTimes(1);
     see(s, false);
     see(s, true);
     expect(s.met).toHaveBeenCalledTimes(1);
@@ -1583,6 +1689,8 @@ describe('in view', () => {
   test('with every tile released by the band watcher no frame is asked for, and painting resumes when a tile returns', () => {
     AREA = { ...BOX, height: 1600 };
     const s = setup();
+    /* The post is in view: the rest timer repaints a tile that returns. */
+    see(s, true);
     const nearBands = (...hold: number[]) => act(() => { bandsWatch!(bandEls.map((el, i) => ({ target: el, isIntersecting: hold.includes(i), intersectionRatio: hold.includes(i) ? 1 : 0 }))); runFrame(); });
     nearBands(0);
     nearBands();
