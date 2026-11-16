@@ -28,7 +28,7 @@
  * content area and a clearing at the post's border opens all the way to it.
  */
 import { mulberry32 } from '../../cards/whoops/splat.ts';
-import { SMOKE } from './smoke.ts';
+import { SMOKE, covered, openness, trailOpenness, type Clearing, type TrailPoint } from './smoke.ts';
 
 /** The fog's numbers: the bench's (docs/research/2026-11-15-hot-box-fog/01-fog.html), named. */
 export const FOG = {
@@ -393,6 +393,52 @@ function ease(field: FogField, B: CellBox, s: FogStore, dt: number): number {
   if (nx1 > nx0) field.box = { x0: nx0, x1: nx1, y0: ny0, y1: ny1 };
   else { field.box = null; field.store = null; field.quiet = false; }
   return (B.x1 - B.x0) * (B.y1 - B.y0);
+}
+
+/* -------------------------------------------------------------------------------- the model's answer, asked a cell at a time ---- */
+
+/**
+ * `covered` (smoke.ts), prepared for the many points a frame asks it about: the same answer at every point, to the last bit, but each clearing's and trail
+ * point's openness is worked out once, a shut one is left out, and the rest are kept in a grid of `radius`-wide buckets so a point asks only the discs that can
+ * reach it (a trail is up to 95 of them, and the field and the direct picture ask about every cell). The model stays `covered`'s: this reads it, it has no
+ * radius or timing of its own, and the smallest of the answers is the same whatever order they are taken in. A coordinate that is not a number goes the long way.
+ */
+export function coverageOf(clearings: readonly Clearing[], radius: number, now: number, reduced: boolean, trail: readonly TrailPoint[] = []): (x: number, y: number) => number {
+  const xs: number[] = [], ys: number[] = [], os: number[] = [];
+  let sound = Number.isFinite(radius) && radius > 0;
+  const add = (x: number, y: number, o: number): void => {
+    if (o <= 0) return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) sound = false;
+    xs.push(x); ys.push(y); os.push(o);
+  };
+  for (const c of clearings) add(c.x, c.y, openness(c, now, reduced));
+  for (const p of trail) add(p.x, p.y, trailOpenness(p, now, reduced));
+  if (xs.length === 0) return () => 1;
+  if (!sound) return (x, y) => covered(x, y, clearings, radius, now, reduced, trail);
+  const core = radius * (1 - SMOKE.edge), span = radius - core, n = xs.length;
+  const buckets = new Map<number, number[]>();
+  const key = (bx: number, by: number): number => bx * 1_000_003 + by;
+  for (let i = 0; i < n; i++) {
+    const k = key(Math.floor(xs[i]! / radius), Math.floor(ys[i]! / radius));
+    const list = buckets.get(k);
+    if (list) list.push(i); else buckets.set(k, [i]);
+  }
+  return (x, y) => {
+    let fog = 1;
+    const bx = Math.floor(x / radius), by = Math.floor(y / radius);
+    for (let a = bx - 1; a <= bx + 1; a++) for (let b = by - 1; b <= by + 1; b++) {
+      const list = buckets.get(key(a, b));
+      if (!list) continue;
+      for (let j = 0; j < list.length; j++) {
+        const i = list[j]!, dx = x - xs[i]!, dy = y - ys[i]!;
+        if (dx >= radius || -dx >= radius || dy >= radius || -dy >= radius) continue;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const local = d <= core ? 0 : d >= radius ? 1 : (d - core) / span;
+        fog = Math.min(fog, 1 - (1 - local) * os[i]!);
+      }
+    }
+    return fog;
+  };
 }
 
 /* -------------------------------------------------------------------------------- the picture ---- */

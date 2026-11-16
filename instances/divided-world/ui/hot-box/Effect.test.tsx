@@ -1034,7 +1034,7 @@ describe('the ladder', () => {
     const s = setup();
     see(s, true);
     expect(level(s)).toBe(0);
-    cost.ms = 9;
+    cost.ms = 40;
     const seen: number[] = [];
     for (let i = 0; i < 200; i++) { pass(50, 50); seen.push(level(s)); cost.perf += 1; }
     expect(seen.at(-1)).toBe(4);
@@ -1068,11 +1068,11 @@ describe('the ladder', () => {
     return seen;
   }
 
-  test('9 ms a frame at rung 0 is judged after 8 frames and goes straight to the first rung that fits (2), where it stays', () => {
+  test('17 ms a frame at rung 0 is judged after 8 frames and goes straight to the first rung that fits (2), where it stays', () => {
     stubObserver();
     const s = setup();
     see(s, true);
-    const seen = drive(s, 9, 200);
+    const seen = drive(s, 17, 200);
     expect(seen[5]).toBe(0);
     expect(seen[10]).toBe(2);
     expect(seen.at(-1)).toBe(2);
@@ -1089,11 +1089,11 @@ describe('the ladder', () => {
     expect(new Set(seen)).toEqual(new Set([0, 4]));
   });
 
-  test('3 ms a frame stays at 0', () => {
+  test('7 ms a frame, under the 8 ms budget, stays at 0', () => {
     stubObserver();
     const s = setup();
     see(s, true);
-    expect(new Set(drive(s, 3, 200))).toEqual(new Set([0]));
+    expect(new Set(drive(s, 7, 200))).toEqual(new Set([0]));
   });
 
   test('a painter within budget keeps the post at 0', () => {

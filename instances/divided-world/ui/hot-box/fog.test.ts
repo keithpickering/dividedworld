@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FOG, cellOrigin, divergence, fogAt, makeCloud, makeField, pageCloud, paintFog, project, rowsOf, stepField, type FogClearing, type FogField, type FogInput } from './fog.ts';
+import { FOG, cellOrigin, coverageOf, divergence, fogAt, makeCloud, makeField, pageCloud, paintFog, project, rowsOf, stepField, type FogClearing, type FogField, type FogInput } from './fog.ts';
 import { SMOKE, covered, extendTrail, fogAlpha, holeRadius, type Clearing, type TrailPoint } from './smoke.ts';
 import { mulberry32 } from '../../cards/whoops/splat.ts';
 
@@ -392,4 +392,16 @@ test('busy: once the pointer is gone and the wake has closed it is not, though c
   assert.ok(busyAfter.length > 100);
   assert.ok(busyAfter.every((b) => !b), 'not busy once the wake has closed');
   assert.ok(easing > 0, 'a moment with carried texture still easing (box held, nothing moving)');
+});
+
+test('coverageOf answers exactly what covered answers at every point, for clearings and a long trail, with motion and without, and skips the points that are shut', () => {
+  const rnd = mulberry32(7), now = 9000;
+  const trail: TrailPoint[] = Array.from({ length: 95 }, (_, i) => ({ x: 100 + rnd() * 500, y: 150 + rnd() * 40, leftAt: now - i * 16 }));
+  trail.push({ x: 300, y: 160, leftAt: now - SMOKE.wake - 5 }, { x: -20, y: 400, leftAt: now - 10 });
+  const clearings: Clearing[] = [at(320, 170), { x: 400, y: 160, openedAt: 0, leftAt: now - 100, hold: 0 }, { x: 50, y: 50, openedAt: 0, leftAt: now - 4000, hold: 0 }];
+  for (const reduced of [false, true]) {
+    const cover = coverageOf(clearings, R, now, reduced, trail);
+    for (let y = -5; y < 460; y += 7) for (let x = -120; x < 700; x += 7) assert.equal(cover(x, y), covered(x, y, clearings, R, now, reduced, trail), `at ${x}, ${y}, reduced ${reduced}`);
+  }
+  assert.equal(coverageOf([], R, now, false, [])(10, 10), 1, 'nothing open is whole fog');
 });

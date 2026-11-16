@@ -67,8 +67,8 @@ import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { readLines } from '../../cards/whoops/lines.ts';
 import { SWEEP_PX_S } from '../../cards/whoops/scrub.ts';
 import { rgbOf } from '../../cards/whoops/splat.ts';
-import { FOG, cellOrigin, makeField, pageCloud, paintFog, rowsOf, stepField, type FogClearing, type FogField } from './fog.ts';
-import { SMOKE, covered, extendTrail, fogAlpha, hardDiscs, holeRadius, maskAlpha, openness, strength, sweepAt, type Clearing, type SweepLine, type TrailPoint } from './smoke.ts';
+import { FOG, cellOrigin, coverageOf, makeField, pageCloud, paintFog, rowsOf, stepField, type FogClearing, type FogField } from './fog.ts';
+import { SMOKE, extendTrail, fogAlpha, hardDiscs, holeRadius, maskAlpha, openness, strength, sweepAt, type Clearing, type SweepLine, type TrailPoint } from './smoke.ts';
 import './hot-box.css';
 
 /** The control's label and its hidden description, which the Lens is given. */
@@ -124,8 +124,12 @@ export function useForcedColors(): boolean {
 
 /* -------------------------------------------------------------------------------- the ladder ---- */
 
-/** The script time a frame all the fog in view may take together, ms (design section 3.3; measured at a phone's speed by e2e/hot-box.spec.ts). */
-export const FOG_BUDGET_MS = 4;
+/**
+ * The script time a frame all the fog in view may take together, ms (measured at a phone's speed by e2e/hot-box.spec.ts). Raised from the design's 4 ms on the
+ * owner's word, 2026-11-16, after the measured figures (a phone's viewport at a 4x CPU throttle: 7.6 to 9.4 ms at rung 0) and the owner's own check on a Pixel 8;
+ * 8 ms is the tiled layer's own budget figure.
+ */
+export const FOG_BUDGET_MS = 8;
 /** How many of the painter's last frames the mean is taken over, at most. */
 const LADDER_FRAMES = 30;
 /** The rungs, by level: the cell's side (px), the rounds of the pressure solve, and whether the fog is drawn from the model with no field. */
@@ -140,11 +144,11 @@ export const FOG_LEVEL_MOST = RUNGS.length - 1;
 /**
  * What a frame costs at each rung, as a share of rung 0's: how far down a mean over the budget has to go to fit it. Measured by e2e/hot-box.spec.ts's cost
  * cases in Chromium at a 4x CPU throttle (a phone's speed), each rung forced alone, a pointer or a finger sweeping 3 s over the short post and over LongPost
- * at a desktop's width and a phone's: the mean of the four ratios to rung 0 (2026-11-16: 0.59 0.54 0.66 0.66 at rung 1, 0.37 0.37 0.48 0.52 at rung 2,
- * 0.39 0.39 0.46 0.53 at rung 3, 0.25 0.24 0.32 0.32 at rung 4). Rung 3's rounds buy nothing a pressure solve of 8 did not already cost less than the cell, so it
+ * at a desktop's width and a phone's: the mean of the four ratios to rung 0 (2026-11-16, with `coverageOf` in the painter: 0.59 0.48 0.67 0.64 at rung 1,
+ * 0.41 0.28 0.61 0.47 at rung 2, 0.41 0.29 0.56 0.42 at rung 3, 0.23 0.17 0.31 0.27 at rung 4). Rung 3's rounds buy nothing a pressure solve of 8 did not already cost less than the cell, so it
  * is no cheaper than rung 2 and the ladder never lands on it from a mean that rung 2 did not fit.
  */
-export const FOG_SHARE: readonly number[] = [1, 0.61, 0.43, 0.44, 0.28];
+export const FOG_SHARE: readonly number[] = [1, 0.59, 0.44, 0.42, 0.25];
 /** How many painter frames the mean has before it is judged: a slow device paints few frames a second, and waits on no more than this. */
 const LADDER_FIRST = 8;
 
@@ -614,7 +618,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
       /* A field at rest is not stepped: with no box disturbed and nothing open to disturb one, the step would do nothing. */
       if (field.box || clearings.length > 0 || m.trail.length > 0) stepField(field, dt, {
         clearings, trail: m.trail, radius, rounds, ...(bottom > top ? { view: { top, bottom } } : {}),
-        target: (x, y) => covered(x, y, cuts.clearings, radius, t, false, m.trail),
+        target: coverageOf(cuts.clearings, radius, t, false, m.trail),
       });
     }
     /* What is still happening, as rows of the box. */
@@ -683,7 +687,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
       }
       paintFog(field, pageCloud(), sc.img.data, rows, {
         color: L.rgb, alpha, t: L.reduced || L.still ? 0 : t - startedAt.current, phase: { x: L.seed % 4096, y: (L.seed >>> 12) % 4096 }, bands: cuts.rects,
-        ...(direct ? { direct: { target: (x: number, y: number) => covered(x, y, cuts.clearings, radius, t, L.reduced, trail), reach } } : {}),
+        ...(direct ? { direct: { target: coverageOf(cuts.clearings, radius, t, L.reduced, trail), reach } } : {}),
       });
       sc.ctx.putImageData(sc.img, 0, 0);
       const o = cellOrigin(field, 0, rows.y0);
