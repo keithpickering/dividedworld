@@ -75,7 +75,7 @@ function mount(o: Options = {}) {
     );
     return o.around ? <TextLayer runs={o.around}>{effect}</TextLayer> : effect;
   }
-  const world = renderInWorld(<Host />);
+  const world = renderInWorld(<Host />, { settings: { economy: { 'whoops.price': 100, 'autocorrect.holdHours': 24 } } as never });
   return { ...world, save, views, edit: (b: string) => act(() => setBody(b)), setStates: (st: Record<string, EffectState>) => act(() => setStates(st)), rerender: () => act(() => bump()) };
 }
 const anchors = () => [...document.querySelectorAll<HTMLElement>('[data-kb-ac-anchor]')];
@@ -311,6 +311,56 @@ describe('Autocorrect: the room', () => {
     expect(seg).toHaveTextContent('Mario');
     expect(seg).not.toHaveAttribute('aria-hidden');
     expect(seg).not.toHaveAttribute('data-kb-quotable');
+  });
+});
+
+describe('Autocorrect: the author\'s hold', () => {
+  const NOW = new Date('2026-11-16T12:00:00.000Z');
+  const hourAgo = (): CardPlay => ({ ...playOf(1, 'mario', 'Luigi'), playedAt: new Date(NOW.getTime() - 3_600_000).toISOString() });
+
+  test('the author on a play landed an hour ago peeks: nothing is saved, the Lens and the anchor say how long it is stuck on, a reader hears nothing of it', async () => {
+    vi.useFakeTimers({ now: NOW });
+    const m = mount({ author: true, body: 'Mario', plays: [hourAgo()] });
+    const w = wide(pieces()[0]!);
+    expect(last(m).ends).toBe(LENS.authorHeld('23h 0m'));
+    expect(last(m).ends).toMatch(/^Stuck on for 23h 0m\. After that you can peel/u);
+    expect(buttons()[0]!.getAttribute('aria-label')).toBe('Autocorrected text: “Luigi”. Stuck on for 23h 0m. Hold Enter or Space to lift it and read under it');
+    await hold(buttons()[0]!, through(w));
+    letGo(buttons()[0]!);
+    await pass(2000);
+    expect(m.save).not.toHaveBeenCalled();
+    expect(pieces()).toHaveLength(1);
+    m.unmount();
+
+    const reader = mount({ author: false, body: 'Mario', plays: [hourAgo()] });
+    expect(last(reader).ends).toBe(LENS.readerEnds);
+    expect(buttons()[0]!.getAttribute('aria-label')).not.toContain('Stuck on');
+  });
+
+  test('when the hold passes the clock moves on by itself: the words change and the author\'s drag peels and saves', async () => {
+    vi.useFakeTimers({ now: NOW });
+    const m = mount({ author: true, body: 'Mario', plays: [hourAgo()] });
+    for (let i = 0; i < 22 * 60 + 59; i++) await pass(60_000);
+    expect(last(m).ends).toBe(LENS.authorHeld('1m'));
+    await pass(60_000);
+    expect(last(m).ends).toBe(LENS.authorEnds);
+    expect(buttons()[0]!.getAttribute('aria-label')).toContain('peel it off for good');
+    const w = wide(pieces()[0]!);
+    await hold(buttons()[0]!, through(w));
+    await pass(500);
+    expect(m.save).toHaveBeenCalledWith('k1', { peeled: [0], clean: true });
+  });
+
+  test('left rounds up to the minute, and an old play has no hold and sets no timer', async () => {
+    vi.useFakeTimers({ now: NOW });
+    const old = mount({ author: true, body: 'Mario' });
+    expect(last(old).ends).toBe(LENS.authorEnds);
+    const timers = vi.getTimerCount();
+    old.unmount();
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(timers);
+    const p = { ...playOf(1, 'mario', 'Luigi'), playedAt: new Date(NOW.getTime() - 24 * 3_600_000 + 12 * 60_000 - 1000).toISOString() };
+    const m2 = mount({ author: true, body: 'Mario', plays: [p] });
+    expect(last(m2).ends).toBe(LENS.authorHeld('12m'));
   });
 });
 

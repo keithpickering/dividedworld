@@ -175,3 +175,16 @@ for (const [width, height] of [[390, 844], [1440, 1120]] as const) {
     });
   }
 }
+
+test('the author on a play inside its hold lifts the tape under a held key and nothing is peeled', async ({ page }) => {
+  await open(page, 'one-author-held', { width: 1440, height: 1120 });
+  const before = await pieces(page);
+  const anchor = page.locator('button[data-kb-ac-anchor]').first();
+  await expect(anchor).toHaveAttribute('aria-label', /Stuck on for/u);
+  await anchor.focus();
+  await page.keyboard.down('Enter');
+  await page.waitForTimeout(PICK_MS + 2500);
+  await page.keyboard.up('Enter');
+  await page.waitForTimeout(500);
+  expect(await pieces(page)).toBe(before);
+});

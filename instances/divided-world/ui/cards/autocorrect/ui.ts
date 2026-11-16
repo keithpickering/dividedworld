@@ -8,6 +8,9 @@ import autocorrectMark from './mark.svg?url';
 import autocorrectArt from './art.json';
 import { orbs, setMoveWords } from '../words.ts';
 
+/** The sentence on the author's hold, left out when there is none. */
+const holdWords = (hours: number | undefined) => (hours ? ` The author can't peel any of a play's tape for the first ${hours} hours after it lands.` : '');
+
 /*
  * Each card's effect loads the first time a post wears it, so the board's first script holds none of them; the engine's effect
  * slot draws one inside a Suspense whose fallback is the post's words (engine/ui/cards/Effects.tsx).
@@ -32,9 +35,9 @@ export const ui: CardUi = {
   },
   describe: (settings: Settings) => {
     const e = settings.economy;
-    return `A Pepperoni card, common. You type a phrase and the words to cover it with, and every place the phrase appears in the post's own words, as whole words in any case, gets a strip of tape with your words on it. Any reader can lift a strip by one end to read under it, and it lays back down. Only the post's author can peel strips off, slowly, for everyone, and the author's words are always under the tape and in the post's History. Up to three can stack on one post. ${setMoveWords('the quoting post')} A set one lands only when the quote's own words hold its phrase, and it waits for a quote that does. Playing it costs ${orbs(e['autocorrect.perVolume'] ?? 0)} more for every ${e['autocorrect.volumeStep'] ?? 0} characters it covers, ${orbs(e['autocorrect.mostAdded'] ?? 0)} at most.`;
+    return `A Pepperoni card, common. You type a phrase and the words to cover it with, and every place the phrase appears in the post's own words, as whole words in any case, gets a strip of tape with your words on it. Any reader can lift a strip by one end to read under it, and it lays back down. Only the post's author can peel strips off, slowly, for everyone, and the author's words are always under the tape and in the post's History.${holdWords(e['autocorrect.holdHours'])} Up to three can stack on one post. ${setMoveWords('the quoting post')} A set one lands only when the quote's own words hold its phrase, and it waits for a quote that does. Playing it costs ${orbs(e['autocorrect.perVolume'] ?? 0)} more for every ${e['autocorrect.volumeStep'] ?? 0} characters it covers, ${orbs(e['autocorrect.mostAdded'] ?? 0)} at most.`;
   },
-  logPlay: (config) => (typeof config.phrase === 'string' && typeof config.replacement === 'string' ? `It covers “${config.phrase}” with “${config.replacement}”.` : undefined),
+  logPlay: (config) => (typeof config.phrase === 'string' && typeof config.replacement === 'string' ? `It covers “${config.phrase}” with “${config.replacement}”. Its author can't peel it at first.` : undefined),
   logSave: (state: unknown) => {
     const { peeled, clean, stuck } = (typeof state === 'object' && state !== null ? state : {}) as { peeled?: unknown; clean?: unknown; stuck?: unknown };
     if (clean === true) return { what: 'Peeled clean', said: 'You peeled every strip it had then. An edit that brings the phrase back brings a strip with it.' };
