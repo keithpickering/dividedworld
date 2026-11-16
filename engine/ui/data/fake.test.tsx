@@ -5657,7 +5657,8 @@ describe('cards on a spun thread', () => {
   const aura: CardRules = { ...base, key: 'aura', name: 'Aura', alignment: 'sweet', rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'day', count: 1 }, canApply: (t, e, _c, now) => landsOn(aura, t, e, now) };
   const cutter: CardRules = { ...base, key: 'cutter', name: 'Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, canApply: (t, e, _c, now) => landsOn(cutter, t, e, now) };
   const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'rare', play: 'set', trap: { trigger: { on: 'cast' } }, catches: () => 'blot', canApply: () => ok(undefined) };
-  const spun: Instance = { ...instance, cards: [blot, solo, shield, sentry, glint, mover, aura, cutter, snare], settings: { ...settings, postMaxLength: 50, economy: {} } };
+  const hood: CardRules = { ...base, key: 'hood', name: 'Hood', alignment: 'pepperoni', rarity: 'rare', reaches: ['post'], lasts: { unit: 'day', count: 3 }, veil: 'author', canApply: (t, e, _c, now) => landsOn(hood, t, e, now) };
+  const spun: Instance = { ...instance, cards: [blot, solo, shield, sentry, glint, mover, aura, cutter, snare, hood], anonymous: { name: 'Nobody', tagline: '' }, settings: { ...settings, postMaxLength: 50, economy: {} } };
 
   /** S: a thread Ana's character spun, so Ana's character wrote its opening post (a `spin` Act), with one reply by Bob's character. Ana is signed in; each holds three of every card. */
   async function spunWorld() {
@@ -5686,7 +5687,7 @@ describe('cards on a spun thread', () => {
     expect(played).toMatchObject({ kind: 'card', targetActId: w.opening, thread: w.thread, payload: { card: 'blot', layer: 1 } });
     const page = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
     expect(page.plays.map((p) => p.id)).toEqual([played.id]);
-    expect(await w.fake.playMoment(played.id)).not.toBeNull();
+    expect((await w.fake.playMoment(played.id))!.version.id).toBe(w.opening);
   });
   test('C2: the same card cast there by Ana\'s character lands, its stack allowing', async () => {
     const w = await spunWorld();
@@ -5788,5 +5789,18 @@ describe('cards on a spun thread', () => {
     const w = await spunWorld();
     expect(await w.fake.characterCounts(w.anaFace)).toEqual({ posts: 0, spins: 1, cards: 0 });
     expect(await w.fake.characterCounts(w.boFace)).toEqual({ posts: 2, spins: 0, cards: 0 });
+  });
+  test('an author veil on the opening post moves one spin, and no post, from its author\'s character to the stand-in, and back when the veil ends', async () => {
+    const w = await spunWorld();
+    w.fake.seed.cards(w.bo, { hood: 1 });
+    asBo(w);
+    must(await w.fake.playCard('hood', w.boFace, w.opening, {}, ''));
+    const stand = (await w.fake.act(w.opening))!.character!;
+    expect(stand).not.toBe(w.anaFace);
+    expect(await w.fake.characterCounts(w.anaFace)).toEqual({ posts: 0, spins: 0, cards: 0 });
+    expect(await w.fake.characterCounts(stand)).toEqual({ posts: 0, spins: 1, cards: 0 });
+    w.fake.clock.advance(3 * DAY + MINUTE);
+    expect(await w.fake.characterCounts(w.anaFace)).toEqual({ posts: 0, spins: 1, cards: 0 });
+    expect(await w.fake.characterCounts(stand)).toEqual({ posts: 0, spins: 0, cards: 0 });
   });
 });
