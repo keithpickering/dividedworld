@@ -1133,7 +1133,7 @@ function onMove(e: PointerEvent): void {
   const host = hostOf(e.target);
   const opts = host ? hosts.get(host) : undefined;
   if (opts?.sticky && opts.flakes) {
-    /* The roll comes first, so the host's refusal (a `closest` up from the target) is asked only of a move that would pick up. */
+    /* The roll comes first, so the host's refusal is asked only of a move that would pick up: a refusal can cost a walk up the document. */
     if (carried.length < MAX_CARRIED && cr() < Math.min(0.6, moved / 40) && !opts.refuses?.(e.target)) {
       /* A board whose band cannot be computed gets no glitter lent from it: nothing is drawn that has no band to hold. */
       const band = bandAt(host!, e.timeStamp);

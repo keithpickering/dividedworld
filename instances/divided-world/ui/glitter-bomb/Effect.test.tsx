@@ -398,11 +398,11 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(b, 'a board change paints the base again').toHaveBeenCalledTimes(bases + 1);
   });
 
-  /* A spun thread's ORIGIN box (docs/plans/2026-11-15-origin-box-effects-design.md, sections 2, 4 and 6): the effect sits in the box's area,
-     inside the opening post's body, which may hold a glitter host of its own. The nearest marked area is this one's. */
   /* The host's refusal of a pickup, as cling asks it (flakes.ts `onMove`): the layer's own listener asks it of every move, so the host's `refuses` is the one place the check lives. */
   const refuses = (target: Element | null): boolean => (spies.clingRegister.mock.calls.at(-1)![1] as { refuses: (t: EventTarget | null) => boolean }).refuses(target);
 
+  /* A spun thread's ORIGIN box (docs/plans/2026-11-15-origin-box-effects-design.md, sections 2, 4 and 6): the effect sits in the box's area,
+     inside the opening post's body, which may hold a glitter host of its own. The nearest marked area is this one's. */
   describe("in the ORIGIN box, inside the opening post's body", () => {
     const rectOf = (w: number, h: number, left = 0, top = 0) => ({ x: left, y: top, left, top, right: left + w, bottom: top + h, width: w, height: h, toJSON: () => ({}) });
     const inBox = (lift: 'none' | 'around' = 'none') => {
