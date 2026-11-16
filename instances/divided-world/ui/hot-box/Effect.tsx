@@ -21,8 +21,8 @@
  *  - the full effect: the fog of `fog.ts`, a shaded body the pointer drags, that flows around it and closes in from its rim. It is painted through the
  *    engine's tiles (engine/ui/cards/tiles.ts): canvases 512 px tall over the content area, held only near the window, at a density of 1 (the fog is drawn a
  *    cell to a pixel and scaled up smooth, so a dense canvas buys nothing). The field is stepped once a frame, on the first tile painted in it, and only
- *    where it is disturbed. Nothing loops: a tile under a clearing, a trail or moving fog is marked stale each frame it is painted, so it is painted again
- *    in the next; fog at rest is marked stale 20 times a second by one timer for the page, which is how fast its drift needs; a tile out of view is not
+ *    where it is disturbed. Nothing loops: a tile under moving fog (a clearing or trail that is moving, or fog still changing as one opens or closes) is marked stale each frame it is
+ *    painted, so it is painted again in the next; fog at rest, and a clearing the reader holds still once it has settled, is marked stale 20 times a second by one timer for the page, which is how fast its drift needs; a tile out of view is not
  *    held, so nothing is painted for it. Where a tile is not yet painted its place shows a stand-in, the fog's flat color (`dw-hotbox-far`), so the words
  *    are never bare;
  *  - the ladder: the painter's own time is kept for the last 30 frames it ran in, for every smoked post on the page together, against `FOG_BUDGET_MS`.
@@ -570,8 +570,9 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
 
   /* ---- the tiles ---- */
   /**
-   * A frame has turned: the model is caught up, the field is stepped once (never once a tile), and the tiles something is still happening under are marked
-   * stale, so the next frame paints them again. A tile nothing is happening under is left to the page's 20-a-second timer.
+   * A frame has turned: the model is caught up, the field is stepped once (never once a tile), and the tiles moving fog is under are marked stale, so the next
+   * frame paints them again. Moving fog is where a clearing or trail is moving, or the field's last step changed something (`busy`); a clearing the reader holds
+   * still has settled, and is as still as fog at rest. A tile nothing is moving under is left to the page's 20-a-second timer.
    */
   const turn = useCallback((t: number, field: FogField, radius: number, direct: boolean, rounds: number) => {
     const m = model.current, L = latest.current, p = painter.current, layer = layerRef.current;
@@ -606,7 +607,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
       if (live) span(c.y - reach, c.y + reach);
     }
     for (const rect of cuts.rects) if (rect.o < 1) span(rect.top, rect.bottom);
-    if (!direct && field.box && !field.quiet) span(cellOrigin(field, 0, field.box.y0).y, cellOrigin(field, 0, field.box.y1).y);
+    if (!direct && field.box && field.busy) span(cellOrigin(field, 0, field.box.y0).y, cellOrigin(field, 0, field.box.y1).y);
     const g = waveFactor(m.wavedAt, t, L.reduced);
     p.live = g > 0 && g < 1 ? 'all' : bottom > top ? { top, bottom } : null;
     if (p.live === 'all') layer?.stale();
@@ -921,7 +922,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
     <div ref={hostRef} className="dw-hotbox" data-kb-hotbox data-dw-fog-level={forcedLevel ?? 0} style={standIn}>
       {forced && <p className="dw-hotbox-sign"><strong>{state}.</strong> {endsText}</p>}
       {!still && !waved && <p className="kb-visually-hidden dw-hotbox-way">{SMOKED_WAY}</p>}
-      <div ref={wordsRef} className="dw-hotbox-words" inert={!still && !waved} style={mask}>{children}</div>
+      <div ref={wordsRef} className="dw-hotbox-words" inert={!still} style={mask}>{children}</div>
       {forced && (
         <div className="dw-hotbox-frame" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }}>
           {discs.map((c, i) => (

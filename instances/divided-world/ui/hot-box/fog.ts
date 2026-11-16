@@ -150,12 +150,18 @@ export interface FogField {
   store: FogStore | null;
   /** Nothing in the box is moving or thinned: only carried texture is still easing back, which a step does without the flow. */
   quiet: boolean;
+  /**
+   * The last step visibly changed something: a cell's speed was over `FOG.rest.speed`, or its density moved by more than 0.002. A clearing held still has
+   * settled: its cells are thinned and the box is held, but nothing changes, so this is false and the page's rest timer is enough to draw it. False for a field at
+   * rest, after an `ease` step (carried texture only), and when a step returns early.
+   */
+  busy: boolean;
 }
 
 /** A field at rest. It holds no array until it is disturbed. */
 export function makeField(width: number, height: number, cell: number = FOG.cell): FogField {
   const w = Number.isFinite(width) ? Math.max(0, width) : 0, h = Number.isFinite(height) ? Math.max(0, height) : 0;
-  return { width: w, height: h, cell, gw: Math.ceil(w / cell) + 1 + 2 * PAD, gh: Math.ceil(h / cell) + 1 + 2 * PAD, box: null, store: null, quiet: false };
+  return { width: w, height: h, cell, gw: Math.ceil(w / cell) + 1 + 2 * PAD, gh: Math.ceil(h / cell) + 1 + 2 * PAD, box: null, store: null, quiet: false, busy: false };
 }
 
 /** The grid rows that cover the box's px rows `top` to `bottom`, with a row over at each end so a scaled picture has a neighbor to blend with. */
@@ -285,6 +291,7 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
   const trail = !Number.isFinite(R) ? [] : input.trail.every(real) ? input.trail : input.trail.filter(real);
   const modeled = clearings.length > 0 || trail.length > 0;
   const prev = field.box;
+  field.busy = false;
   if (!prev && !modeled) return 0;
   if (prev && !modeled && field.quiet && field.store) return ease(field, prev, field.store, dt);
 
@@ -325,6 +332,8 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
   }
   project(field, B, input.rounds ?? FOG.rounds, bursting ? FOG.burst.keep : 1);
   U0.set(U); V0.set(V); D0.set(D); OX0.set(OX); OY0.set(OY);
+  /* The density as the step began, kept in `P`: the pressure solve is done with it, and the next step's `project` clears every cell of it that it reads before it reads it. */
+  s.P.set(D);
   advect(s, gw, U, U0, dt, B, 0, cell); advect(s, gw, V, V0, dt, B, 0, cell); advect(s, gw, D, D0, dt, B, 0, cell); advect(s, gw, OX, OX0, dt, B, 1, cell); advect(s, gw, OY, OY0, dt, B, 2, cell);
 
   const damp = Math.exp(-dt / (FOG.damp / 1000)), settle = Math.exp(-dt / (FOG.settle / 1000)), sink = 1 - Math.exp(-dt / (FOG.sink / 1000));
@@ -336,7 +345,7 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
     const cx = p.x / cell + PAD, cy = p.y / cell + PAD;
     mx0 = Math.min(mx0, Math.floor(cx - rr) - 1); mx1 = Math.max(mx1, Math.ceil(cx + rr) + 1); my0 = Math.min(my0, Math.floor(cy - rr) - 1); my1 = Math.max(my1, Math.ceil(cy + rr) + 1);
   }
-  let nx0 = gw, nx1 = 0, ny0 = gh, ny1 = 0, quiet = true;
+  let nx0 = gw, nx1 = 0, ny0 = gh, ny1 = 0, quiet = true, busy = false;
   for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) {
     const i = (y - top) * gw + x;
     U[i]! *= damp; V[i]! *= damp; OX[i]! *= settle; OY[i]! *= settle;
@@ -350,6 +359,7 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
     }
     const live = D[i]! < FOG.rest.density || Math.abs(U[i]!) + Math.abs(V[i]!) > FOG.rest.speed;
     if (live) quiet = false;
+    if (Math.abs(U[i]!) + Math.abs(V[i]!) > FOG.rest.speed || Math.abs(D[i]! - s.P[i]!) > 0.002) busy = true;
     if (live || Math.abs(OX[i]!) + Math.abs(OY[i]!) > FOG.rest.carried) {
       if (x < nx0) nx0 = x;
       if (x >= nx1) nx1 = x + 1;
@@ -357,7 +367,7 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
       if (y >= ny1) ny1 = y + 1;
     } else { U[i] = 0; V[i] = 0; OX[i] = 0; OY[i] = 0; D[i] = 1; }
   }
-  if (nx1 > nx0) { field.box = { x0: nx0, x1: nx1, y0: ny0, y1: ny1 }; field.quiet = quiet && !modeled; }
+  if (nx1 > nx0) { field.box = { x0: nx0, x1: nx1, y0: ny0, y1: ny1 }; field.quiet = quiet && !modeled; field.busy = busy; }
   else { field.box = null; field.store = null; field.quiet = false; }
   return (B.x1 - B.x0) * (B.y1 - B.y0);
 }

@@ -556,6 +556,24 @@ describe('the pointer', () => {
     }
   });
 
+  test('a mouse parked on the words is painted every frame while the clearing opens, and at the rest pace once it has settled, still clear', () => {
+    const s = setup();
+    const rec = recOf(canvas(s))!;
+    move(s, 300, 250);
+    act(() => { vi.advanceTimersByTime(16); });
+    for (let i = 0; i < 4; i++) {
+      const before = rec.clears;
+      act(() => { vi.advanceTimersByTime(16); runFrame(); });
+      expect(rec.clears, `frame ${i}`).toBe(before + 1);
+    }
+    pass(2000, 16);
+    expect(alphaAt(s, 300, 150)).toBe(0);
+    const before = rec.clears;
+    pass(1000, 16);
+    expect(rec.clears - before).toBeLessThanOrEqual(21);
+    expect(alphaAt(s, 300, 150)).toBe(0);
+  });
+
   test('a touch clears where it lands, holds touchHold, then closes over roll; a second touch replaces the first', () => {
     const s = setup();
     touch(s, 200, 300);

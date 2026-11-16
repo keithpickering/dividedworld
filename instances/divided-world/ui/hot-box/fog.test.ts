@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FOG, cellOrigin, divergence, fogAt, makeCloud, makeField, pageCloud, paintFog, project, rowsOf, stepField, type FogField, type FogInput } from './fog.ts';
+import { FOG, cellOrigin, divergence, fogAt, makeCloud, makeField, pageCloud, paintFog, project, rowsOf, stepField, type FogClearing, type FogField, type FogInput } from './fog.ts';
 import { SMOKE, covered, extendTrail, fogAlpha, holeRadius, type Clearing, type TrailPoint } from './smoke.ts';
 import { mulberry32 } from '../../cards/whoops/splat.ts';
 
@@ -345,4 +345,51 @@ test('stepField uses its rounds: the same drag with none and with the default le
   const a = flow(none), b = flow(some);
   assert.ok(a.some((v, i) => Math.abs(v - b[i]!) > 0.5), 'the flow beside the path is the same');
   assert.ok(divergence(some, box) < divergence(none, box), `${divergence(some, box)} against ${divergence(none, box)}`);
+});
+
+/** Steps a field 16 ms at a time to `total` ms, with `clear(now)` the clearings and trail of each step; calls `each` after every step. */
+function run(field: FogField, total: number, clear: (now: number) => { clearings: FogClearing[]; trail: TrailPoint[] }, each: (now: number) => void): void {
+  for (let now = 16; now <= total; now += 16) {
+    const { clearings, trail } = clear(now);
+    stepField(field, 16, { clearings, trail, radius: R, target: (px, py) => covered(px, py, clearings.map((c) => at(c.x, c.y)), R, now, false, trail) });
+    each(now);
+  }
+}
+
+test('busy: a clearing held still is changing at first and is not by 1.5 s, though its cells are still thinned and the box is held', () => {
+  const field = makeField(W, H);
+  const busy = new Map<number, boolean>();
+  run(field, 2000, () => ({ clearings: [{ x: 300, y: 150 }], trail: [] }), (now) => { busy.set(now, field.busy); });
+  assert.equal(busy.get(16), true);
+  assert.equal(busy.get(160), true);
+  assert.equal(busy.get(1504), false, 'by 1.5 s');
+  assert.equal(busy.get(2000), false);
+  assert.ok(field.box !== null);
+  assert.ok(fogAt(field, 300, 150).d < 1, 'the cells under it are still thinned');
+  assert.ok(fogAt(field, 300 + 0.9 * R, 150).d < 1);
+});
+
+test('busy: a clearing moving at 400 px a second is busy every step', () => {
+  const field = makeField(W, H);
+  let x = 100, quiet = 0, steps = 0;
+  run(field, 1000, (now) => { x += 6.4; return { clearings: [{ x, y: 150, vx: 400, vy: 0 }], trail: [] }; }, (now) => { steps++; if (!field.busy) quiet++; });
+  assert.ok(steps > 50);
+  assert.equal(quiet, 0);
+});
+
+test('busy: once the pointer is gone and the wake has closed it is not, though carried texture may still be easing', () => {
+  const field = makeField(W, H);
+  let x = 100, easing = -1;
+  const busyAfter: boolean[] = [];
+  run(field, 14_000, (now) => {
+    if (now > 1000) return { clearings: [], trail: [] };
+    x += 6.4;
+    return { clearings: [{ x, y: 150, vx: 400, vy: 0 }], trail: [] };
+  }, (now) => {
+    if (now > 1000 + 3 * SMOKE.wake) busyAfter.push(field.busy);
+    if (easing < 0 && now > 1000 + 3 * SMOKE.wake && field.box !== null && field.quiet) easing = now;
+  });
+  assert.ok(busyAfter.length > 100);
+  assert.ok(busyAfter.every((b) => !b), 'not busy once the wake has closed');
+  assert.ok(easing > 0, 'a moment with carried texture still easing (box held, nothing moving)');
 });
