@@ -48,11 +48,19 @@ needs from the engine plan it waits on, and that plan's design session writes th
    to change something real waiting on an admin.
 9. **Ratio's mark stays until an admin lifts it.** Weighed: a mark that fades after 30 days. The owner approved the row
    as proposed.
-10. **A tagline says what the card does.** The owner: "Some may be a tiny bit cryptic since these are the only
+10. **A tagline says what the card does, in two lines.** The owner: "Some may be a tiny bit cryptic since these are the only
     description you see in your Hand." So each tagline states the effect, as Heat Magnet's and Toll's do, and the joke
     is left to the name and the art. Time Machine's, "Go back to better days.", is the owner's own. Kick Me's first
-    draft ("Hang a sign on your own post.") read as hanging a real sign and was replaced.
-11. **The words in section 3 are drafts for the owner's review in this PR.** The owner approved every number and
+    draft ("Hang a sign on your own post.") read as hanging a real sign and was replaced. The owner: "These are fine as long as they fit in the size they'll be displayed." On the fan the
+    tagline's plate holds two lines of about twenty characters (`.kb-postcard-line`, `engine/ui/cards/postcard.css`:
+    74cqw wide and 27cqw high inside its padding, at 7.4cqw type and a 1.25 line height), and the longest tagline of a
+    built card is 37 characters. So no tagline here is longer than 37, and a card that does two things names the
+    larger: Kick Me's says nothing of its refunds, which its summary carries.
+11. **No word a player reads says "Ward".** The owner: "'Ward' I think is not a card type anymore?" It is not: a
+    card is a Move, a Reversal or a Gimmick (`copy.cardKinds`), and Force Field and Sugar Coat are Gimmicks whose words
+    say "turns away cards". `ward` remains the engine's name for that effect, and this document uses it only in that
+    sense. Cheap Shot's words say "can't be turned away or caught".
+12. **The words in section 3 are drafts for the owner's review in this PR.** The owner approved every number and
     effect in conversation; the taglines, summaries, log lines and statuses were drafted afterward in the house style
     of the built cards and were sent, at the owner's request and marked as drafts, to the session rendering the cards'
     promotional images.
@@ -104,7 +112,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 **Sweet Heat** (Pepperoni, uncommon, 1.50, Gimmick on one's own character, 3 days)
 - Each hype (excited-positive) or heat (excited-negative) vote on the character's posts pays half a vote more.
 - Refused while a Sweet Heat is already up on the character.
-- Tagline: "Earn more from excited reactions, good or bad."
+- Tagline: "Earn more from excited reactions."
 - Summary: "Used on your own character. For 3 days, each excited reaction to its posts, positive or negative, pays
   half a vote more."
 - Status: "Paid more for excited reactions". Log: "Each excited reaction to that character's posts, positive or
@@ -116,7 +124,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - Refused while one is already up on the post.
 - Against Hype-Up: Hype-Up is stronger for its 3 days (both positive quadrants, anyone's post); Required Reading runs
   a week, past the day the Technician's Evergreen starts paying.
-- Tagline: "Earn more from calm positive reactions to a post."
+- Tagline: "Earn more from calm praise on a post."
 - Summary: "Used on your post. For a week, each calm positive reaction to it pays one vote more."
 - Status: "Paid more for calm positive reactions". Log: "Each calm positive reaction to that post pays one vote more
   until it ends."
@@ -124,7 +132,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 **Front Row** (Pepperoni, uncommon, 1.50, Gimmick on one's own character, 3 days)
 - Each vote, in any quadrant, on a card the character plays pays half a vote more.
 - Refused while one is already up on the character.
-- Tagline: "Earn more from reactions to the cards you play."
+- Tagline: "Earn more from your cards' reactions."
 - Summary: "Used on your own character. For 3 days, each reaction to a card it plays pays half a vote more."
 - Status: "Paid more for reactions to its cards". Log: "Each reaction to a card that character plays pays half a
   vote more until it ends."
@@ -146,7 +154,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - The sign fills nothing: it is drawn hung on the post's content area, at its top edge, and covers no words. Its look
   is the owner's to settle in its build plan's design.
 - Refused while one is already up on the post.
-- Tagline: "Earn more from a post's negative reactions, and give Salty cards back."
+- Tagline: "Earn more when your post bombs."
 - Summary: "Used on your post. For 3 days, each negative reaction to it pays one vote more, and the first three Salty
   cards cast there go back to their casters' hands."
 - Status: "Wearing a Kick Me sign". Log: "Each negative reaction to that post pays one vote more until it ends, and
@@ -161,10 +169,12 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - A Reversal it gets past stays face down, unsprung, and nothing is told to its setter. A Ward or Reversal above
   uncommon works as it always does, and the Cheap Shot is still used up.
 - It does nothing about Last Word, which stops quotes, not casts. It does nothing for a Move that lands from a quote.
-- Tagline: "Your next Move gets past Wards and Reversals."
-- Summary: "Used on your own character. Its next Move within 3 days gets past Wards and Reversals up to uncommon."
-- Status: "Lining up a cheap shot". Log: "That character's next Move gets past Wards and Reversals up to uncommon."
-  And on the Move: "Your Cheap Shot got this card past a Ward" or "past a card set face down", only where it did.
+- Tagline: "Your next Move slips past defenses."
+- Summary: "Used on your own character. Its next Move within 3 days can't be turned away or caught by a card up to
+  uncommon."
+- Status: "Lining up a cheap shot". Log: "That character's next Move can't be turned away or caught by a card up to
+  uncommon." And on the Move: "Your Cheap Shot got this card past a {card} that would have turned it away" or "past a
+  card set face down", only where it did.
 
 **Buzzkill** (Salty, rare, 3.00, Move on a post or a character; instant)
 - Ends one Gimmick up on the target, up to rare, which the caster picks from those showing there. The Gimmick is not
@@ -191,7 +201,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - Springs on the first common cast there, whatever its flavor. The cast lands, and each vote it draws, in any
   quadrant, pays the setter a quarter of a vote. Votes by the setter's own player pay nothing.
 - Springs once, or ends after the set time. Once sprung it pays for as long as the cast draws votes, as 4D Chess does.
-- Tagline: "Get paid when a common card lands here."
+- Tagline: "Get paid when a common card lands."
 - Summary: "Set face down on your post. The first common cast there lands, and every reaction to it pays you a
   quarter of a vote."
 - Log, setter: "It sprang on a {card}. Each reaction to that card pays you a quarter of a vote."
@@ -204,7 +214,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
   thread.
 - The lockout is public, as the cast that earned it is.
 - Springs once, or ends after the set time.
-- Tagline: "Lock out whoever casts a card that isn't Sweet."
+- Tagline: "Non-Sweet casters get locked out."
 - Summary: "Set face down on your post. The first cast there that isn't Sweet, up to rare, lands, and its caster is
   locked out of the thread for 24 hours."
 - Log, caster: "A SoVeryHappy on that post locked {character} out of the thread until {time}."
