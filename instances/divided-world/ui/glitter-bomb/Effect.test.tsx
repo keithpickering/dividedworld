@@ -400,6 +400,9 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
 
   /* A spun thread's ORIGIN box (docs/plans/2026-11-15-origin-box-effects-design.md, sections 2, 4 and 6): the effect sits in the box's area,
      inside the opening post's body, which may hold a glitter host of its own. The nearest marked area is this one's. */
+  /* The host's refusal of a pickup, as cling asks it (flakes.ts `onMove`): the layer's own listener asks it of every move, so the host's `refuses` is the one place the check lives. */
+  const refuses = (target: Element | null): boolean => (spies.clingRegister.mock.calls.at(-1)![1] as { refuses: (t: EventTarget | null) => boolean }).refuses(target);
+
   describe("in the ORIGIN box, inside the opening post's body", () => {
     const rectOf = (w: number, h: number, left = 0, top = 0) => ({ x: left, y: top, left, top, right: left + w, bottom: top + h, width: w, height: h, toJSON: () => ({}) });
     const inBox = (lift: 'none' | 'around' = 'none') => {
@@ -438,22 +441,22 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
 
     test('a pointermove in a lifted element inside the area is ignored', () => {
       inBox();
-      fireEvent.pointerMove(document.querySelector('.lifted')!, { clientX: 10, clientY: 10, pointerType: 'mouse' });
-      expect(spies.clingOver, 'a lifted thing in the body is not glitter').not.toHaveBeenCalled();
-      fireEvent.pointerMove(box(), { clientX: 10, clientY: 10, pointerType: 'mouse' });
-      expect(spies.clingOver, 'the words in the area are heard').toHaveBeenCalledTimes(1);
+      expect(refuses(document.querySelector('.lifted')), 'a lifted thing in the body is not glitter').toBe(true);
+      expect(refuses(box()), 'the words in the area are heard').toBe(false);
     });
 
     test('a pointermove in a lifted element that contains the area (the box itself) is heard', () => {
       inBox('around');
-      fireEvent.pointerMove(box(), { clientX: 10, clientY: 10, pointerType: 'mouse' });
-      expect(spies.clingOver, 'the box is lifted over the opening post, not over its own glitter').toHaveBeenCalledTimes(1);
+      expect(refuses(box()), 'the box is lifted over the opening post, not over its own glitter').toBe(false);
     });
   });
 
   /* The opening post's glitter, with the ORIGIN box inside its body and no glitter of the box's own (design section 4): the box is lifted
      whole over the opening post's ink, so the pointermove the box's words bubble to the post's body is ignored there. */
   test("on the opening post's body, a pointermove in the ORIGIN box's words is ignored and one in its own words is heard", () => {
+    /* A body with a size, so the host has flakes to lend and registers with cling. */
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 300 : 0; });
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 120 : 0; });
     render(
       <div className="kb-act-main" data-kb-content-area>
         <GlitterBombEffect {...props()} />
@@ -464,10 +467,8 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     );
     see(1);
     frames(2);
-    fireEvent.pointerMove(document.querySelector('.box-words')!, { clientX: 10, clientY: 10, pointerType: 'mouse' });
-    expect(spies.clingOver, "the box's words are the box's, not the opening post's glitter").not.toHaveBeenCalled();
-    fireEvent.pointerMove(document.querySelector('[data-kb-words]')!, { clientX: 10, clientY: 10, pointerType: 'mouse' });
-    expect(spies.clingOver, "the opening post's own words are heard").toHaveBeenCalledTimes(1);
+    expect(refuses(document.querySelector('.box-words')), "the box's words are the box's, not the opening post's glitter").toBe(true);
+    expect(refuses(document.querySelector('[data-kb-words]')), "the opening post's own words are heard").toBe(false);
   });
 
   /* Issue #304: a body bigger than the words is redrawn at a share of the rate (engine/ui/cards/body.ts `paintShare`), and the lit
