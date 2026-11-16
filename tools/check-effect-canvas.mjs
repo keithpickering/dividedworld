@@ -18,13 +18,19 @@
  * has a story for each key. e2e/effect-tiles.spec.ts measures every one of those stories, so an effect with none would skip the measuring. The same
  * holds for the folder directly under instances/<instance>/cards/ (Whoops!, Graffiti and Autocorrect live there). An instance file on the layer that is in
  * neither shape (directly in ui/ or cards/, or anywhere else in the instance) fires too, saying the check cannot name its effect, never a silent pass; the
- * budget story file itself, and test and story files (which are not read), are exempt.
+ * budget story file itself, and test and story files (which are not read), are exempt. A type-only import of the layer makes no layer and is not one. When
+ * the story file is missing, exports no BUDGET, or exports one that is not a plain object literal (a call, a spread, a computed key), the check says so and
+ * refuses; it never reports every effect as missing a key. A failing `git ls-files` ends in one plain line and exit 1.
  *
  * A bare `createElement('canvas')` (React's, imported by name) is one, as is `React.createElement('canvas')`.
  *
  * What it cannot see: a canvas made through a variable tag name (`createElement(tag)`), one made through the automatic JSX runtime's `jsx('canvas', ...)` (no
- * source here calls it; the `<canvas>` element is seen), a `createElement` renamed on import, and a canvas, in a file the list allows, that is sized to a post
- * (a listed file is held to its count, never to what its canvas is for). The tile layer's own unit test (engine/ui/cards/tiles.test.tsx) holds the
+ * source here calls it; the `<canvas>` element is seen), a `createElement` renamed on import, a hyperscript helper under another name (`h('canvas')`), a canvas
+ * written inside an HTML string (`innerHTML`, a template literal), a `cloneNode` of a canvas, and a canvas, in a file the list allows, that is sized to a post
+ * (a listed file is held to its count, never to what its canvas is for). It sees `new OffscreenCanvas`, `new globalThis.OffscreenCanvas` (and self., window.:
+ * any property access ending in the name) and `createElementNS(ns, 'canvas')`. Nor does it see an import of the layer through a path alias or a barrel
+ * re-export in another file (the layer is named only by a relative path to engine/ui/cards/tiles); none exists today, and a new alias or barrel must be taught
+ * to `layerImports` in the same change, or an effect imported through it asks for no budget story. The tile layer's own unit test (engine/ui/cards/tiles.test.tsx) holds the
  * pixels and e2e/effect-tiles.spec.ts holds the frames in a real page; this holds only that nothing makes a canvas where the layer is not looking.
  * tools/test-effect-canvas.mjs drives it red on each planted canvas.
  *
@@ -92,8 +98,10 @@ export function canvasUses(text, file) {
       /* `x.createElement(...)` and a bare `createElement(...)` (React's, imported by name) alike. */
       const name = ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : node.expression.text;
       if (name === 'createElement' && isText(node.arguments[0]) && node.arguments[0].text.toLowerCase() === 'canvas') out.push({ line: lineOf(sf, node), what: "createElement('canvas')" });
+      else if (name === 'createElementNS' && isText(node.arguments[1]) && node.arguments[1].text.toLowerCase() === 'canvas') out.push({ line: lineOf(sf, node), what: "createElementNS('canvas')" });
       else if (name === 'transferControlToOffscreen') out.push({ line: lineOf(sf, node), what: 'transferControlToOffscreen()' });
-    } else if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'OffscreenCanvas') {
+    } else if (ts.isNewExpression(node) && ((ts.isIdentifier(node.expression) && node.expression.text === 'OffscreenCanvas') || (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'OffscreenCanvas'))) {
+      /* `new OffscreenCanvas`, and `new globalThis.OffscreenCanvas` (or self., window.): a property access that ends in the name. */
       out.push({ line: lineOf(sf, node), what: 'new OffscreenCanvas' });
     }
     ts.forEachChild(node, visit);
@@ -112,7 +120,11 @@ export function layerImports(text, file) {
     return target === LAYER_MODULE;
   };
   const visit = (node) => {
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && isText(node.moduleSpecifier) && names(node.moduleSpecifier.text)) out.push(lineOf(sf, node));
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && isText(node.moduleSpecifier) && names(node.moduleSpecifier.text)) {
+      /* `import type` and `export type ... from` are erased: they make no layer, so they ask for no budget. */
+      const typeOnly = ts.isImportDeclaration(node) ? node.importClause?.isTypeOnly === true : node.isTypeOnly;
+      if (!typeOnly) out.push(lineOf(sf, node));
+    }
     else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && isText(node.arguments[0]) && names(node.arguments[0].text)) out.push(lineOf(sf, node));
     ts.forEachChild(node, visit);
   };
@@ -120,7 +132,10 @@ export function layerImports(text, file) {
   return out;
 }
 
-/** The keys of the object literal `BUDGET` that a story file exports, or null when it exports none. */
+/**
+ * The keys of the object literal `BUDGET` that a story file exports, or null when it exports none. A BUDGET that is exported but is not a plain object
+ * literal (built by a call, with a spread, with a computed key) is not read: this throws "cannot read BUDGET's keys", never a guess at them.
+ */
 export function budgetKeys(text, file = 'EffectBudget.board.stories.tsx') {
   const sf = parse(text, file);
   let keys = null;
@@ -130,11 +145,15 @@ export function budgetKeys(text, file = 'EffectBudget.board.stories.tsx') {
       if (!ts.isIdentifier(d.name) || d.name.text !== 'BUDGET' || !d.initializer) continue;
       let init = d.initializer;
       while (ts.isAsExpression(init) || ts.isSatisfiesExpression(init) || ts.isParenthesizedExpression(init)) init = init.expression;
-      if (!ts.isObjectLiteralExpression(init)) continue;
+      const cannot = (why) => new Error(`effect-canvas: cannot read BUDGET's keys: ${why} (${file}:${lineOf(sf, d)}); write BUDGET as a plain object literal of its folder names`);
+      if (!ts.isObjectLiteralExpression(init)) throw cannot(ts.isCallExpression(init) ? 'it is built by a call' : 'it is not an object literal');
       keys = new Set();
       for (const p of init.properties) {
+        if (ts.isSpreadAssignment(p)) throw cannot('it has a spread');
         const n = p.name;
+        if (n && ts.isComputedPropertyName(n)) throw cannot('it has a computed key');
         if (n && (ts.isIdentifier(n) || isText(n))) keys.add(n.text);
+        else throw cannot('it has a key that is not a name');
       }
     }
   }
@@ -176,11 +195,16 @@ export function canvasFaults(files, allowed = CANVASES) {
     if (where) {
       const lines = layerImports(t, p);
       if (lines.length) {
+        const hasFile = budgets.has(where.instance);
         const keys = budgets.get(where.instance) ?? null;
         const story = `instances/${where.instance}/ui/EffectBudget.board.stories.tsx`;
         if (where.folder === null) {
           faults.push({ file: p, line: lines[0], what: `is on the tile layer but is in no ui/<folder>/ or cards/<folder>/ of its instance, so the check cannot name its effect for a key of BUDGET in ${story} (move it into its effect's folder)`, kind: 'budget' });
-        } else if (!keys?.has(where.folder)) {
+        } else if (!hasFile) {
+          faults.push({ file: p, line: lines[0], what: `is on the tile layer and the budget story file ${story} is missing (an effect on the layer needs its key in BUDGET there)`, kind: 'budget' });
+        } else if (keys === null) {
+          faults.push({ file: p, line: lines[0], what: `is on the tile layer and ${story} exports no BUDGET (an effect on the layer needs its key there)`, kind: 'budget' });
+        } else if (!keys.has(where.folder)) {
           faults.push({ file: p, line: lines[0], what: `is on the tile layer and its folder ${where.folder} is no key of BUDGET in ${story}`, kind: 'budget' });
         }
       }
@@ -193,36 +217,61 @@ export function canvasFaults(files, allowed = CANVASES) {
   return faults;
 }
 
-export function treeFiles() {
-  const tree = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', cwd: repoRoot }).split('\0').filter(Boolean);
+export function treeFiles(cwd = repoRoot) {
+  let tree;
+  try {
+    tree = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', cwd, stdio: ['ignore', 'pipe', 'pipe'] }).split('\0').filter(Boolean);
+  } catch (e) {
+    throw new Error(`effect-canvas: git ls-files failed in ${cwd}, so the tree was not read (${String(e?.stderr || e?.message || e).trim().split(/\r?\n/)[0]})`);
+  }
   /** @type {Record<string, string>} */
   const files = {};
   for (const p of tree) {
     if (!((SOURCE.test(p) && !NOT_SOURCE.test(p)) || BUDGET_FILE.test(p))) continue;
-    if (fs.existsSync(path.join(repoRoot, p))) files[p] = fs.readFileSync(path.join(repoRoot, p), 'utf8');
+    if (fs.existsSync(path.join(cwd, p))) files[p] = fs.readFileSync(path.join(cwd, p), 'utf8');
   }
   return files;
 }
 
-function main() {
-  const files = treeFiles();
-  /* A guard reading nothing would pass. */
-  if (!(LAYER in files)) {
-    console.error(`  effect-canvas: ${LAYER} was not read, which cannot be right; refusing to report a pass on nothing`);
-    process.exit(1);
+/**
+ * What the check says and its exit code, from a reader of the tree: a pure function, so the refusals can be driven in a test.
+ * @param {() => Record<string, string>} read
+ * @returns {{ code: number, out: string[], err: string[] }}
+ */
+export function report(read = treeFiles) {
+  const refused = (e) => ({ code: 1, out: [], err: [String(e?.message ?? e).split(/\r?\n/)[0]] });
+  let files;
+  try {
+    files = read();
+  } catch (e) {
+    return refused(e);
   }
-  const faults = canvasFaults(files);
+  /* A guard reading nothing would pass. */
+  if (!(LAYER in files)) return { code: 1, out: [], err: [`  effect-canvas: ${LAYER} was not read, which cannot be right; refusing to report a pass on nothing`] };
+  let faults;
+  try {
+    faults = canvasFaults(files);
+  } catch (e) {
+    return refused(e);
+  }
   if (faults.length) {
-    console.error(`  effect-canvas: ${faults.length} fault(s):`);
+    const err = [`  effect-canvas: ${faults.length} fault(s):`];
     for (const f of faults) {
       const hint = f.kind === 'stale' ? ' (update CANVASES)' : f.kind === 'gone' ? ' (delete its CANVASES line)' : '';
-      console.error(`    ${f.file}${f.line ? `:${f.line}` : ''}  ${f.kind === 'canvas' ? `makes a canvas outside the tile layer: ${f.what}` : f.what}${hint}`);
+      err.push(`    ${f.file}${f.line ? `:${f.line}` : ''}  ${f.kind === 'canvas' ? `makes a canvas outside the tile layer: ${f.what}` : f.what}${hint}`);
     }
-    console.error('  An effect draws on a layer from engine/ui/cards/tiles.ts (makeTileLayer), which holds a canvas only near the window. A canvas that is not the size of a post (a sprite, a preview) is listed in CANVASES (tools/check-effect-canvas.mjs) with why; an effect on the layer needs its key in BUDGET (instances/<instance>/ui/EffectBudget.board.stories.tsx).');
-    process.exit(1);
+    err.push('  An effect draws on a layer from engine/ui/cards/tiles.ts (makeTileLayer), which holds a canvas only near the window. A canvas that is not the size of a post (a sprite, a preview) is listed in CANVASES (tools/check-effect-canvas.mjs) with why; an effect on the layer needs its key in BUDGET (instances/<instance>/ui/EffectBudget.board.stories.tsx).');
+    return { code: 1, out: [], err };
   }
   const waiting = Object.values(CANVASES).filter((e) => e.until).length;
-  console.log(`  effect-canvas: ${Object.keys(files).length} file(s), no canvas outside the layer beyond the ${Object.keys(CANVASES).length} listed (${waiting} waiting for a step)`);
+  return { code: 0, out: [`  effect-canvas: ${Object.keys(files).length} file(s), no canvas outside the layer beyond the ${Object.keys(CANVASES).length} listed (${waiting} waiting for a step)`], err: [] };
+}
+
+function main() {
+  const r = report();
+  for (const l of r.out) console.log(l);
+  for (const l of r.err) console.error(l);
+  if (r.code) process.exit(r.code);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -106,3 +106,23 @@ test('an export a meta excludes is data and not a story', () => {
   fs.writeFileSync(path.join(ui, 'Data.board.stories.tsx'), "export const DATA = {};\nconst meta = { title: 'Boards/97 Data', excludeStories: ['DATA', 'OTHER'] };\nexport const Seen = {};\n");
   expect(boardStoryIds(instanceUis(repo))).toEqual(['boards-97-data--seen']);
 });
+
+test('an excludeStories that is not an array of quoted names cannot be worked out, so it throws and does not list data as stories', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-stories-'));
+  made.push(repo);
+  const ui = path.join(repo, 'instances', 'planted', 'ui');
+  fs.mkdirSync(ui, { recursive: true });
+  for (const form of ['/^DATA/', '[...NAMES]', "['DATA', ...NAMES]"]) {
+    fs.writeFileSync(path.join(ui, 'Data.board.stories.tsx'), `export const DATA = {};\nconst meta = { title: 'Boards/96 Data', excludeStories: ${form} };\nexport const Seen = {};\n`);
+    expect(() => boardStoryIds(instanceUis(repo)), form).toThrow(/cannot work out the excluded exports/);
+  }
+});
+
+test('an excludeStories array of quoted names, in either quote and over lines, is still honored', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-stories-'));
+  made.push(repo);
+  const ui = path.join(repo, 'instances', 'planted', 'ui');
+  fs.mkdirSync(ui, { recursive: true });
+  fs.writeFileSync(path.join(ui, 'Data.board.stories.tsx'), "export const DATA = {};\nexport const MORE = {};\nconst meta = {\n  title: 'Boards/95 Data',\n  excludeStories: [\n    'DATA',\n    \"MORE\",\n  ],\n};\nexport const Seen = {};\n");
+  expect(boardStoryIds(instanceUis(repo))).toEqual(['boards-95-data--seen']);
+});

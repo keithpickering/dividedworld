@@ -41,7 +41,14 @@ export function boardStoryIds(roots: readonly string[] = [ENGINE_UI, ...instance
     const title = /\bconst meta\b[^=]*=\s*\{[^}]*?\btitle:\s*(?:'([^']+)'|"([^"]+)")/.exec(text)?.slice(1).find(Boolean);
     if (!title) throw new Error(`${path.relative(root, file)} has no title the story ids can be worked out from`);
     /* An export the meta's `excludeStories` names is data, not a story, and the story route composes none of them. */
-    const excluded = new Set([...(/\bexcludeStories:\s*\[([^\]]*)\]/.exec(text)?.[1] ?? '').matchAll(/['"](\w+)['"]/g)].map((m) => m[1]!));
+    /* Only an array of quoted names is understood (a regex, a spread or a variable is not), and one the file has in any other form throws, as the
+       title lookup does, so data is never listed as a story. The search is of the whole text and not the meta object alone: matching the object's
+       closing brace without a parser would be less robust than this, and a story's own data naming `excludeStories` is not a thing that exists. */
+    const exclusion = /\bexcludeStories\b/.test(text) ? /\bexcludeStories:\s*\[([^\]]*)\]/.exec(text)?.[1] : '';
+    if (exclusion === undefined || exclusion.replace(/['"]\w+['"]/g, '').replace(/[\s,]/g, '') !== '') {
+      throw new Error(`${path.relative(root, file)} has an excludeStories the story ids cannot work out the excluded exports from (write it as an array of quoted names)`);
+    }
+    const excluded = new Set([...exclusion.matchAll(/['"](\w+)['"]/g)].map((m) => m[1]!));
     return [...text.matchAll(/^export const (\w+)\b/gm)].filter((m) => !excluded.has(m[1]!)).map((m) => toId(title, storyNameFromExport(m[1]!)));
   }).sort();
 }

@@ -9,7 +9,8 @@
  * file within its count) must stay clean. The list must be exact, an instance file on the layer must have a budget story, and the last cases run over the
  * real tree, so a guard gone quiet fails here.
  */
-import { canvasFaults, canvasUses, CANVASES, treeFiles } from './check-effect-canvas.mjs';
+import os from 'node:os';
+import { budgetKeys, canvasFaults, canvasUses, CANVASES, LAYER, layerImports, report, treeFiles } from './check-effect-canvas.mjs';
 
 let pass = 0;
 const failures = [];
@@ -48,6 +49,10 @@ check("a bare createElement('canvas') (React's, imported by name) fires, and nam
 check("React.createElement('canvas') fires", faults("const c = React.createElement('canvas', null);").length === 1);
 check("a bare createElement('div') is not a canvas", faults("const c = createElement('div', null);").length === 0);
 check('a bare createElement of a variable is not read (the header says so)', faults('const c = createElement(tag, null);').length === 0);
+for (const ns of ['globalThis', 'self', 'window']) check(`new ${ns}.OffscreenCanvas(1, 1) fires, and names it`, faults(`const c = new ${ns}.OffscreenCanvas(1, 1);`)[0]?.what === 'new OffscreenCanvas');
+check("document.createElementNS(ns, 'canvas') fires, and names it", faults("const c = document.createElementNS('http://www.w3.org/1999/xhtml', 'canvas');")[0]?.what === "createElementNS('canvas')");
+check("createElementNS(ns, 'svg') is not a canvas", faults("const c = document.createElementNS('http://www.w3.org/2000/svg', 'svg');").length === 0);
+check('new Foo.Canvas is not an OffscreenCanvas', faults('const c = new Foo.Canvas(1, 1);').length === 0);
 check('each of them fires in engine/ui too', ['<canvas />', "document.createElement('canvas')", 'new OffscreenCanvas(1, 1)', 'el.transferControlToOffscreen()']
   .every((s) => faults(`export const a = ${s};`, 'engine/ui/x/X.tsx').length === 1));
 check('a plain .ts file is read', faults("export const c = () => document.createElement('canvas');", 'engine/ui/x/x.ts').length === 1);
@@ -117,6 +122,52 @@ check('canvasUses counts each use with its line', JSON.stringify(canvasUses('a()
   check('an import without the extension is still the layer', canvasFaults({ 'instances/x/ui/y/Effect.tsx': "import { a } from '../../../../engine/ui/cards/tiles';" }, none).length === 1);
   check('a test importing the layer is not read', canvasFaults({ 'instances/x/ui/y/Effect.test.tsx': TILES }, none).length === 0);
   check('an engine file importing the layer needs no budget', canvasFaults({ 'engine/ui/cards/x.ts': "import { a } from './tiles.ts';" }, none).length === 0);
+}
+
+/* ---- the ways a file can name the layer ---- */
+{
+  const F = 'instances/x/ui/y/Effect.tsx';
+  const LAYER_SPEC = "'../../../../engine/ui/cards/tiles.ts'";
+  const lay = (t) => JSON.stringify(layerImports(t, F));
+  const budgetFault = (t) => canvasFaults({ [F]: t, [STORY]: 'export const BUDGET = { z: 1 };' }, none);
+  check('an import of the layer is found at its line', lay(`const a = 1;\nimport { makeTileLayer } from ${LAYER_SPEC};`) === '[2]');
+  check('an export-from of the layer is found at its line', lay(`const a = 1;\nexport { makeTileLayer } from ${LAYER_SPEC};`) === '[2]');
+  check('an export-star of the layer is found at its line', lay(`const a = 1;\nexport * from ${LAYER_SPEC};`) === '[2]');
+  check('a dynamic import of the layer is found at its line', lay(`const a = 1;\nconst m = () => import(${LAYER_SPEC});`) === '[2]');
+  check('an import type of the layer makes no layer', lay(`import type { TileLayer } from ${LAYER_SPEC};`) === '[]');
+  check('an export type from the layer makes no layer', lay(`export type { TileLayer } from ${LAYER_SPEC};`) === '[]');
+  check('an import that names a value besides a type is still the layer', lay(`import { type TileLayer, makeTileLayer } from ${LAYER_SPEC};`) === '[1]');
+  for (const [name, text] of [['an export-from', `const a = 1;\nexport { makeTileLayer } from ${LAYER_SPEC};`], ['a dynamic import', `const a = 1;\nconst m = () => import(${LAYER_SPEC});`]]) {
+    const r = budgetFault(text);
+    check(`${name} of the layer with no key for its folder fires the budget fault, at its line`, r.length === 1 && r[0]?.kind === 'budget' && r[0]?.line === 2, JSON.stringify(r));
+  }
+  check('an import type of the layer asks for no budget', budgetFault(`import type { TileLayer } from ${LAYER_SPEC};`).length === 0);
+}
+
+/* ---- what the check cannot read, it refuses ---- */
+{
+  const refuses = (text) => { try { budgetKeys(text); return null; } catch (e) { return /cannot read BUDGET's keys: /.test(String(e.message)) ? e.message : `wrong error: ${e.message}`; } };
+  check('a BUDGET built by a call is refused, saying so', /call/.test(refuses('export const BUDGET = makeBudget();') ?? ''), String(refuses('export const BUDGET = makeBudget();')));
+  check('a BUDGET with a spread is refused, saying so', /spread/.test(refuses('export const BUDGET = { ...OTHER, y: 1 };') ?? ''), String(refuses('export const BUDGET = { ...OTHER, y: 1 };')));
+  check('a BUDGET with a computed key is refused, saying so', /computed/.test(refuses("export const BUDGET = { [KEY]: 1, y: 1 };") ?? ''), String(refuses('export const BUDGET = { [KEY]: 1, y: 1 };')));
+  check('a plain BUDGET (a shorthand, a method, a quoted key, a cast) is read', JSON.stringify([...budgetKeys("const a = 1; export const BUDGET = { a, b() { return 1; }, 'c': 1 } as const;")]) === '["a","b","c"]');
+  check('no BUDGET at all is null and not a refusal', budgetKeys('export const OTHER = 1;') === null);
+  const F = 'instances/x/ui/y/Effect.tsx';
+  let threw = '';
+  try { canvasFaults({ [F]: TILES, [STORY]: 'export const BUDGET = makeBudget();' }, none); } catch (e) { threw = String(e.message); }
+  check('an effect on the layer in an instance whose BUDGET cannot be read refuses and does not report a missing key', /cannot read BUDGET's keys/.test(threw), threw);
+  const missing = canvasFaults({ [F]: TILES }, none);
+  check('a missing budget story file is named as missing, not as a missing key', missing.length === 1 && /is missing/.test(missing[0]?.what) && !/no key/.test(missing[0]?.what), JSON.stringify(missing));
+  const none2 = canvasFaults({ [F]: TILES, [STORY]: 'export const OTHER = 1;' }, none);
+  check('a story file that exports no BUDGET says so', none2.length === 1 && /exports no BUDGET/.test(none2[0]?.what), JSON.stringify(none2));
+  let git = '';
+  try { treeFiles(os.tmpdir()); } catch (e) { git = String(e.message); }
+  check('a failing git ls-files throws one plain line', /git ls-files failed/.test(git) && !git.includes('\n'), git);
+  const asked = report(() => { throw new Error('effect-canvas: git ls-files failed: boom'); });
+  check('the report of a failing read is one line on stderr and a non-zero code', asked.code === 1 && asked.err.length === 1 && !/\n|\bat /.test(asked.err[0]) && /git ls-files failed/.test(asked.err[0]), JSON.stringify(asked));
+  const unread = report(() => ({ 'instances/x/ui/y/Effect.tsx': 'const a = 1;' }));
+  check('a read that lacks the layer is refused, not passed', unread.code === 1 && unread.out.length === 0 && /was not read/.test(unread.err[0] ?? ''), JSON.stringify(unread));
+  check('a read that has the layer is not refused for that', report(() => ({ [LAYER]: 'export {};' })).err.every((l) => !/was not read/.test(l)));
 }
 
 /* ---- the real tree ---- */
