@@ -181,9 +181,8 @@ export const THROW_Y = [THROW_INSET_Y, THROW_INSET_Y + THROW_SPAN_Y] as const;
  * may fall up to one full dent diameter (its extent on that axis) beyond the text's box to the left, to the right and below, so a dent may land
  * wholly beside the text, and up to its radius above it (the area's top is close above the first line anyway). Its circle is kept inside the
  * area (its center between one radius from each border); where the area is smaller than the dent the zone is the area's middle on that axis.
- * The floor's room at the content area's foot is not kept clear: in a short post's area (a line or two of words plus the room) a dent whose
- * circle fits the area has its center at or below the room's top edge by construction, so keeping out of it would collapse the zone to a
- * line; a chair that comes to rest on a dent is the game's own picture.
+ * The floor's room at the content area's foot is not this function's concern: the caller (Effect.tsx `aim`) passes the area less the room's
+ * height, so the dent's circle stays above where the chairs lie (a post's area is at least 22.5em tall, so the zone fits above the room).
  * `throwOf` takes a target 15% to 85% across and 15% to 60% down the box it gets (body.ts `THROW_INSET_X` and the rest), so the box is sized
  * and placed so that this range is exactly the zone of centers wanted.
  */

@@ -31,12 +31,19 @@ const hub = vi.hoisted(() => ({
   /* What the mocked body.ts saw: the steps run, and the world the last run built. */
   steps: 0,
   world: null as import('./body.ts').World | null,
+  /** Puts every body to sleep after each step (a world that is quiet whatever was thrown), for the test that a due throw keeps the loop going. */
+  sleepAll: false,
 }));
 vi.mock('./body.ts', async (original) => {
   const actual = await original<typeof import('./body.ts')>();
   return {
     ...actual,
-    step: (...a: Parameters<typeof actual.step>) => { hub.steps++; return actual.step(...a); },
+    step: (...a: Parameters<typeof actual.step>) => {
+      hub.steps++;
+      const events = actual.step(...a);
+      if (hub.sleepAll) for (const b of a[0].list) b.asleep = true;
+      return events;
+    },
     createWorld: (...a: Parameters<typeof actual.createWorld>) => { hub.world = actual.createWorld(...a); return hub.world; },
   };
 });
@@ -64,6 +71,10 @@ const drain = () => { const run = [...queue.values()]; queue.clear(); clock += 1
 const frame = () => act(() => { vi.advanceTimersByTime(16); drain(); });
 /** Frames until the page asks for none and at least `least` ms have passed (the throws are 350 ms apart), at most `most` frames. */
 const rest = (least = 1200, most = 1500) => { const from = clock; for (let i = 0; i < most && (queue.size > 0 || clock - from < least); i++) frame(); };
+/** One frame of `ms` of the wall clock: the page's frames come as the machine gives them, 16 ms on a fast one and more on a slow one. */
+const frameOf = (ms: number) => act(() => { vi.advanceTimersByTime(ms); clock += ms; const run = [...queue.values()]; queue.clear(); for (const cb of run) cb(clock); });
+/** Frames of `ms` until the page asks for none. */
+const restAt = (ms: number, most = 6000) => { for (let i = 0; i < most && queue.size > 0; i++) frameOf(ms); };
 const settled = () => { act(() => { vi.advanceTimersByTime(0); }); rest(); };
 
 const watching: { cb: IntersectionObserverCallback; seen: Set<Element>; opts?: IntersectionObserverInit }[] = [];
@@ -201,7 +212,7 @@ const pin = (seed: number | null) => { pinned = seed; };
 
 beforeEach(() => {
   vi.useFakeTimers();
-  queue = new Map(); nextFrame = 1; requested = 0; clock = 0; watching.length = 0; sized.length = 0; size = { h: 200 }; areaWidth = 300; shaking = false; roomAdds = false; textRects = null; seeds = 0; pinned = null; hub.steps = 0; hub.world = null;
+  queue = new Map(); nextFrame = 1; requested = 0; clock = 0; watching.length = 0; sized.length = 0; size = { h: 200 }; areaWidth = 300; shaking = false; roomAdds = false; textRects = null; seeds = 0; pinned = null; hub.steps = 0; hub.world = null; hub.sleepAll = false;
   const realRandom = crypto.getRandomValues.bind(crypto);
   vi.spyOn(crypto, 'getRandomValues').mockImplementation(((a: ArrayBufferView) => {
     if (a instanceof Uint32Array && a.length === 1) { a[0] = pinned ?? seedAt(++seeds); return a; }
@@ -663,6 +674,27 @@ describe('a dent: its own shape and turn, its creases, and how its shading combi
   });
 });
 
+describe("the dents stay above the floor's room", () => {
+  /* A post's content area is at least 22.5em tall (thread.css), so on a short post the hit zone has room below the line: a dent's circle is kept above
+     the last ROOM_HEIGHT px, where the chairs lie, and not only inside the area. (250 px: shorter than the real minimum, so that the zone's reach
+     below the line, a dent's diameter, would otherwise go into the room.) */
+  test('on a short post in a content area taller than its room every dent lies above the room', () => {
+    size = { h: 250 };
+    textRects = [{ left: 10, top: 9, width: 80, height: 18 }];
+    for (let seed = 1; seed <= 12; seed++) {
+      pin(seed);
+      const w = mount({ plays: [play(1), play(2), play(3)] });
+      run();
+      expect(dents(), `seed ${seed}`).toHaveLength(3);
+      for (const d of dents()) {
+        const bottom = parseFloat(d.style.top) + parseFloat(d.style.height);
+        expect(bottom, `seed ${seed}: a dent's bottom edge against the room's top (${250 - ROOM_HEIGHT})`).toBeLessThanOrEqual(250 - ROOM_HEIGHT + 0.5);
+      }
+      w.unmount();
+    }
+  });
+});
+
 describe('when a run starts and ends', () => {
   test('a run starts only after the post\'s middle has been in view for 300 ms, and not if it leaves first', () => {
     mount();
@@ -720,13 +752,15 @@ describe('when a run starts and ends', () => {
     expect(watching.filter((o) => o.seen.size > 0)[0]!.opts?.rootMargin).toBe('-20% 0px -20% 0px');
   });
 
-  /* The second chair's throw waits 350 ms on a timer. Its callback ignores a stopped run, so only the timer count (and not what the page then
-     does) tells whether the timer was cleared. */
+  /* The staggered throws wait on the world's step count and not on a timer, so a run adds no timer once it has started. */
   test('unmounting stops everything: observers, frames and timers of the run, and nothing is requested or heard afterward', () => {
     const w = mount({ plays: [play(1), play(2), play(3)] });
+    const timers = vi.getTimerCount();
     see(true); arm();
     frame();
-    expect(vi.getTimerCount(), 'the staggered throws are waiting on timers').toBeGreaterThan(0);
+    expect(groups(), 'the staggered throws are still due').toHaveLength(1);
+    expect(queue.size, 'and the loop is waiting for a frame').toBeGreaterThan(0);
+    expect(vi.getTimerCount(), 'a run adds no timer of its own: the throws are on the step count').toBeLessThanOrEqual(timers);
     w.unmount();
     expect(watched()).toBe(0);
     expect(sized.every((r) => r.watching.size === 0)).toBe(true);
@@ -770,16 +804,123 @@ describe('when a run starts and ends', () => {
     expect(hub.steps).toBeGreaterThanOrEqual(5);
   });
 
-  test('throws are 350 ms apart', () => {
+  test("throws are 0.35 s of the world's time apart: 42 steps", () => {
     mount({ plays: [play(1), play(2), play(3)] });
     see(true); arm();
     expect(groups()).toHaveLength(1);
-    act(() => { vi.advanceTimersByTime(349); });
+    for (let i = 0; i < 200 && hub.steps < 100; i++) {
+      frame();
+      const expected = hub.steps < 42 ? 1 : hub.steps < 84 ? 2 : 3;
+      expect(groups().length, `after ${hub.steps} steps`).toBe(expected);
+    }
+    expect(hub.steps).toBeGreaterThanOrEqual(100);
+  });
+});
+
+/*
+ * The throws' clock is the world's: chair n enters when n times 42 steps have run, so a run is a pure function of its seed and the box, and the
+ * frame rate is not in it (a wall-clock stagger entered the chairs at a step that depended on it, and the 4-step cap drops time on a slow frame).
+ */
+describe("the throws are staggered in the world's own time", () => {
+  const threePlays = () => [play(1), play(2), play(3)];
+  /** What a run left: every chair's transform, the dents' places and the bodies' rests. */
+  const left = () => ({
+    transforms: groups().map((g) => [g.dataset.play, g.style.transform]),
+    dents: dentAt(),
+    bodies: bodies(hub.world!).map((b) => [b.id, b.position, b.quaternion, b.asleep]),
+  });
+
+  test.each([2, 5, 23])('the same seed (%i) ends in the same pile at 16 ms frames and at 50 ms frames, which hit the cap and drop time', (seed) => {
+    const ends = [16, 50].map((ms) => {
+      pin(seed);
+      const w = mount({ plays: threePlays() });
+      see(true); arm();
+      restAt(ms);
+      expect(groups()).toHaveLength(3);
+      const out = left();
+      w.unmount();
+      return out;
+    });
+    expect(ends[1]).toEqual(ends[0]);
+  });
+
+  test('the second chair enters only after 42 steps have run, whatever the wall clock says', () => {
+    mount({ plays: threePlays() });
+    see(true); arm();
     expect(groups()).toHaveLength(1);
-    act(() => { vi.advanceTimersByTime(1); });
-    expect(groups()).toHaveLength(2);
-    act(() => { vi.advanceTimersByTime(350); });
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(groups(), 'two seconds of timers and no frame').toHaveLength(1);
+    expect(hub.steps).toBe(0);
+    for (let i = 0; i < 100 && hub.steps < 42; i++) { frame(); if (hub.steps < 42) expect(groups()).toHaveLength(1); }
+    expect(hub.steps).toBeGreaterThanOrEqual(42);
+    expect(groups().length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('the loop keeps asking for frames while a throw is due, even with every body asleep, and stops once all are thrown and asleep', () => {
+    hub.sleepAll = true;
+    mount({ plays: threePlays() });
+    see(true); arm();
+    for (let i = 0; i < 400 && hub.steps < 84; i++) {
+      frame();
+      if (hub.steps < 84) expect(queue.size, `after ${hub.steps} steps: a throw is still due`).toBeGreaterThan(0);
+    }
     expect(groups()).toHaveLength(3);
+    for (let i = 0; i < 10; i++) frame();
+    expect(queue.size, 'all thrown and asleep').toBe(0);
+    expect(bodies(hub.world!).every((b) => b.asleep)).toBe(true);
+  });
+
+  test('leaving the view mid-stagger throws nothing more', () => {
+    mount({ plays: threePlays() });
+    see(true); arm();
+    for (let i = 0; i < 5; i++) frame();
+    expect(hub.steps).toBeLessThan(42);
+    see(false);
+    expect(groups()).toHaveLength(0);
+    const steps = hub.steps;
+    act(() => { vi.advanceTimersByTime(2000); drain(); drain(); });
+    expect(groups()).toHaveLength(0);
+    expect(hub.steps).toBe(steps);
+    expect(queue.size).toBe(0);
+  });
+
+  test('Throw again mid-stagger starts over with one chair, and the old run throws nothing more', () => {
+    mount({ plays: threePlays() });
+    see(true); arm();
+    for (let i = 0; i < 20; i++) frame();
+    expect(groups().length).toBeLessThan(3);
+    const again = lastView().controls.find((c) => c.kind === 'press')! as { run: () => void };
+    act(() => { again.run(); });
+    expect(groups()).toHaveLength(1);
+    hub.steps = 0;
+    for (let i = 0; i < 100 && hub.steps < 42; i++) { frame(); if (hub.steps < 42) expect(groups()).toHaveLength(1); }
+  });
+
+  test('a play that lands while the run is still staggering is thrown alone, at once, and the run goes on', () => {
+    mount({ plays: [play(1), play(2)] });
+    see(true); arm();
+    for (let i = 0; i < 3; i++) frame();
+    expect(groups()).toHaveLength(1);
+    act(() => { hub.setPlays([play(1), play(2), play(3)]); });
+    expect(groups().map((g) => g.dataset.play).sort(), 'sc2 still waits for its step; sc3 is thrown at once').toEqual(['sc1', 'sc3']);
+    restAt(16);
+    expect(groups()).toHaveLength(3);
+  });
+
+  test('reduced motion places the throws 42 steps apart, so its rest is the one the animated run ends in for the same seed', () => {
+    const rests: ReturnType<typeof left>[] = [];
+    for (const mode of ['full', 'reduce'] as const) {
+      document.documentElement.setAttribute('data-kb-motion', mode);
+      pin(2);
+      const w = mount({ plays: threePlays() });
+      see(true); arm(); restAt(16);
+      expect(groups()).toHaveLength(3);
+      rests.push(left());
+      w.unmount();
+    }
+    expect(rests[1]!.transforms, 'the chairs lie as the animated run left them').toEqual(rests[0]!.transforms);
+    expect(rests[1]!.dents, 'the dents are where the chairs hit').toEqual(rests[0]!.dents);
+    expect(rests[1]!.bodies).toEqual(rests[0]!.bodies);
   });
 });
 

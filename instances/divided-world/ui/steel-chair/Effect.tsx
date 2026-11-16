@@ -1,9 +1,9 @@
 /**
  * Steel Chair's effect (docs/plans/2026-11-15-steel-chair-plan.md, Task 5, as amended: the world is the post's content area): a folding
  * chair is thrown at the post from any direction, dents it (the words bend into a displacement filter's dent, shaded over them), shakes it
- * once and falls to the floor as a rigid box (body.ts), where it tips, slides and sleeps. Up to three at once, each its own throw 350 ms
- * after the last. Nothing is seeded, saved or sent: each run draws its throws from a generator seeded freshly from the reader's own screen
- * (`crypto.getRandomValues`), so every run and every reader sees a different one, and the effect reads neither who wrote the post nor who
+ * once and falls to the floor as a rigid box (body.ts), where it tips, slides and sleeps. Up to three at once, each its own throw 0.35 s
+ * of the world's own time after the last (see Frames). Nothing is seeded, saved or sent: each run draws its throws from a generator seeded
+ * freshly from the reader's own screen (`crypto.getRandomValues`), so every run and every reader sees a different one, and the effect reads neither who wrote the post nor who
  * played the card. A play's moment (`still`) is the one exception to the freshness: seeded from the plays' ids, so it is the same each
  * time.
  *
@@ -34,11 +34,18 @@
  * the others stay where they lie. Reduced motion has no flight, no shake and no wait (there is nothing to time): the world is built, run to
  * rest and drawn at once, without sound.
  *
- * Frames. The loop runs on `requestAnimationFrame` only while a body is awake (or a dent is growing), runs at most 4 steps a frame (a slow
- * frame or a tab coming back drops the rest of the time it owes), and sets each chair's and each piece's style straight on the DOM nodes
+ * Frames. The loop runs on `requestAnimationFrame` only while a body is awake, a dent is growing or a throw is still due, runs at most 4
+ * steps a frame (a slow frame or a tab coming back drops the rest of the time it owes), and sets each chair's and each piece's style straight on the DOM nodes
  * through refs; React renders only when a chair or a dent comes or goes. The shade of a piece is taken from its normal after the body's
  * orientation turns it, since the light is fixed in the world. A dent's depth grows by moving its map's pixels from neutral (128) to full,
  * so each dent has its own growth in the one filter, and the others keep their depth when a new one lands.
+ *
+ * The throws' clock is the world's. The run counts the steps it has run, and chair n enters the world when that count reaches n times
+ * STAGGER_STEPS (0.35 s of simulated time), checked after every step, so a chair may enter between two steps of one frame. A wall-clock timer
+ * would enter it at a step that depends on the frame rate (the cap above drops time on a slow frame), and the same seed would pile the
+ * chairs differently on a slow machine and a fast one. With the count, a run's whole simulation is a pure function of its seed and the
+ * content area's measured size; the reduced and moment pictures (`placeAll`) step the same STAGGER_STEPS between their throws, so they are
+ * the pile the animated run ends in for the same seed.
  *
  * Sound. The first run after the effect mounts plays `steel-chair.hit` on each hit and one of the four settle sounds on each chair's first
  * floor contact, in the group `steel-chair`; a replay (by scroll or by Throw again) and the reduced and still draws are silent.
@@ -58,7 +65,7 @@ import { STEEL_CHAIR_LASTS } from '../../cards/steel-chair.ts';
 import {
   addThrow, bodies, createWorld, remove, resize, rng, settle, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
-import { depthOf, INSET, piecesOf, project, shadeOf, transformOf, type Piece } from './chair.ts';
+import { depthOf, INSET, piecesOf, project, ROOM_HEIGHT, shadeOf, transformOf, type Piece } from './chair.ts';
 import { DENT_SCALE, dentMapUrl, dentPrimitives, dentShape, dentsOverlap, filterTrusted, hitZone, seedOfIds, type DentShape } from './dent.ts';
 import './steel-chair.css';
 
@@ -85,8 +92,9 @@ const MOST = 3;
  */
 const ARM_ZONE = '-20% 0px -20% 0px';
 const ARM_MS = 300;
-/** The gap between one play's throw and the next, and how long a dent takes to reach its full depth. */
-const GAP_MS = 350;
+/** The gap between one play's throw and the next, in the world's own time, and how long a dent takes to reach its full depth (wall time). */
+const GAP_S = 0.35;
+const STAGGER_STEPS = Math.round(GAP_S / STEP);
 const GROW_MS = 90;
 /**
  * The most steps one frame runs, whatever the clock owes (body.ts: a step costs up to 0.12 ms on a desktop, several times that on a phone).
@@ -283,7 +291,9 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
     let acc = 0;
     const bodyOfPlay = new Map<string, number>();
     const playOfBody = new Map<number, string>();
-    const throws = new Map<string, ReturnType<typeof setTimeout>>();
+    /* The throws still due, in the order they enter, each at the count of steps run (`steps`) it waits for. */
+    let due: { play: CardPlay; at: number }[] = [];
+    let steps = 0;
     const growing = new Map<string, number | null>();
     const caches = new Map<string, Cache>();
 
@@ -414,11 +424,15 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
       lastT = t;
       acc += dt;
       let n = 0;
-      while (acc >= STEP && n < MOST_STEPS) { for (const e of step(world, STEP)) onEvent(e); acc -= STEP; n++; }
+      while (acc >= STEP && n < MOST_STEPS) {
+        for (const e of step(world, STEP)) onEvent(e);
+        acc -= STEP; n++; steps++;
+        release();
+      }
       if (n === MOST_STEPS) acc = 0;
       grow(t);
       const awake = paint();
-      if (awake || growing.size > 0) raf = requestAnimationFrame(tick); else lastT = 0;
+      if (awake || growing.size > 0 || due.length > 0) raf = requestAnimationFrame(tick); else lastT = 0;
     };
     const wake = (): void => { if (!raf && world) raf = requestAnimationFrame(tick); };
 
@@ -431,7 +445,11 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
      */
     const aim = (play: string): Box => {
       const dent = dentPrimitives([{ x: 0, y: 0, shape: shapeOf(play) }], { width: geoNow?.width ?? box.w, height: box.h })[0]!;
-      const zone = hitZone(target, { width: box.w, height: box.h }, dent);
+      /* The zone is cut at the room's top, so that a dent's circle stays above the last ROOM_HEIGHT px, where the chairs lie. A post's content area
+         is at least 22.5em tall (thread.css), so on a post this costs nothing; only where the area less the room is shorter than the dent
+         itself (a preview, a narrow box) is the whole area kept, since a dent inside the area matters more than one clear of the room. */
+      const above = box.h - ROOM_HEIGHT;
+      const zone = hitZone(target, { width: box.w, height: above >= Math.max(dent.width, dent.height) ? above : box.h }, dent);
       return { left: zone.left - INSET, top: zone.top + HIT_LIFT, width: zone.width, height: zone.height };
     };
 
@@ -443,18 +461,18 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
       playOfBody.set(id, play.id);
       setChairs((c) => (c.includes(play.id) ? c : [...c, play.id]));
     };
-    const throwLater = (play: CardPlay): void => {
-      throws.delete(play.id);
-      if (!running || !world) return;
-      addPlay(play);
-      wake();
+    /* The throws whose step has come. Called after every step, so a chair may enter between two steps of one frame. */
+    const release = (): void => {
+      while (due.length > 0 && due[0]!.at <= steps) addPlay(due.shift()!.play);
     };
-    /* Reduced motion and a moment: every new throw at once, settled with the rest, its dent at full depth. */
+    /* Reduced motion and a moment: every new throw placed and settled with the rest at once, its dent at full depth. Each throw after the
+       first waits STAGGER_STEPS of the world's steps, as the animated run's do, so the pile is the one that run ends in for the same seed. */
     const placeAll = (plays: readonly CardPlay[]): void => {
       if (!world) return;
       const added: { play: string; x: number; y: number }[] = [];
       for (const p of plays) {
         if (bodyOfPlay.has(p.id)) continue;
+        if (added.length > 0) for (let k = 0; k < STAGGER_STEPS; k++) step(world, STEP);
         const th = throwOf(rand, aim(p.id));
         const id = addThrow(world, th);
         bodyOfPlay.set(p.id, id);
@@ -514,10 +532,9 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
       meet();
       if (!still) startWatching();
       if (still || reduced) { placeAll(plays); return; }
-      plays.forEach((p, i) => {
-        if (i === 0) addPlay(p);
-        else throws.set(p.id, setTimeout(() => throwLater(p), i * GAP_MS));
-      });
+      steps = 0;
+      due = plays.slice(1).map((p, i) => ({ play: p, at: (i + 1) * STAGGER_STEPS }));
+      if (plays[0]) addPlay(plays[0]);
       wake();
     };
 
@@ -526,8 +543,7 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
       size?.disconnect(); size = null;
       if (raf) cancelAnimationFrame(raf);
       raf = 0; lastT = 0; acc = 0;
-      for (const t of throws.values()) clearTimeout(t);
-      throws.clear();
+      due = []; steps = 0;
       growing.clear();
       caches.clear();
       bodyOfPlay.clear(); playOfBody.clear();
@@ -550,10 +566,10 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
           remove(world, id);
           bodyOfPlay.delete(play); playOfBody.delete(id); growing.delete(play); caches.delete(play);
         }
-        for (const [play, t] of [...throws]) if (!ids.has(play)) { clearTimeout(t); throws.delete(play); }
+        due = due.filter((d) => ids.has(d.play.id));
         setChairs((c) => c.filter((id) => ids.has(id)));
         setDents((d) => d.filter((x) => ids.has(x.play)));
-        const fresh = plays.filter((p) => !bodyOfPlay.has(p.id) && !throws.has(p.id));
+        const fresh = plays.filter((p) => !bodyOfPlay.has(p.id) && !due.some((d) => d.play.id === p.id));
         if (still || reduced) placeAll(fresh);
         else { for (const p of fresh) addPlay(p); wake(); }
       },

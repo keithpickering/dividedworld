@@ -43,20 +43,22 @@ const SEEDS = {
   reduced: [101],
   'short-post': [101],
   /* One-light with a chair that stood on its end or its narrow face and was nudged over (see the test that uses it), found by scanning seeds 1 to
-     60 for a chair that stood still above the room for a few tenths of a second and then lay down: seed 59. */
-  nudged: [59],
-  /* Three with a chair lying on another (its top is higher than any chair alone can reach): found by scanning seeds 1 to 60, the tallest rest of
-     them were seed 19's (58 px above the border) and seed 57's (56). */
-  stacked: [19, 57],
-  /* Three dents on one line, found by running seeds 1 to 70 on the widened hit zone (dent.ts `hitZone`) and the rest rule (body.ts: a quiet chair standing up is nudged over), which moves every rest: the tight case (this one) has
-     two dents over the line and overlapping each other (their centers 12 px apart at the closest); the spread case (SPREAD_SEED) has the
-     dents' centers 65 px apart at the closest, two of them over the line and shading it. See the two tests. */
+     80 on the stepped throws (Effect.tsx) and the content area's 22.5em body (thread.css) for an awake chair that held still above what a flat chair
+     reaches for several frames and then lay down (`watchStanding`). */
+  nudged: [4],
+  /* Three with a chair lying on another (its top is higher than any chair alone can reach): found by scanning seeds 1 to 60 on the same layout;
+     the tallest rests were seeds 60's (55.9 px above the border), 41's, 15's and 14's (55.0 to 55.4). */
+  stacked: [60],
+  /* Three dents on one line, found by running seeds 1 to 70 on the widened hit zone (dent.ts `hitZone`), the stepped throws (Effect.tsx) and the
+     content area's 22.5em body: the tight case (this one) has two dents over the line and overlapping each other (their centers 16 px apart at
+     the closest); the spread case (SPREAD_SEED) has the dents' centers 79 px apart at the closest, one of them over the line and shading it.
+     See the two tests. */
   'short-three': [1],
   three: [101],
   phone: [113],
 } as const;
 /** The short-three layout's second pinned seed: the spread case. */
-const SPREAD_SEED = 28;
+const SPREAD_SEED = 46;
 type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three';
 
 /** The post that wears the card: its content area (the world) and its parts. */
@@ -491,57 +493,66 @@ async function clearOfWordsAndRow(page: Page, m: Measure) {
 const FLAT_ALONE = INSET + 2 * HALF[2] + K * (Z_FRONT + DEPTH + GIVE + HALF[1]);
 
 /**
- * A seed pins the throws, not the exact rest: the world steps by the real time between frames (and the three chairs of a run land by the
- * clock), so the same seed lies a little differently from one run to the next on a slow or a fast runner. So the two tests below ask for a
- * pose that these seeds usually make, give it a few tries (a fresh page each), and check the rest of every try they make, whatever it is.
+ * A seed pins a run exactly: the world steps in fixed steps and the second and third chairs enter at the 42nd and 84th step it has run (Effect.tsx),
+ * so what a run ends in is a function of its seed and the content area's measured size, and not of the frame rate or the wall clock. So each
+ * test below runs once, with a seed that gives the pose it asks for, and must find it.
  */
-const TRIES = 4;
 
 /**
- * A chair that comes to rest on another is the tallest rest the game keeps (body.ts REST_RISE). With the pinned seeds (found by scanning, in
- * which one does: its top is higher than a chair lying alone can reach, FLAT_ALONE), every chair's whole drawn box, in every try, covers no
- * line of words, does not meet the reactions row, and has its top under the room; and some try has a chair on another, so this cannot pass by
- * measuring nothing. The row is found in every try.
+ * A chair that comes to rest on another is the tallest rest the game keeps (body.ts REST_RISE). With the pinned seed (found by scanning, in
+ * which one does: its top is higher than a chair lying alone can reach, FLAT_ALONE), every chair's whole drawn box covers no line of words,
+ * does not meet the reactions row, and has its top under the room; and a chair is on another, so this cannot pass by measuring nothing.
  */
 test('three: a chair that rests on another covers no words, does not reach the reactions row, and is under the room', async ({ page }) => {
-  test.setTimeout(120_000);
-  let stacked = false;
-  for (let i = 0; i < TRIES && !stacked; i++) {
-    await open(page, 'three', undefined, [SEEDS.stacked[i % SEEDS.stacked.length]!]);
-    await atRest(page, 3);
-    const m = await measure(page);
-    await clearOfWordsAndRow(page, m);
-    stacked = Math.max(...m.chairs.map((c) => m.area.bottom - c.top)) > FLAT_ALONE;
-  }
-  expect(stacked, `in ${TRIES} tries a chair came to rest on another, its top higher than a chair lying alone reaches (${FLAT_ALONE})`).toBe(true);
+  await open(page, 'three', undefined, SEEDS.stacked);
+  await atRest(page, 3);
+  const m = await measure(page);
+  await clearOfWordsAndRow(page, m);
+  const highest = Math.max(...m.chairs.map((c) => m.area.bottom - c.top));
+  expect(highest, `a chair came to rest on another, its top higher than a chair lying alone reaches (${FLAT_ALONE})`).toBeGreaterThan(FLAT_ALONE);
 });
 
 /**
- * A chair that stands on its end or its narrow face is not let sleep: it teeters and falls over (body.ts nudge), and ends lying low inside the
- * room. The pinned seeds are ones whose chair stood still above the room for several samples (0.1 s apart) before it fell; the test watches for
- * that, in some try, so it cannot pass on a run that never stood, and checks the rest of every try as above.
+ * Starts counting, in the page and frame by frame, the longest run of consecutive frames in which the first chair is awake, higher than a flat
+ * chair reaches (FLAT_ALONE) and has not moved by half a pixel since the frame before: a chair standing still (teetering, in its few tenths of
+ * a second before the nudge takes it over). Counting frames in the page, and not sampling from the test every 100 ms, keeps the count from
+ * depending on how busy the test runner is; a frame is at least one step of the world and at most four.
  */
-test('one-light: a chair that stands up falls over, and ends lying inside the room, clear of the words and the reactions row', async ({ page }) => {
-  test.setTimeout(120_000);
-  let stood = false;
-  for (let i = 0; i < TRIES && !stood; i++) {
-    await open(page, 'one-light', undefined, [SEEDS.nudged[i % SEEDS.nudged.length]!]);
-    let still = 0, last = NaN;
-    for (let j = 0; j < 160; j++) {
-      const m = await measure(page);
-      const c = m.chairs[0];
-      if (c) {
-        const top = m.area.bottom - c.top;
-        if (Math.abs(top - last) < 0.5 && top > ROOM_HEIGHT) { if (++still >= 4) stood = true; } else still = 0;
+async function watchStanding(page: Page) {
+  await page.evaluate((flat) => {
+    const w = window as unknown as { __stand: { best: number } };
+    w.__stand = { best: 0 };
+    let run = 0, last = NaN;
+    const tick = () => {
+      const box = document.querySelector<HTMLElement>('.kb-act-main:has(.dw-chair)');
+      const g = box?.querySelector<HTMLElement>('.dw-chair-group');
+      if (box && g) {
+        const r = box.getBoundingClientRect();
+        const bottom = r.top + box.clientTop + box.clientHeight;
+        const top = bottom - Math.min(...[...g.querySelectorAll('.dw-chair-piece')].map((p) => p.getBoundingClientRect().top));
+        if (!g.hasAttribute('data-rest') && Math.abs(top - last) < 0.5 && top > flat) w.__stand.best = Math.max(w.__stand.best, ++run); else run = 0;
         last = top;
       }
-      if (await chairs(page).evaluateAll((gs) => gs.length === 1 && gs.every((g) => g.hasAttribute('data-rest')))) break;
-      await page.waitForTimeout(100);
-    }
-    await atRest(page, 1);
-    await clearOfWordsAndRow(page, await measure(page));
-  }
-  expect(stood, `in ${TRIES} tries the chair stood still above the room for 0.4 s before it fell`).toBe(true);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, FLAT_ALONE);
+}
+const standingFrames = (page: Page) => page.evaluate(() => (window as unknown as { __stand: { best: number } }).__stand.best);
+/** The fewest frames in a row that count as standing (about 0.1 s at 60 fps, and the same in steps of the world at the slowest frame rate the cap allows). */
+const STOOD_FRAMES = 6;
+
+/**
+ * A chair that stands on its end or its narrow face is not let sleep: it teeters and falls over (body.ts nudge), and ends lying low inside the
+ * room. The pinned seed is one whose chair stood still, awake, above what a flat chair reaches before it fell; the test watches for that, so it
+ * cannot pass on a run that never stood, and checks the rest as above.
+ */
+test('one-light: a chair that stands up falls over, and ends lying inside the room, clear of the words and the reactions row', async ({ page }) => {
+  await open(page, 'one-light', undefined, SEEDS.nudged);
+  await watchStanding(page);
+  await atRest(page, 1);
+  await clearOfWordsAndRow(page, await measure(page));
+  expect(await standingFrames(page), `frames in a row the chair stood still above ${FLAT_ALONE.toFixed(0)} px before it fell`).toBeGreaterThanOrEqual(STOOD_FRAMES);
 });
 
 /** Opens a clip of the page as RGBA pixels (the screenshot is decoded in the page, which has a canvas). */
@@ -783,7 +794,7 @@ test('short-three, spread: dents land beside and below the line, and the line ca
   await theLineCanBeRead(page, SPREAD_SEED, 'spread');
 });
 
-/** On a post of little text the throws are spread beyond the line, and every dent's circle is inside the content area. */
+/** On a post of little text the throws are spread beyond the line, and every dent's circle is inside the content area and above the room. */
 for (const [kind, seed] of [['tight', SEEDS['short-three'][0]], ['spread', SPREAD_SEED]] as const) {
   test(`short-three, ${kind}: every dent lies inside the content area`, async ({ page }) => {
     await open(page, 'short-three', undefined, [seed]);
@@ -796,6 +807,8 @@ for (const [kind, seed] of [['tight', SEEDS['short-three'][0]], ['spread', SPREA
       expect(d.top, where).toBeGreaterThanOrEqual(s.area.top - 1);
       expect(d.left + d.width, where).toBeLessThanOrEqual(s.area.right + 1);
       expect(d.top + d.height, where).toBeLessThanOrEqual(s.area.bottom + 1);
+      /* The body is at least 22.5em tall (thread.css), so the hit zone fits above the floor's room, where the chairs lie: no dent reaches it. */
+      expect(d.top + d.height, `${where}: above the room's top`).toBeLessThanOrEqual(s.area.bottom - ROOM_HEIGHT + 1);
     });
   });
 }
