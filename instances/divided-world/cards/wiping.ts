@@ -5,6 +5,8 @@
  * wipes nothing, a sideways swipe or a press held `HOLD_MS` wipes, a tap wipes a dab, and a second finger is the page's.
  */
 
+import { liftedOver } from '../../../engine/ui/cards/body.ts';
+
 /** A press held this long on ink grabs it (a finger), and one that moves this far (px) before then is a swipe, up or down the page's and sideways a wipe. */
 export const HOLD_MS = 180;
 export const SLOP_PX = 8;
@@ -21,9 +23,11 @@ export function swipeKind(dx: number, dy: number): 'wait' | 'page' | 'wipe' {
   return Math.abs(dy) > Math.abs(dx) ? 'page' : 'wipe';
 }
 
-/** Whether a press lands on something the engine lifts over the ink (the reactions row, the spun line, the Draw tile): it is that control's, and starts no stroke. */
-export function overInk(target: unknown): boolean {
-  /* An element (a text node or the window has no `closest`); read by shape, as this file is no DOM code. */
-  const el = target as { readonly closest?: (selector: string) => unknown } | null;
-  return typeof el?.closest === 'function' && el.closest('[data-kb-over-ink]') !== null;
+/**
+ * Whether a press lands on something the engine lifts over the ink (the reactions row, the spun line, the Draw tile) inside `body`, the
+ * content area the effect found (`null` with none): it is that control's, and starts no stroke. A lifted thing that holds the body (the
+ * ORIGIN box, lifted over the opening post's ink) is not inside it, so the box's own ink is scrubbed in the box (engine/ui/cards/body.ts).
+ */
+export function overInk(target: unknown, body: Element | null): boolean {
+  return liftedOver(target, body);
 }

@@ -6,7 +6,8 @@
  * The wall is one canvas over the post body's box (`data-kb-effect-ink`), drawn by `paintWall` from the surface's live Acts, and only while
  * the post is near the viewport: a page can hold many walls and a canvas is megabytes. The surface's strokes are asked for then
  * (`surface.near()`) and the canvas is dropped when the post leaves, as Whoops!'s is (whoops/Effect.tsx, whose box, input and measuring this
- * follows: the box is the body's padding box in the thread and the frame in the ORIGIN box, every position is a share of it).
+ * follows: the box is the body's padding box, the nearest content area the engine marks (the post's body in the thread, the ORIGIN box's area), or the frame
+ * where there is none, and every position is a share of it).
  *
  * Scrubbing. A press starts a stroke only where this wall has ink and no card laid over it does: the wall claims its ink on the post's
  * registry (`EffectProps.ink`) and starts only where `topAt` is true, so a press on a splat's ink over the wall scrubs the splat, and one
@@ -30,6 +31,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
+import { bodyBox, bodyOf } from '../../../../engine/ui/cards/body.ts';
 import { bringClear } from '../../../../engine/ui/cards/clear.ts';
 import { LOST_ANSWER, type Answer, type SurfaceAct } from '../../../../engine/ui/data/api.ts';
 import { usePlayer } from '../../../../engine/ui/player.tsx';
@@ -155,7 +157,6 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     wasDrawing.current = drawing;
   }, [drawing]);
 
-  const bleed = place === 'thread';
   /* Draw mode mounts the toolbar's dock over the window's foot, which can cover the post being drawn on, as a compose opened on a post does (the engine's play.tsx):
      the post's body is brought clear once the dock is mounted and has set the root's scroll padding (its layout effect, then a frame for its measured height).
      Keyed on `drawing` opening alone, so no render and no close scrolls. */
@@ -163,13 +164,15 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     if (!drawing) return undefined;
     const frame = requestAnimationFrame(() => {
       const f = frameRef.current;
-      const body = f ? (bleed ? f.closest<HTMLElement>('.kb-act-main') : null) ?? f : null;
+      const body = f ? bodyOf(f) ?? f : null;
       if (body) bringClear(body);
     });
     return () => cancelAnimationFrame(frame);
-  }, [drawing, bleed]);
+  }, [drawing]);
   const rootRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+  /** The content area the frame is in now, the wall's box (found afresh, as a takeover moves the frame). */
+  const bodyNow = () => (frameRef.current ? bodyOf(frameRef.current) : null);
   const tileRef = useRef<HTMLButtonElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -213,7 +216,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     let watched: HTMLElement | null = null;
     let watch: ResizeObserver | null = null;
     const measure = () => {
-      const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+      const cell = bodyOf(f);
       if (watch && cell !== watched) {
         if (watched) watch.unobserve(watched);
         if (cell) watch.observe(cell);
@@ -223,8 +226,8 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
       const surf = cell ?? f;
       let next: { box: Box; left: number; top: number };
       if (cell) {
-        const fr = f.getBoundingClientRect(), cr = cell.getBoundingClientRect();
-        next = { box: { w: cell.clientWidth, h: cell.clientHeight }, left: fr.left - cr.left - cell.clientLeft, top: fr.top - cr.top - cell.clientTop };
+        const b = bodyBox(f, cell);
+        next = { box: { w: b.w, h: b.h }, left: -b.left, top: -b.top };
       } else {
         next = { box: { w: f.clientWidth, h: f.clientHeight }, left: 0, top: 0 };
       }
@@ -241,13 +244,13 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     measure();
     remeasure.current = measure;
     return () => { remeasure.current = null; watch?.disconnect(); };
-  }, [bleed]);
+  }, []);
 
   /* A takeover moves the words between the cell and a view with no size change: each render checks the cell is still the surface listened on. */
   useLayoutEffect(() => {
     const f = frameRef.current;
     if (!f || !remeasure.current) return;
-    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+    const cell = bodyOf(f);
     if ((cell ?? f) !== now.current.surfaceEl) remeasure.current();
   });
 
@@ -470,7 +473,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   const showCursor = (e: PointerEvent) => {
     const el = now.current.surfaceEl;
     if (!el) return;
-    const over = !live.current && !overInk(e.target) && !now.current.drawing && hitAtClient(e.clientX, e.clientY);
+    const over = !live.current && !overInk(e.target, bodyNow()) && !now.current.drawing && hitAtClient(e.clientX, e.clientY);
     shown.current = live.current && !live.current.touch ? 'sponge' : over ? 'sponge' : null;
     cursor.over(el, e, shown.current);
   };
@@ -478,13 +481,13 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   const ensure = () => {
     const f = frameRef.current;
     if (!f) return;
-    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+    const cell = bodyOf(f);
     if ((cell ?? f) !== now.current.surfaceEl) remeasure.current?.();
   };
 
   const onPointerDown = (e: PointerEvent) => {
     ensure();
-    if (e.pointerType === 'touch' || !fixed || live.current || (e.pointerType === 'mouse' && e.button !== 0) || overInk(e.target) || interactive(e.target)) return;
+    if (e.pointerType === 'touch' || !fixed || live.current || (e.pointerType === 'mouse' && e.button !== 0) || overInk(e.target, bodyNow()) || interactive(e.target)) return;
     /* No ink under the pointer: the page has it, for a link or a scroll. */
     if (!begin(e.clientX, e.clientY, e.pointerId, false)) return;
     e.preventDefault();
@@ -530,7 +533,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
       return;
     }
     const tc = e.changedTouches[0];
-    if (!tc || !fixed || overInk(e.target) || interactive(e.target)) return;
+    if (!tc || !fixed || overInk(e.target, bodyNow()) || interactive(e.target)) return;
     suppress.current = false;
     if (!startsAt(tc.clientX, tc.clientY)) return;
     const g: Gesture = { id: tc.identifier, x0: tc.clientX, y0: tc.clientY, cx: tc.clientX, cy: tc.clientY, state: 'wait', timer: null };
@@ -581,7 +584,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   };
 
   /*
-   * The input: the frame always, and in the thread the cell too, as Whoops!'s (whoops/Effect.tsx has the reasoning): native listeners, each
+   * The input: the frame always, and the body too where there is one, as Whoops!'s (whoops/Effect.tsx has the reasoning): native listeners, each
    * calling the latest handler, the cell's taking nothing whose target is inside the frame (the frame's own handler takes that).
    */
   const finishNow = useRef(finish);
@@ -761,7 +764,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   const tile = { left: -size.left + box.w, top: -size.top };
   return (
     <div ref={rootRef} className="kb-graffiti" data-kb-graffiti data-kb-place={place} data-kb-scrubbed={scrubbed} data-kb-drawing={drawing ? 'true' : undefined}>
-      <div ref={frameRef} className="kb-graffiti-frame" style={bleed ? { overflow: 'visible' } : undefined}>
+      <div ref={frameRef} className="kb-graffiti-frame" style={cellEl ? { overflow: 'visible' } : undefined}>
         <div ref={layoutRef} data-kb-graffiti-layout="">
           {children}
         </div>

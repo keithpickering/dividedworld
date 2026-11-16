@@ -4,16 +4,18 @@
  * everyone, and the keyboard path ("Hold to scrub").
  *
  * The post stays the board's 2003 post: its words are laid out like any other post's, at their natural size and width, and the ink
- * is fitted to the post body's box (refinements design, section 1). In the thread that box is the body's padding box
- * (`.kb-act-main`, the cell this sits in, border to border and bar to bar); in the ORIGIN box it is the frame. Every position the
+ * is fitted to the post body's box (refinements design, section 1). That box is the body's padding box: the nearest content area the
+ * engine marks (`bodyOf`, engine/ui/cards/body.ts), the post's `.kb-act-main` in the thread or the ORIGIN box's own area, border to
+ * border; where there is none (Stick Around's view) it is the frame. Every position the
  * effect keeps is a share of that box, across from 0 to 1 and down from 0 to 1, and each screen maps the shares onto its own box,
  * so a body whose height changes stretches its ink and its strokes with it. The ink is canvases laid over the words, one for each
- * layer of each band of the box near the viewport (bands of `BAND_PX`), placed in the box and reaching out of the frame to the cell's corner; the tag is the glass reaching in (`tag` in cards.ts draws it), and
+ * layer of each band of the box near the viewport (bands of `BAND_PX`), placed in the box and reaching out of the frame to the body's corner; the tag is the glass reaching in (`tag` in cards.ts draws it), and
  * the card's state and controls are the Lens's and the kit's, from the view the effect publishes (`show`, below).
  *
- * Input. The effect takes its pointer and touch input on the frame, and in the thread on the cell too, so a press beside the reactions, on the tag's row
- * or in the body's gutters reaches it wherever there is ink; the cell's handler leaves a press inside the frame to the frame's, and takes nothing while the words are away from it. A press whose target is
- * inside `[data-kb-over-ink]` (what the engine lifts over the ink: the reactions row, the spun line) starts nothing. A mouse or pen
+ * Input. The effect takes its pointer and touch input on the frame, and where there is a body on the body too, so a press beside the reactions, on the tag's row
+ * or in the body's gutters reaches it wherever there is ink; the body's handler leaves a press inside the frame to the frame's, and takes nothing while the words are away from it. A press whose target is
+ * inside `[data-kb-over-ink]` inside the body (what the engine lifts over the ink: the reactions row, the spun line, the ORIGIN box's History) starts nothing
+ * (`overInk`, wiping.ts); a lifted thing that holds the body, the ORIGIN box over the opening post's ink, does not stop the box's own. A mouse or pen
  * is read by pointer events, a finger by touch events (design section 6): a quick swipe up or down is the page's and washes nothing,
  * a sideways swipe or a press held 180ms wipes, a tap washes a dab, and a second finger is the page's. Pointer events of type touch
  * are ignored, so a finger is never read twice.
@@ -57,6 +59,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import { watchBands, type BandWatch } from '../../../../engine/ui/cards/bands.ts';
+import { bodyBox, bodyOf } from '../../../../engine/ui/cards/body.ts';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
@@ -327,9 +330,9 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const layers = useMemo<readonly Layer[]>(() => plays.map((play) => ({ play, color: inkOf(play), seed: seedOf(play) })), [plays]);
   /** The body's box on this screen, and the frame's offset in it (px): the ink canvas reaches out of the frame to the box's corner. */
   const [size, setSize] = useState<{ box: Box; left: number; top: number }>({ box: { w: 0, h: 0 }, left: 0, top: 0 });
-  /** What input is taken on: the cell in the thread, the frame in the ORIGIN box. */
+  /** What input is taken on: the body, or the frame where there is none. */
   const [surface, setSurface] = useState<HTMLElement | null>(null);
-  /** The cell the frame was last found in (thread only): its listeners stay while the words are away, and ignore everything until they are back. */
+  /** The body the frame was last found in (none in Stick Around's view): its listeners stay while the words are away, and ignore everything until they are back. */
   const [cellEl, setCellEl] = useState<HTMLElement | null>(null);
   const [near, setNear] = useState(true);
   const [built, setBuilt] = useState(false);
@@ -357,9 +360,9 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** How many band pictures (a build's grid, for a band of a layer) are held: none for a post that has left the viewport, and none while their builds are out. */
   const [pictures, setPictures] = useState(0);
 
-  /** In the thread the box is the post's whole body (the cell), the frame sits inside it, and the ink runs from the frame out to the body's borders, what the engine lifts drawn in front of it. */
-  const bleed = place === 'thread';
   const frameRef = useRef<HTMLDivElement>(null);
+  /** The content area the frame is in now, the box of the ink: the ink runs from the frame out to its borders, what the engine lifts drawn in front of it (found afresh, as a takeover moves the frame). */
+  const bodyNow = () => (frameRef.current ? bodyOf(frameRef.current) : null);
   const layoutRef = useRef<HTMLDivElement>(null);
   const sudsRef = useRef<HTMLCanvasElement>(null);
   /** This post's key with the suds module. */
@@ -445,16 +448,16 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const f = frameRef.current;
     if (!f) return;
     /*
-     * In the thread the box is the post body's padding box (the owner's word: the ink reaches the body's borders), so the body, the cell
-     * this sits in, is measured: its client size, and where the frame starts in it, from the two rects. The cell is found at each measure
-     * and not once: under a takeover (Stick Around) the words are mounted in an element that is moved into the post afterwards, and
-     * moved again into its view, so the cell is not there when this first runs and changes when the words move. The observer follows
-     * whichever cell there is. With no cell (or in the ORIGIN box) the frame is the box.
+     * The box is the body's padding box (the owner's word: the ink reaches the body's borders), so the body, the content area this sits
+     * in, is measured: its client size, and where the frame starts in it (`bodyBox`). The body is found at each measure and not once:
+     * under a takeover (Stick Around) the words are mounted in an element that is moved into the post afterwards, and moved again into
+     * its view, so the body is not there when this first runs and changes when the words move. The observer follows whichever body
+     * there is. With no body the frame is the box.
      */
     let watched: HTMLElement | null = null;
     let watch: ResizeObserver | null = null;
     const measure = () => {
-      const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+      const cell = bodyOf(f);
       if (watch && cell !== watched) {
         if (watched) watch.unobserve(watched);
         if (cell) watch.observe(cell);
@@ -465,8 +468,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       const surf = cell ?? f;
       let next: { box: Box; left: number; top: number };
       if (cell) {
-        const fr = f.getBoundingClientRect(), cr = cell.getBoundingClientRect();
-        next = { box: { w: cell.clientWidth, h: cell.clientHeight }, left: fr.left - cr.left - cell.clientLeft, top: fr.top - cr.top - cell.clientTop };
+        const b = bodyBox(f, cell);
+        next = { box: { w: b.w, h: b.h }, left: -b.left, top: -b.top };
       } else {
         next = { box: { w: f.clientWidth, h: f.clientHeight }, left: 0, top: 0 };
       }
@@ -483,7 +486,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     measure();
     remeasure.current = measure;
     return () => { remeasure.current = null; watch?.disconnect(); };
-  }, [bleed]);
+  }, []);
 
   /*
    * A takeover (Stick Around) moves the words' element, the frame with it, between the post's cell and its view, which may change
@@ -493,7 +496,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   useLayoutEffect(() => {
     const f = frameRef.current;
     if (!f || !remeasure.current) return;
-    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+    const cell = bodyOf(f);
     if ((cell ?? f) !== now.current.surface) remeasure.current();
   });
 
@@ -1135,7 +1138,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** What the cursor shows at a pointer event: nothing over what the engine lifts, the author's pen while they write, the sponge over ink a stroke would take. */
   const cursorAt = (e: PointerEvent): { mode: CursorMode; ink?: string } => {
     if (live.current && !live.current.touch) return shown.current;
-    if (overInk(e.target)) return { mode: null };
+    if (overInk(e.target, bodyNow())) return { mode: null };
     const lives = liveInks();
     if (writing()) {
       const top = lives.reduce((at, ink, i) => (ink ? i : at), -1);
@@ -1158,13 +1161,13 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const ensure = () => {
     const f = frameRef.current;
     if (!f) return;
-    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+    const cell = bodyOf(f);
     if ((cell ?? f) !== now.current.surface) remeasure.current?.();
   };
 
   const onPointerDown = (e: PointerEvent) => {
     ensure();
-    if (e.pointerType === 'touch' || !now.current.built || live.current || (e.pointerType === 'mouse' && e.button !== 0) || overInk(e.target)) return;
+    if (e.pointerType === 'touch' || !now.current.built || live.current || (e.pointerType === 'mouse' && e.button !== 0) || overInk(e.target, bodyNow())) return;
     const [x, y] = shareAt(e.clientX, e.clientY);
     /* No ink under the pointer, or no layer to write in: the page has it, for a link or a scroll. */
     if (!begin([x, y], e.pointerId, false, e.timeStamp)) return;
@@ -1229,7 +1232,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       return;
     }
     const tc = e.changedTouches[0];
-    if (!tc || !now.current.built || overInk(e.target)) return;
+    if (!tc || !now.current.built || overInk(e.target, bodyNow())) return;
     suppress.current = false;
     if (layerAt(shareAt(tc.clientX, tc.clientY)) < 0) return;
     const g: Gesture = { id: tc.identifier, x0: tc.clientX, y0: tc.clientY, cx: tc.clientX, cy: tc.clientY, state: 'wait', timer: null };
@@ -1283,7 +1286,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   };
 
   /*
-   * The input: the frame always, and in the thread the cell too (see the effect). The listeners are native, added here and taken off on
+   * The input: the frame always, and the body too where there is one (see the effect). The listeners are native, added here and taken off on
    * cleanup or when the cell changes, because the cell is the engine's and a touch move must not be passive (React's are). Each
    * calls the latest handler, so none is stale. The surface keeps `touch-action: pan-y pinch-zoom` so a sideways swipe never waits
    * on the browser.
@@ -1296,7 +1299,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const f = frameRef.current;
     if (!f || still) return;
     /*
-     * Listeners are always on the frame, and in the thread on the cell as well. The words can be moved between the cell and a view with
+     * Listeners are always on the frame, and on the body as well where there is one. The words can be moved between the cell and a view with
      * no render, so neither element's place is trusted: the cell's handler takes nothing while the frame is not inside it, and nothing
      * whose target is inside the frame (the frame's own handler takes that), so a press is taken once and a stale cell never acts.
      */
@@ -1572,7 +1575,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       data-kb-bands={nearBands.join(' ')}
       data-kb-splat={splats?.map((sp) => `${sp.placement.cx},${sp.placement.cy}`).join(' ')}
     >
-      <div ref={frameRef} className="kb-whoops-frame" style={bleed ? { overflow: 'visible' } : undefined}>
+      <div ref={frameRef} className="kb-whoops-frame" style={cellEl ? { overflow: 'visible' } : undefined}>
         <div ref={layoutRef} data-kb-whoops-layout="" inert={hidden && !still}>
           {children}
         </div>

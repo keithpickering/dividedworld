@@ -263,6 +263,33 @@ describe('review fixes', () => {
     expect(first.strokes[0]!.points).toEqual([[0.5, 0.5]]);
   });
 
+  /* The body is whatever element carries the marker (the ORIGIN box's area is one and is no `.kb-act-main`), and the class alone is none. */
+  const surfaceIn = (cell: HTMLElement) => {
+    const under = document.createElement('div');
+    cell.append(under);
+    document.body.append(cell);
+    unders.push(cell);
+    Object.defineProperty(cell, 'clientWidth', { configurable: true, value: 480 });
+    Object.defineProperty(cell, 'clientHeight', { configurable: true, value: 260 });
+    renderInWorld(<Compose post={POST} box={{ w: 600, h: 22 }} under={under} submit={vi.fn(ok)} cancel={() => {}} hold={() => {}} ready={() => {}}><p>One line.</p></Compose>);
+    return under.querySelector('[data-kb-draw-surface]') as HTMLElement;
+  };
+
+  test('the body is found by the marker, whatever its class', () => {
+    const area = document.createElement('div');
+    area.className = 'kb-origin-area';
+    area.setAttribute('data-kb-content-area', '');
+    const surface = surfaceIn(area);
+    expect([surface.style.width, surface.style.height]).toEqual(['480px', '260px']);
+  });
+
+  test("an unmarked kb-act-main is not a body: the surface covers the words' box it was given", () => {
+    const cell = document.createElement('div');
+    cell.className = 'kb-act-main';
+    const surface = surfaceIn(cell);
+    expect([surface.style.width, surface.style.height]).toEqual(['600px', '22px']);
+  });
+
   /* A passive listener's preventDefault is ignored and logs "Unable to preventDefault inside passive event listener" at each stroke (found in a real browser, e2e/graffiti.spec.ts). */
   test('the surface\'s pointerdown, which calls preventDefault, and its touchmove are not passive listeners', () => {
     const added: { readonly el: unknown; readonly type: string; readonly passive: unknown }[] = [];
