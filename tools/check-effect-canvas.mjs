@@ -63,7 +63,7 @@ export const CANVASES = {
   'instances/divided-world/cards/whoops/ConfigForm.tsx': { count: 1, why: 'the ink\'s preview in the card\'s config form, a fixed small box (PREVIEW_BOX)' },
   'instances/divided-world/cards/whoops/cursor.ts': { count: 2, why: 'the bench\'s drop, a 24 by 36 sprite drawn once, and the one fixed overlay for the drips, sized to the window and shared by the whole page' },
   'instances/divided-world/ui/hot-box/Effect.tsx': { count: 1, why: 'the puff sprite, a 128 px disc drawn once per color and shared by every smoked post; the fog itself is on the layer' },
-  'instances/divided-world/ui/steel-chair/dent.ts': { count: 1, why: 'the dent\'s displacement map, a 160 px square drawn once and kept as a URL' },
+  'instances/divided-world/ui/steel-chair/dent.ts': { count: 1, why: 'a dent\'s height-map images (its bend, shade and light), each at most 320 px square, drawn once per play and kept as URLs in a cache of 32 plays' },
   /* ---- wait: an effect not yet on the layer, with the step (design, section 7) that moves it ---- */
   'instances/divided-world/cards/graffiti/Compose.tsx': { count: 1, why: 'the wall\'s ink canvas while composing, laid over the post\'s whole area', until: 'step 2' },
   'instances/divided-world/cards/graffiti/Effect.tsx': { count: 2, why: 'the wall\'s ink and its suds, each laid over the post\'s whole area', until: 'step 2' },

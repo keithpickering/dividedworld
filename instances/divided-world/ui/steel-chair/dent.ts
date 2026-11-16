@@ -1,10 +1,13 @@
 import { rng, THROW_INSET_X, THROW_INSET_Y, THROW_SPAN_X, THROW_SPAN_Y } from './body.ts';
 
 /**
- * Steel Chair's dent (docs/plans/2026-11-15-steel-chair-plan.md, Task 4): the displacement map an SVG filter bends the words with, and the
- * filter's numbers. Pure TypeScript apart from `dentMapUrl`, which draws the map on a canvas once. The filter itself (a flood of neutral
- * gray; each dent's `feImage` laid over neutral and added to the running map by an arithmetic `feComposite`, 0.5 + the sum of (d - 0.5), so
- * overlapping dents add and do not cut each other; one `feDisplacementMap` on the words) is written as JSX by the effect from `dentPrimitives`.
+ * Steel Chair's dent (docs/plans/2026-11-15-steel-chair-plan.md, Task 4; docs/plans/2026-11-16-steel-chair-dent-plan.md, Task 1): one height
+ * map per play (`dentHeight`, from the play's `DentShape`), lit by one light into three images: the bend an SVG filter moves the words with
+ * (`dentBend`, the map's slope), the shade that darkens the metal (`dentShade`) and the light that brightens it (`dentLight`). Pure
+ * TypeScript apart from `pixelsUrl`, the file's one canvas, which `dentImages` draws each image on once per play. The filter itself (a flood
+ * of neutral gray; each dent's `feImage` laid over neutral and added to the running map by an arithmetic `feComposite`, 0.5 + the sum of
+ * (d - 0.5), so overlapping dents add and do not cut each other; one `feDisplacementMap` on the words) is written as JSX by the effect from
+ * `dentPrimitives`.
  */
 
 /**
@@ -23,55 +26,6 @@ export const DENT_SCALE = 14;
  * same: 18 / 1.23 is about 14.6, taken as 14. The owner asked that the one-line post's three dents leave the line readable; the dents still
  * read as dents on the long post, where the shading and the bend of a ring of words around each are plain at 14 (e2e/steel-chair.spec.ts).
  */
-
-/**
- * The displacement map, `size` by `size` RGBA pixels. At distance `r` (0 at the center, 1 at the edge) from the center the push away
- * from it is `sin(r·π)·(1 − r)`: nothing at the center and the rim, most in a ring between. Red carries x and green y, 128 is no push,
- * blue is 128 and every pixel is opaque. The push is the plan's bytes, 128 + 127·sin(r·π)·(1 − r), and is not stretched to fill the range: its
- * peak (r of about 0.35) is 0.58 of 127, and a stretched map pushed the words 1/0.58 times too far.
- * Outside the circle (`r` of 1 or more) the map is neutral, so a dent's square edge shows nothing.
- *
- * What `feDisplacementMap` does with it: it draws each pixel P from the source at P + scale·(C − 0.5), so the map's vector is where a
- * pixel is sampled FROM. With the vector pointing away from the center, a pixel on the ring shows the words from farther out, so on
- * screen the words around the ring are drawn in toward the middle, the way print sinks into a dent. This direction is the plan's; the
- * owner judges the look in review.
- */
-export function dentMap(size = 160): Uint8ClampedArray {
-  const out = new Uint8ClampedArray(size * size * 4);
-  const half = size / 2;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = x + 0.5 - half, dy = y + 0.5 - half;
-      const dist = Math.hypot(dx, dy);
-      const r = dist / half;
-      const push = r >= 1 || dist === 0 ? 0 : Math.sin(r * Math.PI) * (1 - r);
-      const i = (y * size + x) * 4;
-      out[i] = 128 + Math.round(127 * push * (dist === 0 ? 0 : dx / dist));
-      out[i + 1] = 128 + Math.round(127 * push * (dist === 0 ? 0 : dy / dist));
-      out[i + 2] = 128;
-      out[i + 3] = 255;
-    }
-  }
-  return out;
-}
-
-let cached: string | null = null;
-
-/**
- * The map as a `data:` address, drawn to a canvas once and kept (the page's policy lets a filter read an image from `data:`,
- * web/headers.ts `img-src`). Empty where there is no canvas to draw on (a test's jsdom): the filter is then simply not applied.
- */
-export function dentMapUrl(): string {
-  if (cached !== null) return cached;
-  if (typeof document === 'undefined') return '';
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 160;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return '';
-  ctx.putImageData(new ImageData(dentMap(160) as Uint8ClampedArray<ArrayBuffer>, 160, 160), 0, 0);
-  cached = canvas.toDataURL('image/png');
-  return cached;
-}
 
 /** Test seams: pass the user agent and whether `CSS.supports('filter', 'url(#x)')` answered yes. Both default to the running browser's. */
 export interface FilterEnv { userAgent?: string; supportsFilterUrl?: boolean }
@@ -107,24 +61,41 @@ export function seedOfIds(ids: readonly string[]): number {
 }
 
 /**
- * One dent's shape: `rx` and `ry`, how far its two axes are scaled from round (0.85 to 1.15); `turn`, how many degrees its light and creases
- * are turned (0 up to 360); `outline`, four points (42 to 58, percent) that make the edge of the shading uneven (CSS `border-radius`'s four
- * corners, each split at its own point instead of at 50%).
+ * One dent's shape, the numbers its height map is made from: `rx` and `ry`, how far its two axes are scaled from round (0.85 to 1.15);
+ * `turn`, the angle of its crease in degrees (0 up to 360); `waves`, the angular waves 2, 3 and 5 that make its bowl uneven (`amp` -0.1 to
+ * 0.1, `phase` 0 to 2π); `lobes`, 2 to 4 smaller hollows near its middle (a center `u`, `v` within 0.3 of it, a `radius` 0.12 to 0.22, a `depth`
+ * 0.3 to 0.6); `crumple`, a 9 by 9 lattice (row by row, -0.5 to 0.5) of the fine wrinkling.
  */
-export interface DentShape { readonly rx: number; readonly ry: number; readonly turn: number; readonly outline: readonly [number, number, number, number] }
+export interface DentShape {
+  readonly rx: number;
+  readonly ry: number;
+  readonly turn: number;
+  readonly waves: readonly { readonly amp: number; readonly phase: number }[];
+  readonly lobes: readonly { readonly u: number; readonly v: number; readonly radius: number; readonly depth: number }[];
+  readonly crumple: readonly number[];
+}
 
 /**
  * A dent's shape, from its play's id alone, through the seeded generator of body.ts: nothing about the reader and not the run's own seed, so a
- * given play's dent has the same shape and turn for every reader and on every replay, and three plays' dents are not copies. (Where it lands is
+ * given play's dent has the same shape for every reader and on every replay, and three plays' dents are not copies. (Where it lands is
  * the run's, and changes each run.) The id is salted with `dent|` so the shape does not move in step with a moment's seed from the same id.
+ * The draws are in this order: `rx`, `ry`, `turn`, each wave's `amp` and `phase`, the lobe count, each lobe's distance, angle, `radius` and
+ * `depth`, then the 81 lattice values.
  */
 export function dentShape(playId: string): DentShape {
   const rand = rng(seedOfIds(['dent', playId]));
   const axis = () => AXIS_MIN + (AXIS_MAX - AXIS_MIN) * rand();
   const rx = axis(), ry = axis();
   const turn = rand() * 360;
-  const point = () => 42 + 16 * rand();
-  return { rx, ry, turn, outline: [point(), point(), point(), point()] };
+  const waves = Array.from({ length: 3 }, () => { const amp = -0.1 + 0.2 * rand(); return { amp, phase: rand() * 2 * Math.PI }; });
+  const lobes = Array.from({ length: 2 + Math.floor(3 * rand()) }, () => {
+    const dist = 0.3 * rand(), angle = rand() * 2 * Math.PI;
+    const radius = 0.12 + 0.1 * rand();
+    const depth = 0.3 + 0.3 * rand();
+    return { u: dist * Math.cos(angle), v: dist * Math.sin(angle), radius, depth };
+  });
+  const crumple = Array.from({ length: 81 }, () => -0.5 + rand());
+  return { rx, ry, turn, waves, lobes, crumple };
 }
 
 /** One dent's `feImage`, and the box of its shading: its top left corner, its width and height, and the larger of the two, in the box's px. */
@@ -154,9 +125,8 @@ export function dentsOverlap(a: DentBox, b: DentBox): boolean {
 /**
  * Each dent's `feImage` numbers, in order. A dent's larger axis is at most 160 px and at most 60% of the box (a narrow post would otherwise
  * be mostly dent); a dent with a `shape` has its two axes scaled by it, divided by `AXIS_MAX` so that the larger can never pass that limit. The
- * dent's box is centered on its point. The displacement map is a circle: the `feImage` stretches it to this (axis-aligned) box, which is the
- * ellipse the shading draws too, so the bend and the shading agree; only the shading's light, creases and uneven edge turn, which the map
- * cannot (an `feImage` cannot be rotated).
+ * dent's box is centered on its point. The dent's height map is made in this (axis-aligned) box (`dentImages`), so an elliptical box gives an
+ * elliptical dent, and the bend, the shade and the light, all from that one map, agree.
  */
 export function dentPrimitives(dents: readonly { x: number; y: number; shape?: DentShape }[], box: { width: number; height: number }): DentPrimitive[] {
   const base = Math.min(160, 0.6 * box.width);
@@ -165,6 +135,223 @@ export function dentPrimitives(dents: readonly { x: number; y: number; shape?: D
     const height = d.shape ? (base * d.shape.ry) / AXIS_MAX : base;
     return { x: d.x - width / 2, y: d.y - height / 2, size: Math.max(width, height), width, height };
   });
+}
+
+/* ---------- a dent's height map, its light, and the three images ---------- */
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * One dent's height map, `width × height` values, row by row, each sampled at a pixel's center in the box's normalized coordinates `u`, `v`
+ * (-1 to 1 across the box, so an ellipse box gives an elliptical dent). Negative is pressed in. A bowl, the lobes a few blows leave in it, a
+ * crease, a raised lip around the bowl, and a fine crumple only where the metal is pressed in; the whole is eased to exactly 0 from
+ * `ρ = 0.98`, so the dent has no edge to show. Pure: the same shape and size give the same array.
+ */
+export function dentHeight(shape: DentShape, width: number, height: number): Float32Array {
+  const out = new Float32Array(width * height);
+  const theta = (shape.turn * Math.PI) / 180;
+  const sinT = Math.sin(theta), cosT = Math.cos(theta);
+  const ks = [2, 3, 5] as const;
+  const lattice = shape.crumple;
+  for (let y = 0; y < height; y++) {
+    const v = ((y + 0.5) / height) * 2 - 1;
+    for (let x = 0; x < width; x++) {
+      const u = ((x + 0.5) / width) * 2 - 1;
+      const rho = Math.hypot(u, v);
+      if (rho >= 0.98) continue;
+      const a = Math.atan2(v, u);
+      let wave = 0;
+      for (let i = 0; i < 3; i++) wave += shape.waves[i]!.amp * Math.cos(ks[i]! * a + shape.waves[i]!.phase);
+      const r0 = 0.5 * (1 + wave);
+      let h = -Math.exp(-2.2 * (rho / r0) ** 2);
+      for (const l of shape.lobes) h -= l.depth * Math.exp(-(((u - l.u) ** 2 + (v - l.v) ** 2) / l.radius ** 2));
+      const n = u * sinT - v * cosT, t = u * cosT + v * sinT;
+      h -= 0.15 * Math.exp(-((n / 0.08) ** 2)) * Math.exp(-((t / 0.4) ** 2));
+      h += 0.12 * Math.exp(-(((rho - 1.05 * r0) / 0.09) ** 2));
+      // the crumple: a 9 by 9 lattice, smoothstep-interpolated, only where the metal is pressed in
+      const gx = ((u + 1) / 2) * 8, gy = ((v + 1) / 2) * 8;
+      const ix = Math.min(7, Math.max(0, Math.floor(gx))), iy = Math.min(7, Math.max(0, Math.floor(gy)));
+      const fx = smoothstep(0, 1, gx - ix), fy = smoothstep(0, 1, gy - iy);
+      const upper = lattice[iy * 9 + ix]! * (1 - fx) + lattice[iy * 9 + ix + 1]! * fx;
+      const lower = lattice[(iy + 1) * 9 + ix]! * (1 - fx) + lattice[(iy + 1) * 9 + ix + 1]! * fx;
+      h += 0.012 * (upper * (1 - fy) + lower * fy) * Math.min(1, Math.max(0, -3 * h));
+      out[y * width + x] = h * (1 - smoothstep(0.8, 0.98, rho));
+    }
+  }
+  return out;
+}
+
+const unit = (x: number, y: number, z: number): readonly [number, number, number] => { const n = Math.hypot(x, y, z); return [x / n, y / n, z / n]; };
+/** The one light: from the upper left and in front (screen `y` is down). `HALF` is the vector halfway between it and the viewer. */
+export const LIGHT = unit(-0.5, -0.6, 0.62);
+export const HALF = unit(LIGHT[0], LIGHT[1], LIGHT[2] + 1);
+/**
+ * How steeply the relief reads: a sample's normal is the unit vector of (-RELIEF·∂h/∂u, -RELIEF·∂h/∂v, 1), the slopes taken in the box's
+ * normalized `u`, `v`, so the look does not change with the box's size. The mock's `k = 22`, put in these units; the one number the owner
+ * may ask to tune in review.
+ */
+export const RELIEF = 0.065;
+
+/** The map lit: `N·LIGHT` and `N·HALF` at every sample, the slopes by central differences in `u`, `v` (one-sided at the edge). */
+function lighting(h: Float32Array, width: number, height: number): { lam: Float64Array; spec: Float64Array } {
+  const lam = new Float64Array(width * height), spec = new Float64Array(width * height);
+  const du = 2 / width, dv = 2 / height;
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.max(0, y - 1), y1 = Math.min(height - 1, y + 1);
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.max(0, x - 1), x1 = Math.min(width - 1, x + 1);
+      const hu = (h[y * width + x1]! - h[y * width + x0]!) / ((x1 - x0) * du);
+      const hv = (h[y1 * width + x]! - h[y0 * width + x]!) / ((y1 - y0) * dv);
+      const [nx, ny, nz] = unit(-RELIEF * hu, -RELIEF * hv, 1);
+      lam[y * width + x] = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2];
+      spec[y * width + x] = nx * HALF[0] + ny * HALF[1] + nz * HALF[2];
+    }
+  }
+  return { lam, spec };
+}
+
+/**
+ * The shade, RGBA gray and opaque: flat metal is 255 and the darkest pixel exactly 128, so that multiplied over the post it never darkens a
+ * word below half. A sample is `1 + (N·LIGHT - flat)·g` (clamped), `flat = LIGHT.z`, with `g` chosen so the map's least lit sample lands on
+ * 128/255. A map with no slope (which no shape gives) is all 255.
+ */
+export function dentShade(h: Float32Array, width: number, height: number): Uint8ClampedArray {
+  const { lam } = lighting(h, width, height);
+  const flat = LIGHT[2];
+  let lo = Infinity;
+  for (const l of lam) lo = Math.min(lo, l);
+  const g = flat - lo > 1e-12 ? (1 - 128 / 255) / (flat - lo) : 0;
+  const out = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < lam.length; i++) {
+    const b = Math.round(255 * Math.min(1, Math.max(128 / 255, 1 + (lam[i]! - flat) * g)));
+    out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = b;
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+/**
+ * The light, RGBA gray and opaque, screened over the post: a soft sheen (`N·LIGHT` above flat, its largest 71/255) and a small glint (a
+ * specular term `(N·HALF)^P`, its largest 140/255), summed and held to 140; 0 where the metal is flat. The glint must stay small: the samples
+ * brighter than 71 are at most 4% of those inside the circle. While they are more, `P` is multiplied by 1.5 (at most 8 times; after that the
+ * glint is scaled to 71, which is a last resort and not a place the shapes reach).
+ */
+export function dentLight(h: Float32Array, width: number, height: number): Uint8ClampedArray {
+  const { lam, spec } = lighting(h, width, height);
+  const n = width * height;
+  const flat = LIGHT[2];
+  const soft = new Float64Array(n);
+  let softMax = 0;
+  for (let i = 0; i < n; i++) { soft[i] = Math.max(0, lam[i]! - flat); softMax = Math.max(softMax, soft[i]!); }
+  const softScale = softMax > 0 ? 71 / 255 / softMax : 0;
+  const inside = new Uint8Array(n);
+  let insideCount = 0;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    if (Math.hypot(((x + 0.5) / width) * 2 - 1, ((y + 0.5) / height) * 2 - 1) < 1) { inside[y * width + x] = 1; insideCount++; }
+  }
+  const out = new Uint8ClampedArray(n * 4);
+  /** Draws the light with a glint of exponent `P` and largest `glintMax`; returns how many pixels inside the circle are over 71. */
+  const draw = (P: number, glintMax: number): number => {
+    const floor = HALF[2] ** P;
+    const glint = new Float64Array(n);
+    let glintTop = 0;
+    for (let i = 0; i < n; i++) { glint[i] = Math.max(0, spec[i]! ** P - floor) / (1 - floor); glintTop = Math.max(glintTop, glint[i]!); }
+    const glintScale = glintTop > 0 ? glintMax / glintTop : 0;
+    let bright = 0;
+    for (let i = 0; i < n; i++) {
+      const b = Math.round(255 * Math.min(140 / 255, soft[i]! * softScale + glint[i]! * glintScale));
+      out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = b;
+      out[i * 4 + 3] = 255;
+      if (inside[i] && b > 71) bright++;
+    }
+    return bright;
+  };
+  let P = 40;
+  for (let attempt = 0; attempt <= 8; attempt++, P *= 1.5) {
+    if (draw(P, 140 / 255) <= 0.04 * insideCount) return out;
+  }
+  draw(P, 71 / 255);
+  return out;
+}
+
+/**
+ * The bend, RGBA, opaque, blue 128: the map's slope in the box's px (`∂h/∂x`, `∂h/∂y`, central differences), scaled by one factor so that
+ * the largest of the two over the map is 74 bytes (0.58 of the 127 a byte can carry: a map stretched to the whole range pushed the words
+ * 1/0.58 times too far and squeezed those inside a dent near unreadable). Red is `128 + round(scale·∂h/∂x)`, green the same for `y`.
+ *
+ * The vector points uphill, away from the bowl's floor. What `feDisplacementMap` does with it: it draws each pixel P from the source at
+ * P + scale·(C - 0.5), so the map's vector is where a pixel is sampled FROM. With the vector pointing away from the middle, a pixel on the
+ * ring shows the words from farther out, so on screen the words around the ring are drawn in toward the middle, the way print sinks into a
+ * dent. This direction is the plan's; the owner judges the look in review.
+ */
+export function dentBend(h: Float32Array, width: number, height: number): Uint8ClampedArray {
+  const gx = new Float64Array(width * height), gy = new Float64Array(width * height);
+  let peak = 0;
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.max(0, y - 1), y1 = Math.min(height - 1, y + 1);
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.max(0, x - 1), x1 = Math.min(width - 1, x + 1);
+      const i = y * width + x;
+      gx[i] = (h[y * width + x1]! - h[y * width + x0]!) / (x1 - x0);
+      gy[i] = (h[y1 * width + x]! - h[y0 * width + x]!) / (y1 - y0);
+      peak = Math.max(peak, Math.abs(gx[i]!), Math.abs(gy[i]!));
+    }
+  }
+  const scale = peak > 0 ? 74 / peak : 0;
+  const out = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    out[i * 4] = 128 + Math.round(scale * gx[i]!);
+    out[i * 4 + 1] = 128 + Math.round(scale * gy[i]!);
+    out[i * 4 + 2] = 128;
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+/**
+ * Pixels as a `data:` address, drawn to a canvas (the page's policy lets a filter read an image from `data:`, web/headers.ts `img-src`).
+ * Empty where there is no canvas to draw on (a test's jsdom, a server): the filter is then simply not applied.
+ */
+export function pixelsUrl(px: Uint8ClampedArray, width: number, height: number): string {
+  if (typeof document === 'undefined') return '';
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+  ctx.putImageData(new ImageData(px as Uint8ClampedArray<ArrayBuffer>, width, height), 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+export interface DentImages { readonly bend: string; readonly shade: string; readonly light: string }
+const IMAGE_CACHE_MAX = 32;
+const imageCache = new Map<string, DentImages>();
+
+/**
+ * A dent's three images as addresses. `box` is the dent's primitive: the bend is made at its size in px (the `feImage` stretches it), the
+ * shade and the light at that times `density` (the caller gives `min(devicePixelRatio, 2)`), so no image passes 320 by 320. Made once per
+ * play, size and density and kept in a cache of at most 32, the oldest dropped first (a `Map`'s order).
+ */
+export function dentImages(play: string, box: DentPrimitive, density: number, toUrl: typeof pixelsUrl = pixelsUrl): DentImages {
+  const w = Math.round(box.width), h = Math.round(box.height);
+  const key = `${play}|${w}|${h}|${density}`;
+  const kept = imageCache.get(key);
+  if (kept) return kept;
+  const shape = dentShape(play);
+  const sw = Math.round(w * density), sh = Math.round(h * density);
+  const bendMap = dentHeight(shape, w, h);
+  const map = sw === w && sh === h ? bendMap : dentHeight(shape, sw, sh);
+  const made = {
+    bend: toUrl(dentBend(bendMap, w, h), w, h),
+    shade: toUrl(dentShade(map, sw, sh), sw, sh),
+    light: toUrl(dentLight(map, sw, sh), sw, sh),
+  };
+  imageCache.set(key, made);
+  if (imageCache.size > IMAGE_CACHE_MAX) imageCache.delete(imageCache.keys().next().value!);
+  return made;
 }
 
 /* ---------- the hit zone of a short post ---------- */
@@ -203,3 +390,4 @@ export function hitZone(
   const width = (x1 - x0) / (THROW_X[1] - THROW_X[0]), height = (y1 - y0) / (THROW_Y[1] - THROW_Y[0]);
   return { left: x0 - THROW_X[0] * width, top: y0 - THROW_Y[0] * height, width, height };
 }
+
