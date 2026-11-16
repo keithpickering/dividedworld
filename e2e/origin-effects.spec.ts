@@ -736,6 +736,8 @@ test('13. scrolled out of view, nothing is drawn for the box and its canvas hold
 
 test('14. with the opening post\'s foil and the box\'s both on the page, two hosts are registered and each is held to its own allowance', async ({ page }) => {
   /* Poison: `share` forced to 1 in Feelin' Fab's `register` call for the box's host (`el.closest('.kb-origin') ? 1 : share`), which the box's registered share fails; for the opening post's host alone (`el.closest('.kb-origin') ? share : 1`), the opening post's bound fails as well. */
+  /* Two foils are brought to rest and sampled over hundreds of frames: on a loaded machine that passed the 30 s a test is given, once, in a run of the whole suite. */
+  test.slow();
   await open(page, 'fab-bright');
   await expect.poll(() => page.evaluate(() => window.__kbOriginShine!.hosts().length), { message: 'two Feelin\' Fabs are registered with the loop' }).toBe(2);
   await atRest(page);
