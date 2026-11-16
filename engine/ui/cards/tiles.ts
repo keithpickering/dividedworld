@@ -17,7 +17,7 @@
  */
 import { bandsOf, watchBands, type BandWatch } from './bands.ts';
 import { bodyBox, bodyOf, sameBox, type BodyBox } from './body.ts';
-import { forget, join, want, type LoopMember } from './tileLoop.ts';
+import { forget, join, unwant, want, type LoopMember } from './tileLoop.ts';
 import type { EffectPlace } from './types.ts';
 
 /** A tile's height in CSS px. */
@@ -252,7 +252,8 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
     if (stopped) return false;
     if (scrollDue) { scrollDue = false; follow(false); }
     for (const tile of [...tiles.values()]) if (looping || tile.dirty) paint(tile, t);
-    return looping;
+    /* A looping layer that holds no tile has nothing to paint and asks for no frame; a tile held later asks again (`hold`, `loop`). */
+    return looping && tiles.size > 0;
   };
   const self: LoopMember = { frame, pixels: () => { let px = 0; for (const t of tiles.values()) for (const c of t.sheets) px += c.width * c.height; return px; } };
 
@@ -334,9 +335,9 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
     loop(on) {
       if (stopped) return;
       looping = on;
-      if (on) want(self);
-      /* Nothing stale and no scroll to follow: no frame of the layer's is left pending. `join` puts it back among the members the probe counts. */
-      else if (!scrollDue && ![...tiles.values()].some((t) => t.dirty)) { forget(self); join(self); }
+      if (on) { if (tiles.size > 0) want(self); }
+      /* Nothing stale and no scroll to follow: no frame of the layer's is left pending, and it stays a member the probe counts. */
+      else if (!scrollDue && ![...tiles.values()].some((t) => t.dirty)) unwant(self);
     },
     stale(rect) {
       if (stopped) return;

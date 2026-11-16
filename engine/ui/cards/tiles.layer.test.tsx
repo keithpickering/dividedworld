@@ -293,6 +293,46 @@ describe('painting', () => {
     expect(painted).toHaveLength(6);
   });
 
+  test('a looping layer whose tiles are all released leaves no frame pending and its painter is not called; a tile held again is painted and the loop resumes', () => {
+    const { layer, host } = make();
+    layer.loop(true);
+    flush(10);
+    /* The watcher skips an empty first report, so it is first told of a tile, then of none. The watcher's own frame and the layer's run together. */
+    report(host, [1]);
+    flush(26);
+    flush(42);
+    report(host, []);
+    flush(58);
+    expect(indexes(layer)).toEqual([]);
+    flush(74);
+    painted = [];
+    expect(queue.size).toBe(0);
+    flush(90);
+    expect(painted).toEqual([]);
+    report(host, [2]);
+    flush(106);
+    expect(queue.size).toBe(1);
+    flush(122);
+    expect(painted.map((d) => [d.index, d.frame])).toEqual([[2, 122]]);
+    flush(138);
+    expect(painted.map((d) => [d.index, d.frame])).toEqual([[2, 122], [2, 138]]);
+  });
+
+  test('two layers, one looping with no tiles and one idle, leave no frame pending', () => {
+    const a = make(), b = make();
+    flush();
+    a.layer.loop(true);
+    report(a.host, [1]);
+    flush();
+    flush();
+    report(a.host, []);
+    flush();
+    flush();
+    expect(indexes(a.layer)).toEqual([]);
+    expect(indexes(b.layer).length).toBeGreaterThan(0);
+    expect(queue.size).toBe(0);
+  });
+
   test('loop(false) with a tile stale keeps the frame that paints it', () => {
     const { layer } = make();
     flush();

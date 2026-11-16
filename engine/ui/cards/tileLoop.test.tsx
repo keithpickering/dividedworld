@@ -5,7 +5,7 @@
  * the loop's own time in a frame is a number the test chose.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { forget, join, probe, want, type LoopMember } from './tileLoop.ts';
+import { forget, join, probe, unwant, want, type LoopMember } from './tileLoop.ts';
 
 let queue = new Map<number, FrameRequestCallback>();
 let nextId = 1;
@@ -89,6 +89,25 @@ describe('the frame schedule', () => {
     forget(b);
     expect(queue.size).toBe(0);
     expect(probe.running()).toBe(false);
+  });
+
+  test('unwant drops a request and keeps the member: the probe order is unchanged, and the frame is cancelled only when nobody else wants it', () => {
+    const a = member({ more: true, px: 1 }), b = member({ more: true, px: 2 }), c = member({ more: true, px: 3 });
+    join(a); join(b); join(c);
+    want(a); want(b);
+    unwant(a);
+    expect(queue.size).toBe(1);
+    expect(probe.held()).toEqual([1, 2, 3]);
+    flush(5);
+    expect(a.seen).toEqual([]);
+    expect(b.seen).toEqual([5]);
+    unwant(b);
+    expect(queue.size).toBe(0);
+    expect(probe.running()).toBe(false);
+    expect(probe.held()).toEqual([1, 2, 3]);
+    want(c);
+    flush(6);
+    expect(c.seen).toEqual([6]);
   });
 
   test('a layer that throws costs only itself its frame', () => {

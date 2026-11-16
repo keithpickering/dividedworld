@@ -60,6 +60,12 @@ export function want(member: LoopMember): void {
   if (handle === null) handle = requestAnimationFrame(frame);
 }
 
+/** Drops `member`'s request for the coming frame and keeps it a member (its place in the probe's order is unchanged); the pending frame is cancelled when nobody else wants one. */
+export function unwant(member: LoopMember): void {
+  asked.delete(member);
+  if (asked.size === 0 && handle !== null) { cancelAnimationFrame(handle); handle = null; }
+}
+
 /** The member is never served again; the last one asking is forgotten and no frame is left pending. */
 export function forget(member: LoopMember): void {
   members.delete(member);
