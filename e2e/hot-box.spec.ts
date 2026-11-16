@@ -475,12 +475,16 @@ test('Tab reaches the mark, Enter opens the Lens, Tab reaches "Wave the smoke", 
   expect(spent, 'a long post takes a long hold').toBeGreaterThan(10_000);
   await page.keyboard.up('Enter');
   /* Clear: the first line and the last have nothing over them. A tile is held only near the window, so each is brought into view to be read. */
-  const all = await lines(page);
   const view = async (index: number) => {
     const l = (await lines(page))[index < 0 ? (await lines(page)).length + index : index]!;
     await page.evaluate((to) => { window.scrollBy(0, to - 560); }, l.y + l.h / 2);
     await run(page, 100);
-    return (await lines(page))[index < 0 ? (await lines(page)).length + index : index]!;
+    const at = (await lines(page))[index < 0 ? (await lines(page)).length + index : index]!;
+    /* The layer learns that a tile has come near from its IntersectionObserver, which reports in real time, and takes the report up in a frame, which is on
+     * the page's frozen clock. A reader's browser gives both at once; here the clock is moved a frame at each look until the report has been taken up and
+     * a tile covers the line. A layer that never makes the tile fails here, with a frame of model time per look (a few hundred ms in all, well inside the wave). */
+    await expect.poll(async () => { const held = (await fogAt(page, at.x + at.w / 2, at.y + at.h / 2)) !== null; if (!held) await run(page, 16); return held; }, `a tile of the layer is held over line ${index} once it is in view`).toBe(true);
+    return at;
   };
   for (const index of [0, -1]) {
     const l = await view(index);
@@ -493,8 +497,11 @@ test('Tab reaches the mark, Enter opens the Lens, Tab reaches "Wave the smoke", 
   await page.clock.fastForward(SMOKE.waved + 200);
   await run(page, SMOKE.roll + 300);
   await expect(words(page)).toHaveJSProperty('inert', true);
-  const first = await view(0);
-  await expect.poll(() => alphaAt(page, first.x + first.w / 2, first.y + first.h / 2)).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
+  /* Under the fog again: the last line, still in view, whose tile was held cleared through the wave, and then the first, whose tile is made after it (fogged, not bare). */
+  for (const index of [-1, 0]) {
+    const l = await view(index);
+    await expect.poll(() => alphaAt(page, l.x + l.w / 2, l.y + l.h / 2), `the smoke is back over line ${index}`).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
+  }
   /* Focus was in the words when they went inert: it goes to the post's mark (No player is ever stuck), and nowhere else is it moved. */
   await expect(page.locator(MARK)).toBeFocused();
 });
