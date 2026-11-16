@@ -492,7 +492,7 @@ export const STAGGER_STEPS = Math.round(0.35 / STEP);
  * (one body needing 11 nudges), and settling that one takes about 0.4 s of a reader's main thread. The tests hold the slowest world they
  * run to half of this, so that a run cut off with a chair in mid-air is not one seed away.
  */
-export const SETTLE_S = 40;
+export const SETTLE_S = 60;
 
 /**
  * Steps until every body sleeps or maxSeconds of simulated time have passed; for reduced motion and a moment. The return value says
