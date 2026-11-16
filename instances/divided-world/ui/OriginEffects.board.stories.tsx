@@ -24,12 +24,25 @@ import type { Fake } from '../../../engine/ui/data/fake.ts';
 import type { ThreadSummary } from '../../../engine/ui/data/api.ts';
 import { LoadedThread } from '../../../engine/ui/loaded.tsx';
 import { foilProbe } from '../../../engine/ui/shine/foilClient.ts';
+import { cling } from '../../../engine/ui/shine/flakes.ts';
+import { probe } from '../../../engine/ui/shine/loop.ts';
 import { cardOf, type World } from '../../../engine/ui/story.tsx';
 
 declare global {
   interface Window {
     /** The nth foil canvas of the ORIGIN box, as the worker that draws it holds it (the canvas's own size where the page draws it): e2e/origin-effects.spec.ts reads the backing size through it, since a handed-over canvas cannot be read on the page. */
     __kbOriginFab?: { size(nth: number): Promise<{ w: number; h: number } | null> };
+    /**
+     * What e2e/origin-effects.spec.ts reads of the shine loop and the cling layer, as e2e/shine.spec.ts reads `window.__kbShine` (Shine.board.stories.tsx, which this page does not mount): each
+     * Feelin' Fab on the page in document order with the loop's draws of it, the box it paints (its canvas's) and its words' own box in the viewport, the share of the loop's rate it is
+     * drawn at, and whether it is the ORIGIN box's; the loop's frames and whether it runs; and how many flakes the page-fixed cling layer carries.
+     */
+    __kbOriginShine?: {
+      hosts(): { draws: number; top: number; bottom: number; width: number; own: { top: number; bottom: number; width: number }; share: number; inBox: boolean }[];
+      frames(): number;
+      running(): boolean;
+      carried(): number;
+    };
   }
 }
 
@@ -186,7 +199,16 @@ function Spun({ mode = 'light', bright = false }: Args) {
         return (await foilProbe.sizes()).get(cv) ?? null;
       },
     };
-    return () => { delete window.__kbOriginFab; };
+    window.__kbOriginShine = {
+      hosts: () => [...document.querySelectorAll('[data-kb-fab]')].map((el) => {
+        const r = (el.querySelector(':scope > canvas') ?? el).getBoundingClientRect(), o = el.getBoundingClientRect();
+        return { draws: probe.draws(el), top: r.top, bottom: r.bottom, width: r.width, own: { top: o.top, bottom: o.bottom, width: o.width }, share: probe.share(el), inBox: el.closest('.kb-origin') !== null };
+      }),
+      frames: probe.frames,
+      running: probe.running,
+      carried: cling.carried,
+    };
+    return () => { delete window.__kbOriginFab; delete window.__kbOriginShine; };
   }, []);
   return <Frame>{spun ? <LoadedThread thread={spun.id} /> : <div aria-busy="true" />}</Frame>;
 }

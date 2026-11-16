@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { REDRAWN_SHARE, onScreen, redrawn, type Box1, type Sample } from './shine-share.ts';
 
 /**
  * The shine loop on a busy page, as Chromium runs it (docs/plans/2026-11-06-shine-plan.md, Task 11; the design's section 6): a thread of
@@ -90,13 +91,6 @@ const THROTTLE = Number(process.env.KB_CPU_THROTTLE ?? 1);
  * else).
  */
 const RASTER_SHARE = 1.5;
-/** The on-screen area a scroll's draws change, over what the posts in view are allowed (`redrawn`): at most this. */
-const REDRAWN_SHARE = 1.25;
-/**
- * The share of its content area a post's draws may change a frame however few its words: the least share of the rate a body is
- * redrawn at (engine/ui/cards/body.ts `LEAST_SHARE`), stated here on its own, so a floor raised there is seen here.
- */
-const BODY_FLOOR = 0.25;
 /**
  * How fast the timed scrolls move, in CSS px a second: the speed the scroll had while it was three seconds from the top of the page to
  * its bottom and a post's body had no floor (3,865 px, CI's `shine-data`). The page is longer now (a body is at least 22.5em: 7,267
@@ -113,8 +107,6 @@ const SCROLL_SPEED = 1290;
 /** Out of view "beyond a margin": a post this many px past the viewport's edge has freed its canvases. */
 const FREED_MARGIN = 300;
 
-interface Box1 { top: number; bottom: number; width: number }
-interface Sample { t: number; draws: number[]; top: number[]; bottom: number[]; height: number; painted?: Box1[]; own?: Box1[]; layers?: number[]; scrollY?: number }
 interface Held { top: number; bottom: number; area?: number; own?: number; sizes: { w: number; h: number }[]; shine?: { w: number; h: number }[] }
 
 /** The shiny posts that hold canvas buffers while fully out of view by more than `margin`, and how many posts hold any at all. */
@@ -138,32 +130,6 @@ export function outOfViewDraws(samples: readonly Sample[], lag = LAG): { frame: 
     });
   });
   return bad;
-}
-
-/** A box's area inside the viewport's rows, in CSS px squared. */
-const onScreen = (b: Box1, height: number): number => Math.max(0, Math.min(b.bottom, height) - Math.max(b.top, 0)) * b.width;
-
-/**
- * The screen the shine changed over a run: for each sample after the first, the on-screen area of each post drawn since the one before
- * (its painted box, the content area), summed; and what the posts were allowed, every post in view on every frame: the larger of its
- * words' box and `BODY_FLOOR` of its painted box, each as much as is on screen. A host drawn more than once between two samples counts
- * each draw. For the log, `words` is the words' boxes alone (the allowance before a body had its floor, as the runs before it
- * recorded it) and `view` the viewport's area over the same samples (`width` times each one's height).
- */
-export function redrawn(samples: readonly Sample[], width = 0): { changed: number; allowed: number; words: number; view: number } {
-  let changed = 0, allowed = 0, words = 0, view = 0;
-  samples.forEach((s, k) => {
-    if (k === 0) return;
-    view += width * s.height;
-    s.draws.forEach((d, h) => {
-      const drew = d - samples[k - 1]!.draws[h]!, body = onScreen(s.painted![h]!, s.height);
-      if (drew > 0) changed += drew * body;
-      const own = onScreen(s.own![h]!, s.height);
-      words += own;
-      allowed += Math.max(own, BODY_FLOOR * body);
-    });
-  });
-  return { changed, allowed, words, view };
 }
 
 const percentile = (xs: readonly number[], p: number): number => {

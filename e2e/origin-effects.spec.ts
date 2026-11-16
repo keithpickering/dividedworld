@@ -3,6 +3,7 @@ import { fogAlpha } from '../instances/divided-world/ui/hot-box/smoke.ts';
 import { ROOM_HEIGHT } from '../instances/divided-world/ui/steel-chair/chair.ts';
 import { inflateSync } from 'node:zlib';
 import { settled } from './settled.ts';
+import { REDRAWN_SHARE, redrawn, type Sample } from './shine-share.ts';
 
 /**
  * Card effects in a spun thread's ORIGIN box, as a browser lays them out (docs/plans/2026-11-15-origin-box-effects-plan.md, Task 3; design, sections 2 to 7).
@@ -18,6 +19,9 @@ import { settled } from './settled.ts';
  *
  * Case 11 is not in the plan: the stories `Under` and `FabBright` hold a state today's server does not produce (a post-reach play on a spin's opening Act, issue #739), so `GlitterOver` holds what it does
  * (a play on the character who spun the thread, delivered with their post on the page), and case 11 reads the box over that glitter.
+ *
+ * Cases 12 to 14 are Task 7 of the plan, the box's foil held to the cost a post's is (the bound is e2e/shine-share.ts's, which e2e/shine.spec.ts holds a busy thread to): at rest, out of view, and
+ * with the opening post's foil and the box's together. They read the loop through the story's `window.__kbOriginShine`.
  *
  * Case 10 of the plan (a box with nothing under its band draws no area) is not here: no story's box is the band alone (the plan's own condition), so
  * engine/ui/spin/Spin.test.tsx's case 4 holds it.
@@ -595,17 +599,122 @@ test('11. under a glittered opening post the box is painted over the glitter, an
   /* Cling (e2e/glitter.spec.ts): a mouse passing over a glittered post picks glitter up, and the page-fixed layer `canvas[data-kb-shine="cling"]` is made by the first pickup. A pointer moved
      back and forth across the box's words picks none up; the same over the opening post's own words does. */
   const cling = page.locator('canvas[data-kb-shine="cling"]');
-  const sweep = async (r: Rect) => {
+  const carried = () => page.evaluate(() => window.__kbOriginShine!.carried());
+  const sweep = async (r: Rect, passes = 3) => {
     const y = (r.top + r.bottom) / 2;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < passes; i++) {
       await page.mouse.move(r.left + 10, y);
       await page.mouse.move(r.right - 10, y, { steps: 30 });
       await run(page, 50);
     }
   };
   expect(await page.evaluate(() => matchMedia('(hover: hover) and (pointer: fine)').matches && !matchMedia('(prefers-reduced-motion: reduce)').matches), 'a fine pointer, and motion on: reduced motion turns cling off by design').toBe(true);
-  await sweep(await borderBox(area(page).locator(':scope > .kb-bb')));
+  const inBox = await borderBox(area(page).locator(':scope > .kb-bb'));
+  await sweep(inBox);
   await expect(cling, 'a pointer across the box\'s words picks no glitter up').toHaveCount(0);
-  await sweep(own);
+  /* The first pickup over the opening post's own words makes the layer. It is made in short stretches, until a few flakes are carried: a sweep across the words fills the layer to its cap (26),
+     and a pickup that is refused cannot then be told from one with no room left. */
+  const y = (own.top + own.bottom) / 2;
+  for (let i = 0; i < 40 && (await carried()) < 3; i++) {
+    await page.mouse.move(own.left + 10, y);
+    await page.mouse.move(own.left + 70, y, { steps: 3 });
+  }
   await expect(cling, 'the same over the opening post\'s own words picks glitter up').toHaveCount(1);
+  const held = await carried();
+  expect(held, 'a few flakes are carried, with room for more').toBeGreaterThanOrEqual(3);
+  expect(held, 'a few flakes are carried, with room for more').toBeLessThan(20);
+  /* The layer is live now, and hears the whole page and not the host: each move it hears is asked of the host's `refuses`, as the first was. Across the box's words, for long enough that a pickup not
+     refused would fill the layer (a move picks up with a chance of up to 0.6, and some thirty moves a pass go over a thousand px), nothing more is carried. */
+  await sweep(inBox, 8);
+  expect(await carried(), `a pointer across the box's words, with the layer live, picks nothing more up (${held} carried before)`).toBeLessThanOrEqual(held);
+  await expect(cling, 'the layer is still there').toHaveCount(1);
+  /* And moves over the opening post's own words can: the refusal is of the box, not of the layer. */
+  await sweep(own, 3);
+  expect(await carried(), 'further moves over the opening post\'s own words pick more up').toBeGreaterThan(held);
+});
+
+/* ------------------------------------------------------------------------------------------ 12 to 14. the cost ---- */
+
+/** Waits for a number of animation frames in the page. */
+const frames = (page: Page, n: number): Promise<void> =>
+  page.evaluate((count) => new Promise<void>((done) => { let left = count; const tick = () => (--left <= 0 ? done() : requestAnimationFrame(tick)); requestAnimationFrame(tick); }), n);
+
+/** Every Feelin' Fab's loop draws and boxes on each of `n` animation frames, in the shape e2e/shine-share.ts reads (a sample a frame, a host a column), and which hosts are the box's. */
+const sampleFrames = (page: Page, n: number) => page.evaluate((count) => new Promise<{ samples: Sample[]; inBox: boolean[] }>((done) => {
+  const kb = window.__kbOriginShine!, out: Sample[] = [];
+  const tick = (t: number) => {
+    const hs = kb.hosts();
+    out.push({ t, draws: hs.map((h) => h.draws), top: hs.map((h) => h.top), bottom: hs.map((h) => h.bottom), height: window.innerHeight, painted: hs.map((h) => ({ top: h.top, bottom: h.bottom, width: h.width })), own: hs.map((h) => h.own) });
+    if (out.length > count) done({ samples: out, inBox: hs.map((h) => h.inBox) }); else requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}), n);
+/** The samples of one host only. */
+const only = (samples: readonly Sample[], h: number): Sample[] => samples.map((s) => ({ ...s, draws: [s.draws[h]!], top: [s.top[h]!], bottom: [s.bottom[h]!], painted: [s.painted![h]!], own: [s.own![h]!] }));
+/** The light eases to the pointer and settles; only then is a draw the idle cadence's (e2e/shine.spec.ts, "at rest"). */
+async function atRest(page: Page) {
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(1500);
+}
+const AT_REST_FRAMES = 240;
+const wordsArea = (s: Sample, h: number) => Math.round(s.own![h]!.width * (s.own![h]!.bottom - s.own![h]!.top));
+const paintedArea = (s: Sample, h: number) => Math.round(s.painted![h]!.width * (s.painted![h]!.bottom - s.painted![h]!.top));
+
+test('12. at rest the box\'s foil is redrawn within what its words and its area allow, by the bound e2e/shine.spec.ts holds a post to', async ({ page }) => {
+  /* Poison: `share` forced to 1 in Feelin' Fab's `register` call (instances/divided-world/ui/feelin-fab/Effect.tsx): the area is then redrawn at the words' rate, over what it is allowed. */
+  await open(page, 'fab');
+  await expect.poll(() => page.evaluate(() => window.__kbOriginShine!.hosts().length)).toBe(1);
+  await atRest(page);
+  const { samples, inBox } = await sampleFrames(page, AT_REST_FRAMES);
+  expect(inBox, 'the one foil on the page is the box\'s').toEqual([true]);
+  const r = redrawn(samples, 1440), last = samples.at(-1)!;
+  console.log(`origin box at rest: ${(r.changed / r.allowed).toFixed(2)} of what it is allowed (bound ${REDRAWN_SHARE}); words ${wordsArea(last, 0)} px squared, area ${paintedArea(last, 0)}, draws ${last.draws[0]! - samples[0]!.draws[0]!} in ${AT_REST_FRAMES} frames`);
+  expect(r.changed, 'the box\'s foil is drawn at rest, or the bound below proves nothing').toBeGreaterThan(0);
+  expect(r.changed / r.allowed, 'the screen area the box\'s draws change at rest, over the larger of its words\' box and a quarter of its area').toBeLessThan(REDRAWN_SHARE);
+});
+
+test('13. scrolled out of view, nothing is drawn for the box and its canvas holds no backing store; back in view, it is drawn again', async ({ page }) => {
+  /* Poison: `hidden: leave` dropped from Feelin' Fab's `register` call: the canvas keeps its backing store out of view. */
+  await open(page, 'fab');
+  await expect.poll(() => page.evaluate(() => window.__kbOriginShine!.hosts()[0]?.draws ?? 0)).toBeGreaterThan(0);
+  const size = () => page.evaluate(() => window.__kbOriginFab!.size(0));
+  const draws = () => page.evaluate(() => window.__kbOriginShine!.hosts()[0]!.draws);
+  const shown = await size();
+  expect(shown, 'in view, the foil has a canvas').not.toBeNull();
+  expect(shown!.w * shown!.h, `in view, the foil's backing store is not empty (${shown!.w} by ${shown!.h})`).toBeGreaterThan(0);
+  /* A tall page, as e2e/shine.spec.ts makes one: room below, and the box scrolled away from the viewport. */
+  await page.evaluate(() => { const s = document.createElement('div'); s.style.height = '4000px'; document.body.append(s); window.scrollTo(0, document.documentElement.scrollHeight); });
+  /* The scroll's own frame, the observer's word after it, and two more. */
+  await frames(page, 4);
+  expect(await page.evaluate(() => document.querySelector('.kb-origin')!.getBoundingClientRect().bottom < 0), 'the box is scrolled fully out of view').toBe(true);
+  const gone = await size();
+  expect(gone, 'out of view the foil still has a canvas').not.toBeNull();
+  expect(gone!.w * gone!.h, `out of view the foil's canvas holds no backing store (${gone!.w} by ${gone!.h})`).toBe(0);
+  const at = await draws();
+  await frames(page, 20);
+  expect(await draws(), 'nothing is drawn for the box out of view').toBe(at);
+  expect(await page.evaluate(() => window.__kbOriginShine!.running()), 'the loop has nothing in view and has stopped').toBe(false);
+  /* Back in view it is sized and drawn again. */
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect.poll(draws, { message: 'back in view the box is drawn again' }).toBeGreaterThan(at);
+  await expect.poll(async () => { const z = await size(); return z === null ? 0 : z.w * z.h; }, { message: 'back in view the foil has a backing store again' }).toBeGreaterThan(0);
+});
+
+test('14. with the opening post\'s foil and the box\'s both on the page, two hosts are registered and each is held to its own allowance', async ({ page }) => {
+  /* Poison: `share` forced to 1 for the opening post's host alone (`el.closest('.kb-origin') ? share : 1` in Feelin' Fab's `register` call): the opening post's bound fails and the box's holds, so each is read against its own. (Forced for the box alone it reads 1.22 here, its words being two fifths of its area and the allowance the larger of the two: under the bound, so that is not the poison.) */
+  await open(page, 'fab-bright');
+  await expect.poll(() => page.evaluate(() => window.__kbOriginShine!.hosts().length), { message: 'two Feelin\' Fabs are registered with the loop' }).toBe(2);
+  await atRest(page);
+  const { samples, inBox } = await sampleFrames(page, AT_REST_FRAMES);
+  expect(inBox.filter(Boolean).length, 'one of the two is the box\'s').toBe(1);
+  expect(inBox.filter((b) => !b).length, 'and one is the opening post\'s').toBe(1);
+  const last = samples.at(-1)!, over: string[] = [];
+  for (const [h, mine] of inBox.entries()) {
+    const name = mine ? 'the box\'s foil' : 'the opening post\'s foil';
+    const r = redrawn(only(samples, h), 1440);
+    console.log(`${name} at rest: ${(r.changed / r.allowed).toFixed(2)} of what it is allowed (bound ${REDRAWN_SHARE}); words ${wordsArea(last, h)} px squared, painted ${paintedArea(last, h)}, draws ${last.draws[h]! - samples[0]!.draws[h]!} in ${AT_REST_FRAMES} frames`);
+    expect.soft(r.changed, `${name} is drawn at rest, or its bound proves nothing`).toBeGreaterThan(0);
+    if (!(r.changed / r.allowed < REDRAWN_SHARE)) over.push(`${name}: ${(r.changed / r.allowed).toFixed(2)} of what it is allowed, over the bound ${REDRAWN_SHARE}`);
+  }
+  expect(over, 'each host\'s redrawn area, over what that host is allowed, is within the bound').toEqual([]);
 });
