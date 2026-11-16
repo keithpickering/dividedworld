@@ -89,6 +89,8 @@ export const STEPS = [
   'node tools/check-css-classes.mjs',
   'node tools/test-one-clock.mjs',
   'node tools/check-one-clock.mjs',
+  'node tools/test-effect-canvas.mjs',
+  'node tools/check-effect-canvas.mjs',
   'node tools/test-chamfer-borders.mjs',
   'node tools/check-chamfer-borders.mjs',
   'node tools/test-glass-contrast.mjs',

@@ -116,11 +116,14 @@ async function lines(page: Page): Promise<Box[]> {
   }, `${POST} .dw-hotbox-words`);
 }
 
-/** The smoke's canvas at a viewport point: the mean of the (2 * half + 1) square around it, each channel as the canvas holds it; null when there is no canvas to read. */
+/** The smoke's tile canvas at a viewport point (the layer holds a canvas for each tile): the mean of the (2 * half + 1) square around it, each channel as the canvas holds it; null when no tile holds the point. */
 async function fogAt(page: Page, x: number, y: number, half = 2) {
   return page.evaluate(([px, py, h]) => {
-    const canvas = document.querySelector<HTMLCanvasElement>('#post-43 canvas.dw-hotbox-smoke');
-    if (!canvas || canvas.width === 0) return null;
+    const canvas = [...document.querySelectorAll<HTMLCanvasElement>('#post-43 canvas.dw-hotbox-smoke')].find((c) => {
+      const r = c.getBoundingClientRect();
+      return c.width > 0 && px! >= r.left && px! < r.right && py! >= r.top && py! < r.bottom;
+    });
+    if (!canvas) return null;
     const box = canvas.getBoundingClientRect();
     const k = canvas.width / box.width;
     const cx = Math.round((px! - box.left) * k), cy = Math.round((py! - box.top) * k);
@@ -154,14 +157,23 @@ const areaBox = (page: Page): Promise<Box> => page.evaluate((sel) => {
   return { x: r.left + area.clientLeft, y: r.top + area.clientTop, w: area.clientWidth, h: area.clientHeight };
 }, `${POST} .dw-hotbox`);
 const wordsBox = async (page: Page): Promise<Box> => { const b = (await words(page).boundingBox())!; return { x: b.x, y: b.y, w: b.width, h: b.height }; };
-/** The smoke canvas's box in the viewport, and its inline box (which the effect sets, relative to `.dw-hotbox`). */
-const canvasBox = (page: Page): Promise<Box> => page.locator(`${POST} canvas.dw-hotbox-smoke`).evaluate((el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+/**
+ * The smoke's box in the viewport: the union of its tiles' canvases (the layer places each at its offset in the box). The union is the content area only
+ * while every tile of the post is held, which is true of the short fixture post (one tile near the view); a post taller than the window's near range holds
+ * only the tiles near it, and its union is shorter than the area.
+ */
+const canvasBox = (page: Page): Promise<Box> => page.locator(`${POST} canvas.dw-hotbox-smoke`).evaluateAll((els) => {
+  if (els.length === 0) throw new Error('the smoke has no tile canvas: there is no box to take the union of');
+  const rs = els.map((el) => el.getBoundingClientRect());
+  const x = Math.min(...rs.map((r) => r.left)), y = Math.min(...rs.map((r) => r.top));
+  return { x, y, w: Math.max(...rs.map((r) => r.right)) - x, h: Math.max(...rs.map((r) => r.bottom)) - y };
+});
 
-/** The canvas is the content area's padding box, to a pixel, and its bitmap is made. */
+/** The tiles together are the content area's padding box, to a pixel, and each tile's bitmap is made. */
 async function expectCanvasFillsArea(page: Page) {
   const a = await areaBox(page), c = await canvasBox(page);
   for (const k of ['x', 'y', 'w', 'h'] as const) expect(Math.abs(c[k] - a[k]), `the canvas's ${k} is the content area's (${JSON.stringify(c)} against ${JSON.stringify(a)})`).toBeLessThanOrEqual(1);
-  expect(await page.locator(`${POST} canvas.dw-hotbox-smoke`).evaluate((el: HTMLCanvasElement) => el.width > 0 && el.height > 0)).toBe(true);
+  expect(await page.locator(`${POST} canvas.dw-hotbox-smoke`).evaluateAll((els) => els.length > 0 && els.every((el) => (el as HTMLCanvasElement).width > 0 && (el as HTMLCanvasElement).height > 0))).toBe(true);
 }
 
 /**
@@ -308,16 +320,16 @@ test('"Wave the smoke" is above the fog and a press on it sweeps the words clear
   /* Every control the post offers, outside its words: a hit at its center lands on it (the fog does not take clicks), and with the canvas made hittable for a moment, which of them are under it. */
   const report = await page.evaluate(() => {
     const post = document.querySelector('#post-43')!;
-    const canvas = post.querySelector<HTMLElement>('canvas.dw-hotbox-smoke')!;
+    const canvases = [...post.querySelectorAll<HTMLElement>('canvas.dw-hotbox-smoke')];
     const found = [...post.querySelectorAll<HTMLElement>('button, a[href], [role="button"], [data-kb-over-ink], .kb-mark')]
       .filter((el) => !el.closest('.dw-hotbox-words') && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0);
     const name = (el: HTMLElement) => `${el.tagName.toLowerCase()}.${String(el.className).split(/\s+/u)[0] ?? ''}${el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : ''}`;
     const center = (el: HTMLElement) => { const b = el.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2] as const; };
     const blocked = found.filter((el) => { const [x, y] = center(el); const hit = document.elementFromPoint(x, y); return !(hit && (hit === el || el.contains(hit))); }).map(name);
-    const prior = canvas.style.pointerEvents;
-    canvas.style.pointerEvents = 'auto';
-    const under = found.filter((el) => { const [x, y] = center(el); return document.elementFromPoint(x, y) === canvas; }).map(name);
-    canvas.style.pointerEvents = prior;
+    const prior = canvases.map((c) => c.style.pointerEvents);
+    for (const c of canvases) c.style.pointerEvents = 'auto';
+    const under = found.filter((el) => { const [x, y] = center(el); return canvases.includes(document.elementFromPoint(x, y) as HTMLElement); }).map(name);
+    canvases.forEach((c, i) => { c.style.pointerEvents = prior[i]!; });
     return { all: found.map(name), blocked, under };
   });
   test.info().annotations.push({ type: 'post controls', description: `all: ${report.all.join(', ')}; blocked: ${report.blocked.join(', ') || 'none'}; under the fog: ${report.under.join(', ') || 'none'}` });
@@ -495,7 +507,7 @@ test.describe('under forced colors', () => {
       const frame = page.locator(`${POST} .dw-hotbox-frame`);
       await expect(frame).toBeVisible();
       expect(await frame.evaluate((el) => { const c = getComputedStyle(el); return { style: c.outlineStyle, width: c.outlineWidth, color: c.outlineColor }; })).toEqual({ style: 'solid', width: '2px', color: text });
-      expect(await page.locator(`${POST} canvas.dw-hotbox-smoke`).evaluate((el) => getComputedStyle(el).display)).toBe('none');
+      await expect(page.locator(`${POST} canvas.dw-hotbox-smoke`), 'no tile is made under forced colors').toHaveCount(0);
       /* The outline is the content area's, border to border (the smoke's container), not the words'. */
       const fb = (await frame.boundingBox())!, ab = await areaBox(page);
       for (const [k, v] of [['x', fb.x], ['y', fb.y], ['w', fb.width], ['h', fb.height]] as const) expect(Math.abs(v - ab[k]), `the frame's ${k} is the area's`).toBeLessThanOrEqual(1);
@@ -600,7 +612,7 @@ test.describe('under forced colors', () => {
     await run(page, 100);
     await expect(page.locator(`${POST} .dw-hotbox-ring`)).toHaveCount(0);
     expect(await words(page).evaluate((el) => { const c = getComputedStyle(el); return { mask: c.maskImage, outline: c.outlineStyle }; })).toEqual({ mask: 'none', outline: 'none' });
-    expect(await page.locator(`${POST} canvas.dw-hotbox-smoke`).evaluate((el) => getComputedStyle(el).display)).toBe('block');
+    expect(await page.locator(`${POST} canvas.dw-hotbox-smoke`).first().evaluate((el) => getComputedStyle(el).display)).toBe('block');
     /* The soft clearing, as in the first test: the center is clear, the fog is the fog, and the edge band is between. */
     await expect.poll(() => alphaAt(page, x, y)).toBeLessThanOrEqual(2);
     const fog = await alphaAt(page, x + r * 2.2, y);

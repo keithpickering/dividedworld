@@ -11,6 +11,11 @@
  * The box is in CSS px from the element's own top-left corner, so a layer placed absolutely in the element (a positioned element) with
  * these numbers covers the body, however the words inside it are laid out. Whoops! measures the same box its own way
  * (instances/divided-world/cards/whoops/Effect.tsx), and the shine effects (Feelin' Fab, Glitter Bomb) use this.
+ *
+ * An effect that paints the body on a canvas does it through the tile layer (engine/ui/cards/tiles.ts), which finds and measures this box
+ * itself, cuts it into tiles and holds a canvas only for the tiles near the viewport: Hot Box is the first, and the others move onto it
+ * step by step (docs/plans/2026-11-16-effect-tiles-design.md, section 7). `paintScale` and `paintShare` below remain the shine effects'
+ * until step 4 re-weighs them, since a tile near the view costs what it costs whatever the body's height.
  */
 
 /** A painted box: its offset from the effect's element, and its size, in CSS px. */

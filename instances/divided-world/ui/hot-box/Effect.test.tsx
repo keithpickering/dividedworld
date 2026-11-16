@@ -2,9 +2,10 @@
  * Hot Box's effect (docs/plans/2026-11-15-hot-box-plan.md, Task 4; design, section 2.2): smoke over a post that readers wave away. Read here, as a
  * reader gets it: the canvas's calls (the fog's color and alpha, the clearings cut out of it), the words' `inert`, the live region, the views the Lens is
  * given, and, under forced colors, the words' mask, its rings and its sign. The page's clock is the backend's (`api.now()`), and here it is the faked
- * `Date`, so the play's end passes when the test says. jsdom has no canvas, no frames and no resizing, so each is stubbed; the lines of a post are
+ * `Date`, so the play's end passes when the test says. jsdom has no canvas, no frames and no resizing, so each is stubbed (each canvas gets a recorder of its own, and `fills` and `draws` are the first tile's); the lines of a post are
  * stubbed too (jsdom cannot measure a range), as three lines of an 800 by 600 box, so a held sweep takes 2 seconds a line and 6 in all.
  */
+import { readFileSync } from 'node:fs';
 import { act, cleanup } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -14,6 +15,7 @@ import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
+import { mostTiles } from '../../../../engine/ui/cards/tiles.ts';
 import { renderIn, testInstance } from '../../../../engine/ui/test-world.tsx';
 import { SMOKE, fogAlpha, holeRadius, maskAlpha, puffs, strength } from './smoke.ts';
 import { HotBoxEffect, WAVE_DESCRIBE, forgetSprites } from './Effect.tsx';
@@ -63,20 +65,49 @@ let AREA = BOX;
 /** The opening post's body around an ORIGIN box's area (`nested` in `setup`): the box is 900 by 700 there, the area is `AREA`. Null where the area is the post's own body. */
 let OUTER: typeof BOX | null = null;
 
+/** The first tile's canvas is the one `fills` and `draws` follow; every smoke canvas has a recorder of its own. */
+interface Rec { fills: Fill[]; draws: unknown[][] }
+const recs = new WeakMap<HTMLCanvasElement, Rec>();
+const ctxs = new WeakMap<HTMLCanvasElement, unknown>();
+const first = (c: HTMLCanvasElement) => c === document.querySelector('canvas.dw-hotbox-smoke');
+
 function stubCanvas() {
-  const ctx = {
-    fillStyle: '' as unknown, globalAlpha: 1, globalCompositeOperation: 'source-over',
-    setTransform: () => {}, save: () => {}, restore: () => {}, beginPath: () => {},
-    clearRect: () => { fills = []; draws = []; },
-    drawImage: (...args: unknown[]) => { draws.push(args); },
-    fillRect: (...rect: number[]) => { fills.push({ style: ctx.fillStyle, op: ctx.globalCompositeOperation, rect }); },
-    createRadialGradient: (_x0: number, _y0: number, _r0: number, x1: number, y1: number, r1: number): Gradient => {
-      gradients += 1;
-      const g: Gradient = { x1, y1, r1, stops: [] };
-      return Object.assign(g, { addColorStop: (at: number, color: string) => { g.stops.push([at, color]); } });
-    },
-  };
-  HTMLCanvasElement.prototype.getContext = (() => { contexts += 1; return ctx; }) as unknown as HTMLCanvasElement['getContext'];
+  HTMLCanvasElement.prototype.getContext = (function (this: HTMLCanvasElement) {
+    contexts += 1;
+    const known = ctxs.get(this);
+    if (known) return known;
+    const rec: Rec = { fills: [], draws: [] };
+    recs.set(this, rec);
+    const ctx = {
+      fillStyle: '' as unknown, globalAlpha: 1, globalCompositeOperation: 'source-over',
+      setTransform: () => {}, save: () => {}, restore: () => {}, beginPath: () => {}, rect: () => {}, clip: () => {},
+      clearRect: () => { rec.fills = []; rec.draws = []; if (first(this)) { fills = rec.fills; draws = rec.draws; } },
+      drawImage: (...args: unknown[]) => { rec.draws.push(args); },
+      fillRect: (...rect: number[]) => { rec.fills.push({ style: ctx.fillStyle, op: ctx.globalCompositeOperation, rect }); },
+      createRadialGradient: (_x0: number, _y0: number, _r0: number, x1: number, y1: number, r1: number): Gradient => {
+        gradients += 1;
+        const g: Gradient = { x1, y1, r1, stops: [] };
+        return Object.assign(g, { addColorStop: (at: number, color: string) => { g.stops.push([at, color]); } });
+      },
+    };
+    ctxs.set(this, ctx);
+    return ctx;
+  }) as unknown as HTMLCanvasElement['getContext'];
+}
+
+/** The IntersectionObserver the tests give a page: the area's (met) callback and the band stand-ins' callback, and the stand-ins it was asked to watch. */
+let watch: ((entries: unknown[]) => void) | undefined;
+let bandsWatch: ((entries: unknown[]) => void) | undefined;
+let bandEls: Element[] = [];
+let margins: unknown[] = [];
+let watched: Element[] = [];
+function stubObserver() {
+  globalThis.IntersectionObserver = class {
+    constructor(cb: (entries: unknown[]) => void, o?: { rootMargin?: string }) { margins.push(o); if (o?.rootMargin === '256px 0px') bandsWatch = cb; else watch = cb; }
+    observe(el: Element) { if (el.classList.contains('kb-band')) bandEls.push(el); else watched.push(el); }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof IntersectionObserver;
 }
 
 function stubWindow() {
@@ -99,7 +130,7 @@ function stubWindow() {
 }
 
 /** Runs the frames asked for so far (each asks for the next), as a browser's next frame would. */
-const runFrame = () => { const due = [...frames.values()]; frames.clear(); for (const cb of due) cb(0); };
+const runFrame = (t = 0) => { const due = [...frames.values()]; frames.clear(); for (const cb of due) cb(t); };
 /** Lets `ms` pass in steps, a frame after each: timers fire in order, and the page renders between steps, as it does for a reader. */
 function pass(ms: number, step = 100) {
   for (let left = ms; left > 0; left -= step) act(() => { vi.advanceTimersByTime(Math.min(step, left)); runFrame(); });
@@ -131,7 +162,14 @@ type Setup = ReturnType<typeof setup>;
 const host = (s: Setup) => s.container.querySelector<HTMLElement>('.dw-hotbox')!;
 const area = (s: Setup) => s.container.querySelector<HTMLElement>('.kb-act-main')!;
 const words = (s: Setup) => s.container.querySelector<HTMLElement>('.dw-hotbox-words')!;
+/** The first tile's canvas, and every tile's. */
 const canvas = (s: Setup) => s.container.querySelector<HTMLCanvasElement>('canvas.dw-hotbox-smoke');
+const tiles = (s: Setup) => [...s.container.querySelectorAll<HTMLCanvasElement>('canvas.dw-hotbox-smoke')];
+const fillsOf = (c: HTMLCanvasElement | undefined): Fill[] => (c ? recs.get(c)?.fills ?? [] : []);
+const gradientsOf = (c: HTMLCanvasElement | undefined) => fillsOf(c).filter((f) => f.op === 'destination-out' && typeof f.style === 'object');
+const fogOf = (c: HTMLCanvasElement | undefined) => fillsOf(c).find((f) => f.op === 'source-over' && typeof f.style === 'string');
+/** Frames asked for so far: the layer's observer asks for one at the start, so "none" is none beyond what the mount asked. */
+const asked = () => vi.mocked(window.requestAnimationFrame).mock.calls.length;
 const button = (s: Setup) => s.container.querySelector<HTMLButtonElement>('button.dw-hotbox-wave');
 const readout = (s: Setup) => s.container.querySelector('[aria-live="polite"]')!.textContent;
 const sign = (s: Setup) => s.container.querySelector('.dw-hotbox-sign');
@@ -183,6 +221,7 @@ const flat = (s: Setup) => layers(s).find((l) => l.kind === 'flat');
 
 beforeEach(() => {
   fills = []; draws = []; gradients = 0; observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX; OUTER = null;
+  watch = undefined; bandsWatch = undefined; bandEls = []; margins = []; watched = [];
   vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   stubCanvas();
   stubWindow();
@@ -192,6 +231,7 @@ afterEach(() => {
   vi.useRealTimers();
   document.documentElement.removeAttribute('data-kb-motion');
   delete (window as { matchMedia?: unknown }).matchMedia;
+  delete (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver;
   delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
   delete (HTMLElement.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
   delete (HTMLElement.prototype as { clientWidth?: unknown }).clientWidth;
@@ -291,12 +331,12 @@ describe('the fog', () => {
     expect(fog()!.a).toBeLessThan(SMOKE.full);
   });
 
-  test('draws puffs over the fog, and the canvas is sized to the words at the screen\'s density, never over twice it', () => {
+  test('draws puffs over the fog, and each tile is sized at the screen\'s density, never over twice it', () => {
     Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 3 });
     const s = setup();
     expect(draws.length).toBeGreaterThan(20);
     expect(canvas(s)!.width).toBe(BOX.width * 2);
-    expect(canvas(s)!.height).toBe(BOX.height * 2);
+    expect(canvas(s)!.height).toBe(512 * 2);
     delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
     s.unmount();
   });
@@ -341,28 +381,6 @@ describe('the fog', () => {
     const open = gradients;
     act(() => { runFrame(); });
     expect(gradients - open).toBe(1);
-  });
-
-  test('the canvas gives its backing store up out of view and is sized again in view', () => {
-    let watch: ((entries: unknown[]) => void) | undefined;
-    globalThis.IntersectionObserver = class { constructor(cb: (entries: unknown[]) => void) { watch = cb; } observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
-    try {
-      Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
-      const s = setup();
-      const see = (isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
-      see(true);
-      expect([canvas(s)!.width, canvas(s)!.height]).toEqual([800, 600]);
-      see(false);
-      expect([canvas(s)!.width, canvas(s)!.height]).toEqual([0, 0]);
-      act(() => { runFrame(); });
-      expect([canvas(s)!.width, canvas(s)!.height]).toEqual([0, 0]);
-      see(true);
-      expect([canvas(s)!.width, canvas(s)!.height]).toEqual([800, 600]);
-      expect(fog()).not.toBeNull();
-    } finally {
-      delete (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver;
-      delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
-    }
   });
 });
 
@@ -751,12 +769,12 @@ describe('reduced motion', () => {
   test('no frame loop runs: it draws once, and again when something changes', () => {
     const s = setup();
     expect(fog()).not.toBeNull();
-    const drawn = contexts;
+    const drawn = contexts, before = asked();
     press(s);
     pass(SWEEP_MS + SMOKE.waved + 5000);
     move(s);
     touch(s);
-    expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+    expect(asked()).toBe(before);
     expect(contexts).toBeGreaterThan(drawn);
     s.unmount();
   });
@@ -1039,9 +1057,11 @@ describe('the content area is the container', () => {
 
   test('the canvas is sized and placed to the content area\'s box, not the words\'', () => {
     const s = setup();
-    expect(canvas(s)!.style).toMatchObject({ left: '-20px', top: '50px', width: '900px', height: '700px' });
+    expect(tiles(s).map((c) => c.style.top)).toEqual(['50px', '562px']);
+    expect(canvas(s)!.style).toMatchObject({ left: '-20px', top: '50px', width: '900px', height: '512px' });
+    expect(tiles(s).map((c) => c.style.height)).toEqual(['512px', '188px']);
     expect(canvas(s)!.width).toBe(900);
-    expect(canvas(s)!.height).toBe(700);
+    expect(canvas(s)!.height).toBe(512);
   });
 
   test('the fog covers that whole box', () => {
@@ -1183,7 +1203,7 @@ describe('the content area is the container', () => {
 
   test('with no post body about it (the ORIGIN box) the area is the effect\'s own element', () => {
     const s = setup({}, false, true);
-    expect(canvas(s)!.style).toMatchObject({ left: '0px', top: '0px', width: '800px', height: '700px' });
+    expect(canvas(s)!.style).toMatchObject({ left: '0px', top: '0px', width: '800px', height: '512px' });
     pointer(host(s), 'pointermove', 300, 250);
     act(() => { runFrame(); });
     expect(circles()[0]).toMatchObject({ x1: 300, y1: 250 });
@@ -1194,7 +1214,7 @@ describe('the content area is the container', () => {
 
   test('a moment fills the same area, drawn once, with no handler', () => {
     const s = setup({ still: true });
-    expect(canvas(s)!.style).toMatchObject({ left: '-20px', top: '50px', width: '900px', height: '700px' });
+    expect(canvas(s)!.style).toMatchObject({ left: '-20px', top: '50px', width: '900px', height: '512px' });
     expect(fills.find((x) => x.op === 'source-over' && typeof x.style === 'string')!.rect).toEqual([0, 0, 900, 700]);
     const before = [...fills];
     pointer(area(s), 'pointermove', 100, 100);
@@ -1309,18 +1329,13 @@ describe('what it tells the Lens', () => {
   });
 
   test('is met once however often the post goes out of view and comes back', () => {
-    let watch: ((entries: unknown[]) => void) | undefined;
-    globalThis.IntersectionObserver = class { constructor(cb: (entries: unknown[]) => void) { watch = cb; } observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
-    try {
-      const s = setup({}, true);
-      const see = (isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
-      see(true);
-      see(false);
-      see(true);
-      expect(s.met).toHaveBeenCalledTimes(1);
-    } finally {
-      delete (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver;
-    }
+    stubObserver();
+    const s = setup({}, true);
+    const see = (isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
+    see(true);
+    see(false);
+    see(true);
+    expect(s.met).toHaveBeenCalledTimes(1);
   });
 
   test('is met once, the first time the smoke is drawn in view', () => {
@@ -1333,78 +1348,212 @@ describe('what it tells the Lens', () => {
 });
 
 describe('in view', () => {
-  let watch: ((entries: unknown[]) => void) | undefined;
-  beforeEach(() => {
-    watch = undefined;
-    globalThis.IntersectionObserver = class { constructor(cb: (entries: unknown[]) => void) { watch = cb; } observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
-  });
-  afterEach(() => { delete (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver; });
+  beforeEach(() => { stubObserver(); });
   const see = (s: Setup, isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
 
-  test('the loop runs only while the post is in view, and met waits for the first sight of it', () => {
+  test('met waits for the first sight of the post, and the loop is the layer: it runs whether or not the post is reported in view', () => {
     const s = setup();
-    expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+    expect(frames.size).toBeGreaterThan(0);
     expect(s.met).not.toHaveBeenCalled();
+    /* The loop paints: the puffs drift with the time, so a tile's drawing moves from frame to frame, with the post never reported in view. */
+    const puffsOf = () => JSON.stringify([fillsOf(tiles(s)[0]).filter((f) => f.op === 'source-over' && typeof f.style === 'object').map((f) => f.style), (recs.get(tiles(s)[0]!)?.draws ?? []).map((d) => d.slice(1))]);
+    act(() => { runFrame(100); });
+    const one = puffsOf();
+    expect(one).not.toBe('[[],[]]');
+    act(() => { vi.advanceTimersByTime(2000); runFrame(2100); });
+    const two = puffsOf();
+    expect(two).not.toBe('[[],[]]');
+    expect(two).not.toBe(one);
+    expect(frames.size).toBeGreaterThan(0);
     see(s, true);
-    expect(window.requestAnimationFrame).toHaveBeenCalled();
     expect(s.met).toHaveBeenCalledTimes(1);
     see(s, false);
-    const asked = vi.mocked(window.requestAnimationFrame).mock.calls.length;
-    act(() => { runFrame(); runFrame(); });
-    expect(vi.mocked(window.requestAnimationFrame).mock.calls.length).toBe(asked);
-    expect(frames.size).toBe(0);
     see(s, true);
-    expect(frames.size).toBe(1);
     expect(s.met).toHaveBeenCalledTimes(1);
   });
 
-  test('before the observer has reported, the canvas is kept and fogged: the words are never bare while it is unknown', () => {
-    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
-    try {
-      const s = setup();
-      expect([canvas(s)!.width, canvas(s)!.height]).toEqual([800, 600]);
-      expect(fog()!.a).toBeCloseTo(SMOKE.full, 3);
-      expect(s.met).not.toHaveBeenCalled();
-      expect(window.requestAnimationFrame).not.toHaveBeenCalled();
-    } finally {
-      delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
-    }
-  });
-
-  test('only a reported "out of view" releases the canvas, and the report of "in view" restores and fogs it in the same commit', () => {
-    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
-    try {
-      const s = setup();
-      see(s, false);
-      expect([canvas(s)!.width, canvas(s)!.height]).toEqual([0, 0]);
-      const before = contexts;
-      see(s, true);
-      expect([canvas(s)!.width, canvas(s)!.height]).toEqual([800, 600]);
-      expect(fog()!.a).toBeCloseTo(fogAlpha(strength(Date.now(), NOW, ENDS)), 3);
-      /* Painted by the layout effect of the commit that restored it, and again by the loop's first frame: two draws, no animation frame having run. */
-      expect(contexts - before).toBeGreaterThanOrEqual(2);
-      expect(frames.size).toBe(1);
-    } finally {
-      delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
-    }
-  });
-
-  test('the element watched is the content area (the post body), and the host in an ORIGIN box', () => {
-    const targets: Element[] = [];
-    globalThis.IntersectionObserver = class { constructor(cb: (entries: unknown[]) => void) { watch = cb; } observe(el: Element) { targets.push(el); } unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
+  test('with every tile released by the band watcher the loop asks for no frame, and it resumes when a tile returns', () => {
+    AREA = { ...BOX, height: 1600 };
     const s = setup();
-    expect(targets).toEqual([area(s)]);
-    s.unmount();
-    targets.length = 0;
-    const b = setup({}, false, true);
-    expect(targets).toEqual([host(b)]);
+    const near = (...hold: number[]) => act(() => { bandsWatch!(bandEls.map((el, i) => ({ target: el, isIntersecting: hold.includes(i), intersectionRatio: hold.includes(i) ? 1 : 0 }))); runFrame(); });
+    near(0);
+    near();
+    expect(tiles(s)).toHaveLength(0);
+    act(() => { runFrame(); });
+    expect(frames.size).toBe(0);
+    const drawn = contexts;
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(frames.size).toBe(0);
+    expect(contexts).toBe(drawn);
+    near(1);
+    expect(tiles(s)).toHaveLength(1);
+    act(() => { runFrame(); });
+    expect(contexts).toBeGreaterThan(drawn);
+    expect(frames.size).toBe(1);
+    const again = contexts;
+    act(() => { vi.advanceTimersByTime(100); runFrame(); });
+    expect(contexts).toBeGreaterThan(again);
   });
 
-  test('the observer is given a margin, so the canvas is back before the post shows', () => {
-    const options: unknown[] = [];
-    globalThis.IntersectionObserver = class { constructor(cb: (entries: unknown[]) => void, o?: unknown) { watch = cb; options.push(o); } observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
+  test('the element watched for met is the content area (the post body), and the host in an ORIGIN box', () => {
+    const s = setup();
+    expect(watched).toEqual([area(s)]);
+    s.unmount();
+    watched = [];
+    const b = setup({}, false, true);
+    expect(watched).toEqual([host(b)]);
+  });
+
+  test('the observers are given margins: the area\'s, so met is not late, and the tile layer\'s own', () => {
     setup();
-    expect(options).toEqual([{ rootMargin: '200px 0px' }]);
+    expect(margins).toContainEqual({ rootMargin: '200px 0px' });
+    expect(margins).toContainEqual({ rootMargin: '256px 0px' });
+  });
+});
+
+/*
+ * The tile layer (engine/ui/cards/tiles.ts, docs/plans/2026-11-16-effect-tiles-design.md, sections 3 to 5): the smoke is drawn in tiles of 512 CSS px, held only near
+ * the window, and each band's place has a stand-in marked far until a painted tile covers it. The box is 800 by 600 unless a test says so.
+ */
+describe('the tiles', () => {
+  test('a box 800 by 600 holds two tiles, 512 and 88 tall, and the fog is filled in both', () => {
+    const s = setup();
+    expect(tiles(s)).toHaveLength(2);
+    expect(tiles(s).map((c) => [c.width, c.height])).toEqual([[800, 512], [800, 88]]);
+    expect(tiles(s).map((c) => c.style.top)).toEqual(['100px', '612px']);
+    for (const c of tiles(s)) {
+      const f = fogOf(c);
+      expect(f, 'every tile is fogged').toBeDefined();
+      expect(rgba(f!.style)!.rgb).toEqual([0, 128, 128]);
+      expect(f!.rect).toEqual([0, 0, 800, 600]);
+    }
+  });
+
+  test('a clearing at y = 500 is cut in both tiles, and one at y = 100 only in the first', () => {
+    const s = setup();
+    /* The pointer is read from the area's corner, which is at page y 100. */
+    move(s, 300, 100 + 500);
+    act(() => { runFrame(); });
+    expect(gradientsOf(tiles(s)[0])).toHaveLength(1);
+    expect(gradientsOf(tiles(s)[1])).toHaveLength(1);
+    expect(gradientsOf(tiles(s)[0])[0]!.style).toMatchObject({ y1: 500 });
+    leave(s);
+    pass(SMOKE.roll + 100);
+    expect(gradientsOf(tiles(s)[0])).toHaveLength(0);
+    move(s, 300, 100 + 100);
+    act(() => { runFrame(); });
+    expect(gradientsOf(tiles(s)[0])).toHaveLength(1);
+    expect(gradientsOf(tiles(s)[1])).toHaveLength(0);
+  });
+
+  test('a box 800 by 20,000 at a screen density of 2 holds at most mostTiles(innerHeight) canvases, each 1,600 by 1,024', () => {
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 });
+    try {
+      AREA = { ...BOX, height: 20_000 };
+      const s = setup();
+      expect(tiles(s).length).toBeGreaterThan(0);
+      expect(tiles(s).length).toBeLessThanOrEqual(mostTiles(window.innerHeight));
+      for (const c of tiles(s)) expect([c.width, c.height]).toEqual([1600, 1024]);
+    } finally {
+      delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
+    }
+  });
+
+  test('before any observer report, a smoked post in view has its tiles painted in the commit that mounts it', () => {
+    stubObserver();
+    const s = setup();
+    /* No observer has reported and no frame has run. */
+    expect(tiles(s)).toHaveLength(2);
+    for (const c of tiles(s)) expect(fogOf(c), 'painted').toBeDefined();
+    expect(s.met).not.toHaveBeenCalled();
+  });
+
+  test('a far band\'s stand-in carries the fog\'s color and alpha, and the alpha follows the strength', () => {
+    AREA = { ...BOX, height: 20_000 };
+    const s = setup();
+    const bands = [...host(s).querySelectorAll<HTMLElement>('.kb-band')];
+    expect(bands.length).toBe(40);
+    expect(bands.every((b) => b.classList.contains('dw-hotbox-far'))).toBe(true);
+    expect(bands[0]!.getAttribute('data-kb-tile')).toBe('held');
+    expect(bands[30]!.getAttribute('data-kb-tile')).toBe('far');
+    expect(host(s).style.getPropertyValue('--dw-hotbox-rgb')).toBe('0 128 128');
+    expect(Number(host(s).style.getPropertyValue('--dw-hotbox-fog'))).toBeCloseTo(fogAlpha(strength(NOW, NOW, ENDS)), 3);
+    const before = Number(host(s).style.getPropertyValue('--dw-hotbox-fog'));
+    pass(1.5 * DAY, DAY / 20);
+    const later = Number(host(s).style.getPropertyValue('--dw-hotbox-fog'));
+    expect(later).toBeLessThan(before);
+    expect(Math.abs(later - fogAlpha(strength(Date.now(), NOW, ENDS)))).toBeLessThan(0.02);
+  });
+
+  test('the stylesheet gives the far mark the fog\'s flat color from those properties, and the held mark nothing', () => {
+    const css = readFileSync('instances/divided-world/ui/hot-box/hot-box.css', 'utf8');
+    const far = /\.dw-hotbox-far\[data-kb-tile="far"\]\s*\{([^}]*)\}/u.exec(css);
+    expect(far, 'a rule for the far mark').not.toBeNull();
+    expect(far![1]).toContain('background: rgb(var(--dw-hotbox-rgb) / var(--dw-hotbox-fog))');
+    expect(far![1]).toContain('z-index: 1');
+    expect(far![1]).toContain('pointer-events: none');
+    expect(css).not.toMatch(/\[data-kb-tile="held"\][^{]*\{[^}]*background/u);
+  });
+
+  test('a tile the band watcher reports gone is released, and one reported near is made and painted in the next frame', () => {
+    stubObserver();
+    AREA = { ...BOX, height: 1600 };
+    const s = setup();
+    expect(tiles(s)).toHaveLength(2);
+    const [, second] = tiles(s);
+    const near = (...hold: number[]) => act(() => { bandsWatch!(bandEls.map((el, i) => ({ target: el, isIntersecting: hold.includes(i), intersectionRatio: hold.includes(i) ? 1 : 0 }))); runFrame(); });
+    near(0);
+    expect(tiles(s)).toHaveLength(1);
+    expect([second!.width, second!.height]).toEqual([0, 0]);
+    expect(second!.isConnected).toBe(false);
+    expect(host(s).querySelectorAll('.kb-band')[1]!.getAttribute('data-kb-tile')).toBe('far');
+    near(0, 1);
+    expect(tiles(s)).toHaveLength(2);
+    expect(fogOf(tiles(s)[1]), 'not painted until the next frame').toBeUndefined();
+    act(() => { runFrame(); });
+    expect(fogOf(tiles(s)[1])).toBeDefined();
+    expect(host(s).querySelectorAll('.kb-band')[1]!.getAttribute('data-kb-tile')).toBe('held');
+  });
+
+  test('the layer survives a strength tick: the same canvases before and after the smoke has thinned', () => {
+    const s = setup();
+    const before = tiles(s);
+    const fogBefore = host(s).style.getPropertyValue('--dw-hotbox-fog');
+    pass(1.5 * DAY, DAY / 20);
+    expect(host(s).style.getPropertyValue('--dw-hotbox-fog')).not.toBe(fogBefore);
+    expect(tiles(s)).toHaveLength(before.length);
+    tiles(s).forEach((c, i) => { expect(c).toBe(before[i]); expect(c.isConnected).toBe(true); });
+  });
+
+  test('a re-render that turns the loop off leaves the painter the fresh state: in the waved window the smoke is drawn at the waved alpha', () => {
+    const s = setup();
+    act(() => { runFrame(); });
+    const standing = fog()!.a;
+    expect(standing).toBeGreaterThan(0);
+    press(s);
+    pass(SWEEP_MS);
+    release(s);
+    pass(SMOKE.waved / 2);
+    expect(frames.size).toBe(0);
+    const waved = fog();
+    expect(waved === null || waved.a < standing, 'the fog is lighter in the waved window').toBe(true);
+    expect(gradientsOf(tiles(s)[0]).length).toBe(0);
+  });
+
+  test('under forced colors there is no canvas and no stand-in', () => {
+    forced = true;
+    AREA = { ...BOX, height: 20_000 };
+    const s = setup();
+    expect(tiles(s)).toHaveLength(0);
+    expect(s.container.querySelectorAll('.kb-band, [data-kb-tile], .dw-hotbox-far')).toHaveLength(0);
+    expect(host(s).style.getPropertyValue('--dw-hotbox-fog')).toBe('');
+    forced = false;
+    act(() => { for (const l of forcedListeners) l(); });
+    expect(tiles(s).length).toBeGreaterThan(0);
+    forced = true;
+    act(() => { for (const l of forcedListeners) l(); });
+    expect(tiles(s)).toHaveLength(0);
+    expect(s.container.querySelectorAll('.kb-band')).toHaveLength(0);
   });
 });
 
@@ -1417,13 +1566,14 @@ describe('the puffs\' sprites', () => {
       return this.classList.contains('dw-hotbox-smoke') ? (ctx as (...x: unknown[]) => unknown).apply(this, a) : null;
     } as unknown as HTMLCanvasElement['getContext'];
     try {
-      setup();
+      const s = setup();
       const canvases = () => made.mock.calls.filter((c) => c[0] === 'canvas').length;
-      const first = canvases();
+      const made0 = canvases();
       act(() => { runFrame(); runFrame(); runFrame(); });
       act(() => { runFrame(); runFrame(); });
-      expect(canvases()).toBe(first);
-      expect(first).toBeLessThanOrEqual(3);
+      expect(canvases()).toBe(made0);
+      /* The tiles' canvases are the layer's; what is left is the two sprites. */
+      expect(made0 - tiles(s).length).toBeLessThanOrEqual(2);
       expect(gradients).toBeGreaterThan(0);
     } finally {
       made.mockRestore();
@@ -1436,6 +1586,7 @@ describe('the puffs\' sprites', () => {
 describe('a moment (still)', () => {
   test('nothing is inert, no button or handler exists, no frame is requested, and nothing is met', () => {
     const s = setup({ still: true });
+    const before0 = asked();
     expect(s.container.querySelector('[inert]')).toBeNull();
     expect(button(s)).toBeNull();
     expect(s.container.querySelector('[aria-live]')).toBeNull();
@@ -1446,7 +1597,7 @@ describe('a moment (still)', () => {
     pass(SMOKE.touchHold + SMOKE.roll);
     expect(circles()).toHaveLength(0);
     expect(fills).toEqual(before);
-    expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+    expect(asked()).toBe(before0);
     expect(s.met).not.toHaveBeenCalled();
     expect(s.show).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'Smoke over the words', controls: [] }));
   });

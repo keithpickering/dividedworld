@@ -12,19 +12,22 @@
  * The container (the owner, 2026-11-15). The smoke fills the post's whole content area, border to border, as Feelin' Fab's foil and Whoops!'s ink do: the
  * post body (`.kb-act-main`) in the thread and the ORIGIN box's area (`.kb-origin-area`) in the box, found and measured with the engine's `bodyOf` and `bodyBox`
  * (engine/ui/cards/body.ts), and this effect's own element where there is none (Stick Around's view). The area's borders are the container, and no smaller un-bordered box in it is. Everything below that says "the box"
- * means that area: the canvas, the puffs, a clearing's radius, the density, where a pointer clears. Only the words' own lines are the words': the held
+ * means that area: the smoke's tiles, the puffs, a clearing's radius, where a pointer clears (the density is the layer's). Only the words' own lines are the words': the held
  * sweep travels them (offset into the area), and under forced colors the mask is the words' (so its coordinates are theirs).
  *
  * The model is `smoke.ts`'s (numbers, strength, clearings, the sweep) and this file draws it, in one of two ways that cost a reader the same:
- *  - the full effect: a canvas laid over the content area, filled with the play's color at the fog's opacity, drifting puffs over it, and each open clearing cut out
- *    of it with a soft edge (`destination-out`). It runs a frame loop only while the post is in view, and none under reduced motion, where it draws again
+ *  - the full effect: the smoke is drawn in the engine's tiles (engine/ui/cards/tiles.ts; docs/plans/2026-11-16-effect-tiles-design.md), canvases 512 px tall laid
+ *    over the content area and held only near the viewport, so a frame costs what is on screen and not what the post's length is. Each tile is filled with the
+ *    play's color at the fog's opacity, drifting puffs over it, and each open clearing cut out of it with a soft edge (`destination-out`); a puff or a clearing
+ *    that crosses two tiles is drawn in both. Where a tile is not yet painted its place shows a stand-in, the fog's flat color (`dw-hotbox-far`), so the words
+ *    are never bare while the browser has yet to say a tile is near. The layer's loop paints the held tiles every frame, and not at all under reduced motion, where it draws again
  *    only when something changes (a clearing opens or closes, the box resizes, the strength has moved a hundredth, a line of the sweep finishes);
  *  - under forced colors, where the fog cannot be drawn in system colors (the amendment at the top of the plan): the words themselves are masked, a flat layer
  *    at `maskAlpha` over the words, a hard-edged circle for each open clearing (same radius, same `roll`, same `touchHold`), a rectangle for each line the sweep
- *    has finished. The canvas is not drawn and no frame is requested; the mask is moved on a 50 ms timer, or on the times things change under reduced motion.
+ *    has finished. No layer is made, so no tile and no stand-in is drawn and no frame is requested; the mask is moved on a 50 ms timer, or on the times things change under reduced motion.
  *    A ring (system colors) shows where each clearing is, a sign says what the Lens says, and the content area is outlined in `CanvasText`, because a smoked post
  *    would otherwise look blank. The outline and the ring are drawn by a frame laid over the content area (`dw-hotbox-frame`), never by the words' own box, which its
- *    mask would take away with the rest; a ring may be anywhere in the area. With forced colors off none of this exists, and the canvas, its fog and its soft edge are exactly as above.
+ *    mask would take away with the rest; a ring may be anywhere in the area. With forced colors off none of this exists, and the tiles, their fog and its soft edge are exactly as above.
  *
  * Screen readers and the keyboard. While the play is up the words are `inert` (as Whoops! makes an inked body), so a link in a smoked post is followed after
  * a finished sweep: the control is the way through for every reader, a mouse's included, and it is never inert, never covered and drawn wherever the post is.
@@ -39,9 +42,10 @@
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
-import { bodyBox, bodyOf, liftedOver } from '../../../../engine/ui/cards/body.ts';
+import { bodyBox, bodyOf, liftedOver, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { TIMER_MOST, useAt } from '../../../../engine/ui/cards/plays.ts';
+import { makeTileLayer, type TileDraw, type TileLayer } from '../../../../engine/ui/cards/tiles.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
@@ -59,9 +63,6 @@ const STATE_SMOKE = 'Smoke over the words';
 const STATE_WAVING = 'Waving it away';
 const STATE_WAVED = 'Waved clear for you';
 
-/** The most the canvas is scaled past the screen's px, and the most px it holds (a long post's canvas is scaled down to fit, not refused). */
-const MAX_DPR = 2;
-const MAX_CANVAS_PX = 16_000_000;
 /** How far the words' offset or size may change mid-hold before the hold is let go, px. */
 const SHIFT_PX = 0.5;
 /** How often the forced-colors mask is moved while something in it is changing, ms. */
@@ -256,14 +257,8 @@ function seedOf(id: string): number {
   return h >>> 0;
 }
 
-/** The screen's density, capped at twice, and scaled down further for a box too large for a canvas. */
-function densityFor(w: number, h: number): number {
-  const screen = Math.min(MAX_DPR, (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1);
-  return Math.min(screen, Math.sqrt(MAX_CANVAS_PX / Math.max(1, w * h)));
-}
-
 /**
- * The boxes the effect reads, in CSS px. The content area (`w`, `h`, placed at `top` and `left` from the effect's element) is the container: the canvas, the
+ * The boxes the effect reads, in CSS px. The content area (`w`, `h`, placed at `top` and `left` from the effect's element) is the container: the smoke's tiles, the
  * puffs, a clearing's radius and the density are its, and a clearing's coordinates are in it. The words stand in it at (`wx`, `wy`) and are `ww` by `wh`: the
  * sweep's lines, and the forced-colors mask's coordinates, are theirs.
  */
@@ -273,7 +268,7 @@ const NO_FRAME: Frame = { w: 0, h: 0, top: 0, left: 0, wx: 0, wy: 0, ww: 0, wh: 
 /**
  * The words' mask, forced colors only: the flat layer, a hard circle for each clearing, a rectangle for each finished line; none while the post is clear.
  * The cuts are in the content area's coordinates and the mask is the words' own, so each is moved by where the words stand in the area (`ox`, `oy`);
- * the radius is the area's (`w` is its width), as on the canvas.
+ * the radius is the area's (`w` is its width), as in the tiles.
  */
 function maskFor(cuts: Cuts, s: number, g: number, now: number, reduced: boolean, w: number, ox: number, oy: number): CSSProperties | undefined {
   if (g >= 1) return undefined;
@@ -318,14 +313,14 @@ export function HotBoxEffect(props: EffectProps) {
   return <Smoke key={play.id} {...props} play={play} />;
 }
 
-function Smoke({ play, still, show, met, children }: EffectProps & { readonly play: CardPlay }) {
+function Smoke({ place, play, still, show, met, children }: EffectProps & { readonly play: CardPlay }) {
   const { api } = useKayfa();
   const reduced = useMotionReduced();
   const forced = useForcedColors();
   const descId = useId();
   const hostRef = useRef<HTMLDivElement>(null);
   const wordsRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const layerRef = useRef<TileLayer | null>(null);
   const waveRef = useRef<HTMLButtonElement>(null);
   const model = useRef<Model>(emptyModel());
   const startedAt = useRef(api.now());
@@ -336,21 +331,19 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
   const [frame, setFrame] = useState<Frame>(NO_FRAME);
   /* The content area's element as the last measure found it (the post body, the ORIGIN box's area, or the host where there is none): the observers and listeners are bound to it, and move when it is replaced. */
   const [areaEl, setAreaEl] = useState<HTMLElement | null>(null);
-  /* Whether the post is on screen is unknown until the observer first reports: the canvas is kept (and painted) through that, so the words are never bare, and only a confirmed "out" releases it. */
-  const [sight, setSight] = useState<'unknown' | 'in' | 'out'>('unknown');
-  const inView = sight === 'in';
-  const keep = sight !== 'out';
+  /* Whether the post's content area is on screen, as the observer last said: `met` waits for the first sight, and the forced-colors mask's timer runs only while it is in view. */
+  const [inView, setInView] = useState(false);
 
   const playedAt = Date.parse(play.playedAt);
   const ends = play.ends === undefined ? Number.NaN : Date.parse(play.ends);
   const rgb = useMemo(() => readColor(play.config['color']), [play.config]);
-  const puffList = useMemo(() => puffs(seedOf(play.id), frame.w, frame.h), [play.id, frame.w, frame.h]);
+  const seed = useMemo(() => seedOf(play.id), [play.id]);
 
-  /* The frame loop runs for the canvas only: in view, with motion, not on the forced-colors path, and not while the post is waved (nothing is drawn then; the wake at the end of the wave renders again). */
+  /* The layer's every-frame way runs with motion, off the forced-colors path (which has no layer), and not while the post is waved (nothing is drawn then; the wake at the end of the wave renders again). It holds tiles only near the window, so whether the post is in view is not its question. */
   const waved = !still && isWaved(model.current.wavedAt, at);
-  const loop = !still && !reduced && !forced && inView && !waved;
-  const latest = useRef({ frame, reduced, forced, still, loop, rgb, puffList, playedAt, ends, inView, keep });
-  useLayoutEffect(() => { latest.current = { frame, reduced, forced, still, loop, rgb, puffList, playedAt, ends, inView, keep }; });
+  const loop = !still && !reduced && !forced && !waved;
+  const latest = useRef({ frame, reduced, forced, still, loop, rgb, seed, playedAt, ends, inView });
+  useLayoutEffect(() => { latest.current = { frame, reduced, forced, still, loop, rgb, seed, playedAt, ends, inView }; });
 
   /*
    * Time. One timer, set for the soonest thing the model needs looked at after the last time it was (`seen`): a line of the sweep finishing, the wave's end,
@@ -377,21 +370,29 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
 
   /* ---- the box ---- */
   /*
-   * The container is the box Feelin' Fab's foil and Whoops!'s ink fill: the content area (a post's body in the thread, `.kb-act-main`), border to border (the engine's
-   * `bodyOf` and `bodyBox`, engine/ui/cards/body.ts), and the ORIGIN box's area in the box; this effect's own element where there is none (Stick Around's view). It is found again at each measure.
+   * The container is the box Feelin' Fab's foil and Whoops!'s ink fill: the content area (a post's body in the thread, `.kb-act-main`, border to border (the engine's
+   * `bodyOf` and `bodyBox`, engine/ui/cards/body.ts), and the ORIGIN box's area in the box; this effect's own element where there is none (Stick Around's view). The tile layer
+   * finds it and tells `take` whenever it changes (`onBox`), and this effect finds it again at each of its own measures, which is how the forced-colors path (no layer) has it. The
+   * words' own offset and size are measured here against that box.
    */
-  const measure = useCallback(() => {
+  const take = useCallback((b: BodyBox, found: HTMLElement | null) => {
     const words = wordsRef.current, host = hostRef.current;
     if (!words || !host) return;
-    const found = bodyOf(host);
     setAreaEl(found ?? host);
-    const b = bodyBox(host, found);
     const w = words.getBoundingClientRect(), h = host.getBoundingClientRect();
     /* The words' corner from the area's corner: both from the page's. */
     const wx = w.left - (h.left + b.left), wy = w.top - (h.top + b.top);
     setFrame((f) => (f.w === b.w && f.h === b.h && f.top === b.top && f.left === b.left && f.wx === wx && f.wy === wy && f.ww === w.width && f.wh === w.height
       ? f : { w: b.w, h: b.h, top: b.top, left: b.left, wx, wy, ww: w.width, wh: w.height }));
   }, []);
+  /* The layer is told too: a takeover can move the words with no change of size, and the layer re-places its tiles from what it measures. */
+  const measure = useCallback(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const found = bodyOf(host);
+    take(bodyBox(host, found), found);
+    layerRef.current?.measure();
+  }, [take]);
   useLayoutEffect(() => {
     measure();
     const words = wordsRef.current, host = hostRef.current;
@@ -404,41 +405,32 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
     return () => watch.disconnect();
   }, [measure, areaEl, forced]);
 
-  /* ---- the canvas ---- */
-  const paint = useCallback(() => {
-    const canvas = canvasRef.current, L = latest.current;
-    if (!canvas || L.forced) return;
-    /* Out of view (confirmed) a canvas holds no pixels (a page of smoked posts would otherwise keep every backing store); it is sized again on return. */
-    if (!L.still && !L.keep) {
-      if (canvas.width !== 0) canvas.width = 0;
-      if (canvas.height !== 0) canvas.height = 0;
-      return;
-    }
-    const { w, h } = L.frame;
+  /* ---- the tiles ---- */
+  /* The puffs for a box of this size: one list for every tile, made when the box changes. The painter can run before this effect has measured anything, so it asks the layer's own box. */
+  const puffCache = useRef<{ readonly key: string; readonly list: ReturnType<typeof puffs> } | null>(null);
+  /* A tile's canvas has been cleared, transformed to the box's px and clipped to the tile's rows by the layer (engine/ui/cards/tiles.ts), so this draws the smoke over the whole box and only the tile's rows are kept. */
+  const paintTile = useCallback((draw: TileDraw) => {
+    const { ctx, box } = draw, L = latest.current;
+    const { w, h } = box;
     if (w <= 0 || h <= 0) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const rows0 = draw.top, rows1 = draw.top + draw.h;
     const light = spriteOf(LIGHT), dark = spriteOf(DARK);
-    const dpr = densityFor(w, h);
-    const W = Math.round(w * dpr), H = Math.round(h * dpr);
-    if (canvas.width !== W) canvas.width = W;
-    if (canvas.height !== H) canvas.height = H;
     const t = api.now();
     const m = model.current;
     /* A moment draws the smoke as it stood at full strength. */
     const s = L.still ? 1 : strength(t, L.playedAt, L.ends);
     const g = L.still ? 0 : waveFactor(m.wavedAt, t, L.reduced);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.clearRect(0, 0, w, h);
     if (g >= 1) return;
     const [r, gr, b] = L.rgb;
     ctx.fillStyle = `rgba(${r}, ${gr}, ${b}, ${a4(fogAlpha(s) * (1 - g))})`;
     ctx.fillRect(0, 0, w, h);
-    /* The puffs: soft discs a little lighter and a little darker than the fog, drifting; still under reduced motion and in a moment. */
+    /* The puffs: soft discs a little lighter and a little darker than the fog, drifting; still under reduced motion and in a moment. Each is drawn in every tile its disc crosses. */
+    const key = `${L.seed}|${w}|${h}`;
+    if (puffCache.current?.key !== key) puffCache.current = { key, list: puffs(L.seed, w, h) };
     const drift = L.reduced || L.still ? 0 : t - startedAt.current;
-    for (const puff of L.puffList) {
+    for (const puff of puffCache.current.list) {
       const p = puffAt(puff, drift, w, h);
+      if (p.y + p.r < rows0 || p.y - p.r > rows1) continue;
       const a = 0.22 * Math.abs(p.shade) * (1 - g);
       const sprite = p.shade >= 0 ? light : dark;
       if (sprite) {
@@ -454,47 +446,49 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
       ctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
     }
     ctx.globalAlpha = 1;
-    /* The clearings are cut out of all of it: a radial fade whose stops are `covered`'s, so the canvas and the model agree. */
+    /* The clearings are cut out of all of it: a radial fade whose stops are `covered`'s, so the tiles and the model agree. */
     const radius = holeRadius(w);
     const cuts = cutsAt(m, t, L.reduced);
     ctx.globalCompositeOperation = 'destination-out';
     for (const c of cuts.clearings) {
+      if (c.y + radius < rows0 || c.y - radius > rows1) continue;
       const cut = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, radius);
       for (const stop of [0, 1 - SMOKE.edge, 1]) cut.addColorStop(stop, `rgba(0, 0, 0, ${a4(1 - covered(c.x + stop * radius, c.y, [c], radius, t, L.reduced))})`);
       ctx.fillStyle = cut;
       ctx.fillRect(c.x - radius, c.y - radius, radius * 2, radius * 2);
     }
     for (const rect of cuts.rects) {
+      if (rect.bottom < rows0 || rect.top > rows1) continue;
       ctx.fillStyle = `rgba(0, 0, 0, ${a4(rect.o)})`;
       ctx.fillRect(rect.left, rect.top, rect.width, rect.bottom - rect.top);
     }
     ctx.globalCompositeOperation = 'source-over';
   }, [api]);
 
-  /* Without a loop the canvas is drawn after every render: a render is how a change reaches it. With one, the commit that sized the canvas or brought it back
-     into view paints it too, in the layout effect, so no frame shows the words bare while the loop's first frame waits for a passive effect. */
-  const painted = useRef('');
+  /* The layer is made in the commit that mounts the effect, and paints its first tiles in it (from the box and the window), so the words are never bare while an observer is awaited. Not on the forced-colors path, which draws no canvas. */
   useLayoutEffect(() => {
-    const key = `${frame.w}|${frame.h}|${keep}|${forced}`;
-    const fresh = key !== painted.current;
-    painted.current = key;
-    if (!loop || fresh) paint();
-  });
-  useEffect(() => {
-    if (!loop) return;
-    let id = 0;
-    const next = () => { paint(); id = requestAnimationFrame(next); };
-    next();
-    return () => cancelAnimationFrame(id);
-  }, [loop, paint]);
+    const host = hostRef.current;
+    if (!host || forced) return;
+    const layer = makeTileLayer(host, { place, className: 'dw-hotbox-smoke', standIn: 'dw-hotbox-far', paint: paintTile, onBox: take });
+    layerRef.current = layer;
+    return () => { layer.stop(); layerRef.current = null; };
+  }, [forced, place, paintTile, take]);
+  /* The every-frame way follows `loop`, and a commit that turns it on paints once itself, so no frame shows the words bare while the frame it asked for waits. */
+  useLayoutEffect(() => {
+    layerRef.current?.loop(loop);
+    if (loop) layerRef.current?.paintNow();
+  }, [loop, forced, place, paintTile, take]);
+  /* Without a loop the tiles are drawn after every render: a render is how a change reaches them. */
+  useLayoutEffect(() => { if (!loop) layerRef.current?.paintNow(); });
 
   /* ---- in view, and met ---- */
   useEffect(() => {
     if (still || !areaEl) return;
-    /* The content area is what the canvas covers, so it is what is watched: a tall post's host can be far out of view while the area is still on screen. A margin above and below, so the canvas is restored before the post scrolls into sight. */
-    return watchInView(areaEl, (seen) => setSight(seen ? 'in' : 'out'), { rootMargin: '200px 0px' });
+    /* The content area is what the smoke covers, so it is what is watched, with a margin above and below. */
+    return watchInView(areaEl, setInView, { rootMargin: '200px 0px' });
   }, [still, areaEl]);
   useEffect(() => { if (!still) refresh(); }, [inView, still, refresh]);
+  /* Met waits for the first sight of the post: the layer holds tiles near the window and says nothing of them, so the observer on the area is asked for this alone. */
   const met1 = useRef(false);
   useEffect(() => {
     if (still || !inView || met1.current) return;
@@ -656,8 +650,11 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
   const radius = holeRadius(frame.w);
   const key = (e: KeyboardEvent) => e.key === ' ' || e.key === 'Enter';
 
+  /* The fog's color and alpha, for the stand-in of a band whose tile is not yet painted (hot-box.css): the same alpha the painter uses. */
+  const standIn = forced ? undefined : { '--dw-hotbox-rgb': rgb.join(' '), '--dw-hotbox-fog': a4(fogAlpha(s) * (1 - g)) } as CSSProperties;
+
   return (
-    <div ref={hostRef} className="dw-hotbox" data-kb-hotbox>
+    <div ref={hostRef} className="dw-hotbox" data-kb-hotbox style={standIn}>
       {!still && (
         <>
           <button
@@ -674,7 +671,6 @@ function Smoke({ play, still, show, met, children }: EffectProps & { readonly pl
       )}
       {forced && <p className="dw-hotbox-sign"><strong>{state}.</strong> {endsText}</p>}
       <div ref={wordsRef} className="dw-hotbox-words" inert={!still && !waved} style={mask}>{children}</div>
-      <canvas ref={canvasRef} className="dw-hotbox-smoke" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }} />
       {forced && (
         <div className="dw-hotbox-frame" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }}>
           {!still && cuts!.clearings.map((c, i) => (

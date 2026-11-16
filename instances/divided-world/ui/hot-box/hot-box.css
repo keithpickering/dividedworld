@@ -1,10 +1,10 @@
 /*
  * Hot Box (Effect.tsx; docs/plans/2026-11-15-hot-box-plan.md, Task 4): smoke over a post's words. The post under it stays the house style; the only color is
- * the smoke's own, and the canvas paints that. The control is styled as Below the Fold's in-words bar is (below-the-fold/fold.css): the theme's header
- * tokens, mono, small, a focus ring that is the header's, at least 44px tall on a coarse pointer. Nothing animates here: the canvas is drawn by script and
+ * the smoke's own, and the tiles paint that. The control is styled as Below the Fold's in-words bar is (below-the-fold/fold.css): the theme's header
+ * tokens, mono, small, a focus ring that is the header's, at least 44px tall on a coarse pointer. Nothing animates here: the tiles are drawn by script and
  * the forced-colors mask is moved by script.
  *
- * Under forced colors the fog cannot be drawn in system colors, so the canvas is hidden and the words themselves are masked (inline, by Effect.tsx). A mask
+ * Under forced colors the fog cannot be drawn in system colors, so no tile is made and the words themselves are masked (inline, by Effect.tsx). A mask
  * takes away everything its element paints outside its own box, outline included, so the outline and each clearing's ring are drawn by a frame laid over the
  * post's content area (`dw-hotbox-frame`: the smoke's container, not the words), in `CanvasText`, and a sign above the words says what the Lens says.
  */
@@ -13,22 +13,31 @@
   display: block;
 }
 
-/* A flow root, so the words' own margins stay inside the box the canvas is fitted to. */
+/* A flow root, so the words' own margins stay inside the box the smoke's tiles are fitted to. */
 .dw-hotbox-words {
   display: flow-root;
   position: relative;
 }
 
 /*
- * Laid over the post's content area, border to border, as Feelin' Fab's foil and Whoops!'s ink are (Effect.tsx sets its box inline, from the engine's
- * `bodyBox`), and never in the way of anything: the pointer is read on the area. In the thread the engine's sheet lifts it (`data-kb-effect-ink`, z-index 1)
- * above the words and below what it lifts over the ink (`data-kb-over-ink`, 2); outside the thread the rules here do the same.
+ * The smoke is laid over the post's content area, border to border, as Feelin' Fab's foil and Whoops!'s ink are, in tiles the engine's layer makes and places inline
+ * (engine/ui/cards/tiles.ts), and never in the way of anything: the pointer is read on the area. In the thread the engine's sheet lifts a tile (`data-kb-effect-ink`,
+ * z-index 1) above the words and below what it lifts over the ink (`data-kb-over-ink`, 2); outside the thread the rule here does the same.
  */
 .dw-hotbox-smoke {
-  position: absolute;
   display: block;
-  pointer-events: none;
   z-index: 1;
+}
+
+/*
+ * The stand-in for a band whose tile is not yet painted (Effect.tsx names it `standIn`; the layer marks it far until a painted tile covers it): the fog's flat color
+ * and alpha, which the effect sets on its element, so a band that scrolls in shows fog with no puffs for a frame and never the words. A painted tile covers it and it
+ * paints nothing then. It is placed by the layer and takes no pointer.
+ */
+.dw-hotbox-far[data-kb-tile="far"] {
+  background: rgb(var(--dw-hotbox-rgb) / var(--dw-hotbox-fog));
+  z-index: 1;
+  pointer-events: none;
 }
 
 .dw-hotbox-wave {
@@ -62,7 +71,7 @@
   }
 }
 
-/* Forced colors only (Effect.tsx draws them only then, and they are hidden here the rest of the time). */
+/* Forced colors only (Effect.tsx draws them only then, and they are hidden here the rest of the time). The smoke's tiles and stand-ins are not made then. */
 .dw-hotbox-sign,
 .dw-hotbox-frame {
   display: none;
@@ -78,10 +87,6 @@
 @media (forced-colors: active) {
   .dw-hotbox-ring {
     border: 2px solid CanvasText;
-  }
-
-  .dw-hotbox-smoke {
-    display: none;
   }
 
   .dw-hotbox-wave {
