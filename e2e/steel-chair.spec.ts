@@ -681,16 +681,12 @@ const relative = (px: number[], i: number) => {
   return 0.2126 * f(px[i]!) + 0.7152 * f(px[i + 1]!) + 0.0722 * f(px[i + 2]!);
 };
 
-/** Each dent's box (the shading's ellipse) and the text's line box, in the window, and each dent's crease elements. */
+/** Each dent's box (the shading's ellipse) and the text's line box, in the window. */
 async function shading(page: Page) {
   return area(page).evaluate((box) => {
-    const dentRects = [...box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent')].map((d, i) => {
+    const dentRects = [...box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent')].map((d) => {
       const r = d.getBoundingClientRect();
-      const play = d.dataset.play ?? String(i);
-      /* A crease is drawn by a pseudo-element of the dent or by an element of its own, in the dents' layer. */
-      const pseudo = ['::before', '::after'].filter((p) => getComputedStyle(d, p).content !== 'none').length;
-      const own = box.querySelectorAll(`.dw-chair-creases[data-play="${play}"]`).length;
-      return { left: r.left, top: r.top, width: r.width, height: r.height, creases: pseudo + own };
+      return { left: r.left, top: r.top, width: r.width, height: r.height };
     });
     const walker = document.createTreeWalker(box.querySelector('.dw-chair-words')!, NodeFilter.SHOW_TEXT);
     const range = document.createRange();
@@ -753,7 +749,7 @@ function deepest(p: { shaded: { px: number[] }; bare: { px: number[] } }): numbe
  * The hard case: one line of words with three dents on it, run on two pinned throws. The tight one has two dents over the line and
  * overlapping each other; the spread one has the dents' centers far apart (the hit zone is wide on a short post, so the dents land beside
  * and below the line as well as on it) with at least one over the line, so the line still has shading to be read through. What is held in
- * both: (i) a dent that overlaps another draws no creases (a lone one does), (ii) the shading over the line is capped at what one lone dent
+ * both: (i) no crease element is drawn in the content area (a dent is a height map's shading, nothing else), (ii) the shading over the line is capped at what one lone dent
  * gives at its darkest (measured in the same test, from the one-dent story), however many overlap, (iii) the glyphs keep a contrast of
  * 4.5:1 against the shaded background, and the displacement keeps the ink within its line box plus what the filter's scale and the dents
  * allow. A tolerance of 6 levels of 255 is allowed on the cap, for the gradient's and the screenshot's rounding.
@@ -768,7 +764,6 @@ async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'sprea
   const s = await shading(page);
   expect(s.dents).toHaveLength(3);
   const overlapping = s.dents.map((d, i) => s.dents.some((o, j) => j !== i && gap(d, o) < -8));
-  const alone = s.dents.map((d, i) => s.dents.every((o, j) => j === i || gap(d, o) > 8));
   const closest = Math.min(...s.dents.flatMap((d, i) => s.dents.slice(i + 1).map((o) => Math.hypot(center(d).x - center(o).x, center(d).y - center(o).y))));
   const overText = s.dents.map((d) => d.left < s.text.right && d.left + d.width > s.text.left && d.top < s.text.bottom && d.top + d.height > s.text.top);
   test.info().annotations.push({ type: kind, description: `closest two dent centers ${closest.toFixed(0)} px apart, ${overText.filter(Boolean).length} over the line` });
@@ -779,21 +774,18 @@ async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'sprea
     expect(closest, 'the spread seed keeps every pair of dent centers well apart').toBeGreaterThanOrEqual(60);
     expect(overText.filter(Boolean).length, 'the spread seed still has a dent over the line').toBeGreaterThanOrEqual(1);
   }
-  s.dents.forEach((d, i) => {
-    /* (i) */
-    if (overlapping[i]) expect(d.creases, `dent ${i} overlaps another and draws creases`).toBe(0);
-    if (alone[i]) expect(d.creases, `dent ${i} is alone and keeps its creases`).toBeGreaterThan(0);
-  });
+  /* (i) */
+  expect(await area(page).locator('[class*="crease"]').count(), 'no crease element is in the content area').toBe(0);
   /* The line's box and its picture: a little air above and below, and as wide as the text. */
   const lineClip = { x: Math.floor(s.text.left), y: Math.floor(s.text.top - 2), width: Math.ceil(s.text.right - s.text.left) + 2, height: Math.ceil(s.text.bottom - s.text.top) + 4 };
   const three = await pair(page, lineClip);
   const peak3 = darkest(three);
   /* The line may sit at the rim of the dents (it is a thin strip at the top of a tall area), where one disc gives little and two added give
      little more, so the cap is also read where the dents are deepest: over the union of their boxes, inside the content area, with the
-     light and the creases hidden so that only the shade layer (the discs combined by `darken`) is measured. Where two discs overlap their
+     light hidden so that only the shade layer (the discs combined by `darken`) is measured. Where two discs overlap their
      middles the darkness must still be one disc's darkest, and not the sum of two. */
   const onlyShade = (hide: boolean) => area(page).evaluate((box, h) => {
-    for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-glows, .dw-chair-crease-layer')) el.style.visibility = h ? 'hidden' : '';
+    for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-glows')) el.style.visibility = h ? 'hidden' : '';
   }, hide);
   await onlyShade(true);
   const ux0 = Math.max(s.area.left + 1, Math.floor(Math.min(...s.dents.map((d) => d.left))));
@@ -892,7 +884,7 @@ async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'sprea
   expect(DENT_SCALE, 'the filter carries the scale this test reads').toBe(again.scale);
 }
 
-test('short-three, tight: the one line can be read: no creases on overlapping dents, shading capped at one dent\'s, glyphs keep 4.5:1, ink stays near its line', async ({ page }) => {
+test('short-three, tight: the one line can be read: no crease element, shading capped at one dent\'s, glyphs keep 4.5:1, ink stays near its line', async ({ page }) => {
   await theLineCanBeRead(page, SEEDS['short-three'][0], 'tight');
 });
 
@@ -929,41 +921,37 @@ for (const name of ['one-light', 'one-dark', 'reduced'] as const) {
 
 /**
  * On the dark theme the dent still shows: the shade's gray (multiplied) darkens the post's own color and the light's gray (screened) lifts it. On
- * the post's color (#262626, 38 of 255) the shade at its darkest (gray 128) leaves about 19, so is 19 levels darker, and the light at its
- * brightest (gray 71) lifts it by about 60. One clipped pair of pictures at each of the two points, with and without the two layers (the chairs
- * hidden in both), compared on the pixels that are plain post color (no glyph) in the bare picture; the margins are about half of that.
+ * the post's color (#262626, 38 of 255) a shade at its darkest leaves about half, so is about 19 levels darker, and the light at its brightest
+ * lifts it by about 60. One clipped pair of pictures over the dent's whole box, with and without the two layers (the chairs hidden in both),
+ * compared on the pixels that are plain post color (no glyph) in the bare picture: the mean of the darkest tenth of the dent's change is
+ * darker than the bare picture there, and the mean of the lightest tenth is lighter, by margins about half of that.
  */
-test('one-dark: the dent shows on the dark theme: the pixels under its light are lighter than the post color, and under its shade darker', async ({ page }) => {
+test('one-dark: the dent shows on the dark theme: the lightest tenth of its box is lighter than the post color, and the darkest tenth darker', async ({ page }) => {
   await open(page, 'one-dark');
   await atRest(page, 1);
   await page.evaluate(() => document.fonts.ready);
-  const at = await area(page).evaluate((box) => {
-    const point = (sel: string, vx: string, vy: string) => {
-      const el = box.querySelector<HTMLElement>(sel)!;
-      const r = el.getBoundingClientRect();
-      return { x: r.left + (parseFloat(el.style.getPropertyValue(vx)) / 100) * r.width, y: r.top + (parseFloat(el.style.getPropertyValue(vy)) / 100) * r.height };
-    };
-    return { light: point('.dw-chair-glow', '--glow-x', '--glow-y'), shade: point('.dw-chair-dent', '--dark-x', '--dark-y') };
-  });
-  const clip = (p: { x: number; y: number }) => ({ x: Math.floor(p.x) - 3, y: Math.floor(p.y) - 3, width: 7, height: 7 });
+  const s = await shading(page);
+  expect(s.dents).toHaveLength(1);
+  const d = s.dents[0]!;
+  const x0 = Math.max(s.area.left + 1, Math.floor(d.left)), y0 = Math.max(s.area.top + 1, Math.floor(d.top));
+  const clip = { x: x0, y: y0, width: Math.ceil(Math.min(s.area.right - 1, d.left + d.width) - x0), height: Math.ceil(Math.min(s.area.bottom - 1, d.top + d.height) - y0) };
   await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-layer')) el.style.visibility = 'hidden'; });
-  const change = async (p: { x: number; y: number }) => {
-    const shaded = await pixelsOf(page, clip(p));
-    await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = 'hidden'; });
-    const bare = await pixelsOf(page, clip(p));
-    await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = ''; });
-    /* Only the pixels that are the post's own background in the bare picture, as the darkness checks below do. */
-    const bg = plain(bare.px);
-    const diffs: number[] = [];
-    for (let i = 0; i < bare.px.length; i += 4) if (bg[i / 4]) diffs.push(luma(shaded.px, i) - luma(bare.px, i));
-    expect(diffs.length, 'plain post-colored pixels in the clip').toBeGreaterThan(10);
-    return diffs.reduce((a, b) => a + b, 0) / diffs.length;
-  };
-  const lifted = await change(at.light);
-  const lowered = await change(at.shade);
-  test.info().annotations.push({ type: 'dark', description: `light ${lifted.toFixed(0)}, shade ${lowered.toFixed(0)} levels of 255` });
-  expect(lifted, 'under the light the post is lighter, levels of 255').toBeGreaterThanOrEqual(30);
-  expect(lowered, 'under the shade the post is darker, levels of 255').toBeLessThanOrEqual(-10);
+  const shaded = await pixelsOf(page, clip);
+  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = 'hidden'; });
+  const bare = await pixelsOf(page, clip);
+  /* Only the pixels that are the post's own background in the bare picture, as the darkness checks above do. */
+  const bg = plain(bare.px);
+  const diffs: number[] = [];
+  for (let i = 0; i < bare.px.length; i += 4) if (bg[i / 4]) diffs.push(luma(shaded.px, i) - luma(bare.px, i));
+  expect(diffs.length, 'plain post-colored pixels in the dent box').toBeGreaterThan(100);
+  diffs.sort((x, y) => x - y);
+  const tenth = Math.max(1, Math.floor(diffs.length / 10));
+  const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
+  const lowered = mean(diffs.slice(0, tenth));
+  const lifted = mean(diffs.slice(-tenth));
+  test.info().annotations.push({ type: 'dark', description: `lightest tenth ${lifted.toFixed(0)}, darkest tenth ${lowered.toFixed(0)} levels of 255` });
+  expect(lifted, 'the lightest tenth of the dent box is lighter than the post, levels of 255').toBeGreaterThanOrEqual(30);
+  expect(lowered, 'the darkest tenth of the dent box is darker than the post, levels of 255').toBeLessThanOrEqual(-10);
 });
 
 test.describe('at a phone\'s width', () => {
