@@ -1,7 +1,7 @@
 /**
  * Hot Box's pure half (docs/plans/2026-11-15-hot-box-plan.md, Task 3; design, section 2.2): the smoke over a post,
- * as numbers. No DOM, no clock and no Math.random: `Effect.tsx` hands it the time and a seed and draws what it
- * returns, on a canvas (fog, puffs, clearings cut out) or, under forced colors, as a hard-edged mask.
+ * as numbers. No DOM, no clock and no Math.random: `Effect.tsx` hands it the time and draws what it returns, as the
+ * fog of `fog.ts` (which it drives) or, under forced colors, as a hard-edged mask.
  *
  * The smoke is an obstacle read through by clearing it, and it is the same for every reader: nothing here knows who
  * wrote the post or who cast the card. It thins in a straight line over the play's life (`strength`), from `full` as
@@ -24,12 +24,7 @@
  * visit. Under reduced motion a trail point is open for `trailHard` of the wake and then shut, as a clearing is. The
  * forced-colors mask draws hard circles (`hardOpen`): a clearing at least `trailHard` open and a trail point still in
  * the first `trailHard` of its wake.
- *
- * The puffs are the drifting texture: placed by a seeded generator, drifting at a steady velocity and wrapping at
- * the box's edges, so where one is at any `t` is a pure function of the puff.
  */
-import { mulberry32 } from '../../cards/whoops/splat.ts';
-
 export const SMOKE = {
   /** The fog's opacity when the play lands. */
   full: 0.94,
@@ -49,11 +44,6 @@ export const SMOKE = {
   touchHold: 4000,
   /** How long the post stays clear after a finished sweep, ms. */
   waved: 20000,
-  /** The area a puff stands for, px squared. */
-  puffArea: 1800,
-  /** The fewest and most puffs a box holds. */
-  puffsMin: 24,
-  puffsMax: 160,
   /** How long a trail point stays partly open behind the pointer, ms. */
   wake: 1500,
   /** How far the pointer travels before the trail takes another point, as a share of a radius. */
@@ -141,38 +131,17 @@ export function covered(x: number, y: number, clearings: readonly Clearing[], ra
   return fog;
 }
 
-/** Whether forced colors shows the words at a point: inside the full radius of a clearing at least `trailHard` open, or of a trail point in the first `trailHard` of its wake. */
+/**
+ * The hard discs forced colors shows the words through, each a full radius: every clearing at least `trailHard` open, and every trail point in the first
+ * `trailHard` of its wake. A disc is there or it is not, under reduced motion too: nothing about it fades.
+ */
+export function hardDiscs(clearings: readonly Clearing[], trail: readonly TrailPoint[], now: number): { readonly x: number; readonly y: number }[] {
+  return [...clearings.filter((c) => openness(c, now, false) >= SMOKE.trailHard), ...trail.filter((p) => trailOpenness(p, now, true) === 1)];
+}
+
+/** Whether forced colors shows the words at a point: inside one of `hardDiscs`. */
 export function hardOpen(x: number, y: number, clearings: readonly Clearing[], trail: readonly TrailPoint[], radius: number, now: number): boolean {
-  return clearings.some((c) => openness(c, now, false) >= SMOKE.trailHard && Math.hypot(x - c.x, y - c.y) < radius)
-    || trail.some((p) => trailOpenness(p, now, true) === 1 && Math.hypot(x - p.x, y - p.y) < radius);
-}
-
-/** One puff of the drifting texture: where it was made, its radius, its drift in px a second and a phase for its shade. */
-export interface Puff { readonly x: number; readonly y: number; readonly r: number; readonly dx: number; readonly dy: number; readonly phase: number }
-
-/** The box's puffs for a seed: one to each `puffArea` px squared, from `puffsMin` to `puffsMax`. */
-export function puffs(seed: number, width: number, height: number): Puff[] {
-  const area = Number.isFinite(width) && Number.isFinite(height) ? Math.max(0, width) * Math.max(0, height) : 0;
-  const count = Math.min(SMOKE.puffsMax, Math.max(SMOKE.puffsMin, Math.round(area / SMOKE.puffArea)));
-  const rnd = mulberry32(seed);
-  const w = Math.max(0, width) || 0, h = Math.max(0, height) || 0;
-  return Array.from({ length: count }, () => {
-    const heading = rnd() * Math.PI * 2, speed = 4 + rnd() * 10;
-    return { x: rnd() * w, y: rnd() * h, r: 18 + rnd() * 24, dx: Math.cos(heading) * speed, dy: Math.sin(heading) * speed, phase: rnd() * Math.PI * 2 };
-  });
-}
-
-const wrap = (v: number, size: number): number => (size > 0 ? ((v % size) + size) % size : 0);
-
-/** Where a puff is at `t` ms (0 under reduced motion), wrapped at the box's edges, and its shade in [-1, 1] (lighter above 0, darker below). */
-export function puffAt(puff: Puff, t: number, width: number, height: number): { x: number; y: number; r: number; shade: number } {
-  const s = t / 1000;
-  return {
-    x: wrap(puff.x + puff.dx * s, width),
-    y: wrap(puff.y + puff.dy * s, height),
-    r: puff.r,
-    shade: Math.sin(puff.phase + s / 3),
-  };
+  return hardDiscs(clearings, trail, now).some((d) => Math.hypot(x - d.x, y - d.y) < radius);
 }
 
 /** A post's line in the box's px (a line's own left and right are not needed: a sweep spans the box). `readLines` gives shares of the box's height: scale them first. */

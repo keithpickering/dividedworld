@@ -1,9 +1,15 @@
 /**
- * Hot Box's effect (docs/plans/2026-11-15-hot-box-plan.md, Task 4; design, section 2.2): smoke over a post that readers wave away. Read here, as a
- * reader gets it: the canvas's calls (the fog's color and alpha, the clearings cut out of it), the words' `inert`, the live region, the views the Lens is
- * given, and, under forced colors, the words' mask, its rings and its sign. The page's clock is the backend's (`api.now()`), and here it is the faked
- * `Date`, so the play's end passes when the test says. jsdom has no canvas, no frames and no resizing, so each is stubbed (each canvas gets a recorder of its own, and `fills` and `draws` are the first tile's); the lines of a post are
- * stubbed too (jsdom cannot measure a range), as three lines of an 800 by 600 box, so a held sweep takes 2 seconds a line and 6 in all.
+ * Hot Box's effect (docs/plans/2026-11-15-hot-box-plan.md, Task 4, reworked by docs/plans/2026-11-15-hot-box-fog-plan.md, Task 5; design
+ * docs/plans/2026-11-15-hot-box-fog-design.md): smoke over a post that readers wave away. Read here, as a reader gets it: the fog's picture on each tile
+ * (its alpha and color at a point of the content area), the words' `inert`, the in-body line, the live region, the views the Lens is given, and, under
+ * forced colors, the words' mask, its rings and its sign. The page's clock is the backend's (`api.now()`), and here it is the faked `Date`, so the play's
+ * end passes when the test says, and the fog's field steps by that clock once a frame.
+ *
+ * jsdom has no canvas, no frames and no resizing, so each is stubbed. The fog is worked out as bytes on a page-wide scratch canvas (`putImageData`) and
+ * drawn from it onto a tile, scaled up a cell to a pixel (`drawImage`); each tile's recorder keeps its last draw with a copy of the bytes it was drawn
+ * from, so `alphaAt` and `colorAt` answer in the box's px. The lines of a post are stubbed too (jsdom cannot measure a range), as three lines of an 800 by
+ * 600 box, so a held sweep takes 2 seconds a line and 6 in all. The fog is driven toward the model with a 70 ms constant, so a test that looks at the
+ * field lets about 400 ms of frames pass first (`settle`); under reduced motion and forced colors the picture is the model's at once.
  */
 import { readFileSync } from 'node:fs';
 import { act, cleanup } from '@testing-library/react';
@@ -15,21 +21,35 @@ import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
-import { mostTiles } from '../../../../engine/ui/cards/tiles.ts';
+import { makeTileLayer, mostTiles } from '../../../../engine/ui/cards/tiles.ts';
 import { renderIn, testInstance } from '../../../../engine/ui/test-world.tsx';
-import { SMOKE, fogAlpha, holeRadius, maskAlpha, puffs, strength } from './smoke.ts';
-import { HotBoxEffect, WAVE_DESCRIBE, forgetSprites } from './Effect.tsx';
+import { SMOKE, fogAlpha, holeRadius, maskAlpha, strength } from './smoke.ts';
+import { paintFog, stepField } from './fog.ts';
+import { HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, forgetScratch, resetFogLadder } from './Effect.tsx';
 
-/* A post's lines, as shares of the box's height, as Whoops!'s `readLines` gives them. */
-const { LINES, read } = vi.hoisted(() => {
+/* A post's lines, as shares of the box's height, as Whoops!'s `readLines` gives them; and what a painter's call costs, for the ladder. */
+const { LINES, read, cost } = vi.hoisted(() => {
   const LINES = [
     { top: 0.1, bottom: 0.2, text: 'First line of the post.' },
     { top: 0.4, bottom: 0.5, text: 'Second line.' },
     { top: 0.7, bottom: 0.8, text: 'Third line.' },
   ];
-  return { LINES, read: { lines: LINES as { top: number; bottom: number; text: string }[] } };
+  return { LINES, read: { lines: LINES as { top: number; bottom: number; text: string }[] }, cost: { ms: 0, perf: 0 } };
 });
 vi.mock('../../cards/whoops/lines.ts', () => ({ readLines: () => read.lines }));
+/* The layer and the fog, each passed through and watched. */
+vi.mock('../../../../engine/ui/cards/tiles.ts', async (orig) => {
+  const real = await orig<typeof import('../../../../engine/ui/cards/tiles.ts')>();
+  return { ...real, makeTileLayer: vi.fn(real.makeTileLayer) };
+});
+vi.mock('./fog.ts', async (orig) => {
+  const real = await orig<typeof import('./fog.ts')>();
+  return {
+    ...real,
+    stepField: vi.fn(real.stepField),
+    paintFog: vi.fn((...a: Parameters<typeof real.paintFog>) => { cost.perf += cost.ms; return real.paintFog(...a); }),
+  };
+});
 
 const DAY = 86_400_000;
 const NOW = Date.parse('2026-11-15T12:00:00Z');
@@ -47,11 +67,12 @@ const play = (over: Partial<CardPlay> = {}): CardPlay => ({ id: 'h1', card: 'hot
 /* ---------------------------------------------------------------------------------------------- the stubs ---- */
 
 interface Fill { readonly style: unknown; readonly op: string; readonly rect: readonly number[] }
-interface Gradient { readonly x1: number; readonly y1: number; readonly r1: number; readonly stops: [number, string][] }
-let fills: Fill[] = [];
-/** The images drawn onto the canvas (the puffs' sprites) since it was last cleared, and every radial gradient made. */
-let draws: unknown[][] = [];
-let gradients = 0;
+/** Bytes put on a canvas: its image's width and height and a copy of its RGBA. */
+interface Put { readonly w: number; readonly h: number; readonly data: Uint8ClampedArray }
+/** A scaled draw from a canvas: the bytes the source last held, the source rectangle, and where it landed in the box's px. */
+interface Draw { readonly put: Put | null; readonly sw: number; readonly sh: number; readonly dx: number; readonly dy: number; readonly dw: number; readonly dh: number }
+/** Each canvas's recorder: since it was last cleared, its flat fills, its draws and its arcs; the rows the layer clipped it to; the bytes last put on it; how many times it was cleared. */
+interface Rec { fills: Fill[]; draws: Draw[]; arcs: { x: number; y: number; r: number }[]; clip: readonly number[] | null; put: Put | null; clears: number }
 let observed: Element[] = [];
 let contexts = 0;
 let frames = new Map<number, FrameRequestCallback>();
@@ -65,30 +86,28 @@ let AREA = BOX;
 /** The opening post's body around an ORIGIN box's area (`nested` in `setup`): the box is 900 by 700 there, the area is `AREA`. Null where the area is the post's own body. */
 let OUTER: typeof BOX | null = null;
 
-/** The first tile's canvas is the one `fills` and `draws` follow; every smoke canvas has a recorder of its own. */
-interface Rec { fills: Fill[]; draws: unknown[][] }
 const recs = new WeakMap<HTMLCanvasElement, Rec>();
 const ctxs = new WeakMap<HTMLCanvasElement, unknown>();
-const first = (c: HTMLCanvasElement) => c === document.querySelector('canvas.dw-hotbox-smoke');
 
 function stubCanvas() {
   HTMLCanvasElement.prototype.getContext = (function (this: HTMLCanvasElement) {
     contexts += 1;
     const known = ctxs.get(this);
     if (known) return known;
-    const rec: Rec = { fills: [], draws: [] };
+    const rec: Rec = { fills: [], draws: [], arcs: [], clip: null, put: null, clears: 0 };
     recs.set(this, rec);
     const ctx = {
-      fillStyle: '' as unknown, globalAlpha: 1, globalCompositeOperation: 'source-over',
-      setTransform: () => {}, save: () => {}, restore: () => {}, beginPath: () => {}, rect: () => {}, clip: () => {},
-      clearRect: () => { rec.fills = []; rec.draws = []; if (first(this)) { fills = rec.fills; draws = rec.draws; } },
-      drawImage: (...args: unknown[]) => { rec.draws.push(args); },
-      fillRect: (...rect: number[]) => { rec.fills.push({ style: ctx.fillStyle, op: ctx.globalCompositeOperation, rect }); },
-      createRadialGradient: (_x0: number, _y0: number, _r0: number, x1: number, y1: number, r1: number): Gradient => {
-        gradients += 1;
-        const g: Gradient = { x1, y1, r1, stops: [] };
-        return Object.assign(g, { addColorStop: (at: number, color: string) => { g.stops.push([at, color]); } });
+      fillStyle: '' as unknown, globalAlpha: 1, globalCompositeOperation: 'source-over', imageSmoothingEnabled: false, imageSmoothingQuality: 'low',
+      setTransform: () => {}, save: () => {}, restore: () => {}, beginPath: () => {}, clip: () => {}, fill: () => {},
+      rect: (...r: number[]) => { rec.clip = r; },
+      arc: (x: number, y: number, r: number) => { rec.arcs.push({ x, y, r }); },
+      clearRect: () => { rec.fills = []; rec.draws = []; rec.arcs = []; rec.clears += 1; },
+      drawImage: (src: HTMLCanvasElement, ...a: number[]) => {
+        if (a.length === 8) rec.draws.push({ put: recs.get(src)?.put ?? null, sw: a[2]!, sh: a[3]!, dx: a[4]!, dy: a[5]!, dw: a[6]!, dh: a[7]! });
       },
+      fillRect: (...rect: number[]) => { rec.fills.push({ style: ctx.fillStyle, op: ctx.globalCompositeOperation, rect }); },
+      createImageData: (w: number, h: number) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
+      putImageData: (img: { width: number; height: number; data: Uint8ClampedArray }) => { rec.put = { w: img.width, h: img.height, data: img.data.slice() }; },
     };
     ctxs.set(this, ctx);
     return ctx;
@@ -135,10 +154,16 @@ const runFrame = (t = 0) => { const due = [...frames.values()]; frames.clear(); 
 function pass(ms: number, step = 100) {
   for (let left = ms; left > 0; left -= step) act(() => { vi.advanceTimersByTime(Math.min(step, left)); runFrame(); });
 }
+/** Time for the fog's field to reach the model, in frames 16 ms apart. */
+const settle = (ms = 400) => pass(ms, 16);
 
 /* ---------------------------------------------------------------------------------------------- the props ---- */
 
-function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, nested = false) {
+/**
+ * `bare` is a post with no content area (the ORIGIN box), `nested` the area of an ORIGIN box inside the opening post's body, and `inPost` the thread's
+ * post around the area (`article.kb-act`, holding the Hot Box mark as engine/ui/cards/Marks.tsx writes it) with a button outside the post beside it.
+ */
+function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, nested = false, inPost = false) {
   const show = vi.fn<(view: CardView | null) => void>();
   const met = vi.fn();
   const save = vi.fn(async () => ({ ok: false as const, error: 'no' }));
@@ -154,7 +179,10 @@ function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, ne
   const inArea = bare ? effect : nested
     ? <div className="kb-act-main" data-kb-content-area><div className="kb-origin" data-kb-over-ink=""><div className="kb-origin-area" data-kb-content-area><p data-kb-over-ink="" className="lifted">History</p>{effect}</div></div></div>
     : <div className="kb-act-main" data-kb-content-area>{effect}</div>;
-  const out = renderIn(world, strict ? <StrictMode>{inArea}</StrictMode> : inArea);
+  const page = inPost
+    ? <div><article className="kb-act"><header><button type="button" className="kb-mark kb-meta-tile" data-kb-card="hot-box">Hot Box</button></header>{inArea}</article><button type="button" className="outside">Elsewhere</button></div>
+    : inArea;
+  const out = renderIn(world, strict ? <StrictMode>{page}</StrictMode> : page);
   return { show, met, save, release, props, ...out };
 }
 type Setup = ReturnType<typeof setup>;
@@ -162,15 +190,13 @@ type Setup = ReturnType<typeof setup>;
 const host = (s: Setup) => s.container.querySelector<HTMLElement>('.dw-hotbox')!;
 const area = (s: Setup) => s.container.querySelector<HTMLElement>('.kb-act-main')!;
 const words = (s: Setup) => s.container.querySelector<HTMLElement>('.dw-hotbox-words')!;
+const way = (s: Setup) => s.container.querySelector<HTMLElement>('p.dw-hotbox-way');
 /** The first tile's canvas, and every tile's. */
 const canvas = (s: Setup) => s.container.querySelector<HTMLCanvasElement>('canvas.dw-hotbox-smoke');
 const tiles = (s: Setup) => [...s.container.querySelectorAll<HTMLCanvasElement>('canvas.dw-hotbox-smoke')];
-const fillsOf = (c: HTMLCanvasElement | undefined): Fill[] => (c ? recs.get(c)?.fills ?? [] : []);
-const gradientsOf = (c: HTMLCanvasElement | undefined) => fillsOf(c).filter((f) => f.op === 'destination-out' && typeof f.style === 'object');
-const fogOf = (c: HTMLCanvasElement | undefined) => fillsOf(c).find((f) => f.op === 'source-over' && typeof f.style === 'string');
-/** Frames asked for so far: the layer's observer asks for one at the start, so "none" is none beyond what the mount asked. */
+const recOf = (c: HTMLCanvasElement | null | undefined): Rec | undefined => (c ? recs.get(c) : undefined);
+/** Frames asked for so far: "none" is none beyond what the mount asked. */
 const asked = () => vi.mocked(window.requestAnimationFrame).mock.calls.length;
-const button = (s: Setup) => s.container.querySelector<HTMLButtonElement>('button.dw-hotbox-wave');
 const readout = (s: Setup) => s.container.querySelector('[aria-live="polite"]')!.textContent;
 const sign = (s: Setup) => s.container.querySelector('.dw-hotbox-sign');
 const rings = (s: Setup) => [...s.container.querySelectorAll<HTMLElement>('.dw-hotbox-ring')];
@@ -178,6 +204,9 @@ const inert = (s: Setup) => words(s).hasAttribute('inert');
 const views = (s: Setup): CardView[] => s.show.mock.calls.flatMap((c) => (c[0] ? [c[0]] : []));
 const last = (s: Setup): CardView => views(s).at(-1)!;
 const wave = (s: Setup): Extract<KitControl, { kind: 'hold' }> => last(s).controls[0] as Extract<KitControl, { kind: 'hold' }>;
+/** The Lens's hold control, as the Lens drives it. */
+const press = (s: Setup) => act(() => { wave(s).start(); });
+const release = (s: Setup) => act(() => { wave(s).stop(); });
 
 /** A pointer event as a browser gives one: returns whether a listener prevented its default. */
 function pointer(el: Element, type: string, x: number, y: number, pointerType = 'mouse'): boolean {
@@ -189,15 +218,50 @@ const move = (s: Setup, x = 300, y = 250) => pointer(host(s), 'pointermove', x, 
 /* The pointer is read on the content area, and a leave does not bubble, so it is sent to the area. */
 const leave = (s: Setup) => pointer(area(s), 'pointerleave', 0, 0);
 const touch = (s: Setup, x = 200, y = 300) => pointer(host(s), 'pointerdown', x, y, 'touch');
-const press = (s: Setup) => pointer(button(s)!, 'pointerdown', 10, 10);
-const release = (s: Setup) => pointer(button(s)!, 'pointerup', 10, 10);
 
-/* What the canvas was last drawn as. */
-const rgba = (style: unknown) => { const m = /rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/.exec(String(style)); return m ? { rgb: [Number(m[1]), Number(m[2]), Number(m[3])], a: Number(m[4]) } : null; };
-const fog = () => { const f = fills.find((x) => x.op === 'source-over' && typeof x.style === 'string'); return f ? rgba(f.style) : null; };
-const circles = () => fills.filter((f) => f.op === 'destination-out' && typeof f.style === 'object').map((f) => f.style as Gradient);
-const rectCuts = () => fills.filter((f) => f.op === 'destination-out' && typeof f.style === 'string');
-const circleAlpha = (g: Gradient) => rgba(g.stops[0]![1])!.a;
+/* ---- what a tile was last drawn as, in the box's px ---- */
+
+/** The RGBA of the fog's picture at (x, y) of the box, as the last draw on `rec` placed it (a cell is one pixel of the image), or null where it drew none. */
+function pixelIn(rec: Rec | undefined, x: number, y: number): [number, number, number, number] | null {
+  const d = rec?.draws.at(-1);
+  if (!d?.put) return null;
+  const col = Math.floor(((x - d.dx) / d.dw) * d.sw), row = Math.floor(((y - d.dy) / d.dh) * d.sh);
+  if (col < 0 || row < 0 || col >= d.sw || row >= d.sh) return null;
+  const i = (row * d.put.w + col) * 4;
+  return [d.put.data[i]!, d.put.data[i + 1]!, d.put.data[i + 2]!, d.put.data[i + 3]!];
+}
+/** The tile whose rows hold `y` (the layer clips each to its own rows). */
+const tileAt = (s: Setup, y: number) => tiles(s).map((c) => recs.get(c)).find((r) => r?.clip && y >= r.clip[1]! && y < r.clip[1]! + r.clip[3]!);
+const colorAt = (s: Setup, x: number, y: number) => pixelIn(tileAt(s, y), x, y);
+/** The fog's alpha (0 to 255) at a point of the box, or null where no fog is drawn. */
+const alphaAt = (s: Setup, x: number, y: number) => colorAt(s, x, y)?.[3] ?? null;
+/** The alpha of whole fog now: the model's `fogAlpha`, as a byte. */
+const whole = (at = Date.now()) => Math.round(fogAlpha(strength(at, NOW, ENDS)) * 255);
+/** Whether a tile drew any fog since it was last cleared. */
+const drawn = (rec: Rec | undefined) => (rec?.draws.length ?? 0) > 0 || (rec?.fills.length ?? 0) > 0;
+const picture = (s: Setup) => drawn(recOf(canvas(s)));
+/** Every alpha of a tile's last picture, as a set. */
+function alphas(rec: Rec | undefined): Set<number> {
+  const out = new Set<number>();
+  const put = rec?.draws.at(-1)?.put;
+  if (put) for (let i = 3; i < put.data.length; i += 4) out.add(put.data[i]!);
+  return out;
+}
+/** The mean alpha across the box's width at row `y`. */
+function rowMean(s: Setup, y: number, w = AREA.width): number {
+  let sum = 0, n = 0;
+  for (let x = 2; x < w; x += 5) { sum += alphaAt(s, x, y) ?? 0; n++; }
+  return sum / n;
+}
+/** The mean color of a tile's last picture, over the pixels with any fog. */
+function meanColor(rec: Rec | undefined): [number, number, number] {
+  const put = rec?.draws.at(-1)?.put;
+  let r = 0, g = 0, b = 0, n = 0;
+  if (put) for (let i = 0; i < put.data.length; i += 4) if (put.data[i + 3]! > 0) { r += put.data[i]!; g += put.data[i + 1]!; b += put.data[i + 2]!; n++; }
+  return n === 0 ? [Number.NaN, Number.NaN, Number.NaN] : [r / n, g / n, b / n];
+}
+const near = (a: readonly number[], b: readonly number[], by: number) => a.every((v, i) => Math.abs(v - b[i]!) <= by);
+const rgbVar = (s: Setup) => host(s).style.getPropertyValue('--dw-hotbox-rgb');
 
 /* What the words' mask is, layer by layer. */
 interface Layer { readonly kind: 'flat' | 'circle' | 'rect'; readonly alpha: number; readonly r?: number; readonly x?: number; readonly y?: number; readonly hard?: boolean; readonly top?: number; readonly height?: number }
@@ -216,12 +280,20 @@ function layers(s: Setup): Layer[] {
   });
 }
 const circleLayers = (s: Setup) => layers(s).filter((l) => l.kind === 'circle');
+/** Where the mask's circles are, each place once (a clearing and the trail point it stands on are one hole). */
+const holes = (s: Setup) => [...new Set(circleLayers(s).map((l) => `${l.x},${l.y}`))];
 const rectLayers = (s: Setup) => layers(s).filter((l) => l.kind === 'rect');
 const flat = (s: Setup) => layers(s).find((l) => l.kind === 'flat');
 
 beforeEach(() => {
-  fills = []; draws = []; gradients = 0; observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX; OUTER = null;
+  observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX; OUTER = null;
   watch = undefined; bandsWatch = undefined; bandEls = []; margins = []; watched = [];
+  cost.ms = 0; cost.perf = 0;
+  vi.mocked(makeTileLayer).mockClear();
+  vi.mocked(stepField).mockClear();
+  vi.mocked(paintFog).mockClear();
+  forgetScratch();
+  resetFogLadder();
   vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   stubCanvas();
   stubWindow();
@@ -229,6 +301,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   document.documentElement.removeAttribute('data-kb-motion');
   delete (window as { matchMedia?: unknown }).matchMedia;
   delete (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver;
@@ -241,33 +314,38 @@ afterEach(() => {
 /* ================================================================================================ the tests ==== */
 
 describe('which play', () => {
-  test('a live play draws the canvas, the button and inert words', () => {
+  test('a live play draws the tiles and inert words', () => {
     const s = setup();
     expect(canvas(s)).not.toBeNull();
     expect(canvas(s)).toHaveAttribute('aria-hidden', 'true');
     expect(canvas(s)).toHaveAttribute('data-kb-effect-ink');
-    expect(button(s)).toHaveTextContent('Wave the smoke');
-    expect(button(s)).toHaveAttribute('type', 'button');
-    expect(button(s)).toHaveAttribute('data-kb-over-ink');
     expect(inert(s)).toBe(true);
     expect(words(s)).toHaveTextContent('The words of the post.');
-    expect(fog()).not.toBeNull();
+    expect(picture(s)).toBe(true);
   });
 
-  test('the button has a description, and the hidden live region is polite', () => {
+  test('no button is rendered inside the effect at all: the control is the Lens\'s', () => {
     const s = setup();
-    const described = document.getElementById(button(s)!.getAttribute('aria-describedby')!);
+    expect(host(s).querySelector('button')).toBeNull();
+    press(s);
+    pass(SWEEP_MS);
+    expect(host(s).querySelector('button')).toBeNull();
+    expect(last(s).controls).toHaveLength(1);
+  });
+
+  test('the control\'s description is the plan\'s, and the hidden live region is polite', () => {
+    const s = setup();
     expect(WAVE_DESCRIBE).toContain(`for ${SMOKE.waved / 1000} seconds.`);
-    expect(described).toHaveTextContent('Hold Space or Enter on this button to wave the smoke off line by line, at the pace of a hand. Let go and it rolls back in. Hold to the end and the post stays clear for 20 seconds.');
+    expect(wave(s).describe).toBe('Hold Space or Enter on this button to wave the smoke off line by line, at the pace of a hand. Let go and it rolls back in. Hold to the end and the post stays clear for 20 seconds.');
     expect(s.container.querySelector('[aria-live="polite"]')).toHaveClass('kb-visually-hidden');
   });
 
   test('an ended play draws the words alone and shows nothing', () => {
     const s = setup({ plays: [play({ ends: iso(NOW - 1000) })] });
     expect(canvas(s)).toBeNull();
-    expect(button(s)).toBeNull();
     expect(s.container.querySelector('[inert]')).toBeNull();
     expect(s.container.querySelector('.dw-hotbox')).toBeNull();
+    expect(way(s)).toBeNull();
     expect(s.container).toHaveTextContent('The words of the post.');
     expect(views(s)).toEqual([]);
     expect(s.show).toHaveBeenLastCalledWith(null);
@@ -281,14 +359,17 @@ describe('which play', () => {
     expect(canvas(s)).not.toBeNull();
     pass(2_000, 1000);
     expect(canvas(s)).toBeNull();
-    expect(button(s)).toBeNull();
+    expect(way(s)).toBeNull();
     expect(s.container.querySelector('[inert]')).toBeNull();
     expect(s.show).toHaveBeenLastCalledWith(null);
   });
 
   test('a second Hot Box cast after the first ended draws the new play and not the old', () => {
     const s = setup({ plays: [play({ id: 'old', ends: iso(NOW - 1000), config: { color: 'red' } }), play({ id: 'new', config: { color: 'blue' } })] });
-    expect(fog()!.rgb).toEqual([0, 0, 255]);
+    expect(rgbVar(s)).toBe('0 0 255');
+    const [r, g, b] = meanColor(recOf(canvas(s)));
+    expect(b).toBeGreaterThan(r + 60);
+    expect(b).toBeGreaterThan(g + 60);
   });
 });
 
@@ -298,16 +379,26 @@ describe('the color of the smoke', () => {
     ['#rgb', '#fa0', [255, 170, 0]],
     ['a named color', 'teal', [0, 128, 128]],
     ['a named color in capitals', ' Teal ', [0, 128, 128]],
-  ])('fills the canvas with %s (%s) as that color', (_what, color, rgb) => {
+  ])('paints %s (%s) as that color: shaded, its mean near it', (_what, color, rgb) => {
     const s = setup({ plays: [play({ config: { color } })] });
-    expect(fog()!.rgb).toEqual(rgb);
+    expect(rgbVar(s)).toBe(rgb.join(' '));
+    expect(near(meanColor(recOf(canvas(s))), rgb, 40)).toBe(true);
     s.unmount();
   });
 
   test.each([['nope'], [''], [42], [undefined]])('only a color that cannot be read (%j) draws light gray', (color) => {
     const s = setup({ plays: [play({ config: { color } })] });
-    expect(fog()!.rgb).toEqual([211, 211, 211]);
+    expect(rgbVar(s)).toBe('211 211 211');
+    expect(near(meanColor(recOf(canvas(s))), [211, 211, 211], 40)).toBe(true);
     s.unmount();
+  });
+
+  test('the fog is shaded: its picture takes many values of a channel, not one flat fill', () => {
+    const s = setup();
+    const put = recOf(canvas(s))!.draws.at(-1)!.put!;
+    const greens = new Set<number>();
+    for (let i = 0; i < put.data.length; i += 4) greens.add(put.data[i + 1]!);
+    expect(greens.size).toBeGreaterThan(20);
   });
 });
 
@@ -316,34 +407,48 @@ describe('the fog', () => {
     ['at landing', 0],
     ['half way', 1.5 * DAY],
     ['near the end', 3 * DAY - 60_000],
-  ])('its alpha %s is fogAlpha\'s', (_when, after) => {
+  ])('every pixel\'s alpha %s is fogAlpha\'s', (_when, after) => {
     vi.setSystemTime(NOW + after);
     const s = setup();
-    expect(fog()!.a).toBeCloseTo(fogAlpha(strength(NOW + after, NOW, ENDS)), 3);
+    expect(alphas(recOf(canvas(s)))).toEqual(new Set([whole(NOW + after)]));
     s.unmount();
   });
 
   test('is full as the play lands, and thins as the days pass', () => {
     const s = setup();
-    expect(fog()!.a).toBeCloseTo(SMOKE.full, 3);
-    act(() => { vi.setSystemTime(NOW + 2.5 * DAY); runFrame(); });
-    expect(fog()!.a).toBeCloseTo(fogAlpha(strength(NOW + 2.5 * DAY, NOW, ENDS)), 3);
-    expect(fog()!.a).toBeLessThan(SMOKE.full);
+    expect(alphaAt(s, 400, 300)).toBe(Math.round(SMOKE.full * 255));
+    act(() => { vi.setSystemTime(NOW + 2.5 * DAY); });
+    pass(100, 50);
+    expect(alphaAt(s, 400, 300)).toBe(whole());
+    expect(alphaAt(s, 400, 300)).toBeLessThan(Math.round(SMOKE.full * 255));
   });
 
-  test('draws puffs over the fog, and each tile is sized at the screen\'s density, never over twice it', () => {
-    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 3 });
+  test('covers the whole box: each tile\'s picture is drawn over all of its rows, border to border', () => {
     const s = setup();
-    expect(draws.length).toBeGreaterThan(20);
-    expect(canvas(s)!.width).toBe(BOX.width * 2);
-    expect(canvas(s)!.height).toBe(512 * 2);
-    delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
-    s.unmount();
+    for (const c of tiles(s)) {
+      const rec = recOf(c)!, d = rec.draws.at(-1)!, [, top, w, h] = rec.clip!;
+      expect(d.dx).toBeLessThanOrEqual(0);
+      expect(d.dx + d.dw).toBeGreaterThanOrEqual(w!);
+      expect(d.dy).toBeLessThanOrEqual(top!);
+      expect(d.dy + d.dh).toBeGreaterThanOrEqual(top! + h!);
+    }
+  });
+
+  test('each tile is drawn at a density of 1 whatever the screen\'s: the fog is a cell to a pixel, scaled up smooth', () => {
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 3 });
+    try {
+      const s = setup();
+      expect(canvas(s)!.width).toBe(BOX.width);
+      expect(canvas(s)!.height).toBe(512);
+      expect(vi.mocked(makeTileLayer).mock.calls[0]![1].density).toBe(1);
+      expect(ctxs.get(canvas(s)!)).toMatchObject({ imageSmoothingEnabled: true });
+    } finally {
+      delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
+    }
   });
 
   test('is drawn again, resized, when the content area\'s box changes', () => {
     const s = setup();
-    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
     AREA = { ...BOX, width: 400, height: 300 };
     act(() => { for (const cb of sizeWatchers) cb(); });
     act(() => { runFrame(); });
@@ -351,7 +456,7 @@ describe('the fog', () => {
     expect(canvas(s)!.height).toBe(300);
     expect(canvas(s)!.style.width).toBe('400px');
     expect(canvas(s)!.style.height).toBe('300px');
-    delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
+    expect(alphaAt(s, 390, 290)).toBe(whole());
   });
 
   test('watches the host and the content area as well as the words, so a move of the words without a resize is measured', () => {
@@ -369,128 +474,159 @@ describe('the fog', () => {
     expect(canvas(s)!.style.top).toBe('150px');
   });
 
-  test('later frames make no gradient but for each open clearing: the puffs are drawn from sprites', () => {
+  test('the painter is given to the tiled layer once, asks for density 1, and with no pointer the field is never stepped into work, while the rest repaints at most 21 times a second', () => {
     const s = setup();
-    act(() => { runFrame(); });
-    const before = gradients;
-    act(() => { runFrame(); runFrame(); });
-    expect(gradients).toBe(before);
-    expect(draws.length).toBeGreaterThan(20);
-    move(s);
-    act(() => { runFrame(); });
-    const open = gradients;
-    act(() => { runFrame(); });
-    expect(gradients - open).toBe(1);
+    expect(makeTileLayer).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(makeTileLayer).mock.calls[0]![1]).toMatchObject({ density: 1, className: 'dw-hotbox-smoke', standIn: 'dw-hotbox-far' });
+    pass(3000, 10);
+    expect(makeTileLayer).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(stepField).mock.results.every((r) => r.value === 0)).toBe(true);
+    const rec = recOf(canvas(s))!;
+    const before = rec.clears;
+    pass(1000, 10);
+    expect(rec.clears - before).toBeGreaterThan(10);
+    expect(rec.clears - before).toBeLessThanOrEqual(21);
+    expect(vi.mocked(stepField).mock.results.every((r) => r.value === 0)).toBe(true);
+  });
+
+  test('fog at rest drifts: its picture moves from one rest frame to the next, its alpha never does', () => {
+    const s = setup();
+    pass(100, 50);
+    const one = recOf(canvas(s))!.draws.at(-1)!.put!.data.slice();
+    pass(2000, 50);
+    const two = recOf(canvas(s))!.draws.at(-1)!.put!.data;
+    expect(Buffer.from(two).equals(Buffer.from(one))).toBe(false);
+    expect(alphas(recOf(canvas(s)))).toEqual(new Set([whole()]));
   });
 });
 
 describe('the pointer', () => {
-  test('a mouse move opens a clearing at the pointer, and it closes roll after the pointer leaves', () => {
+  test('a mouse move clears the fog at the pointer, not far off, and it closes after the pointer leaves', () => {
     const s = setup();
-    expect(circles()).toHaveLength(0);
     move(s, 300, 250);
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(1);
-    expect(circles()[0]).toMatchObject({ x1: 300, y1: 150, r1: holeRadius(BOX.width) });
-    expect(circleAlpha(circles()[0]!)).toBe(1);
-    /* The clearing goes with the pointer: one clearing, moved. */
+    settle();
+    expect(alphaAt(s, 300, 150)).toBe(0);
+    expect(alphaAt(s, 700, 500)).toBe(whole());
+    /* The clearing goes with the pointer. */
     move(s, 340, 270);
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(1);
-    expect(circles()[0]).toMatchObject({ x1: 340, y1: 170 });
-    pass(2000);
-    expect(circles()).toHaveLength(1);
+    settle();
+    expect(alphaAt(s, 340, 170)).toBe(0);
+    pass(2000, 50);
+    expect(alphaAt(s, 340, 170)).toBe(0);
     leave(s);
-    pass(SMOKE.roll / 2);
-    expect(circles()).toHaveLength(1);
-    expect(circleAlpha(circles()[0]!)).toBeCloseTo(0.5, 1);
-    pass(SMOKE.roll / 2 + 100);
-    expect(circles()).toHaveLength(0);
+    pass(SMOKE.roll / 2, 50);
+    expect(alphaAt(s, 340, 170)).toBeGreaterThan(0);
+    pass(SMOKE.roll / 2 + 3 * SMOKE.wake, 50);
+    expect(alphas(tileAt(s, 170))).toEqual(new Set([whole()]));
   });
 
-  test('the clearing is cut with the card\'s soft edge: open at the core, fog again at the rim', () => {
+  test('a still pointer\'s clearing has the card\'s soft edge: clear at the core, thinned toward the rim, whole fog beyond it', () => {
     const s = setup();
-    move(s);
-    act(() => { runFrame(); });
-    const stops = circles()[0]!.stops.map(([at, c]) => [at, rgba(c)!.a] as const);
-    expect(stops[0]).toEqual([0, 1]);
-    expect(stops.at(-1)).toEqual([1, 0]);
-    expect(stops.some(([at, a]) => at > 0.5 && at < 1 && a === 1)).toBe(true);
+    const r = holeRadius(BOX.width);
+    move(s, 300, 250);
+    settle();
+    expect(alphaAt(s, 300, 150)).toBe(0);
+    const rim = alphaAt(s, 300 + 0.9 * r, 150)!;
+    expect(rim).toBeGreaterThan(0);
+    expect(rim).toBeLessThan(whole());
+    expect(alphaAt(s, 300 + 1.2 * r, 150)).toBe(whole());
   });
 
-  test('a touch opens a clearing where it lands, holds it touchHold, then closes it over roll; a second touch replaces the first', () => {
+  test('a pointer moved across the words leaves a trail: clear where it left 300 ms ago, and whole again after the wake', () => {
+    const s = setup();
+    for (let x = 100; x <= 700; x += 40) { move(s, x, 250); pass(16, 16); }
+    /* x = 300 was passed at the sixth move; 300 ms from then. The trail holds that point 0.8 open, so the model lets the fog there be at most 0.2, which
+       the fog's wispy edge draws as nothing: the field's own wake, without the trail, is still thicker than that. */
+    pass(300 - 10 * 16, 16);
+    expect(alphaAt(s, 300, 150)).toBe(0);
+    pass(3 * SMOKE.wake, 16);
+    expect(alphaAt(s, 300, 150)).toBe(whole());
+  });
+
+  test('a tile with something happening under it is painted again in the next frame, whichever tile of the post it is', () => {
+    AREA = { ...BOX, height: 1200 };
+    const s = setup();
+    const second = recOf(tiles(s)[1])!;
+    move(s, 300, 100 + 700);
+    act(() => { vi.advanceTimersByTime(50); });
+    for (let i = 0; i < 5; i++) {
+      const before = second.clears;
+      act(() => { runFrame(); });
+      expect(second.clears, `frame ${i}`).toBe(before + 1);
+    }
+  });
+
+  test('a touch clears where it lands, holds touchHold, then closes over roll; a second touch replaces the first', () => {
     const s = setup();
     touch(s, 200, 300);
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(1);
-    expect(circles()[0]).toMatchObject({ x1: 200, y1: 200 });
-    pass(SMOKE.touchHold - 100);
-    expect(circleAlpha(circles()[0]!)).toBe(1);
+    settle();
+    expect(alphaAt(s, 200, 200)).toBe(0);
+    pass(SMOKE.touchHold - 500, 50);
+    expect(alphaAt(s, 200, 200)).toBe(0);
     touch(s, 500, 400);
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(1);
-    expect(circles()[0]).toMatchObject({ x1: 500, y1: 300 });
-    pass(SMOKE.touchHold);
-    expect(circleAlpha(circles()[0]!)).toBe(1);
-    pass(SMOKE.roll / 2 + 100);
-    expect(circleAlpha(circles()[0]!)).toBeLessThan(1);
-    pass(SMOKE.roll);
-    expect(circles()).toHaveLength(0);
+    settle();
+    expect(alphaAt(s, 500, 300)).toBe(0);
+    pass(SMOKE.touchHold - 400, 50);
+    expect(alphaAt(s, 500, 300)).toBe(0);
+    /* The first touch's place was let go when the second landed: its fog is back, from its rim in, within the wake. */
+    expect(alphaAt(s, 200, 200)).toBe(whole());
+    pass(SMOKE.roll / 2 + 100, 50);
+    expect(alphaAt(s, 500, 300)).toBeGreaterThan(0);
+    pass(SMOKE.roll + 2 * SMOKE.wake, 50);
+    expect(alphas(recOf(canvas(s)))).toEqual(new Set([whole()]));
   });
 
-  test('a touch that moves opens nothing more: the page\'s scroll is never taken', () => {
+  test('a moving finger moves its clearing and leaves a trail, and nothing is prevented', () => {
     const s = setup();
-    touch(s, 200, 300);
-    pointer(host(s), 'pointermove', 260, 420, 'touch');
-    act(() => { runFrame(); });
-    expect(circles()[0]).toMatchObject({ x1: 200, y1: 200 });
+    const prevented = [touch(s, 200, 300), pointer(host(s), 'pointermove', 260, 420, 'touch')];
+    pass(32, 16);
+    prevented.push(pointer(host(s), 'pointermove', 420, 420, 'touch'));
+    settle(300);
+    expect(prevented).toEqual([false, false, false]);
+    /* The clearing is where the finger is now; where it was is the trail, 300 ms on. */
+    expect(alphaAt(s, 420, 320)).toBe(0);
+    expect(alphaAt(s, 260, 320)).toBe(0);
+    pass(3 * SMOKE.wake, 50);
+    expect(alphaAt(s, 260, 320)).toBe(whole());
+    expect(alphaAt(s, 420, 320)).toBe(0);
   });
 
   test('a pen is read as a mouse: it moves a clearing, opens one where it lands, and closes it on leave', () => {
     const s = setup();
     pointer(host(s), 'pointermove', 300, 250, 'pen');
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(1);
-    expect(circles()[0]).toMatchObject({ x1: 300, y1: 150 });
+    settle();
+    expect(alphaAt(s, 300, 150)).toBe(0);
     pointer(area(s), 'pointerleave', 0, 0, 'pen');
-    pass(SMOKE.roll + 100);
-    expect(circles()).toHaveLength(0);
+    pass(SMOKE.roll + 3 * SMOKE.wake, 50);
+    expect(alphaAt(s, 300, 150)).toBe(whole());
     pointer(host(s), 'pointerdown', 120, 220, 'pen');
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(1);
-    expect(circles()[0]).toMatchObject({ x1: 120, y1: 120 });
+    settle();
+    expect(alphaAt(s, 120, 120)).toBe(0);
     pointer(area(s), 'pointerleave', 0, 0, 'pen');
-    pass(SMOKE.roll + 100);
-    expect(circles()).toHaveLength(0);
+    pass(SMOKE.roll + 3 * SMOKE.wake, 50);
+    expect(alphaAt(s, 120, 120)).toBe(whole());
   });
 
-  test('pointing at the wave button closes the mouse clearing: the first line is not read for free', () => {
+  test('pointing at what the engine lifts over the ink closes the mouse clearing: what is beside it is not read for free', () => {
     const s = setup();
+    const lifted = document.createElement('div');
+    lifted.setAttribute('data-kb-over-ink', '');
+    area(s).appendChild(lifted);
     move(s);
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(1);
-    pointer(button(s)!, 'pointermove', 10, 10);
-    pass(SMOKE.roll + 100);
-    expect(circles()).toHaveLength(0);
-    move(s);
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(1);
-    pointer(button(s)!, 'pointerdown', 10, 10);
-    release(s);
-    pass(SMOKE.roll + 100);
-    expect(circles()).toHaveLength(0);
+    settle();
+    expect(alphaAt(s, 300, 150)).toBe(0);
+    pointer(lifted, 'pointermove', 300, 250);
+    pass(SMOKE.roll + 3 * SMOKE.wake, 50);
+    expect(alphaAt(s, 300, 150)).toBe(whole());
   });
 
   test('no handler calls preventDefault', () => {
     const s = setup();
-    const prevented = [
-      move(s), touch(s), leave(s), pointer(host(s), 'pointerdown', 5, 5), pointer(host(s), 'pointercancel', 5, 5, 'touch'),
-      press(s), release(s), pointer(button(s)!, 'pointerleave', 0, 0), pointer(button(s)!, 'pointercancel', 0, 0),
-    ];
+    const prevented = [move(s), touch(s), leave(s), pointer(host(s), 'pointerdown', 5, 5), pointer(host(s), 'pointercancel', 5, 5, 'touch'), pointer(host(s), 'pointermove', 50, 50, 'touch')];
     for (const key of [' ', 'Enter']) {
       for (const type of ['keydown', 'keyup']) {
         const e = new KeyboardEvent(type, { key, bubbles: true, cancelable: true });
-        act(() => { button(s)!.dispatchEvent(e); });
+        act(() => { words(s).dispatchEvent(e); });
         prevented.push(e.defaultPrevented);
       }
     }
@@ -499,7 +635,7 @@ describe('the pointer', () => {
 });
 
 describe('the held sweep', () => {
-  test('holding the button with the pointer starts the sweep: the Lens says it is waving, and lines reach the live region in order', () => {
+  test('holding the Lens control starts the sweep: the Lens says it is waving, and lines reach the live region in order', () => {
     const s = setup();
     expect(readout(s)).toBe('');
     press(s);
@@ -517,53 +653,47 @@ describe('the held sweep', () => {
     expect(readout(s)).toBe('Third line.');
   });
 
-  test('holding Space or Enter starts it too, but not on auto-repeat, and key up stops it', () => {
-    const s = setup();
-    for (const key of [' ', 'Enter']) {
-      act(() => { button(s)!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })); });
-      expect(last(s).state).toBe('Waving it away');
-      pass(LINE_MS);
-      expect(readout(s)).toBe('First line of the post.');
-      /* Auto-repeat neither restarts the sweep nor stops it. */
-      act(() => { button(s)!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, repeat: true })); });
-      pass(LINE_MS);
-      expect(readout(s)).toBe('Second line.');
-      act(() => { button(s)!.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true })); });
-      expect(last(s).state).toBe('Smoke over the words');
-      pass(SMOKE.roll + 100);
-    }
-  });
-
-  test('a finished line stays clear while the hold lasts: one rectangle for each, and the clearing travels along the line', () => {
+  test('a start while a hold runs neither restarts the sweep nor stops it, and stop ends it', () => {
     const s = setup();
     press(s);
-    pass(LINE_MS / 2);
-    expect(circles()).toHaveLength(1);
-    expect(circles()[0]!.x1).toBeCloseTo(BOX.width / 2, 0);
-    expect(circles()[0]!.y1).toBeCloseTo(0.15 * BOX.height, 0);
-    expect(rectCuts()).toHaveLength(0);
-    pass(LINE_MS / 2);
-    expect(rectCuts()).toHaveLength(1);
-    expect(rectCuts()[0]!.rect).toEqual([0, 60, 800, 60]);
     pass(LINE_MS);
-    expect(rectCuts()).toHaveLength(2);
+    expect(readout(s)).toBe('First line of the post.');
+    press(s);
+    pass(LINE_MS);
+    expect(readout(s)).toBe('Second line.');
+    release(s);
+    expect(last(s).state).toBe('Smoke over the words');
+  });
+
+  test('a finished line stays clear while the hold lasts, across the box, and the clearing travels along the line', () => {
+    const s = setup();
+    press(s);
+    pass(LINE_MS / 2, 16);
+    expect(alphaAt(s, BOX.width / 2, 0.15 * BOX.height)).toBe(0);
+    expect(alphaAt(s, 400, 500)).toBe(whole());
+    pass(LINE_MS / 2, 16);
+    expect(alphaAt(s, 5, 90)).toBe(0);
+    expect(alphaAt(s, 795, 90)).toBe(0);
+    expect(rowMean(s, 90)).toBe(0);
+    pass(LINE_MS, 50);
+    expect(rowMean(s, 90)).toBe(0);
+    expect(rowMean(s, 270)).toBe(0);
+    expect(alphaAt(s, 400, 500)).toBe(whole());
   });
 
   test('letting go early restores the fog over roll and leaves the words inert', () => {
     const s = setup();
     press(s);
-    pass(LINE_MS + 500);
-    expect(rectCuts()).toHaveLength(1);
+    pass(LINE_MS + 500, 50);
+    expect(rowMean(s, 90)).toBe(0);
     release(s);
     expect(last(s).state).toBe('Smoke over the words');
-    pass(SMOKE.roll / 2);
-    expect(rectCuts()).toHaveLength(1);
-    expect(rgba(rectCuts()[0]!.style)!.a).toBeLessThan(1);
-    pass(SMOKE.roll / 2 + 100);
-    expect(rectCuts()).toHaveLength(0);
-    expect(circles()).toHaveLength(0);
+    pass(SMOKE.roll / 2, 50);
+    expect(rowMean(s, 90)).toBeGreaterThan(0);
+    expect(rowMean(s, 90)).toBeLessThan(whole());
+    pass(SMOKE.roll / 2 + 3 * SMOKE.wake, 50);
+    for (const c of tiles(s)) expect(alphas(recOf(c))).toEqual(new Set([whole()]));
     expect(inert(s)).toBe(true);
-    expect(fog()!.a).toBeCloseTo(fogAlpha(strength(Date.now(), NOW, ENDS)), 3);
     /* Nothing more is read out once the hold is over, and the post never becomes waved. */
     pass(SWEEP_MS);
     expect(readout(s)).toBe('First line of the post.');
@@ -578,18 +708,18 @@ describe('the held sweep', () => {
     pass(100);
     expect(inert(s)).toBe(false);
     expect(last(s)).toMatchObject({ state: 'Waved clear for you', yours: false });
-    expect(fills).toEqual([]);
+    expect(picture(s)).toBe(false);
     release(s);
     pass(SMOKE.waved - 200);
     expect(inert(s)).toBe(false);
-    expect(fills).toEqual([]);
+    expect(picture(s)).toBe(false);
     pass(200);
     expect(inert(s)).toBe(true);
     expect(last(s).state).toBe('Smoke over the words');
-    pass(SMOKE.roll / 2);
-    expect(fog()!.a).toBeLessThan(fogAlpha(strength(Date.now(), NOW, ENDS)));
-    pass(SMOKE.roll);
-    expect(fog()!.a).toBeCloseTo(fogAlpha(strength(Date.now(), NOW, ENDS)), 2);
+    pass(SMOKE.roll / 2, 50);
+    expect(Math.max(...alphas(recOf(canvas(s))))).toBeLessThan(whole());
+    pass(SMOKE.roll, 50);
+    expect(alphas(recOf(canvas(s)))).toEqual(new Set([whole()]));
   });
 
   test('a link in the words can be focused after a finished sweep, not before', () => {
@@ -599,18 +729,6 @@ describe('the held sweep', () => {
     press(s);
     pass(SWEEP_MS);
     expect(link.closest('[inert]')).toBeNull();
-  });
-
-  test('blur stops the hold', () => {
-    const s = setup();
-    act(() => { button(s)!.focus(); });
-    press(s);
-    pass(LINE_MS + 100);
-    act(() => { button(s)!.blur(); });
-    expect(last(s).state).toBe('Smoke over the words');
-    pass(SWEEP_MS * 2);
-    expect(inert(s)).toBe(true);
-    expect(readout(s)).toBe('First line of the post.');
   });
 
   test('unmounting mid-hold stops it, and stop is safe to call again or without a start', () => {
@@ -638,9 +756,10 @@ describe('the held sweep', () => {
     expect(readout(s)).toBe('First line of the post. Second line. Third line.');
   });
 
-  test('focus inside the words moves to the button when the waved window ends, not before', () => {
-    const s = setup();
+  test('focus on a link in the words moves to the post\'s Hot Box mark when the waved window ends, not before', () => {
+    const s = setup({}, false, false, false, true);
     const link = s.container.querySelector('a')!;
+    const mark = s.container.querySelector<HTMLElement>('button.kb-mark[data-kb-card="hot-box"]')!;
     press(s);
     pass(SWEEP_MS);
     release(s);
@@ -650,19 +769,19 @@ describe('the held sweep', () => {
     expect(document.activeElement).toBe(link);
     pass(300);
     expect(inert(s)).toBe(true);
-    expect(document.activeElement).toBe(button(s));
+    expect(document.activeElement).toBe(mark);
   });
 
-  test('focus on the button stays there through a full hold', () => {
-    const s = setup();
-    act(() => { button(s)!.focus(); });
+  test('focus on a button outside the post is not moved when the waved window ends', () => {
+    const s = setup({}, false, false, false, true);
+    const outside = s.container.querySelector<HTMLElement>('button.outside')!;
     press(s);
-    pass(SWEEP_MS + 500);
-    expect(inert(s)).toBe(false);
-    expect(document.activeElement).toBe(button(s));
+    pass(SWEEP_MS);
     release(s);
+    act(() => { outside.focus(); });
     pass(SMOKE.waved + SMOKE.roll);
-    expect(document.activeElement).toBe(button(s));
+    expect(inert(s)).toBe(true);
+    expect(document.activeElement).toBe(outside);
   });
 
   test('a box that reflows mid-hold releases the hold', () => {
@@ -677,28 +796,13 @@ describe('the held sweep', () => {
     expect(inert(s)).toBe(true);
   });
 
-  test('a context menu on the button is swallowed and the hold survives it; the words\' own context menu is left alone', () => {
-    const s = setup();
-    press(s);
-    pass(500);
-    const onButton = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
-    act(() => { button(s)!.dispatchEvent(onButton); });
-    expect(onButton.defaultPrevented).toBe(true);
-    expect(last(s).state).toBe('Waving it away');
-    pass(LINE_MS);
-    expect(readout(s)).toBe('First line of the post.');
-    const onWords = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
-    act(() => { words(s).dispatchEvent(onWords); });
-    expect(onWords.defaultPrevented).toBe(false);
-  });
-
-  test('no frame is requested while the post is waved, and frames resume when the smoke rolls back', () => {
+  test('no frame and no rest timer runs while the post is waved, and frames resume when the smoke rolls back', () => {
     const s = setup();
     press(s);
     pass(SWEEP_MS);
     release(s);
     expect(inert(s)).toBe(false);
-    const asked = () => vi.mocked(window.requestAnimationFrame).mock.calls.length;
+    act(() => { runFrame(); });
     const before = asked();
     pass(SMOKE.waved - 1000);
     expect(asked()).toBe(before);
@@ -750,7 +854,16 @@ describe('the held sweep', () => {
     expect(frames.size).toBe(0);
   });
 
-  test('the Lens\'s hold control is the button\'s: start and stop drive the same sweep, and stop before a start does nothing', () => {
+  test('a StrictMode mount and unmount leaves no timer and no frame pending', () => {
+    const s = setup({}, true);
+    move(s);
+    pass(500, 50);
+    s.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(frames.size).toBe(0);
+  });
+
+  test('the Lens\'s hold control drives the sweep: start and stop, and stop before a start does nothing', () => {
     const s = setup();
     act(() => { wave(s).stop(); });
     expect(last(s).state).toBe('Smoke over the words');
@@ -763,30 +876,105 @@ describe('the held sweep', () => {
   });
 });
 
+describe('the in-body line', () => {
+  test('stands where the words are while they are smoked, hidden from sight and outside the inert words; gone in the waved window, and back after', () => {
+    const s = setup();
+    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(SMOKED_WAY).toBe('This post is under smoke. To read it, open Hot Box in the cards on this post and hold Wave the smoke.');
+    expect(way(s)).toHaveClass('kb-visually-hidden');
+    expect(way(s)!.closest('[inert]')).toBeNull();
+    expect(words(s).contains(way(s))).toBe(false);
+    expect(way(s)!.parentElement).toBe(host(s));
+    press(s);
+    pass(SWEEP_MS);
+    expect(inert(s)).toBe(false);
+    expect(way(s)).toBeNull();
+    release(s);
+    pass(SMOKE.waved);
+    expect(inert(s)).toBe(true);
+    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+  });
+
+  test('is not drawn in a moment', () => {
+    const s = setup({ still: true });
+    expect(way(s)).toBeNull();
+  });
+});
+
+describe('the ladder', () => {
+  const see = (s: Setup, isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
+  const level = (s: Setup) => Number(host(s).getAttribute('data-dw-fog-level'));
+
+  test('a painter over budget steps the post down a rung at a time, 0 to 4, never back while in view; out of view and back it is at 0', () => {
+    stubObserver();
+    let perf = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => perf + cost.perf);
+    const s = setup();
+    see(s, true);
+    expect(level(s)).toBe(0);
+    cost.ms = 9;
+    const seen: number[] = [];
+    for (let i = 0; i < 200; i++) { pass(50, 50); seen.push(level(s)); perf += 1; }
+    expect(seen.at(-1)).toBe(4);
+    for (let i = 1; i < seen.length; i++) expect(seen[i]!).toBeGreaterThanOrEqual(seen[i - 1]!);
+    expect(new Set(seen)).toEqual(new Set([0, 1, 2, 3, 4]));
+    /* A fast painter gives no rung back while the post is in view. */
+    cost.ms = 0;
+    pass(3000, 50);
+    expect(level(s)).toBe(4);
+    see(s, false);
+    expect(level(s)).toBe(0);
+    see(s, true);
+    expect(level(s)).toBe(0);
+  });
+
+  test('a painter within budget keeps the post at 0', () => {
+    stubObserver();
+    const s = setup();
+    see(s, true);
+    cost.ms = 1;
+    pass(6000, 50);
+    expect(level(s)).toBe(0);
+  });
+});
+
 describe('reduced motion', () => {
   beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
 
-  test('no frame loop runs: it draws once, and again when something changes', () => {
+  test('no frame is asked for: it draws once, and again when something changes', () => {
     const s = setup();
-    expect(fog()).not.toBeNull();
-    const drawn = contexts, before = asked();
+    expect(picture(s)).toBe(true);
+    const drew = contexts, before = asked();
     press(s);
     pass(SWEEP_MS + SMOKE.waved + 5000);
     move(s);
     touch(s);
     expect(asked()).toBe(before);
-    expect(contexts).toBeGreaterThan(drawn);
+    expect(contexts).toBeGreaterThan(drew);
     s.unmount();
   });
 
-  test('a mouse clearing appears and goes with no steps between', () => {
+  test('the fog stands still: two pictures a second apart are the same', () => {
     const s = setup();
-    move(s);
-    expect(circles()).toHaveLength(1);
-    expect(circleAlpha(circles()[0]!)).toBe(1);
+    const one = recOf(canvas(s))!.draws.at(-1)!.put!.data.slice();
+    move(s, 300, 250);
     leave(s);
-    pass(100);
-    expect(circles()).toHaveLength(0);
+    pass(1000, 50);
+    const two = recOf(canvas(s))!.draws.at(-1)!.put!.data;
+    expect(Buffer.from(two).equals(Buffer.from(one))).toBe(true);
+  });
+
+  test('a mouse clearing and the trail it leaves are open or shut with no steps between: open at 749 ms, shut at 750', () => {
+    const s = setup();
+    move(s, 300, 250);
+    expect(alphaAt(s, 300, 150)).toBe(0);
+    leave(s);
+    const seen = new Set<number>();
+    for (let t = 0; t < 749; t += 1) { pass(1, 1); seen.add(alphaAt(s, 300, 150)!); }
+    expect(alphaAt(s, 300, 150)).toBe(0);
+    pass(1, 1);
+    expect(alphaAt(s, 300, 150)).toBe(whole());
+    expect([...seen]).toEqual([0]);
   });
 
   test('a touch clearing holds touchHold and then goes at once, never half closed', () => {
@@ -795,11 +983,11 @@ describe('reduced motion', () => {
     const seen = new Set<number>();
     for (let t = 0; t < SMOKE.touchHold + SMOKE.roll + 500; t += 100) {
       pass(100);
-      for (const g of circles()) seen.add(circleAlpha(g));
-      if (t < SMOKE.touchHold - 200) expect(circles()).toHaveLength(1);
+      seen.add(alphaAt(s, 200, 200)!);
+      if (t < SMOKE.touchHold - 200) expect(alphaAt(s, 200, 200)).toBe(0);
     }
-    expect([...seen]).toEqual([1]);
-    expect(circles()).toHaveLength(0);
+    expect([...seen].sort((a, b) => a - b)).toEqual([0, whole()]);
+    expect(alphaAt(s, 200, 200)).toBe(whole());
   });
 
   test.each([['reduced', true], ['full', false]])('the sweep takes exactly as long (%s motion): the post is waved exactly when the sweep ends, and not before', (_m, reduced) => {
@@ -816,20 +1004,21 @@ describe('reduced motion', () => {
     const s = setup();
     press(s);
     pass(LINE_MS / 2);
-    expect(circles()).toHaveLength(0);
-    expect(rectCuts()).toHaveLength(0);
+    expect(alphaAt(s, BOX.width / 2, 90)).toBe(whole());
+    expect(rowMean(s, 90)).toBe(whole());
     pass(LINE_MS / 2);
-    expect(rectCuts()).toHaveLength(1);
+    expect(rowMean(s, 90)).toBe(0);
     pass(LINE_MS);
-    expect(rectCuts()).toHaveLength(2);
+    expect(rowMean(s, 90)).toBe(0);
+    expect(rowMean(s, 270)).toBe(0);
   });
 
   test('the fog is drawn again when the strength has moved by a hundredth', () => {
     const s = setup();
-    const before = fog()!.a;
+    const before = alphaAt(s, 400, 300)!;
     pass(DAY / 2, DAY / 2);
     pass(1, 1);
-    expect(fog()!.a).toBeLessThan(before);
+    expect(alphaAt(s, 400, 300)).toBeLessThan(before);
     s.unmount();
   });
 });
@@ -837,13 +1026,13 @@ describe('reduced motion', () => {
 describe('forced colors: a hard circular mask', () => {
   beforeEach(() => { forced = true; });
 
-  test('no frame is requested, and the canvas is never drawn', () => {
+  test('no frame is requested, and no canvas is drawn', () => {
     const s = setup();
     move(s);
     press(s);
     pass(3000);
     expect(window.requestAnimationFrame).not.toHaveBeenCalled();
-    expect(fog()).toBeNull();
+    expect(canvas(s)).toBeNull();
     expect(contexts).toBe(0);
     s.unmount();
   });
@@ -861,34 +1050,38 @@ describe('forced colors: a hard circular mask', () => {
     s.unmount();
   });
 
-  test('a mouse move adds a hard-edged circle of holeRadius at the pointer, and a ring; both are gone roll after the pointer leaves', () => {
+  test('a mouse move adds a hard-edged circle of holeRadius at the pointer, and a ring; both are gone once the clearing is half closed after the pointer leaves', () => {
     const s = setup();
     move(s, 300, 250);
-    expect(circleLayers(s)).toHaveLength(1);
-    expect(circleLayers(s)[0]).toMatchObject({ r: holeRadius(BOX.width), x: 300, y: 150, alpha: 1, hard: true });
+    expect(holes(s)).toEqual(['300,150']);
+    for (const c of circleLayers(s)) expect(c).toMatchObject({ r: holeRadius(BOX.width), alpha: 1, hard: true });
     expect(flat(s)).toBeDefined();
-    expect(rings(s)).toHaveLength(1);
-    expect(rings(s)[0]).toHaveAttribute('aria-hidden', 'true');
-    expect(rings(s)[0]!.style).toMatchObject({ left: '210px', top: '60px', width: '180px', height: '180px' });
+    expect(rings(s).length).toBeGreaterThan(0);
+    for (const r of rings(s)) {
+      expect(r).toHaveAttribute('aria-hidden', 'true');
+      expect(r.style).toMatchObject({ left: '210px', top: '60px', width: '180px', height: '180px' });
+    }
     leave(s);
-    pass(SMOKE.roll / 2);
-    expect(circleLayers(s)).toHaveLength(1);
-    expect(circleLayers(s)[0]!.alpha).toBeCloseTo(0.5, 1);
-    expect(circleLayers(s)[0]!.hard).toBe(true);
-    pass(SMOKE.roll / 2 + 100);
+    pass(SMOKE.roll / 2 - 100);
+    expect(holes(s)).toEqual(['300,150']);
+    for (const c of circleLayers(s)) expect(c).toMatchObject({ alpha: 1, hard: true });
+    pass(200);
     expect(circleLayers(s)).toHaveLength(0);
     expect(rings(s)).toHaveLength(0);
     expect(flat(s)).toBeDefined();
   });
 
-  test('pointing at the wave button closes the circle and its ring', () => {
+  test('a trail point younger than 750 ms is a hole in the mask, an older one is not', () => {
     const s = setup();
-    move(s);
-    expect(circleLayers(s)).toHaveLength(1);
-    pointer(button(s)!, 'pointermove', 10, 10);
-    pass(SMOKE.roll + 100);
-    expect(circleLayers(s)).toHaveLength(0);
-    expect(rings(s)).toHaveLength(0);
+    move(s, 300, 250);
+    pass(300, 50);
+    move(s, 500, 250);
+    expect(holes(s).sort()).toEqual(['300,150', '500,150']);
+    pass(449, 449);
+    expect(holes(s)).toContain('300,150');
+    pass(1, 1);
+    expect(holes(s)).toEqual(['500,150']);
+    expect(rings(s).every((r) => r.style.left === '410px')).toBe(true);
   });
 
   test('the frame is placed where the content area is, and follows it when forced colors turn on and shift it', () => {
@@ -901,20 +1094,20 @@ describe('forced colors: a hard circular mask', () => {
     expect(s.container.querySelector<HTMLElement>('.dw-hotbox-frame')!.style.top).toBe('140px');
   });
 
-  test('a touch\'s circle holds touchHold first, and the next touch replaces it', () => {
+  test('a touch\'s circle holds touchHold first, the next touch replaces it, and it is gone once half closed', () => {
     const s = setup();
     touch(s, 200, 300);
     pass(SMOKE.touchHold - 100);
-    expect(circleLayers(s)).toHaveLength(1);
+    expect(holes(s)).toEqual(['200,200']);
     expect(circleLayers(s)[0]!.alpha).toBe(1);
     touch(s, 500, 400);
-    expect(circleLayers(s)).toHaveLength(1);
-    expect(circleLayers(s)[0]).toMatchObject({ x: 500, y: 300 });
+    expect(holes(s)).toEqual(['500,300']);
     pass(SMOKE.touchHold);
+    expect(holes(s)).toEqual(['500,300']);
+    pass(SMOKE.roll / 2 - 100);
+    expect(holes(s)).toEqual(['500,300']);
     expect(circleLayers(s)[0]!.alpha).toBe(1);
-    pass(SMOKE.roll / 2 + 100);
-    expect(circleLayers(s)[0]!.alpha).toBeLessThan(1);
-    pass(SMOKE.roll);
+    pass(200);
     expect(circleLayers(s)).toHaveLength(0);
     expect(rings(s)).toHaveLength(0);
   });
@@ -973,28 +1166,26 @@ describe('forced colors: a hard circular mask', () => {
     pass(SWEEP_MS);
     expect(sign(s)).toHaveTextContent('Waved clear for you');
     expect(sign(s)!.parentElement).toBe(host(s));
-    expect(words(s).previousElementSibling).toBe(sign(s));
   });
 
-  test('the words are inert, as on the canvas path, and the button is never inert', () => {
+  test('the words are inert, as on the canvas path, and the in-body line is not', () => {
     const s = setup();
     expect(inert(s)).toBe(true);
-    expect(button(s)!.closest('[inert]')).toBeNull();
+    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(way(s)!.closest('[inert]')).toBeNull();
   });
 
   test('stubbed not to match, the wrapper has no mask, no ring and no sign: the full effect is untouched', () => {
     forced = false;
     const s = setup();
     move(s);
-    act(() => { runFrame(); });
+    settle();
     expect(words(s).style.maskImage).toBe('');
     expect(words(s).getAttribute('style') ?? '').not.toContain('mask');
     expect(rings(s)).toHaveLength(0);
     expect(sign(s)).toBeNull();
-    expect(fog()).not.toBeNull();
-    expect(circles()).toHaveLength(1);
-    expect(circleAlpha(circles()[0]!)).toBe(1);
-    expect(circles()[0]!.stops.at(-2)![0]).toBeLessThan(1);
+    expect(alphaAt(s, 300, 150)).toBe(0);
+    expect(alphaAt(s, 700, 500)).toBe(whole());
   });
 
   test('the mode is followed as it changes: forced on mid-view takes the canvas away, off brings it back', () => {
@@ -1015,9 +1206,9 @@ describe('forced colors: a hard circular mask', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     const s = setup();
     touch(s);
-    const alphas = new Set<number>();
-    for (let t = 0; t < SMOKE.touchHold + SMOKE.roll; t += 100) { pass(100); for (const c of circleLayers(s)) alphas.add(c.alpha); }
-    expect([...alphas]).toEqual([1]);
+    const seen = new Set<number>();
+    for (let t = 0; t < SMOKE.touchHold + SMOKE.roll; t += 100) { pass(100); for (const c of circleLayers(s)) seen.add(c.alpha); }
+    expect([...seen]).toEqual([1]);
     expect(circleLayers(s)).toHaveLength(0);
     release(s);
     press(s);
@@ -1036,7 +1227,7 @@ describe('forced colors: a hard circular mask', () => {
     touch(s);
     expect(layers(s)).toHaveLength(1);
     expect(rings(s)).toHaveLength(0);
-    expect(button(s)).toBeNull();
+    expect(host(s).querySelector('button')).toBeNull();
     expect(inert(s)).toBe(false);
   });
 });
@@ -1065,58 +1256,64 @@ describe('the content area is the container', () => {
   });
 
   test('the fog covers that whole box', () => {
-    setup();
-    const f = fills.find((x) => x.op === 'source-over' && typeof x.style === 'string')!;
-    expect(f.rect).toEqual([0, 0, 900, 700]);
+    const s = setup();
+    for (const c of tiles(s)) {
+      const d = recOf(c)!.draws.at(-1)!;
+      expect(d.dx).toBeLessThanOrEqual(0);
+      expect(d.dx + d.dw).toBeGreaterThanOrEqual(900);
+    }
+    expect(alphaAt(s, 1, 1)).toBe(whole());
+    expect(alphaAt(s, 899, 699)).toBe(whole());
   });
 
-  test('puffs and a clearing\'s radius come from the area\'s width and height', () => {
-    AREA = { left: 0, top: 50, width: 400, height: 300 };
+  test('a clearing\'s radius comes from the area\'s width', () => {
+    AREA = { left: 0, top: 50, width: 300, height: 300 };
     const s = setup();
-    expect(puffs(1, 400, 300).length).not.toBe(puffs(1, 800, 600).length);
-    expect(draws).toHaveLength(puffs(1, 400, 300).length);
-    expect(holeRadius(400)).not.toBe(holeRadius(800));
-    move(s, 100, 150);
-    act(() => { runFrame(); });
-    expect(circles()[0]).toMatchObject({ r1: holeRadius(400) });
+    expect(canvas(s)!.width).toBe(300);
+    expect(holeRadius(300)).toBeLessThan(holeRadius(800) - 20);
+    move(s, 100, 200);
+    settle();
+    expect(alphaAt(s, 100, 150)).toBe(0);
+    /* 80 px off: past this area's radius, inside an 800 px box's. */
+    expect(alphaAt(s, 180, 150)).toBe(whole());
   });
 
   test('a mouse move at a point in the area outside the words opens a clearing there, in the area\'s coordinates', () => {
     const s = setup();
     move(s, OUTSIDE.x, OUTSIDE.y);
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(1);
-    expect(circles()[0]).toMatchObject({ x1: 10, y1: 10, r1: holeRadius(900) });
+    settle();
+    expect(alphaAt(s, 10, 10)).toBe(0);
     leave(s);
-    pass(SMOKE.roll + 100);
-    expect(circles()).toHaveLength(0);
+    pass(SMOKE.roll + 3 * SMOKE.wake, 50);
+    expect(alphaAt(s, 10, 10)).toBe(whole());
   });
 
   test('a touch anywhere in the area opens a clearing, but a press on what the engine lifts over the ink (the reactions row, a fold bar) opens none', () => {
     const s = setup();
     touch(s, 400, 400);
-    act(() => { runFrame(); });
-    expect(circles()[0]).toMatchObject({ x1: 420, y1: 350 });
+    settle();
+    expect(alphaAt(s, 420, 350)).toBe(0);
     const lifted = document.createElement('div');
     lifted.setAttribute('data-kb-over-ink', '');
     area(s).appendChild(lifted);
-    pass(SMOKE.touchHold + SMOKE.roll + 100);
-    expect(circles()).toHaveLength(0);
+    pass(SMOKE.touchHold + SMOKE.roll + 3 * SMOKE.wake, 50);
+    expect(alphaAt(s, 420, 350)).toBe(whole());
     pointer(lifted, 'pointerdown', 100, 100, 'touch');
     pointer(lifted, 'pointermove', 100, 100);
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(0);
+    settle();
+    for (const c of tiles(s)) expect(alphas(recOf(c))).toEqual(new Set([whole()]));
   });
 
   test('the held sweep travels the words\' lines, offset into the area\'s coordinates', () => {
     const s = setup();
     press(s);
-    pass(LINE_MS / 2);
+    pass(LINE_MS / 2, 16);
     /* Half way along the words' first line (60 to 120 in the words): across the words' 800 from the words' left, down the area by the words' top. */
-    expect(circles()[0]).toMatchObject({ x1: 20 + 400, y1: 50 + 90 });
-    pass(LINE_MS / 2);
-    expect(rectCuts()).toHaveLength(1);
-    expect(rectCuts()[0]!.rect).toEqual([20, 110, 800, 60]);
+    expect(alphaAt(s, 20 + 400, 50 + 90)).toBe(0);
+    pass(LINE_MS / 2, 50);
+    /* The finished line's rows, 110 to 170 of the area, are open. */
+    expect(alphaAt(s, 30, 140)).toBe(0);
+    expect(alphaAt(s, 790, 140)).toBe(0);
     expect(inert(s)).toBe(true);
   });
 
@@ -1128,13 +1325,12 @@ describe('the content area is the container', () => {
     sizes = { ...BOX, top: 130 };
     act(() => { for (const cb of sizeWatchers) cb(); });
     expect(last(s).state).toBe('Smoke over the words');
-    pass(LINE_MS * 4);
+    pass(LINE_MS * 4, 50);
     expect(inert(s)).toBe(true);
-    /* The hold really stopped: no line is announced, the post is never waved, and the finished-line cuts roll shut. */
+    /* The hold really stopped: no line is announced, the post is never waved, and the fog is whole again. */
     expect(readout(s)).toBe('');
     expect(last(s).state).toBe('Smoke over the words');
-    expect(rectCuts()).toHaveLength(0);
-    expect(circles()).toHaveLength(0);
+    for (const c of tiles(s)) expect(alphas(recOf(c))).toEqual(new Set([whole()]));
   });
 
   test('a sub-pixel shift of the words mid-hold keeps the hold, and a 5 px shift lets it go', () => {
@@ -1197,29 +1393,29 @@ describe('the content area is the container', () => {
     act(() => { for (const cb of sizeWatchers) cb(); });
     expect(observed).toContain(fresh);
     pointer(fresh, 'pointermove', 300, 250);
-    act(() => { runFrame(); });
-    expect(circles()).toHaveLength(1);
+    settle();
+    expect(alphaAt(s, 320, 200)).toBe(0);
   });
 
   test('with no post body about it (the ORIGIN box) the area is the effect\'s own element', () => {
     const s = setup({}, false, true);
     expect(canvas(s)!.style).toMatchObject({ left: '0px', top: '0px', width: '800px', height: '512px' });
     pointer(host(s), 'pointermove', 300, 250);
-    act(() => { runFrame(); });
-    expect(circles()[0]).toMatchObject({ x1: 300, y1: 250 });
+    settle();
+    expect(alphaAt(s, 300, 250)).toBe(0);
     pointer(host(s), 'pointerleave', 0, 0);
-    pass(SMOKE.roll + 100);
-    expect(circles()).toHaveLength(0);
+    pass(SMOKE.roll + 3 * SMOKE.wake, 50);
+    expect(alphaAt(s, 300, 250)).toBe(whole());
   });
 
   test('a moment fills the same area, drawn once, with no handler', () => {
     const s = setup({ still: true });
     expect(canvas(s)!.style).toMatchObject({ left: '-20px', top: '50px', width: '900px', height: '512px' });
-    expect(fills.find((x) => x.op === 'source-over' && typeof x.style === 'string')!.rect).toEqual([0, 0, 900, 700]);
-    const before = [...fills];
+    expect(alphaAt(s, 1, 1)).toBe(Math.round(SMOKE.full * 255));
+    const before = recOf(canvas(s))!.draws.at(-1)!.put!.data.slice();
     pointer(area(s), 'pointermove', 100, 100);
     pass(500);
-    expect(fills).toEqual(before);
+    expect(Buffer.from(recOf(canvas(s))!.draws.at(-1)!.put!.data).equals(Buffer.from(before))).toBe(true);
   });
 
   describe('under forced colors', () => {
@@ -1240,7 +1436,7 @@ describe('the content area is the container', () => {
     test('a ring may be anywhere in the area, outside the words\' box too', () => {
       const s = setup();
       move(s, OUTSIDE.x, OUTSIDE.y);
-      expect(rings(s)).toHaveLength(1);
+      expect(rings(s).length).toBeGreaterThan(0);
       expect(rings(s)[0]!.style).toMatchObject({ left: '-80px', top: '-80px', width: '180px', height: '180px' });
     });
 
@@ -1248,8 +1444,8 @@ describe('the content area is the container', () => {
       const s = setup();
       move(s, 320, 260);
       /* Area (340, 210) -> words (320, 160). */
-      expect(circleLayers(s)).toHaveLength(1);
-      expect(circleLayers(s)[0]).toMatchObject({ x: 320, y: 160, r: holeRadius(900), hard: true });
+      expect(holes(s)).toEqual(['320,160']);
+      expect(circleLayers(s)[0]).toMatchObject({ r: holeRadius(900), hard: true });
       expect(rings(s)[0]!.style).toMatchObject({ left: '250px', top: '120px' });
     });
 
@@ -1271,12 +1467,12 @@ describe('the content area is the container', () => {
   test('with forced colors off none of the mask, ring, sign or frame exists', () => {
     const s = setup();
     move(s, OUTSIDE.x, OUTSIDE.y);
-    act(() => { runFrame(); });
+    settle();
     expect(words(s).getAttribute('style') ?? '').not.toContain('mask');
     expect(rings(s)).toHaveLength(0);
     expect(sign(s)).toBeNull();
     expect(s.container.querySelector('.dw-hotbox-frame')).toBeNull();
-    expect(circles()).toHaveLength(1);
+    expect(alphaAt(s, 10, 10)).toBe(0);
   });
 });
 
@@ -1292,7 +1488,7 @@ describe('what it tells the Lens', () => {
     expect(last(s).progress).toBeCloseTo(0, 2);
     expect(last(s).controls).toHaveLength(1);
     expect(last(s).controls[0]).toMatchObject({ kind: 'hold', label: 'Wave the smoke' });
-    expect(wave(s).describe).toBe(document.getElementById(button(s)!.getAttribute('aria-describedby')!)!.textContent);
+    expect(wave(s).describe).toBe(WAVE_DESCRIBE);
   });
 
   test('progress is how far the smoke has thinned', () => {
@@ -1351,20 +1547,14 @@ describe('in view', () => {
   beforeEach(() => { stubObserver(); });
   const see = (s: Setup, isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
 
-  test('met waits for the first sight of the post, and the loop is the layer: it runs whether or not the post is reported in view', () => {
+  test('met waits for the first sight of the post, and the fog is painted by the layer whether or not the post is reported in view', () => {
     const s = setup();
-    expect(frames.size).toBeGreaterThan(0);
     expect(s.met).not.toHaveBeenCalled();
-    /* The loop paints: the puffs drift with the time, so a tile's drawing moves from frame to frame, with the post never reported in view. */
-    const puffsOf = () => JSON.stringify([fillsOf(tiles(s)[0]).filter((f) => f.op === 'source-over' && typeof f.style === 'object').map((f) => f.style), (recs.get(tiles(s)[0]!)?.draws ?? []).map((d) => d.slice(1))]);
-    act(() => { runFrame(100); });
-    const one = puffsOf();
-    expect(one).not.toBe('[[],[]]');
-    act(() => { vi.advanceTimersByTime(2000); runFrame(2100); });
-    const two = puffsOf();
-    expect(two).not.toBe('[[],[]]');
-    expect(two).not.toBe(one);
-    expect(frames.size).toBeGreaterThan(0);
+    pass(100, 50);
+    const one = recOf(canvas(s))!.draws.at(-1)!.put!.data.slice();
+    pass(2000, 50);
+    const two = recOf(canvas(s))!.draws.at(-1)!.put!.data;
+    expect(Buffer.from(two).equals(Buffer.from(one))).toBe(false);
     see(s, true);
     expect(s.met).toHaveBeenCalledTimes(1);
     see(s, false);
@@ -1372,24 +1562,23 @@ describe('in view', () => {
     expect(s.met).toHaveBeenCalledTimes(1);
   });
 
-  test('with every tile released by the band watcher the loop asks for no frame, and it resumes when a tile returns', () => {
+  test('with every tile released by the band watcher no frame is asked for, and painting resumes when a tile returns', () => {
     AREA = { ...BOX, height: 1600 };
     const s = setup();
-    const near = (...hold: number[]) => act(() => { bandsWatch!(bandEls.map((el, i) => ({ target: el, isIntersecting: hold.includes(i), intersectionRatio: hold.includes(i) ? 1 : 0 }))); runFrame(); });
-    near(0);
-    near();
+    const nearBands = (...hold: number[]) => act(() => { bandsWatch!(bandEls.map((el, i) => ({ target: el, isIntersecting: hold.includes(i), intersectionRatio: hold.includes(i) ? 1 : 0 }))); runFrame(); });
+    nearBands(0);
+    nearBands();
     expect(tiles(s)).toHaveLength(0);
     act(() => { runFrame(); });
     expect(frames.size).toBe(0);
-    const drawn = contexts;
+    const drew = contexts;
     act(() => { vi.advanceTimersByTime(1000); });
     expect(frames.size).toBe(0);
-    expect(contexts).toBe(drawn);
-    near(1);
+    expect(contexts).toBe(drew);
+    nearBands(1);
     expect(tiles(s)).toHaveLength(1);
     act(() => { runFrame(); });
-    expect(contexts).toBeGreaterThan(drawn);
-    expect(frames.size).toBe(1);
+    expect(contexts).toBeGreaterThan(drew);
     const again = contexts;
     act(() => { vi.advanceTimersByTime(100); runFrame(); });
     expect(contexts).toBeGreaterThan(again);
@@ -1416,44 +1605,41 @@ describe('in view', () => {
  * the window, and each band's place has a stand-in marked far until a painted tile covers it. The box is 800 by 600 unless a test says so.
  */
 describe('the tiles', () => {
-  test('a box 800 by 600 holds two tiles, 512 and 88 tall, and the fog is filled in both', () => {
+  test('a box 800 by 600 holds two tiles, 512 and 88 tall, and the fog is painted in both', () => {
     const s = setup();
     expect(tiles(s)).toHaveLength(2);
     expect(tiles(s).map((c) => [c.width, c.height])).toEqual([[800, 512], [800, 88]]);
     expect(tiles(s).map((c) => c.style.top)).toEqual(['100px', '612px']);
-    for (const c of tiles(s)) {
-      const f = fogOf(c);
-      expect(f, 'every tile is fogged').toBeDefined();
-      expect(rgba(f!.style)!.rgb).toEqual([0, 128, 128]);
-      expect(f!.rect).toEqual([0, 0, 800, 600]);
-    }
+    for (const c of tiles(s)) expect(alphas(recOf(c)), 'every tile is fogged').toEqual(new Set([whole()]));
+    expect(rgbVar(s)).toBe('0 128 128');
   });
 
-  test('a clearing at y = 500 is cut in both tiles, and one at y = 100 only in the first', () => {
+  test('a clearing at y = 500 is open in both tiles, and one at y = 100 only in the first', () => {
     const s = setup();
+    const [a, b] = tiles(s).map((c) => recOf(c)!);
     /* The pointer is read from the area's corner, which is at page y 100. */
     move(s, 300, 100 + 500);
-    act(() => { runFrame(); });
-    expect(gradientsOf(tiles(s)[0])).toHaveLength(1);
-    expect(gradientsOf(tiles(s)[1])).toHaveLength(1);
-    expect(gradientsOf(tiles(s)[0])[0]!.style).toMatchObject({ y1: 500 });
+    settle();
+    expect(pixelIn(a, 300, 500)![3]).toBe(0);
+    expect(pixelIn(b, 300, 530)![3]).toBe(0);
     leave(s);
-    pass(SMOKE.roll + 100);
-    expect(gradientsOf(tiles(s)[0])).toHaveLength(0);
+    pass(SMOKE.roll + 3 * SMOKE.wake, 50);
+    expect(alphas(a)).toEqual(new Set([whole()]));
+    expect(alphas(b)).toEqual(new Set([whole()]));
     move(s, 300, 100 + 100);
-    act(() => { runFrame(); });
-    expect(gradientsOf(tiles(s)[0])).toHaveLength(1);
-    expect(gradientsOf(tiles(s)[1])).toHaveLength(0);
+    settle();
+    expect(pixelIn(a, 300, 100)![3]).toBe(0);
+    expect(alphas(b)).toEqual(new Set([whole()]));
   });
 
-  test('a box 800 by 20,000 at a screen density of 2 holds at most mostTiles(innerHeight) canvases, each 1,600 by 1,024', () => {
+  test('a box 800 by 20,000 at a screen density of 2 holds at most mostTiles(innerHeight) canvases, each 800 by 512: the fog asks for a density of 1', () => {
     Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 });
     try {
       AREA = { ...BOX, height: 20_000 };
       const s = setup();
       expect(tiles(s).length).toBeGreaterThan(0);
       expect(tiles(s).length).toBeLessThanOrEqual(mostTiles(window.innerHeight));
-      for (const c of tiles(s)) expect([c.width, c.height]).toEqual([1600, 1024]);
+      for (const c of tiles(s)) expect([c.width, c.height]).toEqual([800, 512]);
     } finally {
       delete (window as { devicePixelRatio?: unknown }).devicePixelRatio;
     }
@@ -1464,7 +1650,7 @@ describe('the tiles', () => {
     const s = setup();
     /* No observer has reported and no frame has run. */
     expect(tiles(s)).toHaveLength(2);
-    for (const c of tiles(s)) expect(fogOf(c), 'painted').toBeDefined();
+    for (const c of tiles(s)) expect(drawn(recOf(c)), 'painted').toBe(true);
     expect(s.met).not.toHaveBeenCalled();
   });
 
@@ -1476,7 +1662,7 @@ describe('the tiles', () => {
     expect(bands.every((b) => b.classList.contains('dw-hotbox-far'))).toBe(true);
     expect(bands[0]!.getAttribute('data-kb-tile')).toBe('held');
     expect(bands[30]!.getAttribute('data-kb-tile')).toBe('far');
-    expect(host(s).style.getPropertyValue('--dw-hotbox-rgb')).toBe('0 128 128');
+    expect(rgbVar(s)).toBe('0 128 128');
     expect(Number(host(s).style.getPropertyValue('--dw-hotbox-fog'))).toBeCloseTo(fogAlpha(strength(NOW, NOW, ENDS)), 3);
     const before = Number(host(s).style.getPropertyValue('--dw-hotbox-fog'));
     pass(1.5 * DAY, DAY / 20);
@@ -1485,7 +1671,7 @@ describe('the tiles', () => {
     expect(Math.abs(later - fogAlpha(strength(Date.now(), NOW, ENDS)))).toBeLessThan(0.02);
   });
 
-  test('the stylesheet gives the far mark the fog\'s flat color from those properties, and the held mark nothing', () => {
+  test('the stylesheet: the far mark has the fog\'s flat color and the held mark nothing; the host lets a finger\'s drag reach the effect; nothing in inert words is lifted; no in-post control', () => {
     const css = readFileSync('instances/divided-world/ui/hot-box/hot-box.css', 'utf8');
     const far = /\.dw-hotbox-far\[data-kb-tile="far"\]\s*\{([^}]*)\}/u.exec(css);
     expect(far, 'a rule for the far mark').not.toBeNull();
@@ -1493,6 +1679,12 @@ describe('the tiles', () => {
     expect(far![1]).toContain('z-index: 1');
     expect(far![1]).toContain('pointer-events: none');
     expect(css).not.toMatch(/\[data-kb-tile="held"\][^{]*\{[^}]*background/u);
+    const hostRule = /(?:^|\n)\.dw-hotbox\s*\{([^}]*)\}/u.exec(css);
+    expect(hostRule![1]).toContain('touch-action: pan-y pinch-zoom');
+    const under = /\.dw-hotbox-words\[inert\] \[data-kb-over-ink\]\s*\{([^}]*)\}/u.exec(css);
+    expect(under, 'a rule for what is lifted inside inert words').not.toBeNull();
+    expect(under![1]).toContain('z-index: 0');
+    expect(css).not.toContain('dw-hotbox-wave');
   });
 
   test('a tile the band watcher reports gone is released, and one reported near is made and painted in the next frame', () => {
@@ -1501,17 +1693,17 @@ describe('the tiles', () => {
     const s = setup();
     expect(tiles(s)).toHaveLength(2);
     const [, second] = tiles(s);
-    const near = (...hold: number[]) => act(() => { bandsWatch!(bandEls.map((el, i) => ({ target: el, isIntersecting: hold.includes(i), intersectionRatio: hold.includes(i) ? 1 : 0 }))); runFrame(); });
-    near(0);
+    const nearBands = (...hold: number[]) => act(() => { bandsWatch!(bandEls.map((el, i) => ({ target: el, isIntersecting: hold.includes(i), intersectionRatio: hold.includes(i) ? 1 : 0 }))); runFrame(); });
+    nearBands(0);
     expect(tiles(s)).toHaveLength(1);
     expect([second!.width, second!.height]).toEqual([0, 0]);
     expect(second!.isConnected).toBe(false);
     expect(host(s).querySelectorAll('.kb-band')[1]!.getAttribute('data-kb-tile')).toBe('far');
-    near(0, 1);
+    nearBands(0, 1);
     expect(tiles(s)).toHaveLength(2);
-    expect(fogOf(tiles(s)[1]), 'not painted until the next frame').toBeUndefined();
+    expect(drawn(recOf(tiles(s)[1])), 'not painted until the next frame').toBe(false);
     act(() => { runFrame(); });
-    expect(fogOf(tiles(s)[1])).toBeDefined();
+    expect(drawn(recOf(tiles(s)[1]))).toBe(true);
     expect(host(s).querySelectorAll('.kb-band')[1]!.getAttribute('data-kb-tile')).toBe('held');
   });
 
@@ -1525,19 +1717,14 @@ describe('the tiles', () => {
     tiles(s).forEach((c, i) => { expect(c).toBe(before[i]); expect(c.isConnected).toBe(true); });
   });
 
-  test('a re-render that turns the loop off leaves the painter the fresh state: in the waved window the smoke is drawn at the waved alpha', () => {
+  test('in the waved window no frame is asked for and no fog is drawn', () => {
     const s = setup();
-    act(() => { runFrame(); });
-    const standing = fog()!.a;
-    expect(standing).toBeGreaterThan(0);
     press(s);
     pass(SWEEP_MS);
     release(s);
     pass(SMOKE.waved / 2);
     expect(frames.size).toBe(0);
-    const waved = fog();
-    expect(waved === null || waved.a < standing, 'the fog is lighter in the waved window').toBe(true);
-    expect(gradientsOf(tiles(s)[0]).length).toBe(0);
+    expect(picture(s)).toBe(false);
   });
 
   test('under forced colors there is no canvas and no stand-in', () => {
@@ -1557,9 +1744,8 @@ describe('the tiles', () => {
   });
 });
 
-describe('the puffs\' sprites', () => {
-  test('a browser that gives an offscreen canvas no 2D context is asked once for each sprite, not every frame', () => {
-    forgetSprites();
+describe('the scratch canvas', () => {
+  test('a browser that gives it no 2D context is asked once, and each tile is filled flat in the fog\'s color, with a disc cut where a pointer is', () => {
     const made = vi.spyOn(document, 'createElement');
     const ctx = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...a: unknown[]) {
@@ -1569,16 +1755,18 @@ describe('the puffs\' sprites', () => {
       const s = setup();
       const canvases = () => made.mock.calls.filter((c) => c[0] === 'canvas').length;
       const made0 = canvases();
-      act(() => { runFrame(); runFrame(); runFrame(); });
-      act(() => { runFrame(); runFrame(); });
+      pass(200, 50);
       expect(canvases()).toBe(made0);
-      /* The tiles' canvases are the layer's; what is left is the two sprites. */
-      expect(made0 - tiles(s).length).toBeLessThanOrEqual(2);
-      expect(gradients).toBeGreaterThan(0);
+      /* The tiles' canvases are the layer's; what is left is the one scratch canvas. */
+      expect(made0 - tiles(s).length).toBeLessThanOrEqual(1);
+      const fill = recOf(canvas(s))!.fills.find((f) => f.op === 'source-over')!;
+      expect(fill.style).toBe(`rgba(0, 128, 128, ${Number(fogAlpha(1).toFixed(4))})`);
+      move(s, 300, 250);
+      pass(50, 50);
+      expect(recOf(canvas(s))!.arcs).toContainEqual({ x: 300, y: 150, r: holeRadius(BOX.width) });
     } finally {
       made.mockRestore();
       HTMLCanvasElement.prototype.getContext = ctx;
-      forgetSprites();
     }
   });
 });
@@ -1588,25 +1776,23 @@ describe('a moment (still)', () => {
     const s = setup({ still: true });
     const before0 = asked();
     expect(s.container.querySelector('[inert]')).toBeNull();
-    expect(button(s)).toBeNull();
+    expect(s.container.querySelector('button')).toBeNull();
     expect(s.container.querySelector('[aria-live]')).toBeNull();
     expect(canvas(s)).not.toBeNull();
-    expect(fog()).not.toBeNull();
-    const before = [...fills];
+    expect(picture(s)).toBe(true);
+    const before = recOf(canvas(s))!.draws.at(-1)!.put!.data.slice();
     move(s); touch(s); leave(s);
     pass(SMOKE.touchHold + SMOKE.roll);
-    expect(circles()).toHaveLength(0);
-    expect(fills).toEqual(before);
+    expect(Buffer.from(recOf(canvas(s))!.draws.at(-1)!.put!.data).equals(Buffer.from(before))).toBe(true);
     expect(asked()).toBe(before0);
     expect(s.met).not.toHaveBeenCalled();
     expect(s.show).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'Smoke over the words', controls: [] }));
   });
 
-  test('draws the fog and the puffs as they stood: full, whatever the clock says', () => {
+  test('draws the fog as it stood: full, whatever the clock says', () => {
     vi.setSystemTime(NOW + 2.5 * DAY);
     const s = setup({ still: true, plays: [play({ ends: iso(NOW + DAY) })] });
-    expect(fog()!.a).toBeCloseTo(SMOKE.full, 3);
-    expect(draws.length).toBeGreaterThan(20);
+    expect(alphas(recOf(canvas(s)))).toEqual(new Set([Math.round(SMOKE.full * 255)]));
     expect(s.container.querySelector('.dw-hotbox')).not.toBeNull();
   });
 });
@@ -1614,13 +1800,13 @@ describe('a moment (still)', () => {
 describe('nobody is special', () => {
   test('two readers who differ only in reader.author and reader.caster get the same smoke', () => {
     const a = setup({ reader: { author: false, caster: false } });
-    /* The ids React hands out differ by render; nothing else may. */
     const same = (html: string) => html.replace(/(id|aria-describedby)="[^"]*"/gu, '');
-    const htmlA = same(a.container.innerHTML); const fogA = fills.length;
+    const htmlA = same(a.container.innerHTML);
+    const bytesA = recOf(canvas(a))!.draws.at(-1)!.put!.data.slice();
     a.unmount();
     const b = setup({ reader: { author: true, caster: true } });
     expect(same(b.container.innerHTML)).toBe(htmlA);
-    expect(fills.length).toBe(fogA);
+    expect(Buffer.from(recOf(canvas(b))!.draws.at(-1)!.put!.data).equals(Buffer.from(bytesA))).toBe(true);
     /* The views are equal but for their controls' functions, which are each render's own. */
     const plain = (x: Setup) => views(x).map((v) => ({ ...v, controls: v.controls.map((c) => ({ kind: c.kind, label: c.label })) }));
     expect(plain(b)).toEqual(plain(a));
@@ -1679,11 +1865,11 @@ describe("in the ORIGIN box, inside the opening post's body", () => {
     const s = setup({}, false, false, true);
     pointer(lifted(s), 'pointerdown', 100, 100, 'touch');
     pointer(lifted(s), 'pointermove', 100, 100);
-    act(() => { runFrame(); });
-    expect(circles(), 'History is its own').toHaveLength(0);
+    settle();
+    expect(alphas(recOf(canvas(s))), 'History is its own').toEqual(new Set([whole()]));
     pointer(host(s), 'pointermove', 300, 250);
-    act(() => { runFrame(); });
-    expect(circles(), 'the byline clears').toHaveLength(1);
+    settle();
+    expect(alphaAt(s, 290, 210), 'the byline clears').toBe(0);
   });
 
   test('with the effect on an outer body, a press inside a nested lifted box opens none', () => {
@@ -1691,12 +1877,12 @@ describe("in the ORIGIN box, inside the opening post's body", () => {
     const s = setup();
     const box = document.createElement('div');
     box.setAttribute('data-kb-over-ink', '');
-    const words = document.createElement('p');
-    box.appendChild(words);
+    const inBox = document.createElement('p');
+    box.appendChild(inBox);
     outer(s).appendChild(box);
-    pointer(words, 'pointerdown', 100, 100, 'touch');
-    pointer(words, 'pointermove', 100, 100);
-    act(() => { runFrame(); });
-    expect(circles(), 'the box is not this effect').toHaveLength(0);
+    pointer(inBox, 'pointerdown', 100, 100, 'touch');
+    pointer(inBox, 'pointermove', 100, 100);
+    settle();
+    expect(alphas(recOf(canvas(s))), 'the box is not this effect').toEqual(new Set([whole()]));
   });
 });

@@ -1,17 +1,17 @@
 /**
  * The smoke's pure half (docs/plans/2026-11-15-hot-box-plan.md, Task 3; the trail, docs/plans/2026-11-15-hot-box-fog-design.md
- * section 3.1): its numbers, the strength a play has left, a clearing's openness and coverage, the pointer's trail, the drifting puffs and a held sweep's place. No DOM and no clock.
+ * section 3.1): its numbers, the strength a play has left, a clearing's openness and coverage, the pointer's trail and a held sweep's place. No DOM and no clock.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SMOKE, covered, extendTrail, fogAlpha, hardOpen, holeRadius, maskAlpha, openness, puffAt, puffs, strength, sweepAt, trailOpenness, type Clearing, type TrailPoint } from './smoke.ts';
+import { SMOKE, covered, extendTrail, fogAlpha, hardDiscs, hardOpen, holeRadius, maskAlpha, openness, strength, sweepAt, trailOpenness, type Clearing, type TrailPoint } from './smoke.ts';
 
 const near = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} is not ${b}`);
 
 test('the numbers are the plan\'s', () => {
   assert.equal(SMOKE.full, 0.94); assert.equal(SMOKE.least, 0.45); assert.equal(SMOKE.hole, 90);
   assert.equal(SMOKE.edge, 0.35); assert.equal(SMOKE.roll, 2500); assert.equal(SMOKE.touchHold, 4000);
-  assert.equal(SMOKE.waved, 20000); assert.equal(SMOKE.puffArea, 1800);
+  assert.equal(SMOKE.waved, 20000);
   assert.equal(SMOKE.wake, 1500); assert.equal(SMOKE.trailStep, 1 / 3); assert.equal(SMOKE.trailHard, 0.5);
 });
 
@@ -116,40 +116,6 @@ test('strength with ends at or before playedAt: 1 until ends, 0 from then on', (
   assert.equal(strength(500, 1000, 500), 0);
   assert.equal(strength(700, 1000, 500), 0);
   assert.equal(strength(2000, 1000, 500), 0);
-});
-
-test('puffs: the same seed gives the same puffs, another gives others, nothing reads Math.random, and the count is clamped', () => {
-  const real = Math.random; let calls = 0;
-  Math.random = () => { calls++; return real(); };
-  try {
-    assert.deepEqual(puffs(7, 600, 400), puffs(7, 600, 400));
-    assert.notDeepEqual(puffs(7, 600, 400), puffs(8, 600, 400));
-  } finally { Math.random = real; }
-  assert.equal(calls, 0);
-  assert.equal(puffs(1, 10, 10).length, 24);
-  assert.equal(puffs(1, 0, 0).length, 24);
-  assert.equal(puffs(1, 3000, 3000).length, 160);
-  assert.equal(puffs(1, 360, 360).length, 72);
-  for (const p of puffs(3, 600, 400)) {
-    assert.ok(p.x >= 0 && p.x < 600 && p.y >= 0 && p.y < 400 && p.r > 0);
-  }
-});
-
-test('a puff drifts and wraps at the box\'s edges; at t = 0 it is where it was made', () => {
-  const p = puffs(5, 600, 400)[0]!;
-  const at0 = puffAt(p, 0, 600, 400);
-  near(at0.x, p.x); near(at0.y, p.y); near(at0.r, p.r);
-  assert.ok(at0.shade >= -1 && at0.shade <= 1);
-  assert.notEqual(puffAt(p, 5000, 600, 400).x, at0.x);
-  for (const t of [0, 1000, 123456, 99999999]) {
-    const q = puffAt(p, t, 600, 400);
-    assert.ok(q.x >= 0 && q.x < 600 && q.y >= 0 && q.y < 400, `${t}: ${q.x}, ${q.y}`);
-  }
-  const fast = { x: 590, y: 10, r: 20, dx: 100, dy: -100, phase: 0 };
-  const w = puffAt(fast, 1000, 600, 400);
-  near(w.x, 90); near(w.y, 310);
-  assert.deepEqual(puffAt(p, 12345, 600, 400), puffAt(p, 12345, 600, 400));
-  assert.doesNotThrow(() => puffAt(p, 1000, 0, 0));
 });
 
 const LINES = [{ top: 0, bottom: 20 }, { top: 20, bottom: 40 }, { top: 40, bottom: 60 }];
@@ -271,4 +237,20 @@ test('hardOpen (forced colors): a clearing at least trailHard open and a trail p
   assert.equal(hardOpen(300, 100, [], trail, R, 750), false);
   assert.equal(hardOpen(300 + R - 1, 100, [], trail, R, 749), true);
   assert.equal(hardOpen(300 + R, 100, [], trail, R, 749), false);
+});
+
+test('hardDiscs lists a clearing at least half open and a trail point younger than trailHard of the wake, and hardOpen is true exactly inside a listed disc', () => {
+  const now = 1000, half = SMOKE.roll * SMOKE.trailHard;
+  /* A clearing left `age` ms ago with no hold is `1 - age / roll` open. */
+  const clearing = (x: number, age: number): Clearing => ({ x, y: 100, openedAt: 0, leftAt: now - age, hold: 0 });
+  const whole = clearing(100, 0), justOpen = clearing(300, half), justShut = clearing(500, half + 1), gone = clearing(700, SMOKE.roll);
+  const young: TrailPoint = { x: 900, y: 100, leftAt: now - (SMOKE.trailHard * SMOKE.wake - 1) }, old: TrailPoint = { x: 1100, y: 100, leftAt: now - SMOKE.trailHard * SMOKE.wake };
+  const discs = hardDiscs([whole, justOpen, justShut, gone], [young, old], now);
+  assert.deepEqual(discs.map((d) => d.x), [100, 300, 900]);
+  for (const d of [whole, justOpen, justShut, gone, young, old]) {
+    const listed = discs.some((l) => l.x === d.x);
+    assert.equal(hardOpen(d.x, 100, [whole, justOpen, justShut, gone], [young, old], R, now), listed, `at ${d.x}`);
+    assert.equal(hardOpen(d.x + R - 1, 100, [whole, justOpen, justShut, gone], [young, old], R, now), listed, `inside the rim at ${d.x}`);
+    assert.equal(hardOpen(d.x + R, 100, [whole, justOpen, justShut, gone], [young, old], R, now), false, `at the rim at ${d.x}`);
+  }
 });
