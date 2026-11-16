@@ -1,6 +1,28 @@
 -- A spun thread's opening Act is a post for every card (supabase/migrations/0374_cards_on_a_spun_thread.sql; docs/plans/2026-11-16-cards-on-a-spun-thread-plan.md, Task 1, cases C1 to C16;
 -- design docs/plans/2026-11-16-cards-on-a-spun-thread-design.md, sections 1 to 3). Each case is played through play_card, set_card, take_back, post or spin as the act function sends it,
 -- on S: a spun thread whose opening post (a `spin` Act) Ann's character wrote, with one reply by Bob's character. The cards are this file's own (cs...), never an instance's.
+--
+-- The same cases as the other side's file; a case added to one is added to both.
+-- S is a spun thread whose opening post Ann's character wrote, with one reply by Bob's character. <card> is the card's name.
+--
+-- | #   | Play                                                                        | Expected                                                             |
+-- |-----|-----------------------------------------------------------------------------|----------------------------------------------------------------------|
+-- | C1  | a post card cast on the opening post by Bob's character                     | lands                                                                |
+-- | C2  | the same card cast there by Ann's character                                 | lands                                                                |
+-- | C3  | a post Gimmick used on the opening post by Ann's character                  | lands                                                                |
+-- | C4  | the same Gimmick used there by Bob's character                              | "<card> is used on your own post"                                    |
+-- | C5  | a card set face down on the opening post by Ann's character                 | lands; a quote of the opening post springs it; a take-back lands     |
+-- | C6  | a set by Bob's character on Ann's opening post                              | "a card is set face down on a post of your own character's"          |
+-- | C7  | a reply-carrying card cast on the opening post                              | lands; the reply is drawn under the opening post                     |
+-- | C8  | a character card cast on Ann's character from the opening post              | lands                                                                |
+-- | C9  | a character card on Bob's character from Ann's opening post                 | "a card on a character is played from one of its posts"              |
+-- | C10 | a thread Gimmick used on S by Ann's character                               | lands                                                                |
+-- | C11 | a thread Gimmick used on S by Bob's character                               | "<card> is used on a thread your own character started"              |
+-- | C12 | a thread Move cast on S by Bob's character                                  | lands                                                                |
+-- | C13 | a thread Move set face down by Bob's character on his reply, then sprung    | lands on S                                                           |
+-- | C14 | a spin from a character card on Ann's character, pressed at the opening post| lands, with its moment                                               |
+-- | C15 | any card on an `edit` Act, and on a `card` Act                              | "a card lands on a post"; a set, "a card is set face down on a post" |
+-- | C16 | a second play of a stack-1 card on the opening post                         | "this post already carries that card"                                |
 
 create function pg_temp.cards() returns void language plpgsql as $$
 begin
