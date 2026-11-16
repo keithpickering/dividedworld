@@ -451,6 +451,25 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     });
   });
 
+  /* The opening post's glitter, with the ORIGIN box inside its body and no glitter of the box's own (design section 4): the box is lifted
+     whole over the opening post's ink, so the pointermove the box's words bubble to the post's body is ignored there. */
+  test("on the opening post's body, a pointermove in the ORIGIN box's words is ignored and one in its own words is heard", () => {
+    render(
+      <div className="kb-act-main" data-kb-content-area>
+        <GlitterBombEffect {...props()} />
+        <div className="kb-origin" data-kb-over-ink>
+          <div className="kb-origin-area" data-kb-content-area><p className="box-words">Inside the box.</p></div>
+        </div>
+      </div>,
+    );
+    see(1);
+    frames(2);
+    fireEvent.pointerMove(document.querySelector('.box-words')!, { clientX: 10, clientY: 10, pointerType: 'mouse' });
+    expect(spies.clingOver, "the box's words are the box's, not the opening post's glitter").not.toHaveBeenCalled();
+    fireEvent.pointerMove(document.querySelector('[data-kb-words]')!, { clientX: 10, clientY: 10, pointerType: 'mouse' });
+    expect(spies.clingOver, "the opening post's own words are heard").toHaveBeenCalledTimes(1);
+  });
+
   /* Issue #304: a body bigger than the words is redrawn at a share of the rate (engine/ui/cards/body.ts `paintShare`), and the lit
      layer repaints only the flakes on the rows the loop says are on screen. */
   test('in a post body four times its words\' area, the glitter is redrawn at a quarter of the rate', () => {

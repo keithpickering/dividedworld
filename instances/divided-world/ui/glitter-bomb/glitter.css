@@ -3,8 +3,9 @@
  * what the light changes (the lit flakes, the flares and the loose glitter); over the words, one holds the burst while it flies. All
  * stand on one surface that takes no pointer and no room, so the post reads and lays out as it would bare. The surface is placed and
  * sized in CSS px by Effect.tsx, inline, over the box it paints (engine/ui/cards/body.ts): in the thread the post's whole body, in
- * the ORIGIN box the box's area under its band, only where there is no content area the host; the rules here are the host's box, for the moment before the first measure. The canvases are sized in whole
- * device pixels by Effect.tsx (the box times the loop's density); their CSS size is the surface's, here. They hold no color: the
+ * the ORIGIN box the box's area under its band, only where there is no content area the host; the rules here are the host's box, for
+ * the moment before the first measure. The canvases are sized in whole device pixels by Effect.tsx (the box times the loop's
+ * density); their CSS size is the surface's, here. They hold no color: the
  * flakes' inks are in Effect.tsx and every pixel is held in the board's readable band by the engine, but the dark board's few
  * glints (shine design section 5). The words keep a text shadow in the board's ground.
  *

@@ -38,9 +38,10 @@
  * Where. The glitter covers the post, not only its words (2026-11-06: "the card effect should apply to the entire post in all cases"):
  * the three canvases stand on one surface, an element placed inline over the box the effect paints (engine/ui/cards/body.ts): in the
  * thread the post body's padding box (`.kb-act-main`, bar to bar), in the ORIGIN box the box's area (`.kb-origin-area`, under its band, border
- * to border), and only where there is no content area (Stick Around's view) the host's own. The nearest area is the one it paints, so the
- * box's glitter never hears a pointer through the opening post's, and a pointer over what the engine lifts over the ink inside that area is
- * the lifted thing's, not the glitter's.
+ * to border), and only where there is no content area (Stick Around's view) the host's own. The nearest area is the one it paints. A pointer
+ * over what the engine lifts over the ink inside that area is the lifted thing's, not the glitter's; so the opening post's glitter
+ * ignores a pointer in the ORIGIN box, which is lifted whole over it, while the box's own glitter hears a pointer in its area. That
+ * check is on the host's own move listener only: once the page-wide cling layer exists it hears every move itself (flakes.ts `onMove`).
  * The surface is what cling knows, so a flake can land anywhere on the post, in the surface's px. Painting the body, the host
  * marks itself `data-kb-bleed` and glitter.css puts the flakes under everything in the body (its reactions, its signature, an ORIGIN
  * box above the words), not only under the words. The host watches the body's size as well as its own.
