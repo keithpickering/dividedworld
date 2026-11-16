@@ -1,27 +1,32 @@
 /**
- * End to end: cards on a spun thread's opening post (docs/plans/2026-11-16-cards-on-a-spun-thread-plan.md, Task 8, cases C1 to C16 named there; design section 1, 5, 6 and 9), across the act function's own
- * path (supabase/functions/act/core.ts: `card_target_reach`, the engine's rules and `play_card`, `set_card` or `play_surface_card` read where they meet), the settlement job's own core
- * (supabase/functions/settle/core.ts) and the export and import tools (tools/export-instance.mjs, tools/import-instance.mjs), against the real migrations on the scratch database, the instance's REAL
- * cards seeded (Feelin' Fab, Last Word, Good Vibes, Main Event and Mooch).
+ * End to end: cards on a spun thread's opening post (docs/plans/2026-11-16-cards-on-a-spun-thread-plan.md, Task 8;
+ * design sections 1, 5, 6 and 9). Of the plan's cases C1 to C16 only C1, C3, C5, C10 and C12 run here, as named below.
+ * The path is the act function's own (supabase/functions/act/core.ts), the settlement job's core (supabase/functions/settle/core.ts)
+ * and the export and import tools (tools/export-instance.mjs, tools/import-instance.mjs), against the real migrations on the
+ * scratch database, with the instance's REAL cards seeded (Feelin' Fab, Last Word, Good Vibes, Main Event and Mooch).
  *
- * The day: Ann's character spins a post of Bob's, so the spun thread S opens with Ann's `spin` Act at seq 1, and Bob's character replies once. Then, each through the act function:
- *   C1   Bob casts Feelin' Fab on the opening post: it lands, a card Act on the spin in S's thread (and `card_target_reach` reads the target as a `spin`).
- *   C5   Ann sets Feelin' Fab face down on the opening post (the set Act and its `face_down` row name it); Bob's quote of it springs the back, and the card lands on the quoting post as a cast of Ann's.
+ * The day: Ann's character spins a post of Bob's, so the spun thread S opens with Ann's `spin` Act at seq 1, and Bob's
+ * character replies once. Then, each through the act function:
+ *   C1   Bob casts Feelin' Fab on the opening post: a card Act on the spin, in S (card_target_reach reads the target as a spin).
+ *   C5   Ann sets Feelin' Fab face down on the opening post; Bob's quote of it springs the back, a cast of Ann's on the quote.
  *   C3   Ann uses Last Word on the opening post.
- *   C10  Ann uses Good Vibes, a thread Gimmick, on S: it lands, written on the opening Act, and its `play_reach` row names the thread.
+ *   C10  Ann uses Good Vibes, a thread Gimmick, on S: written on the opening Act, its `play_reach` row naming the thread.
  *   C12  Bob casts Main Event, a thread Move, on S: the same.
- * Then a skim: a fifth character casts Mooch on the opening post and, as the control, on Bob's reply; two players react Tomato to both; and the settlement pays the skim on the opening post as on the plain
- * post (the same sum from the same two votes, each named by the Act it was drawn on), and pays the opening post's reactions to Ann, the spinner. An admin's `reverse_card` ends Bob's Feelin' Fab on the
- * opening post (a way out), a player's is refused, and the caster's and the author's own `log_page` say it, naming the play and the opening post, which is post #1; a stranger's says none of it. The
- * instance is exported and imported again to the same forum, the plays on the opening post included, and the imported forum reads them the same.
+ * Then a skim: a fifth character casts Mooch on the opening post and, as the control, on Bob's reply; two players react Tomato
+ * to both; the settlement pays the skim on the opening post as on the plain post, and the opening post's reactions to Ann, the
+ * spinner. An admin's `reverse_card` ends Bob's Feelin' Fab (a way out), a player's is refused, and the caster's and the
+ * author's `log_page` name the play and the opening post at post #1; a stranger's says none of it. The instance is exported and
+ * imported again to the same forum, and the imported forum reads the plays the same.
  *
- * Stepped over, as 0001, 0027 and 0003 step over theirs: the players' wallets and hands (`wallets` and `card_ledger` are written directly), and the clock. The act function writes at the wall clock and
- * the settlement is of a window that opens where the files before this one left the settlements (they leave windows ahead of it), so once the plays are made this file's own Acts and reactions are carried
- * to just after that window's start, all by the same distance, in one transaction with the append-only trigger and the others off (the order and the gaps between them are as they were; only where they sit in time moves). Every board, account and
- * character is this file's own, and every assertion is about its ids, since the files before leave committed rows.
+ * Stepped over, as 0001, 0027 and 0003 step over theirs: the players' wallets and hands (`wallets` and `card_ledger` are
+ * written directly), and the clock. The act function writes at the wall clock, but the settlement's window opens where the files
+ * before this one left the settlements (ahead of it), and the skim needs the plays inside the window's reach, so this file's
+ * own Acts, reactions and threads are carried to just after the window's start, all by one distance (their order and gaps are
+ * kept). Every board, account and character is this file's own, and every assertion is about its ids.
  *
- * Order: a high number, so it runs after the others (tools/test-sql.mjs sorts the files). It leaves its own committed rows behind and drops the database it imports into. Reads only the scratch database
- * tools/test-sql.mjs made (scratchUrl refuses any other); run by tools/test-sql.mjs.
+ * Order: a high number, so it runs after the others (tools/test-sql.mjs sorts the files). It leaves its own committed rows
+ * behind and drops the database it imports into. Reads only the scratch database tools/test-sql.mjs made (scratchUrl
+ * refuses any other); run by tools/test-sql.mjs.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -183,7 +188,13 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
   for (const target of [open, reply]) for (const n of ['Rae', 'Sam'] as const) await ok(n, { action: 'react', act: target, character: char(n), kind: 'tomato' });
   assert.equal(sql(`select count(*) from reactions where act in ('${open}', '${reply}')`), '4', 'two players reacted to each');
 
-  // ---- The clock: this file's Acts and reactions are carried to just after the window's start, all by one distance. ----
+  // ---- The clock: this file's Acts, reactions and threads are carried to just after the window's start, by one distance. ----
+  // No guard-free way exists. Moving only the reactions (as 0012 does) is not enough: settlement also reads the Mooch plays made before
+  // the window and still up in it (migration 0370, skim_up: made within the card's week before window_start and ending after it). The act
+  // function stamped them at the wall clock, and the window opens wherever the earlier files left the settlements, which can be past that
+  // week. Only an update of the Acts' own time puts them inside it, so acts_no_update is off for this one transaction. Replica mode skips the
+  // ordinary triggers but not an ALWAYS one (0001_core.sql), hence the alter; it is enabled again, as ALWAYS, before the commit (an error
+  // rolls the transaction back, the trigger's state with it).
   const mine = `select a.id from acts a where a.thread in ('${S}', '${originThread}')`;
   sql(`begin;
     set local session_replication_role = replica;
@@ -221,17 +232,20 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
   assert.equal(ended.thread, S, 'the end is in the spun thread');
 
   // ---- Each log says it, plainly, naming the play and post #1; a stranger's says none of it. ----
+  // log_page's `acts` are rows of acts_public (snake_case keys): the play's row names its target, and the opening Act's row says its place.
   type Page = { sources: { ended: Record<string, any>[]; cards: Record<string, any>[]; playsOnMine: Record<string, any>[] }; acts: Record<string, any>[] };
   const logOf = async (n: Who) => await as(n).rpc<Page>('log_page', { in_before: null });
-  const actOf = (page: Page, id: string) => (page.acts ?? []).find((a) => a.id === id);
+  const actOf = (page: Page, id: string) => page.acts.find((a) => a.id === id);
   const bob = await logOf('Bob');
   const bobEnded = bob.sources.ended.find((e) => e.play === bobPlay);
   assert.deepEqual([bobEnded?.side, bobEnded?.reach], ['cast', 'post'], 'the caster\'s log has the ended play, as his own');
-  assert.deepEqual([actOf(bob, bobPlay)?.target_act_id ?? actOf(bob, bobPlay)?.targetActId, actOf(bob, open)?.seq], [open, 1], 'and it follows to the opening post, post #1');
+  assert.equal(actOf(bob, bobPlay)?.target_act_id, open, 'the caster\'s log names the opening post as the ended play\'s target');
+  assert.equal(actOf(bob, open)?.seq, 1, 'and that post is #1 of the spun thread');
   const ann = await logOf('Ann');
   const annEnded = ann.sources.ended.find((e) => e.play === bobPlay);
   assert.deepEqual([annEnded?.side, annEnded?.reach], ['onMine', 'post'], 'the author\'s log has it as ended on her post');
-  assert.deepEqual([actOf(ann, bobPlay)?.target_act_id ?? actOf(ann, bobPlay)?.targetActId, actOf(ann, open)?.seq], [open, 1], 'and it follows to the opening post, post #1');
+  assert.equal(actOf(ann, bobPlay)?.target_act_id, open, 'the author\'s log names the opening post as the ended play\'s target');
+  assert.equal(actOf(ann, open)?.seq, 1, 'and that post is #1 of the spun thread');
   const onMine = (id: string) => ann.sources.playsOnMine.find((p) => p.play === id);
   assert.deepEqual([onMine(bobPlay)?.post, onMine(bobPlay)?.reach], [open, 'post'], 'the author\'s log holds the cast on her opening post');
   assert.deepEqual([onMine(idOf(c12))?.post, onMine(idOf(c12))?.reach], [open, 'thread'], 'and the thread Move on her spun thread, written on the opening post');
