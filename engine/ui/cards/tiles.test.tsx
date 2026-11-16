@@ -111,3 +111,35 @@ describe('nearTiles', () => {
     expect(nearTiles(-5, 0, 900)).toEqual([]);
   });
 });
+
+describe('nearTiles, computed from the index range', () => {
+  /* The answer the definition gives: the filter over every band of the box. */
+  const byFilter = (boxH: number, top: number, bottom: number) =>
+    bandsOf(boxH, TILE_PX).flatMap((t, i) => (t.top + t.h >= top - TILE_NEAR_PX && t.top <= bottom + TILE_NEAR_PX ? [i] : []));
+
+  test('is the filter over bandsOf for many boxes and views: fractional heights, a last short tile, views far outside, no height', () => {
+    const heights = [-10, 0, 0.5, 1, 255.5, 511, 512, 512.25, 513, 1023.99, 1024, 1300, 2500.5, 3000, 4096, 10000.75];
+    const views: [number, number][] = [];
+    for (const top of [-100000, -3000, -800, -768, -513, -300, -257, -256, -255, -1, 0, 0.5, 100, 255, 256, 511, 512, 700, 1024, 1500, 2999, 3000, 3300, 3500, 9999, 10000.75, 50000]) {
+      for (const h of [0, 1, 300, 800, 1200, 5000]) views.push([top, top + h]);
+    }
+    let compared = 0;
+    for (const boxH of heights) {
+      for (const [top, bottom] of views) {
+        expect(nearTiles(boxH, top, bottom), `box ${boxH}, view ${top} to ${bottom}`).toEqual(byFilter(boxH, top, bottom));
+        compared++;
+      }
+    }
+    expect(compared).toBeGreaterThan(1000);
+    /* A tile just TILE_NEAR_PX away counts, and a last short tile that ends short of the view does not. */
+    expect(nearTiles(600, 1000, 1100)).toEqual([]);
+    expect(nearTiles(600, 600 + TILE_NEAR_PX, 2000)).toEqual([1]);
+  });
+
+  test('builds no list of the box tiles: a box of two billion px answers at once, with the few tiles the view crosses', () => {
+    const got = nearTiles(2e9, 1e9, 1e9 + 800);
+    expect(got.length).toBeGreaterThanOrEqual(3);
+    expect(got.length).toBeLessThanOrEqual(mostTiles(800));
+    expect(got).toContain(Math.floor(1e9 / TILE_PX));
+  });
+});

@@ -5,7 +5,8 @@
  * time. Its answer says whether it wants the next frame too, so a looping layer keeps asking by returning true and a layer with nothing left to
  * do returns false and costs nothing. A layer that asks for a frame while a frame runs is served in the next, never the same.
  *
- * A frame that throws never stops the loop: each layer is served on its own, so one layer's painter costs only that layer its frame. The
+ * A frame that throws never stops the loop: each layer is served on its own, so one layer's painter costs only that layer its frame. A member whose `frame`
+ * throws is not asked again until it asks anew (a scroll, a stale tile, a loop it sets); that is accepted as it is. The
  * loop's own time in a frame (milliseconds, two `performance.now` reads around the step) is kept for the last `WORK_KEEP` frames in a ring, as
  * engine/ui/shine/loop.ts keeps it, and read by `probe.work`. That is a duration on the page's own timer, not a time compared with any time the
  * data holds, so it is not a read tools/check-one-clock.mjs counts; the layer's frame time is the timestamp the browser hands the frame.

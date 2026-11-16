@@ -65,33 +65,17 @@ export function mostTiles(viewportH: number): number {
  */
 export function nearTiles(boxH: number, viewTop: number, viewBottom: number): number[] {
   const out: number[] = [];
+  if (!(boxH > 0)) return out;
   const from = viewTop - TILE_NEAR_PX;
   const to = viewBottom + TILE_NEAR_PX;
-  bandsOf(boxH, TILE_PX).forEach((t, i) => {
-    if (t.top + t.h >= from && t.top <= to) out.push(i);
-  });
+  const count = Math.ceil(boxH / TILE_PX);
+  /* Tile i spans [i * TILE_PX, (i + 1) * TILE_PX], except the last, which ends at boxH. A division by 512 is exact, so these are the filter's own bounds. */
+  const first = Math.max(0, Math.ceil(from / TILE_PX) - 1);
+  let last = Math.min(count - 1, Math.floor(to / TILE_PX));
+  if (last === count - 1 && boxH < from) last--;
+  for (let i = first; i <= last; i++) out.push(i);
   return out;
 }
-
-/**
- * The layer (design sections 2, 4 and 5). An effect hands `makeTileLayer` a painter that draws in the box's own CSS px coordinates and never
- * sizes a canvas: the layer finds the box, cuts it into tiles of `TILE_PX`, holds a canvas only for each tile near the view, releases a tile
- * that leaves, and sets the density. It reads a box, the window and the frame's time, nothing of a post and nothing private; time is never read
- * here (tools/check-one-clock.mjs): the frame's timestamp is the only clock.
- *
- * The first tiles are found from the box and the window in the layout pass that makes the layer and painted in it (section 5), because an
- * IntersectionObserver answers a frame or more late and an effect that hides words must not show them in that gap; the observer
- * (`watchBands`, which also lays a stand-in element over each tile's place) keeps the set after that. A tile the observer reports new is made
- * at once and painted in the next frame, so a stand-in marked `far` covers its place until a painted tile does. Where the browser has no
- * IntersectionObserver `bands.ts` counts every tile near; the layer ignores that and holds the tiles `nearTiles` names from the window on each
- * scroll frame, so the figure of section 3 holds there too.
- *
- * The frames are not the layer's: it joins the page's one schedule (tileLoop.ts) and asks it for a frame when it has a loop on, a stale or new tile or a scroll to follow, and requests none of its own.
- *
- * Every canvas is placed inline (the effect's stylesheet places nothing), appended after its tile's stand-in so it covers it, in the host: the
- * effect keeps its own layer at its own depth among the post's elements. The context a painter is handed has been cleared, transformed to the
- * box's coordinates and clipped to the tile's rows, so a painter that fills the whole box fills only the tile.
- */
 
 /** What a painter is handed for one canvas of one tile. `ctx` is already transformed so that its coordinates are the box's CSS px. */
 export interface TileDraw {
@@ -147,7 +131,30 @@ interface Tile {
   painted: boolean;
 }
 
-/** The layer over `host` (an absolutely positioned layer's parent, as `placeLayer` assumes): see the header. */
+/**
+ * The layer (design sections 2, 4 and 5). An effect hands `makeTileLayer` a painter that draws in the box's own CSS px coordinates and never
+ * sizes a canvas: the layer finds the box, cuts it into tiles of `TILE_PX`, holds a canvas only for each tile near the view, releases a tile
+ * that leaves, and sets the density. It reads a box, the window and the frame's time, nothing of a post and nothing private; time is never read
+ * here (tools/check-one-clock.mjs): the frame's timestamp is the only clock.
+ *
+ * The first tiles are found from the box and the window in the layout pass that makes the layer and painted in it (section 5), because an
+ * IntersectionObserver answers a frame or more late and an effect that hides words must not show them in that gap; the observer
+ * (`watchBands`, which also lays a stand-in element over each tile's place) keeps the set after that. A tile the observer reports new is made
+ * at once and painted in the next frame, so a stand-in marked `far` covers its place until a painted tile does. Where the browser has no
+ * IntersectionObserver `bands.ts` counts every tile near; the layer ignores that and holds the tiles `nearTiles` names from the window on each
+ * scroll frame, so the figure of section 3 holds there too.
+ *
+ * The frames are not the layer's: it joins the page's one schedule (tileLoop.ts) and asks it for a frame when it has a loop on, a stale or new
+ * tile or a scroll to follow, and requests none of its own. Following the window costs a scroll listener pair and a rect read a frame, so a layer
+ * does it only while it holds a tile the observer has not yet confirmed (or has no observer): a layer that holds none, which on a long thread is
+ * nearly every one, follows nothing and costs the window nothing (design section 8).
+ *
+ * Every canvas is placed inline (the effect's stylesheet places nothing), appended after its tile's stand-in so it covers it, in the host: the
+ * effect keeps its own layer at its own depth among the post's elements. The context a painter is handed has been cleared, transformed to the
+ * box's coordinates and clipped to the tile's rows, so a painter that fills the whole box fills only the tile.
+ *
+ * The layer over `host` (an absolutely positioned layer's parent, as `placeLayer` assumes).
+ */
 export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): TileLayer {
   const sheetCount = Math.max(1, Math.floor(options.sheets ?? 1));
   const tiles = new Map<number, Tile>();
@@ -227,11 +234,22 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
     mark(tile.index);
   };
 
+  /* A painter that calls back into the layer (a paintNow from its own paint) finds a pass already under way and does nothing. */
+  let painting = false;
   const paint = (tile: Tile, frame: number | null) => {
+    if (stopped || painting) return;
+    painting = true;
+    try { paintSheets(tile, frame); } finally { painting = false; }
+  };
+  const paintSheets = (tile: Tile, frame: number | null) => {
     tile.dirty = false;
+    let drew = false;
     tile.sheets.forEach((c, sheet) => {
+      /* A painter that stopped the layer ends the pass: the canvases are gone. */
+      if (stopped) return;
       const ctx = c.getContext('2d');
       if (!ctx) return;
+      drew = true;
       const d = tile.density;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, c.width, c.height);
@@ -244,6 +262,8 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
       try { options.paint({ ctx, sheet, index: tile.index, top: tile.top, h: tile.h, box: { w: box.w, h: box.h }, density: d, frame }); } catch (err) { console.error(err); }
       ctx.restore();
     });
+    /* A tile no context drew has nothing over its stand-in: for an effect that hides words that is bare words, so it stays far. */
+    if (!drew || stopped) return;
     tile.painted = true;
     mark(tile.index);
   };
@@ -269,12 +289,15 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
   function follow(ask: boolean): void {
     const v = view();
     hold(nearTiles(box.h, v.top, v.bottom), ask);
+    listen(following());
   }
 
-  /* Until the watcher first calls back (it skips an empty first report), and for good where there is no observer, the held set is the window's. */
+  /* Until the watcher first calls back (it skips an empty first report), and for good where there is no observer, the held set is the window's.
+   * That needs the window's scroll only while the layer holds a tile the observer has not confirmed: a layer holding none follows nothing, since
+   * the watcher does call back when the post comes near (its report is then not empty), and once following has released the last tile it stops. */
   let answered = false;
   let listening = false;
-  const following = () => !hasObserver || !answered;
+  const following = () => !hasObserver || (!answered && tiles.size > 0);
   const onScroll = () => { scrollDue = true; want(self); };
   const listen = (on: boolean) => {
     if (on === listening) return;
@@ -329,7 +352,6 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
     resizer.observe(host);
     if (body) { resizer.observe(body); watched = body; }
   }
-  listen(true);
 
   return {
     loop(on) {

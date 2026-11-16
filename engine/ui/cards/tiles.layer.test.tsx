@@ -7,6 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { bandsOf } from './bands.ts';
+import { probe } from './tileLoop.ts';
 import { MAX_TILE_PIXELS, TILE_NEAR_PX, TILE_PX, makeTileLayer, mostTiles, nearTiles, tileDensity, type TileDraw, type TileLayer, type TileLayerOptions } from './tiles.ts';
 
 /* ---- the stubs ---- */
@@ -89,6 +90,8 @@ const canvases = (host: HTMLElement) => [...host.querySelectorAll<HTMLCanvasElem
 const indexes = (layer: TileLayer) => layer.held().map((t) => t.index);
 
 beforeEach(() => {
+  /* The loop's module state is the page's: a handle left pending by one test must not silence the next. Reset before the stubs, as cancelAnimationFrame is stubbed after. */
+  probe.reset();
   observers = []; resizers = []; queue = new Map(); nextId = 1; painted = [];
   vi.stubGlobal('IntersectionObserver', FakeObserver);
   vi.stubGlobal('ResizeObserver', FakeResize);
@@ -536,5 +539,101 @@ describe('where there is no IntersectionObserver', () => {
     expect(removed.mock.calls.map((c) => c[0]).sort()).toEqual(['resize', 'scroll']);
     window.dispatchEvent(new Event('scroll'));
     expect(queue.size).toBe(0);
+  });
+});
+
+describe('a layer that holds no tile follows nothing', () => {
+  const listeners = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map((c) => c[0]).filter((n) => n === 'scroll' || n === 'resize').sort();
+
+  test('a layer made wholly out of view adds no scroll or resize listener to the window', () => {
+    const added = vi.spyOn(window, 'addEventListener');
+    scrollTo(-5000);
+    const { layer } = make();
+    expect(layer.held()).toEqual([]);
+    expect(listeners(added)).toEqual([]);
+  });
+
+  test('a layer whose window-found tiles are all released by following removes its listeners and asks for no frame on later scrolls', () => {
+    const removed = vi.spyOn(window, 'removeEventListener');
+    const { layer } = make();
+    flush();
+    scrollTo(10000);
+    window.dispatchEvent(new Event('scroll'));
+    flush(60);
+    expect(layer.held()).toEqual([]);
+    expect(listeners(removed)).toEqual(['resize', 'scroll']);
+    window.dispatchEvent(new Event('scroll'));
+    window.dispatchEvent(new Event('resize'));
+    expect(queue.size).toBe(0);
+  });
+
+  test('twenty layers out of view: a scroll asks for no frame and reads no host rect', () => {
+    scrollTo(-5000);
+    const hosts = Array.from({ length: 20 }, () => make().host);
+    flush();
+    flush();
+    const rects = hosts.map((h) => { const spy = vi.fn(h.getBoundingClientRect); h.getBoundingClientRect = spy; return spy; });
+    window.dispatchEvent(new Event('scroll'));
+    window.dispatchEvent(new Event('resize'));
+    expect(queue.size).toBe(0);
+    expect(rects.reduce((n, r) => n + r.mock.calls.length, 0)).toBe(0);
+  });
+
+  test('when the observer later reports the post near, its tiles are held and painted', () => {
+    scrollTo(-5000);
+    const { layer, host } = make();
+    flush();
+    report(host, [0, 1]);
+    flush(20);
+    flush(36);
+    expect(indexes(layer)).toEqual([0, 1]);
+    expect(painted.map((d) => [d.index, d.frame])).toEqual([[0, 36], [1, 36]]);
+  });
+});
+
+describe('a tile no context drew', () => {
+  test('is not marked painted: its stand-in stays far when every getContext is null', () => {
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation((() => null) as never);
+    const { host } = make({ standIn: 'fog' });
+    flush();
+    expect(bandEls(host).map((e) => e.getAttribute('data-kb-tile'))).toEqual(['far', 'far', 'far', 'far', 'far', 'far']);
+    expect(painted).toEqual([]);
+  });
+});
+
+describe('a painter that calls back into the layer', () => {
+  test('paintNow from inside a painter does not recurse', () => {
+    const seen: number[] = [];
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let self: TileLayer | undefined;
+    /* The depth is bounded by the test so that a layer with no guard fails an assertion instead of running away. */
+    let depth = 0;
+    const { layer } = make({ paint: (d) => { seen.push(d.index); if (depth < 3) { depth++; self?.paintNow(); depth--; } } });
+    self = layer;
+    seen.length = 0;
+    layer.paintNow();
+    expect(seen).toEqual([0, 1, 2]);
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  test('stop from inside a painter stops the pass: no painter call after it, nothing thrown, in paintNow and in a frame', () => {
+    for (const how of ['paintNow', 'frame'] as const) {
+      const seen: [number, number][] = [];
+      let self: TileLayer | undefined;
+      let stopAt = -1;
+      const { layer, host } = make({ sheets: 2, paint: (d) => { seen.push([d.index, d.sheet]); if (d.index === stopAt) self?.stop(); } });
+      self = layer;
+      flush();
+      seen.length = 0;
+      stopAt = 0;
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      if (how === 'paintNow') expect(() => layer.paintNow()).not.toThrow();
+      else { layer.stale(); expect(() => flush(40)).not.toThrow(); }
+      expect(seen).toEqual([[0, 0]]);
+      expect(errors).not.toHaveBeenCalled();
+      expect(layer.held()).toEqual([]);
+      expect(canvases(host)).toEqual([]);
+      errors.mockRestore();
+    }
   });
 });
