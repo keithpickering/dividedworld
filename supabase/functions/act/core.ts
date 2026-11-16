@@ -145,7 +145,7 @@ const live = (rpc: string, answer: unknown, args: Row = {}): Broadcast[] =>
  * change). Every other write is sent once; a saved effect's state among them, since a save
  * repeated after a newer one landed would bring the older strokes back; and a draw, a wash or a play with its first draw, each of which a second send would write again.
  */
-const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'open_account', 'instance_settings',
+const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'play_landed_at', 'open_account', 'instance_settings',
   // The hints' calls (0065): a read, and a write that finds its own earlier effect (a pattern already fired for an Act fires nothing).
   'act_window_counts', 'fire_hint']);
 export const SAFE_TO_REPEAT = (fn: string): boolean => REPEATABLE.has(fn);

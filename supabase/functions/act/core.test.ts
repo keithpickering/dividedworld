@@ -241,7 +241,7 @@ test('a refused or failed action sends nothing live', async () => {
 });
 
 test('only the reads and the writes that find their own earlier effect are safe to repeat after a lost answer', () => {
-  for (const fn of ['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'open_account', 'instance_settings']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
+  for (const fn of ['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'play_landed_at', 'open_account', 'instance_settings']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
   // A save repeated after a newer one landed would bring back the older strokes.
   for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'apologize', 'react', 'turn', 'withdraw_turn', 'buy_card', 'buy_pack', 'play_card', 'create_character', 'set_debut', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
 });
