@@ -1006,6 +1006,27 @@ describe('reduced motion', () => {
     }
   });
 
+  test('a chair at rest says how many nudges its body took (data-nudges), so a picture that shows no nudge can still be told from one that had it', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    const counts: number[] = [];
+    for (let seed = 1; seed <= 30; seed++) {
+      pin(seed);
+      const w = mount({ plays: [play(1), play(2), play(3)] });
+      see(true); aim(true);
+      /* The bodies are added in the plays' order, so the nth body is the nth chair by play id. */
+      const drawn = groups().sort((x, y) => x.dataset.play!.localeCompare(y.dataset.play!));
+      const views = [...bodies(hub.world!)].sort((x, y) => x.id - y.id);
+      expect(drawn, `seed ${seed}`).toHaveLength(views.length);
+      for (const [i, b] of views.entries()) {
+        expect(drawn[i]).toHaveAttribute('data-nudges', String(b.nudges));
+        counts.push(b.nudges);
+      }
+      w.unmount();
+    }
+    expect(counts.some((n) => n >= 1), 'some seed in 30 nudged a chair').toBe(true);
+    expect(counts.some((n) => n === 0), 'and some did not').toBe(true);
+  });
+
   test('it still differs from run to run', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     mount();

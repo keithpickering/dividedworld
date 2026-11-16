@@ -19,15 +19,24 @@ import { pageViolations } from './axe.ts';
  * leaning is nudged and falls over. So every chair at rest, whole box included, is drawn no higher than ROOM_HEIGHT above the bottom border
  * (the room the content area keeps, derived in chair.ts), covers no line of words and does not reach the reactions row.
  *
- * Why the seed is pinned. Each run draws its throws from a generator seeded by `crypto.getRandomValues` (Effect.tsx `freshSeed`), and the
+ * Why most seeds are pinned. Each run draws its throws from a generator seeded by `crypto.getRandomValues` (Effect.tsx `freshSeed`), and the
  * geometry is checked on the rests one run happened to make, and the nudge of a body that goes quiet high (body.ts) is drawn from a seeded
- * generator, so a CI run would test a different set of rests each time. So every test replaces
- * that call with a counter over a short list of seeds, the nth run of a page getting the nth seed. The seeds were chosen by trying 20
- * candidates for each page layout and keeping ones whose rests are ordinary: every chair under the room, none overlapping another. Two runs in one test still get different seeds, so "the dent's place changes" still means
- * something.
+ * generator, so a CI run would test a different set of rests each time. So every test replaces that call with a counter over a short list of
+ * seeds, the nth run of a page getting the nth seed. The seeds were chosen by trying 20 candidates for each page layout and keeping ones whose
+ * rests are ordinary: every chair under the room, none overlapping another. Two runs in one test still get different seeds, so "the dent's
+ * place changes" still means something.
+ *
+ * Why two poses are found, not pinned. Where a chair lands is a function of the seed AND the content area's measured size and the text's
+ * rects, which differ by platform (fonts): a seed that stacks two chairs, or stands one up, on one machine does not on another. The two tests
+ * that need such a pose (a chair on another, a chair that stood up and fell) scan seeds 1, 2, 3, ... on the page they will run on (`findSeed`),
+ * under reduced motion, whose picture is drawn at once and is exactly the rest the animated run ends in for the same seed (Effect.test.tsx),
+ * until the pose is there, and fail if none of the first SCAN_SEEDS has it. The pose of the second is a chair that took a nudge, which the
+ * effect writes on the chair as `data-nudges`; a rest alone does not show it.
  */
 test.use({ bypassCSP: true });
 
+/** What a scan puts at the start of `window.name` to give the next load its seed. */
+const SEED_NAME = 'kb-seeds:';
 const STORY = (name: string) => `/?fixture=boards&story=boards-25-steel-chair--${name}`;
 
 /** A pixel's rounding, and the half pixel the plan allows at a border. */
@@ -42,13 +51,6 @@ const SEEDS = {
   'one-dark': [101, 104],
   reduced: [101],
   'short-post': [101],
-  /* One-light with a chair that stood on its end or its narrow face and was nudged over (see the test that uses it), found by scanning seeds 1 to
-     80 on the stepped throws (Effect.tsx) and the content area's 22.5em body (thread.css) for an awake chair that held still above what a flat chair
-     reaches for several frames and then lay down (`watchStanding`). */
-  nudged: [4],
-  /* Three with a chair lying on another (its top is higher than any chair alone can reach): found by scanning seeds 1 to 60 on the same layout;
-     the tallest rests were seeds 60's (55.9 px above the border), 41's, 15's and 14's (55.0 to 55.4). */
-  stacked: [60],
   /* Three dents on one line, found by running seeds 1 to 70 on the widened hit zone (dent.ts `hitZone`), the stepped throws (Effect.tsx) and the
      content area's 22.5em body: the tight case (this one) has two dents over the line and overlapping each other (their centers 16 px apart at
      the closest); the spread case (SPREAD_SEED) has the dents' centers 79 px apart at the closest, one of them over the line and shading it.
@@ -69,8 +71,10 @@ const dents = (page: Page) => area(page).locator('.dw-chair-dents .dw-chair-dent
 /** Opens a story with its pinned seeds, the post in view, and starts counting the frames the page asks for. */
 async function open(page: Page, name: Story, size = { width: 1280, height: 760 }, seeds: readonly number[] = SEEDS[name]) {
   await page.setViewportSize(size);
-  await page.addInitScript((list: readonly number[]) => {
-    const w = window as unknown as { __frames: number };
+  await page.addInitScript(({ given, tag }: { given: readonly number[]; tag: string }) => {
+    /* A scan (`findSeed`) re-seeds the page by naming the window, which survives a reload; otherwise the test's own list is used. */
+    const list: readonly number[] = window.name.startsWith(tag) ? JSON.parse(window.name.slice(tag.length)) : given;
+    const w = window as unknown as { __frames: number; __seed: number };
     w.__frames = 0;
     const raf = window.requestAnimationFrame.bind(window);
     window.requestAnimationFrame = (cb: FrameRequestCallback) => { w.__frames++; return raf(cb); };
@@ -78,10 +82,10 @@ async function open(page: Page, name: Story, size = { width: 1280, height: 760 }
     const real = crypto.getRandomValues.bind(crypto);
     let runs = 0;
     crypto.getRandomValues = ((a: ArrayBufferView) => {
-      if (a instanceof Uint32Array && a.length === 1) { a[0] = list[runs++ % list.length]!; return a; }
+      if (a instanceof Uint32Array && a.length === 1) { a[0] = list[runs++ % list.length]!; w.__seed = a[0]; return a; }
       return real(a as Uint8Array);
     }) as typeof crypto.getRandomValues;
-  }, seeds);
+  }, { given: seeds, tag: SEED_NAME });
   await page.goto(STORY(name));
   await expect(page.locator('.dw-chair').first()).toBeAttached();
   await page.evaluate(() => document.fonts.ready);
@@ -492,24 +496,67 @@ async function clearOfWordsAndRow(page: Page, m: Measure) {
  */
 const FLAT_ALONE = INSET + 2 * HALF[2] + K * (Z_FRONT + DEPTH + GIVE + HALF[1]);
 
-/**
- * A seed pins a run exactly: the world steps in fixed steps and the second and third chairs enter at the 42nd and 84th step it has run (Effect.tsx),
- * so what a run ends in is a function of its seed and the content area's measured size, and not of the frame rate or the wall clock. So each
- * test below runs once, with a seed that gives the pose it asks for, and must find it.
- */
+/** How many seeds a scan tries, from 1, before it gives up (the poses it looks for turn up in a few percent of seeds). */
+const SCAN_SEEDS = 300;
+
+/** Gives the next load of the page its seed, the way `open`'s init script reads it, and loads the story again with the post in view. */
+async function loadWith(page: Page, name: Story, seed: number) {
+  await page.evaluate(([tag, s]) => { window.name = `${tag}${JSON.stringify([s])}`; }, [SEED_NAME, seed] as const);
+  /* The story's address, not a reload: the page rewrites its own address once it has loaded the fixture. */
+  await page.goto(STORY(name));
+  await expect(page.locator('.dw-chair').first()).toBeAttached();
+  await page.evaluate(() => document.fonts.ready);
+  await area(page).scrollIntoViewIfNeeded();
+}
 
 /**
- * A chair that comes to rest on another is the tallest rest the game keeps (body.ts REST_RISE). With the pinned seed (found by scanning, in
- * which one does: its top is higher than a chair lying alone can reach, FLAT_ALONE), every chair's whole drawn box covers no line of words,
- * does not meet the reactions row, and has its top under the room; and a chair is on another, so this cannot pass by measuring nothing.
+ * Finds a seed whose run makes the pose `pose` asks for, on this machine's layout. The story opens under reduced motion, whose picture is drawn
+ * at once and is the rest the animated run ends in for the same seed (Effect.test.tsx), with seeds `after + 1` to SCAN_SEEDS queued as its runs'
+ * seeds; and each further run is made without loading the page again, by scrolling the post out of view and back (a run's seed is the next
+ * in the queue), until `pose` is true of what the page measures. None in the queue is a failure that says how many were tried. The page is left
+ * on the run found, and the seed is returned. A pinned seed cannot do this: where a chair lands depends on the content area's size and the text's
+ * rects, which differ by platform.
+ */
+async function findSeed(
+  page: Page, name: Story, n: number, pose: (m: Measure, nudges: number[]) => boolean, after = 0, size?: { width: number; height: number },
+): Promise<number> {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  /* A name left by `loadWith` would give every run the one seed it holds. */
+  await page.evaluate(() => { window.name = ''; });
+  const queue = Array.from({ length: SCAN_SEEDS - after }, (_, i) => after + 1 + i);
+  await open(page, name, size, queue);
+  await page.evaluate(() => {
+    const s = document.createElement('div');
+    s.id = 'chair-spacer';
+    s.style.cssText = 'height:4000px';
+    document.body.append(s);
+  });
+  for (;;) {
+    await atRest(page, n, 2000);
+    const nudges = await chairs(page).evaluateAll((gs) => gs.map((g) => Number(g.getAttribute('data-nudges'))));
+    const seed = await page.evaluate(() => (window as unknown as { __seed: number }).__seed);
+    if (pose(await measure(page), nudges)) return seed;
+    if (seed >= SCAN_SEEDS) throw new Error(`no seed from ${after + 1} to ${SCAN_SEEDS} makes the pose "${name}" asks for on this layout`);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect(chairs(page)).toHaveCount(0);
+    await area(page).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  }
+}
+
+/**
+ * A chair that comes to rest on another is the tallest rest the game keeps (body.ts REST_RISE). The seed is found by scanning (above) for one in
+ * which one does: its top is higher than a chair lying alone can reach, FLAT_ALONE. Then every chair's whole drawn box covers no line of words,
+ * does not meet the reactions row, and has its top under the room; and a chair is on another, so this cannot pass by measuring nothing. The
+ * reduced picture is the animated run's rest, so the geometry is checked on it.
  */
 test('three: a chair that rests on another covers no words, does not reach the reactions row, and is under the room', async ({ page }) => {
-  await open(page, 'three', undefined, SEEDS.stacked);
-  await atRest(page, 3);
+  test.setTimeout(120_000);
+  const highestOf = (m: Measure) => Math.max(...m.chairs.map((c) => m.area.bottom - c.top));
+  const seed = await findSeed(page, 'three', 3, (m) => highestOf(m) > FLAT_ALONE);
+  test.info().annotations.push({ type: 'seed', description: `seed ${seed} stacks a chair` });
   const m = await measure(page);
   await clearOfWordsAndRow(page, m);
-  const highest = Math.max(...m.chairs.map((c) => m.area.bottom - c.top));
-  expect(highest, `a chair came to rest on another, its top higher than a chair lying alone reaches (${FLAT_ALONE})`).toBeGreaterThan(FLAT_ALONE);
+  expect(highestOf(m), `a chair came to rest on another, its top higher than a chair lying alone reaches (${FLAT_ALONE})`).toBeGreaterThan(FLAT_ALONE);
 });
 
 /**
@@ -542,17 +589,32 @@ const standingFrames = (page: Page) => page.evaluate(() => (window as unknown as
 /** The fewest frames in a row that count as standing (about 0.1 s at 60 fps, and the same in steps of the world at the slowest frame rate the cap allows). */
 const STOOD_FRAMES = 6;
 
+/** How many nudged seeds are tried, at most, for one whose run in animation holds a chair still long enough to count (a brief teeter may not). */
+const NUDGED_TRIES = 6;
+
 /**
  * A chair that stands on its end or its narrow face is not let sleep: it teeters and falls over (body.ts nudge), and ends lying low inside the
- * room. The pinned seed is one whose chair stood still, awake, above what a flat chair reaches before it fell; the test watches for that, so it
- * cannot pass on a run that never stood, and checks the rest as above.
+ * room. A seed is found by scanning (above) for a single chair that took a nudge (`data-nudges`), the one thing the rest alone does not show;
+ * then the page is loaded again with that seed in full motion, and the test watches for the chair standing still, awake, above what a flat chair
+ * reaches before it fell, so it cannot pass on a run that never stood, and checks the rest as above. A nudge can come from a brief teeter too
+ * short to count, and then the scan goes on to the next nudged seed (up to NUDGED_TRIES).
  */
 test('one-light: a chair that stands up falls over, and ends lying inside the room, clear of the words and the reactions row', async ({ page }) => {
-  await open(page, 'one-light', undefined, SEEDS.nudged);
-  await watchStanding(page);
-  await atRest(page, 1);
+  test.setTimeout(180_000);
+  let seed = 0, stood = 0;
+  const tried: number[] = [];
+  for (let i = 0; i < NUDGED_TRIES && stood < STOOD_FRAMES; i++) {
+    seed = await findSeed(page, 'one-light', 1, (_m, nudges) => nudges[0]! >= 1, seed);
+    tried.push(seed);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await loadWith(page, 'one-light', seed);
+    await watchStanding(page);
+    await atRest(page, 1);
+    stood = await standingFrames(page);
+  }
+  test.info().annotations.push({ type: 'seed', description: `nudged seeds tried ${tried.join(', ')}; the chair stood ${stood} frames` });
   await clearOfWordsAndRow(page, await measure(page));
-  expect(await standingFrames(page), `frames in a row the chair stood still above ${FLAT_ALONE.toFixed(0)} px before it fell`).toBeGreaterThanOrEqual(STOOD_FRAMES);
+  expect(stood, `frames in a row the chair stood still above ${FLAT_ALONE.toFixed(0)} px before it fell, over the nudged seeds ${tried.join(', ')}`).toBeGreaterThanOrEqual(STOOD_FRAMES);
 });
 
 /** Opens a clip of the page as RGBA pixels (the screenshot is decoded in the page, which has a canvas). */

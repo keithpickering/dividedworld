@@ -140,7 +140,7 @@ interface Memory { first: boolean; met: boolean }
 interface Control { replay(): void; sync(): void }
 /** What a chair's group remembers between frames, so a style is written only when it changed. */
 interface Cache {
-  pieces: HTMLElement[]; list: Piece[]; fold: number; transform: string; depth: string; matrices: string[]; applied: string[]; shades: string[];
+  pieces: HTMLElement[]; list: Piece[]; fold: number; transform: string; depth: string; nudges: number; matrices: string[]; applied: string[]; shades: string[];
 }
 
 /** How far a dent's circle (center in the content area's px, `radius`) reaches past the box's borders, in px: 0 where it lies inside. */
@@ -333,7 +333,7 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
       const group = groups.current.get(play);
       if (!group) return null;
       c = {
-        pieces: [...group.children] as HTMLElement[], list: PIECES, fold: -1, transform: '', depth: '', matrices: [], applied: [], shades: [],
+        pieces: [...group.children] as HTMLElement[], list: PIECES, fold: -1, transform: '', depth: '', nudges: -1, matrices: [], applied: [], shades: [],
       };
       caches.set(play, c);
       return c;
@@ -375,6 +375,8 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
           }
         });
         group.toggleAttribute('data-rest', v.asleep);
+        /* How many nudges the body took (body.ts): a rest alone does not show that a chair stood up and was tipped over, and the browser tests find that pose by it. */
+        if (c.nudges !== v.nudges) { group.setAttribute('data-nudges', String(v.nudges)); c.nudges = v.nudges; }
       }
       return awake;
     };
