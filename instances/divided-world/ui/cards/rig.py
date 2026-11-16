@@ -2,8 +2,8 @@
 roll-off, which is most of the 1990s look), materials, lights, the card's camera, the small shapes the scenes are built
 from, and the render call.
 
-Each card's folder holds a `scene.py` that builds its picture from nothing with this rig. A card's art is made from its
-own folder with
+Each card's folder holds a `scene.py` that builds its picture from nothing with this rig (Hot Box's holds a Blender
+file instead, changed by hand past what the rig builds; see the README). A card's art is made from its own folder with
 
     python scene.py art.webp
 
