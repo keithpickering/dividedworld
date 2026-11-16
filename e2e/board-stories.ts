@@ -40,7 +40,9 @@ export function boardStoryIds(roots: readonly string[] = [ENGINE_UI, ...instance
        apostrophe, Feelin' Fab's, is double-quoted). */
     const title = /\bconst meta\b[^=]*=\s*\{[^}]*?\btitle:\s*(?:'([^']+)'|"([^"]+)")/.exec(text)?.slice(1).find(Boolean);
     if (!title) throw new Error(`${path.relative(root, file)} has no title the story ids can be worked out from`);
-    return [...text.matchAll(/^export const (\w+)\b/gm)].map((m) => toId(title, storyNameFromExport(m[1]!)));
+    /* An export the meta's `excludeStories` names is data, not a story, and the story route composes none of them. */
+    const excluded = new Set([...(/\bexcludeStories:\s*\[([^\]]*)\]/.exec(text)?.[1] ?? '').matchAll(/['"](\w+)['"]/g)].map((m) => m[1]!));
+    return [...text.matchAll(/^export const (\w+)\b/gm)].filter((m) => !excluded.has(m[1]!)).map((m) => toId(title, storyNameFromExport(m[1]!)));
   }).sort();
 }
 

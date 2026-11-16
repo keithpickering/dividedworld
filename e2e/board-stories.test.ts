@@ -91,3 +91,18 @@ test('the veil cards\' stories are listed: the posts for their author, a third r
 test("the ORIGIN box's effect stories are listed: Whoops! live, landed and on a phone, Feelin' Fab plain and bright, Glitter Bomb as it was spun, Hot Box, Steel Chair long and short, and the box under its opening post's effects and under a glittered opening post", () => {
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['whoops', 'whoops-landed', 'fab', 'fab-bright', 'glitter-spun', 'glitter-over', 'hot-box', 'chair', 'chair-short', 'under', 'whoops-phone'].map((n) => `boards-26-origin-effects--${n}`)));
 });
+
+test('the effect budget stories are listed, a story for each effect on the tile layer and the two poisons, and the BUDGET map the file exports is not one', () => {
+  const ids = boardStoryIds();
+  expect(ids).toEqual(expect.arrayContaining(['hot-box', 'poison-slow', 'poison-whole'].map((n) => `boards-25-effect-budget--${n}`)));
+  expect(ids).not.toContain('boards-25-effect-budget--budget');
+});
+
+test('an export a meta excludes is data and not a story', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-stories-'));
+  made.push(repo);
+  const ui = path.join(repo, 'instances', 'planted', 'ui');
+  fs.mkdirSync(ui, { recursive: true });
+  fs.writeFileSync(path.join(ui, 'Data.board.stories.tsx'), "export const DATA = {};\nconst meta = { title: 'Boards/97 Data', excludeStories: ['DATA', 'OTHER'] };\nexport const Seen = {};\n");
+  expect(boardStoryIds(instanceUis(repo))).toEqual(['boards-97-data--seen']);
+});
