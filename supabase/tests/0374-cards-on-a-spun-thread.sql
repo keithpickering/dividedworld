@@ -269,8 +269,9 @@ begin
   if why is distinct from 'this post already carries that card|23505' then raise exception 'C16: %', why; end if;
 end $$;
 
--- ---- post_kind is no client RPC ----
+-- ---- post_kind is no visitor's to call ----
+-- 0375 grants it to a signed-in player, because thread_page is a security invoker and asks it; supabase/tests/0005-default-deny.sql holds the reason.
 do $$
 begin
-  if has_function_privilege('anon', 'post_kind(text)', 'execute') or has_function_privilege('authenticated', 'post_kind(text)', 'execute') then raise exception 'post_kind is callable by an API role'; end if;
+  if has_function_privilege('anon', 'post_kind(text)', 'execute') then raise exception 'post_kind is callable by a visitor'; end if;
 end $$;

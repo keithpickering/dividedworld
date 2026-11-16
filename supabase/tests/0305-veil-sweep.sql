@@ -176,6 +176,7 @@ select 'function', n, m, w from (values
   ('quote_hidden', 'no author', 'whether any version of a post is hidden: a boolean'),
   ('report_post', 'no author', 'a write: answers the report id it wrote, whoever owns the post (it reads no character)'),
   ('shown_payload', 'no author', 'a pure function of its arguments'),
+  ('post_kind', 'no author', 'a pure function of its argument: whether an Act''s kind is a post for a card'),
   ('version_hidden', 'no author', 'whether a version is hidden: a boolean'),
   ('admin_machine', 'no author', 'an admin''s screen of the machine'),
   ('admin_queue', 'no author', 'an admin''s queue: real moderation speaks plainly and admins see the true author by design (decided in planning); refused to a player'),
