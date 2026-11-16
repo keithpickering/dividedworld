@@ -922,7 +922,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
     <div ref={hostRef} className="dw-hotbox" data-kb-hotbox data-dw-fog-level={forcedLevel ?? 0} style={standIn}>
       {forced && <p className="dw-hotbox-sign"><strong>{state}.</strong> {endsText}</p>}
       {!still && !waved && <p className="kb-visually-hidden dw-hotbox-way">{SMOKED_WAY}</p>}
-      <div ref={wordsRef} className="dw-hotbox-words" inert={!still} style={mask}>{children}</div>
+      <div ref={wordsRef} className="dw-hotbox-words" inert={!still && !waved} style={mask}>{children}</div>
       {forced && (
         <div className="dw-hotbox-frame" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }}>
           {discs.map((c, i) => (
