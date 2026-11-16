@@ -10,6 +10,7 @@
  *   post too.
  * - `GlitterSpun`: a Glitter Bomb on a character, spun from a post of theirs ("as it was spun"), its glitter still.
  * - `HotBox`: three lines with Hot Box on it, live. `Chair`: three lines with Steel Chair on it, live. `ChairShort`: one short line with Steel Chair.
+ * - `GlitterOver`: Glitter Bomb on the character who spun the thread (who also has a post on its first page, as the server requires), the box a plain post by another character, live, over the glittered opening post.
  * - `Under`: a plain post in the box (with a 4D Chess play, which draws nothing, so that it has a mark), and Whoops! and Hot Box on the spin's opening post around it: the box stands above them and takes none of their presses.
  *
  * The spin is made through the fake's own `spin`, by the signed-in player's character, and the thread is read once it has answered. The plays on the
@@ -32,7 +33,7 @@ declare global {
   }
 }
 
-type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'chair' | 'chair-short' | 'under';
+type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'chair' | 'chair-short' | 'under' | 'over';
 
 const DAY = 86_400_000;
 /** The spun thread's title, which the page finds it by. */
@@ -74,13 +75,20 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'chair' ? THREE
     : shown === 'chair-short' ? SHORT
       : shown === 'bright' ? QUOTED
-        : shown === 'under' ? PLAIN
+        : shown === 'under' || shown === 'over' ? PLAIN
           : ONE;
   const post = fake.seed.post(made.thread, author, words);
   if (shown === 'whoops' || shown === 'landed') fake.seed.edit(post, author, THREE_EDITED);
-  const whoops = () => ({ layer: 1, live: true, config: { color: CYAN, seed: 202 }, message: 'cyan, obviously' });
+  /* The seed is one whose splat holds the byline's middle and the area's bottom-left corner at both the Main board's width and the phone's (found by running `makeSplat`/`fieldAt` over seeds against the measured areas: field 1.97 at the four points, the ink's threshold being 0.42), so that e2e/origin-effects.spec.ts case 2 reads solid ink in parts of the area that are not the words' box, on both. A splat is only where its seed put it. */
+  const whoops = () => ({ layer: 1, live: true, config: { color: CYAN, seed: 2591 }, message: 'cyan, obviously' });
   fake.signInAs(player);
-  /* The opening post's own plays, seeded when the page is up and given the spin's first Act. */
+  /*
+   * The opening post's own plays, seeded when the page is up and given the spin's first Act. These are fixtures of the engine's rule and not a state today's
+   * server produces (issue #739): a spun thread's opening Act is a `spin` Act, the server returns post-reach plays only for `post` Acts and refuses a card of post
+   * reach on anything else. So `FabBright`'s Feelin' Fab and `Under`'s Whoops! and Hot Box on the opening post show what the engine does for whatever effect is
+   * on it. They are seeded as live deliveries because the fake, like the server, returns none for a `spin` Act. What the server really does produce is
+   * `GlitterOver`: a play on the character, which the server delivers with any post of theirs on the page.
+   */
   const opening = (act: string): void => {
     if (shown === 'bright') fake.seed.card(caster, act, cardOf(instance.cards, 'feelin-fab').key, { layer: 1, live: true, config: {}, message: 'Fab' });
     if (shown === 'under') {
@@ -91,6 +99,8 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   const spun = (from: string, at?: string) => {
     seeded = fake.spin(from, mine, SPUN, 'Carrying on over here.', undefined, at).then((answer) => {
       if (!answer.ok) throw new Error(`the spin was refused: ${answer.error}`);
+      /* Glitter Bomb is a play on a character, and the server delivers a character's plays only with a post of that character on the page: so the spinner has a post on the first page too. */
+      if (shown === 'over') fake.seed.post(answer.value.thread.id, mine, 'And a post of my own, so that the glitter on me is delivered with this page.');
     });
     onOpening = opening;
   };
@@ -102,6 +112,11 @@ const worldOf = (shown: Case): World => (fake, instance) => {
     const play = fake.seed.reach(caster, 'character', author, cardOf(instance.cards, 'glitter-bomb').key, { post: cast.act, ends: now + 5 * DAY, message: 'Sparkle.' });
     spun(play, pressed);
     return;
+  }
+  if (shown === 'over') {
+    /* A play on the spinner, cast from a post of theirs, delivered by the server as it delivers any character's: the spin's opening Act is the spinner's, so the glitter is on it. */
+    const home = fake.seed.thread(board, mine, 'Where the bomb was cast on me', 'A post of mine, which the bomb was cast from.');
+    fake.seed.reach(caster, 'character', mine, cardOf(instance.cards, 'glitter-bomb').key, { post: home.act, ends: now + 5 * DAY, message: 'Sparkle.' });
   }
   if (shown === 'whoops') fake.seed.card(caster, post, cardOf(instance.cards, 'whoops').key, whoops());
   if (shown === 'landed') {
@@ -193,7 +208,12 @@ export const Whoops: Story = of('whoops');
 export const WhoopsLanded: Story = of('landed');
 /** Feelin' Fab on one line, live. */
 export const Fab: Story = of('fab');
-/** Feelin' Fab under Brighter effects, a quote in the box, and Feelin' Fab on the spin's opening post too. */
+/**
+ * Feelin' Fab under Brighter effects, a quote in the box, and Feelin' Fab on the spin's opening post too. A fixture of the engine's rule, not a state the server
+ * produces (issue #739): the opening Act of a spun thread is a `spin` Act, and the server returns plays of post reach only for `post` Acts, refusing a post-reach
+ * card on anything else. The play is seeded as a live delivery because the fake, like the server, returns none for a `spin` Act; the story holds what the engine
+ * does for whatever effect is on the opening post.
+ */
 export const FabBright: Story = of('bright', { bright: true });
 /** Glitter Bomb on a character, spun from a post of theirs: the box shows it as it was spun. */
 export const GlitterSpun: Story = of('glitter');
@@ -203,7 +223,17 @@ export const HotBox: Story = of('hotbox');
 export const Chair: Story = of('chair');
 /** Steel Chair on one short line, live. */
 export const ChairShort: Story = of('chair-short');
-/** A plain post in the box, under Whoops! and Hot Box on the opening post around it. */
+/**
+ * A plain post in the box, under Whoops! and Hot Box on the opening post around it. A fixture of the engine's rule, not a state the server produces (issue #739):
+ * the opening Act of a spun thread is a `spin` Act, the server returns plays of post reach only for `post` Acts and refuses a post-reach card (Whoops!, Hot Box) on
+ * anything else, so these two plays are seeded as live deliveries, the fake returning none for a `spin` Act as the server does. The story holds the engine's rule:
+ * the box stands over whatever effect is on its opening post, and takes none of its presses.
+ */
 export const Under: Story = of('under');
+/**
+ * Glitter Bomb on the character who spun the thread, who also has a post on the thread's first page (the server delivers a character's plays only when that
+ * character has a `post` Act on the page): the opening post is really glittered, and the box shows a plain post by another character, live, over it.
+ */
+export const GlitterOver: Story = of('over');
 /** Whoops! at the phone's width. */
 export const WhoopsPhone: Story = { ...of('whoops'), globals: phone };
