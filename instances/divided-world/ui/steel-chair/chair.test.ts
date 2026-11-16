@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, rng, settle, step, STEP, throwOf } from './body.ts';
+import { addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf } from './body.ts';
 import {
   BOX, depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, PERSPECTIVE, piecesOf, project, REACH, ROOM_HEIGHT, shadeOf, transformOf, Z_FRONT,
   type Matrix, type Piece,
@@ -205,7 +205,7 @@ describe('the room', () => {
   });
 
   test('over 600 seeded throws (every fifth a run of three), no rest of any pose is drawn higher than the room, and none sleeps above REST_RISE', () => {
-    let tallest = 0, flat = 0, rests = 0;
+    let tallest = 0, flat = 0, rests = 0, slowest = 0;
     for (const w of [600, 340]) {
       const h = 8 + 120 + 8 + ROOM_HEIGHT;
       const aim = { left: 10 - INSET, top: 8 - project({ x: 0, y: 0, z: 0 }).y, width: w - 20, height: 120 };
@@ -215,9 +215,11 @@ describe('the room', () => {
         const three = s % 5 === 0;
         for (let i = 0; i < (three ? 3 : 1); i++) {
           addThrow(world, throwOf(r, aim));
-          if (three) for (let k = 0; k < 42; k++) step(world, STEP); // the effect's stagger: 0.35 s is 42 steps
+          if (three) for (let k = 0; k < STAGGER_STEPS; k++) step(world, STEP);
         }
-        settle(world, 14);
+        let steps = 0;
+        while (steps < SETTLE_S / STEP && !bodies(world).every((b) => b.asleep)) { step(world, STEP); steps++; }
+        slowest = Math.max(slowest, steps);
         for (const b of bodies(world)) {
           assert.ok(b.asleep, `seed ${s}, width ${w}: a body is still moving`);
           rests++;
@@ -233,6 +235,8 @@ describe('the room', () => {
     /* What the sample holds, so that a body that stopped lying flat is noticed: flat is the bulk. The tallest rest is under the room, which is a bound. */
     assert.ok(flat > 300 && rests >= 600, `${flat} flat of ${rests}`);
     console.log(`# the tallest of ${rests} rests is drawn ${tallest.toFixed(1)} px above the border, the room is ${ROOM_HEIGHT}`);
+    /* The reduced and moment pictures settle for at most SETTLE_S: a run that needed more would be drawn with a chair in mid-air. */
+    assert.ok(slowest * STEP <= SETTLE_S / 2, `the slowest run took ${(slowest * STEP).toFixed(2)} s to sleep, past half of SETTLE_S ${SETTLE_S}`);
     assert.ok(tallest > 28 && tallest <= ROOM_HEIGHT, `the tallest rest ${tallest} against the room ${ROOM_HEIGHT}`);
   });
 });

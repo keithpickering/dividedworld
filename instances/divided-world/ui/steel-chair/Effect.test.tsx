@@ -69,7 +69,7 @@ let clock = 0;
 const drain = () => { const run = [...queue.values()]; queue.clear(); clock += 16; for (const cb of run) cb(clock); };
 /** One frame's time: the timers' 16 ms and the frames the page asked for. */
 const frame = () => act(() => { vi.advanceTimersByTime(16); drain(); });
-/** Frames until the page asks for none and at least `least` ms have passed (the throws are 350 ms apart), at most `most` frames. */
+/** Frames until the page asks for none and at least `least` ms have passed (the throws are 42 steps, 350 ms, apart), at most `most` frames. */
 const rest = (least = 1200, most = 1500) => { const from = clock; for (let i = 0; i < most && (queue.size > 0 || clock - from < least); i++) frame(); };
 /** One frame of `ms` of the wall clock: the page's frames come as the machine gives them, 16 ms on a fast one and more on a slow one. */
 const frameOf = (ms: number) => act(() => { vi.advanceTimersByTime(ms); clock += ms; const run = [...queue.values()]; queue.clear(); for (const cb of run) cb(clock); });
@@ -760,7 +760,7 @@ describe('when a run starts and ends', () => {
     frame();
     expect(groups(), 'the staggered throws are still due').toHaveLength(1);
     expect(queue.size, 'and the loop is waiting for a frame').toBeGreaterThan(0);
-    expect(vi.getTimerCount(), 'a run adds no timer of its own: the throws are on the step count').toBeLessThanOrEqual(timers);
+    expect(vi.getTimerCount(), 'a run adds no timer of its own: the throws are on the step count').toBe(timers);
     w.unmount();
     expect(watched()).toBe(0);
     expect(sized.every((r) => r.watching.size === 0)).toBe(true);

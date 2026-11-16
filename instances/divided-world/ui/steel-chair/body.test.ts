@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, rng, settle, step, STEP, throwOf,
+  addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf,
   type BodyView, type Box, type Event, type World,
 } from './body.ts';
 
@@ -309,6 +309,41 @@ test('over the single throws no body sleeps with a corner above REST_RISE, and n
     latest = Math.max(latest, r.sleptAt);
   }
   console.log(`# singles: ${nudged} of ${SEEDS} nudged, at most ${most} nudges, the latest asleep at ${latest.toFixed(2)} s`);
+});
+
+/**
+ * Three throws one stagger apart (the effect's own run) into the narrow worlds of a short or a tall post, the cases that were slowest and
+ * the one that was let sleep wedged when a probe ran 6000 of them: [width of the content area, its height, seed]. A chair on its end in a
+ * room barely wider than its 90 px length can be flung from one wall to the other and left leaning on one, so it needs more nudges than the
+ * single throws ever do; each of these must tip over, sleep within SETTLE_S, and sleep no higher than REST_RISE.
+ */
+const SLOW: Array<[number, number, number]> = [
+  [180, 260, 929], [180, 260, 754], [180, 260, 608], [180, 260, 707], [180, 260, 866], [180, 260, 943], [180, 260, 274], [300, 90, 700],
+];
+
+test('three staggered throws into the narrowest rooms, among them the slowest and the one that was wedged, all tip over and sleep', () => {
+  let most = 0, slowest = 0;
+  for (const [w, h, seed] of SLOW) {
+    const world = createWorld(w - 8, h, h);
+    const rand = rng(seed * 104729);
+    const aim: Box = { left: 10, top: 10, width: w * 0.5, height: Math.max(20, h * 0.4) };
+    for (let i = 0; i < 3; i++) {
+      addThrow(world, throwOf(rand, aim));
+      if (i < 2) for (let k = 0; k < STAGGER_STEPS; k++) step(world, STEP);
+    }
+    let steps = 0;
+    while (steps * STEP < SETTLE_S && !bodies(world).every((b) => b.asleep)) { step(world, STEP); steps++; }
+    assert.ok(bodies(world).every((b) => b.asleep), `${w} by ${h}, seed ${seed}: a body is still moving after ${SETTLE_S} s`);
+    slowest = Math.max(slowest, steps * STEP);
+    for (const b of bodies(world)) {
+      most = Math.max(most, b.nudges);
+      assert.equal(b.wedged, false, `${w} by ${h}, seed ${seed}: body ${b.id} was let sleep wedged after ${b.nudges} nudges`);
+      assert.ok(riseOf(b, h) <= REST_RISE, `${w} by ${h}, seed ${seed}: body ${b.id} sleeps ${riseOf(b, h)} px above the floor (REST_RISE ${REST_RISE})`);
+    }
+  }
+  /* The reduced and moment pictures settle for SETTLE_S and ignore whether it was enough: a world that needed more would be drawn with a chair in mid-air. */
+  assert.ok(slowest <= SETTLE_S / 2, `the slowest world took ${slowest.toFixed(2)} s to sleep, past half of SETTLE_S ${SETTLE_S}`);
+  console.log(`# the slow rooms: the most nudges one body needed was ${most}, the slowest world slept at ${slowest.toFixed(2)} s`);
 });
 
 /** A chair stands on its 46 by 8 end at rest on the floor, as nothing in the game now leaves one: the body that has to fall over. */

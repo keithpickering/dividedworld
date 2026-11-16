@@ -63,7 +63,7 @@ import { dayAndTime } from '../../../../engine/ui/characters/format.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { STEEL_CHAIR_LASTS } from '../../cards/steel-chair.ts';
 import {
-  addThrow, bodies, createWorld, remove, resize, rng, settle, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
+  addThrow, bodies, createWorld, remove, resize, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
 import { depthOf, INSET, piecesOf, project, ROOM_HEIGHT, shadeOf, transformOf, type Piece } from './chair.ts';
 import { DENT_SCALE, dentMapUrl, dentPrimitives, dentShape, dentsOverlap, filterTrusted, hitZone, seedOfIds, type DentShape } from './dent.ts';
@@ -92,9 +92,7 @@ const MOST = 3;
  */
 const ARM_ZONE = '-20% 0px -20% 0px';
 const ARM_MS = 300;
-/** The gap between one play's throw and the next, in the world's own time, and how long a dent takes to reach its full depth (wall time). */
-const GAP_S = 0.35;
-const STAGGER_STEPS = Math.round(GAP_S / STEP);
+/** How long a dent takes to reach its full depth (wall time). */
 const GROW_MS = 90;
 /**
  * The most steps one frame runs, whatever the clock owes (body.ts: a step costs up to 0.12 ms on a desktop, several times that on a phone).
@@ -107,8 +105,6 @@ const MOST_STEPS = 4;
 const MOST_FRAME_S = MOST_STEPS * STEP;
 /** How many settle sounds there are (`steel-chair.settle-1` to `-4`): a chair's first floor contact plays one of them. */
 const SETTLE_SOUNDS = 4;
-/** The longest a run is settled for at once (reduced motion and a moment), in simulated seconds: every throw sleeps well inside it. */
-const SETTLE_S = 12;
 const GROUP = 'steel-chair';
 
 /** A fresh seed from the reader's own screen: nothing about who they are, only what makes one run differ from the next. */

@@ -174,19 +174,23 @@ const WAKE_SPEED = 200;
  * times more), so the direction starts within 30 degrees either side of the chair's thin axis, either way round, as a draft or a floor's
  * tremor would topple it; each next nudge triples that spread (within 90 degrees at the second, any direction at the third), since a chair
  * propped like a ladder between the floor and a wall tips only along its own length. After the first, a nudge also hops the body
- * (NUDGE_HOP) and slides it (NUDGE_SLIDE), which lets go the friction that holds a propped chair. After MAX_NUDGES a body that is still high
- * is let sleep (wedged); the tests count none.
+ * (NUDGE_HOP) and slides it (NUDGE_SLIDE), which lets go the friction that holds a propped chair. In a room barely wider than the chair is
+ * long a nudge that frees it can land it leaning on the other wall, so a body may need several (in a probe of 6000 seeded runs of three
+ * throws the most was 11, one in 18000 bodies); from the tenth on a nudge is as hard as the tenth with a new direction, and a body is only
+ * let sleep high (wedged) after MAX_NUDGES, which the tests count none of: the last resort, so that a run always ends.
  */
 const NUDGE_FIRST = 2;
 const NUDGE_GROWTH = 1.5;
 const NUDGE_CAP = 6;
+/** The nudge after which they stop growing: the tenth's strength is kept for the rest, since a harder one would only fling the chair across the room. */
+const GROWN_AT = 10;
 const NUDGE_SPREAD = Math.PI / 6;
 /** The least rise of the middle, px, that a nudge's energy is sized for (g times it): about the lift of tipping a chair a few degrees. */
 const NUDGE_MIN_LIFT = 1;
 /** The hop that comes with a later nudge, px, and the sliding speed, px/s per unit of the nudge's strength, along the direction it tips. */
 const NUDGE_HOP = 1.5;
 const NUDGE_SLIDE = 60;
-const MAX_NUDGES = 10;
+const MAX_NUDGES = 24;
 /** How deep a point may be inside another chair's box and still be a touching contact solved before the move, px. */
 const TOUCH = 0.5;
 const PASSES = 16;
@@ -376,7 +380,7 @@ function nudge(world: World, b: Body): void {
   const base = Math.hypot(thin[0], thin[2]) > 0.05 ? Math.atan2(thin[2], thin[0]) : 0;
   const side = b.luck() < 0.5 ? 0 : Math.PI;
   const angle = base + side + (b.luck() * 2 - 1) * Math.min(Math.PI, NUDGE_SPREAD * 3 ** (b.nudges - 1));
-  const rate = NUDGE_FIRST * NUDGE_GROWTH ** (b.nudges - 1);
+  const rate = NUDGE_FIRST * NUDGE_GROWTH ** Math.min(b.nudges - 1, GROWN_AT - 1);
   const d: Vec3 = [Math.cos(angle), 0, Math.sin(angle)];
   /* The pivot: of the corners that are on the floor (within a pixel of the lowest) the one farthest toward d. */
   let lowY = -Infinity;
@@ -476,6 +480,19 @@ export function bodies(world: World): BodyView[] {
     wedged: b.wedged,
   }));
 }
+
+/**
+ * The gap between one play's throw and the next, in steps of the world's own time (0.35 s): the effect's animated run, its reduced
+ * and moment pictures and the tests all stagger by this one number, so a seed's pile is the same in each.
+ */
+export const STAGGER_STEPS = Math.round(0.35 / STEP);
+/**
+ * The longest a run is settled for at once (reduced motion and a moment), in simulated seconds. A chair that lands on its end is nudged
+ * over, which can take several tries of a fall each: of 6000 seeded runs of three throws into rooms of four sizes the slowest took 20 s
+ * (one body needing 11 nudges), and settling that one takes about 0.4 s of a reader's main thread. The tests hold the slowest world they
+ * run to half of this, so that a run cut off with a chair in mid-air is not one seed away.
+ */
+export const SETTLE_S = 40;
 
 /**
  * Steps until every body sleeps or maxSeconds of simulated time have passed; for reduced motion and a moment. The return value says
