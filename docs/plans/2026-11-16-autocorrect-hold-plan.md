@@ -20,11 +20,12 @@ Model: sonnet
 
 - **Engine** `engine/rules/cards.ts`, `CardRules`: an optional `stateHeldUntil?(settings: Settings, landed: Date): Date | undefined`,
   documented next to `validateState`: before that time, the post's author's saves on a play are refused; undefined is no hold. It names
-  no card.
+  no card. Beside it, an optional `stateHeldWords?(until: string): string`, the refusal's words given the time as `refusalTime` writes
+  it, with a plain default in the act function for a card that gives none.
 - **Act** `supabase/functions/act/core.ts`, the `needsCardOfPlay` branch (line 235): after `validateState`, when `rules.stateHeldUntil`
   is set, read `play_landed_at` as the player, read the settings rows (`withDatabaseSettings`, as `tuned` is read for a play), and when
-  `now < until` answer `refused('play', \`This tape is stuck on until ${refusalTime(until.toISOString())}. It can be peeled after that.\`)`
-  with no write. `now` is the clock the function already uses (inject it the way the file's other time checks do, or `new Date()`).
+  `now < until` answer `refused('play', words)` with no write, `words` being the card's `stateHeldWords(refusalTime(until))`. Autocorrect's:
+  "This tape is stuck on until <time>. It can be peeled after that." `now` is the clock the function already uses (inject it the way the file's other time checks do, or `new Date()`).
   A null landing time is "there is no such card on a post".
 - **Instance** `instances/divided-world/cards/autocorrect.ts`: `reads` gains `{ key: 'autocorrect.holdHours', whole: true, min: 0,
   max: 168 }`; `stateHeldUntil` gives `landed + holdHours` hours, or undefined at 0. Export `heldUntil(settings, playedAt: string):

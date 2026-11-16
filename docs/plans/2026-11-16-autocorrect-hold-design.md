@@ -51,7 +51,9 @@ in History, and a strip follows the post's words as the tape design says. The ho
 - **The read** is one new plain SQL function, `play_landed_at(play)`, next to `card_of_play` (`supabase/migrations/0006_cards.sql`).
   The landing time is public. `effect_state` and `save_effect_state` are unchanged.
 - **The refusal** is the same for every caller and comes before the database's author check, so it says nothing about who wrote the
-  post: "This tape is stuck on until 2026-11-17 15:14 UTC. It can be peeled after that." (the time as `refusalTime` writes it).
+  post. Its words are the card's own (`stateHeldWords(until)`, beside `stateHeldUntil`, with a plain default for a card that gives
+  none), so the act function names no card: Autocorrect's are "This tape is stuck on until 2026-11-17 15:14 UTC. It can be peeled
+  after that." (the time as `refusalTime` writes it).
 
 Weighed: the check in `save_effect_state` (a second place that would need the setting from the economy row and the card's key, so the
 engine's rule would be written twice, once in SQL); a `heldUntil` stored on the play when it lands (a new column, and a setting
