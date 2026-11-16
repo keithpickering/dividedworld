@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tokensOf, ratio } from '../contrast.ts';
+import { liftedOver } from '../cards/body.ts';
 import { POST_INK } from './band.ts';
 import { cling, dropLoose, DRAG, GRAVITY, HANG_S, IDLE_MS, landAll, loose, MAX_AIR, MAX_CARRIED, MAX_LOOSE, makeFlakes, shake, SHAKE_PER_FLICK, SHAKE_SPEED, SPRAY, sweepLoose, THROW, burst, type Flakes } from './flakes.ts';
 
@@ -789,5 +790,78 @@ describe('a fast scroll shakes glitter off', () => {
     sticky();
     expect(removes.mock.calls.filter(([t]) => t === 'scroll')).toHaveLength(1);
     off();
+  });
+});
+
+/* A pointer over a thing lifted over a host's hit (the ORIGIN box, a reactions row, History) lends the host's flakes to no one, in the
+   first move over the host and in every one the live page-wide layer hears after it (docs/plans/2026-11-15-origin-box-effects-design.md
+   sections 4 and 6). The host says so with `refuses`, the engine's `liftedOver` against its own hit. */
+describe('pickup through the live layer refuses a pointer over a lifted thing', () => {
+  beforeEach(() => { vi.stubGlobal('innerWidth', 8000); });
+  const mk = (seed: string) => makeFlakes({ seed, box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+  const refusing = (hit: HTMLElement) => (t: EventTarget | null) => liftedOver(t, hit);
+  const div = (parent: HTMLElement, cls: string, lifted = false): HTMLElement => {
+    const el = document.createElement('div');
+    el.className = cls;
+    if (lifted) el.setAttribute('data-kb-over-ink', '');
+    parent.append(el);
+    return el;
+  };
+  /* A move of 120 px (a certain-enough pickup roll) whose target is `target`, as the browser names it. */
+  let flip = 0;
+  const moveOver = (target: Element, n = 1): void => {
+    for (let i = 0; i < n; i++) {
+      const x = 10 + (flip++ % 2) * 120;
+      const e = new MouseEvent('pointermove', { clientX: x, clientY: 100, bubbles: true });
+      Object.defineProperty(e, 'pointerType', { value: 'mouse' });
+      Object.defineProperty(e, 'timeStamp', { value: (clock += 1) });
+      Object.defineProperty(e, 'target', { value: target });
+      cling.over(e);
+      window.dispatchEvent(e);
+    }
+  };
+  /* Moves over `words` until the layer exists and one flake is carried; returns what is carried. */
+  const live = (words: Element): number => {
+    for (let i = 0; i < 400 && !cling.carried(); i++) moveOver(words);
+    expect(layer(), 'the layer is live').not.toBeNull();
+    return cling.carried();
+  };
+
+  it("a move over a lifted thing inside the hit picks up nothing; one over the host's own words still does", () => {
+    const body = host(0, 0);
+    const words = div(body, 'words'), lifted = div(body, 'lifted', true), inside = div(lifted, 'inside');
+    cling.register(body, { sticky: true, flakes: mk('a'), refuses: refusing(body) });
+    const n = live(words);
+    moveOver(inside, 300);
+    expect(cling.carried(), 'the lifted thing lends nothing').toBe(n);
+    moveOver(words, 300);
+    expect(cling.carried(), "the host's own words still do").toBeGreaterThan(n);
+  });
+
+  it("nested hosts: a move over the inner area's words picks up from the inner host, never the outer", () => {
+    const outer = host(0, 0);
+    const box = div(outer, 'box', true), area = div(box, 'area'), innerWords = div(area, 'inner-words');
+    /* One ink each, so what is drawn says whose flakes are carried. */
+    const outerFlakes = makeFlakes({ seed: 'o', box: { w: 300, h: 300 }, inks: ['#2fd6ff'], holo: 0, density: 70, glint: GLINT });
+    const innerFlakes = makeFlakes({ seed: 'i', box: { w: 300, h: 300 }, inks: ['#ff3b4a'], holo: 0, density: 70, glint: GLINT });
+    cling.register(outer, { sticky: true, flakes: outerFlakes, refuses: refusing(outer) });
+    cling.register(area, { sticky: true, flakes: innerFlakes, refuses: refusing(area) });
+    moveOver(innerWords, 400);
+    expect(cling.carried(), 'the box is lifted but holds the inner area: not lifted over it').toBeGreaterThan(0);
+    drawn.fills.clear();
+    cling.tick(0); cling.tick(16);
+    /* The inner ink is red, the outer cyan: a fill is red where its red channel is above its blue. */
+    const reds = [...drawn.fills].map((f) => parseInt(f.slice(1, 3), 16) > parseInt(f.slice(5, 7), 16));
+    expect(reds.length, 'flakes were drawn').toBeGreaterThan(0);
+    expect(reds.every(Boolean), "every flake carried is the inner host's, none the outer's").toBe(true);
+  });
+
+  it("a lifted box with no host of its own: a move over its words picks up nothing from the outer host", () => {
+    const body = host(0, 0);
+    const words = div(body, 'words'), box = div(body, 'box', true), boxWords = div(div(box, 'area'), 'box-words');
+    cling.register(body, { sticky: true, flakes: mk('c'), refuses: refusing(body) });
+    const n = live(words);
+    moveOver(boxWords, 300);
+    expect(cling.carried(), "the box's words are the box's").toBe(n);
   });
 });

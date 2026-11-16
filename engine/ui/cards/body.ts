@@ -1,15 +1,17 @@
 /**
- * The box a card's effect paints over (the owner, 2026-11-06: "the card effect should apply to the entire post in all cases"). In a
- * thread post it is the post body's padding box (`.kb-act-main`, border to border and bar to bar: engine/ui/thread/thread.css), wherever
- * among the post's words the effect's own element sits, so a post holding one line of words is painted whole, its reactions, its
- * signature and the room below them too. Anywhere else (the ORIGIN box, Stick Around's view) there is no such body, and the box is the
- * effect's own element. A play's moment drawn in the thread (As it landed) is inside the body, so it is painted as the live post is.
+ * The box a card's effect paints over (the owner, 2026-11-06: "the card effect should apply to the entire post in all cases"). That box
+ * is a content area: whatever element carries `data-kb-content-area` (docs/plans/2026-11-15-origin-box-effects-design.md, section 2).
+ * A post's body in a thread and on the front door is one (`.kb-act-main`, border to border and bar to bar: engine/ui/thread/thread.css),
+ * and the ORIGIN box's area is another, so that an effect on a post painted in either fills the bordered box it is shown in, wherever
+ * among the words the effect's own element sits: a post holding one line of words is painted whole, its reactions, its signature and the
+ * room below them too. The nearest area is the effect's own, so an effect in the ORIGIN box finds the box's area and never the opening
+ * post's body around it. Where there is none (Stick Around's view lifts the words out of every area) the box is the effect's own
+ * element. A play's moment drawn in the thread (As it landed) is inside the body, so it is painted as the live post is.
  *
  * The box is in CSS px from the element's own top-left corner, so a layer placed absolutely in the element (a positioned element) with
  * these numbers covers the body, however the words inside it are laid out. Whoops! measures the same box its own way
  * (instances/divided-world/cards/whoops/Effect.tsx), and the shine effects (Feelin' Fab, Glitter Bomb) use this.
  */
-import type { EffectPlace } from './types.ts';
 
 /** A painted box: its offset from the effect's element, and its size, in CSS px. */
 export interface BodyBox {
@@ -19,9 +21,24 @@ export interface BodyBox {
   readonly h: number;
 }
 
-/** The post body an effect drawn at `place` paints, or null where it paints only its own element. Found afresh each time: a takeover may move the element. */
-export function bodyOf(host: Element, place: EffectPlace): HTMLElement | null {
-  return place === 'thread' ? host.closest<HTMLElement>('.kb-act-main') : null;
+/** The content area an effect paints: the nearest element above `host` (or `host` itself) that carries the marker, or null where it paints only its own element. Found afresh each time: a takeover may move the element. */
+export function bodyOf(host: Element): HTMLElement | null {
+  return host.closest<HTMLElement>('[data-kb-content-area]');
+}
+
+/**
+ * Whether a press at `target` landed on something the engine lifts over a post's ink (`data-kb-over-ink`) that is inside `body`, the
+ * content area an effect found: a press there is the lifted thing's, and starts nothing of the effect's. The nearest lifted ancestor is
+ * the one that counts, and it must be in the body. A lifted thing that holds the body (the ORIGIN box, lifted over the opening post's
+ * ink) is not in it, so a press in the box's words is the box's own effect's, while the same press is not the opening post's, whose
+ * body holds the box. A null `body` (an effect painting only its host) counts any lifted ancestor. A text node counts as its parent; a
+ * target that is no element is not lifted. A body that is itself lifted counts (a node contains itself), though no place marks its own
+ * content area lifted.
+ */
+export function liftedOver(target: unknown, body: Element | null): boolean {
+  const el = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+  const lift = el?.closest('[data-kb-over-ink]');
+  return !!lift && (body === null || body.contains(lift));
 }
 
 /** The box to paint, from `host`'s top-left: the body's padding box when there is a body, else the host's own box. */

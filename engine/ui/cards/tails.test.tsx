@@ -263,7 +263,7 @@ describe('the body is a block a tail follows inline', () => {
     const plays = createPlays();
     plays.add(await w.fake.cardsOnMany([w.p1], 8));
     const post = (await w.fake.act(w.p1))!;
-    renderIn(w.fake, <div className="kb-act-main"><PostEffects plays={plays} post={post} place="thread" nameOf={() => ''}><BbCode text="the last line" /></PostEffects></div>, { cards: [tailing], instance });
+    renderIn(w.fake, <div className="kb-act-main" data-kb-content-area><PostEffects plays={plays} post={post} place="thread" nameOf={() => ''}><BbCode text="the last line" /></PostEffects></div>, { cards: [tailing], instance });
     const tail = await screen.findByText('and on it went');
     const body = document.querySelector<HTMLElement>('.kb-bb')!;
     expect(body.nextElementSibling).toBe(tail);

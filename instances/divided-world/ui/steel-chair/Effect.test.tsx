@@ -107,6 +107,8 @@ let areaWidth = 300;
 let shaking = false;
 /** Whether the content area is `size.h` tall plus the room while the effect's host is in it (what the CSS does), or `size.h` always. */
 let roomAdds = false;
+/** The ORIGIN box's content area (`.kb-origin-area`), which the stub gives a size of its own, not the post's. */
+const originArea = { w: 260, h: 150 };
 /** The boxes a `Range` over a text node reports (jsdom has no `getClientRects`), in the window's px, or none. A range over an element reports that element's border box too, as a browser does (the wrapper's, 280 wide), which is not where the text is. */
 let textRects: { left: number; top: number; width: number; height: number }[] | null = null;
 /** The post comes into the middle of the view and stays for the arming wait: a run starts. */
@@ -114,7 +116,7 @@ const arm = () => { aim(true); act(() => { vi.advanceTimersByTime(300); }); };
 /** The post's middle comes into view; a run begins and the world goes on to rest. */
 const run = () => { see(true); arm(); settled(); };
 
-interface Options { plays?: CardPlay[]; still?: boolean; place?: 'thread' | 'origin'; reader?: EffectProps['reader']; wrapped?: boolean }
+interface Options { plays?: CardPlay[]; still?: boolean; place?: 'thread' | 'origin'; reader?: EffectProps['reader']; wrapped?: boolean | 'area' }
 const made = { show: vi.fn<(view: CardView | null) => void>(), met: vi.fn(), save: vi.fn(), release: vi.fn() };
 function Host({ o }: { o: Options }) {
   const [plays, setPlays] = useState(o.plays ?? [play(1)]);
@@ -125,7 +127,10 @@ function Host({ o }: { o: Options }) {
     children: <p data-kb-words>The words of the post.</p>,
   };
   const inner = <SteelChairEffect {...props} />;
-  return o.wrapped === false ? inner : <div className="kb-act-main">{inner}</div>;
+  if (o.wrapped === false) return inner;
+  /* 'area': the ORIGIN box's place, a marked area inside the opening post's marked `.kb-act-main`. */
+  if (o.wrapped === 'area') return <div className="kb-act-main" data-kb-content-area><div className="kb-origin-area" data-kb-content-area>{inner}</div></div>;
+  return <div className="kb-act-main" data-kb-content-area>{inner}</div>;
 }
 const mount = (o: Options = {}) => renderInWorld(<Host o={o} />);
 const lastView = (): CardView => made.show.mock.calls.filter((c) => c[0] !== null).at(-1)![0]!;
@@ -227,6 +232,7 @@ beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', FakeIntersection);
   vi.stubGlobal('ResizeObserver', FakeResize);
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    if (this.classList.contains('kb-origin-area')) return rect(0, 0, originArea.w, originArea.h);
     if (this.classList.contains('kb-act-main')) return rect(0, 0, areaWidth, areaHeight(this));
     if (this.classList.contains('dw-chair')) return rect(10, 8, 280, size.h - 16);
     if (this.classList.contains('dw-chair-words')) return shaking ? rect(14, 7, 280, size.h - 16 - ROOM_HEIGHT) : rect(10, 8, 280, size.h - 16 - ROOM_HEIGHT);
@@ -238,8 +244,8 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).top; });
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).width; });
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).height; });
-  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? areaWidth : 0; });
-  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? areaHeight(this) : 0; });
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-origin-area') ? originArea.w : this.classList.contains('kb-act-main') ? areaWidth : 0; });
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-origin-area') ? originArea.h : this.classList.contains('kb-act-main') ? areaHeight(this) : 0; });
   document.documentElement.setAttribute('data-kb-motion', 'full');
   hub.trusted = true;
   hub.gameOn = false;
@@ -275,32 +281,89 @@ describe('which plays, and what is drawn', () => {
   });
 
   /* The room is "room inside the content area above its bottom border": the reactions row, the signature and the spun line come after the
-     effect's host in `.kb-act-main`, so a strip under the words is nowhere near the floor. The room is the content area's own last ROOM_HEIGHT px. */
-  test('inside a content area the room is its last ROOM_HEIGHT px, added by a static rule while the effect has a live play', () => {
-    /* Both rules sit inside `@supports selector(:has(a))`: a browser without `:has()` never applies the `::after`, so it must not hide the strip in the host either. */
-    expect(guarded.inner, 'the :has() rules are inside an @supports block').not.toBeNull();
-    expect(ruleOf('.kb-act-main:has(.dw-chair)::after'), 'the ::after is not outside the @supports block').toBe('');
-    expect(ruleOf('.kb-act-main .dw-chair-room'), 'hiding the strip is not outside the @supports block').toBe('');
-    expect(ruleWithHas('.kb-act-main:has(.dw-chair)::after')).toMatch(/content:\s*''/u);
-    expect(ruleWithHas('.kb-act-main:has(.dw-chair)::after')).toMatch(/display:\s*block/u);
-    expect(ruleWithHas('.kb-act-main:has(.dw-chair)::after')).toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
-    mount();
-    /* `.dw-chair` is in the page only while a play is live: the rule's condition. The strip inside the host is hidden where there is a content area. */
-    expect(host()).not.toBeNull();
-    expect(ruleWithHas('.kb-act-main .dw-chair-room')).toMatch(/display:\s*none/u);
-    /* The strip itself is a plain rule, so without `:has()` it stays, ROOM_HEIGHT px, in the host. */
+     effect's host in `.kb-act-main`, so a strip under the words is nowhere near the floor. The room is the content area's own last ROOM_HEIGHT px,
+     which the effect marks (`data-dw-chair-room`) on the body it found; one rule serves a thread post's body and the ORIGIN box's area alike. */
+  test('1. the room is the marked body\'s last ROOM_HEIGHT px, by a rule that reads no :has() and sits in no @supports :has block', () => {
+    expect(ruleOf('[data-dw-chair-room]::after'), 'the marked body has an ::after').toMatch(/content:\s*''/u);
+    expect(ruleOf('[data-dw-chair-room]::after')).toMatch(/display:\s*block/u);
+    expect(ruleOf('[data-dw-chair-room]::after'), 'the ::after is ROOM_HEIGHT px tall').toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
+    expect(sheet, 'no rule reads :has(').not.toContain(':has(');
+    expect(sheet, 'no @supports block guards :has').not.toContain('@supports selector');
+    expect(ruleOf('.dw-chair[data-kb-bleed] .dw-chair-room'), 'the strip in the host is hidden where a body was found').toMatch(/display:\s*none/u);
+    /* The strip itself is a plain rule: where there is no body it stays, ROOM_HEIGHT px, in the host. */
     expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
-    cleanup();
-    mount({ plays: [play(1, '2000-01-01T00:00:00Z')] });
-    expect(host()).toBeNull();
   });
 
-  test('outside a content area the room stays in the host, after the words: ROOM_HEIGHT px', () => {
+  test('2. in a thread the body carries data-dw-chair-room and the host data-kb-bleed, and both come off when the play ends', () => {
+    mount();
+    run();
+    const body = document.querySelector<HTMLElement>('.kb-act-main')!;
+    const h = host()!;
+    expect(body, "the body found carries the room's mark").toHaveAttribute('data-dw-chair-room');
+    expect(h, 'the host is marked as bleeding into a body').toHaveAttribute('data-kb-bleed');
+    /* The play ends and the post stays: the body is still in the page, so what it carries is what a reader sees. */
+    act(() => { hub.setPlays([]); });
+    expect(body.isConnected).toBe(true);
+    expect(body, "the room's mark is gone with the effect").not.toHaveAttribute('data-dw-chair-room');
+    expect(h, "the host's bleed mark is gone too").not.toHaveAttribute('data-kb-bleed');
+  });
+
+  test('2a. chairs live and never run (never in view), then the play ends: the body keeps no mark', () => {
+    mount();
+    const body = document.querySelector<HTMLElement>('.kb-act-main')!;
+    act(() => { hub.setPlays([]); });
+    expect(body.isConnected).toBe(true);
+    expect(body, 'no empty room is left on the post').not.toHaveAttribute('data-dw-chair-room');
+  });
+
+  test('2b. run, then the post leaves the view (the run is cleared), then the play ends: the body keeps no mark', () => {
+    mount();
+    run();
+    const body = document.querySelector<HTMLElement>('.kb-act-main')!;
+    see(false);
+    act(() => { hub.setPlays([]); });
+    expect(body.isConnected).toBe(true);
+    expect(body, 'no empty room is left on the post').not.toHaveAttribute('data-dw-chair-room');
+  });
+
+  test('2c. the body is marked from the moment the effect mounts, before any run', () => {
+    mount();
+    expect(document.querySelector('.kb-act-main'), 'the room is there before a run, so the post does not grow when one starts').toHaveAttribute('data-dw-chair-room');
+    expect(host()).toHaveAttribute('data-kb-bleed');
+  });
+
+  test('2d. the effect moved under another body before its first measure: the old body is unmarked and the new one marked', () => {
+    mount();
+    const first = document.querySelector<HTMLElement>('.kb-act-main')!;
+    expect(first).toHaveAttribute('data-dw-chair-room');
+    const other = document.createElement('div');
+    other.className = 'kb-act-main';
+    other.setAttribute('data-kb-content-area', '');
+    document.body.appendChild(other);
+    const h = host()!;
+    first.removeChild(h);
+    other.appendChild(h);
+    try {
+      run();
+      expect(other, 'the new body has the mark').toHaveAttribute('data-dw-chair-room');
+      expect(first, 'the old one lost it').not.toHaveAttribute('data-dw-chair-room');
+      expect(h).toHaveAttribute('data-kb-bleed');
+    } finally {
+      other.removeChild(h);
+      first.appendChild(h);
+      other.remove();
+    }
+  });
+
+  test('4. with no marked ancestor the host\'s box is the world and the room stays in the host, after the words: ROOM_HEIGHT px', () => {
     mount({ place: 'origin', wrapped: false });
     const room = document.querySelector('.dw-chair-room')!;
     expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
     expect(wordsEl().nextElementSibling).toBe(room);
     expect(host()).toContainElement(room as HTMLElement);
+    run();
+    expect(host(), 'no body, so nothing bleeds').not.toHaveAttribute('data-kb-bleed');
+    expect(document.querySelector('[data-dw-chair-room]'), 'no body, so nothing is marked').toBeNull();
   });
 
   test('the host carries no data-kb-chair mark: nothing reads it', () => {
@@ -390,7 +453,47 @@ describe('the layers and the world fill the content area', () => {
     expect(queue.size).toBe(0);
   });
 
-  test('outside a thread there is no body, and the effect\'s own box is the world', () => {
+  test("3. at place origin the world is the marked area's, the room is the area's and not the opening post's body's", () => {
+    mount({ place: 'origin', wrapped: 'area' });
+    run();
+    const area = document.querySelector<HTMLElement>('.kb-origin-area')!;
+    const outer = document.querySelector<HTMLElement>('.kb-act-main')!;
+    const layer = document.querySelector<HTMLElement>('.dw-chair-layer')!;
+    expect([layer.style.left, layer.style.top, layer.style.width, layer.style.height], 'the layer is placed over the area').toEqual(['-10px', '-8px', '260px', '150px']);
+    expect(area, "the area carries the room's mark").toHaveAttribute('data-dw-chair-room');
+    expect(outer, 'the outer body does not').not.toHaveAttribute('data-dw-chair-room');
+    expect(host()).toHaveAttribute('data-kb-bleed');
+    expect(hub.world!.width, "the world is the area's width less the inset at both sides").toBeCloseTo(originArea.w - 2 * INSET, 6);
+    expect(hub.world!.height, 'and its height less the inset at the floor').toBeCloseTo(originArea.h - INSET, 6);
+    expect(groups()).toHaveLength(1);
+    expectOnFloor(groups()[0]!, originArea.h);
+  });
+
+  test('5. a body that changes: the mark moves with it', () => {
+    mount();
+    run();
+    const first = document.querySelector<HTMLElement>('.kb-act-main')!;
+    expect(first).toHaveAttribute('data-dw-chair-room');
+    const other = document.createElement('div');
+    other.className = 'kb-act-main';
+    other.setAttribute('data-kb-content-area', '');
+    document.body.appendChild(other);
+    const h = host()!;
+    first.removeChild(h);
+    other.appendChild(h);
+    try {
+      act(() => { for (const r of sized) r.cb(); });
+      expect(other, 'the new body has the mark').toHaveAttribute('data-dw-chair-room');
+      expect(first, 'the old one lost it').not.toHaveAttribute('data-dw-chair-room');
+      expect(h).toHaveAttribute('data-kb-bleed');
+    } finally {
+      other.removeChild(h);
+      first.appendChild(h);
+      other.remove();
+    }
+  });
+
+  test("outside a thread (no marked ancestor) the effect's own box is the world", () => {
     mount({ place: 'origin', wrapped: false });
     run();
     const layer = document.querySelector<HTMLElement>('.dw-chair-layer')!;

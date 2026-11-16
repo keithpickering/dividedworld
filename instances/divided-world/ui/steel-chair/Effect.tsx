@@ -11,12 +11,14 @@
  * Whoops!'s ink are (engine/ui/cards/body.ts: `bodyOf`, `bodyBox`, `placeLayer`, the bare `data-kb-effect-ink` mark the thread's CSS lifts
  * above the words). That box is the physics world: its left and right borders are the walls and its bottom border the floor; chair.ts draws
  * the world in an oblique view (the floor recedes up the screen), so a chair at rest is drawn inside the box, never past a border. Where
- * there is no body (outside a thread) the effect's own box is the world. A `ResizeObserver` on the box (and the host) resizes the world and
+ * there is no body (no content area above the effect) the effect's own box is the world. A `ResizeObserver` on the box (and the host) resizes the world and
  * places the layers again. The words are a wrapper inside the host; the throw aims at the box the text really takes (a Range's client
  * rects: a short post's wrapper is as wide as the content area), and since the filter is applied to that wrapper its coordinates are the
  * wrapper's, not the content area's: `geo` holds the measured offset between the two. The floor's room is the content area's own
- * last ROOM_HEIGHT px (chair.ts, the height of the tallest rest; steel-chair.css: a static `::after` while a play is live), so a resting chair
- * reaches neither the reactions row nor the words; only where there is no content area is it a strip in the host (`.dw-chair-room`). Nothing
+ * last ROOM_HEIGHT px (chair.ts, the height of the tallest rest), so a resting chair reaches neither the reactions row nor the words: the
+ * effect marks the body it found (`data-dw-chair-room`, the nearest content area, so a chair in a spun thread's ORIGIN box makes room in the
+ * box and not in the opening post's body around it) and steel-chair.css draws the room at the foot of whatever is marked; only where there
+ * is no content area is it a strip in the host (`.dw-chair-room`, hidden where the host is `data-kb-bleed`). Nothing
  * here assumes the content area is as tall as its words plus the room: the world, the layers and the dents' coordinates are all measured boxes
  * (`bodyBox`, the wrapper's offsets, the text's client rects), the room is the content area's last child so it stays at the floor however tall
  * the body is, and the floor is the area's bottom border.
@@ -84,6 +86,11 @@ function shapeOf(play: string): DentShape {
   return shape;
 }
 
+/**
+ * The attribute the effect puts on the body it found, where steel-chair.css draws the floor's room. There is one Steel Chair effect per content
+ * area (one host per post-reach card per post; a moment replaces the live effect, never joins it), so the mark is a plain attribute and is not counted.
+ */
+const ROOM_MARK = 'data-dw-chair-room';
 /** The most chairs one post draws (the card's stack). */
 const MOST = 3;
 /**
@@ -225,7 +232,7 @@ function Bare({ show, children }: { show: EffectProps['show']; children: EffectP
   return <>{children}</>;
 }
 
-function Chairs({ live, still, place, show, met, children, memory }: EffectProps & { live: readonly CardPlay[]; memory: Memory }) {
+function Chairs({ live, still, show, met, children, memory }: EffectProps & { live: readonly CardPlay[]; memory: Memory }) {
   const reduced = useMotionReduced();
   const sound = useSound();
   const gameSound = useGameSound();
@@ -277,6 +284,9 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
     let box: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
     let geoNow: Geo | null = null;
     let body: HTMLElement | null = null;
+    /* The body that carries the room's mark: set only by `giveRoom`, so that a run cleared (which forgets `body`) or an effect moved before
+       its first measure cannot leave a mark that nothing will take off. */
+    let marked: HTMLElement | null = null;
     let found = false;
     let target: Box = { left: 0, top: 0, width: 0, height: 0 };
     let size: ResizeObserver | null = null;
@@ -293,17 +303,30 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
     const growing = new Map<string, number | null>();
     const caches = new Map<string, Cache>();
 
+    /* The room is the body's, marked on it and on the host (steel-chair.css): the nearest content area the host is in, so a chair in the ORIGIN
+       box makes room in the box and not in the opening post's body around it. One effect draws all of a post's chairs, so the mark has one
+       owner, and the cleanup below takes both marks off. */
+    const giveRoom = (next: HTMLElement | null): void => {
+      if (marked && marked !== next) marked.removeAttribute(ROOM_MARK);
+      marked = next;
+      next?.setAttribute(ROOM_MARK, '');
+      el.toggleAttribute('data-kb-bleed', next !== null);
+    };
+    /* The room is there from the moment a play is live, as the old `:has(.dw-chair)` rule gave it, so the post does not grow when a run starts. */
+    giveRoom(bodyOf(el));
+
     /*
      * The box to paint and its words: the content area's padding box (or the host's own), the layers placed over it, and where the words
      * stand in it.
      */
     const measure = (): boolean => {
-      const next = bodyOf(el, place);
+      const next = bodyOf(el);
       if (next !== body || !found) {
         found = true;
         if (body) size?.unobserve(body);
         if (next) size?.observe(next);
         body = next;
+        giveRoom(next);
       }
       const b = bodyBox(el, body);
       const w = wordsEl.getBoundingClientRect(), h = el.getBoundingClientRect();
@@ -588,13 +611,15 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
     return () => {
       stopArm();
       clearTimeout(armTimer);
-      /* The drawn chairs and dents go with the run that drew them: kept through a re-arm (reduced motion, place or moment changing), an old
+      giveRoom(null);
+      el.removeAttribute('data-kb-bleed');
+      /* The drawn chairs and dents go with the run that drew them: kept through a re-arm (reduced motion or the moment changing), an old
          dent would stand at its old place while the new run's chair is aimed elsewhere, and the reduced path skips a play that has a dent. */
       clearRun(true);
       control.current = null;
       paintNow.current = () => {};
     };
-  }, [still, reduced, place, memory]);
+  }, [still, reduced, memory]);
 
   /* Plays that came or went, after the run's own effect has run. */
   useEffect(() => { control.current?.sync(); }, [key]);

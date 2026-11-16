@@ -33,14 +33,16 @@ vi.mock('../../../../engine/ui/player.tsx', async (importOriginal) => ({ ...(awa
 const signedIn = () => { player.value = { session: { signedIn: true, account: 'acct-1' }, hudCharacter: { id: 'c1' }, actingCharacters: [{ id: 'c1' }] }; };
 
 const BOX = { w: 600, h: 400 };
+/** The ORIGIN box's content area, a smaller box than the post body the thread tests use. */
+const AREA = { w: 480, h: 260 };
 const POST = { id: 'post-1', character: 'someone', kind: 'post', thread: 't', payload: {}, currentPayload: {}, targetActId: null, seq: 41, createdAt: '2026-10-29T21:14:00.000Z', editedAt: null, shownEditedAt: null } as unknown as Act;
 const PLAY: CardPlay = { id: 'play-g', card: 'graffiti', layer: 1, caster: 'caster-1', message: '', config: {}, playedAt: '2026-10-29T21:05:00.000Z', post: POST.id };
 
 beforeEach(() => {
   vi.clearAllMocks();
   signedIn();
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-act-main') ? BOX.w : 0; } });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-act-main') ? BOX.h : 0; } });
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-act-main') ? BOX.w : this.classList?.contains('kb-origin-area') ? AREA.w : 0; } });
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-act-main') ? BOX.h : this.classList?.contains('kb-origin-area') ? AREA.h : 0; } });
   Range.prototype.getClientRects = function (this: Range) {
     const top = Math.floor(this.startOffset / 24) * 22.5;
     return [{ top, bottom: top + 22.5, left: 0, right: 1, width: 1, height: 22.5, x: 0, y: top }] as unknown as DOMRectList;
@@ -80,13 +82,17 @@ function propsOf(o: { readonly surface?: EffectProps['surface']; readonly author
   };
 }
 
-function mount(o: { readonly children?: ReactNode; readonly acts?: readonly SurfaceAct[] | null; readonly author?: boolean; readonly surface?: NonNullable<EffectProps['surface']> } = {}) {
+function mount(o: { readonly children?: ReactNode; readonly acts?: readonly SurfaceAct[] | null; readonly author?: boolean; readonly surface?: NonNullable<EffectProps['surface']>; readonly place?: 'thread' | 'origin' } = {}) {
   const surface = o.surface ?? surfaceOf(o.acts === undefined ? MIDDLE : o.acts);
   const shown: CardView[] = [];
   const props = { ...propsOf({ surface, author: o.author ?? false, ...(o.children ? { children: o.children } : {}) }), show: (v: CardView | null) => { if (v) shown.push(v); } };
-  const world = renderInWorld(<div className="kb-act-main"><Effect {...props} /></div>);
+  const effect = <Effect {...props} place={o.place ?? 'thread'} />;
+  /* The ORIGIN box as the engine draws it: the opening post's body, the box (lifted over its ink) and the box's own area. */
+  const world = renderInWorld(o.place === 'origin'
+    ? <div className="kb-act-main" data-kb-content-area><div className="kb-origin" data-kb-over-ink><div className="kb-origin-area" data-kb-content-area>{effect}</div></div></div>
+    : <div className="kb-act-main" data-kb-content-area>{effect}</div>);
   const root = world.container.querySelector('.kb-graffiti') as HTMLElement;
-  return { ...world, surface, shown, root, frame: world.container.querySelector('.kb-graffiti-frame') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement };
+  return { ...world, area: world.container.querySelector('.kb-origin-area') as HTMLElement, surface, shown, root, frame: world.container.querySelector('.kb-graffiti-frame') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement };
 }
 
 const px = (x: number, y: number): [number, number] => [x * BOX.w, y * BOX.h];
@@ -280,7 +286,7 @@ describe('a wall under a splat', () => {
     const base = propsOf({ surface: wall, ink: claims.at('post:graffiti', 0) });
     const outer = { ...base, plays: [whoopsPlay], ink: claims.at('post:whoops', 1), surface: undefined, save: async () => ({ ok: true as const, value: { play: 'play-w', savedAt: '' } }) };
     const world = renderInWorld(
-      <div className="kb-act-main"><WhoopsEffect {...outer}><Effect {...base} /></WhoopsEffect></div>,
+      <div className="kb-act-main" data-kb-content-area><WhoopsEffect {...outer}><Effect {...base} /></WhoopsEffect></div>,
     );
     return { ...world, wall, whoops: world.container.querySelector('[data-kb-whoops]') as HTMLElement, root: world.container.querySelector('.kb-graffiti') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement };
   }
@@ -326,7 +332,58 @@ describe('a wall under a splat', () => {
   });
 });
 
-describe('the Draw tile', () => {
+describe('in the ORIGIN box', () => {
+  /** The frame sits 12px right and 8px down in the area. */
+  const realRect = Element.prototype.getBoundingClientRect;
+  afterEach(() => { Element.prototype.getBoundingClientRect = realRect; });
+  const frameAt = () => {
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const at = this.classList.contains('kb-graffiti-frame') ? { left: 12, top: 8 } : { left: 0, top: 0 };
+      return { ...at, right: at.left, bottom: at.top, width: 0, height: 0, x: at.left, y: at.top, toJSON() {} } as DOMRect;
+    };
+  };
+
+  test("the wall is the content area's size and the Draw tile stands at the area's top right", () => {
+    frameAt();
+    const see = stubViewport();
+    const { root } = mount({ place: 'origin' });
+    see(true);
+    const canvas = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
+    expect(canvas, 'the wall is drawn, the area measuring something').not.toBeNull();
+    expect([canvas.width, canvas.height], "the area's box").toEqual([AREA.w, AREA.h]);
+    expect([canvas.style.left, canvas.style.top], "from the area's corner").toEqual(['-12px', '-8px']);
+    expect(vi.mocked(spray.paintWall).mock.calls.at(-1)![1], "painted at the area's box").toEqual(AREA);
+    const tile = screen.getByRole('button', { name: 'Draw' });
+    expect([tile.style.left, tile.style.top], "at the area's top right").toEqual([`${AREA.w - 12}px`, '-8px']);
+  });
+
+  test('a press at a share of the body in the thread and at the same share of the area is the same point of the wall: the hit test is asked for the same share of each measured box, and both scrub', () => {
+    /* What is drawn is paintWall's (spray.test.tsx owns its pixels); what a mount decides is the box it measures and the share a press is read at. */
+    const asked = (place: 'thread' | 'origin', share: readonly [number, number]) => {
+      const { area, cell, root, unmount } = mount({ place });
+      const [target, box] = place === 'origin' ? [area, AREA] : [cell, BOX];
+      vi.mocked(spray.hitAt).mockClear();
+      const at = [share[0] * box.w, share[1] * box.h] as const;
+      act(() => { fireEvent.pointerDown(target, { clientX: at[0], clientY: at[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerMove(target, { clientX: at[0] + 20, clientY: at[1], pointerId: 1, pointerType: 'mouse', buttons: 1 }); });
+      act(() => { fireEvent.pointerUp(target, { clientX: at[0] + 20, clientY: at[1], pointerId: 1, pointerType: 'mouse' }); });
+      const call = vi.mocked(spray.hitAt).mock.calls[0]!;
+      const result = { box: call[1], share: [call[2] / call[1].w, call[3] / call[1].h], scrubbed: scrubbed(root) };
+      unmount();
+      return result;
+    };
+    const inThread = asked('thread', [0.5, 0.5]);
+    const inArea = asked('origin', [0.5, 0.5]);
+    expect(inThread.box, 'the thread measures the body').toEqual(BOX);
+    expect(inArea.box, "the origin box measures the area, not the post's body").toEqual(AREA);
+    expect(inArea.share, 'the same share of each box is asked').toEqual(inThread.share);
+    expect(inThread.share[0]).toBeCloseTo(0.5, 5);
+    expect(inThread.share[1]).toBeCloseTo(0.5, 5);
+    expect([inThread.scrubbed, inArea.scrubbed], 'a press on the middle stripe scrubs in both').toEqual([1, 1]);
+    const offStripe = [asked('thread', [0.5, 0.1]), asked('origin', [0.5, 0.1])];
+    expect(offStripe.map((r) => r.scrubbed), 'and a press off the stripe, at the same share, scrubs in neither').toEqual([0, 0]);
+  });
+
   test('opens draw mode, as an addition to the wall', () => {
     const { root } = mount();
     expect(root.dataset.kbDrawing).toBeUndefined();
@@ -559,7 +616,7 @@ describe('a hold, and the order of a scrub', () => {
       set = setActs;
       bump = () => setN((v) => v + 1);
       const surface = useMemo(() => surfaceOf(acts), [acts]);
-      return <div className="kb-act-main"><Effect {...propsOf({ surface, ink })}><p data-n={n}>The post&apos;s words.</p></Effect></div>;
+      return <div className="kb-act-main" data-kb-content-area><Effect {...propsOf({ surface, ink })}><p data-n={n}>The post&apos;s words.</p></Effect></div>;
     }
     const world = renderInWorld(<Host />);
     return { ...world, setActs: (a: readonly SurfaceAct[]) => act(() => set(a)), bump: () => act(() => bump()), frame: world.container.querySelector('.kb-graffiti-frame') as HTMLElement };
@@ -596,7 +653,7 @@ describe('draw mode and the wall it is drawn on', () => {
       setActs = sa;
       setHas = sh;
       const surface = useMemo(() => surfaceOf(acts), [acts]);
-      return <div className="kb-act-main"><Effect {...propsOf({ surface, ink })} plays={has ? [PLAY] : []} /></div>;
+      return <div className="kb-act-main" data-kb-content-area><Effect {...propsOf({ surface, ink })} plays={has ? [PLAY] : []} /></div>;
     }
     const world = renderInWorld(<Host />);
     return { ...world, root: world.container.querySelector('.kb-graffiti') as HTMLElement, setActs: (a: readonly SurfaceAct[]) => act(() => setActs(a)), setHas: (h: boolean) => act(() => setHas(h)) };

@@ -49,7 +49,7 @@
   --kb-bright-ink: #ffffff;
   --kb-bright-outline: #000000;
 }
-.kb-act-main[data-kb-bright-ink] .dw-fab-words {
+[data-kb-content-area][data-kb-bright-ink] .dw-fab-words {
   text-shadow: inherit;
 }
 :root[data-kb-effects="bright"] .dw-fab:not([data-kb-bleed]) > .dw-fab-words {

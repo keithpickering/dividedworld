@@ -972,6 +972,12 @@ export interface ClingOptions {
    * registered first. Default `effect`.
    */
   readonly rank?: 'effect' | 'cell';
+  /**
+   * Whether this host refuses a pickup from a pointer at `target`: a pointer over something that is not the host's to lend from (a
+   * thing lifted over the post's ink inside its hit) lends nothing, whether the pointer's move is the first one over the host or one
+   * the page-wide layer hears. Asked at each pickup attempt only; flakes already carried ride the pointer wherever it goes.
+   */
+  readonly refuses?: (target: EventTarget | null) => boolean;
 }
 
 /* The cling layer is page-fixed and has no host of its own, so each flake keeps the band of the host it was picked up from
@@ -1127,7 +1133,8 @@ function onMove(e: PointerEvent): void {
   const host = hostOf(e.target);
   const opts = host ? hosts.get(host) : undefined;
   if (opts?.sticky && opts.flakes) {
-    if (carried.length < MAX_CARRIED && cr() < Math.min(0.6, moved / 40)) {
+    /* The roll comes first, so the host's refusal is asked only of a move that would pick up: a refusal can cost a walk up the document. */
+    if (carried.length < MAX_CARRIED && cr() < Math.min(0.6, moved / 40) && !opts.refuses?.(e.target)) {
       /* A board whose band cannot be computed gets no glitter lent from it: nothing is drawn that has no band to hold. */
       const band = bandAt(host!, e.timeStamp);
       if (band) {

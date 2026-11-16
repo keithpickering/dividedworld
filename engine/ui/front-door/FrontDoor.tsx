@@ -67,7 +67,7 @@ function Post({ staged, stores, nameOf }: { readonly staged: Staged; readonly st
       <div className="kb-act-grid">
         {person && <Postbit person={person} layout="side" link={false} />}
         <header className="kb-act-meta">{marks}<span className="kb-act-number">#{seq}</span></header>
-        <div className="kb-act-main">
+        <div className="kb-act-main" data-kb-content-area>
           <PostEffects plays={stores.plays} post={act} place="thread" marks={marks} nameOf={nameOf}><BbCode text={body} /></PostEffects>
           <Reactions act={act.id} author={act.character} authorName={name} tallies={stores.tallies} mine={stores.mine} />
         </div>

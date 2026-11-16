@@ -14,6 +14,7 @@ import { renderIn, testInstance } from '../test-world.tsx';
 import type { CardUi, EffectProps } from '../cards/types.ts';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { LoadedThread } from '../loaded.tsx';
+import { bodyOf, liftedOver } from '../cards/body.ts';
 
 beforeEach(() => {
   localStorage.clear();
@@ -557,6 +558,157 @@ describe('the ORIGIN box', () => {
     const rest = [...box.querySelectorAll('p')].find((p) => p.textContent?.startsWith('More than 20 cards'))!;
     expect(rest).toHaveTextContent(/the rest are in #2 in A short thread\.$/u);
     expect(within(rest as HTMLElement).getByRole('link', { name: '#2 in A short thread' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
+  });
+});
+
+/*
+ * The ORIGIN box's content area (docs/plans/2026-11-15-origin-box-effects-design.md, sections 2 to 5): everything under the band stands in one
+ * element that says so itself, so an effect in the box fills it border to border and finds it as it finds a post's body.
+ */
+describe('the ORIGIN box\'s content area', () => {
+  const area = (box: HTMLElement) => box.querySelector<HTMLElement>('.kb-origin-area[data-kb-content-area]');
+  /* The thread draws the box inside the opening post's body; a box with none around it is wrapped in a marked one, as that body is. */
+  const outerBody = (box: HTMLElement): HTMLElement => {
+    const own = box.closest<HTMLElement>('[data-kb-content-area]');
+    if (own) return own;
+    const wrap = document.createElement('div');
+    wrap.className = 'kb-act-main';
+    wrap.setAttribute('data-kb-content-area', '');
+    box.parentNode!.insertBefore(wrap, box);
+    wrap.appendChild(box);
+    return wrap;
+  };
+
+  test('a post origin: the band, then one area holding the byline, the words, Last edited and History', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    openSpun(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(box).toHaveTextContent('post 2'));
+    expect([...box.children].map((c) => c.className)).toEqual(['kb-origin-head', 'kb-origin-area']);
+    const inside = area(box)!;
+    expect(inside, 'the box draws a .kb-origin-area[data-kb-content-area]').not.toBeNull();
+    expect(box.querySelectorAll('[data-kb-content-area]')).toHaveLength(1);
+    expect(inside).toContainElement(within(box).getByText('post 2'));
+    expect(inside).toContainElement(box.querySelector('time')!);
+    expect(inside).toContainElement(within(box).getByRole('button', { name: 'History' }));
+    expect(box.querySelector('.kb-origin-head')!.closest('.kb-origin-area')).toBeNull();
+  });
+
+  test('an edited post origin: Last edited is inside the area, under the effect, and the box itself is what lifts over ink above it', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    openSpun(w, spun);
+    const box = await origin();
+    await act(async () => {
+      w.fake.clock.advance(10 * 60_000);
+      await w.fake.edit(w.ids[1]!, w.pipe, 'post 2, rewritten');
+    });
+    await waitFor(() => expect(box).toHaveTextContent('Last edited'));
+    const line = within(box).getByText(/Last edited/u);
+    expect(area(box)!, 'Last edited is inside the area').toContainElement(line);
+    expect(line.closest('[data-kb-over-ink]'), 'Last edited lies under the effect, not lifted over it').toBe(box);
+  });
+
+  test('the box\'s own effect finds the area as its body, and never the opening post\'s', async () => {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    renderIn(w.fake, <LoadedThread thread={spun} />, {
+      path: `/t/${spun}`,
+      cards: [{
+        key: 'whoops', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'x',
+        Effect: ({ place, children }) => <div data-testid="fx" data-place={place}>{children}</div>,
+      }],
+    });
+    const box = await origin();
+    const fx = await within(box).findByTestId('fx');
+    const outer = outerBody(box);
+    expect(fx.dataset.place).toBe('origin');
+    expect(bodyOf(fx), 'the effect\'s body is the box\'s area').toBe(area(box));
+    expect(bodyOf(fx)).not.toBe(outer);
+  });
+
+  test('a play-spun box and a character-spun box hold their moment in the area', async () => {
+    const w = threadWorld(3);
+    const play = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const landed = await spinFrom(w, play, 'About that card');
+    openSpun(w, landed);
+    const frame = await within(await origin()).findByRole('group', { name: /^As it landed/u });
+    expect(frame.closest('.kb-origin-area'), 'the play\'s moment is inside the area').not.toBeNull();
+    cleanup();
+    const zedPost = w.fake.seed.post(w.thread, w.zed, 'zed words');
+    const shine = w.fake.seed.reach(w.spritey, 'character', w.zed, 'whoops', { post: zedPost, ends: Date.now() + 86_400_000, message: 'Shine.' });
+    const cast = await spinFrom(w, shine, 'About the shine');
+    openSpun(w, cast);
+    const mine = await within(await origin()).findByRole('group', { name: /^As it (landed|was spun)/u });
+    expect(mine.closest('.kb-origin-area'), 'the character\'s moment is inside the area').not.toBeNull();
+  });
+
+  test('draws no area where nothing stands under the band: an origin that is a wash, and a play on a thread', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    /* Control: the same spin's live box, before the wash, has its area. */
+    openSpun(w, spun);
+    await waitFor(() => expect(area(document.body), 'a post origin draws an area').not.toBeNull());
+    cleanup();
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
+      const got = await real(id, ...rest);
+      return id === spun && got?.origin?.act ? { ...got, origin: { ...got.origin, act: { ...got.origin.act, kind: 'wash' }, more: false } } : got;
+    });
+    openSpun(w, spun);
+    const washed = await origin();
+    await waitFor(() => expect(washed.querySelector('.kb-origin-head')).not.toBeNull());
+    expect(area(washed), 'a wash draws no area').toBeNull();
+    cleanup();
+    const glint = w.fake.seed.reach(w.spritey, 'thread', w.thread, 'whoops', { ends: Date.now() + 86_400_000 });
+    const onThread = await spinFrom(w, glint, 'About that glint');
+    openSpun(w, onThread);
+    const box = await origin();
+    await waitFor(() => expect(box.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(area(box), 'a play on a thread draws no area').toBeNull();
+  });
+
+  test('the History button and its panel are lifted over the effect; the byline and the words are lifted only by the box itself', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    openSpun(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(box).toHaveTextContent('post 2'));
+    const inside = area(box)!;
+    expect(inside, 'the box draws an area').not.toBeNull();
+    const button = within(box).getByRole('button', { name: 'History' });
+    const words = within(box).getByText('post 2');
+    const byline = box.querySelector('time')!;
+    expect(box).toHaveAttribute('data-kb-over-ink');
+    expect(inside.contains(button.closest('[data-kb-over-ink]')), 'the button\'s lifted element is inside the area').toBe(true);
+    expect(byline.closest('[data-kb-over-ink]')).toBe(box);
+    expect(words.closest('[data-kb-over-ink]')).toBe(box);
+    expect(liftedOver(words, inside)).toBe(false);
+    expect(liftedOver(button, inside)).toBe(true);
+    expect(liftedOver(words, outerBody(box))).toBe(true);
+    /* The panel's wrapper is in the area and lifted, and holds nothing (so draws and covers nothing, its ground being on its content) until History is opened. */
+    const lift = inside.querySelector<HTMLElement>('.kb-origin-lift');
+    expect(lift, 'the History panel is in a .kb-origin-lift').not.toBeNull();
+    expect(lift).toHaveAttribute('data-kb-over-ink');
+    expect(lift!.textContent).toBe('');
+    await userEvent.click(button);
+    await waitFor(() => expect(lift!.textContent).not.toBe(''));
+    expect(liftedOver(lift!.firstElementChild, inside)).toBe(true);
+  });
+
+  test('the "More than 20 cards" note is inside the area and lifted', async () => {
+    const w = threadWorld(3);
+    for (let i = 0; i < 22; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });
+    const spun = await spinFrom(w, w.ids[1]!);
+    openSpun(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(box).toHaveTextContent('More than 20 cards were played'));
+    const note = [...box.querySelectorAll('p')].find((p) => p.textContent?.startsWith('More than 20 cards'))!;
+    expect(area(box), 'the box draws an area').not.toBeNull();
+    expect(area(box)).toContainElement(note);
+    expect(note).toHaveAttribute('data-kb-over-ink');
   });
 });
 

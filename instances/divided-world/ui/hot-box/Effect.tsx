@@ -10,8 +10,8 @@
  * ended is the one that shows. With none, the words are drawn alone.
  *
  * The container (the owner, 2026-11-15). The smoke fills the post's whole content area, border to border, as Feelin' Fab's foil and Whoops!'s ink do: the
- * post body (`.kb-act-main`) in the thread, found and measured with the engine's `bodyOf` and `bodyBox` (engine/ui/cards/body.ts), and this effect's own
- * element elsewhere (the ORIGIN box). The area's borders are the container, and no smaller un-bordered box in it is. Everything below that says "the box"
+ * post body (`.kb-act-main`) in the thread and the ORIGIN box's area (`.kb-origin-area`) in the box, found and measured with the engine's `bodyOf` and `bodyBox`
+ * (engine/ui/cards/body.ts), and this effect's own element where there is none (Stick Around's view). The area's borders are the container, and no smaller un-bordered box in it is. Everything below that says "the box"
  * means that area: the canvas, the puffs, a clearing's radius, the density, where a pointer clears. Only the words' own lines are the words': the held
  * sweep travels them (offset into the area), and under forced colors the mask is the words' (so its coordinates are theirs).
  *
@@ -39,7 +39,7 @@
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
-import { bodyBox, bodyOf } from '../../../../engine/ui/cards/body.ts';
+import { bodyBox, bodyOf, liftedOver } from '../../../../engine/ui/cards/body.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { TIMER_MOST, useAt } from '../../../../engine/ui/cards/plays.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -318,7 +318,7 @@ export function HotBoxEffect(props: EffectProps) {
   return <Smoke key={play.id} {...props} play={play} />;
 }
 
-function Smoke({ play, still, show, met, place, children }: EffectProps & { readonly play: CardPlay }) {
+function Smoke({ play, still, show, met, children }: EffectProps & { readonly play: CardPlay }) {
   const { api } = useKayfa();
   const reduced = useMotionReduced();
   const forced = useForcedColors();
@@ -334,7 +334,7 @@ function Smoke({ play, still, show, met, place, children }: EffectProps & { read
   const [tick, bump] = useReducer((n: number) => n + 1, 0);
   const [spoken, setSpoken] = useState('');
   const [frame, setFrame] = useState<Frame>(NO_FRAME);
-  /* The content area's element as the last measure found it (the post body, or the host in an ORIGIN box): the observers and listeners are bound to it, and move when it is replaced. */
+  /* The content area's element as the last measure found it (the post body, the ORIGIN box's area, or the host where there is none): the observers and listeners are bound to it, and move when it is replaced. */
   const [areaEl, setAreaEl] = useState<HTMLElement | null>(null);
   /* Whether the post is on screen is unknown until the observer first reports: the canvas is kept (and painted) through that, so the words are never bare, and only a confirmed "out" releases it. */
   const [sight, setSight] = useState<'unknown' | 'in' | 'out'>('unknown');
@@ -377,13 +377,13 @@ function Smoke({ play, still, show, met, place, children }: EffectProps & { read
 
   /* ---- the box ---- */
   /*
-   * The container is the box Feelin' Fab's foil and Whoops!'s ink fill: the post body (`.kb-act-main`) in the thread, border to border (the engine's
-   * `bodyOf` and `bodyBox`, engine/ui/cards/body.ts), and this effect's own element anywhere else (the ORIGIN box). It is found again at each measure.
+   * The container is the box Feelin' Fab's foil and Whoops!'s ink fill: the content area (a post's body in the thread, `.kb-act-main`), border to border (the engine's
+   * `bodyOf` and `bodyBox`, engine/ui/cards/body.ts), and the ORIGIN box's area in the box; this effect's own element where there is none (Stick Around's view). It is found again at each measure.
    */
   const measure = useCallback(() => {
     const words = wordsRef.current, host = hostRef.current;
     if (!words || !host) return;
-    const found = bodyOf(host, place);
+    const found = bodyOf(host);
     setAreaEl(found ?? host);
     const b = bodyBox(host, found);
     const w = words.getBoundingClientRect(), h = host.getBoundingClientRect();
@@ -391,7 +391,7 @@ function Smoke({ play, still, show, met, place, children }: EffectProps & { read
     const wx = w.left - (h.left + b.left), wy = w.top - (h.top + b.top);
     setFrame((f) => (f.w === b.w && f.h === b.h && f.top === b.top && f.left === b.left && f.wx === wx && f.wy === wy && f.ww === w.width && f.wh === w.height
       ? f : { w: b.w, h: b.h, top: b.top, left: b.left, wx, wy, ww: w.width, wh: w.height }));
-  }, [place]);
+  }, []);
   useLayoutEffect(() => {
     measure();
     const words = wordsRef.current, host = hostRef.current;
@@ -505,11 +505,13 @@ function Smoke({ play, still, show, met, place, children }: EffectProps & { read
   /* ---- the pointer: on the content area, passive, never prevented, never captured ---- */
   useEffect(() => {
     if (still || !areaEl) return;
-    /* The pointer is read on the content area, which the smoke fills (the host in an ORIGIN box), and placed in its padding box. */
+    /* The pointer is read on the content area, which the smoke fills (the host where there is none), and placed in its padding box. */
     const area = areaEl;
     const at = (e: PointerEvent) => { const r = area.getBoundingClientRect(); return { x: e.clientX - r.left - area.clientLeft, y: e.clientY - r.top - area.clientTop }; };
-    /* The control is the way through, not the words, and so is whatever the engine lifts over the ink (a fold's bar, the reactions row): a press on one clears nothing. */
-    const onControl = (e: Event) => e.target instanceof Element && e.target.closest('.dw-hotbox-wave, [data-kb-over-ink]') !== null;
+    /* The control is the way through, not the words, and so is whatever the engine lifts over the ink inside this area (a fold's bar, the reactions row, the ORIGIN box's History): a press
+       on one clears nothing. The area found again here, since a lifted thing that holds it (the ORIGIN box, lifted whole over the opening post's smoke) is no part of it: a press on that
+       box's byline is this smoke's own, while the same press is not the opening post's, whose area holds the box. */
+    const onControl = (e: Event) => (e.target instanceof Element && e.target.closest('.dw-hotbox-wave') !== null) || liftedOver(e.target, hostRef.current ? bodyOf(hostRef.current) : null);
     const follow = (e: PointerEvent) => {
       const m = model.current, { x, y } = at(e);
       m.mouse = { x, y, openedAt: m.mouse?.openedAt ?? api.now(), leftAt: null, hold: 0 };

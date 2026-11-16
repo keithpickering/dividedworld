@@ -81,7 +81,7 @@ let boxHeight: number | null = null;
 let frameBox: Box | null = null;
 const boxNow = (): Box => ({ w: boxWidth, h: boxHeight ?? layoutLines * LINE_PX });
 
-const isBox = (el: HTMLElement) => el.classList?.contains('kb-act-main') || el.classList?.contains('kb-whoops-frame');
+const isBox = (el: HTMLElement) => el.classList?.contains('kb-act-main') || el.classList?.contains('kb-origin-area') || el.classList?.contains('kb-whoops-frame');
 
 beforeEach(() => {
   boxWidth = MAX_FRAME;
@@ -139,8 +139,12 @@ interface Options {
   readonly still?: boolean;
   /** `thread` (the default) renders inside the post body's cell, `.kb-act-main`, which is then the ink's box; `origin` is the ORIGIN box, where the frame is. */
   readonly place?: 'thread' | 'origin';
+  /** At place `origin`, whether the ORIGIN box's content area is there (the default); false is Stick Around's view, where the words stand in no content area. */
+  readonly area?: boolean;
   /** What the engine draws beside the effect in the post body, such as the reactions row. */
   readonly beside?: ReactNode;
+  /** A second Whoops! effect, the lifted ORIGIN box's own, drawn inside the post body beside the first: the box lifted over the body's ink, holding its own content area and the effect in it. */
+  readonly nested?: boolean;
 }
 
 function mount(o: Options = {}) {
@@ -169,16 +173,20 @@ function mount(o: Options = {}) {
     const [view, setView] = useState<CardView | null>(null);
     say = setView;
     const effect = <Effect {...props} post={{ ...props.post, currentPayload: payload }} plays={list} states={held} />;
+    const inner = o.nested ? <div className="kb-origin" data-kb-over-ink><div className="kb-origin-area" data-kb-content-area><Effect {...props} place="origin" ink={createClaims().at('post:whoops', 1)} /></div></div> : null;
     return (
       <>
-        {props.place === 'thread' ? <div className="kb-act-main">{effect}{o.beside}</div> : effect}
+        {props.place === 'thread' ? <div className="kb-act-main" data-kb-content-area>{effect}{o.beside}{inner}</div>
+          : o.area === false ? effect
+          /* The ORIGIN box as the engine draws it: the opening post's body, the box (lifted over its ink) and the box's own area. */
+          : <div className="kb-act-main" data-kb-content-area><div className="kb-origin" data-kb-over-ink><div className="kb-origin-area" data-kb-content-area>{effect}{o.beside}</div></div></div>}
         <Kit card="whoops" controls={view?.controls ?? []} />
       </>
     );
   }
   const world = renderInWorld(<Host />, { settings: { cardSettings: o.clean === null ? {} : { 'whoops.clean': o.clean ?? 95 } } });
   const root = world.container.querySelector('.kb-whoops') as HTMLElement;
-  return { ...world, shown, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)), replay: () => act(() => replay()), edit: () => act(() => edit()) };
+  return { ...world, shown, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement, area: world.container.querySelector('.kb-origin-area') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)), replay: () => act(() => replay()), edit: () => act(() => edit()) };
 }
 
 /**
@@ -1185,11 +1193,74 @@ describe('the body\'s box', () => {
     expect(washed(root)[0]).toBeGreaterThan(0);
   });
 
-  test('in the ORIGIN box the frame is the surface and the box', () => {
-    const { frame, root } = mount({ place: 'origin' });
+  test('in the ORIGIN box the content area is the surface and the box, and the frame, a smaller element in it, is neither', () => {
+    /* The frame is the words' own element: smaller than the area, and sitting 12px right and 8px down in it. */
+    frameBox = { w: 100, h: 40 };
+    const realRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const at = this.classList.contains('kb-whoops-frame') ? { left: 12, top: 8 } : { left: 0, top: 0 };
+      return { ...at, right: at.left, bottom: at.top, width: 0, height: 0, x: at.left, y: at.top, toJSON() {} } as DOMRect;
+    };
+    try {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+      const { area, frame, root } = mount({ place: 'origin' });
+      for (let k = 0; k < 4; k++) act(() => { vi.advanceTimersByTime(60); });
+      const ink = root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-ink')!;
+      const sud = root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-suds')!;
+      expect(sud.width, "the suds canvas is the area's width, not the frame's").toBe(boxNow().w);
+      expect([ink.style.left, ink.style.top], 'placed in the area, reaching out of the frame to its corner').toEqual(['-12px', '-8px']);
+      expect(ink.style.width, "the ink is the area's width").toBe(`${boxNow().w}px`);
+      expect(frame.style.overflow, 'the frame lets the ink reach out of it').toBe('visible');
+      expect(area.style.touchAction, 'the area is the surface that is held for the touch').toBe('pan-y pinch-zoom');
+      /* A press in the area outside the frame (the shares are the area's) washes. */
+      const [x, y] = inkSpot(inkOf(0));
+      press(area, [[x, y], [x + 0.05, y]]);
+      expect(washed(root)[0], 'a press on the area, outside the frame, washes').toBeGreaterThan(0);
+    } finally {
+      Element.prototype.getBoundingClientRect = realRect;
+    }
+  });
+
+  test("at place origin with no content area around it (Stick Around's view), the frame is the surface and the box, as before", () => {
+    const { frame, root } = mount({ place: 'origin', area: false });
+    expect(frame.style.overflow, 'no body, nothing to reach out to').toBe('');
     const [x, y] = inkSpot(inkOf(0));
     press(frame, [[x, y], [x + 0.05, y]]);
     expect(washed(root)[0]).toBeGreaterThan(0);
+  });
+
+  test('a lifted element that holds the body (the box, for its own ink) does not stop a stroke', () => {
+    /* The box is lifted over the opening post's ink and holds the area: a press in the area, which is inside it, is the area's own. */
+    const { area, root } = mount({ place: 'origin' });
+    const [x, y] = inkSpot(inkOf(0));
+    press(area, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    expect(washed(root)[0], 'a press under the lifted box, in the body, starts a stroke').toBeGreaterThan(0);
+  });
+
+  test('a press inside a lifted element inside the body starts nothing, in the box and in the thread', () => {
+    for (const place of ['origin', 'thread'] as const) {
+      const chip = <div data-kb-over-ink><button type="button">React</button></div>;
+      const { root, unmount } = mount({ place, beside: chip });
+      const [x, y] = inkSpot(inkOf(0));
+      const down = fireEvent.pointerDown(screen.getByRole('button', { name: 'React' }), { clientX: px(x, y)[0], clientY: px(x, y)[1], pointerId: 1, button: 0, pointerType: 'mouse' });
+      expect(down, `${place}: the press is not prevented`).toBe(true);
+      expect(washed(root)[0], `${place}: nothing is washed`).toBe(0);
+      unmount();
+    }
+  });
+
+  test("with the effect on an outer body and another in a nested lifted box, a press on the box's words is the inner effect's alone, and one on the outer body's words the outer's alone", () => {
+    /* The box as the engine draws it, inside the opening post's body: lifted, holding its own area and its own effect. */
+    const { container, root: outer } = mount({ nested: true });
+    const [outerRoot, innerRoot] = [...container.querySelectorAll<HTMLElement>('.kb-whoops')];
+    expect(outerRoot, "the first effect is the outer body's").toBe(outer);
+    const frames = [...container.querySelectorAll<HTMLElement>('.kb-whoops-frame')];
+    const [x, y] = inkSpot(inkOf(0));
+    press(frames[1]!, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    expect(washed(innerRoot!)[0], "the box's own effect takes a press on the box's words").toBeGreaterThan(0);
+    expect(washed(outerRoot!)[0], "the outer effect does not: the press is the lifted box's").toBe(0);
+    press(frames[0]!, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    expect(washed(outerRoot!)[0], "a press on the outer body's own words is the outer effect's").toBeGreaterThan(0);
   });
 
   test('pointer events of type touch are ignored, so a finger is never read twice', () => {

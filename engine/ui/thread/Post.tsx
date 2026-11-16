@@ -334,7 +334,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
           {!folding && marks}
           <Link className="kb-act-number" to={href} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
         </header>
-        <div className="kb-act-main" data-kb-cell="words">
+        <div className="kb-act-main" data-kb-cell="words" data-kb-content-area>
           <Body act={act} name={name} spoken={spoken} person={person} editing={editing} own={own} onEdit={() => setEditing(true)} onDone={() => setEditing(false)} marks={marks} visit={visit} />
           <SpunInto act={act.id} />
         </div>

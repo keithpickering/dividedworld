@@ -61,9 +61,9 @@ export function useMomentRead(key: Id, load: () => Promise<PlayMoment | null>): 
  * is the box's: no ring, no tag); `own` (what became of the play itself), `named` and `words` are what the frame says under the post;
  * `unrecorded` says what else was on the post then wasn't recorded.
  */
-export function MomentFrame({ play, place, at, read, back, label = 'As it landed', own = null, named, words, unrecorded, frame, children }: {
+export function MomentFrame({ play, at, read, back, label = 'As it landed', own = null, named, words, unrecorded, frame, children }: {
   /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
-  readonly play: CardPlay; readonly place: EffectPlace; readonly read: MomentRead['status'] | 'none';
+  readonly play: CardPlay; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
   /** What the frame calls the moment: "As it landed" for a play's, "As it was spun" for a spin's. */
   readonly label?: string;
@@ -79,7 +79,7 @@ export function MomentFrame({ play, place, at, read, back, label = 'As it landed
   const rules = play.faceDown ? undefined : instance.cards.find((c) => c.key === play.card);
   const onInk = useOnInk();
   const ink = play.faceDown ? undefined : inkOf(ui, play, [play], onInk);
-  const ring = useRing(place);
+  const ring = useRing();
   /* The moment is the content (a play-spun ORIGIN box): the box frames it, so there is no ring or tag, and a read not yet done is said above the words (and Try again). Over a post, As it landed opens once the moment is read (glass/prepared.ts), so the tag never says it is loading. */
   const content = back === undefined;
   const status = read === 'read' ? null : read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.';
@@ -122,7 +122,7 @@ const TAG_GAP = 8;
  * (a takeover moves them, and a moved moment is measured at its next render). With no body, both are the stylesheet's: the ring is the
  * moment's own box and the tag stands in the moment's flow.
  */
-function useRing(place: EffectPlace) {
+function useRing() {
   const host = useRef<HTMLDivElement | null>(null);
   const ring = useRef<HTMLDivElement>(null);
   const tag = useRef<HTMLParagraphElement>(null);
@@ -137,7 +137,7 @@ function useRing(place: EffectPlace) {
     watch?.observe(el);
     const unhang = () => { t.removeAttribute('data-kb-hung'); t.removeAttribute('style'); };
     measure.current = () => {
-      const now = bodyOf(el, place);
+      const now = bodyOf(el);
       const nowBar = now?.closest('article')?.querySelector<HTMLElement>(':scope > .kb-act-grid > .kb-act-meta, :scope > .kb-act-meta') ?? null;
       if (now !== body || nowBar !== bar) {
         if (body) watch?.unobserve(body);
@@ -172,7 +172,7 @@ function useRing(place: EffectPlace) {
     };
     measure.current();
     return () => { measure.current = null; watch?.disconnect(); };
-  }, [place]);
+  }, []);
   /* Each render: a moment moved (into Stick Around's view and back) with no size change wakes no observer. */
   useLayoutEffect(() => { measure.current?.(); });
   return { host, ring, tag };
@@ -222,7 +222,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   }, []);
   if (read.status !== 'read' || read.moment === null) {
     return (
-      <MomentFrame frame={frame} play={play} place={place} at={source ? undefined : play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
+      <MomentFrame frame={frame} play={play} at={source ? undefined : play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
         {now}
         {read.status === 'failed' && <button type="button" className="kb-moment-retry" onClick={() => { frame.current?.focus(); read.retry(); }}>Try again</button>}
       </MomentFrame>
@@ -233,7 +233,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   const name = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
   const words = Object.keys(said).sort().map((k) => `${name(k)}: ${said[k]}`);
   return (
-    <MomentFrame frame={frame} play={play} place={place} at={moment.at} label={label} read="read" back={back} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
+    <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
       <MomentEffects moment={moment} place={place} nameOf={nameOf} onWords={onWords}>{bodyOf(moment.version)}</MomentEffects>
     </MomentFrame>
   );

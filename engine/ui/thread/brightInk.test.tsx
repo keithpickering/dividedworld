@@ -30,29 +30,46 @@ describe('the bright ink', () => {
   });
 
   test('on the marked body the four inks, the quote border and the text shadow are the instance\'s', () => {
-    const body = rule(thread, '.kb-act-main[data-kb-bright-ink]').replace(/\s+/gu, ' ');
+    const body = rule(thread, '[data-kb-content-area][data-kb-bright-ink]').replace(/\s+/gu, ' ');
     for (const ink of ['fg', 'link', 'link-visited', 'muted']) expect(body).toContain(`--kb-${ink}: var(--kb-bright-ink);`);
     expect(body).toContain('color: var(--kb-bright-ink);');
     expect(body).toContain(`text-shadow: ${SHADOW};`);
-    expect(rule(thread, '.kb-act-main[data-kb-bright-ink] .kb-quote')).toMatch(/border-color:\s*var\(--kb-bright-ink\)/u);
+    expect(body).toContain('--kb-quote-rule: var(--kb-bright-ink);');
   });
 
   test('what has a ground of its own takes the board\'s inks back and drops the shadow', () => {
-    const own = rule(thread, '.kb-act-main[data-kb-bright-ink] :is(.kb-tally, .kb-origin, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span)').replace(/\s+/gu, ' ');
+    const own = rule(thread, '[data-kb-content-area][data-kb-bright-ink] :is(.kb-tally, .kb-origin, .kb-moment-list, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span)').replace(/\s+/gu, ' ');
     for (const ink of ['fg', 'link', 'link-visited', 'muted']) expect(own, ink).toContain(`--kb-${ink}: var(--kb-board-${ink});`);
     expect(own).toContain('color: var(--kb-board-fg);');
     expect(own).toMatch(/text-shadow:\s*none;/u);
-    expect(rule(thread, '.kb-act-main[data-kb-bright-ink] :is(.kb-tally, .kb-origin, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span) .kb-quote')).toMatch(/border-color:\s*var\(--kb-rule\)/u);
+    expect(own).toContain('--kb-quote-rule: var(--kb-rule);');
   });
 
   test('a shut spoiler and the video box keep their ground: board inks back (color stays its background) and no outline over hidden glyphs', () => {
-    const sel = rule(thread, '.kb-act-main[data-kb-bright-ink] :is(.kb-tally, .kb-origin, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span)').replace(/\s+/gu, ' ');
+    const sel = rule(thread, '[data-kb-content-area][data-kb-bright-ink] :is(.kb-tally, .kb-origin, .kb-moment-list, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span)').replace(/\s+/gu, ' ');
     expect(sel).toContain('--kb-fg: var(--kb-board-fg);');
     expect(sel).toMatch(/text-shadow:\s*none;/u);
     const bb = fs.readFileSync(path.resolve(here, '../bbcode/bbcode.css'), 'utf8');
     expect(bb).toMatch(/\.kb-bb-ispoiler \{[^}]*color: var\(--kb-fg\);[^}]*background: var\(--kb-fg\);/u);
     expect(bb).toMatch(/\.kb-bb-video-box \{[^}]*background: var\(--kb-bg\);/u);
     expect(bb).toMatch(/\.kb-bb-video-face > span \{[^}]*background: var\(--kb-bg\);/u);
+  });
+
+  test('a quote border is read from --kb-quote-rule, set by the bright rule and by the reset, and no rule sets it past the property', () => {
+    const bb = strip(fs.readFileSync(path.resolve(here, '../bbcode/bbcode.css'), 'utf8'));
+    expect(rule(bb, '.kb-quote')).toMatch(/border:\s*1px solid var\(--kb-quote-rule, var\(--kb-rule\)\);/u);
+    expect(rule(thread, '[data-kb-content-area][data-kb-bright-ink]')).toContain('--kb-quote-rule: var(--kb-bright-ink);');
+    expect(rule(thread, '[data-kb-content-area][data-kb-bright-ink] :is(.kb-tally, .kb-origin, .kb-moment-list, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span)')).toContain('--kb-quote-rule: var(--kb-rule);');
+    /* No rule in thread.css styles a quote's border: not one whose selector (in any list, under any ancestors) ends in `.kb-quote`, and not a border-color on any selector that names it. */
+    const quoteRules = [...thread.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((sel) => /\.kb-quote\s*$/u.test(sel)) || (/\.kb-quote/u.test(m[1]!) && /border(-[a-z]+)*-color/u.test(m[2]!)));
+    expect(quoteRules.map((m) => m[0].trim())).toEqual([]);
+  });
+
+  test('the ink rules are written against the content-area marker, not a post class', () => {
+    expect(thread).toMatch(/\[data-kb-content-area\] \[data-kb-effect-ink\] \{/u);
+    expect(thread).toMatch(/\[data-kb-content-area\] \[data-kb-over-ink\] \{/u);
+    expect(thread).not.toMatch(/\.kb-act-main\[data-kb-bright-ink\]/u);
+    expect(thread).not.toMatch(/\.kb-act-main \[data-kb-(effect|over)-ink\]/u);
   });
 
   test('the selectors name classes that exist', () => {

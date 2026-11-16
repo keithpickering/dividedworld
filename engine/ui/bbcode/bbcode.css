@@ -161,7 +161,7 @@
 }
 
 .kb-quote {
-  border: 1px solid var(--kb-rule);
+  border: 1px solid var(--kb-quote-rule, var(--kb-rule));
   margin: 0.4em 0;
   padding: 0.3em 2%;
 }

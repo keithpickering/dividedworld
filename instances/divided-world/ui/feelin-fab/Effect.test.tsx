@@ -226,7 +226,7 @@ describe("Feelin' Fab", () => {
   };
   test('in a post body four times its words\' area, the foil is redrawn at a quarter of the rate; with no body, at the full rate', () => {
     inBody(300, 480);
-    const r = render(<div className="kb-act-main"><FeelinFabEffect {...props(1)} /></div>);
+    const r = render(<div className="kb-act-main" data-kb-content-area><FeelinFabEffect {...props(1)} /></div>);
     expect(probe.share(box())).toBe(0.25);
     r.unmount();
     render(<FeelinFabEffect {...props(1)} />);
@@ -529,7 +529,7 @@ describe("Feelin' Fab", () => {
    free one, the foil is drawn from FAB_BRIGHT on both boards and the post body asks for the bright ink; with it off nothing is as it was. */
 describe("Feelin' Fab, bright", () => {
   const bodyOfPost = () => document.querySelector('.kb-act-main') as HTMLElement;
-  const inBody = (level = 1) => render(<div className="kb-act-main"><FeelinFabEffect {...props(level)} /></div>);
+  const inBody = (level = 1) => render(<div className="kb-act-main" data-kb-content-area><FeelinFabEffect {...props(level)} /></div>);
   const effects = (on: boolean) => act(async () => { if (on) document.documentElement.setAttribute('data-kb-effects', 'bright'); else document.documentElement.removeAttribute('data-kb-effects'); await Promise.resolve(); });
 
   test('FAB_BRIGHT is the bench\'s six full-saturation stops, red to violet', () => {
@@ -597,7 +597,7 @@ describe("Feelin' Fab, bright", () => {
   });
 
   test('a moment (still) draws bright once and redraws when the mark changes', async () => {
-    render(<div className="kb-act-main"><FeelinFabEffect {...props(1)} still /></div>);
+    render(<div className="kb-act-main" data-kb-content-area><FeelinFabEffect {...props(1)} still /></div>);
     expect(made.at(-1)!.opts.palette).toEqual(FAB_STOPS.light);
     await effects(true);
     expect(made.at(-1)!.opts.palette).toEqual(FAB_BRIGHT);
@@ -606,7 +606,7 @@ describe("Feelin' Fab, bright", () => {
 
   test('a takeover that moves the words to another body while bright is on unmarks the old body and marks the new one', () => {
     document.documentElement.setAttribute('data-kb-effects', 'bright');
-    render(<><div className="kb-act-main" id="a"><FeelinFabEffect {...props(1)} /></div><div className="kb-act-main" id="b" /></>);
+    render(<><div className="kb-act-main" data-kb-content-area id="a"><FeelinFabEffect {...props(1)} /></div><div className="kb-act-main" data-kb-content-area id="b" /></>);
     const a = document.getElementById('a')!, b = document.getElementById('b')!;
     expect(a).toHaveAttribute('data-kb-bright-ink');
     b.appendChild(box());
@@ -619,7 +619,7 @@ describe("Feelin' Fab, bright", () => {
   test.each([['reduced motion', () => document.documentElement.setAttribute('data-kb-motion', 'reduce'), true], ['out of view', () => {}, false]] as const)('turning it off while the loop sleeps (%s) clears the mark', async (_name, setUp, inView) => {
     document.documentElement.setAttribute('data-kb-effects', 'bright');
     setUp();
-    render(<div className="kb-act-main"><FeelinFabEffect {...props(1)} /></div>);
+    render(<div className="kb-act-main" data-kb-content-area><FeelinFabEffect {...props(1)} /></div>);
     void see(canvas(), true); frames(3);
     if (!inView) { void see(canvas(), false); frames(3, 100); }
     expect(bodyOfPost()).toHaveAttribute('data-kb-bright-ink');
@@ -635,7 +635,55 @@ describe("Feelin' Fab, bright", () => {
     expect(bodyOfPost()).not.toHaveAttribute('data-kb-bright-ink');
   });
 
-  test('with no body (the ORIGIN box, a view of its own) there is nothing to mark and the foil is still bright', () => {
+  /* In a spun thread's ORIGIN box (docs/plans/2026-11-15-origin-box-effects-design.md, section 6): the effect sits in the box's area, which is
+     inside the opening post's body. The nearest marked area is the effect's: the foil, the density, the rate and the bright ink are the area's. */
+  describe("in the ORIGIN box, inside the opening post's body", () => {
+    const OUTER = { w: 900, h: 700 }, AREA = { w: 600, h: 300 }, OWN = { w: 300, h: 120 };
+    const rectOf = (w: number, h: number, left = 0, top = 0) => ({ x: left, y: top, left, top, right: left + w, bottom: top + h, width: w, height: h, toJSON: () => ({}) });
+    const inBox = (level = 1) => {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+        if (this.classList.contains('kb-act-main')) return rectOf(OUTER.w, OUTER.h);
+        if (this.classList.contains('kb-origin-area')) return rectOf(AREA.w, AREA.h, 10, 40);
+        return rectOf(OWN.w, OWN.h, 20, 60);
+      });
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? OUTER.w : this.classList.contains('kb-origin-area') ? AREA.w : 0; });
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? OUTER.h : this.classList.contains('kb-origin-area') ? AREA.h : 0; });
+      return render(<div className="kb-act-main" data-kb-content-area><div className="kb-origin-area" data-kb-content-area><FeelinFabEffect {...props(level)} place="origin" /></div></div>);
+    };
+    const area = () => document.querySelector('.kb-origin-area') as HTMLElement;
+
+    test('the foil is placed over the area, not the outer body', () => {
+      inBox();
+      /* The host is at (20, 60) and the area at (10, 40): the area's corner is (-10, -20) from the host. */
+      expect([canvas().style.left, canvas().style.top, canvas().style.width, canvas().style.height], 'the foil is the area box').toEqual(['-10px', '-20px', '600px', '300px']);
+    });
+
+    test('the area is marked for the bright ink when the band is bright, and the outer body is not', () => {
+      document.documentElement.setAttribute('data-kb-effects', 'bright');
+      inBox();
+      expect(area(), 'the area carries the mark').toHaveAttribute('data-kb-bright-ink');
+      expect(bodyOfPost(), 'the outer body does not').not.toHaveAttribute('data-kb-bright-ink');
+    });
+
+    test('the density and the rate are those of the words box in the area', () => {
+      inBox();
+      const k = Math.min(1, Math.max(0.5, Math.sqrt((OWN.w * OWN.h) / (AREA.w * AREA.h))));
+      expect(canvas().width, 'paintScale(host, area)').toBe(Math.round(AREA.w * 1.5 * k));
+      expect(canvas().height).toBe(Math.round(AREA.h * 1.5 * k));
+      expect(probe.share(box()), 'paintShare(host, area)').toBe(Math.min(1, Math.max(0.25, (OWN.w * OWN.h) / (AREA.w * AREA.h))));
+    });
+
+    test('on unmount the mark is gone', () => {
+      document.documentElement.setAttribute('data-kb-effects', 'bright');
+      const r = inBox();
+      expect(area()).toHaveAttribute('data-kb-bright-ink');
+      const a = area();
+      r.unmount();
+      expect(a, 'the area is unmarked').not.toHaveAttribute('data-kb-bright-ink');
+    });
+  });
+
+  test('with no body (the view Stick Around draws, which lifts the words out of every area) there is nothing to mark and the foil is still bright', () => {
     document.documentElement.setAttribute('data-kb-effects', 'bright');
     render(<FeelinFabEffect {...props(1)} place="origin" />);
     void see(canvas(), true); frames(2);
@@ -660,7 +708,7 @@ describe("Feelin' Fab, bright", () => {
     expect(css).toMatch(/:root\s*\{[^}]*--kb-bright-ink:\s*#ffffff;[^}]*--kb-bright-outline:\s*#000000;/u);
     expect(css.match(/\.dw-fab\s*\{[^}]*\}/u)![0]).not.toMatch(/--kb-bright-/u);
     expect(css).toMatch(/:root\[data-kb-effects="bright"\]\s+\.dw-fab:not\(\[data-kb-bleed\]\)\s+>\s+\.dw-fab-words\s*\{[^}]*color:\s*var\(--kb-bright-ink\)[^}]*text-shadow:[^}]*var\(--kb-bright-outline\)/u);
-    expect(css).toMatch(/\.kb-act-main\[data-kb-bright-ink\]\s+\.dw-fab-words\s*\{[^}]*text-shadow:\s*inherit/u);
+    expect(css).toMatch(/\[data-kb-content-area\]\[data-kb-bright-ink\]\s+\.dw-fab-words\s*\{[^}]*text-shadow:\s*inherit/u);
   });
 });
 

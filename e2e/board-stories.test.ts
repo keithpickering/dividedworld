@@ -87,3 +87,7 @@ test('the veil cards\' stories are listed: the posts for their author, a third r
     'boards-22-whodunnit--wore-off-light', 'boards-22-whodunnit--wore-off-dark',
   ]));
 });
+
+test("the ORIGIN box's effect stories are listed: Whoops! live, landed and on a phone, Feelin' Fab plain and bright, Glitter Bomb as it was spun, Hot Box, Steel Chair long and short, and the box under its opening post's effects and under a glittered opening post", () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['whoops', 'whoops-landed', 'fab', 'fab-bright', 'glitter-spun', 'glitter-over', 'hot-box', 'chair', 'chair-short', 'under', 'whoops-phone'].map((n) => `boards-26-origin-effects--${n}`)));
+});

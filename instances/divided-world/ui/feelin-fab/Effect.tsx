@@ -39,8 +39,9 @@
  * hand-over is refused after the first transferred it (logged, the post bare); the app does not use StrictMode.
  *
  * Where. The foil fills the post, not only its words (2026-11-06: "the card effect should apply to the entire post in all cases"): in
- * the thread the box is the post body's padding box (engine/ui/cards/body.ts, `.kb-act-main`, bar to bar), and the canvas is placed
- * over it from the host, inline; anywhere else (the ORIGIN box, Stick Around's view) it is the host's own box. Painting the body, the
+ * the thread the box is the post body's padding box (engine/ui/cards/body.ts, `.kb-act-main`, bar to bar), in the ORIGIN box the box's
+ * area (`.kb-origin-area`, under its band, border to border), and the canvas is placed over it from the host, inline; only where there is
+ * no content area (Stick Around's view) is it the host's own box. Painting the body, the
  * host marks itself `data-kb-bleed` and fab.css puts the foil under everything in the body (its reactions, its signature, an ORIGIN
  * box above the words), not only under the words. The host watches the body's size as well as its own.
  *
@@ -94,7 +95,7 @@ type PaletteKey = 'bright' | 'light' | 'dark';
 const paletteOf = (band: Band): PaletteKey => (band.bright ? 'bright' : band.board);
 const PALETTES: Record<PaletteKey, readonly string[]> = { bright: FAB_BRIGHT, light: FAB_STOPS.light, dark: FAB_STOPS.dark };
 
-export function FeelinFabEffect({ post, plays, place, still, children }: EffectProps) {
+export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const level = Math.max(1, Math.min(MOST, plays.length));
@@ -178,7 +179,7 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
       freed = true;
     };
     const measure = (): BodyBox => {
-      const now = bodyOf(el, place);
+      const now = bodyOf(el);
       if (now !== body) {
         if (body) { resize?.unobserve(body); markBrightInk(body, false); }
         if (now) resize?.observe(now);
@@ -245,7 +246,7 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
       markBrightInk(body, false);
       el.removeAttribute('data-kb-bleed');
     };
-  }, [level, seed, still, place]);
+  }, [level, seed, still]);
 
   return (
     <div ref={host} className="dw-fab" data-kb-fab="" data-kb-level={level}>

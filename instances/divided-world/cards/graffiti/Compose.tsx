@@ -23,6 +23,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import type { ComposeProps } from '../../../../engine/ui/cards/types.ts';
+import { bodyOf } from '../../../../engine/ui/cards/body.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import { usePlayer } from '../../../../engine/ui/player.tsx';
@@ -366,11 +367,11 @@ export function Compose({ box, under, submit, cancel, hold, ready, children }: C
      mounts; that is in place by the time the engine's frame, which this tells to measure again, runs. */
   useEffect(() => { ready(); }, [ready]);
 
-  /* The box is the post body's (`.kb-act-main`), the one the wall paints in and Whoops! measures, and not the words' element, which on a one-line post is a strip:
+  /* The box is the post body's (the content area the engine marks), the one the wall paints in and Whoops! measures, and not the words' element, which on a one-line post is a strip:
      strokes are shares of the same box before and after Tag it. The words' element sits inside it, so the drawing is offset by where the body begins. */
   const [cell, setCell] = useState<{ w: number; h: number; left: number; top: number } | null>(null);
   useLayoutEffect(() => {
-    const body = under?.closest<HTMLElement>('.kb-act-main');
+    const body = under ? bodyOf(under) : null;
     if (!under || !body) { setCell(null); return undefined; }
     const measure = () => {
       const u = under.getBoundingClientRect(), b = body.getBoundingClientRect();

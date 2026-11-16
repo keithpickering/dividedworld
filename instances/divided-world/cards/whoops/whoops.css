@@ -11,8 +11,9 @@
 }
 
 /*
- * The frame holds the words. In the ORIGIN box it clips the ink at its own edge. In the thread the effect lets the ink out
- * (Effect.tsx) to the post body's corner, so the ink reaches the body's borders over the tag's row and the reactions row. A vertical
+ * The frame holds the words. Where no content area surrounds it (Stick Around's view) it clips the ink at its own edge. Wherever there is
+ * one, a post's body in the thread or the ORIGIN box's area, the effect lets the ink out (Effect.tsx) to that area's corner, so the ink
+ * reaches its borders over the tag's row and the reactions row. A vertical
  * drag still scrolls the page; a sideways one scrubs (the effect keeps the same on the post body it takes touches on).
  */
 .kb-whoops-frame {
