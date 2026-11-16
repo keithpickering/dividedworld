@@ -498,6 +498,41 @@ const FLAT_ALONE = INSET + 2 * HALF[2] + K * (Z_FRONT + DEPTH + GIVE + HALF[1]);
 
 /** How many seeds a scan tries, from 1, before it gives up (the poses it looks for turn up in a few percent of seeds). */
 const SCAN_SEEDS = 300;
+/**
+ * Measured on the development machine: a scan's first run is up at about 2 s and each further run takes about 0.15 s (a full 300 seeds, 45 s);
+ * the animated load and its rest take about 3 s (the cap, REST_MS, is 10 s). SCAN_MS is twice a full scan; a scan that has not found its pose by
+ * then throws its own message, before the test's timeout does. TEST_MS is the scan, then the animated load, REST_MS for its rest, and 20 s over.
+ */
+const SCAN_MS = 90_000;
+const TEST_MS = SCAN_MS + REST_MS + 40_000;
+
+/** The content area's and the words' boxes in the window (the layout a pose depends on), measured on whatever the page now shows. */
+const layoutOf = (page: Page) => page.evaluate(() => {
+  const box = document.querySelector<HTMLElement>('.kb-act-main:has(.dw-chair)')!;
+  const words = box.querySelector<HTMLElement>('.dw-chair-words')!;
+  const rect = (e: Element) => { const r = e.getBoundingClientRect(); return { left: r.left + scrollX, top: r.top + scrollY, width: r.width, height: r.height }; };
+  return { area: rect(box), words: rect(words), client: [box.clientWidth, box.clientHeight], viewport: [document.documentElement.clientWidth, innerWidth] };
+});
+type Layout = Awaited<ReturnType<typeof layoutOf>>;
+
+/**
+ * Gives every load of the page below a tall spacer, so it can scroll away from the post and back, at the same layout (the same scrollbar) in a
+ * scan and in the animated run that follows it. It is added before the story's first run, not after.
+ */
+async function addSpacer(page: Page) {
+  await page.addInitScript(() => {
+    const add = () => {
+      const s = document.createElement('div');
+      s.id = 'chair-spacer';
+      s.style.cssText = 'height:4000px';
+      document.body.append(s);
+    };
+    if (document.body) add(); else document.addEventListener('DOMContentLoaded', add);
+  });
+}
+
+/** The layout the scan measured, kept by `findSeed` for the animated load that follows to be compared against. */
+const scanLayouts = new WeakMap<Page, Layout>();
 
 /** Gives the next load of the page its seed, the way `open`'s init script reads it, and loads the story again with the post in view. */
 async function loadWith(page: Page, name: Story, seed: number) {
@@ -507,36 +542,39 @@ async function loadWith(page: Page, name: Story, seed: number) {
   await expect(page.locator('.dw-chair').first()).toBeAttached();
   await page.evaluate(() => document.fonts.ready);
   await area(page).scrollIntoViewIfNeeded();
+  /* The pose was found on the scan's layout; on another one it says nothing. */
+  const scanned = scanLayouts.get(page);
+  if (scanned) expect(await layoutOf(page), 'the animated load has the layout the scan found the seed on (content area and words)').toEqual(scanned);
 }
 
 /**
  * Finds a seed whose run makes the pose `pose` asks for, on this machine's layout. The story opens under reduced motion, whose picture is drawn
  * at once and is the rest the animated run ends in for the same seed (Effect.test.tsx), with seeds `after + 1` to SCAN_SEEDS queued as its runs'
  * seeds; and each further run is made without loading the page again, by scrolling the post out of view and back (a run's seed is the next
- * in the queue), until `pose` is true of what the page measures. None in the queue is a failure that says how many were tried. The page is left
- * on the run found, and the seed is returned. A pinned seed cannot do this: where a chair lands depends on the content area's size and the text's
- * rects, which differ by platform.
+ * in the queue), until `pose` is true of what the page measures. None in the queue, or none before `budgetMs` has passed (so that this message
+ * comes before the test's own timeout), is a failure that says how many were tried. The page is left on the run found, and the seed is
+ * returned. A pinned seed cannot do this: where a chair lands depends on the content area's size and the text's rects, which differ by platform.
  */
 async function findSeed(
   page: Page, name: Story, n: number, pose: (m: Measure, nudges: number[]) => boolean, after = 0, size?: { width: number; height: number },
+  budgetMs = SCAN_MS,
 ): Promise<number> {
+  const deadline = Date.now() + budgetMs;
   await page.emulateMedia({ reducedMotion: 'reduce' });
   /* A name left by `loadWith` would give every run the one seed it holds. */
   await page.evaluate(() => { window.name = ''; });
   const queue = Array.from({ length: SCAN_SEEDS - after }, (_, i) => after + 1 + i);
+  if (!scanLayouts.has(page)) await addSpacer(page);
   await open(page, name, size, queue);
-  await page.evaluate(() => {
-    const s = document.createElement('div');
-    s.id = 'chair-spacer';
-    s.style.cssText = 'height:4000px';
-    document.body.append(s);
-  });
+  let tried = 0;
   for (;;) {
     await atRest(page, n, 2000);
     const nudges = await chairs(page).evaluateAll((gs) => gs.map((g) => Number(g.getAttribute('data-nudges'))));
     const seed = await page.evaluate(() => (window as unknown as { __seed: number }).__seed);
-    if (pose(await measure(page), nudges)) return seed;
+    tried++;
+    if (pose(await measure(page), nudges)) { scanLayouts.set(page, await layoutOf(page)); return seed; }
     if (seed >= SCAN_SEEDS) throw new Error(`no seed from ${after + 1} to ${SCAN_SEEDS} makes the pose "${name}" asks for on this layout`);
+    if (Date.now() > deadline) throw new Error(`no seed from ${after + 1} to ${seed} (${tried} tried in ${budgetMs} ms) makes the pose "${name}" asks for on this layout`);
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     await expect(chairs(page)).toHaveCount(0);
     await area(page).evaluate((el) => el.scrollIntoView({ block: 'center' }));
@@ -545,18 +583,22 @@ async function findSeed(
 
 /**
  * A chair that comes to rest on another is the tallest rest the game keeps (body.ts REST_RISE). The seed is found by scanning (above) for one in
- * which one does: its top is higher than a chair lying alone can reach, FLAT_ALONE. Then every chair's whole drawn box covers no line of words,
- * does not meet the reactions row, and has its top under the room; and a chair is on another, so this cannot pass by measuring nothing. The
- * reduced picture is the animated run's rest, so the geometry is checked on it.
+ * which one does: its top is higher than a chair lying alone can reach, FLAT_ALONE. Then the page is loaded again with that seed in full motion,
+ * and on the animated run's rest every chair's whole drawn box covers no line of words, does not meet the reactions row, and has its top under
+ * the room; and a chair is on another, so this cannot pass by measuring nothing. (That the reduced picture is the animated run's rest is
+ * Effect.test.tsx's; here it is the animated run that is measured.)
  */
 test('three: a chair that rests on another covers no words, does not reach the reactions row, and is under the room', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(TEST_MS);
   const highestOf = (m: Measure) => Math.max(...m.chairs.map((c) => m.area.bottom - c.top));
   const seed = await findSeed(page, 'three', 3, (m) => highestOf(m) > FLAT_ALONE);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await loadWith(page, 'three', seed);
+  await atRest(page, 3);
   test.info().annotations.push({ type: 'seed', description: `seed ${seed} stacks a chair` });
   const m = await measure(page);
   await clearOfWordsAndRow(page, m);
-  expect(highestOf(m), `a chair came to rest on another, its top higher than a chair lying alone reaches (${FLAT_ALONE})`).toBeGreaterThan(FLAT_ALONE);
+  expect(highestOf(m), `a chair came to rest on another on the animated run, its top higher than a chair lying alone reaches (${FLAT_ALONE})`).toBeGreaterThan(FLAT_ALONE);
 });
 
 /**
@@ -600,11 +642,13 @@ const NUDGED_TRIES = 6;
  * short to count, and then the scan goes on to the next nudged seed (up to NUDGED_TRIES).
  */
 test('one-light: a chair that stands up falls over, and ends lying inside the room, clear of the words and the reactions row', async ({ page }) => {
-  test.setTimeout(180_000);
+  /* Up to NUDGED_TRIES scans share one scan budget, and each animated run may take REST_MS. */
+  test.setTimeout(SCAN_MS + NUDGED_TRIES * (REST_MS + 5_000) + 40_000);
+  const scanUntil = Date.now() + SCAN_MS;
   let seed = 0, stood = 0;
   const tried: number[] = [];
   for (let i = 0; i < NUDGED_TRIES && stood < STOOD_FRAMES; i++) {
-    seed = await findSeed(page, 'one-light', 1, (_m, nudges) => nudges[0]! >= 1, seed);
+    seed = await findSeed(page, 'one-light', 1, (_m, nudges) => nudges[0]! >= 1, seed, undefined, Math.max(scanUntil - Date.now(), 1));
     tried.push(seed);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await loadWith(page, 'one-light', seed);
