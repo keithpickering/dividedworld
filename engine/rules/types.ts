@@ -415,9 +415,10 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'unmask' | 'announce' 
 /**
  * A post for every card: a `post` Act, or a `spin` Act, which is always seq 1 of the thread it opened and is the post a
  * spun thread opens on. Every other kind of Act (a card, an edit, an unmask, an announce, a set, a spring) is no post.
- * Its SQL twin is `post_kind(kind)`; they change together.
+ * Its SQL twin is `post_kind(kind)`; they change together. It takes any Act's kind as text, as its twin does: the screens
+ * name more kinds of Act than the rules read (a visit, a tally, a report), and each of those is no post either.
  */
-export const isPost = (kind: ActKind): boolean => kind === 'post' || kind === 'spin';
+export const isPost = (kind: string): boolean => kind === 'post' || kind === 'spin';
 
 /**
  * A board the instance starts with. Exactly one is The System's (`system`): only The System posts
