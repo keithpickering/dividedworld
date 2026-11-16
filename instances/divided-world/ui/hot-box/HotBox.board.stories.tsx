@@ -32,6 +32,8 @@ declare global {
   interface Window {
     /** The tile loop's probe (engine/ui/cards/tileLoop.ts), for e2e/hot-box.spec.ts's cost cases: the one measure the budget stories hand over, not another. */
     __kbTiles?: typeof probe;
+    /** Draws every smoked post at this rung (null gives each its own back), so e2e/hot-box.spec.ts can measure each rung alone. */
+    __dwFogLevel?: typeof forceFogLevel;
   }
 }
 
@@ -120,7 +122,8 @@ function Smoked({ mode, into = 0, long = false, reduced = false, parted = false,
   }, [reduced]);
   useEffect(() => {
     window.__kbTiles = probe;
-    return () => { delete window.__kbTiles; };
+    window.__dwFogLevel = forceFogLevel;
+    return () => { delete window.__kbTiles; delete window.__dwFogLevel; };
   }, []);
   /* A rung forced for the story is put back when it goes: a module's own state would otherwise stay in the next story of the page. */
   useLayoutEffect(() => {

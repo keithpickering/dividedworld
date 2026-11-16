@@ -623,7 +623,14 @@ test.describe('what the fog costs', () => {
     const line = (await lines(page))[1]!;
     const y = line.y + line.h / 2, x0 = line.x + 40, span = Math.min(line.w - 80, 500);
     expect(line.y, 'the line swept is on screen').toBeLessThan(1000);
-    const f0 = await page.evaluate(() => (window as unknown as { __kbTiles: { frames(): number } }).__kbTiles.frames());
+    const f0 = await page.evaluate(() => {
+      const kb = (window as unknown as { __kbTiles: { frames(): number }; __hbRung: number }).__kbTiles;
+      /* The frame the ladder last stepped in, so the frames painted at the rung it settled on can be told from the ones before. */
+      const w = window as unknown as { __hbRung: number };
+      w.__hbRung = kb.frames();
+      new MutationObserver(() => { w.__hbRung = kb.frames(); }).observe(document.querySelector('#post-43 .dw-hotbox')!, { attributes: true, attributeFilter: ['data-dw-fog-level'] });
+      return kb.frames();
+    });
     const began = Date.now();
     for (let i = 0; Date.now() - began < ms; i++) {
       const phase = (i % 40) / 40;
@@ -633,7 +640,8 @@ test.describe('what the fog costs', () => {
       const kb = (window as unknown as { __kbTiles: { frames(): number; work(n: number): number[] } }).__kbTiles;
       const work = kb.work(kb.frames() - from);
       const mean = (a: number[]) => (a.length ? a.reduce((x, v) => x + v, 0) / a.length : 0);
-      return { frames: work.length, mean: mean(work), last: mean(work.slice(-30)), max: Math.max(0, ...work), level: Number(document.querySelector('#post-43 .dw-hotbox')?.getAttribute('data-dw-fog-level')) };
+      const atRung = kb.work(kb.frames() - (window as unknown as { __hbRung: number }).__hbRung);
+      return { frames: work.length, mean: mean(work), last: mean(work.slice(-30)), atRung: mean(atRung), atRungFrames: atRung.length, max: Math.max(0, ...work), level: Number(document.querySelector('#post-43 .dw-hotbox')?.getAttribute('data-dw-fog-level')) };
     }, f0);
   }
 
@@ -642,22 +650,22 @@ test.describe('what the fog costs', () => {
       test(`${label} at ${rate}x CPU: the fog's painter is within ${FOG_BUDGET_MS} ms a frame, or the ladder has stepped down to where it is`, async ({ page }) => {
         test.setTimeout(90_000);
         if (rate > 1) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate });
-        const got = await sweepFor(page, 3000, story);
-        const text = `${label}, ${rate}x CPU, pointer sweeping 3 s: ${got.frames} frames, mean ${got.mean.toFixed(2)} ms, last 30 frames mean ${got.last.toFixed(2)} ms, worst ${got.max.toFixed(1)} ms, ladder rung ${got.level}`;
+        const got = await sweepFor(page, rate === 4 ? 6000 : 3000, story);
+        const text = `${label}, ${rate}x CPU, pointer sweeping ${rate === 4 ? 6 : 3} s: ${got.frames} frames, mean ${got.mean.toFixed(2)} ms, mean at the rung it settled on ${got.atRung.toFixed(2)} ms over ${got.atRungFrames} frames, worst ${got.max.toFixed(1)} ms, ladder rung ${got.level}`;
         figures.push(text);
         test.info().annotations.push({ type: 'cost', description: text });
         console.log(`hot-box cost: ${text}`);
         expect(got.frames, 'the painter ran').toBeGreaterThan(10);
         /* Only the throttled run is held to the budget (a phone's speed); the unthrottled one is the figure to compare it with. */
         if (rate === 4) {
-          if (got.level === 0) expect(got.mean, `at rung 0 the mean is within the budget`).toBeLessThanOrEqual(FOG_BUDGET_MS);
-          else expect(got.last, `the ladder is at rung ${got.level} and the last 30 frames are within the budget`).toBeLessThanOrEqual(FOG_BUDGET_MS);
+          expect(got.atRungFrames, 'the ladder has settled: frames were painted at its last rung').toBeGreaterThanOrEqual(8);
+          expect(got.atRung, `the ladder settled on rung ${got.level} and the frames painted at it are within the budget`).toBeLessThanOrEqual(FOG_BUDGET_MS);
         }
       });
     }
   }
 
-  /* Not held to the budget: where the ladder comes to at a phone's speed given time (it judges the mean of 30 frames, which a throttled page paints in several seconds), for the figures. */
+  /* Not held to the budget: where the ladder comes to at a phone's speed given time (it judges the mean of its first 8 frames, which a throttled page paints in well under a second), for the figures. */
   test('LongPost at 4x CPU for 12 s: where the ladder settles', async ({ page }) => {
     test.setTimeout(90_000);
     await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 });

@@ -126,7 +126,7 @@ export function useForcedColors(): boolean {
 
 /** The script time a frame all the fog in view may take together, ms (design section 3.3; measured at a phone's speed by e2e/hot-box.spec.ts). */
 export const FOG_BUDGET_MS = 4;
-/** How many of the painter's frames the mean is taken over. */
+/** How many of the painter's last frames the mean is taken over, at most. */
 const LADDER_FRAMES = 30;
 /** The rungs, by level: the cell's side (px), the rounds of the pressure solve, and whether the fog is drawn from the model with no field. */
 const RUNGS: readonly { readonly cell: number; readonly rounds: number; readonly direct: boolean }[] = [
@@ -137,33 +137,51 @@ const RUNGS: readonly { readonly cell: number; readonly rounds: number; readonly
   { cell: 10, rounds: 0, direct: true },
 ];
 export const FOG_LEVEL_MOST = RUNGS.length - 1;
+/**
+ * What a frame costs at each rung, as a share of rung 0's: how far down a mean over the budget has to go to fit it. Measured by e2e/hot-box.spec.ts's cost
+ * cases in Chromium at a 4x CPU throttle (a phone's speed), each rung forced alone, a pointer or a finger sweeping 3 s over the short post and over LongPost
+ * at a desktop's width and a phone's: the mean of the four ratios to rung 0 (2026-11-16: 0.59 0.54 0.66 0.66 at rung 1, 0.37 0.37 0.48 0.52 at rung 2,
+ * 0.39 0.39 0.46 0.53 at rung 3, 0.25 0.24 0.32 0.32 at rung 4). Rung 3's rounds buy nothing a pressure solve of 8 did not already cost less than the cell, so it
+ * is no cheaper than rung 2 and the ladder never lands on it from a mean that rung 2 did not fit.
+ */
+export const FOG_SHARE: readonly number[] = [1, 0.61, 0.43, 0.44, 0.28];
+/** How many painter frames the mean has before it is judged: a slow device paints few frames a second, and waits on no more than this. */
+const LADDER_FIRST = 8;
 
 /** A smoked post on the ladder: its rung, whether a pointer is on it, the last frame it painted in (the ladder's count), and the step down. */
-interface Rung { level(): number; pointed(): boolean; paintedIn(): number; lower(): void }
+interface Rung { level(): number; pointed(): boolean; paintedIn(): number; lower(to: number): void }
 /* One budget for the page: every smoked post's painter adds its time to the frame it ran in, and the mean of the last frames decides. */
-const ladder = { rungs: new Set<Rung>(), stamp: null as number | null, seen: new Set<string>(), spent: 0, painted: false, kept: [] as number[], frames: 0 };
+const ladder = { rungs: new Set<Rung>(), stamp: null as number | null, seen: new Set<string>(), spent: 0, painted: false, kept: [] as number[], frames: 0, skipping: false };
 /* Each smoked post's own name in the ladder's frames: the same play can be shown twice on a page (in its thread and in an ORIGIN box), so the play's id is not one. */
 let painters = 0;
 
 /** The frame before this one is over: its cost joins the mean, and a mean over the budget sends one post a rung down, a post nobody points at first. */
 function closeFrame(): void {
+  /* The frame that straddled a step began at the old rung: it is not counted, so the new rung is judged on frames drawn at it. */
+  if (ladder.skipping) { ladder.skipping = false; ladder.spent = 0; ladder.painted = false; ladder.frames += 1; return; }
   if (!ladder.painted) return;
   ladder.kept.push(ladder.spent);
   if (ladder.kept.length > LADDER_FRAMES) ladder.kept.shift();
   ladder.spent = 0;
   ladder.painted = false;
   ladder.frames += 1;
-  if (ladder.kept.length < LADDER_FRAMES) return;
+  if (ladder.kept.length < LADDER_FIRST) return;
   let sum = 0;
   for (const ms of ladder.kept) sum += ms;
-  if (sum / LADDER_FRAMES <= FOG_BUDGET_MS) return;
+  const mean = sum / ladder.kept.length;
+  if (mean <= FOG_BUDGET_MS) return;
   /* Only a post that painted in the frames the mean is over can take its cost off it: one that holds no tile near the window is never stepped down. */
   const open = [...ladder.rungs].filter((r) => r.level() < FOG_LEVEL_MOST && ladder.frames - r.paintedIn() <= LADDER_FRAMES);
   const next = open.find((r) => !r.pointed()) ?? open[0];
   if (!next) return;
-  next.lower();
+  /* It goes to the first rung whose expected cost fits (the mean as the rungs' shares scale it), at least one down, and to the last where none does. */
+  const from = next.level();
+  let to = from + 1;
+  while (to < FOG_LEVEL_MOST && (mean * FOG_SHARE[to]!) / FOG_SHARE[from]! > FOG_BUDGET_MS) to += 1;
+  next.lower(to);
   /* The mean starts again, so the rung just taken is judged on its own frames. */
   ladder.kept = [];
+  ladder.skipping = true;
 }
 
 /** A painter's time for one tile, in the frame `stamp` (a tile is painted once a frame, so a tile seen twice is a new frame even where the stamp is the same). */
@@ -171,6 +189,7 @@ function spend(key: string, stamp: number | null, ms: number): void {
   if (stamp === null) return;
   if (stamp !== ladder.stamp || ladder.seen.has(key)) { closeFrame(); ladder.stamp = stamp; ladder.seen.clear(); }
   ladder.seen.add(key);
+  if (ladder.skipping) return;
   ladder.spent += ms;
   ladder.painted = true;
 }
@@ -182,7 +201,7 @@ export function forceFogLevel(level: number | null): void {
 }
 /** For tests: the ladder as a fresh page has it. */
 export function resetFogLadder(): void {
-  ladder.rungs.clear(); ladder.stamp = null; ladder.seen.clear(); ladder.spent = 0; ladder.painted = false; ladder.kept = []; ladder.frames = 0;
+  ladder.rungs.clear(); ladder.stamp = null; ladder.seen.clear(); ladder.spent = 0; ladder.painted = false; ladder.kept = []; ladder.frames = 0; ladder.skipping = false;
   forcedLevel = null;
 }
 
@@ -710,7 +729,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
       level: () => painter.current.level,
       pointed: () => model.current.mouse !== null || model.current.touch !== null,
       paintedIn: () => painter.current.paintedIn,
-      lower: () => setLevel(Math.min(FOG_LEVEL_MOST, painter.current.level + 1)),
+      lower: (to) => setLevel(Math.min(FOG_LEVEL_MOST, Math.max(painter.current.level + 1, to))),
     };
     ladder.rungs.add(rung);
     return () => { ladder.rungs.delete(rung); };

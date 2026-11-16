@@ -25,7 +25,7 @@ import { makeTileLayer, mostTiles } from '../../../../engine/ui/cards/tiles.ts';
 import { renderIn, testInstance } from '../../../../engine/ui/test-world.tsx';
 import { SMOKE, fogAlpha, holeRadius, maskAlpha, strength } from './smoke.ts';
 import { makeField, paintFog, stepField } from './fog.ts';
-import { HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, forceFogLevel, forgetScratch, resetFogLadder } from './Effect.tsx';
+import { HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, forgetScratch, resetFogLadder } from './Effect.tsx';
 
 /* A post's lines, as shares of the box's height, as Whoops!'s `readLines` gives them; and what a painter's call costs, for the ladder. */
 const { LINES, read, cost } = vi.hoisted(() => {
@@ -1029,7 +1029,7 @@ describe('the ladder', () => {
   const see = (s: Setup, isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
   const level = (s: Setup) => Number(host(s).getAttribute('data-dw-fog-level'));
 
-  test('a painter over budget steps the post down a rung at a time, 0 to 4, never back while in view; out of view and back it is at 0', () => {
+  test('a painter over budget steps the post down, 0 to 4, never back while in view; out of view and back it is at 0', () => {
     stubObserver();
     const s = setup();
     see(s, true);
@@ -1039,7 +1039,8 @@ describe('the ladder', () => {
     for (let i = 0; i < 200; i++) { pass(50, 50); seen.push(level(s)); cost.perf += 1; }
     expect(seen.at(-1)).toBe(4);
     for (let i = 1; i < seen.length; i++) expect(seen[i]!).toBeGreaterThanOrEqual(seen[i - 1]!);
-    expect(new Set(seen)).toEqual(new Set([0, 1, 2, 3, 4]));
+    /* Over the budget at every rung, it ends on the last: it may skip rungs on the way (the next test), never go back. */
+    expect(seen).toContain(0);
     /* A fast painter gives no rung back while the post is in view. */
     cost.ms = 0;
     pass(3000, 50);
@@ -1048,6 +1049,51 @@ describe('the ladder', () => {
     expect(level(s)).toBe(0);
     see(s, true);
     expect(level(s)).toBe(0);
+  });
+
+  /**
+   * A painter that costs `ms` a frame at rung 0 and `FOG_SHARE[level]` of that at the post's rung, over `frames` frames. Returns the rung after each frame.
+   * A frame paints every tile the layer holds, so a call of the fog costs its share of the frame's.
+   */
+  function drive(s: Setup, ms: number, frames: number): number[] {
+    vi.mocked(paintFog).mockClear();
+    pass(50, 50);
+    const per = Math.max(1, vi.mocked(paintFog).mock.calls.length);
+    const seen: number[] = [];
+    for (let i = 0; i < frames; i++) {
+      cost.ms = (ms * FOG_SHARE[level(s)]!) / per;
+      pass(50, 50);
+      seen.push(level(s));
+    }
+    return seen;
+  }
+
+  test('9 ms a frame at rung 0 is judged after 8 frames and goes straight to the first rung that fits (2), where it stays', () => {
+    stubObserver();
+    const s = setup();
+    see(s, true);
+    const seen = drive(s, 9, 200);
+    expect(seen[5]).toBe(0);
+    expect(seen[10]).toBe(2);
+    expect(seen.at(-1)).toBe(2);
+    expect(new Set(seen)).toEqual(new Set([0, 2]));
+  });
+
+  test('40 ms a frame goes straight to the last rung after 8 frames', () => {
+    stubObserver();
+    const s = setup();
+    see(s, true);
+    const seen = drive(s, 40, 200);
+    expect(seen[5]).toBe(0);
+    expect(seen[10]).toBe(4);
+    expect(new Set(seen)).toEqual(new Set([0, 4]));
+  });
+
+  test('3 ms a frame stays at 0', () => {
+    stubObserver();
+    const s = setup();
+    see(s, true);
+    expect(new Set(drive(s, 3, 200))).toEqual(new Set([0]));
   });
 
   test('a painter within budget keeps the post at 0', () => {
