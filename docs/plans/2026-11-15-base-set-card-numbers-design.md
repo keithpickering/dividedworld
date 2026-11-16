@@ -48,7 +48,11 @@ needs from the engine plan it waits on, and that plan's design session writes th
    to change something real waiting on an admin.
 9. **Ratio's mark stays until an admin lifts it.** Weighed: a mark that fades after 30 days. The owner approved the row
    as proposed.
-10. **The words in section 3 are drafts for the owner's review in this PR.** The owner approved every number and
+10. **A tagline says what the card does.** The owner: "Some may be a tiny bit cryptic since these are the only
+    description you see in your Hand." So each tagline states the effect, as Heat Magnet's and Toll's do, and the joke
+    is left to the name and the art. Time Machine's, "Go back to better days.", is the owner's own. Kick Me's first
+    draft ("Hang a sign on your own post.") read as hanging a real sign and was replaced.
+11. **The words in section 3 are drafts for the owner's review in this PR.** The owner approved every number and
     effect in conversation; the taglines, summaries, log lines and statuses were drafted afterward in the house style
     of the built cards and were sent, at the owner's request and marked as drafts, to the session rendering the cards'
     promotional images.
@@ -100,7 +104,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 **Sweet Heat** (Pepperoni, uncommon, 1.50, Gimmick on one's own character, 3 days)
 - Each hype (excited-positive) or heat (excited-negative) vote on the character's posts pays half a vote more.
 - Refused while a Sweet Heat is already up on the character.
-- Tagline: "Get paid for the pop and the boos."
+- Tagline: "Earn more from excited reactions, good or bad."
 - Summary: "Used on your own character. For 3 days, each excited reaction to its posts, positive or negative, pays
   half a vote more."
 - Status: "Paid more for excited reactions". Log: "Each excited reaction to that character's posts, positive or
@@ -112,7 +116,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - Refused while one is already up on the post.
 - Against Hype-Up: Hype-Up is stronger for its 3 days (both positive quadrants, anyone's post); Required Reading runs
   a week, past the day the Technician's Evergreen starts paying.
-- Tagline: "Make them take notes."
+- Tagline: "Earn more from calm positive reactions to a post."
 - Summary: "Used on your post. For a week, each calm positive reaction to it pays one vote more."
 - Status: "Paid more for calm positive reactions". Log: "Each calm positive reaction to that post pays one vote more
   until it ends."
@@ -120,7 +124,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 **Front Row** (Pepperoni, uncommon, 1.50, Gimmick on one's own character, 3 days)
 - Each vote, in any quadrant, on a card the character plays pays half a vote more.
 - Refused while one is already up on the character.
-- Tagline: "Get paid for the cards you play."
+- Tagline: "Earn more from reactions to the cards you play."
 - Summary: "Used on your own character. For 3 days, each reaction to a card it plays pays half a vote more."
 - Status: "Paid more for reactions to its cards". Log: "Each reaction to a card that character plays pays half a
   vote more until it ends."
@@ -129,7 +133,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - Each loss the character takes from a reaction is halved. It changes no earning.
 - Beside a flat Earn: the loss is halved first, and the Earn's amount is added after. Both apply.
 - Refused while one is already up on the character.
-- Tagline: "Let it bounce off."
+- Tagline: "Lose half as much from reactions."
 - Summary: "Used on your own character. For 3 days, what it loses from reactions is halved."
 - Status: "Loses half as much from reactions". Log: "What that character loses from reactions is halved until it
   ends."
@@ -142,7 +146,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - The sign fills nothing: it is drawn hung on the post's content area, at its top edge, and covers no words. Its look
   is the owner's to settle in its build plan's design.
 - Refused while one is already up on the post.
-- Tagline: "Hang a sign on your own post."
+- Tagline: "Earn more from a post's negative reactions, and give Salty cards back."
 - Summary: "Used on your post. For 3 days, each negative reaction to it pays one vote more, and the first three Salty
   cards cast there go back to their casters' hands."
 - Status: "Wearing a Kick Me sign". Log: "Each negative reaction to that post pays one vote more until it ends, and
@@ -157,7 +161,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - A Reversal it gets past stays face down, unsprung, and nothing is told to its setter. A Ward or Reversal above
   uncommon works as it always does, and the Cheap Shot is still used up.
 - It does nothing about Last Word, which stops quotes, not casts. It does nothing for a Move that lands from a quote.
-- Tagline: "Hit them while the ref isn't looking."
+- Tagline: "Your next Move gets past Wards and Reversals."
 - Summary: "Used on your own character. Its next Move within 3 days gets past Wards and Reversals up to uncommon."
 - Status: "Lining up a cheap shot". Log: "That character's next Move gets past Wards and Reversals up to uncommon."
   And on the Move: "Your Cheap Shot got this card past a Ward" or "past a card set face down", only where it did.
@@ -169,7 +173,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
   so a Buzzkill can end a Force Field.
 - Refused where the target has no Gimmick up.
 - Nothing is destroyed: the ended play is an Act beside the Gimmick's, and an admin can reverse it.
-- Tagline: "Party's over."
+- Tagline: "End a Gimmick early."
 - Summary: "Cast on a post or a character. Ends one Gimmick there, up to rare. You choose which."
 - Log, caster: "It ended the {card} there." Log, the Gimmick's owner: "A Buzzkill ended your {card} early."
 
@@ -177,7 +181,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - Springs on the first Sweet cast there, up to uncommon. The cast lands, and its card goes back to the caster's hand.
   The setter is paid nothing beyond what a spring already earns.
 - Springs once, or ends after the instance's set time (`settings.setLasts`).
-- Tagline: "One good turn."
+- Tagline: "Give a Sweet card back to its caster."
 - Summary: "Set face down on your post. The first Sweet cast there, up to uncommon, lands, and its card goes back to
   the caster's hand."
 - Status: every Reversal's, "Set, face down to everyone else". Log, caster: "A Pay It Forward on that post gave your
@@ -187,7 +191,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - Springs on the first common cast there, whatever its flavor. The cast lands, and each vote it draws, in any
   quadrant, pays the setter a quarter of a vote. Votes by the setter's own player pay nothing.
 - Springs once, or ends after the set time. Once sprung it pays for as long as the cast draws votes, as 4D Chess does.
-- Tagline: "Have a seat."
+- Tagline: "Get paid when a common card lands here."
 - Summary: "Set face down on your post. The first common cast there lands, and every reaction to it pays you a
   quarter of a vote."
 - Log, setter: "It sprang on a {card}. Each reaction to that card pays you a quarter of a vote."
@@ -200,7 +204,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
   thread.
 - The lockout is public, as the cast that earned it is.
 - Springs once, or ends after the set time.
-- Tagline: "Good vibes only. Or else."
+- Tagline: "Lock out whoever casts a card that isn't Sweet."
 - Summary: "Set face down on your post. The first cast there that isn't Sweet, up to rare, lands, and its caster is
   locked out of the thread for 24 hours."
 - Log, caster: "A SoVeryHappy on that post locked {character} out of the thread until {time}."
@@ -217,7 +221,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - Wards are asked as for any Pepperoni cast.
 - **Its way out:** 3 days; the author's edit, which ends it at once and lands as the post's newest version; or an
   admin. Nothing is destroyed: the post is computed from its Acts as of the point.
-- Tagline: "Take it back."
+- Tagline: "Go back to better days."
 - Summary: "Cast on a post. For 3 days it shows as it was at an earlier point you pick, and no card up to rare can be
   cast on it. The author's edit ends it."
 - Status: "Showing an earlier version". Hint, to the author: "Edit this post to end the Time Machine." Log: "That
@@ -232,7 +236,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
 - **The state it adds, and its way out:** the mark is a layer over the post that changes none of its words; an admin
   can lift it.
 - The stamp is placed under the post's words and fills nothing; the mark's look is its build plan's.
-- Tagline: "Outdraw the post."
+- Tagline: "Outdraw a post to leave a mark on it."
 - Summary: "Cast on another character's post. A stamp sits under it for 3 days. If the stamp draws more reactions than
   the post, the post is marked ratioed."
 - Status: "Being ratioed". Log, caster, at the end: "Your Ratio drew {n} votes to the post's {m}. The post is marked
@@ -243,7 +247,7 @@ the line in the player's own log (`CardUi.logPlay`), which says plainly what the
   for a day.
 - The 3 days is the card's own setting (`necroBump.days`), never the Technician's `technician.evergreenDays`.
 - Refused on a younger post, and in a thread where a post still reads "bumped": one bump per thread per day.
-- Tagline: "Raise a dead thread."
+- Tagline: "Bump an old thread to the top."
 - Summary: "Cast on a post at least 3 days old. Its thread goes to the top of its board, and the post reads bumped for
   a day."
 - Log: "It bumped that thread to the top of its board."
