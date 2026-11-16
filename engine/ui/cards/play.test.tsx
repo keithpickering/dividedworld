@@ -6,7 +6,7 @@
  * three, a wallet of 4.62, a long post (812 characters, so Whoops! costs 0.25 more on it) and a
  * post that already carries three Whoops!.
  */
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect, useId, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -1593,5 +1593,130 @@ describe('the play form of a card that replies', () => {
     expect(await within(form).findByRole('status', { name: 'What came of the play' })).toHaveTextContent('Caught by a trap. It did nothing. Your reply was not posted.');
     expect(screen.getByRole('dialog', { name: 'Cutter' })).toBeInTheDocument();
     expect(editor).toHaveValue(REPLY);
+  });
+});
+
+/*
+ * Cards on a spun thread (docs/plans/2026-11-16-cards-on-a-spun-thread-design.md, section 4): the opening post is a post for every card,
+ * so it offers what any post offers: the armed card's play mark, the form, a strip of marks with the Lens, and a character's mark on its
+ * postbit; and the thread's head offers a thread Gimmick to the character who started it.
+ */
+describe('cards on a spun thread: the opening post offers what any post does', () => {
+  const ward: CardRules = { key: 'ward', name: 'Ward', alignment: 'sweet', rarity: 'common', play: 'use', reaches: ['post'], gimmick: { kind: 'noQuote' }, lasts: { unit: 'day', count: 1 }, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn({ key: 'ward', reaches: ['post'] }, t, e, now) };
+  const hallway: CardRules = { key: 'hallway', name: 'Hallway', alignment: 'pepperoni', rarity: 'common', play: 'set', trap: { trigger: { on: 'visit' } }, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: () => ok(undefined) };
+  const glint: CardRules = { key: 'glint', name: 'Glint', alignment: 'pepperoni', rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'day', count: 7 }, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn({ key: 'glint', reaches: ['character'] }, t, e, now) };
+  const vibes: CardRules = { key: 'good-vibes', name: 'Good Vibes', alignment: 'sweet', rarity: 'uncommon', play: 'use', reaches: ['thread'], gimmick: { kind: 'price', flavors: ['salty'], add: 25 }, lasts: { unit: 'day', count: 1 }, playPrice: () => 0, validateConfig: (c) => ok(c), canApply: (t, e, _c, now) => landsOn({ key: 'good-vibes', reaches: ['thread'] }, t, e, now) };
+  const served: Instance = { ...instance, cards: [whoopsRules, ward, hallway, glint, vibes] };
+  const faces: CardUi[] = [...cards, ...[ward, hallway, glint, vibes].map((r) => ({ key: r.key, art: { color: '#2ee6ff', ink: '#03141a', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Test card.' }))];
+
+  /** A thread spun from Gloomba's post by Pipewrench: its opening post is Pipewrench's. Both players hold cards of each kind. */
+  async function spunWorld() {
+    const w = world(served);
+    const spun = await w.fake.spin(w.ids[1]!, w.pipe, 'Spun off', 'Taking this elsewhere.');
+    if (!spun.ok) throw new Error(spun.error);
+    const thread = spun.value.thread.id;
+    const first = spun.value.act.id;
+    const held = { whoops: 2, ward: 1, hallway: 1, glint: 1, 'good-vibes': 1 };
+    w.fake.seed.cards(w.me, held);
+    w.fake.seed.cards(w.other, held);
+    w.fake.seed.wallet(w.other, 462);
+    return { ...w, thread, first };
+  }
+  type Spun = Awaited<ReturnType<typeof spunWorld>>;
+  async function openSpun(w: Spun) {
+    renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance: served, cards: faces, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
+    await screen.findByRole('article', { name: /^Post 1 /u });
+    await screen.findByRole('button', { name: /^Hand, \d postcards/u });
+  }
+  const armed = async (user: ReturnType<typeof userEvent.setup>, name: RegExp) => {
+    await user.click(handButton());
+    await user.click(within(drawer()).getByRole('button', { name }));
+  };
+
+  test('an armed post card draws its play mark on the opening post, which opens the form there, and the play lands as a mark in its strip with its Lens', async () => {
+    const user = userEvent.setup();
+    const w = await spunWorld();
+    await openSpun(w);
+    await arm(user);
+    const ghost = within(post(1)).getByRole('button', { name: 'Play Whoops! on post 1' });
+    expect(ghost.closest('.kb-act-meta')).not.toBeNull();
+    await user.click(ghost);
+    const form = await screen.findByRole('dialog', { name: 'Whoops!' });
+    expect(within(form).getByRole('link', { name: /post #1/u })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-1`);
+    await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Whoops!' })).toBeNull());
+    expect((await w.fake.cardsOn(w.first, 10)).map((a) => a.payload.card)).toEqual(['whoops']);
+    const strip = post(1).querySelector('.kb-act-meta .kb-marks') as HTMLElement;
+    const mark = await within(strip).findByRole('button', { name: /^Whoops!, 1 play\b/u });
+    await user.click(mark);
+    expect(await screen.findByRole('dialog', { name: /Cards on this post/u })).toBeInTheDocument();
+  });
+
+  test('a Gimmick and a Set are offered on the opening post to its author\'s player alone', async () => {
+    const user = userEvent.setup();
+    const w = await spunWorld();
+    await openSpun(w);
+    await armed(user, /^Ward, /u);
+    expect(within(post(1)).getByRole('button', { name: 'Use Ward on post 1' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await armed(user, /^Hallway, /u);
+    expect(within(post(1)).getByRole('button', { name: 'Set Hallway face down on post 1' })).toBeInTheDocument();
+    cleanup();
+    w.fake.signInAs(w.other);
+    localStorage.clear();
+    await openSpun(w);
+    await armed(user, /^Ward, /u);
+    expect(within(post(1)).queryByRole('button', { name: /^Use Ward/u })).toBeNull();
+    await user.keyboard('{Escape}');
+    await armed(user, /^Hallway, /u);
+    expect(within(post(1)).queryByRole('button', { name: /^Set Hallway/u })).toBeNull();
+    expect(within(post(1)).queryByRole('button', { name: /^Play Hallway/u })).toBeNull();
+  });
+
+  test('an armed character card draws its mark on the opening post\'s postbit', async () => {
+    const user = userEvent.setup();
+    const w = await spunWorld();
+    await openSpun(w);
+    await armed(user, /^Glint, /u);
+    const bit = post(1).querySelector('.kb-postbit') as HTMLElement;
+    expect(within(bit).getByRole('button', { name: 'Play Glint on Pipewrench' })).toBeInTheDocument();
+  });
+
+  test('an armed thread Gimmick draws its mark in the thread\'s head for the character who spun it and for no other', async () => {
+    const user = userEvent.setup();
+    const w = await spunWorld();
+    await openSpun(w);
+    const head = () => document.querySelector('.kb-thread-head') as HTMLElement;
+    await armed(user, /^Good Vibes, /u);
+    expect(within(head()).getByRole('button', { name: /^Use Good Vibes on /u })).toBeInTheDocument();
+    cleanup();
+    localStorage.setItem(hudKey(w.me), w.hooligan);
+    await openSpun(w);
+    await armed(user, /^Good Vibes, /u);
+    expect(within(head()).queryByRole('button', { name: /^Use Good Vibes on /u })).toBeNull();
+  });
+
+  test('the form keeps the opening post\'s live copy: three Whoops! landing while it is open update its words', async () => {
+    const user = userEvent.setup();
+    const w = await spunWorld();
+    await openSpun(w);
+    await arm(user);
+    await user.click(within(post(1)).getByRole('button', { name: 'Play Whoops! on post 1' }));
+    const form = await screen.findByRole('dialog', { name: 'Whoops!' });
+    await act(async () => { for (const layer of [1, 2, 3]) w.fake.seed.card(w.gloomba, w.first, 'whoops', { message: `layer ${layer}`, layer, config: { color: '#ff2bd6' }, live: true }); });
+    await waitFor(() => expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeDisabled());
+    expect(within(form).getByRole('status', { name: 'Cost' })).toHaveTextContent(/already carries 3/u);
+  });
+
+  test('the form reads the opening post again and takes what it answers: its words are the price', async () => {
+    const user = userEvent.setup();
+    const w = await spunWorld();
+    await openSpun(w);
+    await arm(user);
+    const real = w.fake.actsById.bind(w.fake);
+    vi.spyOn(w.fake, 'actsById').mockImplementation(async (...args) => (await real(...args)).map((a) => (a.id === w.first ? { ...a, currentPayload: { ...a.currentPayload, body: 'x'.repeat(812) } } : a)));
+    await user.click(within(post(1)).getByRole('button', { name: 'Play Whoops! on post 1' }));
+    const form = await screen.findByRole('dialog', { name: 'Whoops!' });
+    await waitFor(() => expect(within(form).getByText('To pay now').closest('div')).toHaveTextContent('0.25'));
   });
 });

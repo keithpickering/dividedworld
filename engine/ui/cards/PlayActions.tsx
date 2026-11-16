@@ -13,6 +13,7 @@
 import type { CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { PronounSet } from '../../rules/pronouns.ts';
+import { isPost } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { useThread } from '../thread/context.ts';
@@ -29,7 +30,7 @@ import { lowerFirst } from '../copy-words.ts';
 /** The post a play lands on, as the hand and the form name it. */
 function useTarget(act: Act): PlayTarget | null {
   const { thread, perPage, summary, plays, nameOf, know, reread } = useThread();
-  if (act.kind !== 'post' || act.seq === null) return null;
+  if (!isPost(act.kind) || act.seq === null) return null;
   return { post: act, board: summary.board, title: summary.title, author: act.character === null ? lowerFirst(nameOf(null)) : nameOf(act.character), to: threadHref(thread, pageOf(act.seq, perPage), act.seq), plays, know: know ?? (async () => {}), ...(reread ? { reread } : {}) };
 }
 
