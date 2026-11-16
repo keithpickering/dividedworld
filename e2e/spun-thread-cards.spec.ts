@@ -48,7 +48,7 @@ async function open(page: Page, name = 'cards') {
 }
 
 /** Arms a card from the hand, as a player does. */
-async function arm(page: Page, name: RegExp) {
+async function arm(page: Page, name: RegExp, settle = true) {
   const hand = page.getByRole('dialog', { name: 'Your hand' });
   if (!(await hand.isVisible())) await page.getByRole('button', { name: HAND }).click();
   /* The hand fans its cards over one another, so a pointer press lands on a neighbor's art: the card is armed from the keyboard, which is how a player without a pointer does it (e2e/hand-arc.spec.ts). */
@@ -56,6 +56,8 @@ async function arm(page: Page, name: RegExp) {
   await hand.getByRole('button', { name }).first().focus();
   await page.keyboard.press('Enter');
   await expect(hand).toBeHidden();
+  /* The hand's exit and the card's arming entrances are done before anything is pressed. A phone's closed hand drawer rests at inline opacity 0 and blur(6px), which `settled` reads as an entrance that never ends: the one case there plays nothing and passes false. */
+  if (settle) await settled(page, { loops: true });
 }
 
 /** The ink's pictures are built (a layer in each band near the viewport), so a read of its ink is a baseline and not the flat stand-in. */
@@ -100,6 +102,7 @@ async function playWhoops(page: Page) {
   await opening(page).getByRole('button', { name: 'Play Whoops! on post 1' }).click();
   const form = page.getByRole('dialog', { name: 'Whoops!' });
   await expect(form).toBeVisible();
+  await settled(page, { loops: true });
   await form.getByRole('button', { name: /^Play as Pipewrench$/ }).click();
   await expect(form).toBeHidden();
   await expect(opening(page).locator('canvas.kb-whoops-ink').first(), 'the opening post wears the ink').toBeAttached({ timeout: 15_000 });
@@ -111,6 +114,7 @@ async function playWhoops(page: Page) {
 test('1. Whoops! on the opening post: armed, marked, played, its ink fills the content area and the box stands above it; the wash clears it', async ({ page }) => {
   /* Poison: `Body` in engine/ui/thread/Post.tsx stops drawing `PostEffects place="thread"` for a spin (the ink is never drawn), or draws it into the words' own box (it then
      does not fill `.kb-act-main`); `.kb-origin` loses its `data-kb-over-ink` (the ink is then over the box, and a press in the box is the ink's). */
+  test.setTimeout(150_000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await open(page);
   await arm(page, /^Whoops!, Salty\b/);
@@ -143,9 +147,25 @@ test('1. Whoops! on the opening post: armed, marked, played, its ink fills the c
     return out;
   }, region);
   expect(answers.every(Boolean), 'an element of the box answers at every point tried in it').toBe(true);
-  /* What is painted at nine points of the box is the box's: the pixel there is the same (within 2 of a channel) with every canvas of the opening post shown and hidden, and the box is painted over the canvas
-     at each point where there is one (a hit test cannot say, the canvases take no pointer: they are made to take one for the read). */
-  const points = [0.1, 0.5, 0.9].flatMap((fx) => [0.25, 0.5, 0.75].map((fy) => ({ x: region.left + (region.right - region.left) * fx, y: region.top + (region.bottom - region.top) * fy })));
+  /* What is painted inside the box is the box's: at up to nine points of its rectangle where the opening post's ink lies under it (read from the canvases), the pixel is the same (within 2 of a channel) with every
+     canvas of the opening post shown and hidden, and the box is painted over the canvas at each (a hit test cannot say, the canvases take no pointer: they are made to take one for the read).
+     A point on bare ground would pass whether the box were lifted or not, so only inked points count, and there must be some. */
+  const inkedPoints = await page.evaluate(([sel, l, t, r, b]) => {
+    const found: { x: number; y: number }[] = [];
+    const canvases = [...document.querySelectorAll<HTMLCanvasElement>(sel as string)].filter((c) => !c.closest('.kb-origin') && c.width > 0);
+    for (let y = (t as number) + 4; y < (b as number) - 4; y += 10) for (let x = (l as number) + 4; x < (r as number) - 4; x += 10) {
+      for (const c of canvases) {
+        const cr = c.getBoundingClientRect();
+        if (x < cr.left || x >= cr.right || y < cr.top || y >= cr.bottom) continue;
+        const k = c.width / cr.width;
+        if (c.getContext('2d')!.getImageData(Math.floor((x - cr.left) * k), Math.floor((y - cr.top) * k), 1, 1).data[3]! > 40) { found.push({ x, y }); break; }
+      }
+    }
+    return found;
+  }, [OUTER_INK, region.left, region.top, region.right, region.bottom] as const);
+  expect(inkedPoints.length, 'the ink has pixels under the box\'s rectangle, so the check below is tied to ink').toBeGreaterThan(0);
+  const stride = Math.max(1, Math.floor(inkedPoints.length / 9));
+  const points = inkedPoints.filter((_, i) => i % stride === 0).slice(0, 9);
   for (const p of points) {
     const order = await page.evaluate(([px, py]) => {
       const canvases = [...document.querySelectorAll<HTMLElement>('article:has(.kb-origin) canvas')].filter((c) => !c.closest('.kb-origin'));
@@ -164,20 +184,6 @@ test('1. Whoops! on the opening post: armed, marked, played, its ink fills the c
     await page.evaluate(() => { for (const c of document.querySelectorAll<HTMLElement>('article:has(.kb-origin) canvas')) c.style.visibility = ''; });
     expect(Math.max(...painted.map((v, i) => Math.abs(v - without[i]!))), `the pixel at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) is the box's, the same with the opening post's ink shown and hidden (${painted} shown, ${without} hidden)`).toBeLessThanOrEqual(2);
   }
-  /* The ink is there to be under it: some point of the box's rectangle is inked on the opening post's canvases, so the line above proves something. */
-  const under = await page.evaluate(([sel, l, t, r, b]) => {
-    for (let y = t as number; y < (b as number); y += 6) for (let x = l as number; x < (r as number); x += 6) {
-      for (const c of document.querySelectorAll<HTMLCanvasElement>(sel as string)) {
-        if (c.closest('.kb-origin') || c.width === 0) continue;
-        const cr = c.getBoundingClientRect();
-        if (x < cr.left || x >= cr.right || y < cr.top || y >= cr.bottom) continue;
-        const k = c.width / cr.width;
-        if (c.getContext('2d')!.getImageData(Math.floor((x - cr.left) * k), Math.floor((y - cr.top) * k), 1, 1).data[3]! > 40) return true;
-      }
-    }
-    return false;
-  }, [OUTER_INK, region.left, region.top, region.right, region.bottom] as const);
-  expect(under, 'the ink has pixels under the box\'s rectangle').toBe(true);
   /* A press and drag inside the box is the box's: the ink is not washed by it. */
   const before = await inked(page);
   const inner = await borderBox(box(page).locator('.kb-origin-area'));
@@ -188,6 +194,33 @@ test('1. Whoops! on the opening post: armed, marked, played, its ink fills the c
   await page.mouse.up();
   await page.waitForTimeout(300);
   expect(await inked(page), 'a scrub across the box washes none of the opening post\'s ink').toBe(before);
+  /* Positive control: the same kind of scrub outside the box, on the opening post's own inked body, does wash some, so the line above is not true of a scrub that washes nothing anywhere. */
+  const bodyBox = await borderBox(body(page));
+  const outside = [
+    { top: region.bottom + 4, bottom: bodyBox.bottom - 4 },
+    { top: bodyBox.top + 4, bottom: region.top - 4 },
+  ].find((s) => s.bottom - s.top >= 12);
+  expect(outside, 'the opening post\'s body has room outside the box to scrub').toBeDefined();
+  /* A press begins a wash only on ink, so it begins at a point of the strip that the canvases show inked. */
+  const start = await page.evaluate(([sel, l, t, r, b]) => {
+    const canvases = [...document.querySelectorAll<HTMLCanvasElement>(sel as string)].filter((c) => !c.closest('.kb-origin') && c.width > 0);
+    for (let y = (t as number); y < (b as number); y += 4) for (let x = (l as number); x < (r as number); x += 8) {
+      for (const c of canvases) {
+        const cr = c.getBoundingClientRect();
+        if (x < cr.left || x >= cr.right || y < cr.top || y >= cr.bottom) continue;
+        const k = c.width / cr.width;
+        if (c.getContext('2d')!.getImageData(Math.floor((x - cr.left) * k), Math.floor((y - cr.top) * k), 1, 1).data[3]! > 200) return { x, y };
+      }
+    }
+    return null;
+  }, [OUTER_INK, bodyBox.left + 60, outside!.top, bodyBox.right - 260, outside!.bottom] as const);
+  expect(start, 'the strip outside the box has ink to begin a scrub on').not.toBeNull();
+  await page.mouse.move(start!.x, start!.y);
+  await page.mouse.down();
+  for (let pass = 0; pass < 6; pass++) await page.mouse.move(start!.x + (pass % 2 === 0 ? 200 : 0), start!.y, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  expect(await inked(page), 'a scrub outside the box, on the opening post\'s body, does wash some of its ink').toBeLessThan(before);
 
   /* The way out, on the opening post: the Lens's "Hold to scrub" (the keyboard path, timed like a scrub) clears the ink. A pass down the body takes a line's width over the pace for each line. */
   const area = await borderBox(body(page));
@@ -217,6 +250,7 @@ test('2. Good Vibes is played from the thread\'s head by the spinner, and its ma
   await head.getByRole('button', { name: /^Use Good Vibes on / }).click();
   const form = page.getByRole('dialog', { name: 'Good Vibes' });
   await expect(form).toBeVisible();
+  await settled(page, { loops: true });
   await form.getByRole('button', { name: /^Use as Pipewrench$/ }).click();
   await expect(form).toBeHidden();
   const mark = head.locator('.kb-thread-head-marks .kb-mark[data-kb-card="good-vibes"]:not(.kb-ghost-mark)');
@@ -238,6 +272,7 @@ test('3. Glitter Bomb is cast on the spinner from the opening post\'s postbit', 
   await bit.getByRole('button', { name: 'Play Glitter Bomb on Pipewrench' }).click();
   const form = page.getByRole('dialog', { name: 'Glitter Bomb' });
   await expect(form).toBeVisible();
+  await settled(page, { loops: true });
   await form.getByRole('button', { name: /^Play as Pipewrench$/ }).click();
   await expect(form).toBeHidden();
   await expect(bit.locator('.kb-mark[data-kb-card="glitter-bomb"]:not(.kb-ghost-mark)'), 'the play is a mark on the postbit').toHaveCount(1);
@@ -269,7 +304,7 @@ test('5. at phone width the page has no horizontal scroll with the opening post\
   /* Poison: the opening post's strip drawn with `flex-wrap: nowrap` and no room for its marks (the header then pushes the page wider than the window). */
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, 'cards-phone');
-  await arm(page, /^Whoops!, Salty\b/);
+  await arm(page, /^Whoops!, Salty\b/, false);
   const strip = opening(page).locator('.kb-act-meta .kb-marks');
   await expect(strip.locator('.kb-mark').first(), 'the opening post\'s strip has marks').toBeVisible();
   await expect(opening(page).getByRole('button', { name: 'Play Whoops! on post 1' }), 'and the armed card\'s play mark').toBeVisible();
@@ -277,7 +312,10 @@ test('5. at phone width the page has no horizontal scroll with the opening post\
   await expect(band, 'the band has its own marks').toBeVisible();
   /* Two strips in two frames: the band's marks are never in the opening post's header, and the other way round. */
   expect(await strip.evaluate((s) => s.closest('.kb-origin') === null), 'the opening post\'s strip is not in the box').toBe(true);
-  expect(await band.evaluate((m) => m.closest('.kb-act-meta') === null || m.closest('.kb-origin') !== null), 'the band\'s mark is in the box').toBe(true);
+  const art = await opening(page).elementHandle();
+  expect(await strip.evaluate((s, a) => s.closest('.kb-act-meta') !== null && a!.contains(s), art), 'the opening post\'s strip is in the opening post\'s header').toBe(true);
+  expect(await band.evaluate((m) => m.closest('.kb-origin-head') !== null && m.closest('.kb-origin') !== null), 'the band\'s mark is in the ORIGIN box\'s band').toBe(true);
+  expect(await band.evaluate((m) => m.closest('.kb-act-meta') === null), 'and not in the opening post\'s header').toBe(true);
   const wide = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth, bodyScroll: document.body.scrollWidth }));
   expect(wide.scroll, `the page does not scroll sideways (scroll width ${wide.scroll}, window ${wide.client})`).toBeLessThanOrEqual(wide.client);
   expect(wide.bodyScroll).toBeLessThanOrEqual(wide.client);
