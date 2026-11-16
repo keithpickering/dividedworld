@@ -271,7 +271,7 @@ test('a card\'s landing may read its checked configuration, and a landing refusa
   assert.deepEqual(decidePlay(words as CardRules, settings, on, [], { word: ' cats ' }, ''), { ok: true, value: { price: 0, config: { word: 'cats' }, message: '' } });
   assert.deepEqual(said.at(-1), { word: 'cats' }, 'it is given the configuration as the card checked it');
   assert.deepEqual(decidePlay(words as CardRules, settings, on, [], { word: 'dogs' }, ''), { ok: false, why: 'that word is not in this post' });
-  assert.deepEqual(decidePlay(words as CardRules, settings, { ...on, kind: 'spin' }, [], {}, ''), { ok: false, why: 'a word' }, 'a spin is a post, so landing passes and the card own configuration check speaks');
+  assert.deepEqual(decidePlay(words as CardRules, settings, { ...on, kind: 'spin' }, [], {}, ''), { ok: false, why: 'a word' }, "a spin is a post, so landing passes and the card's own configuration check speaks");
   assert.deepEqual(decidePlay(words as CardRules, settings, { ...on, kind: 'edit' }, [], {}, ''), { ok: false, why: 'a post' }, 'landing first, as before');
   assert.deepEqual(decidePlay(words as CardRules, settings, on, [], {}, ''), { ok: false, why: 'a word' });
 });
