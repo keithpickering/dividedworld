@@ -8,15 +8,32 @@
  * half days in, with half a day left, so the fog has thinned most of the way to its least. `LongPost` gives the post twelve paragraphs with a link in the
  * ninth, which the smoke makes inert until a sweep is held to its end. `Reduced` is the fresh smoke with motion reduced (`data-kb-motion="reduce"`), where
  * nothing drifts and a clearing opens and closes with no steps between. Open them at 1440 by 1120.
+ *
+ * `Parted` is the fog with a mouse parked on the post's second line and a trail behind it. The story route renders no play function, so the story drives the
+ * pointer itself: it dispatches a short run of `pointermove` events along the second line (40 ms apart, the last the parked point) and runs it again every
+ * second, so the trail (the wake of `SMOKE.wake`, 1.5 s) is always in the picture. That is the one thing here that depends on a clock: the events are the
+ * page's, read against `api.now()`, so a tool that holds the page's clock still holds the pointer where its last run left it and the wake as it stood.
+ * `FoldUnderSmoke` is the post under Below the Fold (played first) and then Hot Box: the fold's bar is under the smoke like the words, and neither looks nor is
+ * pressable until the post is waved. `Degraded` draws the fog at the ladder's last rung (`forceFogLevel(4)`: the fog drawn from the model with no field), put
+ * back when the story goes, so it cannot reach another story.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 import { cardOf } from '../../../../engine/ui/story.tsx';
+import { probe } from '../../../../engine/ui/cards/tileLoop.ts';
+import { forceFogLevel } from './Effect.tsx';
+
+declare global {
+  interface Window {
+    /** The tile loop's probe (engine/ui/cards/tileLoop.ts), for e2e/hot-box.spec.ts's cost cases: the one measure the budget stories hand over, not another. */
+    __kbTiles?: typeof probe;
+  }
+}
 
 const DAY = 86_400_000;
 /** The smoke's color in every story: hot pink, as hex (the named list `color()` reads has no `hotpink`). */
@@ -33,9 +50,59 @@ interface Args {
   readonly into?: number;
   readonly long?: boolean;
   readonly reduced?: boolean;
+  /** A mouse parked on the second line with a trail behind it. */
+  readonly parted?: boolean;
+  /** Below the Fold played on the post before the smoke. */
+  readonly folded?: boolean;
+  /** The ladder's rung every smoked post is drawn at (4 is the fog drawn from the model alone). */
+  readonly level?: number;
 }
 
-function Smoked({ mode, into = 0, long = false, reduced = false }: Args) {
+/** The moves of one run of the pointer, ms apart; the last is where it stays. */
+const RUN_MOVES = 6;
+const RUN_STEP_MS = 40;
+/** How often the run starts again: inside the wake (`SMOKE.wake`, 1.5 s), so the trail is never gone. */
+const RUN_EVERY_MS = 1000;
+
+/**
+ * Drives a mouse along the post's second line, from 60 px in to 260 px in, and parks it there, again every second. Dispatched on the content area, where the
+ * smoke reads the pointer; it waits for the post's words and for the smoke's canvas, so that the first run is not lost to a post still being drawn.
+ */
+function useParted(on: boolean, thread: string | null, ready: boolean) {
+  useEffect(() => {
+    if (!on || !ready || thread === null) return;
+    let timers: ReturnType<typeof setTimeout>[] = [];
+    let every: ReturnType<typeof setInterval> | undefined;
+    const secondLine = () => {
+      const words = document.querySelector('#post-43 .dw-hotbox-words');
+      if (!words) return null;
+      const tops = new Map<number, { left: number; top: number; height: number }>();
+      const walk = document.createTreeWalker(words, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        if (!(n.textContent ?? '').trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        for (const r of range.getClientRects()) if (r.width > 1 && r.height > 1) tops.set(Math.round(r.top / 4), { left: r.left, top: r.top, height: r.height });
+      }
+      return [...tops.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1])[1] ?? null;
+    };
+    const run = () => {
+      const area = document.querySelector<HTMLElement>('#post-43 .kb-act-main');
+      const line = secondLine();
+      if (!area || !line) return;
+      for (let i = 0; i < RUN_MOVES; i++) {
+        timers.push(setTimeout(() => {
+          const x = line.left + 60 + (200 * i) / (RUN_MOVES - 1), y = line.top + line.height / 2;
+          area.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', pointerId: 1, isPrimary: true, clientX: x, clientY: y, bubbles: true }));
+        }, i * RUN_STEP_MS));
+      }
+    };
+    const begin = setTimeout(() => { run(); every = setInterval(run, RUN_EVERY_MS); }, 300);
+    return () => { clearTimeout(begin); clearInterval(every); for (const t of timers) clearTimeout(t); timers = []; };
+  }, [on, thread, ready]);
+}
+
+function Smoked({ mode, into = 0, long = false, reduced = false, parted = false, folded = false, level }: Args) {
   const { api, instance } = useKayfa();
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
@@ -52,6 +119,16 @@ function Smoked({ mode, into = 0, long = false, reduced = false }: Args) {
     return () => { document.documentElement.removeAttribute('data-kb-motion'); };
   }, [reduced]);
   useEffect(() => {
+    window.__kbTiles = probe;
+    return () => { delete window.__kbTiles; };
+  }, []);
+  /* A rung forced for the story is put back when it goes: a module's own state would otherwise stay in the next story of the page. */
+  useLayoutEffect(() => {
+    if (level === undefined) return;
+    forceFogLevel(level);
+    return () => { forceFogLevel(null); };
+  }, [level]);
+  useEffect(() => {
     if (thread === null) return;
     let live = true;
     void (async () => {
@@ -60,13 +137,15 @@ function Smoked({ mode, into = 0, long = false, reduced = false }: Args) {
       const fake = api as Fake;
       if (long) fake.seed.edit(target.id, target.character, LONG);
       const now = api.now();
+      if (folded) fake.seed.card(caster.character, target.id, 'below-the-fold', { layer: 1, live: true, config: {}, message: 'Below the fold' });
       fake.seed.card(caster.character, target.id, cardOf(instance.cards, 'hot-box').key, {
-        layer: 1, live: true, config: { color: COLOR }, message: 'Smoke out', at: now - into * DAY, ends: new Date(now + (3 - into) * DAY).toISOString(),
+        layer: folded ? 2 : 1, live: true, config: { color: COLOR }, message: 'Smoke out', at: now - into * DAY, ends: new Date(now + (3 - into) * DAY).toISOString(),
       });
       if (live) setSeeded(thread);
     })();
     return () => { live = false; };
-  }, [api, instance, thread, into, long]);
+  }, [api, instance, thread, into, long, folded]);
+  useParted(parted, thread, seeded === thread);
   return <Frame>{thread && seeded === thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
 }
 
@@ -85,3 +164,6 @@ export const FreshDark: Story = { args: { mode: 'dark' } };
 export const Thinning: Story = { args: { mode: 'light', into: 2.5 } };
 export const LongPost: Story = { args: { mode: 'light', long: true } };
 export const Reduced: Story = { args: { mode: 'light', reduced: true } };
+export const Parted: Story = { args: { mode: 'light', parted: true } };
+export const FoldUnderSmoke: Story = { args: { mode: 'light', folded: true } };
+export const Degraded: Story = { args: { mode: 'light', level: 4 } };
