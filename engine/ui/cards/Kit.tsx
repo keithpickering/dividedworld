@@ -49,8 +49,10 @@ function Hold({ control }: { readonly control: Extract<KitControl, { kind: 'hold
   const pulse = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const clearPulse = () => { clearTimeout(pulse.current); pulse.current = undefined; };
   const start = () => { holding.current = true; control.start(); };
-  const stop = () => { clearPulse(); owned.current = false; holding.current = false; control.stop(); };
-  const grab = () => { owned.current = true; start(); };
+  /* Stops through the latest control: a pulse's timer fires after renders, and the control it was set under may be a new object by then. */
+  const stop = () => { clearPulse(); owned.current = false; holding.current = false; live.current.stop(); };
+  /* A press that lands during a pulse takes the hold over: the pulse's timer goes, the hold already runs, and the release ends it. */
+  const grab = () => { owned.current = true; clearPulse(); if (!holding.current) start(); };
   /* A click holds for one second: it starts the hold if none runs, and sets the one timer that ends it a second from now, so a click while it runs only moves the end. */
   const click = () => {
     if (owned.current) return;

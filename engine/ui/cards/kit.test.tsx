@@ -1,4 +1,5 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { HOLD_PULSE_HELP, HOLD_PULSE_MS, Kit } from './Kit.tsx';
@@ -197,6 +198,59 @@ describe('a click holds for one second', () => {
       expect(stop).toHaveBeenCalledTimes(1);
       vi.advanceTimersByTime(5000);
       expect(stop).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('a pointer press during a pulse takes the hold over: no second start, the pulse timer is cleared, the release ends it', () => {
+    vi.useFakeTimers();
+    try {
+      const start = vi.fn(), stop = vi.fn();
+      draw([hold(start, stop)]);
+      const b = screen.getByRole('button', { name: 'Hold to scrub' });
+      press(b);
+      vi.advanceTimersByTime(500);
+      fireEvent.pointerDown(b);
+      vi.advanceTimersByTime(3000);
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(stop, 'the click\'s timer did not end the hold under a held pointer').not.toHaveBeenCalled();
+      fireEvent.pointerUp(b);
+      expect(stop).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('a key press during a pulse takes the hold over the same way', () => {
+    vi.useFakeTimers();
+    try {
+      const start = vi.fn(), stop = vi.fn();
+      draw([hold(start, stop)]);
+      const b = screen.getByRole('button', { name: 'Hold to scrub' });
+      press(b);
+      vi.advanceTimersByTime(500);
+      fireEvent.keyDown(b, { key: ' ' });
+      vi.advanceTimersByTime(3000);
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(stop, 'the click\'s timer did not end the hold under a held key').not.toHaveBeenCalled();
+      fireEvent.keyUp(b, { key: ' ' });
+      expect(stop).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('the timer stops through the latest control, not the one the click was made on', () => {
+    vi.useFakeTimers();
+    try {
+      const startA = vi.fn(), stopA = vi.fn(), startB = vi.fn(), stopB = vi.fn();
+      let swap: (c: KitControl) => void = () => {};
+      const Probe = () => {
+        const [c, set] = useState<KitControl>(hold(startA, stopA));
+        swap = set;
+        return <Kit card="whoops" controls={[c]} ink="var(--kb-glass-neon)" />;
+      };
+      renderIn(buildWorld(), <Probe />);
+      press(screen.getByRole('button', { name: 'Hold to scrub' }));
+      act(() => swap(hold(startB, stopB)));
+      vi.advanceTimersByTime(HOLD_PULSE_MS);
+      expect(stopB, 'the new control stopped it').toHaveBeenCalledTimes(1);
+      expect(stopA, 'the old control was not called').not.toHaveBeenCalled();
     } finally { vi.useRealTimers(); }
   });
 
