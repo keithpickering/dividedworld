@@ -143,6 +143,8 @@ interface Options {
   readonly area?: boolean;
   /** What the engine draws beside the effect in the post body, such as the reactions row. */
   readonly beside?: ReactNode;
+  /** A second Whoops! effect, the lifted ORIGIN box's own, drawn inside the post body beside the first: the box lifted over the body's ink, holding its own content area and the effect in it. */
+  readonly nested?: boolean;
 }
 
 function mount(o: Options = {}) {
@@ -171,9 +173,10 @@ function mount(o: Options = {}) {
     const [view, setView] = useState<CardView | null>(null);
     say = setView;
     const effect = <Effect {...props} post={{ ...props.post, currentPayload: payload }} plays={list} states={held} />;
+    const inner = o.nested ? <div className="kb-origin" data-kb-over-ink><div className="kb-origin-area" data-kb-content-area><Effect {...props} place="origin" ink={createClaims().at('post:whoops', 1)} /></div></div> : null;
     return (
       <>
-        {props.place === 'thread' ? <div className="kb-act-main" data-kb-content-area>{effect}{o.beside}</div>
+        {props.place === 'thread' ? <div className="kb-act-main" data-kb-content-area>{effect}{o.beside}{inner}</div>
           : o.area === false ? effect
           /* The ORIGIN box as the engine draws it: the opening post's body, the box (lifted over its ink) and the box's own area. */
           : <div className="kb-act-main" data-kb-content-area><div className="kb-origin" data-kb-over-ink><div className="kb-origin-area" data-kb-content-area>{effect}{o.beside}</div></div></div>}
@@ -1235,24 +1238,29 @@ describe('the body\'s box', () => {
   });
 
   test('a press inside a lifted element inside the body starts nothing, in the box and in the thread', () => {
-    const chip = <div data-kb-over-ink><button type="button">React</button></div>;
-    const { root } = mount({ place: 'origin', beside: chip });
-    const [x, y] = inkSpot(inkOf(0));
-    const down = fireEvent.pointerDown(screen.getByRole('button', { name: 'React' }), { clientX: px(x, y)[0], clientY: px(x, y)[1], pointerId: 1, button: 0, pointerType: 'mouse' });
-    expect(down, 'the press is not prevented').toBe(true);
-    expect(washed(root)[0]).toBe(0);
+    for (const place of ['origin', 'thread'] as const) {
+      const chip = <div data-kb-over-ink><button type="button">React</button></div>;
+      const { root, unmount } = mount({ place, beside: chip });
+      const [x, y] = inkSpot(inkOf(0));
+      const down = fireEvent.pointerDown(screen.getByRole('button', { name: 'React' }), { clientX: px(x, y)[0], clientY: px(x, y)[1], pointerId: 1, button: 0, pointerType: 'mouse' });
+      expect(down, `${place}: the press is not prevented`).toBe(true);
+      expect(washed(root)[0], `${place}: nothing is washed`).toBe(0);
+      unmount();
+    }
   });
 
-  test('with the effect on an outer body, a press inside a nested lifted box starts nothing', () => {
-    /* A box inside the opening post's body, lifted, holding its own area: the outer effect's body is the post's, and the press is the box's. */
-    const nested = (
-      <div className="kb-origin" data-kb-over-ink><div className="kb-origin-area" data-kb-content-area><button type="button">Inside</button></div></div>
-    );
-    const { root } = mount({ beside: nested });
+  test("with the effect on an outer body and another in a nested lifted box, a press on the box's words is the inner effect's alone, and one on the outer body's words the outer's alone", () => {
+    /* The box as the engine draws it, inside the opening post's body: lifted, holding its own area and its own effect. */
+    const { container, root: outer } = mount({ nested: true });
+    const [outerRoot, innerRoot] = [...container.querySelectorAll<HTMLElement>('.kb-whoops')];
+    expect(outerRoot, "the first effect is the outer body's").toBe(outer);
+    const frames = [...container.querySelectorAll<HTMLElement>('.kb-whoops-frame')];
     const [x, y] = inkSpot(inkOf(0));
-    const down = fireEvent.pointerDown(screen.getByRole('button', { name: 'Inside' }), { clientX: px(x, y)[0], clientY: px(x, y)[1], pointerId: 1, button: 0, pointerType: 'mouse' });
-    expect(down, 'the press is not prevented').toBe(true);
-    expect(washed(root)[0]).toBe(0);
+    press(frames[1]!, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    expect(washed(innerRoot!)[0], "the box's own effect takes a press on the box's words").toBeGreaterThan(0);
+    expect(washed(outerRoot!)[0], "the outer effect does not: the press is the lifted box's").toBe(0);
+    press(frames[0]!, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    expect(washed(outerRoot!)[0], "a press on the outer body's own words is the outer effect's").toBeGreaterThan(0);
   });
 
   test('pointer events of type touch are ignored, so a finger is never read twice', () => {

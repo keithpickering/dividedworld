@@ -357,19 +357,33 @@ describe('in the ORIGIN box', () => {
     expect([tile.style.left, tile.style.top], "at the area's top right").toEqual([`${AREA.w - 12}px`, '-8px']);
   });
 
-  test('a stroke at a share of the body in the thread is at the same share of the area: a press there scrubs', () => {
-    const { area, root } = mount({ place: 'origin' });
-    /* The wall's middle stripe is at share 0.5 down; a press there, on the area (outside the frame), is on ink. */
-    const at = [0.5 * AREA.w, 0.5 * AREA.h] as const;
-    expect(spray.hitAt(MIDDLE, AREA, at[0], at[1])).toBe(true);
-    act(() => { fireEvent.pointerDown(area, { clientX: at[0], clientY: at[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-    act(() => { fireEvent.pointerMove(area, { clientX: at[0] + 20, clientY: at[1], pointerId: 1, pointerType: 'mouse', buttons: 1 }); });
-    act(() => { fireEvent.pointerUp(area, { clientX: at[0] + 20, clientY: at[1], pointerId: 1, pointerType: 'mouse' }); });
-    expect(scrubbed(root), 'the area is the surface').toBe(1);
+  test('a press at a share of the body in the thread and at the same share of the area is the same point of the wall: the hit test is asked for the same share of each measured box, and both scrub', () => {
+    /* What is drawn is paintWall's (spray.test.tsx owns its pixels); what a mount decides is the box it measures and the share a press is read at. */
+    const asked = (place: 'thread' | 'origin', share: readonly [number, number]) => {
+      const { area, cell, root, unmount } = mount({ place });
+      const [target, box] = place === 'origin' ? [area, AREA] : [cell, BOX];
+      vi.mocked(spray.hitAt).mockClear();
+      const at = [share[0] * box.w, share[1] * box.h] as const;
+      act(() => { fireEvent.pointerDown(target, { clientX: at[0], clientY: at[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerMove(target, { clientX: at[0] + 20, clientY: at[1], pointerId: 1, pointerType: 'mouse', buttons: 1 }); });
+      act(() => { fireEvent.pointerUp(target, { clientX: at[0] + 20, clientY: at[1], pointerId: 1, pointerType: 'mouse' }); });
+      const call = vi.mocked(spray.hitAt).mock.calls[0]!;
+      const result = { box: call[1], share: [call[2] / call[1].w, call[3] / call[1].h], scrubbed: scrubbed(root) };
+      unmount();
+      return result;
+    };
+    const inThread = asked('thread', [0.5, 0.5]);
+    const inArea = asked('origin', [0.5, 0.5]);
+    expect(inThread.box, 'the thread measures the body').toEqual(BOX);
+    expect(inArea.box, "the origin box measures the area, not the post's body").toEqual(AREA);
+    expect(inArea.share, 'the same share of each box is asked').toEqual(inThread.share);
+    expect(inThread.share[0]).toBeCloseTo(0.5, 5);
+    expect(inThread.share[1]).toBeCloseTo(0.5, 5);
+    expect([inThread.scrubbed, inArea.scrubbed], 'a press on the middle stripe scrubs in both').toEqual([1, 1]);
+    const offStripe = [asked('thread', [0.5, 0.1]), asked('origin', [0.5, 0.1])];
+    expect(offStripe.map((r) => r.scrubbed), 'and a press off the stripe, at the same share, scrubs in neither').toEqual([0, 0]);
   });
-});
 
-describe('the Draw tile', () => {
   test('opens draw mode, as an addition to the wall', () => {
     const { root } = mount();
     expect(root.dataset.kbDrawing).toBeUndefined();
