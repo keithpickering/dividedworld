@@ -635,7 +635,55 @@ describe("Feelin' Fab, bright", () => {
     expect(bodyOfPost()).not.toHaveAttribute('data-kb-bright-ink');
   });
 
-  test('with no body (the ORIGIN box, a view of its own) there is nothing to mark and the foil is still bright', () => {
+  /* In a spun thread's ORIGIN box (docs/plans/2026-11-15-origin-box-effects-design.md, section 6): the effect sits in the box's area, which is
+     inside the opening post's body. The nearest marked area is the effect's: the foil, the density, the rate and the bright ink are the area's. */
+  describe("in the ORIGIN box, inside the opening post's body", () => {
+    const OUTER = { w: 900, h: 700 }, AREA = { w: 600, h: 300 }, OWN = { w: 300, h: 120 };
+    const rectOf = (w: number, h: number, left = 0, top = 0) => ({ x: left, y: top, left, top, right: left + w, bottom: top + h, width: w, height: h, toJSON: () => ({}) });
+    const inBox = (level = 1) => {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+        if (this.classList.contains('kb-act-main')) return rectOf(OUTER.w, OUTER.h);
+        if (this.classList.contains('kb-origin-area')) return rectOf(AREA.w, AREA.h, 10, 40);
+        return rectOf(OWN.w, OWN.h, 20, 60);
+      });
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? OUTER.w : this.classList.contains('kb-origin-area') ? AREA.w : 0; });
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? OUTER.h : this.classList.contains('kb-origin-area') ? AREA.h : 0; });
+      return render(<div className="kb-act-main" data-kb-content-area><div className="kb-origin-area" data-kb-content-area><FeelinFabEffect {...props(level)} place="origin" /></div></div>);
+    };
+    const area = () => document.querySelector('.kb-origin-area') as HTMLElement;
+
+    test('the foil is placed over the area, not the outer body', () => {
+      inBox();
+      /* The host is at (20, 60) and the area at (10, 40): the area's corner is (-10, -20) from the host. */
+      expect([canvas().style.left, canvas().style.top, canvas().style.width, canvas().style.height], 'the foil is the area box').toEqual(['-10px', '-20px', '600px', '300px']);
+    });
+
+    test('the area is marked for the bright ink when the band is bright, and the outer body is not', () => {
+      document.documentElement.setAttribute('data-kb-effects', 'bright');
+      inBox();
+      expect(area(), 'the area carries the mark').toHaveAttribute('data-kb-bright-ink');
+      expect(bodyOfPost(), 'the outer body does not').not.toHaveAttribute('data-kb-bright-ink');
+    });
+
+    test('the density and the rate are those of the words box in the area', () => {
+      inBox();
+      const k = Math.min(1, Math.max(0.5, Math.sqrt((OWN.w * OWN.h) / (AREA.w * AREA.h))));
+      expect(canvas().width, 'paintScale(host, area)').toBe(Math.round(AREA.w * 1.5 * k));
+      expect(canvas().height).toBe(Math.round(AREA.h * 1.5 * k));
+      expect(probe.share(box()), 'paintShare(host, area)').toBe(Math.min(1, Math.max(0.25, (OWN.w * OWN.h) / (AREA.w * AREA.h))));
+    });
+
+    test('on unmount the mark is gone', () => {
+      document.documentElement.setAttribute('data-kb-effects', 'bright');
+      const r = inBox();
+      expect(area()).toHaveAttribute('data-kb-bright-ink');
+      const a = area();
+      r.unmount();
+      expect(a, 'the area is unmarked').not.toHaveAttribute('data-kb-bright-ink');
+    });
+  });
+
+  test('with no body (the view Stick Around draws, which lifts the words out of every area) there is nothing to mark and the foil is still bright', () => {
     document.documentElement.setAttribute('data-kb-effects', 'bright');
     render(<FeelinFabEffect {...props(1)} place="origin" />);
     void see(canvas(), true); frames(2);

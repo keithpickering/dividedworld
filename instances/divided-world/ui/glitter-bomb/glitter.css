@@ -2,8 +2,8 @@
  * Glitter Bomb (Effect.tsx): three canvases go around the words. Under them, one holds the settled flakes unlit and the one over it
  * what the light changes (the lit flakes, the flares and the loose glitter); over the words, one holds the burst while it flies. All
  * stand on one surface that takes no pointer and no room, so the post reads and lays out as it would bare. The surface is placed and
- * sized in CSS px by Effect.tsx, inline, over the box it paints (engine/ui/cards/body.ts): in the thread the post's whole body,
- * elsewhere the host; the rules here are the host's box, for the moment before the first measure. The canvases are sized in whole
+ * sized in CSS px by Effect.tsx, inline, over the box it paints (engine/ui/cards/body.ts): in the thread the post's whole body, in
+ * the ORIGIN box the box's area under its band, only where there is no content area the host; the rules here are the host's box, for the moment before the first measure. The canvases are sized in whole
  * device pixels by Effect.tsx (the box times the loop's density); their CSS size is the surface's, here. They hold no color: the
  * flakes' inks are in Effect.tsx and every pixel is held in the board's readable band by the engine, but the dark board's few
  * glints (shine design section 5). The words keep a text shadow in the board's ground.
@@ -11,7 +11,7 @@
  * The surface makes no stacking context, so its canvases stack with the words. Painting the body (`data-kb-bleed`), the host is no
  * stacking context either, so the settled flakes lie in the body's (thread.css's `.kb-act-main`, isolated) under everything in it, the
  * reactions, the signature and an ORIGIN box too, and over only the body's own ground; the words stand at the body's level and the
- * burst over them, still under what the engine lifts over a post's ink.
+ * burst over them, still under what the engine lifts over a post's ink (in the ORIGIN box's area, its History button and panel).
  */
 .dw-glitter {
   position: relative;

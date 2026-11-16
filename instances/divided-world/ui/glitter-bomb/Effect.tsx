@@ -37,7 +37,10 @@
  *
  * Where. The glitter covers the post, not only its words (2026-11-06: "the card effect should apply to the entire post in all cases"):
  * the three canvases stand on one surface, an element placed inline over the box the effect paints (engine/ui/cards/body.ts): in the
- * thread the post body's padding box (`.kb-act-main`, bar to bar), anywhere else (the ORIGIN box, Stick Around's view) the host's own.
+ * thread the post body's padding box (`.kb-act-main`, bar to bar), in the ORIGIN box the box's area (`.kb-origin-area`, under its band, border
+ * to border), and only where there is no content area (Stick Around's view) the host's own. The nearest area is the one it paints, so the
+ * box's glitter never hears a pointer through the opening post's, and a pointer over what the engine lifts over the ink inside that area is
+ * the lifted thing's, not the glitter's.
  * The surface is what cling knows, so a flake can land anywhere on the post, in the surface's px. Painting the body, the host
  * marks itself `data-kb-bleed` and glitter.css puts the flakes under everything in the body (its reactions, its signature, an ORIGIN
  * box above the words), not only under the words. The host watches the body's size as well as its own.
@@ -58,7 +61,7 @@
 import { useEffect, useRef } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
-import { bodyBox, bodyOf, paintScale, paintShare, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
+import { bodyBox, bodyOf, liftedOver, paintScale, paintShare, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { burst, cling, dropLoose, drawBurst, drawLoose, landAll, loose, makeFlakes, release, stepBurst, type Flakes } from '../../../../engine/ui/shine/flakes.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
@@ -215,8 +218,10 @@ export function GlitterBombEffect({ post, plays, still, kept, children }: Effect
     const leave = (): void => { drop(); below.width = below.height = lit.width = lit.height = 0; based = null; freeOver(); freed = true; };
     /* The body this paints, found again at each measure (a takeover moves the words), and watched for its size as the host is. */
     let body: HTMLElement | null = null;
-    /* A pointer passing over what the glitter covers (the body, else the host: one of them, so a move is read once) may pick some up. */
-    const passing = (e: PointerEvent): void => cling.over(e);
+    /* A pointer passing over what the glitter covers (the body, else the host: one of them, so a move is read once) may pick some up, unless it is over something the engine lifts over
+       the ink inside the body (the reactions row, the ORIGIN box's History): that is the lifted thing's own. The ORIGIN box itself, lifted whole over the opening post's glitter, holds
+       this body and is not inside it, so a pointer in the box's words is the box's own glitter's. */
+    const passing = (e: PointerEvent): void => { if (liftedOver(e.target, body)) return; cling.over(e); };
     let heard: HTMLElement | null = null;
     const hear = (on: HTMLElement | null): void => {
       if (still || on === heard) return;

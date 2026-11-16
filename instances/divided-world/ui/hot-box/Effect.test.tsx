@@ -60,6 +60,8 @@ let sizeWatchers: (() => void)[] = [];
 let sizes = BOX;
 /** The post's content area (`.kb-act-main`, border to border), which the smoke fills; the words' box above is inside it. By default the two are the same box. */
 let AREA = BOX;
+/** The opening post's body around an ORIGIN box's area (`nested` in `setup`): the box is 900 by 700 there, the area is `AREA`. Null where the area is the post's own body. */
+let OUTER: typeof BOX | null = null;
 
 function stubCanvas() {
   const ctx = {
@@ -88,12 +90,12 @@ function stubWindow() {
   })) as unknown as typeof window.matchMedia;
   globalThis.ResizeObserver = class { constructor(cb: () => void) { sizeWatchers.push(cb); } observe(el: Element) { observed.push(el); } unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
   HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
-    const r = this.classList.contains('dw-hotbox-words') ? sizes : this.classList.contains('dw-hotbox') ? HOST : this.classList.contains('kb-act-main') ? AREA : { left: 0, top: 0, width: 0, height: 0 };
+    const r = this.classList.contains('dw-hotbox-words') ? sizes : this.classList.contains('dw-hotbox') ? HOST : this.classList.contains('kb-act-main') ? (OUTER ?? AREA) : this.classList.contains('kb-origin-area') ? AREA : { left: 0, top: 0, width: 0, height: 0 };
     return { ...r, x: r.left, y: r.top, right: r.left + r.width, bottom: r.top + r.height, toJSON: () => r } as DOMRect;
   };
   /* The area's padding box, as the engine's `bodyBox` reads it. */
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList.contains('kb-act-main') ? AREA.width : 0; } });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return this.classList.contains('kb-act-main') ? AREA.height : 0; } });
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { const r = this.classList.contains('kb-act-main') ? (OUTER ?? AREA) : this.classList.contains('kb-origin-area') ? AREA : null; return r ? r.width : 0; } });
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { const r = this.classList.contains('kb-act-main') ? (OUTER ?? AREA) : this.classList.contains('kb-origin-area') ? AREA : null; return r ? r.height : 0; } });
 }
 
 /** Runs the frames asked for so far (each asks for the next), as a browser's next frame would. */
@@ -105,7 +107,7 @@ function pass(ms: number, step = 100) {
 
 /* ---------------------------------------------------------------------------------------------- the props ---- */
 
-function setup(over: Partial<EffectProps> = {}, strict = false, bare = false) {
+function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, nested = false) {
   const show = vi.fn<(view: CardView | null) => void>();
   const met = vi.fn();
   const save = vi.fn(async () => ({ ok: false as const, error: 'no' }));
@@ -118,7 +120,9 @@ function setup(over: Partial<EffectProps> = {}, strict = false, bare = false) {
   const world = createFake({ instance: testInstance, now: () => Date.now() });
   const effect = <HotBoxEffect {...props} />;
   /* In the thread the effect sits inside the post's content area; `bare` is a post with none (the ORIGIN box), where the area is the effect's own element. */
-  const inArea = bare ? effect : <div className="kb-act-main" data-kb-content-area>{effect}</div>;
+  const inArea = bare ? effect : nested
+    ? <div className="kb-act-main" data-kb-content-area><div className="kb-origin" data-kb-over-ink=""><div className="kb-origin-area" data-kb-content-area><p data-kb-over-ink="" className="lifted">History</p>{effect}</div></div></div>
+    : <div className="kb-act-main" data-kb-content-area>{effect}</div>;
   const out = renderIn(world, strict ? <StrictMode>{inArea}</StrictMode> : inArea);
   return { show, met, save, release, props, ...out };
 }
@@ -178,7 +182,7 @@ const rectLayers = (s: Setup) => layers(s).filter((l) => l.kind === 'rect');
 const flat = (s: Setup) => layers(s).find((l) => l.kind === 'flat');
 
 beforeEach(() => {
-  fills = []; draws = []; gradients = 0; observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX;
+  fills = []; draws = []; gradients = 0; observed = []; read.lines = LINES; contexts = 0; frames = new Map(); frameId = 0; forced = false; forcedListeners = []; sizeWatchers = []; sizes = BOX; AREA = BOX; OUTER = null;
   vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   stubCanvas();
   stubWindow();
@@ -1484,5 +1488,64 @@ describe('nobody is special', () => {
     expect(s.save).not.toHaveBeenCalled();
     expect(s.release).not.toHaveBeenCalled();
     expect(holdScreen).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * A spun thread's ORIGIN box (docs/plans/2026-11-15-origin-box-effects-design.md, sections 2, 4 and 6): the effect is in the box's area, which is inside
+ * the opening post's body. The nearest marked area is the effect's: the smoke, the pointer and the press test are the area's, and what the engine lifts
+ * over the ink is the area's own only where it is inside it.
+ */
+describe("in the ORIGIN box, inside the opening post's body", () => {
+  const BOXAREA = { left: 10, top: 40, width: 600, height: 300 };
+  beforeEach(() => { AREA = BOXAREA; OUTER = { left: 0, top: 0, width: 900, height: 700 }; });
+  const inner = (s: Setup) => s.container.querySelector<HTMLElement>('.kb-origin-area')!;
+  const outer = (s: Setup) => s.container.querySelector<HTMLElement>('.kb-act-main')!;
+  const lifted = (s: Setup) => s.container.querySelector<HTMLElement>('.lifted')!;
+
+  test('the smoke canvas is the area box, not the opening post body', () => {
+    const s = setup({}, false, false, true);
+    expect(canvas(s)!.style, 'the canvas is placed over the area').toMatchObject({ left: '10px', top: '40px', width: '600px', height: '300px' });
+    expect(canvas(s)!.width).toBe(600);
+    expect(canvas(s)!.height).toBe(300);
+  });
+
+  test('the pointer listeners are on the area and not on the outer body', () => {
+    const adds: [Element, string][] = [];
+    const realAdd = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function (this: EventTarget, type: string, ...rest: unknown[]) {
+      if (type.startsWith('pointer') && this instanceof Element && this.hasAttribute('data-kb-content-area')) adds.push([this, type]);
+      return (realAdd as (...a: unknown[]) => void).call(this, type, ...rest);
+    } as never;
+    try {
+      const s = setup({}, false, false, true);
+      expect(adds.filter(([el]) => el === inner(s)).map(([, t]) => t).sort(), 'on the area').toEqual(['pointerdown', 'pointerleave', 'pointermove']);
+      expect(adds.filter(([el]) => el === outer(s)), 'not on the outer body').toHaveLength(0);
+    } finally { EventTarget.prototype.addEventListener = realAdd; }
+  });
+
+  test('a press on a lifted element inside the area opens no clearing, and a press on the byline (unlifted, in the area) opens one', () => {
+    const s = setup({}, false, false, true);
+    pointer(lifted(s), 'pointerdown', 100, 100, 'touch');
+    pointer(lifted(s), 'pointermove', 100, 100);
+    act(() => { runFrame(); });
+    expect(circles(), 'History is its own').toHaveLength(0);
+    pointer(host(s), 'pointermove', 300, 250);
+    act(() => { runFrame(); });
+    expect(circles(), 'the byline clears').toHaveLength(1);
+  });
+
+  test('with the effect on an outer body, a press inside a nested lifted box opens none', () => {
+    /* The opening post's own Hot Box: its body holds the ORIGIN box, lifted whole. */
+    const s = setup();
+    const box = document.createElement('div');
+    box.setAttribute('data-kb-over-ink', '');
+    const words = document.createElement('p');
+    box.appendChild(words);
+    outer(s).appendChild(box);
+    pointer(words, 'pointerdown', 100, 100, 'touch');
+    pointer(words, 'pointermove', 100, 100);
+    act(() => { runFrame(); });
+    expect(circles(), 'the box is not this effect').toHaveLength(0);
   });
 });

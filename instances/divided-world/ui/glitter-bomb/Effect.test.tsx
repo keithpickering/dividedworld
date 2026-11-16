@@ -398,6 +398,59 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(b, 'a board change paints the base again').toHaveBeenCalledTimes(bases + 1);
   });
 
+  /* A spun thread's ORIGIN box (docs/plans/2026-11-15-origin-box-effects-design.md, sections 2, 4 and 6): the effect sits in the box's area,
+     inside the opening post's body, which may hold a glitter host of its own. The nearest marked area is this one's. */
+  describe("in the ORIGIN box, inside the opening post's body", () => {
+    const rectOf = (w: number, h: number, left = 0, top = 0) => ({ x: left, y: top, left, top, right: left + w, bottom: top + h, width: w, height: h, toJSON: () => ({}) });
+    const inBox = (lift: 'none' | 'around' = 'none') => {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+        if (this.classList.contains('kb-act-main')) return rectOf(900, 700);
+        if (this.classList.contains('kb-origin-area')) return rectOf(600, 300, 10, 40);
+        return rectOf(300, 120, 20, 60);
+      });
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 900 : this.classList.contains('kb-origin-area') ? 600 : 0; });
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 700 : this.classList.contains('kb-origin-area') ? 300 : 0; });
+      const area = (
+        <div className="kb-origin-area" data-kb-content-area>
+          <p className="lifted" data-kb-over-ink>History</p>
+          <GlitterBombEffect {...props()} place="origin" />
+        </div>
+      );
+      render(<div className="kb-act-main" data-kb-content-area>{lift === 'around' ? <div className="kb-origin" data-kb-over-ink>{area}</div> : area}</div>);
+      see(1);
+      frames(2);
+      return document.querySelector('.kb-origin-area') as HTMLElement;
+    };
+
+    test('the surface is placed over the area, not the outer body', () => {
+      inBox();
+      const face = box().querySelector<HTMLElement>('.dw-glitter-surface')!;
+      /* The host is at (20, 60) and the area at (10, 40). */
+      expect([face.style.left, face.style.top, face.style.width, face.style.height], 'the surface is the area box').toEqual(['-10px', '-20px', '600px', '300px']);
+    });
+
+    test('the hit cling is given is the area, and with nested glitter hosts the nearest area is the one that answers', () => {
+      const area = inBox();
+      const options = spies.clingRegister.mock.calls.at(-1)![1] as { hit?: unknown };
+      expect(options.hit, 'the hit is the area').toBe(area);
+      expect(options.hit, 'not the opening post body').not.toBe(document.querySelector('.kb-act-main'));
+    });
+
+    test('a pointermove in a lifted element inside the area is ignored', () => {
+      inBox();
+      fireEvent.pointerMove(document.querySelector('.lifted')!, { clientX: 10, clientY: 10, pointerType: 'mouse' });
+      expect(spies.clingOver, 'a lifted thing in the body is not glitter').not.toHaveBeenCalled();
+      fireEvent.pointerMove(box(), { clientX: 10, clientY: 10, pointerType: 'mouse' });
+      expect(spies.clingOver, 'the words in the area are heard').toHaveBeenCalledTimes(1);
+    });
+
+    test('a pointermove in a lifted element that contains the area (the box itself) is heard', () => {
+      inBox('around');
+      fireEvent.pointerMove(box(), { clientX: 10, clientY: 10, pointerType: 'mouse' });
+      expect(spies.clingOver, 'the box is lifted over the opening post, not over its own glitter').toHaveBeenCalledTimes(1);
+    });
+  });
+
   /* Issue #304: a body bigger than the words is redrawn at a share of the rate (engine/ui/cards/body.ts `paintShare`), and the lit
      layer repaints only the flakes on the rows the loop says are on screen. */
   test('in a post body four times its words\' area, the glitter is redrawn at a quarter of the rate', () => {
