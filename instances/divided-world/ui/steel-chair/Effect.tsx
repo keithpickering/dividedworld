@@ -86,9 +86,12 @@ function shapeOf(play: string): DentShape {
   return shape;
 }
 
-/** The most chairs one post draws (the card's stack). */
-/** The attribute the effect puts on the body it found, where steel-chair.css draws the floor's room. */
+/**
+ * The attribute the effect puts on the body it found, where steel-chair.css draws the floor's room. There is one Steel Chair effect per content
+ * area (one host per post-reach card per post; a moment replaces the live effect, never joins it), so the mark is a plain attribute and is not counted.
+ */
 const ROOM_MARK = 'data-dw-chair-room';
+/** The most chairs one post draws (the card's stack). */
 const MOST = 3;
 /**
  * The middle of the view the post must be in for a run to start (the top and bottom fifths do not count), and how long it stays there
@@ -281,6 +284,9 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     let box: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
     let geoNow: Geo | null = null;
     let body: HTMLElement | null = null;
+    /* The body that carries the room's mark: set only by `giveRoom`, so that a run cleared (which forgets `body`) or an effect moved before
+       its first measure cannot leave a mark that nothing will take off. */
+    let marked: HTMLElement | null = null;
     let found = false;
     let target: Box = { left: 0, top: 0, width: 0, height: 0 };
     let size: ResizeObserver | null = null;
@@ -301,6 +307,8 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
        box makes room in the box and not in the opening post's body around it. One effect draws all of a post's chairs, so the mark has one
        owner, and the cleanup below takes both marks off. */
     const giveRoom = (next: HTMLElement | null): void => {
+      if (marked && marked !== next) marked.removeAttribute(ROOM_MARK);
+      marked = next;
       next?.setAttribute(ROOM_MARK, '');
       el.toggleAttribute('data-kb-bleed', next !== null);
     };
@@ -315,7 +323,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       const next = bodyOf(el);
       if (next !== body || !found) {
         found = true;
-        if (body) { size?.unobserve(body); if (body !== next) body.removeAttribute(ROOM_MARK); }
+        if (body) size?.unobserve(body);
         if (next) size?.observe(next);
         body = next;
         giveRoom(next);
@@ -603,8 +611,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     return () => {
       stopArm();
       clearTimeout(armTimer);
-      body?.removeAttribute(ROOM_MARK);
-      bodyOf(el)?.removeAttribute(ROOM_MARK);
+      giveRoom(null);
       el.removeAttribute('data-kb-bleed');
       /* The drawn chairs and dents go with the run that drew them: kept through a re-arm (reduced motion or the moment changing), an old
          dent would stand at its old place while the new run's chair is aimed elsewhere, and the reduced path skips a play that has a dent. */

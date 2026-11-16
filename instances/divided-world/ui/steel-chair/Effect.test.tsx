@@ -294,16 +294,65 @@ describe('which plays, and what is drawn', () => {
     expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
   });
 
-  test('2. in a thread the body carries data-dw-chair-room and the host data-kb-bleed, and both are gone after unmount', () => {
+  test('2. in a thread the body carries data-dw-chair-room and the host data-kb-bleed, and both come off when the play ends', () => {
     mount();
     run();
     const body = document.querySelector<HTMLElement>('.kb-act-main')!;
+    const h = host()!;
     expect(body, "the body found carries the room's mark").toHaveAttribute('data-dw-chair-room');
-    expect(host(), 'the host is marked as bleeding into a body').toHaveAttribute('data-kb-bleed');
-    cleanup();
-    expect(body, "the room's mark is gone after unmount").not.toHaveAttribute('data-dw-chair-room');
-    expect(document.querySelector('[data-dw-chair-room]')).toBeNull();
-    expect(document.querySelector('[data-kb-bleed]')).toBeNull();
+    expect(h, 'the host is marked as bleeding into a body').toHaveAttribute('data-kb-bleed');
+    /* The play ends and the post stays: the body is still in the page, so what it carries is what a reader sees. */
+    act(() => { hub.setPlays([]); });
+    expect(body.isConnected).toBe(true);
+    expect(body, "the room's mark is gone with the effect").not.toHaveAttribute('data-dw-chair-room');
+    expect(h, "the host's bleed mark is gone too").not.toHaveAttribute('data-kb-bleed');
+  });
+
+  test('2a. chairs live and never run (never in view), then the play ends: the body keeps no mark', () => {
+    mount();
+    const body = document.querySelector<HTMLElement>('.kb-act-main')!;
+    act(() => { hub.setPlays([]); });
+    expect(body.isConnected).toBe(true);
+    expect(body, 'no empty room is left on the post').not.toHaveAttribute('data-dw-chair-room');
+  });
+
+  test('2b. run, then the post leaves the view (the run is cleared), then the play ends: the body keeps no mark', () => {
+    mount();
+    run();
+    const body = document.querySelector<HTMLElement>('.kb-act-main')!;
+    see(false);
+    act(() => { hub.setPlays([]); });
+    expect(body.isConnected).toBe(true);
+    expect(body, 'no empty room is left on the post').not.toHaveAttribute('data-dw-chair-room');
+  });
+
+  test('2c. the body is marked from the moment the effect mounts, before any run', () => {
+    mount();
+    expect(document.querySelector('.kb-act-main'), 'the room is there before a run, so the post does not grow when one starts').toHaveAttribute('data-dw-chair-room');
+    expect(host()).toHaveAttribute('data-kb-bleed');
+  });
+
+  test('2d. the effect moved under another body before its first measure: the old body is unmarked and the new one marked', () => {
+    mount();
+    const first = document.querySelector<HTMLElement>('.kb-act-main')!;
+    expect(first).toHaveAttribute('data-dw-chair-room');
+    const other = document.createElement('div');
+    other.className = 'kb-act-main';
+    other.setAttribute('data-kb-content-area', '');
+    document.body.appendChild(other);
+    const h = host()!;
+    first.removeChild(h);
+    other.appendChild(h);
+    try {
+      run();
+      expect(other, 'the new body has the mark').toHaveAttribute('data-dw-chair-room');
+      expect(first, 'the old one lost it').not.toHaveAttribute('data-dw-chair-room');
+      expect(h).toHaveAttribute('data-kb-bleed');
+    } finally {
+      other.removeChild(h);
+      first.appendChild(h);
+      other.remove();
+    }
   });
 
   test('4. with no marked ancestor the host\'s box is the world and the room stays in the host, after the words: ROOM_HEIGHT px', () => {
