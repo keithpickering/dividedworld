@@ -18,13 +18,13 @@ import { rng, THROW_INSET_X, THROW_INSET_Y, THROW_SPAN_X, THROW_SPAN_Y } from '.
 export const DENT_SCALE = 14;
 /*
  * 14, and not the plan's 26 or the 18 an earlier build shipped: the plan's own review focus says the scale comes down if a dent makes a line
- * unreadable, and it did. A dent is 160 px across and squeezes the words at its middle by 1 / (1 + scale·0.0196) (66% at 26, 74% at 18), and
- * stretches them at its rim; seen in a browser at 26 the one-line post's second word was a smear, and where two dents overlap their squeezes
- * add. At 18 every word of the long post reads at desktop and phone width, with one dent and with three overlapping, and the one-line post
- * reads with one dent. Dents are now smaller (a dent's larger axis is its base, its smaller within 26% of it; an average dent is 87% of the
- * old 160 px), and a smaller dent at the same scale bends its words more steeply, by the ratio of the sizes, so the scale came down by the
- * same: 18 / 1.23 is about 14.6, taken as 14. The owner asked that the one-line post's three dents leave the line readable; the dents still
- * read as dents on the long post, where the shading and the bend of a ring of words around each are plain at 14 (e2e/steel-chair.spec.ts).
+ * unreadable, and it did (seen in a browser at 26 the one-line post's second word was a smear, and where two dents overlap their pushes add).
+ * What the constant does now: the bend (`dentBend`) is the height map's slope in the box's px, scaled so its largest channel offset is 74 bytes,
+ * so the steepest point of any dent moves the words by 74/255 of `DENT_SCALE`, about 4 px at 14, whatever the dent's size; the scale sets how
+ * far the words are drawn in, and the dent's own size (the surface is spread `SPREAD` times the recipe's) sets how many words that reaches. The
+ * figures that first led to 14 (a 160 px dent, a 1 / (1 + scale·0.0196) squeeze at its middle) were for the first build's bend and cannot be
+ * derived from the height map; 14 is the value kept from that build, and the owner judges how readable the long and the one-line posts are
+ * (e2e/steel-chair.spec.ts).
  */
 
 /** Test seams: pass the user agent and whether `CSS.supports('filter', 'url(#x)')` answered yes. Both default to the running browser's. */
@@ -194,12 +194,13 @@ export function dentHeight(shape: DentShape, width: number, height: number): Flo
   for (let y = 0; y < height; y++) {
     const v0 = ((y + 0.5) / height) * 2 - 1;
     const gy = ((v0 / SPREAD + 1) / 2) * 8;
+    // the clamps below are not reached while SPREAD is 1.5 (|u / SPREAD| is under 0.67 inside the window); they keep the lattice index in range if it changes
     const iy = Math.min(7, Math.max(0, Math.floor(gy)));
     const fy = smoothstep(0, 1, gy - iy);
     for (let x = 0; x < width; x++) {
       const bu = us[x]!;
       const rhoBox = hypot2(bu, v0);
-      if (rhoBox >= 0.98) continue;
+      if (rhoBox >= W1) continue;
       const u = bu / SPREAD, v = v0 / SPREAD, rho = rhoBox / SPREAD;
       const a = Math.atan2(v, u);
       let wave = 0;

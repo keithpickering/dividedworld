@@ -738,7 +738,7 @@ function darkest(p: { shaded: { px: number[] }; bare: { px: number[] } }): numbe
 
 /**
  * How dark the shading makes plain background at its deepest, as a fraction of the background: the lowest shaded luma over the bare luma of
- * the same pixel. One disc is 128 of 255 at its darkest (a fraction of 0.50 of the post's own color, `multiply`), two added would be 0.00 to
+ * the same pixel. One dent's shade is 128 of 255 at its darkest (a fraction of 0.50 of the post's own color, `multiply`), two added would be 0.00 to
  * 0.25, so this does not depend on the post's own color, as a difference in levels does.
  */
 function deepest(p: { shaded: { px: number[] }; bare: { px: number[] } }): number {
@@ -752,10 +752,10 @@ function deepest(p: { shaded: { px: number[] }; bare: { px: number[] } }): numbe
  * The hard case: one line of words with three dents on it, run on two pinned throws. The tight one has two dents over the line and
  * overlapping each other; the spread one has the dents' centers far apart (the hit zone is wide on a short post, so the dents land beside
  * and below the line as well as on it) with at least one over the line, so the line still has shading to be read through. What is held in
- * both: (i) no crease element is drawn in the content area (a dent is a height map's shading, nothing else), (ii) the shading over the line is capped at what one lone dent
+ * both: (i) no crease element is drawn in the content area (a dent is a height map's shading, nothing else; this count guards against the removed crease layer coming back), (ii) the shading over the line is capped at what one lone dent
  * gives at its darkest (measured in the same test, from the one-dent story), however many overlap, (iii) the glyphs keep a contrast of
  * 4.5:1 against the shaded background, and the displacement keeps the ink within its line box plus what the filter's scale and the dents
- * allow. A tolerance of 6 levels of 255 is allowed on the cap, for the gradient's and the screenshot's rounding.
+ * allow. A tolerance of 6 levels of 255 is allowed on the cap, for the screenshot's rounding (the bound is kept from the first build).
  */
 async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'spread') {
   /* Three full runs of the page in one test (the three-dent line, the one-dent story, the three-dent line again), each waiting for its chairs to
@@ -783,10 +783,10 @@ async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'sprea
   const lineClip = { x: Math.floor(s.text.left), y: Math.floor(s.text.top - 2), width: Math.ceil(s.text.right - s.text.left) + 2, height: Math.ceil(s.text.bottom - s.text.top) + 4 };
   const three = await pair(page, lineClip);
   const peak3 = darkest(three);
-  /* The line may sit at the rim of the dents (it is a thin strip at the top of a tall area), where one disc gives little and two added give
+  /* The line may sit near the edge of the dents (it is a thin strip at the top of a tall area), where one dent gives little and two added give
      little more, so the cap is also read where the dents are deepest: over the union of their boxes, inside the content area, with the
-     light hidden so that only the shade layer (the discs combined by `darken`) is measured. Where two discs overlap their
-     middles the darkness must still be one disc's darkest, and not the sum of two. */
+     light hidden so that only the shade layer (the dents' shade images combined by `darken`) is measured. Where two dents overlap at
+     their deepest the darkness must still be one dent's darkest, and not the sum of two. */
   const onlyShade = (hide: boolean) => area(page).evaluate((box, h) => {
     for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-glows')) el.style.visibility = h ? 'hidden' : '';
   }, hide);
@@ -798,9 +798,9 @@ async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'sprea
   const unionClip = { x: ux0, y: uy0, width: ux1 - ux0, height: uy1 - uy0 };
   const union = await pair(page, unionClip);
   const deepDents = deepest(union);
-  /* Each dent alone (the others hidden): where discs overlap, the shade must be the darker of the discs there, pixel for pixel (`darken`),
-     which an opaque disc laid over another (a lighter rim over a darker middle: 0.38 off) or two added would not give; with `darken` the
-     worst pixel is 0.07 off (the antialiased rim), so the bound is 0.12. */
+  /* Each dent alone (the others hidden): where dents overlap, the shade must be the darker of the dents there, pixel for pixel (`darken`),
+     which one opaque shade image laid over another, or two added, would not give. The bound of 0.12 is the allowance for the screenshot's
+     rounding and is kept from the first build. */
   const alone1: number[][] = [];
   for (let k = 0; k < s.dents.length; k++) {
     await area(page).evaluate((box, keep) => {
@@ -834,7 +834,7 @@ async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'sprea
   expect(lone, 'a lone dent really darkens its background').toBeGreaterThan(40);
   /* (ii) */
   expect(peak3, 'the dents do shade the line (a cap on nothing proves nothing)').toBeGreaterThan(25);
-  /* One disc takes the post to 0.50 of its color; the tolerance is the gradient's and the screenshot's rounding. Added, two discs would be 0.25 or less. */
+  /* One dent takes the post to 0.50 of its color at its darkest; the tolerance is the screenshot's rounding and is kept from the first build. Added, two dents would be 0.25 or less. */
   expect(deepDents, 'the dents do shade the post where they lie').toBeLessThan(0.62);
   expect(worstGap, `where discs overlap the shade is the darker of them (the worst pixel is ${worstGap.toFixed(3)} off, over ${overlapPixels} overlapping pixels)`).toBeLessThanOrEqual(0.12);
   if (kind === 'tight') expect(overlapPixels, 'the tight seed has overlapping discs to compare').toBeGreaterThan(500);
@@ -923,11 +923,12 @@ for (const name of ['one-light', 'one-dark', 'reduced'] as const) {
 }
 
 /**
- * On the dark theme the dent still shows: the shade's gray (multiplied) darkens the post's own color and the light's gray (screened) lifts it. On
- * the post's color (#262626, 38 of 255) a shade at its darkest leaves about half, so is about 19 levels darker, and the light at its brightest
- * lifts it by about 60. One clipped pair of pictures over the dent's whole box, with and without the two layers (the chairs hidden in both),
- * compared on the pixels that are plain post color (no glyph) in the bare picture: the mean of the darkest tenth of the dent's change is
- * darker than the bare picture there, and the mean of the lightest tenth is lighter, by margins about half of that.
+ * On the dark theme the dent still shows: the shade's gray (multiplied) darkens the post's own color and the light's gray (screened) lifts it.
+ * One clipped pair of pictures over the dent's whole box, with and without the two layers (the chairs hidden in both), compared on the pixels
+ * that are plain post color (no glyph) in the bare picture, sorted by how much the dent changed them. Measured locally: the mean of the
+ * lightest tenth is about +55 to +59 levels of 255 and the mean of the darkest tenth about -10.4, against a floor of about -19 (a shade at its
+ * darkest leaves about half of the post's #262626, 38 of 255). The bounds below, 30 and -10, sit under those means; the darkest tenth's is the
+ * closer.
  */
 test('one-dark: the dent shows on the dark theme: the lightest tenth of its box is lighter than the post color, and the darkest tenth darker', async ({ page }) => {
   await open(page, 'one-dark');

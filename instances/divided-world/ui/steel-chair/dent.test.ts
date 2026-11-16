@@ -67,6 +67,17 @@ describe('dentHeight: a height map, pressed in with a lip', () => {
       assert.ok(middle < 0 && middle < ring, `${id}: middle ${middle}, ring ${ring}`);
     }
   });
+  test('the lip: the highest sample is clearly above 0 and lies at a box rho of 0.5 to 0.95', () => {
+    // Measured over these ids and sizes: the highest sample is at least 0.041 and lies at rho 0.669 to 0.796 (the floor and the band are looser).
+    for (const [w, h] of SIZES) for (const id of IDS) {
+      const m = mapOf(id, w, h);
+      let top = -Infinity, at = 0;
+      for (let i = 0; i < m.length; i++) if (m[i]! > top) { top = m[i]!; at = i; }
+      const p = uv(at % w, Math.floor(at / w), w, h);
+      assert.ok(top >= 0.02, `${id} at ${w} by ${h}: the highest sample is ${top}`);
+      assert.ok(p.rho >= 0.5 && p.rho <= 0.95, `${id} at ${w} by ${h}: the highest sample is at rho ${p.rho}`);
+    }
+  });
 });
 
 describe('dentShade: lit from the upper left, in front', () => {
