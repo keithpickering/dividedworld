@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { FLOOR_DEPTH, ROOM_HEIGHT } from '../instances/divided-world/ui/steel-chair/chair.ts';
+import { DEPTH, HALF } from '../instances/divided-world/ui/steel-chair/body.ts';
+import { GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from '../instances/divided-world/ui/steel-chair/chair.ts';
 import { DENT_SCALE } from '../instances/divided-world/ui/steel-chair/dent.ts';
 import { pageViolations } from './axe.ts';
 
@@ -13,37 +14,25 @@ import { pageViolations } from './axe.ts';
  *
  * The geometry (chair.ts): the world is drawn in an oblique view, so the floor recedes UP the screen the farther back it is. A chair is
  * therefore always inside the content area's padding box (the side walls are the borders at every depth, and the floor's front is the bottom
- * border), and its lowest drawn point is on the border only when it rests at the very front. A chair lying flat (its big face down) on the
- * floor is at most the floor's depth (FLOOR_DEPTH, 28 px) above the border. A chair standing on a narrow face is not bounded by it: its
- * contact edge is at most 4 px in front of its middle, which is at most DEPTH + GIVE = 52 px behind the front, so it may be drawn up to
- * K·(Z_FRONT + 52 + 4) = 33.7 px above the border, and that is what is asserted for it (34, and a pixel's rounding). A chair lying on another
- * chair is held to resting on a chair that is itself held (see `onTheFloor`), and to the border and the top of the content area. The room the
- * content area keeps above its bottom border is taller than the floor is deep: ROOM_HEIGHT, the height of the tallest rest (chair.ts), so that
- * a chair at rest in any pose, whole box included, covers no line of words and does not reach the reactions row.
+ * border), and its lowest drawn point is on the border only when it rests at the very front. A body sleeps only while it lies low (body.ts
+ * REST_RISE: no corner higher than three flat chairs and a chair across them above the floor); one that goes quiet standing on an end or
+ * leaning is nudged and falls over. So every chair at rest, whole box included, is drawn no higher than ROOM_HEIGHT above the bottom border
+ * (the room the content area keeps, derived in chair.ts), covers no line of words and does not reach the reactions row.
  *
  * Why the seed is pinned. Each run draws its throws from a generator seeded by `crypto.getRandomValues` (Effect.tsx `freshSeed`), and the
- * geometric bounds above have a tail: a chair that comes to rest almost flat (|m[9]| near the 0.98 threshold of `flat`), and the rare lean
- * (about 0.2% of throws rest propped on the glass or a wall) would fail a bound about once in 40 to 100 CI runs. So every test replaces
+ * geometry is checked on the rests one run happened to make, and the nudge of a body that goes quiet high (body.ts) is drawn from a seeded
+ * generator, so a CI run would test a different set of rests each time. So every test replaces
  * that call with a counter over a short list of seeds, the nth run of a page getting the nth seed. The seeds were chosen by trying 20
- * candidates for each page layout and keeping ones whose rests are ordinary: every chair lying flat on the floor, 25 px or less above the
- * border, none leaning, none overlapping another. Two runs in one test still get different seeds, so "the dent's place changes" still means
+ * candidates for each page layout and keeping ones whose rests are ordinary: every chair under the room, none overlapping another. Two runs in one test still get different seeds, so "the dent's place changes" still means
  * something.
  */
 test.use({ bypassCSP: true });
 
 const STORY = (name: string) => `/?fixture=boards&story=boards-25-steel-chair--${name}`;
 
-/**
- * The floor's drawn depth (the most a chair lying flat is lifted above the bottom border), and the highest a chair standing on a narrow face may
- * be drawn with its lowest point above the border (see above). The room the content area keeps is ROOM_HEIGHT, the height of the tallest rest.
- */
-const ROOM = FLOOR_DEPTH;
-const HIGHEST_STANDING = 34;
 /** A pixel's rounding, and the half pixel the plan allows at a border. */
 const ROUND = 1;
 const EDGE = 0.5;
-/** How far above another chair's top a chair's lowest point may be and still be resting on it: both are drawn in one oblique view. */
-const STACK_TOL = 3;
 /** The longest a throw is waited for: a slow runner at 20 fps runs the capped simulation (4 steps a frame) at about two thirds speed. */
 const REST_MS = 10_000;
 
@@ -53,17 +42,21 @@ const SEEDS = {
   'one-dark': [101, 104],
   reduced: [101],
   'short-post': [101],
-  /* One-light with a chair that rests standing on its long narrow face (46 tall): found by running seeds, see the test that uses it. */
-  standing: [45],
-  /* Three dents on one line, found by running seeds 1 to 40 on the widened hit zone (dent.ts `hitZone`): the tight case (this one) has
-     two dents over the line and overlapping each other (their centres 13 px apart at the closest); the spread case (SPREAD_SEED) has the
-     dents' centres 69 px apart at the closest, one of them over the line and shading it. See the two tests. */
+  /* One-light with a chair that stood on its end or its narrow face and was nudged over (see the test that uses it), found by scanning seeds 1 to
+     60 for a chair that stood still above the room for a few tenths of a second and then lay down: seed 59. */
+  nudged: [59],
+  /* Three with a chair lying on another (its top is higher than any chair alone can reach): found by scanning seeds 1 to 60, the tallest rest of
+     them were seed 19's (58 px above the border) and seed 57's (56). */
+  stacked: [19, 57],
+  /* Three dents on one line, found by running seeds 1 to 70 on the widened hit zone (dent.ts `hitZone`) and the rest rule (body.ts: a quiet chair standing up is nudged over), which moves every rest: the tight case (this one) has
+     two dents over the line and overlapping each other (their centers 12 px apart at the closest); the spread case (SPREAD_SEED) has the
+     dents' centers 65 px apart at the closest, two of them over the line and shading it. See the two tests. */
   'short-three': [1],
   three: [101],
   phone: [113],
 } as const;
 /** The short-three layout's second pinned seed: the spread case. */
-const SPREAD_SEED = 36;
+const SPREAD_SEED = 28;
 type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three';
 
 /** The post that wears the card: its content area (the world) and its parts. */
@@ -105,8 +98,8 @@ interface Box { left: number; top: number; right: number; bottom: number }
 interface Measure {
   /** The content area's padding box (inside its borders), in the window. */
   readonly area: Box;
-  /** Each chair's drawn box: the union of its pieces' boxes, in the window, and whether it lies flat (its big face turned to the floor). */
-  readonly chairs: (Box & { flat: boolean })[];
+  /** Each chair's drawn box: the union of its pieces' boxes, in the window. */
+  readonly chairs: Box[];
   /**
    * The room: the `::after` the stylesheet adds to the content area, its computed size, and the gap between the last real child and the
    * content's end.
@@ -124,14 +117,9 @@ const measure = (page: Page): Promise<Measure> => page.evaluate(() => {
   };
   const chairs = [...box.querySelectorAll<HTMLElement>('.dw-chair-group')].map((g) => {
     const rects = [...g.querySelectorAll('.dw-chair-piece')].map((p) => p.getBoundingClientRect());
-    /* The rotation is the last matrix3d of the transform; its third column is the direction the big face looks, and a chair lies flat when
-       that is up or down. */
-    const matrices = [...g.style.transform.matchAll(/matrix3d\(([^)]*)\)/gu)];
-    const m = matrices.at(-1)![1]!.split(',').map(Number);
     return {
       left: Math.min(...rects.map((x) => x.left)), top: Math.min(...rects.map((x) => x.top)),
       right: Math.max(...rects.map((x) => x.right)), bottom: Math.max(...rects.map((x) => x.bottom)),
-      flat: Math.abs(m[9]!) > 0.98,
     };
   });
   const after = getComputedStyle(box, '::after');
@@ -168,33 +156,14 @@ function inside(m: Measure) {
 }
 
 /**
- * Each chair's lowest drawn point is no lower than the border, and every chair is held to a real height: it meets the floor bound (the
- * floor's 28 px for one lying flat, `HIGHEST_STANDING` for one on a narrow face), or it rests on a chair that is itself held. "Rests on" is
- * drawn geometry: the two overlap across, and its lowest point is no higher than the other's top (within `STACK_TOL`), so a chair floating
- * above another's top fails too. Held chairs are found from the floor up, so at least one chair of every overlapping group meets the floor bound.
+ * Each chair's lowest drawn point is no lower than the border, and its top is no higher than the room: ROOM_HEIGHT above the bottom border
+ * (a pixel's rounding allowed), whichever way it rests, on the floor or on another chair.
  */
 function onTheFloor(m: Measure) {
-  const above = (c: Box) => m.area.bottom - c.bottom;
-  const bound = (c: Box & { flat: boolean }) => (c.flat ? ROOM + ROUND : HIGHEST_STANDING + ROUND);
-  for (const c of m.chairs) expect(above(c), `lowest point ${above(c)} px above the bottom border`).toBeGreaterThanOrEqual(-EDGE);
-  const held = new Set<number>();
-  m.chairs.forEach((c, i) => { if (above(c) <= bound(c)) held.add(i); });
-  for (let grew = true; grew;) {
-    grew = false;
-    m.chairs.forEach((c, i) => {
-      if (held.has(i)) return;
-      const rests = [...held].some((j) => {
-        const o = m.chairs[j]!;
-        return o.left < c.right && o.right > c.left && c.bottom >= o.top - STACK_TOL;
-      });
-      if (rests) { held.add(i); grew = true; }
-    });
+  for (const [i, c] of m.chairs.entries()) {
+    expect(m.area.bottom - c.bottom, `chair ${i}: lowest point above the bottom border`).toBeGreaterThanOrEqual(-EDGE);
+    expect(m.area.bottom - c.top, `chair ${i}: top above the bottom border, the room being ${ROOM_HEIGHT}`).toBeLessThanOrEqual(ROOM_HEIGHT + ROUND);
   }
-  m.chairs.forEach((c, i) => {
-    expect(
-      held.has(i), `chair ${i} (flat: ${c.flat}) is ${above(c)} px above the bottom border, over the bound ${bound(c)}, and rests on no held chair`,
-    ).toBe(true);
-  });
 }
 
 /**
@@ -208,7 +177,7 @@ function roomIsLast(m: Measure) {
 }
 
 /**
- * No word is under a chair: each chair's whole drawn box, whichever way it rests (flat, on a narrow face, on its end), covers no line of words.
+ * No word is under a chair: each chair's whole drawn box covers no line of words.
  * The room is the height of the tallest rest (chair.ts ROOM_HEIGHT), so the words end above the tallest chair's top.
  */
 function noWordsUnderChairs(m: Measure) {
@@ -393,7 +362,7 @@ test('short-post: the host is as tall as its words, the content area holds the r
   expect(rows.hostStrip, 'the strip in the host is hidden inside a content area').toBe(0);
   /* The words wrapper is as wide as the content area but the text is one short line: the dent is over the text and not beside it. */
   expect(rows.text.right - rows.text.left, 'the text is narrower than its wrapper').toBeLessThan(rows.wordsWidth / 2);
-  /* The throw aims at a box grown around the short line (dent.ts `hitZone`): the dent's centre may be up to a dent's diameter beside the line
+  /* The throw aims at a box grown around the short line (dent.ts `hitZone`): the dent's center may be up to a dent's diameter beside the line
      (so the dent may lie wholly next to it) or below it, and not above its top by more than a radius. */
   const reach = `dent ${JSON.stringify(rows.dent)} against the text ${JSON.stringify(rows.text)}`;
   const dw = rows.dent.right - rows.dent.left, dh = rows.dent.bottom - rows.dent.top;
@@ -492,34 +461,87 @@ test('short-post: the filter\'s region covers the wrapper and its displacement, 
   expect(shipped, `ink with the shipped region against a region 100 px larger: ${inks}`).toBeGreaterThanOrEqual(larger * 0.99);
 });
 
-/**
- * A chair that rests standing on its long narrow face (46 tall, the seed is pinned to one) stands higher than the room under flat chairs: the
- * room is the height of the tallest rest, so such a chair's whole drawn box covers no line of words (the post is one whose words reach the end of
- * the content) and does not touch the reactions row. The row is found, and the chair is checked to really be standing, so this cannot pass by
- * measuring nothing.
- */
-test('one-light: a chair standing on its narrow face covers no words and does not reach the reactions row', async ({ page }) => {
-  await open(page, 'one-light', undefined, SEEDS.standing);
-  await atRest(page, 1);
-  const m = await measure(page);
-  const standing = await chairs(page).first().evaluate((g) => {
-    const mat = [...g.style.transform.matchAll(/matrix3d\(([^)]*)\)/gu)].at(-1)![1]!.split(',').map(Number);
-    /* The first column of the rotation is where the chair's width points: straight up or down when it stands on its long narrow face. */
-    return Math.abs(mat[1]!);
-  });
-  expect(standing, 'the chair stands on its long narrow face (its width points up)').toBeGreaterThan(0.95);
+/** The row's band, as the page lays it out: its own height across the whole content area (a chair reaching its height anywhere is in its way). */
+async function reactionsRow(page: Page, m: Measure) {
   const row = await area(page).locator('.kb-reactions').first().evaluate((el, m) => {
     const r = el.getBoundingClientRect();
-    /* The row's band: its own height across the whole content area (the row is only as wide as its tiles, but a chair reaching its height anywhere is in its way). */
     return { left: m.area.left, top: r.top, right: m.area.right, bottom: r.bottom, height: r.height };
   }, m);
   expect(row.height, 'the reactions row (the + React tile and the others, full width) was found').toBeGreaterThan(0);
+  return row;
+}
+
+/** Every chair's whole drawn box covers no line of words and does not meet the reactions row, and its top is under the room. */
+async function clearOfWordsAndRow(page: Page, m: Measure) {
+  const row = await reactionsRow(page, m);
   noWordsUnderChairs(m);
   for (const c of m.chairs) {
     const touches = c.left < row.right && c.right > row.left && c.top < row.bottom && c.bottom > row.top;
     expect(touches, `the chair's box ${JSON.stringify(c)} against the reactions row ${JSON.stringify(row)}`).toBe(false);
   }
+  onTheFloor(m);
   inside(m);
+}
+
+/**
+ * The highest a chair lying flat on the floor can reach alone, px above the border: its 8 px thickness and, at the very back of the floor with
+ * its long side along z, the oblique view's lift of its far end (chair.ts: K for each px of depth) and the INSET the border lies below the
+ * world. A chair drawn higher than this is on another chair (or leaning on one).
+ */
+const FLAT_ALONE = INSET + 2 * HALF[2] + K * (Z_FRONT + DEPTH + GIVE + HALF[1]);
+
+/**
+ * A seed pins the throws, not the exact rest: the world steps by the real time between frames (and the three chairs of a run land by the
+ * clock), so the same seed lies a little differently from one run to the next on a slow or a fast runner. So the two tests below ask for a
+ * pose that these seeds usually make, give it a few tries (a fresh page each), and check the rest of every try they make, whatever it is.
+ */
+const TRIES = 4;
+
+/**
+ * A chair that comes to rest on another is the tallest rest the game keeps (body.ts REST_RISE). With the pinned seeds (found by scanning, in
+ * which one does: its top is higher than a chair lying alone can reach, FLAT_ALONE), every chair's whole drawn box, in every try, covers no
+ * line of words, does not meet the reactions row, and has its top under the room; and some try has a chair on another, so this cannot pass by
+ * measuring nothing. The row is found in every try.
+ */
+test('three: a chair that rests on another covers no words, does not reach the reactions row, and is under the room', async ({ page }) => {
+  test.setTimeout(120_000);
+  let stacked = false;
+  for (let i = 0; i < TRIES && !stacked; i++) {
+    await open(page, 'three', undefined, [SEEDS.stacked[i % SEEDS.stacked.length]!]);
+    await atRest(page, 3);
+    const m = await measure(page);
+    await clearOfWordsAndRow(page, m);
+    stacked = Math.max(...m.chairs.map((c) => m.area.bottom - c.top)) > FLAT_ALONE;
+  }
+  expect(stacked, `in ${TRIES} tries a chair came to rest on another, its top higher than a chair lying alone reaches (${FLAT_ALONE})`).toBe(true);
+});
+
+/**
+ * A chair that stands on its end or its narrow face is not let sleep: it teeters and falls over (body.ts nudge), and ends lying low inside the
+ * room. The pinned seeds are ones whose chair stood still above the room for several samples (0.1 s apart) before it fell; the test watches for
+ * that, in some try, so it cannot pass on a run that never stood, and checks the rest of every try as above.
+ */
+test('one-light: a chair that stands up falls over, and ends lying inside the room, clear of the words and the reactions row', async ({ page }) => {
+  test.setTimeout(120_000);
+  let stood = false;
+  for (let i = 0; i < TRIES && !stood; i++) {
+    await open(page, 'one-light', undefined, [SEEDS.nudged[i % SEEDS.nudged.length]!]);
+    let still = 0, last = NaN;
+    for (let j = 0; j < 160; j++) {
+      const m = await measure(page);
+      const c = m.chairs[0];
+      if (c) {
+        const top = m.area.bottom - c.top;
+        if (Math.abs(top - last) < 0.5 && top > ROOM_HEIGHT) { if (++still >= 4) stood = true; } else still = 0;
+        last = top;
+      }
+      if (await chairs(page).evaluateAll((gs) => gs.length === 1 && gs.every((g) => g.hasAttribute('data-rest')))) break;
+      await page.waitForTimeout(100);
+    }
+    await atRest(page, 1);
+    await clearOfWordsAndRow(page, await measure(page));
+  }
+  expect(stood, `in ${TRIES} tries the chair stood still above the room for 0.4 s before it fell`).toBe(true);
 });
 
 /** Opens a clip of the page as RGBA pixels (the screenshot is decoded in the page, which has a canvas). */
@@ -566,9 +588,9 @@ async function shading(page: Page) {
   });
 }
 type Dent = Awaited<ReturnType<typeof shading>>['dents'][number];
-const centre = (d: Dent) => ({ x: d.left + d.width / 2, y: d.top + d.height / 2 });
+const center = (d: Dent) => ({ x: d.left + d.width / 2, y: d.top + d.height / 2 });
 /** How far the ellipses overlap, by the mean radii: negative where the footprints are apart (a test of its own: the effect's rule is in dent.ts). */
-const gap = (a: Dent, b: Dent) => Math.hypot(centre(a).x - centre(b).x, centre(a).y - centre(b).y) - ((a.width + a.height) / 4 + (b.width + b.height) / 4);
+const gap = (a: Dent, b: Dent) => Math.hypot(center(a).x - center(b).x, center(a).y - center(b).y) - ((a.width + a.height) / 4 + (b.width + b.height) / 4);
 
 /** The shaded picture of a clip, and the same clip with the dents' layer hidden (the chairs are hidden in both: the line is what is measured). */
 async function pair(page: Page, clip: { x: number; y: number; width: number; height: number }) {
@@ -612,7 +634,7 @@ function deepest(p: { shaded: { px: number[] }; bare: { px: number[] } }): numbe
 
 /**
  * The hard case: one line of words with three dents on it, run on two pinned throws. The tight one has two dents over the line and
- * overlapping each other; the spread one has the dents' centres far apart (the hit zone is wide on a short post, so the dents land beside
+ * overlapping each other; the spread one has the dents' centers far apart (the hit zone is wide on a short post, so the dents land beside
  * and below the line as well as on it) with at least one over the line, so the line still has shading to be read through. What is held in
  * both: (i) a dent that overlaps another draws no creases (a lone one does), (ii) the shading over the line is capped at what one lone dent
  * gives at its darkest (measured in the same test, from the one-dent story), however many overlap, (iii) the glyphs keep a contrast of
@@ -620,6 +642,9 @@ function deepest(p: { shaded: { px: number[] }; bare: { px: number[] } }): numbe
  * allow. A tolerance of 6 levels of 255 is allowed on the cap, for the gradient's and the screenshot's rounding.
  */
 async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'spread') {
+  /* Three full runs of the page in one test (the three-dent line, the one-dent story, the three-dent line again), each waiting for its chairs to
+     sleep, so the default 30 s is not enough on a busy runner. */
+  test.setTimeout(90_000);
   await open(page, 'short-three', undefined, [seed]);
   await atRest(page, 3);
   await page.evaluate(() => document.fonts.ready);
@@ -627,14 +652,14 @@ async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'sprea
   expect(s.dents).toHaveLength(3);
   const overlapping = s.dents.map((d, i) => s.dents.some((o, j) => j !== i && gap(d, o) < -8));
   const alone = s.dents.map((d, i) => s.dents.every((o, j) => j === i || gap(d, o) > 8));
-  const closest = Math.min(...s.dents.flatMap((d, i) => s.dents.slice(i + 1).map((o) => Math.hypot(centre(d).x - centre(o).x, centre(d).y - centre(o).y))));
+  const closest = Math.min(...s.dents.flatMap((d, i) => s.dents.slice(i + 1).map((o) => Math.hypot(center(d).x - center(o).x, center(d).y - center(o).y))));
   const overText = s.dents.map((d) => d.left < s.text.right && d.left + d.width > s.text.left && d.top < s.text.bottom && d.top + d.height > s.text.top);
-  test.info().annotations.push({ type: kind, description: `closest two dent centres ${closest.toFixed(0)} px apart, ${overText.filter(Boolean).length} over the line` });
+  test.info().annotations.push({ type: kind, description: `closest two dent centers ${closest.toFixed(0)} px apart, ${overText.filter(Boolean).length} over the line` });
   if (kind === 'tight') {
     expect(overlapping.filter(Boolean).length, 'the tight seed has at least two dents overlapping').toBeGreaterThanOrEqual(2);
     expect(overText.filter(Boolean).length, 'the tight seed has at least two dents over the line').toBeGreaterThanOrEqual(2);
   } else {
-    expect(closest, 'the spread seed keeps every pair of dent centres well apart').toBeGreaterThanOrEqual(60);
+    expect(closest, 'the spread seed keeps every pair of dent centers well apart').toBeGreaterThanOrEqual(60);
     expect(overText.filter(Boolean).length, 'the spread seed still has a dent over the line').toBeGreaterThanOrEqual(1);
   }
   s.dents.forEach((d, i) => {
@@ -782,6 +807,45 @@ for (const name of ['one-light', 'one-dark', 'reduced'] as const) {
     expect(await pageViolations(page)).toEqual([]);
   });
 }
+
+/**
+ * On the dark theme the dent still shows: the shade's gray (multiplied) darkens the post's own color and the light's gray (screened) lifts it. On
+ * the post's color (#262626, 38 of 255) the shade at its darkest (gray 128) leaves about 19, so is 19 levels darker, and the light at its
+ * brightest (gray 71) lifts it by about 60. One clipped pair of pictures at each of the two points, with and without the two layers (the chairs
+ * hidden in both), compared on the pixels that are plain post color (no glyph) in the bare picture; the margins are about half of that.
+ */
+test('one-dark: the dent shows on the dark theme: the pixels under its light are lighter than the post color, and under its shade darker', async ({ page }) => {
+  await open(page, 'one-dark');
+  await atRest(page, 1);
+  await page.evaluate(() => document.fonts.ready);
+  const at = await area(page).evaluate((box) => {
+    const point = (sel: string, vx: string, vy: string) => {
+      const el = box.querySelector<HTMLElement>(sel)!;
+      const r = el.getBoundingClientRect();
+      return { x: r.left + (parseFloat(el.style.getPropertyValue(vx)) / 100) * r.width, y: r.top + (parseFloat(el.style.getPropertyValue(vy)) / 100) * r.height };
+    };
+    return { light: point('.dw-chair-glow', '--glow-x', '--glow-y'), shade: point('.dw-chair-dent', '--dark-x', '--dark-y') };
+  });
+  const clip = (p: { x: number; y: number }) => ({ x: Math.floor(p.x) - 3, y: Math.floor(p.y) - 3, width: 7, height: 7 });
+  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-layer')) el.style.visibility = 'hidden'; });
+  const change = async (p: { x: number; y: number }) => {
+    const shaded = await pixelsOf(page, clip(p));
+    await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = 'hidden'; });
+    const bare = await pixelsOf(page, clip(p));
+    await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = ''; });
+    /* Only the pixels that are the post's own background in the bare picture, as the darkness checks below do. */
+    const bg = plain(bare.px);
+    const diffs: number[] = [];
+    for (let i = 0; i < bare.px.length; i += 4) if (bg[i / 4]) diffs.push(luma(shaded.px, i) - luma(bare.px, i));
+    expect(diffs.length, 'plain post-colored pixels in the clip').toBeGreaterThan(10);
+    return diffs.reduce((a, b) => a + b, 0) / diffs.length;
+  };
+  const lifted = await change(at.light);
+  const lowered = await change(at.shade);
+  test.info().annotations.push({ type: 'dark', description: `light ${lifted.toFixed(0)}, shade ${lowered.toFixed(0)} levels of 255` });
+  expect(lifted, 'under the light the post is lighter, levels of 255').toBeGreaterThanOrEqual(30);
+  expect(lowered, 'under the shade the post is darker, levels of 255').toBeLessThanOrEqual(-10);
+});
 
 test.describe('at a phone\'s width', () => {
   test.use({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true });

@@ -1,4 +1,4 @@
-import { rng } from './body.ts';
+import { rng, THROW_INSET_X, THROW_INSET_Y, THROW_SPAN_X, THROW_SPAN_Y } from './body.ts';
 
 /**
  * Steel Chair's dent (docs/plans/2026-11-15-steel-chair-plan.md, Task 4): the displacement map an SVG filter bends the words with, and the
@@ -14,14 +14,14 @@ import { rng } from './body.ts';
  */
 export const DENT_SCALE = 14;
 /*
- * 14, and not the plan's 26 or the 18 an earlier build shipped: the plan's own review focus says the scale comes down if a dent makes a line unreadable, and it did. A dent is
- * 160 px across and squeezes the words at its middle by 1 / (1 + scale·0.0196) (66% at 26, 74% at 18), and stretches them at its rim; seen in a
- * browser at 26 the one-line post's second word was a smear, and where two dents overlap their squeezes add. At 18 every word of the long post
- * reads at desktop and phone width, with one dent and with three overlapping, and the one-line post reads with one dent.
- * Dents are now smaller (a dent's larger axis is its base, its smaller within 26% of it; an average dent is 87% of the old 160 px), and a smaller
- * dent at the same scale bends its words more steeply, by the ratio of the sizes, so the scale came down by the same: 18 / 1.23 is about 14.6,
- * taken as 14. The owner asked that the one-line post's three dents leave the line readable; the dents still read as dents on the long post,
- * where the shading and the bend of a ring of words around each are plain at 14 (e2e/steel-chair.spec.ts).
+ * 14, and not the plan's 26 or the 18 an earlier build shipped: the plan's own review focus says the scale comes down if a dent makes a line
+ * unreadable, and it did. A dent is 160 px across and squeezes the words at its middle by 1 / (1 + scale·0.0196) (66% at 26, 74% at 18), and
+ * stretches them at its rim; seen in a browser at 26 the one-line post's second word was a smear, and where two dents overlap their squeezes
+ * add. At 18 every word of the long post reads at desktop and phone width, with one dent and with three overlapping, and the one-line post
+ * reads with one dent. Dents are now smaller (a dent's larger axis is its base, its smaller within 26% of it; an average dent is 87% of the
+ * old 160 px), and a smaller dent at the same scale bends its words more steeply, by the ratio of the sizes, so the scale came down by the
+ * same: 18 / 1.23 is about 14.6, taken as 14. The owner asked that the one-line post's three dents leave the line readable; the dents still
+ * read as dents on the long post, where the shading and the bend of a ring of words around each are plain at 14 (e2e/steel-chair.spec.ts).
  */
 
 /**
@@ -127,10 +127,16 @@ export function dentShape(playId: string): DentShape {
   return { rx, ry, turn, outline: [point(), point(), point(), point()] };
 }
 
+/** One dent's `feImage`, and the box of its shading: its top left corner, its width and height, and the larger of the two, in the box's px. */
+export interface DentBox { x: number; y: number; width: number; height: number }
+export interface DentPrimitive extends DentBox { size: number }
+
 /**
  * Two dents' footprints intersect: the ellipses, each centered in its box (`x`, `y` its top left corner, with its width and height), are
  * closer than the sum of their radii along the line between the centers. Exact for circles; for ellipses a close approximation, which is
- * enough to decide whether the creases are drawn.
+ * enough to decide whether the creases are drawn. It compares the two reaches along the line of the centers, so for two ellipses of different
+ * orientation it can also MISS a graze of the rims alone (each ellipse's rim bulges off that line). That is accepted: the rim is the faintest part
+ * of a dent, and the creases, short of it, do not reach that far, so a graze there shows nothing the creases could cross.
  */
 export function dentsOverlap(a: DentBox, b: DentBox): boolean {
   const ax = a.x + a.width / 2, ay = a.y + a.height / 2, bx = b.x + b.width / 2, by = b.y + b.height / 2;
@@ -144,10 +150,6 @@ export function dentsOverlap(a: DentBox, b: DentBox): boolean {
   };
   return dist < reach(a) + reach(b);
 }
-
-/** One dent's `feImage`, and the box of its shading: its top left corner, its width and height, and the larger of the two, in the box's px. */
-export interface DentBox { x: number; y: number; width: number; height: number }
-export interface DentPrimitive extends DentBox { size: number }
 
 /**
  * Each dent's `feImage` numbers, in order. A dent's larger axis is at most 160 px and at most 60% of the box (a narrow post would otherwise
@@ -167,9 +169,9 @@ export function dentPrimitives(dents: readonly { x: number; y: number; shape?: D
 
 /* ---------- the hit zone of a short post ---------- */
 
-/** Where throwOf (body.ts) lets a throw's target fall in the box it is given: this fraction of the way across, and down. */
-export const THROW_X = [0.15, 0.85] as const;
-export const THROW_Y = [0.15, 0.6] as const;
+/** Where throwOf (body.ts) lets a throw's target fall in the box it is given: this fraction of the way across, and down (body.ts's inset and span). */
+export const THROW_X = [THROW_INSET_X, THROW_INSET_X + THROW_SPAN_X] as const;
+export const THROW_Y = [THROW_INSET_Y, THROW_INSET_Y + THROW_SPAN_Y] as const;
 
 /**
  * The box to hand `throwOf` for a dent of `dent`'s size, from the box the text takes (`text`, in the content area's px) in an area of `area`
@@ -182,20 +184,23 @@ export const THROW_Y = [0.15, 0.6] as const;
  * The floor's room at the content area's foot is not kept clear: in a short post's area (a line or two of words plus the room) a dent whose
  * circle fits the area has its center at or below the room's top edge by construction, so keeping out of it would collapse the zone to a
  * line; a chair that comes to rest on a dent is the game's own picture.
- * `throwOf` takes a target 15% to
- * 85% across and 15% to 60% down the box it gets, so the box is sized and placed so that this range is exactly the zone of centers wanted.
+ * `throwOf` takes a target 15% to 85% across and 15% to 60% down the box it gets (body.ts `THROW_INSET_X` and the rest), so the box is sized
+ * and placed so that this range is exactly the zone of centers wanted.
  */
-export function hitZone(text: DentBox | { left: number; top: number; width: number; height: number }, area: { width: number; height: number }, dent: { width: number; height: number }): { left: number; top: number; width: number; height: number } {
-  const t = 'left' in text ? text : { left: text.x, top: text.y, width: text.width, height: text.height };
+export function hitZone(
+  text: { left: number; top: number; width: number; height: number },
+  area: { width: number; height: number },
+  dent: { width: number; height: number },
+): { left: number; top: number; width: number; height: number } {
   const diameter = Math.max(dent.width, dent.height);
-  if (t.height >= diameter) return t;
+  if (text.height >= diameter) return text;
   const span = (lo: number, hi: number, radius: number, extent: number): [number, number] => {
     if (extent <= 2 * radius) return [extent / 2, extent / 2];
     const clamp = (v: number) => Math.min(extent - radius, Math.max(radius, v));
     return [clamp(lo), clamp(hi)];
   };
-  const [x0, x1] = span(t.left - dent.width, t.left + t.width + dent.width, dent.width / 2, area.width);
-  const [y0, y1] = span(t.top - dent.height / 2, t.top + t.height + dent.height, dent.height / 2, area.height);
+  const [x0, x1] = span(text.left - dent.width, text.left + text.width + dent.width, dent.width / 2, area.width);
+  const [y0, y1] = span(text.top - dent.height / 2, text.top + text.height + dent.height, dent.height / 2, area.height);
   const width = (x1 - x0) / (THROW_X[1] - THROW_X[0]), height = (y1 - y0) / (THROW_Y[1] - THROW_Y[0]);
   return { left: x0 - THROW_X[0] * width, top: y0 - THROW_Y[0] * height, width, height };
 }

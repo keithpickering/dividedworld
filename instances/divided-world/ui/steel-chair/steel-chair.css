@@ -30,7 +30,7 @@
 }
 
 /*
- * The floor's room: 126 px (chair.ts `ROOM_HEIGHT`, held equal by Effect.test.tsx: CSS cannot read it) above the content area's bottom border
+ * The floor's room: 77 px (chair.ts `ROOM_HEIGHT`, held equal by Effect.test.tsx: CSS cannot read it) above the content area's bottom border
  * where chairs come to rest, the height of the tallest rest (a chair standing on its 46 by 8 end, 90 tall, drawn lifted by the oblique floor),
  * so a resting chair reaches neither the reactions row nor the words. After the effect's host,
  * inside `.kb-act-main`, come the edited note, the reactions row, the signature and the spun line, so a strip right under the words would be
@@ -46,16 +46,17 @@
   .kb-act-main:has(.dw-chair)::after {
     content: '';
     display: block;
-    height: 126px;
+    height: 77px;
     pointer-events: none;
   }
   .kb-act-main .dw-chair-room {
     display: none;
   }
 }
-/* Where there is no content area (a moment or a preview outside a thread; the world is the host's own box), or `:has()` is not understood, the room is a strip in the host. */
+/* Where there is no content area (a moment or a preview outside a thread; the world is the host's own box), or `:has()` is not understood,
+   the room is a strip in the host. */
 .dw-chair-room {
-  height: 126px;
+  height: 77px;
   pointer-events: none;
 }
 
@@ -113,27 +114,37 @@
  * Each dent is an ellipse (its box is the displacement's `feImage` box, within 15% of round) with an uneven edge, and its light, shade and
  * creases turn by an angle from its play's id (dent.ts `dentShape`): the effect sets `--dark-x`, `--dark-y`, `--glow-x`, `--glow-y` and the
  * border radius. The shade's gray is 128 at its darkest, as the old black at 50% was, and the light's 71, as white at 28% was.
- * Where `mix-blend-mode` is not understood the layers draw as plain opaque discs; every current browser understands it. Under `forced-colors`
- * all three are hidden, below.
+ * Where `mix-blend-mode` is not understood the blended look is not applied (`@supports`) and the discs are faint translucent shading instead,
+ * never opaque; every current browser understands it. Under `forced-colors` all three are hidden, below.
  */
-.dw-chair-dents {
-  mix-blend-mode: multiply;
-}
-.dw-chair-glows {
-  mix-blend-mode: screen;
-}
 .dw-chair-dent,
 .dw-chair-glow {
   position: absolute;
   pointer-events: none;
 }
+/* Without `mix-blend-mode` (an old browser) the discs below, which are opaque, would cover the words; so outside the `@supports` block each
+   is a faint translucent shading like the one before the blend: black fading from 50% alpha for the shade, white from 28% for the light. */
 .dw-chair-dent {
-  mix-blend-mode: darken;
-  background: radial-gradient(circle at var(--dark-x, 32%) var(--dark-y, 32%), rgb(128, 128, 128) 0%, rgb(199, 199, 199) 45%, rgb(255, 255, 255) 72%);
+  background: radial-gradient(circle at var(--dark-x, 32%) var(--dark-y, 32%), rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.22) 45%, rgba(0, 0, 0, 0) 72%);
 }
 .dw-chair-glow {
-  mix-blend-mode: lighten;
-  background: radial-gradient(circle at var(--glow-x, 70%) var(--glow-y, 70%), rgb(71, 71, 71) 0%, rgb(0, 0, 0) 45%);
+  background: radial-gradient(circle at var(--glow-x, 70%) var(--glow-y, 70%), rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0) 45%);
+}
+@supports (mix-blend-mode: multiply) {
+  .dw-chair-dents {
+    mix-blend-mode: multiply;
+  }
+  .dw-chair-glows {
+    mix-blend-mode: screen;
+  }
+  .dw-chair-dent {
+    mix-blend-mode: darken;
+    background: radial-gradient(circle at var(--dark-x, 32%) var(--dark-y, 32%), rgb(128, 128, 128) 0%, rgb(199, 199, 199) 45%, rgb(255, 255, 255) 72%);
+  }
+  .dw-chair-glow {
+    mix-blend-mode: lighten;
+    background: radial-gradient(circle at var(--glow-x, 70%) var(--glow-y, 70%), rgb(71, 71, 71) 0%, rgb(0, 0, 0) 45%);
+  }
 }
 /* A lone dent's two creases, as a folded sheet of metal takes: the wrapper is the dent's box, turned about its middle by the dent's own angle. */
 .dw-chair-creases {

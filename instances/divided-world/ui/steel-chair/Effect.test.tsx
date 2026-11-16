@@ -17,9 +17,9 @@ import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
-import { bodies, DEPTH, HALF } from './body.ts';
-import { depthOf, FLOOR_DEPTH, GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from './chair.ts';
-import { DENT_SCALE, dentShape, dentsOverlap } from './dent.ts';
+import { bodies, cornersOf, DEPTH, HALF } from './body.ts';
+import { depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from './chair.ts';
+import { DENT_SCALE, dentShape } from './dent.ts';
 import { SteelChairEffect } from './Effect.tsx';
 
 const hub = vi.hoisted(() => ({
@@ -135,6 +135,10 @@ const rulesOf = (source: string, selector: string) => [...source.matchAll(/([^{}
 const ruleOf = (selector: string) => rulesOf(guarded.rest, selector);
 /** The rules that only apply where `:has()` does. */
 const ruleWithHas = (selector: string) => rulesOf(guarded.inner ?? '', selector);
+/** The blended look lives in its own `@supports (mix-blend-mode: ...)` block; what is outside it is what a browser without blending draws. */
+const blended = atRule(guarded.rest, '@supports (mix-blend-mode: multiply)');
+const blendRule = (selector: string) => rulesOf(blended.inner ?? '', selector);
+const plainRule = (selector: string) => rulesOf(blended.rest, selector);
 
 const rect = (left: number, top: number, width: number, height: number) => ({ x: left, y: top, left, top, right: left + width, bottom: top + height, width, height, toJSON: () => ({}) });
 const areaHeight = (el: Element) => size.h + (roomAdds && el.querySelector('.dw-chair') ? ROOM_HEIGHT : 0);
@@ -187,6 +191,8 @@ function expectOnFloor(group: HTMLElement, floor: number): void {
  */
 /** A seed for which sc1 and sc3 lie on the floor and not on sc2 (seed 4, for one, lands a chair on sc2: it falls when sc2 goes). */
 const PINNED_SEED = 2;
+/** A seed that puts sc1 and sc3's dents about 35 px apart (overlapping) and sc2's more than 136 px from both (seed 23, found by hand). */
+const SEED_TWO_AND_ONE = 23;
 let seeds = 0;
 /** The seed the nth unpinned run gets. */
 const seedAt = (n: number) => Math.imul(n, 2654435761) >>> 0;
@@ -409,7 +415,8 @@ describe('the layers and the world fill the content area', () => {
 
   /* The words' wrapper is as wide as the content area, so on a one-line post a throw aimed at its box lands right of the text and bends nothing.
      The aim is the box the text really takes: the union of the client rects of a Range over the words (stubbed: jsdom has none). Where that box
-     is shorter than a dent it is grown (dent.ts `hitZone`, and its own tests): the dent's center may be a dent's width beside the text, or below it, so the dent may land off the text. */
+     is shorter than a dent it is grown (dent.ts `hitZone`, and its own tests): the dent's center may be a dent's width beside the text, or
+     below it, so the dent may land off the text. */
   test("the throw aims at the box the text really occupies, not the words wrapper's: the dent's center is within a dent's reach of it, inside the content area", () => {
     textRects = [{ left: 40, top: 30, width: 60, height: 18 }, { left: 40, top: 48, width: 30, height: 18 }];
     for (let k = 0; k < 6; k++) {
@@ -577,22 +584,18 @@ describe('a dent: its own shape and turn, its creases, and how its shading combi
   });
 
   test('a dent that overlaps another draws no creases, and a lone dent draws its two', () => {
-    /* A seed in which, of three dents, some overlap and one stands alone, found among the first few: the check is then made on both kinds. */
-    let seen = { overlapping: 0, alone: 0 };
-    for (let seed = 1; seed <= 40 && (seen.overlapping === 0 || seen.alone === 0); seed++) {
-      pin(seed);
-      const w = mount({ plays: [play(1), play(2), play(3)] });
-      run();
-      const boxes = dents().map((d) => ({ play: d.dataset.play!, box: dentBox(d) }));
-      for (const a of boxes) {
-        const over = boxes.some((b) => b !== a && dentsOverlap(a.box, b.box));
-        expect(creasesOf(a.play), `play ${a.play} (overlapping: ${over}) in seed ${seed}`).toBe(over ? 0 : 1);
-        if (over) seen.overlapping++; else seen.alone++;
-      }
-      w.unmount();
-    }
-    expect(seen.overlapping, 'a seed with overlapping dents was found').toBeGreaterThan(0);
-    expect(seen.alone, 'a seed with a lone dent was found').toBeGreaterThan(0);
+    /* Fixed places, found by hand: with this seed the run puts sc1 and sc3 close together and sc2 far from both, and the test states that
+       geometry itself (the gaps between centers) before it looks at the creases, so what is expected does not come from `dentsOverlap`, the
+       unit under test. In this 300 px area a dent is at most 136 px across (a reach of 68) and at least about 100 (50): two centers closer than
+       100 px apart must overlap, and two farther than 136 cannot. */
+    pin(SEED_TWO_AND_ONE);
+    mount({ plays: [play(1), play(2), play(3)] });
+    run();
+    const at = (id: string) => { const b = dentBox(dents().find((d) => d.dataset.play === id)!); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+    const gap = (a: string, b: string) => Math.hypot(at(a).x - at(b).x, at(a).y - at(b).y);
+    expect(gap('sc1', 'sc3'), 'sc1 and sc3 plainly overlap').toBeLessThan(100);
+    expect(Math.min(gap('sc1', 'sc2'), gap('sc2', 'sc3')), `sc2 is plainly alone: ${gap('sc1', 'sc2')}, ${gap('sc2', 'sc3')}`).toBeGreaterThan(136);
+    expect([creasesOf('sc1'), creasesOf('sc2'), creasesOf('sc3')]).toEqual([0, 1, 0]);
   });
 
   test('one dent alone keeps its creases, turned by its own angle', () => {
@@ -604,15 +607,24 @@ describe('a dent: its own shape and turn, its creases, and how its shading combi
   });
 
   test('the shading is three layers with their own blends: shade multiplied (dents darkened against each other), light screened (lightened), creases plain, all hidden in forced colors', () => {
-    const blend = (selector: string) => /mix-blend-mode:\s*([a-z-]+)/u.exec(ruleOf(selector))?.[1];
+    const blend = (selector: string) => /mix-blend-mode:\s*([a-z-]+)/u.exec(blendRule(selector))?.[1];
     expect(blend('.dw-chair-dents')).toBe('multiply');
     expect(blend('.dw-chair-dent')).toBe('darken');
     expect(blend('.dw-chair-glows')).toBe('screen');
     expect(blend('.dw-chair-glow')).toBe('lighten');
     expect(blend('.dw-chair-creases')).toBeUndefined();
     /* The shade's gray at its darkest is one dent's worth (128, as black at 50% was); nothing in it is darker, so overlap cannot be. */
-    expect(ruleOf('.dw-chair-dent')).toMatch(/rgb\(128, 128, 128\) 0%/u);
-    expect(ruleOf('.dw-chair-dent')).not.toMatch(/rgba\(/u);
+    expect(blendRule('.dw-chair-dent')).toMatch(/rgb\(128, 128, 128\) 0%/u);
+    expect(blendRule('.dw-chair-dent')).not.toMatch(/rgba\(/u);
+    /* Outside the block (a browser that cannot blend) no blend is set and no disc is opaque: the opaque gray and black discs would cover the words. */
+    for (const [sel, most] of [['.dw-chair-dent', 0.5], ['.dw-chair-glow', 0.28]] as const) {
+      const css = plainRule(sel);
+      expect(css, sel).not.toMatch(/mix-blend-mode/u);
+      expect(css, sel).not.toMatch(/rgb\(/u);
+      const alphas = [...css.matchAll(/rgba\([^)]*,\s*([0-9.]+)\)/gu)].map((m) => Number(m[1]));
+      expect(alphas.length, sel).toBeGreaterThan(1);
+      expect(Math.max(...alphas), sel).toBeLessThanOrEqual(most);
+    }
     expect(sheet).toMatch(/forced-colors: active\)\s*\{\s*\.dw-chair-shading,\s*\.dw-chair-layer\s*\{\s*display: none/u);
     mount();
     run();
@@ -832,6 +844,25 @@ describe('reduced motion', () => {
     expect(document.querySelector('[data-shake]')).toBeNull();
     expect(hub.sound.play).not.toHaveBeenCalled();
     expect(requested).toBe(0);
+  });
+
+  test('every chair it draws at once lies low: its top is no higher than the room above the content area bottom border', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    for (let seed = 1; seed <= 12; seed++) {
+      pin(seed);
+      const w = mount({ plays: [play(1), play(2), play(3)] });
+      see(true); aim(true);
+      expect(groups(), `seed ${seed}`).toHaveLength(3);
+      /* The world the effect simulates: INSET in from the sides, its floor INSET above the content area's bottom border. */
+      const areaHeight = hub.world!.floorY + INSET;
+      for (const b of bodies(hub.world!)) {
+        expect(b.asleep, `seed ${seed}`).toBe(true);
+        const center = { x: b.position.x + INSET, y: b.position.y, z: b.position.z };
+        const top = Math.min(...cornersOf(b).map((c) => drawn([c[0] + INSET, c[1], c[2]], center).y));
+        expect(areaHeight - top, `seed ${seed}: a chair's top is ${areaHeight - top} above the border, the room ${ROOM_HEIGHT}`).toBeLessThanOrEqual(ROOM_HEIGHT);
+      }
+      w.unmount();
+    }
   });
 
   test('it still differs from run to run', () => {

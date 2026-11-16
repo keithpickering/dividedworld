@@ -27,7 +27,10 @@
  * and has to be lifted back (a lift is energy from nowhere, and was what kept chairs resting on one another awake). Two chairs that
  * overlap anyway (one landing where another lies) are separated along the axis of least overlap of the two boxes.
  *
- * Sleep: a body slower than 6 px/s and 12 degrees a second for 0.4 s sleeps and becomes a static obstacle. A body moving into a
+ * Sleep: a body slower than 6 px/s and 12 degrees a second for 0.4 s sleeps and becomes a static obstacle, but only while it lies low: no
+ * corner higher above the floor than REST_RISE. One that goes quiet higher (standing on its end, leaning on a wall) is nudged and falls over
+ * (nudge(): a seeded kick of its spin about its lowest edge, never a turn of its orientation, which still changes only by integrating the
+ * spin), and so stays awake until it lies down. A body moving into a
  * sleeper faster than 200 px/s at a contact wakes it with the equal and opposite impulse, whether that contact is met before the move
  * (a chair stopped on arrival) or after it (one that overlapped anyway). Two awake chairs also push each other
  * apart (the plan names sleepers as the obstacles; two chairs falling together must not pass through each other either).
@@ -90,6 +93,10 @@ export interface BodyView {
   omegaPeak: number;
   /** Kinetic (linear and rotational) plus g times height above the floor plus the glass spring's, with mass 1. */
   energy: number;
+  /** How many times the body has been nudged to fall over (it went quiet standing, or leaning, above REST_RISE). */
+  nudges: number;
+  /** True if it was let sleep above REST_RISE after the cap of nudges: a wedged body, which the tests require to be none. */
+  wedged: boolean;
 }
 
 interface Body {
@@ -112,6 +119,11 @@ interface Body {
   peak: number;
   /** Counts the impulses the solver has applied to the body, so that a contact can tell whether anything it reads has changed. */
   pushes: number;
+  /** How many nudges the body has had, and whether it was let sleep high after the cap. */
+  nudges: number;
+  wedged: boolean;
+  /** The body's own seeded generator for its nudges (seeded from its throw, so every reader's screen draws the same). */
+  luck: () => number;
 }
 
 export interface World {
@@ -127,8 +139,18 @@ export interface World {
 
 export const STEP = 1 / 120;
 export const DEPTH = 40;
+
 /** The folded chair's half extents: 46 wide, 90 tall, 8 thick. */
 export const HALF: Vec3 = [23, 45, 4];
+/**
+ * The highest a corner of a SLEEPING body may be above the floor, px: the most an honest rest on other chairs reaches. Three chairs lying
+ * flat on one another stand 3 x the 8 px thickness (24); a chair lying across the edge of the stack, its far end up on it, stands up to one
+ * more thickness above that (it is 46 wide, and tilted over one thickness it rises 8 across that width): 32; and 1 px more for the 0.5 px
+ * (TOUCH) of each of the two contacts those rests keep. Three is the most the effect stacks (it keeps at most three live chairs). A body
+ * that goes quiet any higher (standing on its 46 by 8 end or on its long narrow face, propped on a wall or the glass, or on more than
+ * that) is not let sleep: it is nudged and falls over (nudge()).
+ */
+export const REST_RISE = 3 * 2 * HALF[2] + 2 * HALF[2] + 2 * 0.5;
 
 const GRAVITY = 1900;
 const LINEAR_DAMPING = 0.1;
@@ -142,6 +164,29 @@ const SLEEP_SPEED = 6;
 const SLEEP_SPIN = 12 * Math.PI / 180;
 const SLEEP_TIME = 0.4;
 const WAKE_SPEED = 200;
+/**
+ * The nudge a quiet body above REST_RISE is given: its angular velocity gains a spin that tips it about its lowest edge toward a horizontal
+ * direction drawn from its own seeded generator, and gravity does the rest. It is sized to the body: the energy the spin has about the pivot
+ * is NUDGE_FIRST times the barrier (g times the rise it takes to lift the middle over the pivot; NUDGE_MIN_LIFT is the least counted), so a
+ * chair on its 8 px end, whose barrier is a fraction of a pixel, gets a few thousand (7% of the energy of its fall) and one on its narrow face
+ * its own, where one force for both would be a shove for one and a breath for the other. Each next nudge is NUDGE_GROWTH times harder, and the
+ * spin is never over NUDGE_CAP rad/s. A chair stands unstably only toward its 8 px thickness (toward its 46 px width the barrier is a hundred
+ * times more), so the direction starts within 30 degrees either side of the chair's thin axis, either way round, as a draft or a floor's
+ * tremor would topple it; each next nudge triples that spread (within 90 degrees at the second, any direction at the third), since a chair
+ * propped like a ladder between the floor and a wall tips only along its own length. After the first, a nudge also hops the body
+ * (NUDGE_HOP) and slides it (NUDGE_SLIDE), which lets go the friction that holds a propped chair. After MAX_NUDGES a body that is still high
+ * is let sleep (wedged); the tests count none.
+ */
+const NUDGE_FIRST = 2;
+const NUDGE_GROWTH = 1.5;
+const NUDGE_CAP = 6;
+const NUDGE_SPREAD = Math.PI / 6;
+/** The least rise of the middle, px, that a nudge's energy is sized for (g times it): about the lift of tipping a chair a few degrees. */
+const NUDGE_MIN_LIFT = 1;
+/** The hop that comes with a later nudge, px, and the sliding speed, px/s per unit of the nudge's strength, along the direction it tips. */
+const NUDGE_HOP = 1.5;
+const NUDGE_SLIDE = 60;
+const MAX_NUDGES = 10;
 /** How deep a point may be inside another chair's box and still be a touching contact solved before the move, px. */
 const TOUCH = 0.5;
 const PASSES = 16;
@@ -261,6 +306,16 @@ export function createWorld(width: number, height: number, floorY: number): Worl
 }
 
 /**
+ * Where a throw's target falls in the box it is given: this fraction of the way in from the left and from the top (the inset) and this much
+ * of the box's width and height on from there (the span), so the target is 15 to 85 percent across and 15 to 60 percent down. Named, and
+ * exported, because dent.ts `hitZone` sizes the box a throw is given from exactly this range: one list, not two that must agree.
+ */
+export const THROW_INSET_X = 0.15;
+export const THROW_SPAN_X = 0.7;
+export const THROW_INSET_Y = 0.15;
+export const THROW_SPAN_Y = 0.45;
+
+/**
  * A throw. The target is a point in the words' box, 15 percent in from the sides and from the top and no lower than 60 percent
  * of its height (the dent bends the words, so the aim is the words). The chair comes from any direction, from one diagonal of
  * the world away (taken as twice the words' margins plus their size, since the world is the box the words sit in), at 1500 px/s,
@@ -268,8 +323,8 @@ export function createWorld(width: number, height: number, floorY: number): Worl
  */
 export function throwOf(rand: () => number, words: Box): Throw {
   const target = {
-    x: words.left + words.width * (0.15 + 0.7 * rand()),
-    y: words.top + words.height * (0.15 + 0.45 * rand()),
+    x: words.left + words.width * (THROW_INSET_X + THROW_SPAN_X * rand()),
+    y: words.top + words.height * (THROW_INSET_Y + THROW_SPAN_Y * rand()),
   };
   const angle = rand() * Math.PI * 2;
   const direction = { x: Math.cos(angle), y: Math.sin(angle) };
@@ -290,6 +345,69 @@ export function throwOf(rand: () => number, words: Box): Throw {
   return { target, start, direction, speed: 1500, spin, orientation, scaleFrom: 2.2, kick, spinAfter };
 }
 
+/** A seed for a body's nudges, from the numbers of its throw alone (the same throw, the same nudges, on any machine). */
+function seedOf(th: Throw): number {
+  let h = 2166136261;
+  for (const v of [th.target.x, th.target.y, ...th.orientation, th.kick, th.spinAfter[0]]) h = Math.imul(h ^ Math.floor(v * 1e6), 16777619);
+  return h >>> 0;
+}
+
+/** The highest any corner of a body is above the floor, px. */
+function riseOf(world: World, b: Body): number {
+  let top = Infinity;
+  for (const corner of CORNERS) top = Math.min(top, pointOf(b, corner)[1]);
+  return world.floorY - top;
+}
+
+/**
+ * Tips a body that has gone quiet above REST_RISE (standing on its end or its narrow face, propped on a wall, the glass or another chair)
+ * so that it falls over. Physics and nothing else: its angular velocity gains a nudge about a horizontal axis whose angle is drawn from the
+ * body's seeded generator (so the sign and the axis differ from body to body and are the same for every reader), pivoting about the lowest
+ * corner: the middle gets the linear velocity that pivot gives it, so the corner is not driven into the floor. The orientation is not
+ * touched: it turns only as the next steps integrate this spin, and the contacts and gravity do the falling. Each nudge for the same
+ * body is harder than the one before (NUDGE_GROWTH, up to NUDGE_CAP).
+ */
+function nudge(world: World, b: Body): void {
+  b.nudges++;
+  b.quiet = 0;
+  /* The direction to tip toward: the body's thin axis (its local z) seen from above, off by a seeded angle that widens with each nudge,
+     and either way round (the sign is the generator's too). */
+  const thin = toWorld(b.R, [0, 0, 1]);
+  const base = Math.hypot(thin[0], thin[2]) > 0.05 ? Math.atan2(thin[2], thin[0]) : 0;
+  const side = b.luck() < 0.5 ? 0 : Math.PI;
+  const angle = base + side + (b.luck() * 2 - 1) * Math.min(Math.PI, NUDGE_SPREAD * 3 ** (b.nudges - 1));
+  const rate = NUDGE_FIRST * NUDGE_GROWTH ** (b.nudges - 1);
+  const d: Vec3 = [Math.cos(angle), 0, Math.sin(angle)];
+  /* The pivot: of the corners that are on the floor (within a pixel of the lowest) the one farthest toward d. */
+  let lowY = -Infinity;
+  for (const corner of CORNERS) lowY = Math.max(lowY, pointOf(b, corner)[1]);
+  let pivot = b.pos, far = -Infinity;
+  for (const corner of CORNERS) {
+    const p = pointOf(b, corner);
+    if (p[1] >= lowY - 1 && dot(p, d) > far) { far = dot(p, d); pivot = p; }
+  }
+  /* Tipping toward d, y being down, is the spin d x y; the middle moves as it does about that pivot. Its size: the energy the spin has about
+     the pivot (the body's inertia about that axis through the middle, plus the middle's about the pivot) is `rate` times the barrier. */
+  const axis = cross(d, [0, 1, 0]);
+  const r = sub(b.pos, pivot);
+  /* The middle's offset from the line through the pivot along the axis (the edge it tips over), and its height above that line. */
+  const across = norm(cross(r, axis));
+  /* No less than NUDGE_MIN_LIFT of it: a body already leaning over its pivot (a ladder between the floor and a wall) has none, and is held by
+     friction alone, which a spin of nothing would not break. */
+  const barrier = Math.max(NUDGE_MIN_LIFT, across - (pivot[1] - b.pos[1]));
+  const local = toBody(b.R, axis);
+  const inertia = INERTIA[0] * local[0] ** 2 + INERTIA[1] * local[1] ** 2 + INERTIA[2] * local[2] ** 2 + across ** 2;
+  const spin = mul(axis, Math.min(NUDGE_CAP, Math.sqrt((2 * rate * GRAVITY * barrier) / inertia)));
+  b.w = add(b.w, spin);
+  b.vel = add(b.vel, cross(spin, sub(b.pos, pivot)));
+  /* The first nudge is the tip alone. Where that did not free the body (one propped on a wall is held by friction, which a tip does not
+     break), the next ones come with the hop and the slide. */
+  if (b.nudges >= 2) {
+    b.vel[1] -= Math.sqrt(2 * GRAVITY * NUDGE_HOP);
+    b.vel = add(b.vel, mul(d, NUDGE_SLIDE * rate));
+  }
+}
+
 /** Puts a throw in the air. The id is the caller's, if given, so a play can find its body again; otherwise the next free one. */
 export function addThrow(world: World, th: Throw, id?: number): number {
   if (id !== undefined && world.list.some((b) => b.id === id)) throw new Error(`a body with id ${id} is already in the world`);
@@ -299,7 +417,7 @@ export function addThrow(world: World, th: Throw, id?: number): number {
     id: use, th, phase: 'flying',
     pos: [th.start.x, th.start.y, 0], q: th.orientation,
     vel: [th.direction.x * th.speed, th.direction.y * th.speed, 0], w: [...th.spin],
-    R: matrixOf(th.orientation), flown: 0, foldT: 0, scale: th.scaleFrom, asleep: false, quiet: 0, floored: false, peak: 0, pushes: 0,
+    R: matrixOf(th.orientation), flown: 0, foldT: 0, scale: th.scaleFrom, asleep: false, quiet: 0, floored: false, peak: 0, pushes: 0, nudges: 0, wedged: false, luck: rng(seedOf(th)),
   };
   world.list.push(body);
   return use;
@@ -354,6 +472,8 @@ export function bodies(world: World): BodyView[] {
     omega: norm(b.w),
     omegaPeak: Math.max(b.peak, norm(b.w)),
     energy: energyOf(world, b),
+    nudges: b.nudges,
+    wedged: b.wedged,
   }));
 }
 
@@ -470,7 +590,9 @@ export function step(world: World, dt: number): Event[] {
   for (const b of awake) {
     if (norm(b.vel) < SLEEP_SPEED && norm(b.w) < SLEEP_SPIN) b.quiet += dt;
     else b.quiet = 0;
-    if (b.quiet >= SLEEP_TIME) {
+    if (b.quiet >= SLEEP_TIME && riseOf(world, b) > REST_RISE && b.nudges < MAX_NUDGES) nudge(world, b);
+    else if (b.quiet >= SLEEP_TIME) {
+      if (riseOf(world, b) > REST_RISE) b.wedged = true;
       b.asleep = true;
       b.vel = [0, 0, 0];
       b.w = [0, 0, 0];

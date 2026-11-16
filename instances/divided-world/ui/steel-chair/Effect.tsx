@@ -59,8 +59,23 @@ import {
   addThrow, bodies, createWorld, remove, resize, rng, settle, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
 import { depthOf, INSET, piecesOf, project, shadeOf, transformOf, type Piece } from './chair.ts';
-import { DENT_SCALE, dentMapUrl, dentPrimitives, dentShape, dentsOverlap, filterTrusted, hitZone, seedOfIds } from './dent.ts';
+import { DENT_SCALE, dentMapUrl, dentPrimitives, dentShape, dentsOverlap, filterTrusted, hitZone, seedOfIds, type DentShape } from './dent.ts';
 import './steel-chair.css';
+
+/**
+ * A play's dent shape, computed once per play id: `dentShape` is a pure function of the id (the same for every reader and replay), so the
+ * answer is kept and not recomputed on each render. Cleared when it grows past a few hundred plays, which only costs a recomputation.
+ */
+const shapes = new Map<string, DentShape>();
+function shapeOf(play: string): DentShape {
+  let shape = shapes.get(play);
+  if (!shape) {
+    if (shapes.size > 300) shapes.clear();
+    shape = dentShape(play);
+    shapes.set(play, shape);
+  }
+  return shape;
+}
 
 /** The most chairs one post draws (the card's stack). */
 const MOST = 3;
@@ -415,7 +430,7 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
      * run's own generator's, as before.
      */
     const aim = (play: string): Box => {
-      const dent = dentPrimitives([{ x: 0, y: 0, shape: dentShape(play) }], { width: geoNow?.width ?? box.w, height: box.h })[0]!;
+      const dent = dentPrimitives([{ x: 0, y: 0, shape: shapeOf(play) }], { width: geoNow?.width ?? box.w, height: box.h })[0]!;
       const zone = hitZone(target, { width: box.w, height: box.h }, dent);
       return { left: zone.left - INSET, top: zone.top + HIT_LIFT, width: zone.width, height: zone.height };
     };
@@ -603,8 +618,8 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
   const shown = dents.filter((d) => live.some((p) => p.id === d.play));
   const off = geo ?? { left: 0, top: 0, width: 0, height: 0 };
   /* Each dent's own shape and turn come from its play's id alone (dent.ts `dentShape`): the same for every reader and on every replay. */
-  const shapes = shown.map((d) => dentShape(d.play));
-  const prims = dentPrimitives(shown.map((d, i) => ({ x: d.x - off.left, y: d.y - off.top, shape: shapes[i]! })), { width: off.width, height: off.height });
+  const shapesOf = shown.map((d) => shapeOf(d.play));
+  const prims = dentPrimitives(shown.map((d, i) => ({ x: d.x - off.left, y: d.y - off.top, shape: shapesOf[i]! })), { width: off.width, height: off.height });
   /* A dent that overlaps another draws no creases: where they met they would strike through the words. A lone dent keeps its two. */
   const lone = prims.map((p, i) => !prims.some((o, j) => j !== i && dentsOverlap(p, o)));
   const filterOn = trusted && shown.length > 0 && geo !== null;
@@ -612,19 +627,26 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
      (-10% to 120% of the box) is too small for a one-line post, where a displacement of up to DENT_SCALE / 2 px moves the glyphs out of it
      and clips them. */
   const region = { x: -DENT_SCALE, y: -DENT_SCALE, width: off.width + 2 * DENT_SCALE, height: off.height + 2 * DENT_SCALE };
-  /* A dent's box (the ellipse the displacement's `feImage` is stretched to), its uneven edge, and where its shade and its light sit: the
-     light from the direction of its turn, the shade opposite, as a pressed-in plate lit from one side. */
-  const dentStyle = (i: number, round = true): CSSProperties => {
-    const p = prims[i]!, sh = shapes[i]!;
-    const a = (sh.turn * Math.PI) / 180, [o0, o1, o2, o3] = sh.outline;
-    const style: Record<string, string> = {
-      left: `${p.x + off.left}px`, top: `${p.y + off.top}px`, width: `${p.width}px`, height: `${p.height}px`,
-      '--dark-x': `${(50 + 25 * Math.cos(a)).toFixed(1)}%`, '--dark-y': `${(50 + 25 * Math.sin(a)).toFixed(1)}%`,
-      '--glow-x': `${(50 - 28 * Math.cos(a)).toFixed(1)}%`, '--glow-y': `${(50 - 28 * Math.sin(a)).toFixed(1)}%`,
-    };
-    if (round) style.borderRadius = `${o0}% ${100 - o0}% ${o2}% ${100 - o2}% / ${o1}% ${o3}% ${100 - o3}% ${100 - o1}%`;
-    return style as CSSProperties;
+  /* A dent's box (the ellipse the displacement's `feImage` is stretched to), and what each layer of its shading takes from it: the shade and
+     the light the box and the uneven edge, and each its own direction (the light from the direction of its turn, the shade opposite, as a
+     pressed-in plate lit from one side); the creases only the box, which they turn about. */
+  const boxStyle = (i: number): CSSProperties => {
+    const p = prims[i]!;
+    return { left: `${p.x + off.left}px`, top: `${p.y + off.top}px`, width: `${p.width}px`, height: `${p.height}px` };
   };
+  const edgeStyle = (i: number): CSSProperties => {
+    const [o0, o1, o2, o3] = shapesOf[i]!.outline;
+    return { ...boxStyle(i), borderRadius: `${o0}% ${100 - o0}% ${o2}% ${100 - o2}% / ${o1}% ${o3}% ${100 - o3}% ${100 - o1}%` };
+  };
+  const turnOf = (i: number) => (shapesOf[i]!.turn * Math.PI) / 180;
+  const shadeStyle = (i: number): CSSProperties => ({
+    ...edgeStyle(i),
+    '--dark-x': `${(50 + 25 * Math.cos(turnOf(i))).toFixed(1)}%`, '--dark-y': `${(50 + 25 * Math.sin(turnOf(i))).toFixed(1)}%`,
+  } as CSSProperties);
+  const lightStyle = (i: number): CSSProperties => ({
+    ...edgeStyle(i),
+    '--glow-x': `${(50 - 28 * Math.cos(turnOf(i))).toFixed(1)}%`, '--glow-y': `${(50 - 28 * Math.sin(turnOf(i))).toFixed(1)}%`,
+  } as CSSProperties);
   const last = shown.length - 1;
   return (
     <div ref={host} className="dw-chair">
@@ -663,14 +685,14 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
           words), the light (brightest, screened on), and the creases (lone dents only). Each is its own stacking context, so a blend inside
           it is among its own dents and the layer as a whole blends with the words (steel-chair.css). */}
       <div ref={shading} className="dw-chair-dents dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
-        {shown.map((d, i) => <div key={d.play} className="dw-chair-dent" data-play={d.play} style={dentStyle(i)} />)}
+        {shown.map((d, i) => <div key={d.play} className="dw-chair-dent" data-play={d.play} style={shadeStyle(i)} />)}
       </div>
       <div ref={glows} className="dw-chair-glows dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
-        {shown.map((d, i) => <div key={d.play} className="dw-chair-glow" data-play={d.play} style={dentStyle(i)} />)}
+        {shown.map((d, i) => <div key={d.play} className="dw-chair-glow" data-play={d.play} style={lightStyle(i)} />)}
       </div>
       <div ref={creases} className="dw-chair-crease-layer dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
         {shown.map((d, i) => (lone[i]
-          ? <div key={d.play} className="dw-chair-creases" data-play={d.play} style={{ ...dentStyle(i, false), transform: `rotate(${shapes[i]!.turn.toFixed(1)}deg)` }} />
+          ? <div key={d.play} className="dw-chair-creases" data-play={d.play} style={{ ...boxStyle(i), transform: `rotate(${shapesOf[i]!.turn.toFixed(1)}deg)` }} />
           : null))}
       </div>
       <div ref={layer} className="dw-chair-layer" data-kb-effect-ink="" aria-hidden="true">

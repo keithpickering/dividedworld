@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, remove, resize, rng, settle, step, STEP, throwOf,
+  addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, rng, settle, step, STEP, throwOf,
   type BodyView, type Box, type Event, type World,
 } from './body.ts';
 
@@ -124,6 +124,9 @@ function leansOnWall(b: BodyView, width: number, floorY: number): boolean {
   return onFloor >= 2 && onWall >= 1;
 }
 
+/** The highest a body's corners are above the floor, px. */
+const riseOf = (b: BodyView, floorY: number): number => floorY - Math.min(...cornersOf(b).map((c) => c[1]));
+
 /** Everything one throw into an empty world measures, for the tests below. */
 interface Run {
   seed: number;
@@ -193,7 +196,8 @@ function simulate(seed: number, words: Box = WORDS, kind: Kind = WORLD): Run {
       past = Math.max(past, (Math.abs(b.position.z) - DEPTH - GLASS_GIVE) + 0.5);
       run.maxPast = Math.max(run.maxPast!, past);
       // the hit step itself sets a new velocity, so the energy is followed from the step after it
-      if (tumblingSteps > 1 && !prev.asleep && !Number.isNaN(prevEnergy)) {
+      // (a nudge, given at the end of the step it is counted in, is the one place energy is let rise: see the nudge test)
+      if (tumblingSteps > 1 && !prev.asleep && !Number.isNaN(prevEnergy) && b.nudges === prev.nudges) {
         run.maxRise = Math.max(run.maxRise!, b.energy - prevEnergy);
       }
       prevEnergy = b.energy;
@@ -284,16 +288,87 @@ test('every throw sleeps within 6 simulated seconds and reports one rest and a f
   }
 });
 
-test('at rest four corners of one face lie within 0.75 px of the floor: it lies on a face, never balanced on an edge or a corner', () => {
-  // The one exception the contacts leave is a chair propped on an edge against a side wall (see leansOnWall); it must be rare.
-  let leaning = 0;
+test('at rest four corners of one face lie within 0.75 px of the floor: it lies on a face, never balanced on an edge, a corner or a wall', () => {
+  /* A chair propped on an edge against a side wall used to be the one exception, at up to 2% of the seeds. It no longer is: a body that goes
+     quiet above REST_RISE is nudged and falls over, so the allowance is zero. */
   for (let seed = 0; seed < SEEDS; seed++) {
     const r = simulate(seed);
-    if (r.faceGap <= 0.75) continue;
-    assert.ok(r.leans, `seed ${seed} face ${r.pose} gap ${r.faceGap}: not on a face and not leaning on a wall`);
-    leaning++;
+    assert.ok(r.faceGap <= 0.75, `seed ${seed} face ${r.pose} gap ${r.faceGap}: not lying on a face (leaning on a wall: ${r.leans})`);
   }
-  assert.ok(leaning <= SEEDS * 0.02, `${leaning} of ${SEEDS} came to rest leaning on a wall`);
+});
+
+test('over the single throws no body sleeps with a corner above REST_RISE, and none is wedged', () => {
+  let nudged = 0, most = 0, latest = 0;
+  for (let seed = 0; seed < SEEDS; seed++) {
+    const r = simulate(seed);
+    assert.ok(r.final.asleep, `seed ${seed}`);
+    assert.ok(riseOf(r.final, WORLD.floorY) <= REST_RISE, `seed ${seed} sleeps with a corner ${riseOf(r.final, WORLD.floorY)} px above the floor (REST_RISE ${REST_RISE})`);
+    assert.equal(r.final.wedged, false, `seed ${seed} was let sleep wedged`);
+    if (r.final.nudges > 0) nudged++;
+    most = Math.max(most, r.final.nudges);
+    latest = Math.max(latest, r.sleptAt);
+  }
+  console.log(`# singles: ${nudged} of ${SEEDS} nudged, at most ${most} nudges, the latest asleep at ${latest.toFixed(2)} s`);
+});
+
+/** A chair stands on its 46 by 8 end at rest on the floor, as nothing in the game now leaves one: the body that has to fall over. */
+function standing(world: World, seed = 1, x = 300) {
+  return placed(world, seed, [x, WORLD.floorY - HALF[1], 0], false, [0, 0, 0], false);
+}
+
+test('a body standing on its end falls over and sleeps flat: no snap, energy up only at the nudge, and the nudge small against the fall', () => {
+  const fall = 1900 * (HALF[1] - HALF[2]);
+  for (const seed of [1, 2, 3, 4, 5, 6]) {
+    const world = worldOf(WORLD);
+    standing(world, seed);
+    let prev = at(bodies(world), 0);
+    let t = 0, worstExcess = -Infinity, nudgeEnergy = 0, risesOutsideNudge = 0, biggestTurn = 0;
+    while (!prev.asleep && t < 8) {
+      step(world, STEP);
+      t += STEP;
+      const b = at(bodies(world), 0);
+      const excess = turn(prev, b) - Math.max(prev.omega, b.omegaPeak) * STEP - 0.01 * DEG;
+      worstExcess = Math.max(worstExcess, excess);
+      biggestTurn = Math.max(biggestTurn, turn(prev, b));
+      if (b.nudges > prev.nudges) nudgeEnergy = Math.max(nudgeEnergy, b.energy - prev.energy);
+      else if (!prev.asleep) risesOutsideNudge = Math.max(risesOutsideNudge, b.energy - prev.energy);
+      prev = b;
+    }
+    assert.ok(prev.asleep, `seed ${seed} still moving after ${t} s`);
+    assert.ok(t <= 4, `seed ${seed} took ${t} s to lie down`);
+    assert.ok(prev.nudges >= 1, `seed ${seed} was never nudged`);
+    assert.ok(riseOf(prev, WORLD.floorY) <= REST_RISE, `seed ${seed} sleeps ${riseOf(prev, WORLD.floorY)} px up`);
+    assert.ok(worstExcess <= 0, `seed ${seed} turned ${worstExcess} rad too far in a step`);
+    assert.ok(risesOutsideNudge <= RISE, `seed ${seed} energy rose by ${risesOutsideNudge} outside a nudge`);
+    assert.ok(nudgeEnergy <= 0.15 * fall, `seed ${seed} nudge energy ${nudgeEnergy} against the fall ${fall}`);
+    assert.ok(biggestTurn < 2 * DEG * 12, `a step turned ${biggestTurn / DEG} degrees`);
+  }
+});
+
+test('the same seed gives the same nudges and the same rest, step by step', () => {
+  for (const seed of [1, 2, 3]) {
+    const a = worldOf(WORLD), b = worldOf(WORLD);
+    standing(a, seed); standing(b, seed);
+    for (let i = 0; i < 6 * 120; i++) { step(a, STEP); step(b, STEP); assert.deepEqual(bodies(a), bodies(b)); }
+    assert.ok(at(bodies(a), 0).nudges >= 1);
+    assert.ok(at(bodies(a), 0).asleep);
+  }
+  const x = worldOf(WORLD), y = worldOf(WORLD);
+  standing(x, 1); standing(y, 2);
+  settle(x, 8); settle(y, 8);
+  assert.notDeepEqual(at(bodies(x), 0).quaternion, at(bodies(y), 0).quaternion, 'different seeds fall different ways');
+});
+
+test('settle ends a standing body flat, in the same rest as stepping by hand', () => {
+  for (const seed of [1, 2, 3]) {
+    const a = worldOf(WORLD), b = worldOf(WORLD);
+    standing(a, seed); standing(b, seed);
+    assert.equal(settle(a, 12), true);
+    let n = 0;
+    while (!bodies(b).every((x) => x.asleep) && n++ < 12 * 120) step(b, STEP);
+    assert.deepEqual(bodies(a), bodies(b));
+    assert.ok(riseOf(at(bodies(a), 0), WORLD.floorY) <= REST_RISE);
+  }
 });
 
 test('no snap: the orientation never turns by more than its spin allows between two steps, right up to sleep', () => {
@@ -347,6 +422,10 @@ test('three throws into one world all sleep, none overlaps another by more than 
       all = next;
     }
     assert.ok(all.every((b) => b.asleep), `seed ${seed} still moving after ${t} s`);
+    for (const b of all) {
+      assert.ok(riseOf(b, WORLD.floorY) <= REST_RISE, `seed ${seed}: body ${b.id} sleeps ${riseOf(b, WORLD.floorY)} px above the floor`);
+      assert.equal(b.wedged, false, `seed ${seed}: body ${b.id} was let sleep wedged`);
+    }
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
       assert.ok(overlap(at(all, i), at(all, j)) <= 1, `seed ${seed} bodies ${i} and ${j} overlap by ${overlap(at(all, i), at(all, j))}`);
     }
@@ -365,6 +444,8 @@ const BUSY_WORDS: Box = { left: 16, top: 16, width: 568, height: 240 };
 const BUSY_GAP = 0.35;
 /** The latest any seed of the three-at-350-ms test fell asleep after the last throw, seconds; printed so the number is on record. */
 let latestBusy = 0;
+/** What the rest rule did over the busy seeds: bodies nudged, the most nudges one needed. */
+let busyNudged = 0, busyMost = 0, busyBodies = 0;
 
 /**
  * The seeds that once failed this test (146, 147, 177, 198, each as 5000 + i) are always run, then the first 40: each seed is three
@@ -394,12 +475,19 @@ test('three throws 350 ms apart (the effect stack) all sleep within 8 s of the l
     const moving = all.filter((b) => !b.asleep).map((b) => `body ${b.id} at ${b.speed.toFixed(1)} px/s, ${b.omega.toFixed(2)} rad/s`);
     assert.ok(moving.length === 0, `seed ${seed}: still moving 8 s after the last throw: ${moving.join('; ')}`);
     latestBusy = Math.max(latestBusy, allSleptAt);
+    for (const b of all) {
+      busyBodies++;
+      if (b.nudges > 0) busyNudged++;
+      busyMost = Math.max(busyMost, b.nudges);
+      assert.ok(riseOf(b, BUSY.floorY) <= REST_RISE, `seed ${seed}: body ${b.id} sleeps ${riseOf(b, BUSY.floorY)} px above the floor (REST_RISE ${REST_RISE})`);
+      assert.equal(b.wedged, false, `seed ${seed}: body ${b.id} was let sleep wedged`);
+    }
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
       assert.ok(overlap(at(all, i), at(all, j)) <= 1, `seed ${seed} bodies ${i} and ${j} overlap by ${overlap(at(all, i), at(all, j))}`);
     }
     assert.ok(past <= 0.5, `seed ${seed} a corner went ${past} px past the floor or a wall`);
   }
-  console.log(`# the latest any of the ${BUSY_SEEDS.length} seeds fell asleep after the last throw: ${latestBusy.toFixed(2)} s`);
+  console.log(`# the latest any of the ${BUSY_SEEDS.length} seeds fell asleep after the last throw: ${latestBusy.toFixed(2)} s; ${busyNudged} of ${busyBodies} bodies nudged, at most ${busyMost} nudges`);
 });
 
 /**
@@ -423,11 +511,11 @@ function placed(world: World, seed: number, pos: V3, flat: boolean, vel: V3, asl
   return b;
 }
 
-/** A chair lies asleep on the floor; another comes down on it standing on its end, with a gap of `gap` px and a speed of `v` px/s down. */
-function dropOnSleeper(gap: number, v: number) {
+/** A chair lies asleep on the floor; another comes down on it standing on its end (or lying flat), with a gap of `gap` px and a speed of `v` px/s down. */
+function dropOnSleeper(gap: number, v: number, mode: 'end' | 'flat' = 'end') {
   const world = worldOf(WORLD);
   const lying = placed(world, 1, [300, WORLD.floorY - 4, 0], true, [0, 0, 0], true);
-  const mover = placed(world, 2, [300, WORLD.floorY - 8 - 45 - gap, 0], false, [0, v, 0], false);
+  const mover = placed(world, 2, [300, WORLD.floorY - 8 - (mode === 'end' ? 45 : 4) - gap, 0], mode === 'flat', [0, v, 0], false);
   return { world, lying, mover };
 }
 
@@ -480,7 +568,9 @@ test('a corner contact on a sleeper closing faster than 200 px/s wakes it with t
 });
 
 test('a contact on a sleeper closing slower than 200 px/s leaves it asleep', () => {
-  const { world, lying, mover } = dropOnSleeper(1, 100);
+  /* The mover comes down flat: one standing on its end would be nudged over by the rest rule (body.ts nudge) once it was quiet, and that fall is
+     its own, not the slow contact this test is about. */
+  const { world, lying, mover } = dropOnSleeper(1, 100, 'flat');
   let hit = false;
   for (let i = 0; i < 240; i++) {
     const before = mover.vel[1];
