@@ -19,7 +19,7 @@
  *  - A debut dropped "now" writes no announcement Act; tests that need one seed it.
  *  - A card's seeded settings are not drawn (a play carries no `seed`); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
  */
-import type { Instance, Quadrant, Settings, Span } from '../../rules/types.ts';
+import { isPost, type Instance, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
@@ -1481,7 +1481,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (at !== undefined) {
       const reach = reachPlays.get(origin);
       const post = acts.get(at);
-      const there = from.kind === 'card' && from.payload.caught === undefined && reach?.reach === 'character' && post?.kind === 'post' && shownAuthor(post, false) === reach.target
+      const there = from.kind === 'card' && from.payload.caught === undefined && reach?.reach === 'character' && post !== undefined && isPost(post.kind) && shownAuthor(post, false) === reach.target
         && reach.endsAt > now() && !reversedPlays.has(origin);
       if (!there) return refuse('that card is not on that post');
     }
@@ -1618,7 +1618,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const play = acts.get(id);
     if (!play || !(play.kind === 'card' || play.kind === 'set' || play.kind === 'spring') || play.target === null || !(onPost(play) || play.payload.reach === 'character')) return null;
     const post = acts.get(play.target);
-    if (!post || post.kind !== 'post') return null;
+    if (!post || !isPost(post.kind)) return null;
     const m = moments.get(id);
     const version = m ? acts.get(m.version)! : edits(post).filter((e) => e.at <= play.at).at(-1) ?? post;
     return momentOf(play, post, version, m?.layers ?? [], play.at, m !== undefined);
@@ -2310,9 +2310,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!characters.has(target)) return refuse('there is no such character', 'target');
       from = fromPost ? acts.get(fromPost) : undefined;
       /* The post is read as it is shown (acts_public): a post under a live author veil is the stand-in's, so a card on its real author is a card on the stand-in, in the same words (place_cast, 0359). */
-      const shown = from?.kind === 'post' ? shownAuthor(from, false) : null;
+      const shown = from !== undefined && isPost(from.kind) ? shownAuthor(from, false) : null;
       if (standInRec !== null && shown === standInRec.id) return refuse('no card is played on a stand-in');
-      if (!from || from.kind !== 'post' || shown !== target) return refuse('a card on a character is played from one of its posts');
+      if (!from || !isPost(from.kind) || shown !== target) return refuse('a card on a character is played from one of its posts');
       thread = from.thread;
       on = from.id;
       above = { thread: reachEffects('thread', thread), board: reachEffects('board', boardOf(thread)) };
@@ -4165,7 +4165,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const under = [...underPlays].filter(([play, u]) => onPage.has(u.parent) && !over(play))
         .sort(([a], [b]) => acts.get(a)!.at - acts.get(b)!.at || acts.get(a)!.order - acts.get(b)!.order)
         .map(([play, u]) => ({ parent: u.parent, play, act: publicAct(acts.get(u.reply)!) }));
-      const posts = [...shownActs.filter((a) => a.kind === 'post'), ...under.map((u) => u.act)];
+      const posts = [...shownActs.filter((a) => isPost(a.kind)), ...under.map((u) => u.act)];
       const plays = posts.length ? core.cardsOnMany(posts.map((a) => a.id), posts.length * PLAYS_PER_POST) : [];
       const above = core.effectsAbove([...new Set(posts.flatMap((a) => (a.character === null ? [] : [a.character])))], thread, summary.board);
       /* The plays at thread reach that wore off by time (not an admin's end) and keep their level on a post written while they were up: the page's posts' dates, nested replies' too, oldest play first, at most 100. */

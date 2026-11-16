@@ -5640,3 +5640,153 @@ describe('discipline cards: hearts, the Unban and Take the Fall', () => {
     expect(ana).not.toBe(bo);
   });
 });
+
+/**
+ * Cards on a spun thread (docs/plans/2026-11-16-cards-on-a-spun-thread-plan.md, Task 4): a spun thread's opening Act is a `spin`, and it is a
+ * post for every card (`isPost`). The cases C1 to C16 of the plan's table are the server's (supabase/tests/0374-cards-on-a-spun-thread.sql), in its words.
+ * Not modeled by the fake, so not run here: a quote springing a Move (C5's spring, C13's spring); `seed.spring` lays one by hand.
+ */
+describe('cards on a spun thread', () => {
+  const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+  const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', stack: 3, canApply: (t, e, _c, now) => landsOn(blot, t, e, now) };
+  const solo: CardRules = { ...base, key: 'solo', name: 'Solo', alignment: 'salty', rarity: 'common', canApply: (t, e, _c, now) => landsOn(solo, t, e, now) };
+  const shield: CardRules = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', gimmick: { kind: 'ward', upTo: 'uncommon' }, lasts: { unit: 'day', count: 7 }, canApply: (t, e, _c, now) => landsOn(shield, t, e, now) };
+  const sentry: CardRules = { ...base, key: 'sentry', name: 'Sentry', alignment: 'sweet', rarity: 'rare', play: 'use', gimmick: { kind: 'ward', upTo: 'common' }, reaches: ['thread'], lasts: { unit: 'day', count: 1 }, canApply: (t, e, _c, now) => landsOn(sentry, t, e, now) };
+  const glint: CardRules = { ...base, key: 'glint', name: 'Glint', alignment: 'sweet', rarity: 'rare', reaches: ['thread'], lasts: { unit: 'day', count: 1 }, keeps: true, canApply: (t, e, _c, now) => landsOn(glint, t, e, now) };
+  const mover: CardRules = { ...base, key: 'mover', name: 'Mover', alignment: 'salty', rarity: 'rare', reaches: ['thread'], lasts: { unit: 'day', count: 1 }, canApply: (t, e, _c, now) => landsOn(mover, t, e, now) };
+  const aura: CardRules = { ...base, key: 'aura', name: 'Aura', alignment: 'sweet', rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'day', count: 1 }, canApply: (t, e, _c, now) => landsOn(aura, t, e, now) };
+  const cutter: CardRules = { ...base, key: 'cutter', name: 'Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, canApply: (t, e, _c, now) => landsOn(cutter, t, e, now) };
+  const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'rare', play: 'set', trap: { trigger: { on: 'cast' } }, catches: () => 'blot', canApply: () => ok(undefined) };
+  const spun: Instance = { ...instance, cards: [blot, solo, shield, sentry, glint, mover, aura, cutter, snare], settings: { ...settings, postMaxLength: 50, economy: {} } };
+
+  /** S: a thread Ana's character spun, so Ana's character wrote its opening post (a `spin` Act), with one reply by Bob's character. Ana is signed in; each holds three of every card. */
+  async function spunWorld() {
+    const fake = createFake({ instance: spun });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { act: origin } = fake.seed.thread('general', boFace, 'Origin', 'Where it came from');
+    fake.signInAs(ana);
+    const made = must(await fake.spin(origin, anaFace, 'Spun', 'The opening post.'));
+    const reply = fake.seed.post(made.thread.id, boFace, 'Bob replies.');
+    const hand = { blot: 3, solo: 3, shield: 3, sentry: 3, glint: 3, mover: 3, aura: 3, cutter: 3, snare: 3 };
+    fake.seed.cards(ana, hand);
+    fake.seed.cards(bo, hand);
+    return { fake, ana, bo, anaFace, boFace, thread: made.thread.id, opening: made.act.id, reply };
+  }
+  type SpunWorld = Awaited<ReturnType<typeof spunWorld>>;
+  const asBo = (w: SpunWorld) => w.fake.signInAs(w.bo);
+  const asAna = (w: SpunWorld) => w.fake.signInAs(w.ana);
+
+  test('C1: a post card cast on the opening post by Bob\'s character lands; its moment answers; the page delivers it in `plays`', async () => {
+    const w = await spunWorld();
+    asBo(w);
+    const played = must(await w.fake.playCard('blot', w.boFace, w.opening, {}, ''));
+    expect(played).toMatchObject({ kind: 'card', targetActId: w.opening, thread: w.thread, payload: { card: 'blot', layer: 1 } });
+    const page = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    expect(page.plays.map((p) => p.id)).toEqual([played.id]);
+    expect(await w.fake.playMoment(played.id)).not.toBeNull();
+  });
+  test('C2: the same card cast there by Ana\'s character lands, its stack allowing', async () => {
+    const w = await spunWorld();
+    must(await w.fake.playCard('blot', w.anaFace, w.opening, {}, ''));
+    expect(must(await w.fake.playCard('blot', w.anaFace, w.opening, {}, '')).payload.layer).toBe(2);
+  });
+  test('C3 and C4: a post Gimmick is used on the opening post by Ana\'s character, and refused to Bob\'s in "is used on your own post"', async () => {
+    const w = await spunWorld();
+    asBo(w);
+    expect(await w.fake.useCard('shield', w.boFace, w.opening, {}, '')).toEqual(refused('Shield is used on your own post'));
+    asAna(w);
+    const used = must(await w.fake.useCard('shield', w.anaFace, w.opening, {}, ''));
+    expect(used).toMatchObject({ kind: 'card', targetActId: w.opening });
+  });
+  test('C5 and C6: a card is set face down on the opening post by Ana\'s character and taken back; Bob\'s is refused as on any post that is not the setter\'s', async () => {
+    const w = await spunWorld();
+    asBo(w);
+    expect(await w.fake.setCard('snare', w.boFace, w.opening, {})).toEqual(refused('a card is set face down on a post of your own character\'s'));
+    asAna(w);
+    const set = must(await w.fake.setCard('snare', w.anaFace, w.opening, {}));
+    expect([set.kind, set.targetActId]).toEqual(['set', w.opening]);
+    expect(await w.fake.myFaceDown([set.id])).toEqual({ [set.id]: 'snare' });
+    expect(must(await w.fake.takeBack(w.anaFace, set.id)).kind).toBe('take_back');
+  });
+  test('C7: a reply-carrying card cast on the opening post draws its reply under the opening post while the play is in force', async () => {
+    const w = await spunWorld();
+    asBo(w);
+    const played = must(await w.fake.playCard('cutter', w.boFace, w.opening, {}, '', undefined, undefined, undefined, { body: 'Excuse me.' }));
+    const reply = (await w.fake.act(played.payload.reply as string))!;
+    const page = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    expect(page.under).toEqual([{ parent: w.opening, play: played.id, act: reply }]);
+  });
+  test('C8 and C9: a character card is cast on Ana\'s character from the opening post, and refused on Bob\'s character from it', async () => {
+    const w = await spunWorld();
+    asBo(w);
+    const landed = must(await w.fake.playCard('aura', w.boFace, w.anaFace, {}, '', 'character', w.opening));
+    expect(landed).toMatchObject({ kind: 'card', targetActId: w.opening, payload: { reach: 'character', character: w.anaFace } });
+    expect(await w.fake.playCard('aura', w.boFace, w.boFace, {}, '', 'character', w.opening)).toEqual(refused('a card on a character is played from one of its posts'));
+    const page = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    expect(page.above.map((p) => [p.play, p.reach, p.target])).toEqual([[landed.id, 'character', w.anaFace]]);
+  });
+  test('C10 and C11: a thread Gimmick is used on S by Ana\'s character and refused to Bob\'s in "is used on a thread your own character started"', async () => {
+    const w = await spunWorld();
+    asBo(w);
+    expect(await w.fake.useCard('sentry', w.boFace, w.thread, {}, '', 'thread')).toEqual(refused('Sentry is used on a thread your own character started'));
+    asAna(w);
+    const used = must(await w.fake.useCard('sentry', w.anaFace, w.thread, {}, '', 'thread'));
+    expect(used).toMatchObject({ kind: 'card', targetActId: w.opening, thread: w.thread, payload: { reach: 'thread', thread: w.thread } });
+  });
+  test('C12 and C13: a thread Move is cast on S by Bob\'s character, and set face down by him on his reply in S; the page delivers the thread play in `above`', async () => {
+    const w = await spunWorld();
+    asBo(w);
+    const cast = must(await w.fake.playCard('mover', w.boFace, w.thread, {}, '', 'thread'));
+    expect(cast).toMatchObject({ kind: 'card', targetActId: w.opening, payload: { reach: 'thread' } });
+    const set = must(await w.fake.setCard('mover', w.boFace, w.reply, {}));
+    expect([set.kind, set.targetActId, set.thread]).toEqual(['set', w.reply, w.thread]);
+    const page = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    expect(page.above.map((p) => [p.play, p.reach, p.target])).toContainEqual([cast.id, 'thread', w.thread]);
+  });
+  test('C14: a spin from a character card on Ana\'s character, pressed at the opening post, lands with its moment', async () => {
+    const w = await spunWorld();
+    const play = w.fake.seed.reach(w.boFace, 'character', w.anaFace, 'aura', { post: w.opening });
+    const again = must(await w.fake.spin(play, w.anaFace, 'Spun at', 'body', undefined, w.opening));
+    expect(again.act.payload).toEqual({ title: 'Spun at', body: 'body', at: w.opening });
+    const moment = (await w.fake.spinMoment(again.act.id))!;
+    expect(moment.version.id).toBe(w.opening);
+    expect(moment.recorded).toBe(true);
+  });
+  test('C15: any card on an edit Act or a card Act is refused in "a card lands on a post", and a set in "a card is set face down on a post"', async () => {
+    const w = await spunWorld();
+    const mine = must(await w.fake.post(w.thread, w.anaFace, 'Ana replies.', null));
+    must(await w.fake.edit(mine.id, w.anaFace, 'Ana replies, again.'));
+    const edited = (await w.fake.history(mine.id))[1]!;
+    expect(edited.kind).toBe('edit');
+    const card = must(await w.fake.playCard('blot', w.anaFace, w.opening, {}, ''));
+    for (const target of [edited.id, card.id]) {
+      expect(await w.fake.playCard('blot', w.anaFace, target, {}, '')).toEqual(refused('a card lands on a post', 'config'));
+      expect(await w.fake.setCard('snare', w.anaFace, target, {})).toEqual(refused('a card is set face down on a post', 'config'));
+    }
+  });
+  test('C16: a second play of a stack-1 card on the opening post is refused in "this post already carries that card"', async () => {
+    const w = await spunWorld();
+    asBo(w);
+    must(await w.fake.playCard('solo', w.boFace, w.opening, {}, ''));
+    expect(await w.fake.playCard('solo', w.boFace, w.opening, {}, '')).toEqual(refused('this post already carries that card', 'config'));
+  });
+  test('a thread play that wore off and keeps is `kept` on S\'s page', async () => {
+    const w = await spunWorld();
+    asBo(w);
+    const cast = must(await w.fake.playCard('glint', w.boFace, w.thread, {}, '', 'thread'));
+    w.fake.clock.advance(1000);
+    const late = w.fake.seed.post(w.thread, w.boFace, 'While it was up.');
+    w.fake.clock.advance(2 * DAY);
+    const page = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    expect(page.kept.map((k) => [k.play, k.reach, k.target])).toEqual([[cast.id, 'thread', w.thread]]);
+    expect(page.acts.map((a) => a.id)).toContain(late);
+  });
+  test('a spin Act and a post are counted apart: a character\'s spin count holds the opening post, its post count the replies', async () => {
+    const w = await spunWorld();
+    expect(await w.fake.characterCounts(w.anaFace)).toEqual({ posts: 0, spins: 1, cards: 0 });
+    expect(await w.fake.characterCounts(w.boFace)).toEqual({ posts: 2, spins: 0, cards: 0 });
+  });
+});
