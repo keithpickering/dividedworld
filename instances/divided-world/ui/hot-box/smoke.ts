@@ -129,7 +129,10 @@ export function covered(x: number, y: number, clearings: readonly Clearing[], ra
   const core = radius * (1 - SMOKE.edge);
   const open = (cx: number, cy: number, o: number): void => {
     if (o <= 0) return;
-    const d = Math.hypot(x - cx, y - cy);
+    /* Beyond the radius it changes nothing; asked first, since the fog's field asks about every cell a clearing or a trail point might reach. */
+    const dx = x - cx, dy = y - cy;
+    if (dx >= radius || -dx >= radius || dy >= radius || -dy >= radius) return;
+    const d = Math.sqrt(dx * dx + dy * dy);
     const local = d <= core ? 0 : d >= radius ? 1 : (d - core) / (radius - core);
     fog = Math.min(fog, 1 - (1 - local) * o);
   };
