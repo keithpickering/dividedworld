@@ -73,7 +73,7 @@ const RUN_EVERY_MS = 1000;
 function useParted(on: boolean, thread: string | null, ready: boolean) {
   useEffect(() => {
     if (!on || !ready || thread === null) return;
-    let timers: ReturnType<typeof setTimeout>[] = [];
+    const timers = new Set<ReturnType<typeof setTimeout>>();
     let every: ReturnType<typeof setInterval> | undefined;
     const secondLine = () => {
       const words = document.querySelector('#post-43 .dw-hotbox-words');
@@ -93,14 +93,17 @@ function useParted(on: boolean, thread: string | null, ready: boolean) {
       const line = secondLine();
       if (!area || !line) return;
       for (let i = 0; i < RUN_MOVES; i++) {
-        timers.push(setTimeout(() => {
+        const timer = setTimeout(() => {
+          /* A finished timer leaves the set, so it holds only the ones still to come. */
+          timers.delete(timer);
           const x = line.left + 60 + (200 * i) / (RUN_MOVES - 1), y = line.top + line.height / 2;
           area.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', pointerId: 1, isPrimary: true, clientX: x, clientY: y, bubbles: true }));
-        }, i * RUN_STEP_MS));
+        }, i * RUN_STEP_MS);
+        timers.add(timer);
       }
     };
     const begin = setTimeout(() => { run(); every = setInterval(run, RUN_EVERY_MS); }, 300);
-    return () => { clearTimeout(begin); clearInterval(every); for (const t of timers) clearTimeout(t); timers = []; };
+    return () => { clearTimeout(begin); clearInterval(every); for (const t of timers) clearTimeout(t); timers.clear(); };
   }, [on, thread, ready]);
 }
 

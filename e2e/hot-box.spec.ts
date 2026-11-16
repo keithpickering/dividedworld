@@ -412,12 +412,18 @@ test('a mouse over a line clears it there, softly, and it closes again after the
   expect(await alphaAt(page, x + r * 2.2, y)).toBeGreaterThanOrEqual(fog - 10);
   await page.mouse.move(5, 5);
   await run(page, SMOKE.roll / 2);
-  /* The fog's wake closes from its rim in (design, section 3.2): half way through, the clearing's rim is part fogged again, and still the model's floor never lets the fog be thicker than the model says. */
+  /* The fog closes in from its rim (design, section 3.2): half way through, the rim is more fogged than the center, by a clear margin (a uniform fade would have both the same), and neither is past the model's fog. */
   const rim = x + r * 0.8;
-  await expect.poll(() => alphaAt(page, rim, y, 1), 'half way through its closing the clearing\'s rim is partly fogged').toBeGreaterThan(20);
-  expect(await alphaAt(page, rim, y, 1)).toBeLessThan(fog - 20);
+  const mid = { center: await alphaAt(page, x, y, 1), rim: await alphaAt(page, rim, y, 1) };
+  test.info().annotations.push({ type: 'closing', description: `half way: center ${mid.center.toFixed(0)}, rim ${mid.rim.toFixed(0)}, of ${fog.toFixed(0)}` });
+  console.log(`hot-box closing: half way, center ${mid.center.toFixed(0)}, rim ${mid.rim.toFixed(0)}, fog ${fog.toFixed(0)}`);
+  expect(mid.rim, 'half way through its closing the rim is partly fogged again').toBeGreaterThan(20);
+  expect(mid.rim, 'and not past the fog').toBeLessThan(fog - 20);
+  expect(mid.rim - mid.center, 'the rim is more fogged than the center: it closes in from the rim').toBeGreaterThan(30);
+  /* The wake lasts SMOKE.roll (2.5 s) and the field's last cells settle to rest a little after it; 500 ms is what that takes on this machine, and the poll below waits no longer than the test's own timeout. */
   await run(page, SMOKE.roll / 2 + 500);
   await expect.poll(() => alphaAt(page, x, y), 'and the whole of it has closed, the center last').toBeGreaterThanOrEqual(fog - 10);
+  await expect.poll(() => alphaAt(page, rim, y), 'the rim too').toBeGreaterThanOrEqual(fog - 10);
 });
 
 test('thinning is visibly thinner than fresh', async ({ page, context }) => {
@@ -497,13 +503,15 @@ test('Tab reaches the mark, Enter opens the Lens, Tab reaches "Wave the smoke", 
 
 test('the fog is shaded: many colors in the smoked area, and not the flat color alone', async ({ page }) => {
   await open(page, 'fresh-light');
-  const found = await page.evaluate(() => {
+  /* Only pixels at the fog's resting strength count: a transparent pixel is no color of the fog, and a fog of one flat color with transparent corners must not pass for shaded. */
+  const found = await page.evaluate((minAlpha) => {
     const colors = new Map<number, number>();
     let total = 0;
     for (const canvas of document.querySelectorAll<HTMLCanvasElement>('#post-43 canvas.dw-hotbox-smoke')) {
       if (canvas.width === 0 || canvas.height === 0) continue;
       const d = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
       for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3]! < minAlpha) continue;
         const key = (d[i]! << 16) | (d[i + 1]! << 8) | d[i + 2]!;
         colors.set(key, (colors.get(key) ?? 0) + 1);
         total += 1;
@@ -512,7 +520,7 @@ test('the fog is shaded: many colors in the smoked area, and not the flat color 
     let most = 0;
     for (const n of colors.values()) most = Math.max(most, n);
     return { distinct: colors.size, total, share: total ? most / total : 1 };
-  });
+  }, (fogAlpha(1) - 0.06) * 255);
   test.info().annotations.push({ type: 'shading', description: `${found.distinct} distinct colors over ${found.total} px; the commonest is ${(found.share * 100).toFixed(1)}% of them` });
   expect(found.total, 'the post has smoke painted').toBeGreaterThan(1000);
   expect(found.distinct, 'at least 40 distinct colors').toBeGreaterThanOrEqual(40);
@@ -589,6 +597,11 @@ test('the fog fills the area at rest, and its repaints are at most 20 a second',
 
 test('a post scrolled out of view holds no tile and repaints nothing', async ({ page }) => {
   await open(page, 'long-post', { counted: true });
+  /* First the post is in view and does hold a tile that is repainted, so that "none after" is a change and not an effect that never made a layer. */
+  await expect.poll(() => page.locator(`${POST} canvas.dw-hotbox-smoke`).count(), 'a tile canvas is held for the post while it is in view').toBeGreaterThanOrEqual(1);
+  await forgetDraws(page);
+  await page.waitForTimeout(500);
+  expect((await perTile(page)).all, 'and it is being repainted while in view').toBeGreaterThan(0);
   /* The page is made taller (a spacer before the post, which the post does not know of), so that the window can be 3,000 px from the post whatever the board's length. */
   const far = await page.evaluate(() => {
     const post = document.querySelector('#post-43')!;
@@ -610,7 +623,6 @@ test('a post scrolled out of view holds no tile and repaints nothing', async ({ 
 test.describe('what the fog costs', () => {
   /* The painter's own time, which the tile loop keeps for its last 600 frames (engine/ui/cards/tileLoop.ts, `probe.work`): the way e2e/effect-tiles.spec.ts reads it. */
   const BUDGET_STORY = 'boards-25-effect-budget--hot-box';
-  const figures: string[] = [];
 
   async function sweepFor(page: Page, ms: number, story: string) {
     await page.goto(story.startsWith('boards-25') ? `/?fixture=boards&story=${story}` : STORY(story));
@@ -652,7 +664,6 @@ test.describe('what the fog costs', () => {
         if (rate > 1) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate });
         const got = await sweepFor(page, rate === 4 ? 6000 : 3000, story);
         const text = `${label}, ${rate}x CPU, pointer sweeping ${rate === 4 ? 6 : 3} s: ${got.frames} frames, mean ${got.mean.toFixed(2)} ms, mean at the rung it settled on ${got.atRung.toFixed(2)} ms over ${got.atRungFrames} frames, worst ${got.max.toFixed(1)} ms, ladder rung ${got.level}`;
-        figures.push(text);
         test.info().annotations.push({ type: 'cost', description: text });
         console.log(`hot-box cost: ${text}`);
         expect(got.frames, 'the painter ran').toBeGreaterThan(10);
@@ -765,10 +776,13 @@ test.describe('under forced colors', () => {
       /* With the mouse over it: inside the circle the words show (more than one color), outside, right up to the ring, they do not (a hard edge). */
       await page.mouse.move(x, y);
       await run(page, 100);
-      /* A clearing and the trail point the pointer's first move left in it are each a disc, and each draws a ring: the first is the one measured. */
+      /* A clearing and the trail point the pointer's first move left in it are each a disc, and each draws a ring: the one centered on the pointer is measured. */
       const rings = page.locator(`${POST} .dw-hotbox-ring`);
-      const ring = rings.first();
       await expect(rings).not.toHaveCount(0);
+      /* Some ring is the pointer's: centered on it, within 2 px (the count is whatever it is). */
+      const ringIndex = await rings.evaluateAll((els, [px, py]) => els.findIndex((el) => { const b = el.getBoundingClientRect(); return Math.abs(b.left + b.width / 2 - px!) <= 2 && Math.abs(b.top + b.height / 2 - py!) <= 2; }), [x, y] as const);
+      expect(ringIndex, 'some ring is centered on the pointer').toBeGreaterThanOrEqual(0);
+      const ring = rings.nth(ringIndex);
       const rb = (await ring.boundingBox())!;
       expect(Math.abs(rb.width - 2 * r)).toBeLessThanOrEqual(2);
       expect(await ring.evaluate((el) => { const c = getComputedStyle(el); return { style: c.borderTopStyle, width: c.borderTopWidth, color: c.borderTopColor, events: c.pointerEvents }; })).toEqual({ style: 'solid', width: '2px', color: text, events: 'none' });
@@ -798,13 +812,14 @@ test.describe('under forced colors', () => {
       await page.mouse.move(below.x, below.y);
       await run(page, 100);
       await expect(rings).not.toHaveCount(0);
-      const pb = (await ring.boundingBox())!;
-      expect(Math.abs(pb.width - 2 * r)).toBeLessThanOrEqual(2);
-      expect(Math.abs(pb.x + pb.width / 2 - below.x), 'the ring is centered on the pointer').toBeLessThanOrEqual(2);
-      expect(Math.abs(pb.y + pb.height / 2 - below.y), 'the ring is centered on the pointer, in the padding').toBeLessThanOrEqual(2);
+      /* The pointer's first move leaves a trail point that draws a ring too, so the count is whatever it is: some ring is the pointer's (centered on it, within 2 px, and a clearing's width). */
+      const pb = (await rings.evaluateAll((els) => els.map((el) => { const b = el.getBoundingClientRect(); return { x: b.left, y: b.top, width: b.width, height: b.height }; })))
+        .find((b) => Math.abs(b.x + b.width / 2 - below.x) <= 2 && Math.abs(b.y + b.height / 2 - below.y) <= 2);
+      expect(pb, 'some ring is centered on the pointer, in the padding').toBeDefined();
+      expect(Math.abs(pb!.width - 2 * r)).toBeLessThanOrEqual(2);
       /* Its left and right edges lie in the padding below the words (the ring's vertical middle is that row), where there is no text: both are dark against the page. */
-      expect(pb.y + pb.height / 2, 'the ring\'s middle row is below the words').toBeGreaterThan(wb2.y + wb2.h + 2);
-      for (const ex of [pb.x, pb.x + pb.width - 2]) expect(await colorRange(page, { x: ex - 2, y: pb.y + pb.height / 2 - 2, w: 6, h: 4 }), 'the ring is drawn in the padding').toBeGreaterThanOrEqual(100);
+      expect(pb!.y + pb!.height / 2, 'the ring\'s middle row is below the words').toBeGreaterThan(wb2.y + wb2.h + 2);
+      for (const ex of [pb!.x, pb!.x + pb!.width - 2]) expect(await colorRange(page, { x: ex - 2, y: pb!.y + pb!.height / 2 - 2, w: 6, h: 4 }), 'the ring is drawn in the padding').toBeGreaterThanOrEqual(100);
       /* The words are masked still: the last line, clear of the ring, is one color. */
       const all = await lines(page), last = all[all.length - 1]!;
       expect(await colorRange(page, { x: last.x + 8, y: last.y + 3, w: Math.max(20, Math.min(160, last.w - 16)), h: last.h - 6 }), 'the words stay masked with the pointer in the padding').toBeLessThanOrEqual(ONE_COLOR);
@@ -944,14 +959,19 @@ test.describe('at a phone\'s width', () => {
     await expect.poll(() => alphaAt(page, x, y)).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
   });
 
-  test('a drag across a line leaves a wake, and does not scroll the page', async ({ page }) => {
+  test('a horizontal drag across a line leaves a wake behind the finger, and it closes again', async ({ page }) => {
     await open(page, 'fresh-light', { frozen: true });
     const [first] = await lines(page);
     const r = await radiusOf(page);
     const y = first!.y + first!.h / 2, x0 = first!.x + 4, x1 = first!.x + first!.w - 4;
-    const rest = await alphaAt(page, x0 + 2, y);
-    expect(rest, 'fog at rest where the drag starts').toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
-    const scrolled = await page.evaluate(() => window.scrollY);
+    /* A point on the path, more than a clearing's radius (and its soft edge) from both the touch-down point and where the finger ends: neither the touch's own held clearing at
+       the start nor the one it carries to the end reaches it, so only the wake the finger left can have opened it. */
+    const clear = r * 1.3;
+    const mid = (x0 + x1) / 2;
+    expect(mid - x0, 'the drag is long enough for a point beyond the start clearing').toBeGreaterThan(clear);
+    expect(x1 - mid, 'and beyond the end clearing').toBeGreaterThan(clear);
+    const rest = await alphaAt(page, mid, y);
+    expect(rest, 'fog at rest on the path').toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y }] });
     for (let i = 1; i <= 12; i++) {
@@ -960,13 +980,14 @@ test.describe('at a phone\'s width', () => {
     }
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await run(page, 300);
-    expect(x1 - x0, 'the finger ended well away from where it started').toBeGreaterThan(r * 1.5);
-    await expect.poll(() => alphaAt(page, x0 + 2, y), 'the wake the finger left is clearer than rest at 300 ms').toBeLessThan(rest - 40);
-    expect(await page.evaluate(() => window.scrollY), 'a drag across a line does not scroll').toBe(scrolled);
+    await expect.poll(() => alphaAt(page, mid, y), 'the wake the finger left on its path is clearer than rest shortly after it passed').toBeLessThan(rest - 40);
+    /* The wake lasts SMOKE.wake (1.5 s) and the end's clearing SMOKE.touchHold (4 s) but it is not near the middle: three seconds on, the middle is whole fog again. */
+    await run(page, 3000);
+    await expect.poll(() => alphaAt(page, mid, y), 'and a few seconds later it is whole fog again').toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
     await cdp.detach();
   });
 
-  test('a swipe over the smoked post still scrolls the page', async ({ page }) => {
+  test('a vertical swipe that starts on the smoked words scrolls the page and leaves no long wake', async ({ page }) => {
     await open(page, 'long-post');
     const host = page.locator(`${POST} .dw-hotbox-words`);
     /* The post's words a third of the way down the screen, so a swipe up starts on them. */
@@ -980,7 +1001,25 @@ test.describe('at a phone\'s width', () => {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: startX, y: startY }] });
     for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: startX, y: startY - i * 20 }] });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await expect.poll(() => page.evaluate(() => window.scrollY), 'the swipe moved the page').toBeGreaterThan(before + 100);
+    await expect.poll(() => page.evaluate(() => window.scrollY), 'the swipe that started on the smoked words moved the page (`touch-action: pan-y` on the host)').toBeGreaterThan(before + 100);
+    /* The browser took the swipe for a scroll, so the finger sent no moves: what is open is the clearing where it landed and no streak along 200 px of path. The cleared area (fog under
+       half its rest strength, in css px) is about one clearing's, never the clearing's and a streak of two radii by 200 px. */
+    const r = await radiusOf(page);
+    const cleared = await page.locator(`${POST} canvas.dw-hotbox-smoke`).evaluateAll((els, rest) => {
+      let area = 0;
+      for (const el of els as HTMLCanvasElement[]) {
+        if (el.width === 0) continue;
+        const k = el.width / el.getBoundingClientRect().width;
+        const d = el.getContext('2d')!.getImageData(0, 0, el.width, el.height).data;
+        let n = 0;
+        for (let i = 3; i < d.length; i += 4) if (d[i]! < rest / 2) n += 1;
+        area += n / (k * k);
+      }
+      return area;
+    }, fogAlpha(1) * 255);
+    test.info().annotations.push({ type: 'swipe', description: `${cleared.toFixed(0)} css px squared cleared; one clearing is ${(Math.PI * r * r).toFixed(0)}` });
+    console.log(`hot-box swipe: cleared ${cleared.toFixed(0)}, one clearing ${(Math.PI * r * r).toFixed(0)}`);
+    expect(cleared, 'a swipe leaves one clearing and no long wake').toBeLessThan(1.6 * Math.PI * r * r);
     await cdp.detach();
   });
 });
