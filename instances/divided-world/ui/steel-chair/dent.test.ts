@@ -6,12 +6,20 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { rng, throwOf } from './body.ts';
 import {
-  AXIS_MAX, AXIS_MIN, DENT_SCALE, dentBend, dentHeight, dentImages, dentLight, dentPrimitives, dentShade, dentShape, dentsOverlap, filterTrusted,
+  AXIS_MAX, AXIS_MIN, DENT_SCALE, HALF, LIGHT, RELIEF, dentBend, dentHeight, dentImages, dentLight, dentPrimitives, dentShade, dentShape, dentsOverlap, filterTrusted,
   hitZone, THROW_X, THROW_Y,
 } from './dent.ts';
 
 const IDS = Array.from({ length: 20 }, (_, i) => `height-play-${i}`);
 const SIZES = [[160, 140], [120, 160]] as const;
+/** The maps are built once per id and size for the whole file (nothing here changes a map). */
+const mapCache = new Map<string, Float32Array>();
+const mapOf = (id: string, w: number, h: number): Float32Array => {
+  const key = `${id}|${w}|${h}`;
+  let m = mapCache.get(key);
+  if (!m) { m = dentHeight(dentShape(id), w, h); mapCache.set(key, m); }
+  return m;
+};
 /** A pixel's box coordinates: u and v run -1 to 1 across the box, sampled at the pixel's center. */
 const uv = (x: number, y: number, w: number, h: number) => {
   const u = ((x + 0.5) / w) * 2 - 1, v = ((y + 0.5) / h) * 2 - 1;
@@ -31,20 +39,20 @@ describe('the scale', () => {
 describe('dentHeight: a height map, pressed in with a lip', () => {
   test('the same id gives the same array, with width times height values', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
-      const a = dentHeight(dentShape(id), w, h);
+      const a = mapOf(id, w, h);
       assert.equal(a.length, w * h);
       assert.deepEqual(a, dentHeight(dentShape(id), w, h));
     }
   });
   test('every sample at rho of 0.98 or more is exactly 0', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
-      const m = dentHeight(dentShape(id), w, h);
+      const m = mapOf(id, w, h);
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (uv(x, y, w, h).rho >= 0.98) assert.equal(m[y * w + x], 0, `${id} at ${x},${y}`);
     }
   });
   test('the lowest sample lies within rho of 0.6', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
-      const m = dentHeight(dentShape(id), w, h);
+      const m = mapOf(id, w, h);
       let low = 0, at = 0;
       for (let i = 0; i < m.length; i++) if (m[i]! < low) { low = m[i]!; at = i; }
       const p = uv(at % w, Math.floor(at / w), w, h);
@@ -53,7 +61,7 @@ describe('dentHeight: a height map, pressed in with a lip', () => {
   });
   test('the middle is pressed in: its mean is below 0 and below the mean of the ring around it, which has a lip', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
-      const m = dentHeight(dentShape(id), w, h);
+      const m = mapOf(id, w, h);
       const middle = meanOver(w, h, (p) => p.rho < 0.3, (i) => m[i]!);
       const ring = meanOver(w, h, (p) => p.rho > 0.5 && p.rho < 0.7, (i) => m[i]!);
       assert.ok(middle < 0 && middle < ring, `${id}: middle ${middle}, ring ${ring}`);
@@ -64,7 +72,7 @@ describe('dentHeight: a height map, pressed in with a lip', () => {
 describe('dentShade: lit from the upper left, in front', () => {
   test('its darkest pixel is 128 (within 1) and flat metal is 255; every pixel at rho of 0.98 or more is 255', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
-      const s = dentShade(dentHeight(dentShape(id), w, h), w, h);
+      const s = dentShade(mapOf(id, w, h), w, h);
       assert.equal(s.length, w * h * 4);
       let lo = 255, hi = 0;
       for (let i = 0; i < w * h; i++) {
@@ -79,7 +87,7 @@ describe('dentShade: lit from the upper left, in front', () => {
   test('lit as a hollow: the upper left of the middle is darker than the lower right, for every id', () => {
     for (const id of IDS) {
       const [w, h] = [160, 140] as const;
-      const s = dentShade(dentHeight(dentShape(id), w, h), w, h);
+      const s = dentShade(mapOf(id, w, h), w, h);
       const upperLeft = meanOver(w, h, (p) => p.u < -0.1 && p.v < -0.1 && p.rho < 0.5, (i) => s[i * 4]!);
       const lowerRight = meanOver(w, h, (p) => p.u > 0.1 && p.v > 0.1 && p.rho < 0.5, (i) => s[i * 4]!);
       assert.ok(upperLeft < lowerRight, `${id}: upper left ${upperLeft}, lower right ${lowerRight}`);
@@ -90,7 +98,7 @@ describe('dentShade: lit from the upper left, in front', () => {
 describe('dentLight: a soft sheen and a small glint', () => {
   test('every byte is at most 140, the bytes over 71 are at most 4% of the pixels inside the circle, and the rim is dark', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
-      const l = dentLight(dentHeight(dentShape(id), w, h), w, h);
+      const l = dentLight(mapOf(id, w, h), w, h);
       assert.equal(l.length, w * h * 4);
       let inside = 0, bright = 0, top = 0;
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -107,10 +115,47 @@ describe('dentLight: a soft sheen and a small glint', () => {
   });
 });
 
+describe('dentLight: the last resort', () => {
+  /* A map that is one tilted plane facing the halfway vector, with a slight bowl: every sample is near the glint's peak at any exponent, so the
+     samples over 71 are far more than 4% however large P grows and the fallback is reached. The expected bytes are stated here on their own:
+     the glint at P = 40 · 1.5^8 (eight multiplications, no ninth), scaled to 71, summed with the sheen and held to 140. */
+  test('after eight multiplications of P the glint is scaled to 71 at that P', () => {
+    const [w, h] = [64, 64];
+    const m = new Float32Array(w * h);
+    const slopeU = -HALF[0] / HALF[2] / RELIEF, slopeV = -HALF[1] / HALF[2] / RELIEF;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const u = ((x + 0.5) / w) * 2 - 1, v = ((y + 0.5) / h) * 2 - 1;
+      m[y * w + x] = slopeU * u + slopeV * v + 0.2 * (u * u + v * v);
+    }
+    const lam = new Float64Array(w * h), spec = new Float64Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - 1), x1 = Math.min(w - 1, x + 1), y0 = Math.max(0, y - 1), y1 = Math.min(h - 1, y + 1);
+      const hu = (m[y * w + x1]! - m[y * w + x0]!) / ((x1 - x0) * (2 / w)), hv = (m[y1 * w + x]! - m[y0 * w + x]!) / ((y1 - y0) * (2 / h));
+      const len = Math.hypot(RELIEF * hu, RELIEF * hv, 1), nx = -RELIEF * hu / len, ny = -RELIEF * hv / len, nz = 1 / len;
+      lam[y * w + x] = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2];
+      spec[y * w + x] = nx * HALF[0] + ny * HALF[1] + nz * HALF[2];
+    }
+    const soft = Array.from(lam, (l) => Math.max(0, l - LIGHT[2]));
+    const softScale = 71 / 255 / Math.max(...soft);
+    const P = 40 * 1.5 ** 8, floor = HALF[2] ** P;
+    const glint = Array.from(spec, (s) => Math.max(0, s ** P - floor) / (1 - floor));
+    const glintScale = 71 / 255 / Math.max(...glint);
+    const expected = Array.from(soft, (s, i) => Math.round(255 * Math.min(140 / 255, s * softScale + glint[i]! * glintScale)));
+    const got = dentLight(m, w, h);
+    let inside = 0, bright = 0;
+    for (let i = 0; i < w * h; i++) {
+      const { rho } = uv(i % w, Math.floor(i / w), w, h);
+      if (rho < 1) { inside++; if (expected[i]! > 71) bright++; }
+    }
+    assert.ok(bright > 0.04 * inside, 'the map is one the glint cannot be made small on');
+    assert.deepEqual(Array.from(got).filter((_, i) => i % 4 === 0), expected);
+  });
+});
+
 describe('dentBend: the slope, pointing uphill', () => {
   test('blue is 128 and alpha 255 everywhere; the rim is neutral; the largest offset is 73 to 75', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
-      const b = dentBend(dentHeight(dentShape(id), w, h), w, h);
+      const b = dentBend(mapOf(id, w, h), w, h);
       assert.equal(b.length, w * h * 4);
       let peak = 0;
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -126,7 +171,7 @@ describe('dentBend: the slope, pointing uphill', () => {
      P + scale·(C - 0.5), so on screen the words around the ring are drawn in toward the middle. */
   test('points outward on the whole: in 16 sectors of the ring, the mean dot with the outward direction is positive in at least 12', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
-      const b = dentBend(dentHeight(dentShape(id), w, h), w, h);
+      const b = dentBend(mapOf(id, w, h), w, h);
       const sum = new Array<number>(16).fill(0), n = new Array<number>(16).fill(0);
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
         const p = uv(x, y, w, h);

@@ -144,6 +144,32 @@ const smoothstep = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
+/*
+ * `Math.hypot(a, b)` and `Math.hypot(a, b, 1)`, written out: the engine's own algorithm (scale by the largest, a compensated sum of the
+ * squares, one square root), so the same bits, without the call's argument handling, which is most of the cost in the per-sample loops
+ * below. Finite arguments only, which is all a map has.
+ */
+const hypot2 = (a: number, b: number): number => {
+  const x = Math.abs(a), y = Math.abs(b);
+  const max = x > y ? x : y;
+  if (max === 0) return 0;
+  const n1 = x / max, n2 = y / max;
+  // the compensation is 0 after the first term, and the second's own error is not carried anywhere
+  return Math.sqrt(n1 * n1 + n2 * n2) * max;
+};
+const hypot3One = (a: number, b: number): number => {
+  const x = Math.abs(a), y = Math.abs(b);
+  let max = x > y ? x : y;
+  if (max < 1) max = 1;
+  const n1 = x / max, n2 = y / max, n3 = 1 / max;
+  let sum = n1 * n1;
+  let s = n2 * n2, pre = sum + s;
+  const comp = (pre - sum) - s;
+  sum = pre;
+  s = n3 * n3 - comp; pre = sum + s;
+  return Math.sqrt(pre) * max;
+};
+
 /**
  * One dent's height map, `width × height` values, row by row, each sampled at a pixel's center in the box's normalized coordinates `u`, `v`
  * (-1 to 1 across the box, so an ellipse box gives an elliptical dent). Negative is pressed in. A bowl, the lobes a few blows leave in it, a
@@ -156,25 +182,34 @@ export function dentHeight(shape: DentShape, width: number, height: number): Flo
   const sinT = Math.sin(theta), cosT = Math.cos(theta);
   const ks = [2, 3, 5] as const;
   const lattice = shape.crumple;
+  const amp = shape.waves.map((w) => w.amp), phase = shape.waves.map((w) => w.phase);
+  const lobeU = shape.lobes.map((l) => l.u), lobeV = shape.lobes.map((l) => l.v);
+  const lobeR2 = shape.lobes.map((l) => l.radius ** 2), lobeDepth = shape.lobes.map((l) => l.depth);
+  const lobes = shape.lobes.length;
+  const us = new Float64Array(width);
+  for (let x = 0; x < width; x++) us[x] = ((x + 0.5) / width) * 2 - 1;
   for (let y = 0; y < height; y++) {
     const v = ((y + 0.5) / height) * 2 - 1;
+    const gy = ((v + 1) / 2) * 8;
+    const iy = Math.min(7, Math.max(0, Math.floor(gy)));
+    const fy = smoothstep(0, 1, gy - iy);
     for (let x = 0; x < width; x++) {
-      const u = ((x + 0.5) / width) * 2 - 1;
-      const rho = Math.hypot(u, v);
+      const u = us[x]!;
+      const rho = hypot2(u, v);
       if (rho >= 0.98) continue;
       const a = Math.atan2(v, u);
       let wave = 0;
-      for (let i = 0; i < 3; i++) wave += shape.waves[i]!.amp * Math.cos(ks[i]! * a + shape.waves[i]!.phase);
+      for (let i = 0; i < 3; i++) wave += amp[i]! * Math.cos(ks[i]! * a + phase[i]!);
       const r0 = 0.5 * (1 + wave);
       let h = -Math.exp(-2.2 * (rho / r0) ** 2);
-      for (const l of shape.lobes) h -= l.depth * Math.exp(-(((u - l.u) ** 2 + (v - l.v) ** 2) / l.radius ** 2));
+      for (let i = 0; i < lobes; i++) h -= lobeDepth[i]! * Math.exp(-(((u - lobeU[i]!) ** 2 + (v - lobeV[i]!) ** 2) / lobeR2[i]!));
       const n = u * sinT - v * cosT, t = u * cosT + v * sinT;
       h -= 0.15 * Math.exp(-((n / 0.08) ** 2)) * Math.exp(-((t / 0.4) ** 2));
       h += 0.12 * Math.exp(-(((rho - 1.05 * r0) / 0.09) ** 2));
       // the crumple: a 9 by 9 lattice, smoothstep-interpolated, only where the metal is pressed in
-      const gx = ((u + 1) / 2) * 8, gy = ((v + 1) / 2) * 8;
-      const ix = Math.min(7, Math.max(0, Math.floor(gx))), iy = Math.min(7, Math.max(0, Math.floor(gy)));
-      const fx = smoothstep(0, 1, gx - ix), fy = smoothstep(0, 1, gy - iy);
+      const gx = ((u + 1) / 2) * 8;
+      const ix = Math.min(7, Math.max(0, Math.floor(gx)));
+      const fx = smoothstep(0, 1, gx - ix);
       const upper = lattice[iy * 9 + ix]! * (1 - fx) + lattice[iy * 9 + ix + 1]! * fx;
       const lower = lattice[(iy + 1) * 9 + ix]! * (1 - fx) + lattice[(iy + 1) * 9 + ix + 1]! * fx;
       h += 0.012 * (upper * (1 - fy) + lower * fy) * Math.min(1, Math.max(0, -3 * h));
@@ -195,19 +230,27 @@ export const HALF = unit(LIGHT[0], LIGHT[1], LIGHT[2] + 1);
  */
 export const RELIEF = 0.065;
 
-/** The map lit: `N·LIGHT` and `N·HALF` at every sample, the slopes by central differences in `u`, `v` (one-sided at the edge). */
-function lighting(h: Float32Array, width: number, height: number): { lam: Float64Array; spec: Float64Array } {
+interface Lit { readonly lam: Float64Array; readonly spec: Float64Array }
+/**
+ * The map lit: `N·LIGHT` and `N·HALF` at every sample, the slopes by central differences in `u`, `v` (one-sided at the edge). Made once a map,
+ * and the shade and the light are both drawn from it (`dentImages`).
+ */
+function lighting(h: Float32Array, width: number, height: number): Lit {
   const lam = new Float64Array(width * height), spec = new Float64Array(width * height);
   const du = 2 / width, dv = 2 / height;
+  const [lx, ly, lz] = LIGHT, [sx, sy, sz] = HALF;
   for (let y = 0; y < height; y++) {
     const y0 = Math.max(0, y - 1), y1 = Math.min(height - 1, y + 1);
+    const dy = (y1 - y0) * dv;
     for (let x = 0; x < width; x++) {
       const x0 = Math.max(0, x - 1), x1 = Math.min(width - 1, x + 1);
       const hu = (h[y * width + x1]! - h[y * width + x0]!) / ((x1 - x0) * du);
-      const hv = (h[y1 * width + x]! - h[y0 * width + x]!) / ((y1 - y0) * dv);
-      const [nx, ny, nz] = unit(-RELIEF * hu, -RELIEF * hv, 1);
-      lam[y * width + x] = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2];
-      spec[y * width + x] = nx * HALF[0] + ny * HALF[1] + nz * HALF[2];
+      const hv = (h[y1 * width + x]! - h[y0 * width + x]!) / dy;
+      const px = -RELIEF * hu, py = -RELIEF * hv;
+      const len = hypot3One(px, py);
+      const nx = px / len, ny = py / len, nz = 1 / len;
+      lam[y * width + x] = nx * lx + ny * ly + nz * lz;
+      spec[y * width + x] = nx * sx + ny * sy + nz * sz;
     }
   }
   return { lam, spec };
@@ -219,12 +262,14 @@ function lighting(h: Float32Array, width: number, height: number): { lam: Float6
  * 128/255. A map with no slope (which no shape gives) is all 255.
  */
 export function dentShade(h: Float32Array, width: number, height: number): Uint8ClampedArray {
-  const { lam } = lighting(h, width, height);
+  return shadeOf(lighting(h, width, height));
+}
+function shadeOf({ lam }: Lit): Uint8ClampedArray {
   const flat = LIGHT[2];
   let lo = Infinity;
-  for (const l of lam) lo = Math.min(lo, l);
+  for (let i = 0; i < lam.length; i++) lo = Math.min(lo, lam[i]!);
   const g = flat - lo > 1e-12 ? (1 - 128 / 255) / (flat - lo) : 0;
-  const out = new Uint8ClampedArray(width * height * 4);
+  const out = new Uint8ClampedArray(lam.length * 4);
   for (let i = 0; i < lam.length; i++) {
     const b = Math.round(255 * Math.min(1, Math.max(128 / 255, 1 + (lam[i]! - flat) * g)));
     out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = b;
@@ -237,10 +282,12 @@ export function dentShade(h: Float32Array, width: number, height: number): Uint8
  * The light, RGBA gray and opaque, screened over the post: a soft sheen (`N·LIGHT` above flat, its largest 71/255) and a small glint (a
  * specular term `(N·HALF)^P`, its largest 140/255), summed and held to 140; 0 where the metal is flat. The glint must stay small: the samples
  * brighter than 71 are at most 4% of those inside the circle. While they are more, `P` is multiplied by 1.5 (at most 8 times; after that the
- * glint is scaled to 71, which is a last resort and not a place the shapes reach).
+ * glint, at that `P`, is scaled to 71, which is a last resort and not a place the shapes reach).
  */
 export function dentLight(h: Float32Array, width: number, height: number): Uint8ClampedArray {
-  const { lam, spec } = lighting(h, width, height);
+  return lightOf(lighting(h, width, height), width, height);
+}
+function lightOf({ lam, spec }: Lit, width: number, height: number): Uint8ClampedArray {
   const n = width * height;
   const flat = LIGHT[2];
   const soft = new Float64Array(n);
@@ -249,16 +296,34 @@ export function dentLight(h: Float32Array, width: number, height: number): Uint8
   const softScale = softMax > 0 ? 71 / 255 / softMax : 0;
   const inside = new Uint8Array(n);
   let insideCount = 0;
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    if (Math.hypot(((x + 0.5) / width) * 2 - 1, ((y + 0.5) / height) * 2 - 1) < 1) { inside[y * width + x] = 1; insideCount++; }
+  for (let y = 0; y < height; y++) {
+    const v = ((y + 0.5) / height) * 2 - 1;
+    for (let x = 0; x < width; x++) {
+      if (hypot2(((x + 0.5) / width) * 2 - 1, v) < 1) { inside[y * width + x] = 1; insideCount++; }
+    }
   }
   const out = new Uint8ClampedArray(n * 4);
-  /** Draws the light with a glint of exponent `P` and largest `glintMax`; returns how many pixels inside the circle are over 71. */
-  const draw = (P: number, glintMax: number): number => {
+  const glint = new Float64Array(n);
+  /* A sample whose `N·HALF` is below `HALF.z` by a clear margin has `spec ** P` below the floor for every `P` here, so its glint is 0 and it is
+     left out of the exponent loop (the large majority of a dent's samples; the margin is far wider than any rounding of `**`). */
+  const keep = HALF[2] * (1 - 1e-9);
+  const near: number[] = [];
+  for (let i = 0; i < n; i++) if (spec[i]! > keep) near.push(i);
+  /** Fills `glint` for exponent `P`; returns its largest. */
+  const glintAt = (P: number): number => {
     const floor = HALF[2] ** P;
-    const glint = new Float64Array(n);
-    let glintTop = 0;
-    for (let i = 0; i < n; i++) { glint[i] = Math.max(0, spec[i]! ** P - floor) / (1 - floor); glintTop = Math.max(glintTop, glint[i]!); }
+    const range = 1 - floor;
+    let top = 0;
+    for (let k = 0; k < near.length; k++) {
+      const i = near[k]!;
+      const g = Math.max(0, spec[i]! ** P - floor) / range;
+      glint[i] = g;
+      if (g > top) top = g;
+    }
+    return top;
+  };
+  /** Draws the light from `glint` with its largest `glintMax`; returns how many pixels inside the circle are over 71. */
+  const draw = (glintTop: number, glintMax: number): number => {
     const glintScale = glintTop > 0 ? glintMax / glintTop : 0;
     let bright = 0;
     for (let i = 0; i < n; i++) {
@@ -269,11 +334,14 @@ export function dentLight(h: Float32Array, width: number, height: number): Uint8
     }
     return bright;
   };
-  let P = 40;
-  for (let attempt = 0; attempt <= 8; attempt++, P *= 1.5) {
-    if (draw(P, 140 / 255) <= 0.04 * insideCount) return out;
+  let P = 40, top = glintAt(P);
+  for (let multiplied = 0; multiplied < 8; multiplied++) {
+    if (draw(top, 140 / 255) <= 0.04 * insideCount) return out;
+    P *= 1.5;
+    top = glintAt(P);
   }
-  draw(P, 71 / 255);
+  if (draw(top, 140 / 255) <= 0.04 * insideCount) return out;
+  draw(top, 71 / 255);
   return out;
 }
 
@@ -344,10 +412,11 @@ export function dentImages(play: string, box: DentPrimitive, density: number, to
   const sw = Math.round(w * density), sh = Math.round(h * density);
   const bendMap = dentHeight(shape, w, h);
   const map = sw === w && sh === h ? bendMap : dentHeight(shape, sw, sh);
+  const lit = lighting(map, sw, sh);
   const made = {
     bend: toUrl(dentBend(bendMap, w, h), w, h),
-    shade: toUrl(dentShade(map, sw, sh), sw, sh),
-    light: toUrl(dentLight(map, sw, sh), sw, sh),
+    shade: toUrl(shadeOf(lit), sw, sh),
+    light: toUrl(lightOf(lit, sw, sh), sw, sh),
   };
   imageCache.set(key, made);
   if (imageCache.size > IMAGE_CACHE_MAX) imageCache.delete(imageCache.keys().next().value!);
