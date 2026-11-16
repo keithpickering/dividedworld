@@ -11,14 +11,14 @@ import { MAX_TILE_PIXELS, TILE_NEAR_PX, TILE_PX, makeTileLayer, mostTiles, nearT
 
 /* ---- the stubs ---- */
 
-type FakeIO = { cb: IntersectionObserverCallback };
+type FakeIO = { cb: IntersectionObserverCallback; disconnected: boolean };
 let observers: FakeIO[] = [];
 class FakeObserver {
   readonly entry: FakeIO;
-  constructor(cb: IntersectionObserverCallback) { this.entry = { cb }; observers.push(this.entry); }
+  constructor(cb: IntersectionObserverCallback) { this.entry = { cb, disconnected: false }; observers.push(this.entry); }
   observe() {}
   unobserve() {}
-  disconnect() {}
+  disconnect() { this.entry.disconnected = true; }
   takeRecords() { return []; }
 }
 
@@ -288,8 +288,21 @@ describe('painting', () => {
     flush(116);
     expect(painted).toHaveLength(6);
     layer.loop(false);
+    expect(queue.size).toBe(0);
     flush(132);
     expect(painted).toHaveLength(6);
+  });
+
+  test('loop(false) with a tile stale keeps the frame that paints it', () => {
+    const { layer } = make();
+    flush();
+    layer.loop(true);
+    layer.stale();
+    layer.loop(false);
+    expect(queue.size).toBe(1);
+    painted = [];
+    flush(40);
+    expect(painted.map((d) => d.index)).toEqual([0, 1, 2]);
     expect(queue.size).toBe(0);
   });
 
@@ -368,6 +381,8 @@ describe('stop', () => {
     for (const c of cs) { expect([c.width, c.height]).toEqual([0, 0]); expect(c.isConnected).toBe(false); }
     expect(bandEls(host)).toEqual([]);
     expect(resizers.every((r) => r.disconnected)).toBe(true);
+    expect(observers.length).toBeGreaterThan(0);
+    expect(observers.every((o) => o.disconnected)).toBe(true);
     expect(queue.size).toBe(0);
     layer.stop();
     layout.body!.h = 900;
@@ -378,6 +393,64 @@ describe('stop', () => {
     expect(told).toHaveLength(1);
     expect(painted).toEqual([]);
     expect(host.children).toHaveLength(0);
+    expect(layer.held()).toEqual([]);
+  });
+});
+
+describe('until the watcher first answers', () => {
+  test('the layer keeps its held set true to the window: a page scrolled far away before any report releases the tiles, and an empty report keeps it so', () => {
+    const { layer, host } = make({ standIn: 'fog' });
+    flush();
+    const gone = layer.held().map((t) => t.sheets[0]!);
+    expect(gone).toHaveLength(3);
+    scrollTo(10000);
+    window.dispatchEvent(new Event('scroll'));
+    flush(60);
+    expect(layer.held()).toEqual([]);
+    for (const c of gone) { expect([c.width, c.height]).toEqual([0, 0]); expect(c.isConnected).toBe(false); }
+    expect(canvases(host)).toEqual([]);
+    expect(bandEls(host).every((e) => e.getAttribute('data-kb-tile') === 'far')).toBe(true);
+    report(host, []);
+    flush(76);
+    flush(92);
+    expect(layer.held()).toEqual([]);
+  });
+
+  test('a window that grows taller with the box unchanged is followed by resize, and tiles scrolled into view are held and painted', () => {
+    const { layer } = make();
+    flush();
+    painted = [];
+    vi.stubGlobal('innerHeight', 2000);
+    window.dispatchEvent(new Event('resize'));
+    flush(30);
+    expect(indexes(layer)).toEqual(nearTiles(3000, -20, 1980));
+    expect(indexes(layer)).toEqual([0, 1, 2, 3, 4]);
+    expect(painted.map((d) => [d.index, d.frame])).toEqual([[3, 30], [4, 30]]);
+  });
+
+  test('after the watcher answers once the observer keeps the set: the scroll and resize listeners are removed and a scroll changes nothing', () => {
+    const removed = vi.spyOn(window, 'removeEventListener');
+    const { layer, host } = make();
+    flush();
+    report(host, [0, 1, 2]);
+    flush(40);
+    expect(removed.mock.calls.map((c) => c[0]).sort()).toEqual(['resize', 'scroll']);
+    scrollTo(10000);
+    window.dispatchEvent(new Event('scroll'));
+    window.dispatchEvent(new Event('resize'));
+    expect(queue.size).toBe(0);
+    flush(56);
+    expect(indexes(layer)).toEqual([0, 1, 2]);
+  });
+
+  test('stop removes the listeners it still has, and a late scroll does nothing', () => {
+    const removed = vi.spyOn(window, 'removeEventListener');
+    const { layer } = make();
+    flush();
+    layer.stop();
+    expect(removed.mock.calls.map((c) => c[0]).sort()).toEqual(['resize', 'scroll']);
+    window.dispatchEvent(new Event('scroll'));
+    expect(queue.size).toBe(0);
     expect(layer.held()).toEqual([]);
   });
 });
@@ -404,6 +477,24 @@ describe('where there is no IntersectionObserver', () => {
     expect(canvases(host)).toHaveLength(want.length);
     expect(painted.map((d) => [d.index, d.frame])).toEqual(want.map((i) => [i, 200]));
     flush(216);
+    expect(queue.size).toBe(0);
+  });
+
+  test('a window that grows taller is followed by resize, and stop removes both listeners', () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    tall(40000);
+    const removed = vi.spyOn(window, 'removeEventListener');
+    const { layer } = make();
+    flush();
+    flush();
+    vi.stubGlobal('innerHeight', 2000);
+    window.dispatchEvent(new Event('resize'));
+    flush(30);
+    expect(indexes(layer)).toEqual(nearTiles(40000, -20, 1980));
+    expect(indexes(layer)).toEqual([0, 1, 2, 3, 4]);
+    layer.stop();
+    expect(removed.mock.calls.map((c) => c[0]).sort()).toEqual(['resize', 'scroll']);
+    window.dispatchEvent(new Event('scroll'));
     expect(queue.size).toBe(0);
   });
 });

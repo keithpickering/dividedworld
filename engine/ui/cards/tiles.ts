@@ -270,7 +270,25 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
     hold(nearTiles(box.h, v.top, v.bottom), ask);
   }
 
-  const onNear = (near: number[]) => { if (!stopped && hasObserver) hold(near, true); };
+  /* Until the watcher first calls back (it skips an empty first report), and for good where there is no observer, the held set is the window's. */
+  let answered = false;
+  let listening = false;
+  const following = () => !hasObserver || !answered;
+  const onScroll = () => { scrollDue = true; want(self); };
+  const listen = (on: boolean) => {
+    if (on === listening) return;
+    listening = on;
+    const act = on ? window.addEventListener : window.removeEventListener;
+    act.call(window, 'scroll', onScroll, on ? { passive: true, capture: true } : { capture: true });
+    act.call(window, 'resize', onScroll, on ? { passive: true } : undefined);
+  };
+  const onNear = (near: number[]) => {
+    if (stopped || !hasObserver) return;
+    answered = true;
+    scrollDue = false;
+    listen(false);
+    hold(near, true);
+  };
 
   let watcher: BandWatch | null = null;
   const resizer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => measure());
@@ -298,10 +316,8 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
       /* A canvas given a new size is blank, and a resize is delivered before the frame is painted, so it is painted here. */
       if (place(tile) || sized) paint(tile, null);
     }
-    if (!hasObserver) follow(true);
+    if (following()) follow(true);
   }
-
-  const onScroll = () => { scrollDue = true; want(self); };
 
   options.onBox?.(box, body);
   join(self);
@@ -312,13 +328,15 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
     resizer.observe(host);
     if (body) { resizer.observe(body); watched = body; }
   }
-  if (!hasObserver) window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+  listen(true);
 
   return {
     loop(on) {
       if (stopped) return;
       looping = on;
       if (on) want(self);
+      /* Nothing stale and no scroll to follow: no frame of the layer's is left pending. `join` puts it back among the members the probe counts. */
+      else if (!scrollDue && ![...tiles.values()].some((t) => t.dirty)) { forget(self); join(self); }
     },
     stale(rect) {
       if (stopped) return;
@@ -340,7 +358,7 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
       if (stopped) return;
       stopped = true;
       resizer?.disconnect();
-      if (!hasObserver) window.removeEventListener('scroll', onScroll, { capture: true });
+      listen(false);
       for (const tile of [...tiles.values()]) release(tile);
       watcher?.stop();
       standIns = [];
