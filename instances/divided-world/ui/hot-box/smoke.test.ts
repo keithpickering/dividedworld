@@ -1,10 +1,10 @@
 /**
- * The smoke's pure half (docs/plans/2026-11-15-hot-box-plan.md, Task 3): its numbers, the strength a play has left,
- * a clearing's openness and coverage, the drifting puffs and a held sweep's place. No DOM and no clock.
+ * The smoke's pure half (docs/plans/2026-11-15-hot-box-plan.md, Task 3; the trail, docs/plans/2026-11-15-hot-box-fog-design.md
+ * section 3.1): its numbers, the strength a play has left, a clearing's openness and coverage, the pointer's trail, the drifting puffs and a held sweep's place. No DOM and no clock.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SMOKE, covered, fogAlpha, holeRadius, maskAlpha, openness, puffAt, puffs, strength, sweepAt, type Clearing } from './smoke.ts';
+import { SMOKE, covered, extendTrail, fogAlpha, hardOpen, holeRadius, maskAlpha, openness, puffAt, puffs, strength, sweepAt, trailOpenness, type Clearing, type TrailPoint } from './smoke.ts';
 
 const near = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} is not ${b}`);
 
@@ -12,6 +12,7 @@ test('the numbers are the plan\'s', () => {
   assert.equal(SMOKE.full, 0.94); assert.equal(SMOKE.least, 0.45); assert.equal(SMOKE.hole, 90);
   assert.equal(SMOKE.edge, 0.35); assert.equal(SMOKE.roll, 2500); assert.equal(SMOKE.touchHold, 4000);
   assert.equal(SMOKE.waved, 20000); assert.equal(SMOKE.puffArea, 1800);
+  assert.equal(SMOKE.wake, 1500); assert.equal(SMOKE.trailStep, 1 / 3); assert.equal(SMOKE.trailHard, 0.5);
 });
 
 test('strength is 1 at playedAt, a straight line down to 0 at ends, clamped, and 1 for a time that is no time', () => {
@@ -192,4 +193,82 @@ test('a sweep depends on elapsed time and nothing else (no reduced-motion argume
   assert.equal(inf.done, true); assert.equal(inf.finished, 2);
   const nan = sweepAt(LINES, NaN, 400, 400);
   assert.deepEqual([nan.x, nan.finished, nan.done], [0, -1, false]);
+});
+
+const R = 90;
+
+test('the trail takes a point only after a third of a radius of travel, and a still pointer adds none', () => {
+  const first = extendTrail([], 10, 20, 100, R);
+  assert.deepEqual(first, [{ x: 10, y: 20, leftAt: 100 }]);
+  assert.equal(extendTrail(first, 10, 20, 116, R).length, 1);
+  assert.equal(extendTrail(first, 10 + R * SMOKE.trailStep - 1, 20, 116, R).length, 1);
+  const moved = extendTrail(first, 10 + R * SMOKE.trailStep, 20, 116, R);
+  assert.deepEqual(moved, [{ x: 10, y: 20, leftAt: 100 }, { x: 10 + R * SMOKE.trailStep, y: 20, leftAt: 116 }]);
+  assert.equal(first.length, 1, 'the trail it was given is not changed');
+});
+
+test('the trail drops points a wake old and never holds more than the wake needs at a frame each', () => {
+  const old: TrailPoint = { x: 0, y: 0, leftAt: 0 };
+  assert.equal(extendTrail([old], 500, 0, SMOKE.wake - 1, R).length, 2);
+  assert.deepEqual(extendTrail([old], 500, 0, SMOKE.wake, R), [{ x: 500, y: 0, leftAt: SMOKE.wake }]);
+  assert.deepEqual(extendTrail([old], 0, 0, SMOKE.wake, R), []);
+  const cap = Math.ceil(SMOKE.wake / 16) + 1;
+  let trail: TrailPoint[] = [];
+  for (let i = 0; i < 10000; i++) {
+    trail = extendTrail(trail, i * R, 0, i, R);
+    assert.ok(trail.length <= cap, `${i}: ${trail.length} points`);
+    assert.ok(trail.every((p) => i - p.leftAt < SMOKE.wake));
+  }
+  assert.equal(trail.length, cap);
+  assert.equal(trail[trail.length - 1]!.leftAt, 9999);
+  assert.equal(trail[0]!.leftAt, 9999 - cap + 1, 'the oldest are the ones dropped');
+});
+
+test('a trail point is open at once and closes in a straight line over the wake; reduced motion switches at trailHard of it', () => {
+  const p: TrailPoint = { x: 0, y: 0, leftAt: 1000 };
+  assert.equal(trailOpenness(p, 1000, false), 1);
+  near(trailOpenness(p, 1750, false), 0.5);
+  assert.equal(trailOpenness(p, 2500, false), 0);
+  assert.equal(trailOpenness(p, 99999, false), 0);
+  assert.equal(trailOpenness(p, 500, false), 1);
+  assert.equal(trailOpenness(p, 1749, true), 1);
+  assert.equal(trailOpenness(p, 1750, true), 0);
+  const seen = new Set<number>();
+  for (let t = 1000; t < 3000; t += 10) seen.add(trailOpenness(p, t, true));
+  assert.deepEqual([...seen].sort(), [0, 1]);
+});
+
+test('coverage with a trail: the point the pointer left 300 ms ago is partly open, and without the trail it is fog', () => {
+  const trail: TrailPoint[] = [{ x: 100, y: 100, leftAt: 0 }];
+  near(covered(100, 100, [], R, 300, false, trail), 0.2);
+  assert.equal(covered(100, 100, [], R, 300, false), 1);
+  assert.equal(covered(100, 100, [], R, 300, false, []), 1);
+  assert.equal(covered(100 + R, 100, [], R, 300, false, trail), 1, 'the trail point has the same rim a clearing has');
+  near(covered(100 + R * (1 - SMOKE.edge / 2), 100, [], R, 0, false, trail), 0.5);
+  const c: Clearing = { x: 100, y: 100, openedAt: 0, leftAt: null, hold: 0 };
+  assert.equal(covered(100, 100, [c], R, 300, false, trail), 0, 'the most open of a clearing and a trail point wins');
+  const closing: Clearing = { ...c, leftAt: 0, hold: 0 };
+  near(covered(100, 100, [closing], R, 1250, false, [{ x: 100, y: 100, leftAt: 1000 }]), 250 / SMOKE.wake, 1e-9);
+  assert.equal(covered(100, 100, [], R, 1500, false, trail), 1);
+  assert.equal(covered(100, 100, [], R, 749, true, trail), 0);
+  assert.equal(covered(100, 100, [], R, 750, true, trail), 1);
+});
+
+test('hardOpen (forced colors): a clearing at least trailHard open and a trail point younger than trailHard of the wake show the words', () => {
+  const c: Clearing = { x: 100, y: 100, openedAt: 0, leftAt: null, hold: 0 };
+  assert.equal(hardOpen(100, 100, [c], [], R, 0), true);
+  assert.equal(hardOpen(100 + R - 1, 100, [c], [], R, 0), true);
+  assert.equal(hardOpen(100 + R, 100, [c], [], R, 0), false);
+  assert.equal(hardOpen(100, 100, [], [], R, 0), false);
+  for (const dx of [0, R / 2, R, R + 50]) {
+    assert.equal(hardOpen(100 + dx, 100, [c], [], R, 0), covered(100 + dx, 100, [c], R, 0, false) < 1 - SMOKE.trailHard, `${dx}`);
+  }
+  const closing: Clearing = { ...c, leftAt: 0, hold: 0 };
+  assert.equal(hardOpen(100, 100, [closing], [], R, 1249), true);
+  assert.equal(hardOpen(100, 100, [closing], [], R, 1251), false);
+  const trail: TrailPoint[] = [{ x: 300, y: 100, leftAt: 0 }];
+  assert.equal(hardOpen(300, 100, [], trail, R, 749), true);
+  assert.equal(hardOpen(300, 100, [], trail, R, 750), false);
+  assert.equal(hardOpen(300 + R - 1, 100, [], trail, R, 749), true);
+  assert.equal(hardOpen(300 + R, 100, [], trail, R, 749), false);
 });
