@@ -17,6 +17,7 @@
  */
 import { bandsOf, watchBands, type BandWatch } from './bands.ts';
 import { bodyBox, bodyOf, sameBox, type BodyBox } from './body.ts';
+import { forget, join, want, type LoopMember } from './tileLoop.ts';
 import type { EffectPlace } from './types.ts';
 
 /** A tile's height in CSS px. */
@@ -84,6 +85,8 @@ export function nearTiles(boxH: number, viewTop: number, viewBottom: number): nu
  * IntersectionObserver `bands.ts` counts every tile near; the layer ignores that and holds the tiles `nearTiles` names from the window on each
  * scroll frame, so the figure of section 3 holds there too.
  *
+ * The frames are not the layer's: it joins the page's one schedule (tileLoop.ts) and asks it for a frame when it has a loop on, a stale or new tile or a scroll to follow, and requests none of its own.
+ *
  * Every canvas is placed inline (the effect's stylesheet places nothing), appended after its tile's stand-in so it covers it, in the host: the
  * effect keeps its own layer at its own depth among the post's elements. The context a painter is handed has been cleared, transformed to the
  * box's coordinates and clipped to the tile's rows, so a painter that fills the whole box fills only the tile.
@@ -141,31 +144,6 @@ interface Tile {
   dirty: boolean;
   /** Painted at least once, so its stand-in is marked held. */
   painted: boolean;
-}
-
-/* The frame schedule. Task 3 moves this to tileLoop.ts; the layer only ever asks it for a frame and tells it when it is done. */
-interface Member { frame(t: number): boolean }
-const members = new Set<Member>();
-const asked = new Set<Member>();
-let handle: number | null = null;
-function tick(t: number): void {
-  handle = null;
-  const now = [...asked];
-  asked.clear();
-  for (const m of now) {
-    try { if (m.frame(t)) asked.add(m); } catch (err) { console.error(err); }
-  }
-  if (asked.size > 0 && handle === null) handle = requestAnimationFrame(tick);
-}
-const join = (m: Member): void => { members.add(m); };
-function want(m: Member): void {
-  asked.add(m);
-  if (handle === null) handle = requestAnimationFrame(tick);
-}
-function forget(m: Member): void {
-  members.delete(m);
-  asked.delete(m);
-  if (asked.size === 0 && handle !== null) { cancelAnimationFrame(handle); handle = null; }
 }
 
 /** The layer over `host` (an absolutely positioned layer's parent, as `placeLayer` assumes): see the header. */
@@ -275,7 +253,7 @@ export function makeTileLayer(host: HTMLElement, options: TileLayerOptions): Til
     for (const tile of [...tiles.values()]) if (looping || tile.dirty) paint(tile, t);
     return looping;
   };
-  const self: Member = { frame };
+  const self: LoopMember = { frame, pixels: () => { let px = 0; for (const t of tiles.values()) for (const c of t.sheets) px += c.width * c.height; return px; } };
 
   /** Holds the tiles in `near` and no others; a tile made is painted by the next frame (asked for here unless the caller paints it itself). */
   function hold(near: readonly number[], ask: boolean): void {
