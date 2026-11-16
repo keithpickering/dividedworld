@@ -161,6 +161,11 @@ test('an autocorrect save is refused while its play is held, and saves once the 
   const whoops = pair({ whoami, card_of_play: 'whoops', save_effect_state: { play: target } });
   await runAction(whoops.dbs, instance, { action: 'saveEffect', play: target, character: id, state: { strokes: [] } });
   assert.ok(!whoops.calls.some((c) => c.includes('play_landed_at')), 'a card with no hold reads no landing time');
+  // A card with a hold and no words of its own is refused in the plain default.
+  const plain = { ...instance, cards: instance.cards.map((c) => (c.key === 'autocorrect' ? { ...c, stateHeldWords: undefined } : c)) };
+  const quiet = pair({ whoami, card_of_play: 'autocorrect', play_landed_at: hoursAgo(1), save_effect_state: { play: target } });
+  const said = await runAction(quiet.dbs, plain, { action: 'saveEffect', play: target, character: id, state });
+  assert.match(String((said.body as { error: string }).error), /^This card's effect can't be changed by its post's author until .+\.$/);
 });
 
 test('what an action wrote is broadcast as its public projection, on its thread\'s or board\'s channel; a purchase never is', async () => {

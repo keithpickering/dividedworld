@@ -79,5 +79,6 @@ Model: sonnet
   next save is refused until the hold ends. The screen must not try to save in a loop meanwhile.
 - The refusal comes before the author check for every caller, so a non-author learns nothing new.
 - A deployed economy row lacks `autocorrect.holdHours` until the seed adds it, and `withDatabaseSettings` throws on a missing read
-  key: the seed must run before the act function serves saves on the new code.
+  key, and every play, set and draw reads the settings through it: the seed must run before the act function serves any card action on
+  the new code.
 - The timer exists only for the author's screen while a hold runs, never once per post for every reader.

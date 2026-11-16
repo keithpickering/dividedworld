@@ -239,7 +239,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       if (!rules.validateState) return refused('play', 'this card keeps no state');
       const state = rules.validateState(decision.args.state);
       if (!state.ok) return refused('state', state.why);
-      // A hold on the author's saves (a play's own rules name it): refused with no write, before any other card's path is touched.
+      // A hold on the author's saves (the play's own rules name it): refused before any write and before the database's author check, from the
+      // play's public landing time and the settings alone, so the answer is the same for every caller and proves nothing about who wrote the post.
       if (rules.stateHeldUntil) {
         const landed = await dbs.player.rpc<string | null>('play_landed_at', { play: decision.args.on_play });
         if (!landed) return refused('play', 'there is no such card on a post');
