@@ -1,0 +1,129 @@
+<!--
+  Record, written 2026-11-15. The effect canvas bench: the design session's measurement for the effect-canvas design
+  (Hot Box's final review, F2, and Graffiti's lag on a long post). It draws stand-ins for two effects' frames, Hot Box's
+  smoke (a loop: every frame) and Graffiti's wall (a repaint for every move of a scrub), two ways: on one canvas the
+  size of the whole post, as both are built today, and on fixed-height tiles of which only those near the viewport
+  exist. A standalone page: open it in a browser and press Run, or call `run(mode, w, h)` from the console. It is a
+  measure of the two shapes, not the effects' own code and not code to copy.
+-->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Effect Canvas Bench</title>
+<style>
+body { font: 13px/1.4 Verdana, Geneva, sans-serif; margin: 0; background: #fff; color: #000; }
+#bar { position: fixed; inset: 0 0 auto 0; z-index: 5; background: #f1f1ef; border-bottom: 1px solid #000; padding: 6px 10px; }
+#out { font: 12px/1.35 "Courier New", monospace; white-space: pre; max-height: 40vh; overflow: auto; margin: 4px 0 0; }
+#post { position: relative; margin: 150px auto 0; border: 1px solid #000; background: repeating-linear-gradient(#fff 0 17px, #ddd 17px 18px); }
+#post canvas { position: absolute; left: 0; pointer-events: none; }
+button { font: inherit; }
+</style></head><body>
+<div id="bar"><button id="go">Run all</button> <span id="state"></span><pre id="out"></pre></div>
+<div id="post"></div>
+<script>
+const MAX_DPR = 2, CAP = { hotbox: 16_000_000, graffiti: 4_000_000 }, TILE = 1024, NEAR = 200, FRAMES = 90;
+const post = document.getElementById('post');
+const rng = (seed) => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const sprite = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const s = g.createRadialGradient(64, 64, 0, 64, 64, 64); s.addColorStop(0, 'rgba(255,255,255,1)'); s.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = s; g.fillRect(0, 0, 128, 128); return c; })();
+const density = (w, h, cap) => Math.min(MAX_DPR, window.devicePixelRatio || 1, Math.sqrt(cap / (w * h)));
+const mk = (w, h, d, top) => { const c = document.createElement('canvas'); c.width = Math.ceil(w * d); c.height = Math.ceil(h * d); c.style.cssText = `top:${top}px;width:${w}px;height:${h}px`; post.appendChild(c); return c; };
+
+/* Hot Box's frame: clear, the fog, up to 160 drifting puffs, one clearing cut out. `top`/`th` are the slice of the post this canvas holds. */
+function smoke(ctx, d, w, h, top, th, puffs, t) {
+  ctx.setTransform(d, 0, 0, d, 0, -top * d);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  ctx.clearRect(0, top, w, th);
+  ctx.fillStyle = 'rgba(200,200,200,0.9)'; ctx.fillRect(0, top, w, th);
+  for (const p of puffs) {
+    const y = ((p.y + p.dy * t) % h + h) % h, x = ((p.x + p.dx * t) % w + w) % w;
+    if (y + p.r < top || y - p.r > top + th) continue;
+    ctx.globalAlpha = 0.2; ctx.drawImage(sprite, x - p.r, y - p.r, p.r * 2, p.r * 2);
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'destination-out';
+  const cy = scrollY + 300 - post.offsetTop, cut = ctx.createRadialGradient(w / 2, cy, 0, w / 2, cy, 90);
+  cut.addColorStop(0, 'rgba(0,0,0,1)'); cut.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = cut; ctx.fillRect(w / 2 - 90, cy - 90, 180, 180);
+}
+/* Graffiti's repaint: every stroke's overspray stamps and speckle on a halo layer, its core on the wall, the halo laid under. */
+function wall(ctx, halo, d, w, top, th, strokes) {
+  for (const g of [ctx, halo]) { g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, g.canvas.width, g.canvas.height); g.setTransform(d, 0, 0, d, 0, -top * d); g.lineCap = g.lineJoin = 'round'; }
+  for (const s of strokes) {
+    if (s.y1 < top || s.y0 > top + th) continue;
+    halo.globalAlpha = 0.05;
+    for (const [x, y] of s.stamps) halo.drawImage(sprite, x - s.reach, y - s.reach, s.reach * 2, s.reach * 2);
+    halo.globalAlpha = 0.5; halo.fillStyle = s.color;
+    for (const [x, y] of s.dots) { halo.beginPath(); halo.arc(x, y, 0.6, 0, 6.3); halo.fill(); }
+    ctx.globalAlpha = 0.92; ctx.strokeStyle = s.color; ctx.lineWidth = s.rw * 2; ctx.beginPath();
+    s.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'destination-over';
+  ctx.drawImage(halo.canvas, 0, 0);
+}
+function strokesFor(w, h) {
+  const r = rng(7), out = [];
+  /* A wall's tags gather where readers are: 80 strokes, each within a screen's height of where it starts. */
+  for (let n = 0; n < 80; n++) {
+    let x = r() * w, y = r() * h; const rw = 4 + r() * 10, pts = [], stamps = [], dots = [];
+    for (let i = 0; i < 120; i++) { x = Math.min(w, Math.max(0, x + (r() - 0.5) * 30)); y = Math.min(h, Math.max(0, y + (r() - 0.5) * 30)); pts.push([x, y]); for (let k = 0; k < 4; k++) stamps.push([x + r() * 4, y + r() * 4]); }
+    for (let i = 0; i < 200; i++) { const p = pts[Math.floor(r() * pts.length)]; dots.push([p[0] + (r() - 0.5) * rw * 6, p[1] + (r() - 0.5) * rw * 6]); }
+    const ys = pts.map((p) => p[1]);
+    out.push({ pts, stamps, dots, rw, reach: rw * 1.9, color: ['#e11', '#17c', '#1a4'][n % 3], y0: Math.min(...ys) - rw * 4, y1: Math.max(...ys) + rw * 4 });
+  }
+  return out;
+}
+const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return +s[Math.min(s.length - 1, Math.floor(s.length * p))].toFixed(2); };
+
+/** mode: 'hotbox-whole' | 'hotbox-tiled' | 'graffiti-whole' | 'graffiti-tiled'. Resolves with the JS time per paint and the gap between frames, ms. */
+async function run(mode, w, h, FRAMES = 90) {
+  post.replaceChildren(); post.style.width = w + 'px'; post.style.height = h + 'px';
+  scrollTo(0, 0);
+  const [effect, shape] = mode.split('-'), r = rng(3);
+  const puffs = Array.from({ length: Math.min(160, Math.max(12, Math.round(w * h / 9000))) }, () => ({ x: r() * w, y: r() * h, r: 18 + r() * 24, dx: (r() - 0.5) * 20, dy: (r() - 0.5) * 20 }));
+  const strokes = strokesFor(w, h);
+  let px = 0, paint;
+  if (shape === 'whole') {
+    const d = density(w, h, CAP[effect]), c = mk(w, h, d, 0), ctx = c.getContext('2d'); px = c.width * c.height;
+    if (effect === 'hotbox') paint = (t) => smoke(ctx, d, w, h, 0, h, puffs, t);
+    else {
+      const hc = document.createElement('canvas'), halo = hc.getContext('2d');
+      /* As spray.ts does: the halo layer is sized for each paint and released after it. */
+      paint = () => { hc.width = c.width; hc.height = c.height; wall(ctx, halo, d, w, 0, h, strokes); hc.width = hc.height = 0; px = c.width * c.height * 2; };
+    }
+  } else {
+    const d = Math.min(MAX_DPR, window.devicePixelRatio || 1), tiles = new Map();
+    const hc = document.createElement('canvas'), halo = hc.getContext('2d'); hc.width = Math.ceil(w * d); hc.height = Math.ceil(TILE * d);
+    paint = (t) => {
+      const from = scrollY - post.offsetTop - NEAR, to = from + innerHeight + NEAR * 2;
+      px = effect === 'graffiti' ? hc.width * hc.height : 0;
+      for (let i = 0, top = 0; top < h; i++, top += TILE) {
+        const th = Math.min(TILE, h - top), near = top + th > from && top < to;
+        if (!near) { tiles.get(i)?.remove(); tiles.delete(i); continue; }
+        let c = tiles.get(i); if (!c) { c = mk(w, th, d, top); tiles.set(i, c); }
+        px += c.width * c.height;
+        if (effect === 'hotbox') smoke(c.getContext('2d'), d, w, h, top, th, puffs, t); else wall(c.getContext('2d'), halo, d, w, top, th, strokes);
+      }
+    };
+  }
+  const js = [], gaps = []; let last = 0;
+  await new Promise((done) => {
+    let n = 0;
+    const frame = (now) => {
+      if (last) gaps.push(now - last); last = now;
+      const t0 = performance.now(); paint(now / 1000); js.push(performance.now() - t0);
+      if (++n < FRAMES) requestAnimationFrame(frame); else done();
+    };
+    requestAnimationFrame(frame);
+  });
+  return { mode, w, h, megapixels: +(px / 1e6).toFixed(1), jsP50: pct(js, 0.5), jsP95: pct(js, 0.95), gapP50: pct(gaps, 0.5), gapP95: pct(gaps, 0.95) };
+}
+async function runAll(sizes = [[720, 1000], [720, 4000], [720, 8000], [720, 20000], [390, 8000], [390, 40000]]) {
+  const rows = [];
+  for (const [w, h] of sizes) for (const mode of ['hotbox-whole', 'hotbox-tiled', 'graffiti-whole', 'graffiti-tiled']) {
+    document.getElementById('state').textContent = `${mode} ${w}x${h}`;
+    rows.push(await run(mode, w, h));
+    document.getElementById('out').textContent = rows.map((x) => `${x.mode.padEnd(15)} ${String(x.w).padStart(4)}x${String(x.h).padEnd(6)} ${String(x.megapixels).padStart(5)} Mpx  js ${String(x.jsP50).padStart(6)}/${String(x.jsP95).padStart(6)} ms  gap ${String(x.gapP50).padStart(6)}/${String(x.gapP95).padStart(6)} ms`).join('\n');
+  }
+  document.getElementById('state').textContent = 'done';
+  return rows;
+}
+document.getElementById('go').onclick = () => runAll();
+</script></body></html>
