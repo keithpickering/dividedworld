@@ -76,6 +76,33 @@ describe('liftedOver', () => {
     expect(lifted(b.querySelector('#words')!.firstChild, b)).toBe(false);
   });
 
+  test('a body that is itself lifted is lifted over: the nearest lifted element is the body, and it contains itself', () => {
+    const root = mount('<div id="body" data-kb-content-area data-kb-over-ink><span id="words">words</span></div>');
+    const b = root.querySelector<HTMLElement>('#body')!;
+    expect(lifted(b.querySelector('#words'), b)).toBe(true);
+    expect(lifted(b, b)).toBe(true);
+  });
+
+  test('with lifts nested, the nearest wins: a lifted button in a body in a lifted box is lifted over, a plain word in that body is not', () => {
+    const root = mount('<div id="box" data-kb-over-ink><div id="body" data-kb-content-area><button id="btn" data-kb-over-ink>History</button><span id="words">words</span></div></div>');
+    const b = root.querySelector<HTMLElement>('#body')!;
+    expect(lifted(b.querySelector('#btn'), b)).toBe(true);
+    expect(lifted(b.querySelector('#words'), b)).toBe(false);
+  });
+
+  test('an SVG element target inside a lifted element in the body is lifted over', () => {
+    const root = mount('<div id="body" data-kb-content-area><div data-kb-over-ink><svg><path id="p" d="M0 0"/></svg></div></div>');
+    const p = root.querySelector('#p')!;
+    expect(p instanceof SVGElement).toBe(true);
+    expect(lifted(p, root.querySelector('#body'))).toBe(true);
+  });
+
+  test('a detached node with no lifted ancestor is not lifted over', () => {
+    const lone = document.createElement('span');
+    expect(lifted(lone, null)).toBe(false);
+    expect(lifted(lone, document.createElement('div'))).toBe(false);
+  });
+
   test('what is no element is not lifted over', () => {
     const b = area();
     expect(lifted(null, b)).toBe(false);

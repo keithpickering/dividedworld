@@ -63,7 +63,7 @@ export function useMomentRead(key: Id, load: () => Promise<PlayMoment | null>): 
  */
 export function MomentFrame({ play, at, read, back, label = 'As it landed', own = null, named, words, unrecorded, frame, children }: {
   /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
-  readonly play: CardPlay; readonly place: EffectPlace; readonly read: MomentRead['status'] | 'none';
+  readonly play: CardPlay; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
   /** What the frame calls the moment: "As it landed" for a play's, "As it was spun" for a spin's. */
   readonly label?: string;
@@ -222,7 +222,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   }, []);
   if (read.status !== 'read' || read.moment === null) {
     return (
-      <MomentFrame frame={frame} play={play} place={place} at={source ? undefined : play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
+      <MomentFrame frame={frame} play={play} at={source ? undefined : play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
         {now}
         {read.status === 'failed' && <button type="button" className="kb-moment-retry" onClick={() => { frame.current?.focus(); read.retry(); }}>Try again</button>}
       </MomentFrame>
@@ -233,7 +233,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   const name = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
   const words = Object.keys(said).sort().map((k) => `${name(k)}: ${said[k]}`);
   return (
-    <MomentFrame frame={frame} play={play} place={place} at={moment.at} label={label} read="read" back={back} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
+    <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
       <MomentEffects moment={moment} place={place} nameOf={nameOf} onWords={onWords}>{bodyOf(moment.version)}</MomentEffects>
     </MomentFrame>
   );

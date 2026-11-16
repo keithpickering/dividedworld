@@ -60,7 +60,9 @@ describe('the bright ink', () => {
     expect(rule(bb, '.kb-quote')).toMatch(/border:\s*1px solid var\(--kb-quote-rule, var\(--kb-rule\)\);/u);
     expect(rule(thread, '[data-kb-content-area][data-kb-bright-ink]')).toContain('--kb-quote-rule: var(--kb-bright-ink);');
     expect(rule(thread, '[data-kb-content-area][data-kb-bright-ink] :is(.kb-tally, .kb-origin, .kb-moment-list, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span)')).toContain('--kb-quote-rule: var(--kb-rule);');
-    expect(thread).not.toMatch(/\.kb-quote\s*\{/u);
+    /* No rule in thread.css styles a quote's border: not one whose selector (in any list, under any ancestors) ends in `.kb-quote`, and not a border-color on any selector that names it. */
+    const quoteRules = [...thread.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((sel) => /\.kb-quote\s*$/u.test(sel)) || (/\.kb-quote/u.test(m[1]!) && /border(-[a-z]+)*-color/u.test(m[2]!)));
+    expect(quoteRules.map((m) => m[0].trim())).toEqual([]);
   });
 
   test('the ink rules are written against the content-area marker, not a post class', () => {

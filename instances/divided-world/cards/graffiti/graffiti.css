@@ -29,7 +29,7 @@
  * The Draw tile: glass at the body's top right (the effect gives its left and top, the body's right edge and top, in px), a drawn can in the
  * color the reader picked last and the word Draw. A tile of the kit's size and focus.
  */
-/* The doubled class beats the thread's rule for what it lifts over ink (`.kb-act-main [data-kb-over-ink]`: position relative), which left the tile in the flow below the words. */
+/* The doubled class beats the thread's rule for what it lifts over ink (`[data-kb-content-area] [data-kb-over-ink]`: position relative), which left the tile in the flow below the words. */
 .kb-graffiti-draw.kb-graffiti-draw {
   position: absolute;
   z-index: 2;

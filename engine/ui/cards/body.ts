@@ -32,7 +32,8 @@ export function bodyOf(host: Element): HTMLElement | null {
  * the one that counts, and it must be in the body. A lifted thing that holds the body (the ORIGIN box, lifted over the opening post's
  * ink) is not in it, so a press in the box's words is the box's own effect's, while the same press is not the opening post's, whose
  * body holds the box. A null `body` (an effect painting only its host) counts any lifted ancestor. A text node counts as its parent; a
- * target that is no element is not lifted.
+ * target that is no element is not lifted. A body that is itself lifted counts (a node contains itself), though no place marks its own
+ * content area lifted.
  */
 export function liftedOver(target: unknown, body: Element | null): boolean {
   const el = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
