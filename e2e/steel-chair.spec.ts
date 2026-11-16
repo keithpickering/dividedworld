@@ -51,16 +51,19 @@ const SEEDS = {
   'one-dark': [101, 104],
   reduced: [101],
   'short-post': [101],
-  /* Three dents on one line, found by running seeds 1 to 70 on the widened hit zone (dent.ts `hitZone`), the stepped throws (Effect.tsx) and the
-     content area's 22.5em body: the tight case (this one) has two dents over the line and overlapping each other (their centers 16 px apart at
-     the closest); the spread case (SPREAD_SEED) has the dents' centers 79 px apart at the closest, one of them over the line and shading it.
-     See the two tests. */
-  'short-three': [1],
+  /* Three dents on one line. The tight case (this seed, 172) has two dents over the line and overlapping each other (their centers 15 px apart at
+     the closest), the nearer two with the line at 0.59 and 0.72 of their radii from their centers; the spread case (SPREAD_SEED, 158) has the
+     dents' centers 70 px apart at the closest, one of them over the line and shading it (the line at 0.63 of its radius). Found by running seeds 1 to
+     200 on the widened hit zone (dent.ts `hitZone`), the stepped throws (Effect.tsx) and the content area's 22.5em body, re-pinned (they were 1 and
+     46) when the dent became one that fills its box (dent.ts `SPREAD`): the new dent's shade is in its bowl and not at its box's rim, so a seed
+     shades the line only if the line lies inside a bowl, and a seed is a fixture and not a bound. Of the 200 seeds 22 shade the line by more than
+     25 levels (the bound below), 7 by 50 or more; of those that also meet each case's own conditions the most-shaded are taken. See the two tests. */
+  'short-three': [172],
   three: [101],
   phone: [113],
 } as const;
 /** The short-three layout's second pinned seed: the spread case. */
-const SPREAD_SEED = 46;
+const SPREAD_SEED = 158;
 type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three';
 
 /** The post that wears the card: its content area (the world) and its parts. */
@@ -949,7 +952,7 @@ test('one-dark: the dent shows on the dark theme: the lightest tenth of its box 
   const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
   const lowered = mean(diffs.slice(0, tenth));
   const lifted = mean(diffs.slice(-tenth));
-  test.info().annotations.push({ type: 'dark', description: `lightest tenth ${lifted.toFixed(0)}, darkest tenth ${lowered.toFixed(0)} levels of 255` });
+  test.info().annotations.push({ type: 'dark', description: `lightest tenth ${lifted.toFixed(2)}, darkest tenth ${lowered.toFixed(2)} levels of 255` });
   expect(lifted, 'the lightest tenth of the dent box is lighter than the post, levels of 255').toBeGreaterThanOrEqual(30);
   expect(lowered, 'the darkest tenth of the dent box is darker than the post, levels of 255').toBeLessThanOrEqual(-10);
 });

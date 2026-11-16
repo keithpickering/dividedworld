@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { rng, throwOf } from './body.ts';
 import {
-  AXIS_MAX, AXIS_MIN, DENT_SCALE, HALF, LIGHT, RELIEF, dentBend, dentHeight, dentImages, dentLight, dentPrimitives, dentShade, dentShape, dentsOverlap, filterTrusted,
+  AXIS_MAX, AXIS_MIN, DENT_SCALE, HALF, LIGHT, RELIEF, SPREAD, dentBend, dentHeight, dentImages, dentLight, dentPrimitives, dentShade, dentShape, dentsOverlap, filterTrusted,
   hitZone, THROW_X, THROW_Y,
 } from './dent.ts';
 
@@ -50,20 +50,20 @@ describe('dentHeight: a height map, pressed in with a lip', () => {
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (uv(x, y, w, h).rho >= 0.98) assert.equal(m[y * w + x], 0, `${id} at ${x},${y}`);
     }
   });
-  test('the lowest sample lies within rho of 0.6', () => {
+  test('the lowest sample lies within rho of min(0.6 times the spread, 0.9)', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
       const m = mapOf(id, w, h);
       let low = 0, at = 0;
       for (let i = 0; i < m.length; i++) if (m[i]! < low) { low = m[i]!; at = i; }
       const p = uv(at % w, Math.floor(at / w), w, h);
-      assert.ok(p.rho < 0.6, `${id} at ${w} by ${h}: the lowest is at rho ${p.rho}`);
+      assert.ok(p.rho < Math.min(0.6 * SPREAD, 0.9), `${id} at ${w} by ${h}: the lowest is at rho ${p.rho}`);
     }
   });
   test('the middle is pressed in: its mean is below 0 and below the mean of the ring around it, which has a lip', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
       const m = mapOf(id, w, h);
-      const middle = meanOver(w, h, (p) => p.rho < 0.3, (i) => m[i]!);
-      const ring = meanOver(w, h, (p) => p.rho > 0.5 && p.rho < 0.7, (i) => m[i]!);
+      const middle = meanOver(w, h, (p) => p.rho < 0.3 * SPREAD, (i) => m[i]!);
+      const ring = meanOver(w, h, (p) => p.rho > 0.5 * SPREAD && p.rho < Math.min(0.7 * SPREAD, 0.98), (i) => m[i]!);
       assert.ok(middle < 0 && middle < ring, `${id}: middle ${middle}, ring ${ring}`);
     }
   });
@@ -84,12 +84,23 @@ describe('dentShade: lit from the upper left, in front', () => {
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (uv(x, y, w, h).rho >= 0.98) assert.equal(s[(y * w + x) * 4], 255, `${id} at ${x},${y}`);
     }
   });
+  /* The point of the spread (owner, 2026-11-16): the dent fills its box as the approved mock's does. The pixels the shade darkens at all (by 5 of 255 or
+     more) span at least 70% of the box's width and of its height, for every id. (The recipe before the spread, `SPREAD` 1, reaches 56% of the box.) */
+  test('the shade reaches the box: pixels at 250 or less span at least 70% of its width and of its height, for every id', () => {
+    const [w, h] = [160, 140] as const;
+    for (const id of IDS) {
+      const s = dentShade(mapOf(id, w, h), w, h);
+      let x0 = w, x1 = -1, y0 = h, y1 = -1;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (s[(y * w + x) * 4]! <= 250) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+      assert.ok((x1 - x0 + 1) / w >= 0.7 && (y1 - y0 + 1) / h >= 0.7, `${id}: shade spans ${(x1 - x0 + 1) / w} of the width, ${(y1 - y0 + 1) / h} of the height`);
+    }
+  });
   test('lit as a hollow: the upper left of the middle is darker than the lower right, for every id', () => {
     for (const id of IDS) {
       const [w, h] = [160, 140] as const;
       const s = dentShade(mapOf(id, w, h), w, h);
-      const upperLeft = meanOver(w, h, (p) => p.u < -0.1 && p.v < -0.1 && p.rho < 0.5, (i) => s[i * 4]!);
-      const lowerRight = meanOver(w, h, (p) => p.u > 0.1 && p.v > 0.1 && p.rho < 0.5, (i) => s[i * 4]!);
+      const upperLeft = meanOver(w, h, (p) => p.u < -0.1 * SPREAD && p.v < -0.1 * SPREAD && p.rho < 0.5 * SPREAD, (i) => s[i * 4]!);
+      const lowerRight = meanOver(w, h, (p) => p.u > 0.1 * SPREAD && p.v > 0.1 * SPREAD && p.rho < 0.5 * SPREAD, (i) => s[i * 4]!);
       assert.ok(upperLeft < lowerRight, `${id}: upper left ${upperLeft}, lower right ${lowerRight}`);
     }
   });
@@ -122,7 +133,8 @@ describe('dentLight: the last resort', () => {
   test('after eight multiplications of P the glint is scaled to 71 at that P', () => {
     const [w, h] = [64, 64];
     const m = new Float32Array(w * h);
-    const slopeU = -HALF[0] / HALF[2] / RELIEF, slopeV = -HALF[1] / HALF[2] / RELIEF;
+    const relief = RELIEF * SPREAD;
+    const slopeU = -HALF[0] / HALF[2] / relief, slopeV = -HALF[1] / HALF[2] / relief;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const u = ((x + 0.5) / w) * 2 - 1, v = ((y + 0.5) / h) * 2 - 1;
       m[y * w + x] = slopeU * u + slopeV * v + 0.2 * (u * u + v * v);
@@ -131,7 +143,7 @@ describe('dentLight: the last resort', () => {
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const x0 = Math.max(0, x - 1), x1 = Math.min(w - 1, x + 1), y0 = Math.max(0, y - 1), y1 = Math.min(h - 1, y + 1);
       const hu = (m[y * w + x1]! - m[y * w + x0]!) / ((x1 - x0) * (2 / w)), hv = (m[y1 * w + x]! - m[y0 * w + x]!) / ((y1 - y0) * (2 / h));
-      const len = Math.hypot(RELIEF * hu, RELIEF * hv, 1), nx = -RELIEF * hu / len, ny = -RELIEF * hv / len, nz = 1 / len;
+      const len = Math.hypot(relief * hu, relief * hv, 1), nx = -relief * hu / len, ny = -relief * hv / len, nz = 1 / len;
       lam[y * w + x] = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2];
       spec[y * w + x] = nx * HALF[0] + ny * HALF[1] + nz * HALF[2];
     }
@@ -175,7 +187,7 @@ describe('dentBend: the slope, pointing uphill', () => {
       const sum = new Array<number>(16).fill(0), n = new Array<number>(16).fill(0);
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
         const p = uv(x, y, w, h);
-        if (!(p.rho > 0.25 && p.rho < 0.6)) continue;
+        if (!(p.rho > 0.25 * SPREAD && p.rho < 0.6 * SPREAD)) continue;
         const k = Math.min(15, Math.floor(((Math.atan2(p.v, p.u) + Math.PI) / (2 * Math.PI)) * 16));
         const i = (y * w + x) * 4;
         sum[k]! += ((b[i]! - 128) * p.u + (b[i + 1]! - 128) * p.v) / p.rho; n[k]!++;

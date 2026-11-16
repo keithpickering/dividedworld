@@ -173,8 +173,11 @@ const hypot3One = (a: number, b: number): number => {
 /**
  * One dent's height map, `width × height` values, row by row, each sampled at a pixel's center in the box's normalized coordinates `u`, `v`
  * (-1 to 1 across the box, so an ellipse box gives an elliptical dent). Negative is pressed in. A bowl, the lobes a few blows leave in it, a
- * crease, a raised lip around the bowl, and a fine crumple only where the metal is pressed in; the whole is eased to exactly 0 from
- * `ρ = 0.98`, so the dent has no edge to show. Pure: the same shape and size give the same array.
+ * crease, a raised lip around the bowl, and a fine crumple only where the metal is pressed in. All of that is the plan's recipe evaluated at
+ * `u' = u / SPREAD, v' = v / SPREAD` (the owner's choice of 2026-11-16 to make the dent fill its box as the approved mock's does: the recipe's
+ * `r0 = 0.5` bowl would otherwise be about half the box), so the dent is the same shape, `SPREAD` times larger. Then the whole is multiplied by
+ * an edge window in the box's own `ρ` (`1 - smoothstep(W0, W1, ρ)`), so it is exactly 0 from `ρ = W1` and the box's edge is never drawn.
+ * Pure: the same shape and size give the same array.
  */
 export function dentHeight(shape: DentShape, width: number, height: number): Float32Array {
   const out = new Float32Array(width * height);
@@ -189,14 +192,15 @@ export function dentHeight(shape: DentShape, width: number, height: number): Flo
   const us = new Float64Array(width);
   for (let x = 0; x < width; x++) us[x] = ((x + 0.5) / width) * 2 - 1;
   for (let y = 0; y < height; y++) {
-    const v = ((y + 0.5) / height) * 2 - 1;
-    const gy = ((v + 1) / 2) * 8;
+    const v0 = ((y + 0.5) / height) * 2 - 1;
+    const gy = ((v0 / SPREAD + 1) / 2) * 8;
     const iy = Math.min(7, Math.max(0, Math.floor(gy)));
     const fy = smoothstep(0, 1, gy - iy);
     for (let x = 0; x < width; x++) {
-      const u = us[x]!;
-      const rho = hypot2(u, v);
-      if (rho >= 0.98) continue;
+      const bu = us[x]!;
+      const rhoBox = hypot2(bu, v0);
+      if (rhoBox >= 0.98) continue;
+      const u = bu / SPREAD, v = v0 / SPREAD, rho = rhoBox / SPREAD;
       const a = Math.atan2(v, u);
       let wave = 0;
       for (let i = 0; i < 3; i++) wave += amp[i]! * Math.cos(ks[i]! * a + phase[i]!);
@@ -213,7 +217,7 @@ export function dentHeight(shape: DentShape, width: number, height: number): Flo
       const upper = lattice[iy * 9 + ix]! * (1 - fx) + lattice[iy * 9 + ix + 1]! * fx;
       const lower = lattice[(iy + 1) * 9 + ix]! * (1 - fx) + lattice[(iy + 1) * 9 + ix + 1]! * fx;
       h += 0.012 * (upper * (1 - fy) + lower * fy) * Math.min(1, Math.max(0, -3 * h));
-      out[y * width + x] = h * (1 - smoothstep(0.8, 0.98, rho));
+      out[y * width + x] = h * (1 - smoothstep(W0, W1, rhoBox));
     }
   }
   return out;
@@ -224,11 +228,27 @@ const unit = (x: number, y: number, z: number): readonly [number, number, number
 export const LIGHT = unit(-0.5, -0.6, 0.62);
 export const HALF = unit(LIGHT[0], LIGHT[1], LIGHT[2] + 1);
 /**
- * How steeply the relief reads: a sample's normal is the unit vector of (-RELIEF·∂h/∂u, -RELIEF·∂h/∂v, 1), the slopes taken in the box's
- * normalized `u`, `v`, so the look does not change with the box's size. The mock's `k = 22`, put in these units; the one number the owner
- * may ask to tune in review.
+ * How steeply the relief reads: a sample's normal is the unit vector of (-RELIEF·SPREAD·∂h/∂u, -RELIEF·SPREAD·∂h/∂v, 1), the slopes taken in
+ * the box's normalized `u`, `v`, so the look does not change with the box's size. The mock's `k = 22`, put in these units, for a surface
+ * drawn at `SPREAD` 1 (the surface is stretched by `SPREAD`, so its slopes in the box's `u`, `v` are `1 / SPREAD` of the unstretched ones;
+ * multiplying by `SPREAD` gives the same normals, hence the same look, only larger); the one number the owner may ask to tune in review.
  */
 export const RELIEF = 0.065;
+/**
+ * How many times larger than the plan's first recipe the dent's surface is drawn, so that it fills its box as the approved mock's dents fill
+ * theirs (the owner's choice of 2026-11-16, "make the dent fill its box"). The surface is the recipe evaluated at `(u / SPREAD, v / SPREAD)`; the
+ * edge window stays in the box's own coordinates.
+ */
+export const SPREAD = 1.5;
+/**
+ * The edge window's two ends, in the box's own `ρ` (the surface is multiplied by `1 - smoothstep(W0, W1, ρ)`): `W0`, where the surface starts
+ * to be eased down, and `W1`, where it reaches exactly 0. `W1` is 0.95 and not 0.98 because the lighting and the bend take central differences:
+ * a sample at `ρ ≥ 0.98` reads its neighbors, and if a neighbor were not 0 it would be a byte off flat (254, light 1, bend 127). With the height
+ * 0 from 0.95 a pixel's neighbors are flat out to well past 0.98 at any box a dent can be, so those samples are exactly 255 / 0 / 128. `W0` is
+ * 0.8 so the ease is a long one and no outline of the box's ellipse can show.
+ */
+export const W0 = 0.8;
+export const W1 = 0.95;
 
 interface Lit { readonly lam: Float64Array; readonly spec: Float64Array }
 /**
@@ -237,7 +257,7 @@ interface Lit { readonly lam: Float64Array; readonly spec: Float64Array }
  */
 function lighting(h: Float32Array, width: number, height: number): Lit {
   const lam = new Float64Array(width * height), spec = new Float64Array(width * height);
-  const du = 2 / width, dv = 2 / height;
+  const du = 2 / width, dv = 2 / height, relief = RELIEF * SPREAD;
   const [lx, ly, lz] = LIGHT, [sx, sy, sz] = HALF;
   for (let y = 0; y < height; y++) {
     const y0 = Math.max(0, y - 1), y1 = Math.min(height - 1, y + 1);
@@ -246,7 +266,7 @@ function lighting(h: Float32Array, width: number, height: number): Lit {
       const x0 = Math.max(0, x - 1), x1 = Math.min(width - 1, x + 1);
       const hu = (h[y * width + x1]! - h[y * width + x0]!) / ((x1 - x0) * du);
       const hv = (h[y1 * width + x]! - h[y0 * width + x]!) / dy;
-      const px = -RELIEF * hu, py = -RELIEF * hv;
+      const px = -relief * hu, py = -relief * hv;
       const len = hypot3One(px, py);
       const nx = px / len, ny = py / len, nz = 1 / len;
       lam[y * width + x] = nx * lx + ny * ly + nz * lz;
