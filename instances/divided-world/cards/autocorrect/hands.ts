@@ -53,6 +53,8 @@ export interface PieceSpec {
   readonly open: boolean;
   /** Lower strips' pieces overlapping this one on its line, highest first: what a peek lifts after it. */
   readonly under: readonly string[];
+  /** The author's hold on this piece's play is running: the author peeks it as a reader does. */
+  readonly held: boolean;
 }
 
 export type Side = 'a' | 'b';
@@ -180,7 +182,7 @@ export class Hands {
     const p = this.pieces.get(piece);
     if (!p) return 'none';
     if (this.hand || this.key) return 'busy';
-    return this.settings.author ? this.pressPeel(p, x, pointer) : this.pressPeek(p, x, pointer);
+    return this.settings.author && !p.spec.held ? this.pressPeel(p, x, pointer) : this.pressPeek(p, x, pointer);
   }
 
   private pressPeel(p: Piece, x: number, pointer: number | string): 'covered' | 'none' | 'picking' | 'peeling' {
@@ -277,7 +279,7 @@ export class Hands {
     if (this.hand || this.key) return false;
     const mine = [...this.pieces.values()].filter((p) => p.spec.strip === strip).sort((a, b) => a.spec.index - b.spec.index);
     if (!mine.length) return false;
-    if (!this.settings.author) {
+    if (!this.settings.author || mine[0]!.spec.held) {
       const first = mine.find((p) => p.stuck.length > 0);
       if (!first) return false;
       const up = [...this.peeks.values()].find((pk) => pk.pull > 0 && this.chainOf(pk.carrier).includes(first.spec.id));

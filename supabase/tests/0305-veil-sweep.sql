@@ -209,6 +209,7 @@ select 'function', n, m, w from (values
   ('card_ended', 'no author', 'whether a play has ended'),
   ('card_held', 'no author', 'the count of a card in the caller''s own hand'),
   ('card_of_play', 'no author', 'the card a play is of'),
+  ('play_landed_at', 'no author', 'when a play landed: its card Act''s public time'),
   ('card_target', 'no author', 'a post''s words, length and the plays on it: no character'),
   ('card_target_reach', 'swept', 'what is up above a post, read from the character shown'),
   ('create_character', 'no author', 'a write: the caller''s own new character'),

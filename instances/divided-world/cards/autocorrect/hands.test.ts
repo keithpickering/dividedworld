@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { Hands, type HandEvent, type PieceSpec } from './hands.ts';
 
 const SETTINGS = { pace: 90, pickMs: 450, give: 34, peekStayMs: 300, peekSettle: 300, reduced: false };
-const piece = (o: Partial<PieceSpec> = {}): PieceSpec => ({ id: 's:0:0', strip: 's:0', index: 0, w: 200, h: 20, stuck: [[0, 200, 0]], open: true, under: [], ...o });
+const piece = (o: Partial<PieceSpec> = {}): PieceSpec => ({ id: 's:0:0', strip: 's:0', index: 0, w: 200, h: 20, stuck: [[0, 200, 0]], open: true, under: [], held: false, ...o });
 const make = (specs: PieceSpec[], author = true, over: Partial<typeof SETTINGS> = {}) => {
   const hands = new Hands({ ...SETTINGS, ...over, author });
   hands.sync(specs);
@@ -369,4 +369,22 @@ test('a held pointer with nothing to do lets the loop rest, and a move wakes it:
   assert.equal(p.busy(), true, 'a move wakes it');
   run(p, 32);
   assert.equal(p.view('a:0').lift!.lift, 60);
+});
+
+test('the author on a held piece peeks as a reader: lifts and lays back, no change, no tear; unheld by sync, the same press peels', () => {
+  const h = make([piece({ held: true })]);
+  assert.equal(h.press('s:0:0', 3, 1), 'peeking');
+  h.move(1, 150);
+  run(h, 3000);
+  assert.ok(h.view('s:0:0').lift, 'it lifts');
+  h.release(1);
+  run(h, 3000);
+  assert.equal(h.view('s:0:0').lift, null, 'and lays back down');
+  assert.deepEqual(h.drain(), [], 'no change, no tear');
+  assert.equal(h.keyDown('s:0'), true);
+  h.keyUp();
+  run(h, 3000);
+  assert.deepEqual(h.drain().filter((e) => e.kind === 'change' || e.kind === 'torn'), [], 'a key hold peeks too');
+  h.sync([piece({ held: false })]);
+  assert.equal(h.press('s:0:0', 3, 1), 'picking');
 });

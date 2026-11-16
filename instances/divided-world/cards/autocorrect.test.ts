@@ -3,11 +3,12 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PEELS, autocorrect } from './autocorrect.ts';
+import { PEELS, autocorrect, heldUntil } from './autocorrect.ts';
 import { decidePlay, type CardRules } from '../../../engine/rules/cards.ts';
-import { withOverrides } from '../../../engine/rules/instance.ts';
+import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
 import { on } from './test-kit.ts';
+import { instance } from '../index.ts';
 
 /* ---- Autocorrect (docs/plans/2026-11-03-autocorrect-plan.md, Task 5) ---- */
 const config = (phrase: unknown, replacement: unknown = 'Luigi') => autocorrect.validateConfig({ phrase, replacement });
@@ -137,4 +138,22 @@ test('Autocorrect: a landing refusal is said before a configuration\'s, the face
 test('Autocorrect: the replacement is refused as the phrase itself exactly when the matcher would read them as one', () => {
   assert.equal(config('Mario', 'mArIo').ok, false);
   assert.equal(config('straße', 'STRASSE').ok, true, 'the matcher does not fold ß to SS, so neither does this');
+});
+
+test('Autocorrect holds its author\'s saves for holdHours after the play lands; 0 holds none', () => {
+  const landed = new Date('2026-11-16T10:00:00Z');
+  assert.equal(autocorrect.stateHeldUntil!(settings, landed)?.toISOString(), '2026-11-17T10:00:00.000Z');
+  const none = withOverrides(settings, { economy: { 'autocorrect.holdHours': 0 } });
+  assert.equal(autocorrect.stateHeldUntil!(none, landed), undefined);
+  assert.equal(heldUntil(settings, '2026-11-16T10:00:00Z')?.toISOString(), '2026-11-17T10:00:00.000Z');
+  assert.equal(heldUntil(settings, 'not a time'), undefined);
+  assert.match(autocorrect.stateHeldWords!('Nov 17, 10:00'), /^This tape is stuck on until Nov 17, 10:00\. It can be peeled after that\.$/);
+});
+
+test('autocorrect.holdHours is a whole number of hours from 0 to 168', () => {
+  for (const bad of [-1, 169, 1.5]) {
+    const problems = instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'autocorrect.holdHours': bad } }) }).join('\n');
+    assert.match(problems, /autocorrect\.holdHours/, String(bad));
+  }
+  assert.deepEqual(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'autocorrect.holdHours': 168 } }) }), []);
 });

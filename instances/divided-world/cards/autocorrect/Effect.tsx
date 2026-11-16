@@ -47,6 +47,8 @@ import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake, SPAN_MARGIN } from '../../../../engine/ui/shine/loop.ts';
 import { seeded } from '../../ui/seeded.ts';
 import type { Stretch } from '../autocorrect.ts';
+import { economyNow } from '../../../../engine/ui/economy.ts';
+import { heldUntil } from '../autocorrect.ts';
 import { dropRoll } from './drop.ts';
 import { Hands, type HandEvent, type HandSettings, type PieceSpec, type PieceView } from './hands.ts';
 import { drawPaper, PAPER, type PaperContext } from './paper.ts';
@@ -75,7 +77,16 @@ const MOST_RESIDUE_PIXELS = 4_000_000;
 export const LENS = Object.freeze({
   readerEnds: 'Lift a strip by one end to read under it; it lays back down. Only the post\'s author can peel strips off for good.',
   authorEnds: 'Peel a strip off for good: hold one end until it lifts, then pull slowly. Pull too fast and it tears.',
+  authorHeld: (left: string) => `Stuck on for ${left}. After that you can peel strips off for good: hold one end until it lifts, then pull slowly. Pull too fast and it tears.`,
 });
+
+/** How long a hold has left, rounded up to the minute: "5h 12m", "12m", or "less than a minute". */
+function left(ms: number): string {
+  if (ms < 60_000) return 'less than a minute';
+  const minutes = Math.ceil(ms / 60_000);
+  const h = Math.floor(minutes / 60);
+  return h > 0 ? `${h}h ${minutes % 60}m` : `${minutes}m`;
+}
 
 /** What a saved state names: the places peeled whole, and the stretches still stuck of those half peeled. Anything else is none. */
 function savedOf(state: unknown): SavedTape {
@@ -193,6 +204,8 @@ interface AnchorProps {
   /** A key goes down on (or comes up from) the anchor. */
   readonly onKey: (strip: TapeStrip, down: boolean) => void;
   readonly onFocus: (key: string | null) => void;
+  /** The author's hold on the strip's play, as time left in words; absent when none runs. */
+  readonly heldLeft?: string;
 }
 
 /**
@@ -201,8 +214,10 @@ interface AnchorProps {
  * pick then peel at pace (it cannot tear), a reader's lift at a piece's width every 0.45 seconds. In a play's moment it is only
  * words, with nothing to press.
  */
-function Anchor({ strip, author, still, open, onKey, onFocus }: AnchorProps) {
-  const name = `Autocorrected text: “${strip.replacement}”. Hold Enter or Space to ${author ? 'peel it off for good' : 'lift it and read under it'}`;
+function Anchor({ strip, author, still, open, onKey, onFocus, heldLeft }: AnchorProps) {
+  const name = author && heldLeft !== undefined
+    ? `Autocorrected text: “${strip.replacement}”. Stuck on for ${heldLeft}. Hold Enter or Space to lift it and read under it`
+    : `Autocorrected text: “${strip.replacement}”. Hold Enter or Space to ${author ? 'peel it off for good' : 'lift it and read under it'}`;
   if (still) {
     return <span className="kb-visually-hidden" data-kb-ac-anchor={strip.key} data-kb-quotable={open ? 'shown' : 'hidden'}>{strip.replacement}</span>;
   }
@@ -350,6 +365,7 @@ interface Drawn {
   readonly laid: Layout;
   readonly live: readonly TapeStrip[];
   readonly still: boolean;
+  readonly held: boolean;
   readonly pieces: readonly DrawnPiece[];
   readonly regions: readonly Region[];
   readonly specs: readonly PieceSpec[];
@@ -509,7 +525,7 @@ function Residue({ regions, span, width, host, still }: ResidueProps) {
 type Local = Readonly<Record<string, Readonly<Record<string, readonly Stretch[]>>>>;
 
 export function AutocorrectEffect({ post, plays, states, reader, still, save, show, met, children }: EffectProps) {
-  const { settings } = useKayfa();
+  const { settings, instance } = useKayfa();
   const body = typeof post.currentPayload.body === 'string' ? post.currentPayload.body : '';
   const text = useMemo(() => visibleText(parse(body)), [body]);
   /* The author's changes on their way to being saved; a refused save's words, by play; what the last peel uncovered or the last press said. */
@@ -548,6 +564,28 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
   const liveKey = strips.filter((s) => stuckFor(s).length > 0).map((s) => s.key).join('|');
   const live = useMemo(() => { const keys = new Set(liveKey ? liveKey.split('|') : []); return strips.filter((s) => keys.has(s.key)); }, [strips, liveKey]);
   const liveKeys = useMemo(() => new Set(live.map((s) => s.key)), [live]);
+
+  /*
+   * The author's hold (the design's section 4): each play's tape is stuck on, for the author, until its hold ends. The clock is a
+   * state only the author's screen keeps, and only while a live strip is held: it moves on each minute, and once at the moment the
+   * latest hold ends. A reader's screen, and an author's with no hold running, sets no timer.
+   */
+  /* The economy as the server holds it now over the compiled one: a screen that has not read the server's holds the compiled hours. */
+  const economy = useMemo(() => ({ economy: economyNow(instance.settings, settings.economy) }), [instance, settings.economy]);
+  const holds = useMemo(() => new Map(plays.map((p) => [p.id, heldUntil(economy, p.playedAt)?.getTime()] as const)), [plays, economy]);
+  const [clock, setClock] = useState(() => Date.now());
+  const heldAt = (s: TapeStrip): number | undefined => {
+    const until = reader.author ? holds.get(s.play) : undefined;
+    return until !== undefined && until > clock ? until : undefined;
+  };
+  const heldLeft = (s: TapeStrip): string | undefined => { const until = heldAt(s); return until === undefined ? undefined : left(until - clock); };
+  const latestHold = live.reduce((m, s) => Math.max(m, heldAt(s) ?? 0), 0);
+  useEffect(() => {
+    if (!latestHold) return;
+    const wait = Math.max(0, Math.min(60_000, latestHold - Date.now()));
+    const t = setTimeout(() => setClock(Date.now()), wait);
+    return () => clearTimeout(t);
+  }, [latestHold, clock]);
 
   /*
    * The author's changes, saved as Whoops!'s strokes are: debounced, one save on its way per play at a time, what changes meanwhile
@@ -942,7 +980,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
         render: ({ text: words, key }) => (
           <Fragment key={key}>
             {key === `ac:${id}@${start}` ? anchors.map((s) => (
-              <Anchor key={s.key} strip={s} author={reader.author} still={still} open={openKeys.has(s.key)} onKey={onKey} onFocus={setFocused} />
+              <Anchor key={s.key} strip={s} author={reader.author} heldLeft={heldLeft(s)} still={still} open={openKeys.has(s.key)} onKey={onKey} onFocus={setFocused} />
             )) : null}
             <span data-kb-ac-seg={id} {...(covered ? { 'aria-hidden': true, 'data-kb-quotable': 'hidden' } : null)}>{words}</span>
           </Fragment>
@@ -950,7 +988,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
         ...(room > 0 ? { trail: (key: string) => <span key={key} className="dw-ac-room" aria-hidden="true" data-kb-quotable="hidden" data-kb-ac-room={end}>{' '.repeat(room)}</span> } : null),
       };
     });
-  }), [stacks, liveKeys, live, rooms, reader.author, still, onKey]);
+  }), [stacks, liveKeys, live, rooms, reader.author, still, onKey, clock, holds]);
 
   /*
    * What a strip's drawing and hands need of its stretches, made once for the stretches it has (by identity) and this layout, so a
@@ -999,8 +1037,9 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     const at = laid?.strips[s.key];
     if (!laid || !at) return null;
     const src = stuckFor(s);
+    const isHeld = heldAt(s) !== undefined;
     const was = drawn.current.get(s.key);
-    if (was && was.src === src && was.laid === laid && was.live === live && was.still === still) return was;
+    if (was && was.src === src && was.laid === laid && was.live === live && was.still === still && was.held === isHeld) return was;
     const px = piecesOf(src, at.boxes.map((b) => b.w));
     const open = openKeys.has(s.key);
     const lower = (stackOf.get(s.key) ?? []).filter((q) => q.z < s.z && liveKeys.has(q.key)).sort((x, y) => y.z - x.z);
@@ -1023,9 +1062,9 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
         const line = Math.min(b.y + b.h, qb.y + qb.h) - Math.max(b.y, qb.y) > 0.5 * Math.min(b.h, qb.h);
         return line && qb.x < b.x + b.w && qb.x + qb.w > b.x ? [`${q.key}:${j}`] : [];
       }));
-      specs.push({ id, strip: s.key, index: i, w: b.w, h: b.h, stuck: own, open, under });
+      specs.push({ id, strip: s.key, index: i, w: b.w, h: b.h, stuck: own, open, under, held: isHeld });
     });
-    const made: Drawn = { src, laid, live, still, pieces, regions, specs };
+    const made: Drawn = { src, laid, live, still, held: isHeld, pieces, regions, specs };
     drawn.current.set(s.key, made);
     return made;
   };
@@ -1074,7 +1113,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
   const view: CardView = {
     progress: reader.author && progress.current !== null ? Math.round(progress.current * 1000) / 1000 : null,
     state: all ? `${all} ${all === 1 ? 'strip' : 'strips'}, ${done} peeled${reader.author && started > 0 ? `, ${started} started` : ''}` : 'Phrase not in this version',
-    ends: reader.author ? LENS.authorEnds : LENS.readerEnds,
+    ends: reader.author ? (latestHold ? LENS.authorHeld(left(latestHold - clock)) : LENS.authorEnds) : LENS.readerEnds,
     yours: live.length > 0,
     controls: [],
     notes: Object.fromEntries(configs.map((c) => {

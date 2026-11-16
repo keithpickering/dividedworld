@@ -9,7 +9,7 @@
  *
  * `viewer` is `reader`, a new account that wrote none of the thread (it can only peek, and nothing it does is saved), or `author`,
  * the moment's own player, who wrote the post and may peel for good. The plays come from #42's author, who is not the post's. Each
- * case has a Light, a Dark, an Author (light) and a Phone twin at 390 by 844 (the others at 1440 by 1120); `Still*` is reduced motion
+ * case has a Light, a Dark, an Author (light) and a Phone twin at 390 by 844 (the others at 1440 by 1120); `OneAuthorHeld` is the author on a play that landed an hour ago, inside its hold (the plays of every other case landed two days ago); `Still*` is reduced motion
  * (the peel is instant; the strip still lifts and the tape still comes off). Peel with a drag, or focus a strip's anchor and hold
  * Enter or Space. (The story lives under ui/, where Storybook looks; the card's screens are in cards/autocorrect/.)
  */
@@ -21,7 +21,7 @@ import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
-type Case = 'one' | 'covered' | 'wider' | 'across' | 'stack' | 'half' | 'reloaded';
+type Case = 'one' | 'covered' | 'wider' | 'across' | 'stack' | 'half' | 'reloaded' | 'held';
 type Viewer = 'reader' | 'author';
 
 interface Args {
@@ -39,6 +39,7 @@ const BODY: Record<Case, string> = {
   stack: 'Big cats are the best enemies in the whole game, and I cheer every time big cats are back for another level.',
   half: 'Finally beat the last castle in my Mario fangame. Mario controls a lot better than he did in the demo, and the new Mario sprites are all by Sloopy.',
   reloaded: 'My review, for what it is worth: the boss fight is fine. Music slaps though.',
+  held: 'Finally beat the last castle in my Mario fangame. Mario controls a lot better than he did in the demo, and the new Mario sprites are all by Sloopy.',
 };
 const MARIO = [{ phrase: 'Mario', replacement: 'Luigi' }];
 const PLAYS: Record<Case, readonly { phrase: string; replacement: string }[]> = {
@@ -49,7 +50,11 @@ const PLAYS: Record<Case, readonly { phrase: string; replacement: string }[]> = 
   stack: [{ phrase: 'big cats', replacement: 'small dogs' }, { phrase: 'cats are', replacement: 'nobody asked' }, { phrase: 'big cats', replacement: 'Wigglers' }],
   half: MARIO,
   reloaded: [{ phrase: 'the boss fight is fine', replacement: 'the boss fight is the single greatest achievement in the history of fangames' }],
+  held: MARIO,
 };
+/** How long before now each case's plays landed: two days, past the author's hold, so the author peels; `held` an hour, inside it. The screen's clock is the real one, as the fake's own is a fixed day. */
+const HOUR = 3_600_000;
+const LANDED_AGO: Record<Case, number> = { one: 48 * HOUR, covered: 48 * HOUR, wider: 48 * HOUR, across: 48 * HOUR, stack: 48 * HOUR, half: 48 * HOUR, reloaded: 48 * HOUR, held: HOUR };
 /** The first Mario's strip half peeled: its first 45% gone, ending at a peel line (a Stretch is [from, to, edges], edges = startKind * 3 + endKind; 0 an end of the strip, 1 a peel line, 2 a tear). */
 const HALF = { peeled: [] as number[], stuck: { '0': [[0, 0.45, 1]] } };
 
@@ -75,7 +80,7 @@ function Autocorrected({ shown, viewer, mode, reduced }: Args) {
       if (!author?.character || !caster?.character) return;
       const fake = api as Fake;
       const post = fake.seed.post(thread, author.character, BODY[shown]);
-      const plays = PLAYS[shown].map((config, i) => fake.seed.card(caster.character!, post, 'autocorrect', { layer: i + 1, live: true, config, message: '' }));
+      const plays = PLAYS[shown].map((config, i) => fake.seed.card(caster.character!, post, 'autocorrect', { layer: i + 1, live: true, config, message: '', at: Date.now() - LANDED_AGO[shown] }));
       /* The author's own save, made before a reader is signed in. */
       const state = SAVED[shown];
       if (state) {
@@ -107,6 +112,7 @@ const phone = { parameters: { moment: '02-phone' } } as const;
 export const OneLight: Story = { args: { shown: 'one', viewer: 'reader', mode: 'light' } };
 export const OneDark: Story = { args: { shown: 'one', viewer: 'reader', mode: 'dark' } };
 export const OneAuthor: Story = { args: { shown: 'one', viewer: 'author', mode: 'light' } };
+export const OneAuthorHeld: Story = { args: { shown: 'held', viewer: 'author', mode: 'light' } };
 export const OnePhone: Story = { args: { shown: 'one', viewer: 'reader', mode: 'light' }, ...phone };
 export const OnePhoneDark: Story = { args: { shown: 'one', viewer: 'author', mode: 'dark' }, ...phone };
 

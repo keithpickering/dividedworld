@@ -14,7 +14,7 @@
  */
 import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
-import { casterMessage, decideDraw, decidePlay, decideSet, decideUse, decideWash, effectsOnTarget, postTarget, type CardEffect, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
+import { casterMessage, refusalTime, decideDraw, decidePlay, decideSet, decideUse, decideWash, effectsOnTarget, postTarget, type CardEffect, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, barredAnswer, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -145,7 +145,7 @@ const live = (rpc: string, answer: unknown, args: Row = {}): Broadcast[] =>
  * change). Every other write is sent once; a saved effect's state among them, since a save
  * repeated after a newer one landed would bring the older strokes back; and a draw, a wash or a play with its first draw, each of which a second send would write again.
  */
-const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'open_account', 'instance_settings',
+const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'play_landed_at', 'open_account', 'instance_settings',
   // The hints' calls (0065): a read, and a write that finds its own earlier effect (a pattern already fired for an Act fires nothing).
   'act_window_counts', 'fire_hint']);
 export const SAFE_TO_REPEAT = (fn: string): boolean => REPEATABLE.has(fn);
@@ -239,6 +239,18 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       if (!rules.validateState) return refused('play', 'this card keeps no state');
       const state = rules.validateState(decision.args.state);
       if (!state.ok) return refused('state', state.why);
+      // A hold on the author's saves (the play's own rules name it): refused before any write and before the database's author check, from the
+      // play's public landing time and the settings alone, so the answer is the same for every caller and proves nothing about who wrote the post.
+      if (rules.stateHeldUntil) {
+        const landed = await dbs.player.rpc<string | null>('play_landed_at', { play: decision.args.on_play });
+        if (!landed) return refused('play', 'there is no such card on a post');
+        const held = await withDatabaseSettings(instance, dbs.service);
+        const until = rules.stateHeldUntil(held.settings, new Date(landed));
+        if (until && Date.now() < until.getTime()) {
+          const when = refusalTime(until.toISOString());
+          return refused('play', rules.stateHeldWords?.(when) ?? `This card's effect can't be changed by its post's author until ${when}.`);
+        }
+      }
       args = { ...args, state: state.value };
     }
     if (decision.needsSurface) {

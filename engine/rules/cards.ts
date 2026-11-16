@@ -411,6 +411,13 @@ export interface CardRules<Config = unknown> {
   };
   /** For a card whose effect holds state (Whoops!'s strokes): checks a state to be saved. */
   validateState?(state: unknown): Verdict<unknown>;
+  /**
+   * Before the time this returns, the author of the post a play is on has their saves of its state refused; `landed` is when the play
+   * landed, and undefined is no hold. It names no card: the act function asks any card that has it.
+   */
+  stateHeldUntil?(settings: Settings, landed: Date): Date | undefined;
+  /** The refusal's plain words for a hold, given the time as `refusalTime` writes it; a neutral sentence when absent. */
+  stateHeldWords?(until: string): string;
 }
 
 /**
