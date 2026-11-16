@@ -33,6 +33,8 @@ const hub = vi.hoisted(() => ({
   world: null as import('./body.ts').World | null,
   /** Puts every body to sleep after each step (a world that is quiet whatever was thrown), for the test that a due throw keeps the loop going. */
   sleepAll: false,
+  /** What the mocked `dentImages` calls (a spy made in `beforeEach`, so the effect's arguments can be read): fixed addresses from the play's id. */
+  images: undefined as unknown as ReturnType<typeof import('vitest').vi.fn>,
 }));
 vi.mock('./body.ts', async (original) => {
   const actual = await original<typeof import('./body.ts')>();
@@ -54,9 +56,7 @@ vi.mock('../../../../engine/ui/audio/sound.ts', async (original) => {
 });
 vi.mock('./dent.ts', async (original) => {
   const actual = await original<typeof import('./dent.ts')>();
-  return { ...actual, filterTrusted: () => hub.trusted, dentImages: (play: string) => ({
-      bend: `data:image/png;base64,B${play}`, shade: `data:image/png;base64,S${play}`, light: `data:image/png;base64,L${play}`,
-    }),
+  return { ...actual, filterTrusted: () => hub.trusted, dentImages: (...args: unknown[]) => hub.images(...args),
   };
 });
 
@@ -251,6 +251,9 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-origin-area') ? originArea.h : this.classList.contains('kb-act-main') ? areaHeight(this) : 0; });
   document.documentElement.setAttribute('data-kb-motion', 'full');
   hub.trusted = true;
+  hub.images = vi.fn((play: string) => ({
+    bend: `data:image/png;base64,B${play}`, shade: `data:image/png;base64,S${play}`, light: `data:image/png;base64,L${play}`,
+  }));
   hub.gameOn = false;
   hub.set = vi.fn();
   hub.sound = { play: vi.fn(async () => null), loop: vi.fn(), caption: vi.fn() };
@@ -676,6 +679,39 @@ describe('a dent: its own images, and how its shading combines', () => {
     for (const g of glows) expect(urlOf(g, '--dw-glow-img'), g.dataset.play).toBe(`url("data:image/png;base64,L${g.dataset.play}")`);
     expect(bends()).toEqual(found.map((d) => `data:image/png;base64,B${d.dataset.play}`));
     expect(new Set(bends()).size).toBe(3);
+  });
+
+  /* The effect's own call: which play, which box (the very one the dent's shade element is styled with), which density. */
+  const callsOf = () => hub.images.mock.calls as unknown as [string, { x: number; y: number; width: number; height: number }, number][];
+  const lastCallFor = (id: string) => callsOf().filter((c) => c[0] === id).at(-1)!;
+
+  test("each dent's images are asked for with its own play, its own box and the density", () => {
+    mount({ plays: [play(1), play(2), play(3)] });
+    run();
+    const found = dents();
+    expect(found).toHaveLength(3);
+    expect(new Set(found.map((d) => d.style.width + d.style.height)).size, 'the dents are not all one size').toBeGreaterThan(1);
+    for (const d of found) {
+      const [id, box, density] = lastCallFor(d.dataset.play!);
+      expect(id).toBe(d.dataset.play);
+      const own = dentBox(d);
+      expect(box.width).toBeCloseTo(own.width, 6);
+      expect(box.height).toBeCloseTo(own.height, 6);
+      expect(density).toBe(1);
+    }
+  });
+
+  test('the density is the device pixel ratio held to 2', () => {
+    vi.stubGlobal('devicePixelRatio', 3);
+    mount();
+    run();
+    expect(hub.images.mock.calls.length).toBeGreaterThan(0);
+    expect(new Set(callsOf().map((c) => c[2]))).toEqual(new Set([2]));
+    hub.images.mockClear();
+    vi.stubGlobal('devicePixelRatio', 1.5);
+    mount({ plays: [play(7)] });
+    run();
+    expect(new Set(callsOf().map((c) => c[2]))).toEqual(new Set([1.5]));
   });
 
   test("a play's dent has the same images on every run and for every reader: only where it lands changes", () => {
@@ -1240,6 +1276,20 @@ describe('the filter', () => {
     expect(wordsEl().getAttribute('style') ?? '').not.toContain('filter');
     expect(document.querySelector('filter')).toBeNull();
     expect(dents()).toHaveLength(1);
+  });
+});
+
+describe('the filter, where an image cannot be made', () => {
+  test("a dent whose bend is '' turns the filter off, and its shade and light are still set", () => {
+    hub.images = vi.fn((play: string) => ({ bend: '', shade: `data:image/png;base64,S${play}`, light: `data:image/png;base64,L${play}` }));
+    mount();
+    run();
+    expect(dents()).toHaveLength(1);
+    expect(wordsEl().style.filter).toBe('');
+    expect(wordsEl().getAttribute('style') ?? '').not.toContain('filter');
+    const d = dents()[0]!;
+    expect(d.style.getPropertyValue('--dw-dent-img')).toBe(`url("data:image/png;base64,S${d.dataset.play}")`);
+    expect(document.querySelector<HTMLElement>('.dw-chair-glow')!.style.getPropertyValue('--dw-glow-img')).toBe(`url("data:image/png;base64,L${d.dataset.play}")`);
   });
 });
 

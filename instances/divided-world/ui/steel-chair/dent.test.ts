@@ -220,6 +220,16 @@ describe('dentImages: three images a dent, made once a play', () => {
     assert.deepEqual(calls.map((c) => [c.w, c.h]), [[150, 121], [300, 242], [300, 242]]);
     assert.deepEqual(calls.map((c) => c.length), [150 * 121 * 4, 300 * 242 * 4, 300 * 242 * 4]);
   });
+  test('a box that rounds to under 1 px on either side draws nothing: empty images, toUrl not called, nothing cached', () => {
+    const { calls, toUrl } = counting();
+    for (const [width, height] of [[0, 0], [0.4, 120], [120, 0.4]] as const) {
+      const made = dentImages('cache-empty', { x: 0, y: 0, size: Math.max(width, height), width, height }, 1, toUrl);
+      assert.deepEqual(made, { bend: '', shade: '', light: '' }, `${width} by ${height}`);
+    }
+    assert.equal(calls.length, 0);
+    dentImages('cache-empty', box, 1, toUrl);
+    assert.equal(calls.length, 3, 'a real box under the same play is still made');
+  });
   test('is empty for each image where there is no document (the default toUrl)', () => {
     assert.equal(typeof document, 'undefined');
     assert.deepEqual(dentImages('cache-none', box, 1), { bend: '', shade: '', light: '' });

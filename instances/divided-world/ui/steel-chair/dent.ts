@@ -103,11 +103,11 @@ export interface DentBox { x: number; y: number; width: number; height: number }
 export interface DentPrimitive extends DentBox { size: number }
 
 /**
- * Two dents' footprints intersect: the ellipses, each centered in its box (`x`, `y` its top left corner, with its width and height), are
- * closer than the sum of their radii along the line between the centers. Exact for circles; for ellipses a close approximation, which is
- * enough to decide whether the creases are drawn. It compares the two reaches along the line of the centers, so for two ellipses of different
- * orientation it can also MISS a graze of the rims alone (each ellipse's rim bulges off that line). That is accepted: the rim is the faintest part
- * of a dent, and the creases, short of it, do not reach that far, so a graze there shows nothing the creases could cross.
+ * Whether two dents' footprints intersect: the ellipses, each centered in its box (`x`, `y` its top left corner, with its width and height),
+ * are closer than the sum of their radii along the line between the centers. Exact for circles; for ellipses a close approximation. It
+ * compares the two reaches along the line of the centers, so for two ellipses of different orientation it can MISS a graze of the rims alone
+ * (each ellipse's rim bulges off that line). The effect no longer uses it to decide anything: a dent's crease is part of its height map, so
+ * overlapping dents need no separate treatment.
  */
 export function dentsOverlap(a: DentBox, b: DentBox): boolean {
   const ax = a.x + a.width / 2, ay = a.y + a.height / 2, bx = b.x + b.width / 2, by = b.y + b.height / 2;
@@ -401,10 +401,13 @@ const imageCache = new Map<string, DentImages>();
 /**
  * A dent's three images as addresses. `box` is the dent's primitive: the bend is made at its size in px (the `feImage` stretches it), the
  * shade and the light at that times `density` (the caller gives `min(devicePixelRatio, 2)`), so no image passes 320 by 320. Made once per
- * play, size and density and kept in a cache of at most 32, the oldest dropped first (a `Map`'s order).
+ * play, size and density and kept in a cache of at most 32, the oldest dropped first (a `Map`'s order). A box that rounds to under 1 px on
+ * either side gets three empty addresses, is not drawn and is not cached.
  */
 export function dentImages(play: string, box: DentPrimitive, density: number, toUrl: typeof pixelsUrl = pixelsUrl): DentImages {
   const w = Math.round(box.width), h = Math.round(box.height);
+  // a box under 1 px on a side (not yet measured, or a very narrow post) has no image to make: `new ImageData` would throw on it
+  if (w < 1 || h < 1) return { bend: '', shade: '', light: '' };
   const key = `${play}|${w}|${h}|${density}`;
   const kept = imageCache.get(key);
   if (kept) return kept;
