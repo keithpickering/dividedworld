@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RARITIES, quadrantFree, faceUpOnly, instant, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
-import type { Settings } from './types.ts';
+import { isPost, type ActKind, type Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
 const base = { alignment: 'salty' as const, playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
@@ -71,6 +71,17 @@ test('decideUse uses a Use and nothing else, and a ward does not stop a Use', ()
   assert.equal(decideUse(shield, settings, post, [], {}, '').ok, true);
 });
 
+test('isPost: a post and a spin are posts for every card, and no other kind of Act is', () => {
+  // A Record keyed by every ActKind, so a kind added to the union fails the type check here until it is asked.
+  const expected: Record<ActKind, boolean> = { post: true, spin: true, card: false, edit: false, unmask: false, announce: false, set: false, spring: false };
+  for (const kind of Object.keys(expected) as ActKind[]) assert.equal(isPost(kind), expected[kind], `isPost('${kind}')`);
+});
+
+test('decideUse uses a Use on the opening Act of a spun thread as on any post, and still refuses an edit', () => {
+  assert.equal(decideUse(shield, settings, { ...post, kind: 'spin' }, [], {}, '').ok, true);
+  assert.deepEqual(decideUse(shield, settings, { ...post, kind: 'edit' }, [], {}, ''), { ok: false, why: 'a card lands on a post' });
+});
+
 test('decideSet sets a card, one face-down card to a post', () => {
   const back: CardEffect = { card: null, act: 's', faceDown: true, ends: soon };
   assert.deepEqual(decideSet(snare, settings, post, [back], { card: 'inky' }, [inky]), { ok: false, why: 'this post already holds a card face down' });
@@ -78,7 +89,9 @@ test('decideSet sets a card, one face-down card to a post', () => {
   assert.equal(decideSet(watcher, settings, post, [], {}, []).ok, true);
   // A ward never blocks a Set.
   assert.equal(decideSet(snare, settings, post, [{ card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'legendary' }, ends: soon }], { card: 'inky' }, [inky]).ok, true);
-  assert.match((decideSet(snare, settings, { ...post, kind: 'spin' }, [], { card: 'inky' }, [inky]) as { why: string }).why, /post/);
+  // A spun thread's opening Act is a post for every card: a set lands on it as on any post.
+  assert.equal(decideSet(snare, settings, { ...post, kind: 'spin' }, [], { card: 'inky' }, [inky]).ok, true);
+  assert.deepEqual(decideSet(snare, settings, { ...post, kind: 'edit' }, [], { card: 'inky' }, [inky]), { ok: false, why: 'a card is set face down on a post' });
 });
 
 test('decideSet sets a Move that lands on a character, since the quote decides where it lands', () => {
@@ -92,7 +105,8 @@ test('decideSet sets a Move, and returns the phrase its landing needs', () => {
   assert.deepEqual(decideSet(glue, settings, post, [], { phrase: 'soon' }, [glue]), { ok: true, value: { price: 0, config: { phrase: 'soon' }, phrase: 'soon' } });
   const back: CardEffect = { card: null, act: 's', faceDown: true, ends: soon };
   assert.deepEqual(decideSet(glue, settings, post, [back], { phrase: 'soon' }, [glue]), { ok: false, why: 'this post already holds a card face down' });
-  assert.match((decideSet(glue, settings, { ...post, kind: 'spin' }, [], { phrase: 'soon' }, [glue]) as { why: string }).why, /post/);
+  assert.equal(decideSet(glue, settings, { ...post, kind: 'spin' }, [], { phrase: 'soon' }, [glue]).ok, true);
+  assert.deepEqual(decideSet(glue, settings, { ...post, kind: 'edit' }, [], { phrase: 'soon' }, [glue]), { ok: false, why: 'a card is set face down on a post' });
   // An empty phrase is in no post, so the back could never land: it is refused before it is set.
   assert.deepEqual(decideSet(glue, settings, post, [], { phrase: '' }, [glue]), { ok: false, why: 'Test Glue needs a phrase to wait for' });
   assert.deepEqual(decideSet(glue, settings, post, [], { phrase: '  ' }, [glue]), { ok: false, why: 'Test Glue needs a phrase to wait for' });
@@ -156,8 +170,10 @@ test('a card lands only on a reach it lists, a post unless it says', () => {
   assert.equal(landsOn(sparkle, character, []).ok, true);
   assert.deepEqual(landsOn(sparkle, post, []), { ok: false, why: 'this card lands on a character' });
   assert.deepEqual(landsOn({ key: 'both', reaches: ['character', 'thread'] }, board, []), { ok: false, why: 'this card lands on a character or a thread' });
-  // An Act that is no post is still no post, whatever the card reaches.
-  assert.deepEqual(landsOn({ key: 'plain' }, { ...post, kind: 'spin' } as CardTarget, []), { ok: false, why: 'a card lands on a post' });
+  // A spun thread's opening Act is a post for every card; an Act that is no post is still no post, whatever the card reaches.
+  assert.equal(landsOn({ key: 'plain' }, { ...post, kind: 'spin' } as CardTarget, []).ok, true);
+  assert.deepEqual(landsOn({ key: 'plain' }, { ...post, kind: 'edit' } as CardTarget, []), { ok: false, why: 'a card lands on a post' });
+  assert.deepEqual(landsOn({ key: 'plain' }, { ...post, kind: 'card' } as CardTarget, []), { ok: false, why: 'a card lands on a post' });
 });
 
 test('a target\'s stack counts only the effects on that same target, never those above it', () => {
@@ -246,7 +262,7 @@ test('a card\'s landing may read its checked configuration, and a landing refusa
     key: 'words', name: 'Words', alignment: 'pepperoni', rarity: 'common', playPrice: () => 0,
     canApply: (target, _effects, config) => {
       said.push(config);
-      if (target.reach !== 'post' || target.kind !== 'post') return refuse('a post');
+      if (target.reach !== 'post' || !isPost(target.kind)) return refuse('a post');
       return config && !target.text.includes(config.word) ? refuse('that word is not in this post') : ok(undefined);
     },
     validateConfig: (c) => typeof (c as { word?: unknown })?.word === 'string' ? ok({ word: (c as { word: string }).word.trim() }) : refuse('a word'),
@@ -255,7 +271,8 @@ test('a card\'s landing may read its checked configuration, and a landing refusa
   assert.deepEqual(decidePlay(words as CardRules, settings, on, [], { word: ' cats ' }, ''), { ok: true, value: { price: 0, config: { word: 'cats' }, message: '' } });
   assert.deepEqual(said.at(-1), { word: 'cats' }, 'it is given the configuration as the card checked it');
   assert.deepEqual(decidePlay(words as CardRules, settings, on, [], { word: 'dogs' }, ''), { ok: false, why: 'that word is not in this post' });
-  assert.deepEqual(decidePlay(words as CardRules, settings, { ...on, kind: 'spin' }, [], {}, ''), { ok: false, why: 'a post' }, 'landing first, as before');
+  assert.deepEqual(decidePlay(words as CardRules, settings, { ...on, kind: 'spin' }, [], {}, ''), { ok: false, why: 'a word' }, 'a spin is a post, so landing passes and the card own configuration check speaks');
+  assert.deepEqual(decidePlay(words as CardRules, settings, { ...on, kind: 'edit' }, [], {}, ''), { ok: false, why: 'a post' }, 'landing first, as before');
   assert.deepEqual(decidePlay(words as CardRules, settings, on, [], {}, ''), { ok: false, why: 'a word' });
 });
 

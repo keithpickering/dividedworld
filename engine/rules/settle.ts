@@ -346,6 +346,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   };
   const windowActsBy = group(windowActs, (a) => a.character);
   const windowVotesOn = group([...windowVotes, ...unscoredVotes], (v) => v.act);
+  // Counts a spun thread's repliers, not card targets: a spin is deliberately not widened in here (types.ts isPost).
   const postsIn = group([...acts.values()].filter((a) => a.kind === 'post'), (a) => a.thread);
   const received = new Map<string, ReceivedReaction[]>();
   for (const v of windowVotes) {
@@ -523,6 +524,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         from: stretch.from,
         to: stretch.to,
         // Posts alone: a card, a spin, a reveal (`unmask`) and an announce are the character's Acts, never its posts.
+        // Counts a character's posts, not card targets: a spin is deliberately not widened in here (types.ts isPost).
         posts: inside((windowActsBy.get(c.id) ?? []).filter((a) => a.kind === 'post')).map((a) => ({ act: a.id, at: a.at })),
         received: inside(received.get(c.id)).sort(byTime),
         given: inside(given.get(c.id)).sort(byTime),
