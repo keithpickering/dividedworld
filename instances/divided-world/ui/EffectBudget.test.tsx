@@ -8,13 +8,25 @@ import * as stories from './EffectBudget.board.stories.tsx';
 
 const pascal = (key: string) => key.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
 
+/** What is wrong with a stories module against its keys: each key with no story named for it, or whose story plays another effect. */
+function storyFaults(keys: readonly string[], mod: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const key of keys) {
+    const story = mod[pascal(key)] as { args?: { effect?: string } } | undefined;
+    if (!story) out.push(`no story ${pascal(key)} for the key ${key}`);
+    else if (story.args?.effect !== key) out.push(`the story ${pascal(key)} plays ${String(story.args?.effect)}, not ${key}`);
+  }
+  return out;
+}
+
 describe('the effect budget stories', () => {
   it('have a story for each key of BUDGET, named for it', () => {
-    for (const key of Object.keys(stories.BUDGET)) {
-      const story = (stories as Record<string, unknown>)[pascal(key)] as { args?: { effect?: string } } | undefined;
-      expect(story, `no story ${pascal(key)} for the key ${key}`).toBeDefined();
-      expect(story?.args?.effect).toBe(key);
-    }
+    expect(storyFaults(Object.keys(stories.BUDGET), stories as Record<string, unknown>)).toEqual([]);
+  });
+  it('the rule reports a key with no story, and a story that plays another effect (poison)', () => {
+    const mod = { ...(stories as Record<string, unknown>), Planted: undefined };
+    expect(storyFaults([...Object.keys(stories.BUDGET), 'planted'], mod)).toEqual([expect.stringContaining('no story Planted for the key planted')]);
+    expect(storyFaults(['hot-box'], { HotBox: { args: { effect: 'other' } } })).toEqual([expect.stringContaining('hot-box')]);
   });
   it('have the two poisons, which play no effect', () => {
     expect(stories.PoisonSlow.args).toEqual({ poison: 'slow' });

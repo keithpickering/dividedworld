@@ -8,16 +8,22 @@
  * near the window, capped in pixels, so a canvas an effect makes for itself is the defect. This is guard 2 of that design.
  *
  * Read: every non-test, non-story `.ts`/`.tsx` under engine/ui and instances/, from the TypeScript AST. A canvas is a `<canvas>` element, a call of
- * `createElement('canvas')` on anything, a `new OffscreenCanvas(...)`, or a call of `transferControlToOffscreen()`. Each is a fault unless it is in
+ * `createElement('canvas')` on anything or bare, a `new OffscreenCanvas(...)`, or a call of `transferControlToOffscreen()`. Each is a fault unless it is in
  * engine/ui/cards/tiles.ts (the layer makes the canvases) or in CANVASES, which lists each other file with how many, and why a canvas that is not the size of a
  * post is right there. A file making more than its count, a listed file making fewer (a stale entry: the step that moved the effect deletes its line), and a
  * listed file that is gone, each fail. An entry with `until` is an effect not yet on the layer, and names the step of the design's section 7 that moves it.
  *
  * Budget stories (guard 3): an instance file that imports engine/ui/cards/tiles.ts is an effect on the layer, and the folder it is in (the one directly
  * under instances/<instance>/ui/) must be a key of the object literal `BUDGET` exported by instances/<instance>/ui/EffectBudget.board.stories.tsx, which
- * has a story for each key. e2e/effect-tiles.spec.ts measures every one of those stories, so an effect with none would skip the measuring.
+ * has a story for each key. e2e/effect-tiles.spec.ts measures every one of those stories, so an effect with none would skip the measuring. The same
+ * holds for the folder directly under instances/<instance>/cards/ (Whoops!, Graffiti and Autocorrect live there). An instance file on the layer that is in
+ * neither shape (directly in ui/ or cards/, or anywhere else in the instance) fires too, saying the check cannot name its effect, never a silent pass; the
+ * budget story file itself, and test and story files (which are not read), are exempt.
  *
- * What it cannot see: a canvas made through a variable tag name (`createElement(tag)`), and a canvas, in a file the list allows, that is sized to a post
+ * A bare `createElement('canvas')` (React's, imported by name) is one, as is `React.createElement('canvas')`.
+ *
+ * What it cannot see: a canvas made through a variable tag name (`createElement(tag)`), one made through the automatic JSX runtime's `jsx('canvas', ...)` (no
+ * source here calls it; the `<canvas>` element is seen), a `createElement` renamed on import, and a canvas, in a file the list allows, that is sized to a post
  * (a listed file is held to its count, never to what its canvas is for). The tile layer's own unit test (engine/ui/cards/tiles.test.tsx) holds the
  * pixels and e2e/effect-tiles.spec.ts holds the frames in a real page; this holds only that nothing makes a canvas where the layer is not looking.
  * tools/test-effect-canvas.mjs drives it red on each planted canvas.
@@ -47,9 +53,9 @@ export const CANVASES = {
   /* ---- stay: a canvas that is not a post's size, by what it is for ---- */
   'engine/ui/glass/field.ts': { count: 1, why: 'rasterizes the glass field\'s SVG noise to a PNG mask, a scratch canvas the size of the field\'s window, drawn once and dropped' },
   'engine/ui/profile-edit/picture.ts': { count: 4, why: 'the avatar editor: a 4 px probe for whether the browser honors a bitmap resize, the shrunk picture it shows, the picture it opens, and the encoded crop' },
-  'engine/ui/vending/packLight.ts': { count: 1, why: 'a scratch canvas to read the pixels of a pack\'s art, to light it' },
+  'engine/ui/vending/packLight.ts': { count: 2, why: 'a scratch canvas to read the pixels of a pack\'s art, to light it, and the light\'s own canvas laid over the pack\'s picture (a bare createElement), a bitmap never past the relief\'s 540 by 840' },
   'instances/divided-world/cards/whoops/ConfigForm.tsx': { count: 1, why: 'the ink\'s preview in the card\'s config form, a fixed small box (PREVIEW_BOX)' },
-  'instances/divided-world/cards/whoops/cursor.ts': { count: 2, why: 'the bench\'s drop, a 24 by 36 sprite drawn once, and the one cursor canvas that follows the pointer' },
+  'instances/divided-world/cards/whoops/cursor.ts': { count: 2, why: 'the bench\'s drop, a 24 by 36 sprite drawn once, and the one fixed overlay for the drips, sized to the window and shared by the whole page' },
   'instances/divided-world/ui/hot-box/Effect.tsx': { count: 1, why: 'the puff sprite, a 128 px disc drawn once per color and shared by every smoked post; the fog itself is on the layer' },
   'instances/divided-world/ui/steel-chair/dent.ts': { count: 1, why: 'the dent\'s displacement map, a 160 px square drawn once and kept as a URL' },
   /* ---- wait: an effect not yet on the layer, with the step (design, section 7) that moves it ---- */
@@ -66,7 +72,7 @@ export const CANVASES = {
   'engine/ui/shine/flakes.ts': { count: 3, why: 'the loose flakes\' star sprite (an OffscreenCanvas, or a canvas where there is none) and the one window-sized canvas the loop draws them on', until: 'step 4' },
   'engine/ui/shine/landing.ts': { count: 1, why: 'a landed-glitter tile, at most TILE_W by TILE_H, made where a flake first lands in its cell', until: 'step 4' },
   /* ---- wait: step 5 ---- */
-  'instances/divided-world/cards/autocorrect/Effect.tsx': { count: 5, why: 'a text ruler for measureText, each line\'s own paper (a line\'s size, and it stays), a film and a scratch for the peeled residue, and the residue canvas laid over the post', until: 'step 5' },
+  'instances/divided-world/cards/autocorrect/Effect.tsx': { count: 5, why: 'five. Four stay: the text ruler for measureText, each line\'s own paper (a line\'s size), and the film and the scratch the residue is colored on. The residue canvas, sized to the strips\' whole footprint, leaves for the layer at step 5, which lowers this count to 4 and drops `until`', until: 'step 5' },
 };
 
 const kindOf = (file) => (file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
@@ -82,8 +88,9 @@ export function canvasUses(text, file) {
   const visit = (node) => {
     if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && ts.isIdentifier(node.tagName) && node.tagName.text === 'canvas') {
       out.push({ line: lineOf(sf, node), what: '<canvas>' });
-    } else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const name = node.expression.name.text;
+    } else if (ts.isCallExpression(node) && (ts.isPropertyAccessExpression(node.expression) || ts.isIdentifier(node.expression))) {
+      /* `x.createElement(...)` and a bare `createElement(...)` (React's, imported by name) alike. */
+      const name = ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : node.expression.text;
       if (name === 'createElement' && isText(node.arguments[0]) && node.arguments[0].text.toLowerCase() === 'canvas') out.push({ line: lineOf(sf, node), what: "createElement('canvas')" });
       else if (name === 'transferControlToOffscreen') out.push({ line: lineOf(sf, node), what: 'transferControlToOffscreen()' });
     } else if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'OffscreenCanvas') {
@@ -134,12 +141,15 @@ export function budgetKeys(text, file = 'EffectBudget.board.stories.tsx') {
   return keys;
 }
 
-/** The folder a file is in directly under `instances/<instance>/ui/`, with that instance; the folder is null for a file directly in ui/. */
+/**
+ * The effect an instance file belongs to: the folder directly under `instances/<instance>/ui/` or `instances/<instance>/cards/`, with that instance. The
+ * folder is null where the check cannot name the effect (a file directly in ui/ or cards/, or anywhere else in the instance); null for a file outside any instance.
+ */
 function effectFolder(file) {
-  const m = /^instances\/([^/]+)\/ui\/(.+)$/.exec(file);
+  const m = /^instances\/([^/]+)\/(.+)$/.exec(file);
   if (!m) return null;
   const rest = m[2].split('/');
-  return { instance: m[1], folder: rest.length > 1 ? rest[0] : null };
+  return { instance: m[1], folder: (rest[0] === 'ui' || rest[0] === 'cards') && rest.length > 2 ? rest[1] : null };
 }
 
 /**
@@ -162,13 +172,16 @@ export function canvasFaults(files, allowed = CANVASES) {
     seen.set(p, uses.length);
     const room = allowed[p]?.count ?? 0;
     if (uses.length > room) for (const u of uses.slice(room)) faults.push({ file: p, line: u.line, what: u.what, kind: 'canvas' });
-    const where = effectFolder(p);
+    const where = BUDGET_FILE.test(p) ? null : effectFolder(p);
     if (where) {
       const lines = layerImports(t, p);
       if (lines.length) {
         const keys = budgets.get(where.instance) ?? null;
-        if (where.folder === null || !keys?.has(where.folder)) {
-          faults.push({ file: p, line: lines[0], what: `is on the tile layer and its folder ${where.folder ?? '(none)'} is no key of BUDGET in instances/${where.instance}/ui/EffectBudget.board.stories.tsx`, kind: 'budget' });
+        const story = `instances/${where.instance}/ui/EffectBudget.board.stories.tsx`;
+        if (where.folder === null) {
+          faults.push({ file: p, line: lines[0], what: `is on the tile layer but is in no ui/<folder>/ or cards/<folder>/ of its instance, so the check cannot name its effect for a key of BUDGET in ${story} (move it into its effect's folder)`, kind: 'budget' });
+        } else if (!keys?.has(where.folder)) {
+          faults.push({ file: p, line: lines[0], what: `is on the tile layer and its folder ${where.folder} is no key of BUDGET in ${story}`, kind: 'budget' });
         }
       }
     }

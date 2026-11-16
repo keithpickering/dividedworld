@@ -30,6 +30,7 @@ const none = {};
 const faults = (text, file = 'instances/x/ui/y/Effect.tsx', allowed = none) => canvasFaults({ [file]: text }, allowed);
 const STORY = 'instances/x/ui/EffectBudget.board.stories.tsx';
 const TILES = "import { makeTileLayer } from '../../../../engine/ui/cards/tiles.ts';\nexport const layer = makeTileLayer;";
+const SHALLOW = TILES.replace('../../../../', '../../../');
 
 /* ---- the poison ---- */
 {
@@ -43,6 +44,10 @@ check('createElement("canvas") through another document fires', faults('const c 
 check('createElement with a template string fires', faults('const c = document.createElement(`canvas`);').length === 1);
 check('new OffscreenCanvas(1, 1) fires, and names it', faults('const c = new OffscreenCanvas(1, 1);')[0]?.what === 'new OffscreenCanvas');
 check('el.transferControlToOffscreen() fires, and names it', faults('const o = el.transferControlToOffscreen();')[0]?.what === 'transferControlToOffscreen()');
+check("a bare createElement('canvas') (React's, imported by name) fires, and names it", faults("const c = createElement('canvas', { ref });")[0]?.what === "createElement('canvas')");
+check("React.createElement('canvas') fires", faults("const c = React.createElement('canvas', null);").length === 1);
+check("a bare createElement('div') is not a canvas", faults("const c = createElement('div', null);").length === 0);
+check('a bare createElement of a variable is not read (the header says so)', faults('const c = createElement(tag, null);').length === 0);
 check('each of them fires in engine/ui too', ['<canvas />', "document.createElement('canvas')", 'new OffscreenCanvas(1, 1)', 'el.transferControlToOffscreen()']
   .every((s) => faults(`export const a = ${s};`, 'engine/ui/x/X.tsx').length === 1));
 check('a plain .ts file is read', faults("export const c = () => document.createElement('canvas');", 'engine/ui/x/x.ts').length === 1);
@@ -96,6 +101,17 @@ check('canvasUses counts each use with its line', JSON.stringify(canvasUses('a()
   check('with no budget stories file at all it fires', on(null).length === 1);
   check('a story file of another instance does not count', canvasFaults({ 'instances/x/ui/y/Effect.tsx': TILES, 'instances/w/ui/EffectBudget.board.stories.tsx': 'export const BUDGET = { y: 1 };' }, none).length === 1);
   check('a file directly in ui/ has no folder, so it fires', canvasFaults({ 'instances/x/ui/Effect.tsx': TILES.replace('../../../../', '../../../'), [STORY]: 'export const BUDGET = { y: 1, ui: 1 };' }, none).length === 1);
+  {
+    const CARD = 'instances/x/cards/y/Effect.tsx';
+    const withKey = { [STORY]: "export const BUDGET = { y: 1 };" };
+    const r = canvasFaults({ [CARD]: TILES }, none);
+    check('an instance effect under cards/<folder>/ on the layer, with no key, fires', r.length === 1 && r[0]?.kind === 'budget' && r[0]?.file === CARD, JSON.stringify(r));
+    check('and with its key it is clean', canvasFaults({ [CARD]: TILES, ...withKey }, none).length === 0);
+    const r2 = canvasFaults({ 'instances/x/cards/y.ts': SHALLOW, ...withKey }, none);
+    check('an instance file in neither shape that imports the layer fires, saying it cannot name its effect', r2.length === 1 && r2[0]?.kind === 'budget' && /cannot name its effect/.test(r2[0]?.what), JSON.stringify(r2));
+    check('a file directly under instances/x/ui/ importing the layer fires', canvasFaults({ 'instances/x/ui/Effect.tsx': SHALLOW, ...withKey }, none).length === 1);
+    check('the budget story file itself is not held to the rule', canvasFaults({ [STORY]: TILES + '\nexport const BUDGET = { y: 1 };' }, none).length === 0);
+  }
   check('an import of another engine file is not the layer', canvasFaults({ 'instances/x/ui/y/Effect.tsx': "import { bodyOf } from '../../../../engine/ui/cards/body.ts';" }, none).length === 0);
   check('an import of a file named tiles.ts that is not the layer is not the layer', canvasFaults({ 'instances/x/ui/y/Effect.tsx': "import { a } from './tiles.ts';" }, none).length === 0);
   check('an import without the extension is still the layer', canvasFaults({ 'instances/x/ui/y/Effect.tsx': "import { a } from '../../../../engine/ui/cards/tiles';" }, none).length === 1);
