@@ -130,7 +130,7 @@ function stubWindow() {
 }
 
 /** Runs the frames asked for so far (each asks for the next), as a browser's next frame would. */
-const runFrame = () => { const due = [...frames.values()]; frames.clear(); for (const cb of due) cb(0); };
+const runFrame = (t = 0) => { const due = [...frames.values()]; frames.clear(); for (const cb of due) cb(t); };
 /** Lets `ms` pass in steps, a frame after each: timers fire in order, and the page renders between steps, as it does for a reader. */
 function pass(ms: number, step = 100) {
   for (let left = ms; left > 0; left -= step) act(() => { vi.advanceTimersByTime(Math.min(step, left)); runFrame(); });
@@ -1351,15 +1351,48 @@ describe('in view', () => {
   beforeEach(() => { stubObserver(); });
   const see = (s: Setup, isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
 
-  test('met waits for the first sight of the post, and the loop is the layer\'s: it runs whether or not the post is reported in view', () => {
+  test('met waits for the first sight of the post, and the loop is the layer: it runs whether or not the post is reported in view', () => {
     const s = setup();
-    expect(asked()).toBeGreaterThan(0);
+    expect(frames.size).toBeGreaterThan(0);
     expect(s.met).not.toHaveBeenCalled();
+    /* The loop paints: the puffs drift with the time, so a tile's drawing moves from frame to frame, with the post never reported in view. */
+    const puffsOf = () => JSON.stringify([fillsOf(tiles(s)[0]).filter((f) => f.op === 'source-over' && typeof f.style === 'object').map((f) => f.style), (recs.get(tiles(s)[0]!)?.draws ?? []).map((d) => d.slice(1))]);
+    act(() => { runFrame(100); });
+    const one = puffsOf();
+    expect(one).not.toBe('[[],[]]');
+    act(() => { vi.advanceTimersByTime(2000); runFrame(2100); });
+    const two = puffsOf();
+    expect(two).not.toBe('[[],[]]');
+    expect(two).not.toBe(one);
+    expect(frames.size).toBeGreaterThan(0);
     see(s, true);
     expect(s.met).toHaveBeenCalledTimes(1);
     see(s, false);
     see(s, true);
     expect(s.met).toHaveBeenCalledTimes(1);
+  });
+
+  test('with every tile released by the band watcher the loop asks for no frame, and it resumes when a tile returns', () => {
+    AREA = { ...BOX, height: 1600 };
+    const s = setup();
+    const near = (...hold: number[]) => act(() => { bandsWatch!(bandEls.map((el, i) => ({ target: el, isIntersecting: hold.includes(i), intersectionRatio: hold.includes(i) ? 1 : 0 }))); runFrame(); });
+    near(0);
+    near();
+    expect(tiles(s)).toHaveLength(0);
+    act(() => { runFrame(); });
+    expect(frames.size).toBe(0);
+    const drawn = contexts;
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(frames.size).toBe(0);
+    expect(contexts).toBe(drawn);
+    near(1);
+    expect(tiles(s)).toHaveLength(1);
+    act(() => { runFrame(); });
+    expect(contexts).toBeGreaterThan(drawn);
+    expect(frames.size).toBe(1);
+    const again = contexts;
+    act(() => { vi.advanceTimersByTime(100); runFrame(); });
+    expect(contexts).toBeGreaterThan(again);
   });
 
   test('the element watched for met is the content area (the post body), and the host in an ORIGIN box', () => {
@@ -1480,6 +1513,31 @@ describe('the tiles', () => {
     act(() => { runFrame(); });
     expect(fogOf(tiles(s)[1])).toBeDefined();
     expect(host(s).querySelectorAll('.kb-band')[1]!.getAttribute('data-kb-tile')).toBe('held');
+  });
+
+  test('the layer survives a strength tick: the same canvases before and after the smoke has thinned', () => {
+    const s = setup();
+    const before = tiles(s);
+    const fogBefore = host(s).style.getPropertyValue('--dw-hotbox-fog');
+    pass(1.5 * DAY, DAY / 20);
+    expect(host(s).style.getPropertyValue('--dw-hotbox-fog')).not.toBe(fogBefore);
+    expect(tiles(s)).toHaveLength(before.length);
+    tiles(s).forEach((c, i) => { expect(c).toBe(before[i]); expect(c.isConnected).toBe(true); });
+  });
+
+  test('a re-render that turns the loop off leaves the painter the fresh state: in the waved window the smoke is drawn at the waved alpha', () => {
+    const s = setup();
+    act(() => { runFrame(); });
+    const standing = fog()!.a;
+    expect(standing).toBeGreaterThan(0);
+    press(s);
+    pass(SWEEP_MS);
+    release(s);
+    pass(SMOKE.waved / 2);
+    expect(frames.size).toBe(0);
+    const waved = fog();
+    expect(waved === null || waved.a < standing, 'the fog is lighter in the waved window').toBe(true);
+    expect(gradientsOf(tiles(s)[0]).length).toBe(0);
   });
 
   test('under forced colors there is no canvas and no stand-in', () => {

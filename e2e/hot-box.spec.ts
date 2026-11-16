@@ -157,8 +157,13 @@ const areaBox = (page: Page): Promise<Box> => page.evaluate((sel) => {
   return { x: r.left + area.clientLeft, y: r.top + area.clientTop, w: area.clientWidth, h: area.clientHeight };
 }, `${POST} .dw-hotbox`);
 const wordsBox = async (page: Page): Promise<Box> => { const b = (await words(page).boundingBox())!; return { x: b.x, y: b.y, w: b.width, h: b.height }; };
-/** The smoke's box in the viewport: the union of its tiles' canvases (the layer places each at its offset in the box). */
+/**
+ * The smoke's box in the viewport: the union of its tiles' canvases (the layer places each at its offset in the box). The union is the content area only
+ * while every tile of the post is held, which is true of the short fixture post (one tile near the view); a post taller than the window's near range holds
+ * only the tiles near it, and its union is shorter than the area.
+ */
 const canvasBox = (page: Page): Promise<Box> => page.locator(`${POST} canvas.dw-hotbox-smoke`).evaluateAll((els) => {
+  if (els.length === 0) throw new Error('the smoke has no tile canvas: there is no box to take the union of');
   const rs = els.map((el) => el.getBoundingClientRect());
   const x = Math.min(...rs.map((r) => r.left)), y = Math.min(...rs.map((r) => r.top));
   return { x, y, w: Math.max(...rs.map((r) => r.right)) - x, h: Math.max(...rs.map((r) => r.bottom)) - y };
