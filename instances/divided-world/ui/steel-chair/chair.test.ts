@@ -215,7 +215,7 @@ describe('the room', () => {
         const three = s % 5 === 0;
         for (let i = 0; i < (three ? 3 : 1); i++) {
           addThrow(world, throwOf(r, aim));
-          if (three) for (let t = 0; t < 0.35; t += STEP) step(world, STEP);
+          if (three) for (let k = 0; k < 42; k++) step(world, STEP); // the effect's stagger: 0.35 s is 42 steps
         }
         settle(world, 14);
         for (const b of bodies(world)) {
