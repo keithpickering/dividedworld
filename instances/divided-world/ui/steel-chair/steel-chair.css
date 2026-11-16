@@ -1,0 +1,187 @@
+/*
+ * Steel Chair (Effect.tsx, docs/plans/2026-11-15-steel-chair-plan.md, Tasks 4 and 5): a chair is thrown at the post, dents it and falls to
+ * the floor. The world is the post's content area, the bordered box that holds the words; its borders are the chair's walls and floor. The
+ * layer of chairs and the layer of dents' shading fill that box border to border the way Feelin' Fab's foil and Whoops!'s ink do: the
+ * effect calls `placeLayer(layer, bodyBox(host, body))` (engine/ui/cards/body.ts) for each layer's inline left, top, width and height
+ * (the page allows no inline style sheet), and marks each layer `data-kb-effect-ink`, which the engine's thread CSS (`.kb-act-main
+ * [data-kb-effect-ink]`) lifts above the words. So this file holds only the static rules, and a layer's 100% size is just the fallback
+ * for the moment before the first measure, as in fab.css.
+ * Every position, size, color of a piece and transform is the effect's. The chairs and the shading are drawn in color and depth on
+ * purpose: they are game pieces on the board, while the post stays the house style. Colors here are literals, as the instance's CSS
+ * is not held to the engine's tokens.
+ */
+.dw-chair {
+  position: relative;
+}
+
+/* The words' wrapper: the filter is set on it by the effect, and the one shake of a hit (4 px, 0.25 s) runs on it. */
+.dw-chair-words {
+  position: relative;
+}
+.dw-chair-words[data-shake] {
+  animation: dw-chair-shake 0.25s linear 1;
+}
+@keyframes dw-chair-shake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-4px, 1px); }
+  40% { transform: translate(4px, -1px); }
+  60% { transform: translate(-3px, 1px); }
+  80% { transform: translate(2px, 0); }
+}
+
+/*
+ * The floor's room: 77 px (chair.ts `ROOM_HEIGHT`, held equal by Effect.test.tsx: CSS cannot read it) above the content area's bottom border
+ * where chairs come to rest: a bound on how high any rest is drawn (a chair never rests on its end; it lies flat, or stacked on another),
+ * so a resting chair reaches neither the reactions row nor the words. After the effect's host,
+ * inside `.kb-act-main`, come the edited note, the reactions row, the signature and the spun line, so a strip right under the words would be
+ * nowhere near the floor. So while a play is live (`.dw-chair` is in the page only then) the content area itself gains the room at its very end,
+ * above its bottom padding: a block `::after` is the last child of a block container, and `.kb-act-main` lays its children out as blocks
+ * (engine/ui/thread/thread.css). It is static: nothing measures or sets it, and the effect's resize observer sees the area grow.
+ *
+ * Both rules that depend on `:has()` are inside one `@supports selector(:has(a))`: a browser without it (older Firefox and Safari) never
+ * applies the `::after`, so it must not hide the host's strip either, or there would be no room at all. There the chairs rest in the strip
+ * under the words, as they do outside a content area, and a post's last lines stay clear of them.
+ */
+@supports selector(:has(a)) {
+  .kb-act-main:has(.dw-chair)::after {
+    content: '';
+    display: block;
+    height: 77px;
+    pointer-events: none;
+  }
+  .kb-act-main .dw-chair-room {
+    display: none;
+  }
+}
+/* Where there is no content area (a moment or a preview outside a thread; the world is the host's own box), or `:has()` is not understood,
+   the room is a strip in the host. */
+.dw-chair-room {
+  height: 77px;
+  pointer-events: none;
+}
+
+/* The chairs' layer and the dents' shading layer each fill the content area, placed by `placeLayer` and marked `data-kb-effect-ink`
+   (see the header); each `.dw-chair-dent` is positioned inside the dents' layer. */
+.dw-chair-layer,
+.dw-chair-shading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+/* No perspective on the layer: the world is drawn in an oblique view (chair.ts `project`: y is drawn higher the farther back), so the side walls
+   are the content area's borders at every depth and nothing is drawn below its bottom border. Each chair has a mild perspective of its own, in
+   its group's transform (chair.ts `transformOf`), about its own center; the effect sets each group's z-index so a nearer chair paints over a farther. */
+
+/* One chair: a zero-size group at its projected position, each piece a child placed by its own matrix. */
+.dw-chair-group {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+/* A piece: a rectangle whose size, left, top, transform and background (the shade) the effect sets. Seen from behind it shows too. */
+.dw-chair-piece {
+  position: absolute;
+  box-sizing: border-box;
+  backface-visibility: visible;
+  pointer-events: none;
+}
+/* The back frame and the rear legs' frame: a bordered box with no bottom edge, so it reads as a hollow of tubing. */
+.dw-chair-piece[data-kind='frame'] {
+  background: transparent;
+  border: 3px solid #8d96a3;
+  border-bottom: 0;
+}
+
+/*
+ * A dent's shading, in three layers (`.dw-chair-shading`, each filling the content area like the chairs' layer), so that overlapping dents never
+ * bury the words. Each layer is its own stacking context (the engine's `[data-kb-effect-ink]` lift gives it a z-index), so a blend between its
+ * dents is among those alone, and the layer as a whole blends with the post beneath it:
+ *  - the shade layer is `multiply`, and each dent in it is an opaque gray disc fading to white at its rim, combined with the others by `darken`
+ *    (the darker pixel of two, not their sum): where discs overlap the post is darkened as much as the darkest of them does alone, never more,
+ *    and white (the rim, and outside every disc) leaves the post as it is;
+ *  - the light layer is `screen`, each dent a gray disc fading to black, combined by `lighten` (the lighter of two), so that the light of
+ *    overlapping dents is capped the same way and never washes a line out;
+ *  - the creases are plain thin lines, drawn only on a dent that overlaps no other (Effect.tsx).
+ * Each dent is an ellipse (its box is the displacement's `feImage` box, within 15% of round) with an uneven edge, and its light, shade and
+ * creases turn by an angle from its play's id (dent.ts `dentShape`): the effect sets `--dark-x`, `--dark-y`, `--glow-x`, `--glow-y` and the
+ * border radius. The shade's gray is 128 at its darkest, as the old black at 50% was, and the light's 71, as white at 28% was.
+ * Where `mix-blend-mode` is not understood the blended look is not applied (`@supports`) and the discs are faint translucent shading instead,
+ * never opaque; every current browser understands it. Under `forced-colors` all three are hidden, below.
+ */
+.dw-chair-dent,
+.dw-chair-glow {
+  position: absolute;
+  pointer-events: none;
+}
+/* Without `mix-blend-mode` (an old browser) the discs below, which are opaque, would cover the words; so outside the `@supports` block each
+   is a faint translucent shading like the one before the blend: black fading from 50% alpha for the shade, white from 28% for the light. */
+.dw-chair-dent {
+  background: radial-gradient(circle at var(--dark-x, 32%) var(--dark-y, 32%), rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.22) 45%, rgba(0, 0, 0, 0) 72%);
+}
+.dw-chair-glow {
+  background: radial-gradient(circle at var(--glow-x, 70%) var(--glow-y, 70%), rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0) 45%);
+}
+@supports (mix-blend-mode: multiply) {
+  .dw-chair-dents {
+    mix-blend-mode: multiply;
+  }
+  .dw-chair-glows {
+    mix-blend-mode: screen;
+  }
+  .dw-chair-dent {
+    mix-blend-mode: darken;
+    background: radial-gradient(circle at var(--dark-x, 32%) var(--dark-y, 32%), rgb(128, 128, 128) 0%, rgb(199, 199, 199) 45%, rgb(255, 255, 255) 72%);
+  }
+  .dw-chair-glow {
+    mix-blend-mode: lighten;
+    background: radial-gradient(circle at var(--glow-x, 70%) var(--glow-y, 70%), rgb(71, 71, 71) 0%, rgb(0, 0, 0) 45%);
+  }
+}
+/* A lone dent's two creases, as a folded sheet of metal takes: the wrapper is the dent's box, turned about its middle by the dent's own angle. */
+.dw-chair-creases {
+  position: absolute;
+  pointer-events: none;
+}
+.dw-chair-creases::before,
+.dw-chair-creases::after {
+  content: '';
+  position: absolute;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+  transform-origin: 0 50%;
+}
+.dw-chair-creases::before {
+  top: 38%;
+  left: 24%;
+  width: 34%;
+  transform: rotate(28deg);
+}
+.dw-chair-creases::after {
+  top: 55%;
+  left: 40%;
+  width: 28%;
+  transform: rotate(-16deg);
+}
+
+/* No shake under reduced motion (the effect also draws the dent and the resting chairs at once and starts no frame). */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .dw-chair-words[data-shake] { animation: none; }
+}
+:root[data-kb-motion='reduce'] .dw-chair-words[data-shake] { animation: none; }
+
+/* Forced colors: the system palette would turn the shading and the steel into flat boxes, so they are hidden. The filter stays: it draws
+   nothing of its own, it only bends the words, so the dent is still seen as a dent. The room stays too, so the post does not change size. */
+@media (forced-colors: active) {
+  .dw-chair-shading,
+  .dw-chair-layer { display: none; }
+}

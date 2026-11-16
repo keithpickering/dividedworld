@@ -30,6 +30,7 @@ import { feelinFab } from '../cards/feelin-fab.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
 import { ropeBreak } from '../cards/rope-break.ts';
+import { STEEL_CHAIR_LASTS } from '../cards/steel-chair.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
 import { WORDS as THIS_WORDS, thisCard } from '../cards/this.ts';
 import { HOT_BOX_LASTS, hotBox } from '../cards/hot-box.ts';
@@ -1098,10 +1099,15 @@ describe('Divided World\'s sounds', () => {
     { key: 'laugh-track.titter', file: 'titter.mp3', caption: 'The audience titters', ink: 'var(--kb-pepperoni)', loop: true },
     { key: 'laugh-track.ooh', file: 'ooh.mp3', caption: 'The audience goes “ooh”', ink: 'var(--kb-sweet)', loop: true },
     { key: 'laugh-track.grumble', file: 'grumble.mp3', caption: 'A grumble rises', ink: 'var(--kb-salty)', loop: true },
+    { key: 'steel-chair.hit', file: 'steel-chair-hit.mp3', caption: 'A steel chair clangs', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.settle-1', file: 'steel-chair-settle-1.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.settle-2', file: 'steel-chair-settle-2.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.settle-3', file: 'steel-chair-settle-3.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.settle-4', file: 'steel-chair-settle-4.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
   ];
   const slots = instanceUi.sounds?.slots ?? [];
 
-  test('there are exactly the twelve slots of the design, in order, with their keys, captions, inks and loops', () => {
+  test('there are exactly the seventeen slots of the design, in order, with their keys, captions, inks and loops', () => {
     expect(slots.map((s) => s.key)).toEqual(TABLE.map((t) => t.key));
     for (const row of TABLE) {
       const slot = slots.find((s) => s.key === row.key);
@@ -1110,7 +1116,7 @@ describe('Divided World\'s sounds', () => {
       expect(slot!.ink, `${row.key}'s ink`).toBe(row.ink);
       expect(slot!.loop, `${row.key}'s loop`).toEqual(row.loop ? true : undefined);
     }
-    expect(slots).toHaveLength(12);
+    expect(slots).toHaveLength(17);
   });
   test('every slot plays on the game bus', () => {
     for (const slot of slots) expect(slot.bus, `${slot.key}'s bus`).toBe('game');
@@ -1163,5 +1169,35 @@ describe('where each card lands, as the screens ask it', () => {
       expect(() => landingOn(rules, target, [], { cards: instance.cards, faceDown: true }), rules.key).not.toThrow();
     }
     expect(landingOn(instance.cards.find((c) => c.key === 'you-were-saying')!, target, [], { cards: instance.cards }).ok).toBe(true);
+  });
+});
+
+describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
+  const chair = instanceUi.cards.find((c) => c.key === 'steel-chair')!;
+  const play = (n: number): CardPlay[] => Array.from({ length: n }, (_, i) => ({ id: `k${i}`, card: 'steel-chair', layer: 1, caster: null, message: '', config: {}, playedAt: '2026-11-15T00:00:00.000Z', post: 'p' }));
+
+  test('it wears the Salty pink and ink, and says what it does in a tagline, a summary and a hint', () => {
+    expect(chair.art.color).toBe('#ff3d7f');
+    expect(chair.art.ink).toBe('#14030a');
+    expect(chair.art.tagline).toBe('Dent a post.');
+    expect(chair.summary).toBe('Hits a post with a folding chair and leaves a dent.');
+    expect(chair.hint).toBe('Someone took a chair to this post. The Lens says who.');
+  });
+
+  test('its status counts the chairs from two on', () => {
+    const status = chair.status as (p: readonly CardPlay[]) => string;
+    expect(status(play(1))).toBe('Dented by a chair');
+    expect(status(play(2))).toBe('Dented by 2 chairs');
+    expect(status(play(3))).toBe('Dented by 3 chairs');
+  });
+
+  test('its words read the stack and the span from its rules', () => {
+    expect(spanWords(STEEL_CHAIR_LASTS)).toBe('3 days');
+    expect(chair.describe(instance.settings)).toBe('A Salty card, common. A folding chair is thrown at a post and dents it: the words bend into the dent, and the chair drops to the floor under them. It covers none of the words and holds nobody. It plays again each time the post scrolls into view, somewhere else each time; with Game sounds on, it clangs the first time. Up to 3 can stack on one post, each with its own dent, and each is gone 3 days after it lands. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
+  });
+
+  test('it has an effect and no form', () => {
+    expect(chair.Effect).toBeDefined();
+    expect(chair.ConfigForm).toBeUndefined();
   });
 });

@@ -1,5 +1,5 @@
 /**
- * Divided World's laugh track: the audience's sounds, each with its caption and the ink of its dot.
+ * Divided World's sounds: the audience's laugh track and Steel Chair's, each with its caption and the ink of its dot.
  * The files are in `sounds/`, listed in `sounds/sounds.json` (tools/check-sounds.mjs holds the two to each other).
  * The engine plays them on the game bus (engine/ui/audio/types.ts), each with the `gain` that brings its measured
  * loudness (the manifest's `lufs` and `peak`, written by tools/measure-sounds.mjs) to the same level.
@@ -18,10 +18,16 @@ import boo3 from './sounds/boo-3.mp3?url';
 import titter from './sounds/titter.mp3?url';
 import ooh from './sounds/ooh.mp3?url';
 import grumble from './sounds/grumble.mp3?url';
+import steelChairHit from './sounds/steel-chair-hit.mp3?url';
+import steelChairSettle1 from './sounds/steel-chair-settle-1.mp3?url';
+import steelChairSettle2 from './sounds/steel-chair-settle-2.mp3?url';
+import steelChairSettle3 from './sounds/steel-chair-settle-3.mp3?url';
+import steelChairSettle4 from './sounds/steel-chair-settle-4.mp3?url';
 
 const LAUGH = 'The audience laughs';
 const CHEER = 'The audience cheers';
 const BOO = 'The audience boos';
+const CLATTER = 'A chair clatters to the floor';
 
 /** The loudness every sound is brought to, in LUFS. */
 export const TARGET_LUFS = -18;
@@ -55,6 +61,11 @@ export const sounds: SoundsUi = Object.freeze({
     slot('laugh-track.titter', 'titter.mp3', titter, 'The audience titters', 'var(--kb-pepperoni)', true),
     slot('laugh-track.ooh', 'ooh.mp3', ooh, 'The audience goes “ooh”', 'var(--kb-sweet)', true),
     slot('laugh-track.grumble', 'grumble.mp3', grumble, 'A grumble rises', 'var(--kb-salty)', true),
+    slot('steel-chair.hit', 'steel-chair-hit.mp3', steelChairHit, 'A steel chair clangs', 'var(--kb-salty)'),
+    slot('steel-chair.settle-1', 'steel-chair-settle-1.mp3', steelChairSettle1, CLATTER, 'var(--kb-salty)'),
+    slot('steel-chair.settle-2', 'steel-chair-settle-2.mp3', steelChairSettle2, CLATTER, 'var(--kb-salty)'),
+    slot('steel-chair.settle-3', 'steel-chair-settle-3.mp3', steelChairSettle3, CLATTER, 'var(--kb-salty)'),
+    slot('steel-chair.settle-4', 'steel-chair-settle-4.mp3', steelChairSettle4, CLATTER, 'var(--kb-salty)'),
   ]),
   preview: Object.freeze({ game: 'laugh-track.laugh-1' }),
 });
