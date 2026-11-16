@@ -11,6 +11,11 @@
  * counts every element in view, so every band is near and the effect paints the whole box as it would without bands.
  *
  * The elements are placed inline, so no stylesheet is needed to make them harmless; `kb-band` is the hook for a test or a stylesheet.
+ *
+ * The tile layer (engine/ui/cards/tiles.ts) is built on this: its tiles are these bands, and it takes up each band's element as the
+ * stand-in for a tile not yet painted, so it relies on the elements being `kb-band` children of the host, appended in index order. Where
+ * there is no IntersectionObserver the layer does not paint the whole box: it finds the near tiles from the window itself. Whoops! still
+ * uses this directly until its ink moves onto the layer (docs/plans/2026-11-16-effect-tiles-design.md, section 7, step 3).
  */
 import { watchInView } from '../shine/inView.ts';
 import type { BodyBox } from './body.ts';

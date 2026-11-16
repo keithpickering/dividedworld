@@ -13,7 +13,7 @@
   display: block;
 }
 
-/* A flow root, so the words' own margins stay inside the box the canvas is fitted to. */
+/* A flow root, so the words' own margins stay inside the box the smoke's tiles are fitted to. */
 .dw-hotbox-words {
   display: flow-root;
   position: relative;

@@ -12,19 +12,22 @@
  * The container (the owner, 2026-11-15). The smoke fills the post's whole content area, border to border, as Feelin' Fab's foil and Whoops!'s ink do: the
  * post body (`.kb-act-main`) in the thread and the ORIGIN box's area (`.kb-origin-area`) in the box, found and measured with the engine's `bodyOf` and `bodyBox`
  * (engine/ui/cards/body.ts), and this effect's own element where there is none (Stick Around's view). The area's borders are the container, and no smaller un-bordered box in it is. Everything below that says "the box"
- * means that area: the canvas, the puffs, a clearing's radius, the density, where a pointer clears. Only the words' own lines are the words': the held
+ * means that area: the smoke's tiles, the puffs, a clearing's radius, where a pointer clears (the density is the layer's). Only the words' own lines are the words': the held
  * sweep travels them (offset into the area), and under forced colors the mask is the words' (so its coordinates are theirs).
  *
  * The model is `smoke.ts`'s (numbers, strength, clearings, the sweep) and this file draws it, in one of two ways that cost a reader the same:
- *  - the full effect: a canvas laid over the content area, filled with the play's color at the fog's opacity, drifting puffs over it, and each open clearing cut out
- *    of it with a soft edge (`destination-out`). It runs a frame loop only while the post is in view, and none under reduced motion, where it draws again
+ *  - the full effect: the smoke is drawn in the engine's tiles (engine/ui/cards/tiles.ts; docs/plans/2026-11-16-effect-tiles-design.md), canvases 512 px tall laid
+ *    over the content area and held only near the viewport, so a frame costs what is on screen and not what the post's length is. Each tile is filled with the
+ *    play's color at the fog's opacity, drifting puffs over it, and each open clearing cut out of it with a soft edge (`destination-out`); a puff or a clearing
+ *    that crosses two tiles is drawn in both. Where a tile is not yet painted its place shows a stand-in, the fog's flat color (`dw-hotbox-far`), so the words
+ *    are never bare while the browser has yet to say a tile is near. The layer's loop paints the held tiles every frame, and not at all under reduced motion, where it draws again
  *    only when something changes (a clearing opens or closes, the box resizes, the strength has moved a hundredth, a line of the sweep finishes);
  *  - under forced colors, where the fog cannot be drawn in system colors (the amendment at the top of the plan): the words themselves are masked, a flat layer
  *    at `maskAlpha` over the words, a hard-edged circle for each open clearing (same radius, same `roll`, same `touchHold`), a rectangle for each line the sweep
- *    has finished. The canvas is not drawn and no frame is requested; the mask is moved on a 50 ms timer, or on the times things change under reduced motion.
+ *    has finished. No layer is made, so no tile and no stand-in is drawn and no frame is requested; the mask is moved on a 50 ms timer, or on the times things change under reduced motion.
  *    A ring (system colors) shows where each clearing is, a sign says what the Lens says, and the content area is outlined in `CanvasText`, because a smoked post
  *    would otherwise look blank. The outline and the ring are drawn by a frame laid over the content area (`dw-hotbox-frame`), never by the words' own box, which its
- *    mask would take away with the rest; a ring may be anywhere in the area. With forced colors off none of this exists, and the canvas, its fog and its soft edge are exactly as above.
+ *    mask would take away with the rest; a ring may be anywhere in the area. With forced colors off none of this exists, and the tiles, their fog and its soft edge are exactly as above.
  *
  * Screen readers and the keyboard. While the play is up the words are `inert` (as Whoops! makes an inked body), so a link in a smoked post is followed after
  * a finished sweep: the control is the way through for every reader, a mouse's included, and it is never inert, never covered and drawn wherever the post is.
@@ -255,7 +258,7 @@ function seedOf(id: string): number {
 }
 
 /**
- * The boxes the effect reads, in CSS px. The content area (`w`, `h`, placed at `top` and `left` from the effect's element) is the container: the canvas, the
+ * The boxes the effect reads, in CSS px. The content area (`w`, `h`, placed at `top` and `left` from the effect's element) is the container: the smoke's tiles, the
  * puffs, a clearing's radius and the density are its, and a clearing's coordinates are in it. The words stand in it at (`wx`, `wy`) and are `ww` by `wh`: the
  * sweep's lines, and the forced-colors mask's coordinates, are theirs.
  */
@@ -265,7 +268,7 @@ const NO_FRAME: Frame = { w: 0, h: 0, top: 0, left: 0, wx: 0, wy: 0, ww: 0, wh: 
 /**
  * The words' mask, forced colors only: the flat layer, a hard circle for each clearing, a rectangle for each finished line; none while the post is clear.
  * The cuts are in the content area's coordinates and the mask is the words' own, so each is moved by where the words stand in the area (`ox`, `oy`);
- * the radius is the area's (`w` is its width), as on the canvas.
+ * the radius is the area's (`w` is its width), as in the tiles.
  */
 function maskFor(cuts: Cuts, s: number, g: number, now: number, reduced: boolean, w: number, ox: number, oy: number): CSSProperties | undefined {
   if (g >= 1) return undefined;
@@ -443,7 +446,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
       ctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
     }
     ctx.globalAlpha = 1;
-    /* The clearings are cut out of all of it: a radial fade whose stops are `covered`'s, so the canvas and the model agree. */
+    /* The clearings are cut out of all of it: a radial fade whose stops are `covered`'s, so the tiles and the model agree. */
     const radius = holeRadius(w);
     const cuts = cutsAt(m, t, L.reduced);
     ctx.globalCompositeOperation = 'destination-out';
