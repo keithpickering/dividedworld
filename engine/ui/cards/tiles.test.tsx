@@ -48,6 +48,18 @@ describe('tileDensity', () => {
     }
   });
 
+  test('holds the bound at a fractional width, where the quotient alone rounds past it, and lowers no further than it must', () => {
+    /* 2400 / 2097.199999999184 multiplied back is over 2,400: the width the step down is for. */
+    for (const w of [1200.0001, 1200.5, 1333.3, 2097.199999999184, 2121.499999999162, 2399.9]) {
+      const d = tileDensity(w, 2);
+      expect(Math.ceil(w * d)).toBeLessThanOrEqual(2400);
+      expect(Math.ceil(w * d) * Math.ceil(TILE_PX * d)).toBeLessThanOrEqual(MAX_TILE_PIXELS);
+      expect(w * d).toBeGreaterThan(2399.999);
+    }
+    expect(tileDensity(1200.5, 2)).toBeGreaterThan(1.999);
+    expect(tileDensity(1200.5, 2)).toBeLessThan(2);
+  });
+
   test('is 1 for a density that is not a positive finite number', () => {
     for (const bad of [0, -2, NaN, Infinity, -Infinity]) {
       expect(tileDensity(600, bad)).toBe(1);
@@ -89,6 +101,9 @@ describe('nearTiles', () => {
   test('holds the edge tile for a view just within TILE_NEAR_PX of the box', () => {
     expect(nearTiles(2000, -1500, -TILE_NEAR_PX + 1)).toEqual([0]);
     expect(nearTiles(2000, 2000 + TILE_NEAR_PX - 1, 4000)).toEqual([3]);
+    /* Exactly the margin away still counts. */
+    expect(nearTiles(2000, -1500, -TILE_NEAR_PX)).toEqual([0]);
+    expect(nearTiles(2000, 2000 + TILE_NEAR_PX, 4000)).toEqual([3]);
   });
 
   test('holds none for a box of no height', () => {

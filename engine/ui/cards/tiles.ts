@@ -39,7 +39,8 @@ function sane(d: number): number {
 /**
  * The density a tile of a box `w` CSS px wide is drawn at: the least of `MAX_TILE_DENSITY`, the screen's density and what the effect asked
  * for (`undefined` is no ask); for `w` over 1,200 it is lowered so that `ceil(w * density)` is at most 2,400 (`MAX_TILE_WIDTH_PX` at the
- * cap), which keeps `ceil(w * d) * ceil(TILE_PX * d)` at or under `MAX_TILE_PIXELS`. A density that is not a positive finite number is 1.
+ * cap), which keeps `ceil(w * d) * ceil(TILE_PX * d)` at or under `MAX_TILE_PIXELS`. A density that is not a positive finite number is 1. A width
+ * that is not finite is not lowered: such a box has no canvas.
  */
 export function tileDensity(w: number, screen: number, ask?: number): number {
   let d = Math.min(MAX_TILE_DENSITY, sane(screen), ask === undefined ? Infinity : sane(ask));
