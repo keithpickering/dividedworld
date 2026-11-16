@@ -86,7 +86,7 @@ const loadSeed = (): string => {
   return Math.floor(Math.random() * 2 ** 32).toString(36);
 };
 
-export function GlitterBombEffect({ post, plays, place, still, kept, children }: EffectProps) {
+export function GlitterBombEffect({ post, plays, still, kept, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
   const surface = useRef<HTMLDivElement>(null);
   const under = useRef<HTMLCanvasElement>(null);
@@ -226,7 +226,7 @@ export function GlitterBombEffect({ post, plays, place, still, kept, children }:
     };
     let found = false;
     const measure = (): BodyBox => {
-      const now = bodyOf(el, place);
+      const now = bodyOf(el);
       if (now !== body || !found) {
         found = true;
         if (body) resize?.unobserve(body);
@@ -303,7 +303,7 @@ export function GlitterBombEffect({ post, plays, place, still, kept, children }:
       hear(null);
       el.removeAttribute('data-kb-bleed');
     };
-  }, [seed, still, place]);
+  }, [seed, still]);
 
   return (
     <div ref={host} className="dw-glitter" data-kb-glitter="">

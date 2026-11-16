@@ -1,7 +1,7 @@
 /*
  * A play's moment on its post (Moment.tsx): a chamfered glass ring in the play's ink (`--kb-moment-ink`, inline) or its card's
  * alignment's color, as the Lens's border is (lens.css), with its glow. In the thread the ring is the post body's own edge: Moment.tsx
- * places it, inline, over the whole of `.kb-act-main` (thread.css, measured by engine/ui/cards/body.ts), bar to bar, as a card's effect
+ * places it, inline, over the whole of the content area (`[data-kb-content-area]`: a post's body, thread.css; measured by engine/ui/cards/body.ts), bar to bar, as a card's effect
  * paints it (the owner, 2026-11-06: the frame "should extend all the way to the edges accordingly, so it can show the effect
  * accurately"). Elsewhere (a post-spun ORIGIN box, or Stick Around's view, which moves the words out of the body) the ring is the
  * moment's own box, with room inside it for the words. The ring is a layer over everything and takes no pointer, and nothing here clips:
@@ -24,7 +24,7 @@
 }
 
 /* In the thread the body's padding is the moment's, and the ring is placed over the body by Moment.tsx (engine/ui/cards/body.ts). */
-.kb-act-main .kb-moment {
+[data-kb-content-area] .kb-moment {
   margin: 0;
   padding: 0;
 }

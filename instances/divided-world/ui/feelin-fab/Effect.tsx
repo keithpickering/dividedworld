@@ -94,7 +94,7 @@ type PaletteKey = 'bright' | 'light' | 'dark';
 const paletteOf = (band: Band): PaletteKey => (band.bright ? 'bright' : band.board);
 const PALETTES: Record<PaletteKey, readonly string[]> = { bright: FAB_BRIGHT, light: FAB_STOPS.light, dark: FAB_STOPS.dark };
 
-export function FeelinFabEffect({ post, plays, place, still, children }: EffectProps) {
+export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const level = Math.max(1, Math.min(MOST, plays.length));
@@ -178,7 +178,7 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
       freed = true;
     };
     const measure = (): BodyBox => {
-      const now = bodyOf(el, place);
+      const now = bodyOf(el);
       if (now !== body) {
         if (body) { resize?.unobserve(body); markBrightInk(body, false); }
         if (now) resize?.observe(now);
@@ -245,7 +245,7 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
       markBrightInk(body, false);
       el.removeAttribute('data-kb-bleed');
     };
-  }, [level, seed, still, place]);
+  }, [level, seed, still]);
 
   return (
     <div ref={host} className="dw-fab" data-kb-fab="" data-kb-level={level}>

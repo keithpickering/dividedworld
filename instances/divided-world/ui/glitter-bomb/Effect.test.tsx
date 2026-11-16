@@ -332,7 +332,7 @@ describe('Glitter Bomb', () => {
   test('in a thread the pointer is over the surface as the post\'s body, and a takeover that moves the host to another body tells cling', () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 300 : 0; });
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 120 : 0; });
-    render(<div><div className="kb-act-main" data-n="1"><GlitterBombEffect {...props()} /></div><div className="kb-act-main" data-n="2" /></div>);
+    render(<div><div className="kb-act-main" data-kb-content-area data-n="1"><GlitterBombEffect {...props()} /></div><div className="kb-act-main" data-kb-content-area data-n="2" /></div>);
     see(1);
     frames(2);
     const face = box().querySelector<HTMLElement>('.dw-glitter-surface')!;
@@ -403,7 +403,7 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
   test('in a post body four times its words\' area, the glitter is redrawn at a quarter of the rate', () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 300 : 0; });
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 480 : 0; });
-    const r = render(<div className="kb-act-main"><GlitterBombEffect {...props()} /></div>);
+    const r = render(<div className="kb-act-main" data-kb-content-area><GlitterBombEffect {...props()} /></div>);
     expect(probe.share(box())).toBe(0.25);
     r.unmount();
     render(<GlitterBombEffect {...props()} />);

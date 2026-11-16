@@ -171,7 +171,7 @@ function mount(o: Options = {}) {
     const effect = <Effect {...props} post={{ ...props.post, currentPayload: payload }} plays={list} states={held} />;
     return (
       <>
-        {props.place === 'thread' ? <div className="kb-act-main">{effect}{o.beside}</div> : effect}
+        {props.place === 'thread' ? <div className="kb-act-main" data-kb-content-area>{effect}{o.beside}</div> : effect}
         <Kit card="whoops" controls={view?.controls ?? []} />
       </>
     );

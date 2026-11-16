@@ -225,7 +225,7 @@ function Bare({ show, children }: { show: EffectProps['show']; children: EffectP
   return <>{children}</>;
 }
 
-function Chairs({ live, still, place, show, met, children, memory }: EffectProps & { live: readonly CardPlay[]; memory: Memory }) {
+function Chairs({ live, still, show, met, children, memory }: EffectProps & { live: readonly CardPlay[]; memory: Memory }) {
   const reduced = useMotionReduced();
   const sound = useSound();
   const gameSound = useGameSound();
@@ -298,7 +298,7 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
      * stand in it.
      */
     const measure = (): boolean => {
-      const next = bodyOf(el, place);
+      const next = bodyOf(el);
       if (next !== body || !found) {
         found = true;
         if (body) size?.unobserve(body);
@@ -588,13 +588,13 @@ function Chairs({ live, still, place, show, met, children, memory }: EffectProps
     return () => {
       stopArm();
       clearTimeout(armTimer);
-      /* The drawn chairs and dents go with the run that drew them: kept through a re-arm (reduced motion, place or moment changing), an old
+      /* The drawn chairs and dents go with the run that drew them: kept through a re-arm (reduced motion or the moment changing), an old
          dent would stand at its old place while the new run's chair is aimed elsewhere, and the reduced path skips a play that has a dent. */
       clearRun(true);
       control.current = null;
       paintNow.current = () => {};
     };
-  }, [still, reduced, place, memory]);
+  }, [still, reduced, memory]);
 
   /* Plays that came or went, after the run's own effect has run. */
   useEffect(() => { control.current?.sync(); }, [key]);

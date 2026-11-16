@@ -318,7 +318,7 @@ export function HotBoxEffect(props: EffectProps) {
   return <Smoke key={play.id} {...props} play={play} />;
 }
 
-function Smoke({ play, still, show, met, place, children }: EffectProps & { readonly play: CardPlay }) {
+function Smoke({ play, still, show, met, children }: EffectProps & { readonly play: CardPlay }) {
   const { api } = useKayfa();
   const reduced = useMotionReduced();
   const forced = useForcedColors();
@@ -377,13 +377,13 @@ function Smoke({ play, still, show, met, place, children }: EffectProps & { read
 
   /* ---- the box ---- */
   /*
-   * The container is the box Feelin' Fab's foil and Whoops!'s ink fill: the post body (`.kb-act-main`) in the thread, border to border (the engine's
+   * The container is the box Feelin' Fab's foil and Whoops!'s ink fill: the content area (a post's body in the thread, `.kb-act-main`), border to border (the engine's
    * `bodyOf` and `bodyBox`, engine/ui/cards/body.ts), and this effect's own element anywhere else (the ORIGIN box). It is found again at each measure.
    */
   const measure = useCallback(() => {
     const words = wordsRef.current, host = hostRef.current;
     if (!words || !host) return;
-    const found = bodyOf(host, place);
+    const found = bodyOf(host);
     setAreaEl(found ?? host);
     const b = bodyBox(host, found);
     const w = words.getBoundingClientRect(), h = host.getBoundingClientRect();
@@ -391,7 +391,7 @@ function Smoke({ play, still, show, met, place, children }: EffectProps & { read
     const wx = w.left - (h.left + b.left), wy = w.top - (h.top + b.top);
     setFrame((f) => (f.w === b.w && f.h === b.h && f.top === b.top && f.left === b.left && f.wx === wx && f.wy === wy && f.ww === w.width && f.wh === w.height
       ? f : { w: b.w, h: b.h, top: b.top, left: b.left, wx, wy, ww: w.width, wh: w.height }));
-  }, [place]);
+  }, []);
   useLayoutEffect(() => {
     measure();
     const words = wordsRef.current, host = hostRef.current;

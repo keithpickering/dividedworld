@@ -341,7 +341,7 @@ describe('the Stencils tab', () => {
   });
 
   test('the dock is hosted by the posts\' table, never inside a post, whose isolation would trap its z-index under the posts that follow', () => {
-    document.body.innerHTML = '<div class="kb-acts"><article class="kb-act" style="isolation: isolate"><div class="kb-act-main"><p id="words"></p></div></article></div><div id="loose"></div>';
+    document.body.innerHTML = '<div class="kb-acts"><article class="kb-act" style="isolation: isolate"><div class="kb-act-main" data-kb-content-area><p id="words"></p></div></article></div><div id="loose"></div>';
     const words = document.getElementById('words');
     expect(dockHostOf(words)).toBe(document.querySelector('.kb-acts'));
     /* Off the thread's table, the post itself; with neither, nothing. */

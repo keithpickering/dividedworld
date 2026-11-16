@@ -476,8 +476,8 @@ describe('THIS: the look', () => {
     expect(css).not.toMatch(/data-kb-over-ink/u);
   });
   test('under bright ink the note and the receipt take the bright ink and its outline, and the swipe is not drawn', () => {
-    expect(css).toMatch(/\.kb-act-main\[data-kb-bright-ink\] \.dw-this-hl \{\s*background: none;/u);
-    expect(css).toMatch(/\.kb-act-main\[data-kb-bright-ink\] :is\(\.dw-this-note, \.dw-this-receipt\) \{[^}]*color: var\(--kb-bright-ink\)[^}]*var\(--kb-bright-outline\)/u);
+    expect(css).toMatch(/\[data-kb-content-area\]\[data-kb-bright-ink\] \.dw-this-hl \{\s*background: none;/u);
+    expect(css).toMatch(/\[data-kb-content-area\]\[data-kb-bright-ink\] :is\(\.dw-this-note, \.dw-this-receipt\) \{[^}]*color: var\(--kb-bright-ink\)[^}]*var\(--kb-bright-outline\)/u);
   });
 });
 

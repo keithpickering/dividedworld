@@ -122,16 +122,16 @@
  * Under Feelin' Fab's bright ink (thread.css) the words are the bright ink with its outline, so the note and the receipt are too, and the
  * swipe is not drawn (the band would be under white words). The outline is the body's own, drawn around the glyphs and, for the arrow, around its stroke.
  */
-.kb-act-main[data-kb-bright-ink] .dw-this-hl {
+[data-kb-content-area][data-kb-bright-ink] .dw-this-hl {
   background: none;
 }
-.kb-act-main[data-kb-bright-ink] :is(.dw-this-note, .dw-this-receipt) {
+[data-kb-content-area][data-kb-bright-ink] :is(.dw-this-note, .dw-this-receipt) {
   color: var(--kb-bright-ink);
   text-shadow: -1px -1px 0 var(--kb-bright-outline), 1px -1px 0 var(--kb-bright-outline), -1px 1px 0 var(--kb-bright-outline), 1px 1px 0 var(--kb-bright-outline), 0 0 3px var(--kb-bright-outline);
 }
-.kb-act-main[data-kb-bright-ink] .dw-this-arrow path {
+[data-kb-content-area][data-kb-bright-ink] .dw-this-arrow path {
   stroke: var(--kb-bright-ink);
 }
-.kb-act-main[data-kb-bright-ink] .dw-this-arrow {
+[data-kb-content-area][data-kb-bright-ink] .dw-this-arrow {
   filter: drop-shadow(1px 0 0 var(--kb-bright-outline)) drop-shadow(-1px 0 0 var(--kb-bright-outline)) drop-shadow(0 1px 0 var(--kb-bright-outline)) drop-shadow(0 -1px 0 var(--kb-bright-outline));
 }

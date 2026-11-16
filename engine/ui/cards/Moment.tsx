@@ -61,7 +61,7 @@ export function useMomentRead(key: Id, load: () => Promise<PlayMoment | null>): 
  * is the box's: no ring, no tag); `own` (what became of the play itself), `named` and `words` are what the frame says under the post;
  * `unrecorded` says what else was on the post then wasn't recorded.
  */
-export function MomentFrame({ play, place, at, read, back, label = 'As it landed', own = null, named, words, unrecorded, frame, children }: {
+export function MomentFrame({ play, at, read, back, label = 'As it landed', own = null, named, words, unrecorded, frame, children }: {
   /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
   readonly play: CardPlay; readonly place: EffectPlace; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
@@ -79,7 +79,7 @@ export function MomentFrame({ play, place, at, read, back, label = 'As it landed
   const rules = play.faceDown ? undefined : instance.cards.find((c) => c.key === play.card);
   const onInk = useOnInk();
   const ink = play.faceDown ? undefined : inkOf(ui, play, [play], onInk);
-  const ring = useRing(place);
+  const ring = useRing();
   /* The moment is the content (a play-spun ORIGIN box): the box frames it, so there is no ring or tag, and a read not yet done is said above the words (and Try again). Over a post, As it landed opens once the moment is read (glass/prepared.ts), so the tag never says it is loading. */
   const content = back === undefined;
   const status = read === 'read' ? null : read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.';
@@ -122,7 +122,7 @@ const TAG_GAP = 8;
  * (a takeover moves them, and a moved moment is measured at its next render). With no body, both are the stylesheet's: the ring is the
  * moment's own box and the tag stands in the moment's flow.
  */
-function useRing(place: EffectPlace) {
+function useRing() {
   const host = useRef<HTMLDivElement | null>(null);
   const ring = useRef<HTMLDivElement>(null);
   const tag = useRef<HTMLParagraphElement>(null);
@@ -137,7 +137,7 @@ function useRing(place: EffectPlace) {
     watch?.observe(el);
     const unhang = () => { t.removeAttribute('data-kb-hung'); t.removeAttribute('style'); };
     measure.current = () => {
-      const now = bodyOf(el, place);
+      const now = bodyOf(el);
       const nowBar = now?.closest('article')?.querySelector<HTMLElement>(':scope > .kb-act-grid > .kb-act-meta, :scope > .kb-act-meta') ?? null;
       if (now !== body || nowBar !== bar) {
         if (body) watch?.unobserve(body);
@@ -172,7 +172,7 @@ function useRing(place: EffectPlace) {
     };
     measure.current();
     return () => { measure.current = null; watch?.disconnect(); };
-  }, [place]);
+  }, []);
   /* Each render: a moment moved (into Stick Around's view and back) with no size change wakes no observer. */
   useLayoutEffect(() => { measure.current?.(); });
   return { host, ring, tag };

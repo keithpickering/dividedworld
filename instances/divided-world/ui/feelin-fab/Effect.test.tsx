@@ -226,7 +226,7 @@ describe("Feelin' Fab", () => {
   };
   test('in a post body four times its words\' area, the foil is redrawn at a quarter of the rate; with no body, at the full rate', () => {
     inBody(300, 480);
-    const r = render(<div className="kb-act-main"><FeelinFabEffect {...props(1)} /></div>);
+    const r = render(<div className="kb-act-main" data-kb-content-area><FeelinFabEffect {...props(1)} /></div>);
     expect(probe.share(box())).toBe(0.25);
     r.unmount();
     render(<FeelinFabEffect {...props(1)} />);
@@ -529,7 +529,7 @@ describe("Feelin' Fab", () => {
    free one, the foil is drawn from FAB_BRIGHT on both boards and the post body asks for the bright ink; with it off nothing is as it was. */
 describe("Feelin' Fab, bright", () => {
   const bodyOfPost = () => document.querySelector('.kb-act-main') as HTMLElement;
-  const inBody = (level = 1) => render(<div className="kb-act-main"><FeelinFabEffect {...props(level)} /></div>);
+  const inBody = (level = 1) => render(<div className="kb-act-main" data-kb-content-area><FeelinFabEffect {...props(level)} /></div>);
   const effects = (on: boolean) => act(async () => { if (on) document.documentElement.setAttribute('data-kb-effects', 'bright'); else document.documentElement.removeAttribute('data-kb-effects'); await Promise.resolve(); });
 
   test('FAB_BRIGHT is the bench\'s six full-saturation stops, red to violet', () => {
@@ -597,7 +597,7 @@ describe("Feelin' Fab, bright", () => {
   });
 
   test('a moment (still) draws bright once and redraws when the mark changes', async () => {
-    render(<div className="kb-act-main"><FeelinFabEffect {...props(1)} still /></div>);
+    render(<div className="kb-act-main" data-kb-content-area><FeelinFabEffect {...props(1)} still /></div>);
     expect(made.at(-1)!.opts.palette).toEqual(FAB_STOPS.light);
     await effects(true);
     expect(made.at(-1)!.opts.palette).toEqual(FAB_BRIGHT);
@@ -606,7 +606,7 @@ describe("Feelin' Fab, bright", () => {
 
   test('a takeover that moves the words to another body while bright is on unmarks the old body and marks the new one', () => {
     document.documentElement.setAttribute('data-kb-effects', 'bright');
-    render(<><div className="kb-act-main" id="a"><FeelinFabEffect {...props(1)} /></div><div className="kb-act-main" id="b" /></>);
+    render(<><div className="kb-act-main" data-kb-content-area id="a"><FeelinFabEffect {...props(1)} /></div><div className="kb-act-main" data-kb-content-area id="b" /></>);
     const a = document.getElementById('a')!, b = document.getElementById('b')!;
     expect(a).toHaveAttribute('data-kb-bright-ink');
     b.appendChild(box());
@@ -619,7 +619,7 @@ describe("Feelin' Fab, bright", () => {
   test.each([['reduced motion', () => document.documentElement.setAttribute('data-kb-motion', 'reduce'), true], ['out of view', () => {}, false]] as const)('turning it off while the loop sleeps (%s) clears the mark', async (_name, setUp, inView) => {
     document.documentElement.setAttribute('data-kb-effects', 'bright');
     setUp();
-    render(<div className="kb-act-main"><FeelinFabEffect {...props(1)} /></div>);
+    render(<div className="kb-act-main" data-kb-content-area><FeelinFabEffect {...props(1)} /></div>);
     void see(canvas(), true); frames(3);
     if (!inView) { void see(canvas(), false); frames(3, 100); }
     expect(bodyOfPost()).toHaveAttribute('data-kb-bright-ink');
@@ -660,7 +660,7 @@ describe("Feelin' Fab, bright", () => {
     expect(css).toMatch(/:root\s*\{[^}]*--kb-bright-ink:\s*#ffffff;[^}]*--kb-bright-outline:\s*#000000;/u);
     expect(css.match(/\.dw-fab\s*\{[^}]*\}/u)![0]).not.toMatch(/--kb-bright-/u);
     expect(css).toMatch(/:root\[data-kb-effects="bright"\]\s+\.dw-fab:not\(\[data-kb-bleed\]\)\s+>\s+\.dw-fab-words\s*\{[^}]*color:\s*var\(--kb-bright-ink\)[^}]*text-shadow:[^}]*var\(--kb-bright-outline\)/u);
-    expect(css).toMatch(/\.kb-act-main\[data-kb-bright-ink\]\s+\.dw-fab-words\s*\{[^}]*text-shadow:\s*inherit/u);
+    expect(css).toMatch(/\[data-kb-content-area\]\[data-kb-bright-ink\]\s+\.dw-fab-words\s*\{[^}]*text-shadow:\s*inherit/u);
   });
 });
 

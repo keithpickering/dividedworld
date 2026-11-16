@@ -118,7 +118,7 @@ function setup(over: Partial<EffectProps> = {}, strict = false, bare = false) {
   const world = createFake({ instance: testInstance, now: () => Date.now() });
   const effect = <HotBoxEffect {...props} />;
   /* In the thread the effect sits inside the post's content area; `bare` is a post with none (the ORIGIN box), where the area is the effect's own element. */
-  const inArea = bare ? effect : <div className="kb-act-main">{effect}</div>;
+  const inArea = bare ? effect : <div className="kb-act-main" data-kb-content-area>{effect}</div>;
   const out = renderIn(world, strict ? <StrictMode>{inArea}</StrictMode> : inArea);
   return { show, met, save, release, props, ...out };
 }
@@ -1167,6 +1167,7 @@ describe('the content area is the container', () => {
     const s = setup();
     const fresh = document.createElement('div');
     fresh.className = 'kb-act-main';
+    fresh.setAttribute('data-kb-content-area', '');
     s.container.appendChild(fresh);
     fresh.appendChild(host(s));
     act(() => { for (const cb of sizeWatchers) cb(); });

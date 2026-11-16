@@ -125,7 +125,7 @@ function Host({ o }: { o: Options }) {
     children: <p data-kb-words>The words of the post.</p>,
   };
   const inner = <SteelChairEffect {...props} />;
-  return o.wrapped === false ? inner : <div className="kb-act-main">{inner}</div>;
+  return o.wrapped === false ? inner : <div className="kb-act-main" data-kb-content-area>{inner}</div>;
 }
 const mount = (o: Options = {}) => renderInWorld(<Host o={o} />);
 const lastView = (): CardView => made.show.mock.calls.filter((c) => c[0] !== null).at(-1)![0]!;

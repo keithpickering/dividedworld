@@ -84,7 +84,7 @@ function mount(o: { readonly children?: ReactNode; readonly acts?: readonly Surf
   const surface = o.surface ?? surfaceOf(o.acts === undefined ? MIDDLE : o.acts);
   const shown: CardView[] = [];
   const props = { ...propsOf({ surface, author: o.author ?? false, ...(o.children ? { children: o.children } : {}) }), show: (v: CardView | null) => { if (v) shown.push(v); } };
-  const world = renderInWorld(<div className="kb-act-main"><Effect {...props} /></div>);
+  const world = renderInWorld(<div className="kb-act-main" data-kb-content-area><Effect {...props} /></div>);
   const root = world.container.querySelector('.kb-graffiti') as HTMLElement;
   return { ...world, surface, shown, root, frame: world.container.querySelector('.kb-graffiti-frame') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement };
 }
@@ -280,7 +280,7 @@ describe('a wall under a splat', () => {
     const base = propsOf({ surface: wall, ink: claims.at('post:graffiti', 0) });
     const outer = { ...base, plays: [whoopsPlay], ink: claims.at('post:whoops', 1), surface: undefined, save: async () => ({ ok: true as const, value: { play: 'play-w', savedAt: '' } }) };
     const world = renderInWorld(
-      <div className="kb-act-main"><WhoopsEffect {...outer}><Effect {...base} /></WhoopsEffect></div>,
+      <div className="kb-act-main" data-kb-content-area><WhoopsEffect {...outer}><Effect {...base} /></WhoopsEffect></div>,
     );
     return { ...world, wall, whoops: world.container.querySelector('[data-kb-whoops]') as HTMLElement, root: world.container.querySelector('.kb-graffiti') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement };
   }
@@ -559,7 +559,7 @@ describe('a hold, and the order of a scrub', () => {
       set = setActs;
       bump = () => setN((v) => v + 1);
       const surface = useMemo(() => surfaceOf(acts), [acts]);
-      return <div className="kb-act-main"><Effect {...propsOf({ surface, ink })}><p data-n={n}>The post&apos;s words.</p></Effect></div>;
+      return <div className="kb-act-main" data-kb-content-area><Effect {...propsOf({ surface, ink })}><p data-n={n}>The post&apos;s words.</p></Effect></div>;
     }
     const world = renderInWorld(<Host />);
     return { ...world, setActs: (a: readonly SurfaceAct[]) => act(() => set(a)), bump: () => act(() => bump()), frame: world.container.querySelector('.kb-graffiti-frame') as HTMLElement };
@@ -596,7 +596,7 @@ describe('draw mode and the wall it is drawn on', () => {
       setActs = sa;
       setHas = sh;
       const surface = useMemo(() => surfaceOf(acts), [acts]);
-      return <div className="kb-act-main"><Effect {...propsOf({ surface, ink })} plays={has ? [PLAY] : []} /></div>;
+      return <div className="kb-act-main" data-kb-content-area><Effect {...propsOf({ surface, ink })} plays={has ? [PLAY] : []} /></div>;
     }
     const world = renderInWorld(<Host />);
     return { ...world, root: world.container.querySelector('.kb-graffiti') as HTMLElement, setActs: (a: readonly SurfaceAct[]) => act(() => setActs(a)), setHas: (h: boolean) => act(() => setHas(h)) };

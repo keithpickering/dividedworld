@@ -241,6 +241,7 @@ describe('review fixes', () => {
     const user = userEvent.setup();
     const cell = document.createElement('div');
     cell.className = 'kb-act-main';
+    cell.setAttribute('data-kb-content-area', '');
     const under = document.createElement('div');
     cell.append(under);
     document.body.append(cell);
