@@ -37,13 +37,23 @@ describe('the ORIGIN box', () => {
     expect(band).toMatch(/min-height:\s*calc\(var\(--kb-meta-tile\) - 0\.4rem\)/u);
   });
 
-  test('the band takes back the box\'s inset: the box sets it and pads by it, the band\'s margin is its negation and its padding is it', () => {
+  /*
+   * The inset moved (docs/plans/2026-11-15-origin-box-effects-design.md, section 2): the box used to pad by it and the band to take it back with a negative
+   * margin, so the box's content area was a padded strip. The box now has no padding and the band no negative margin; the content area under the
+   * band pads by the inset and fills the frame's inner edges, so an effect painted on it reaches the frame.
+   */
+  test('the box sets the inset and pads nothing; the band pads by it with no negative margin; the area pads by it and isolates', () => {
     const box = rules(spin, '.kb-origin').join(';');
     expect(box).toMatch(/--kb-origin-inset:/u);
-    expect(box).toMatch(/padding:[^;]*var\(--kb-origin-inset\)/u);
+    expect(box).toMatch(/(?<![-\w])padding:\s*0\s*(?:;|$)/u);
     const band = rules(spin, '.kb-origin-head').join(';');
-    expect(band).toMatch(/margin:[^;]*calc\(-1 \* var\(--kb-origin-inset\)\)/u);
+    expect(band).not.toMatch(/margin(?:-\w+)?:[^;]*-/u);
+    expect(band).toMatch(/margin:\s*0\s*;/u);
     expect(band).toMatch(/padding:[^;]*var\(--kb-origin-inset\)/u);
+    const inside = rules(spin, '.kb-origin-area').join(';');
+    expect(inside).toMatch(/padding:[^;]*var\(--kb-origin-inset\)/u);
+    expect(inside).toMatch(/isolation:\s*isolate/u);
+    expect(inside).not.toMatch(/min-height|overflow|position/u);
   });
 
   test('the link on the band keeps the band\'s ink, grows its underline on hover, and rings in the column head\'s focus color; no rule reaches the mark tiles', () => {
@@ -55,11 +65,15 @@ describe('the ORIGIN box', () => {
     expect(spin).not.toMatch(/\.kb-origin-head \*?:focus-visible/u);
   });
 
-  test('bright ink: no thread rule whose selector names data-kb-bright-ink names .kb-origin-head, so the bright ink never reaches the band', () => {
-    for (const m of thread.matchAll(/([^{}]+)\{[^{}]*\}/gu)) {
-      const selector = m[1]!;
-      if (selector.includes('data-kb-bright-ink')) expect(selector, selector).not.toMatch(/kb-origin-head/u);
+  test('bright ink: no rule in spin.css or thread.css whose selector names data-kb-bright-ink names .kb-origin-head, so the bright ink never reaches the band', () => {
+    let seen = 0;
+    for (const css of [spin, thread]) {
+      for (const m of css.matchAll(/([^{}]+)\{[^{}]*\}/gu)) {
+        const selector = m[1]!;
+        if (selector.includes('data-kb-bright-ink')) { seen++; expect(selector, selector).not.toMatch(/kb-origin-head/u); }
+      }
     }
+    expect(seen).toBeGreaterThan(0);
     const band = rules(spin, '.kb-origin-head').join(';');
     expect(band).toMatch(/(?<![-\w])color:\s*var\(--kb-head-fg\)/u);
     expect(band).toMatch(/text-shadow:\s*var\(--kb-head-shadow\)/u);

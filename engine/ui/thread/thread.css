@@ -271,6 +271,11 @@
   max-width: 100%;
 }
 
+/* The ORIGIN box is lifted whole over the opening post's ink (design 2026-11-15, section 4), and is no chip: it keeps the full width of the post's body. */
+[data-kb-content-area] .kb-origin[data-kb-over-ink] {
+  width: auto;
+}
+
 /*
  * Brighter effects (docs/plans/2026-11-08-brighter-effects-design.md, section 1): an effect that draws a bright look under the words
  * (Feelin' Fab's rainbow) asks for it with `data-kb-bright-ink` on the content area it painted (cards/body.ts `markBrightInk`), and the four post inks

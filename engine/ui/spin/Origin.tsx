@@ -17,7 +17,8 @@
  * never an error or an empty box. In both the character's name and avatar are one link to its profile, the box has a byline (that link and the version's date)
  * above the words, the card's effect is drawn still on the words, and the mark's Go to post leads to the pressed post where there is one, else the cast-from
  * post. A thread's play and a board's play draw no mark of their own in the box today (the mark is keyed by a post they have not): the box is the head and
- * nothing under it. The moment the page carried is kept in the Lens's store under the key the frame reads it by (`seedMoment`), so the frame reads nothing.
+ * nothing under it. Everything under the band stands in one content area (`div.kb-origin-area`, marked `data-kb-content-area`, drawn only where something stands there), which is what an
+ * effect on the box fills and finds as its body; the History button, its panel and the "More than" note are lifted over it, and the box itself over the opening post's effect (spin.css). The moment the page carried is kept in the Lens's store under the key the frame reads it by (`seedMoment`), so the frame reads nothing.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
@@ -245,16 +246,20 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
             <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>
             <LastEdited act={act} />
-            {act.kind === 'post' && <p className="kb-small">{history.button}</p>}
-            {history.panel}
+            {act.kind === 'post' && <p className="kb-small" data-kb-over-ink>{history.button}</p>}
+            {/* Lifted always and empty until History opens: a wrapper with nothing in it draws and covers nothing, and its ground (spin.css) is on what it holds. */}
+            <div className="kb-origin-lift" data-kb-over-ink>{history.panel}</div>
           </>
         );
     }
   };
 
+  /* What stands under the band: the area is drawn only where there is something to put in it (a draw, a wash and a play on a thread or a board leave the box the head alone). */
+  const content = body();
+  const note = act !== null && act.kind !== 'card' && more;
   return (
     <>
-      <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>
+      <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1} data-kb-over-ink>
         <p className="kb-origin-head">
           {/* A play's moment is the box's content, framed by the box: the head says it is the post as the play found it, where a ring and a tag would say it again. */}
           <span className="kb-origin-head-text">
@@ -264,9 +269,11 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
           {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}
           {marks}
         </p>
-        {body()}
-        {act && act.kind !== 'card' && more && (
-          <p className="kb-small kb-muted">More than {CARDS_SHOWN} cards were played on this Act; the rest are in {link}.</p>
+        {(content !== null || note) && (
+          <div className="kb-origin-area" data-kb-content-area>
+            {content}
+            {note && <p className="kb-small kb-muted kb-origin-note" data-kb-over-ink>More than {CARDS_SHOWN} cards were played on this Act; the rest are in {link}.</p>}
+          </div>
         )}
       </div>
       {spinOrigin && (

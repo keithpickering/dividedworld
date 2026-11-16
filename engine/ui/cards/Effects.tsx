@@ -8,7 +8,8 @@
  * Lens draw from it; the post's own body holds the effect and nothing a player presses.
  *
  * An effect (`CardUi.Effect`) wraps the post's words wherever they are drawn (the thread, and the ORIGIN box of a thread spun
- * from the post). The order they nest in is `nestOrder`'s, the one place it is stated, from the innermost out: the cards that
+ * from the post), and paints on the content area it stands in: the nearest element marked `data-kb-content-area` (cards/body.ts), a
+ * post's body in a thread and the area of the ORIGIN box (spin/Origin.tsx). The order they nest in is `nestOrder`'s, the one place it is stated, from the innermost out: the cards that
  * write (`CardRules.writes`, on the post's own reach) wrap the words first, so a tail they draw is the words' next sibling under
  * every other card, whatever the play order; then the cards with `CardUi.beneath` (the layer other cards' ink lies on); then
  * every other card, so the latest played is outermost; then the takeovers (Stick Around, which lifts the post out of its thread),
