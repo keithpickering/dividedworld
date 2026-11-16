@@ -1162,11 +1162,11 @@ describe('reduced motion', () => {
     if (!reduced) document.documentElement.setAttribute('data-kb-motion', 'full');
     const s = setup();
     press(s);
-    pass(SWEEP_MS - 1, 1);
+    pass(SWEEP_MS - 1, LINE_MS);
     expect(inert(s)).toBe(true);
     pass(1, 1);
     expect(inert(s)).toBe(false);
-  }, 120_000);
+  });
 
   test('a held sweep clears each line as it finishes, with no clearing sliding along it', () => {
     const s = setup();
@@ -1827,6 +1827,8 @@ describe('the tiles', () => {
   });
 
   test('a far band\'s stand-in carries the fog\'s color and alpha, and the alpha follows the strength', () => {
+    /* The observer never reports: the post is out of view, so the page's 50 ms rest timer is not joined (it would tick 2.6 million times over these days); the strength tick, which is not the rest timer's, is what is read. */
+    stubObserver();
     AREA = { ...BOX, height: 20_000 };
     const s = setup();
     const bands = [...host(s).querySelectorAll<HTMLElement>('.kb-band')];
@@ -1837,7 +1839,8 @@ describe('the tiles', () => {
     expect(rgbVar(s)).toBe('0 128 128');
     expect(Number(host(s).style.getPropertyValue('--dw-hotbox-fog'))).toBeCloseTo(fogAlpha(strength(NOW, NOW, ENDS)), 3);
     const before = Number(host(s).style.getPropertyValue('--dw-hotbox-fog'));
-    pass(1.5 * DAY, DAY / 20);
+    /* One jump of the clock and one frame: only that the days have passed matters, not the frames between. */
+    pass(1.5 * DAY, 1.5 * DAY);
     const later = Number(host(s).style.getPropertyValue('--dw-hotbox-fog'));
     expect(later).toBeLessThan(before);
     expect(Math.abs(later - fogAlpha(strength(Date.now(), NOW, ENDS)))).toBeLessThan(0.02);
@@ -1880,10 +1883,13 @@ describe('the tiles', () => {
   });
 
   test('the layer survives a strength tick: the same canvases before and after the smoke has thinned', () => {
+    /* The observer never reports: the post is out of view, so the page's 50 ms rest timer is not joined (it would tick 2.6 million times over these days); the strength tick, which is not the rest timer's, is what is read. */
+    stubObserver();
     const s = setup();
     const before = tiles(s);
     const fogBefore = host(s).style.getPropertyValue('--dw-hotbox-fog');
-    pass(1.5 * DAY, DAY / 20);
+    /* One jump of the clock and one frame: only that the smoke has thinned matters, not the frames between. */
+    pass(1.5 * DAY, 1.5 * DAY);
     expect(host(s).style.getPropertyValue('--dw-hotbox-fog')).not.toBe(fogBefore);
     expect(tiles(s)).toHaveLength(before.length);
     tiles(s).forEach((c, i) => { expect(c).toBe(before[i]); expect(c.isConnected).toBe(true); });
