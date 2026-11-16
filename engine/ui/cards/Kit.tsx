@@ -8,6 +8,14 @@
  * Enter (never on the key's auto-repeat, which would start it again and again), and stops on pointer up, leave or cancel,
  * on key up and on blur, so a hold that loses its pointer or its focus can never be left running. The context menu is
  * swallowed (a long press on a touch screen would open it and cancel the hold).
+ *
+ * A click also holds, for one second (HOLD_PULSE_MS): a screen reader in browse mode sends a button a click and never a held
+ * key, so without this it could not hold at all, and a click lasts one second so that nothing latches and runs unattended
+ * (hot box and fog design, section 4.3). A click while the pulse runs only moves its end, and does not start the hold again.
+ * A pointer or key hold in progress owns the control, so the click that comes with it does nothing; the click the browser
+ * sends after the release then starts a pulse, which is intended (a quick mouse click is a one-second hold). The pulse ends
+ * on blur, on the pointer leaving and on unmount like any hold, and its timer goes with it, so stop is called once. The
+ * hidden description is the card's own words and then HOLD_PULSE_HELP, which a hold with no words has alone.
  */
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { Link } from '../router.tsx';
@@ -16,6 +24,11 @@ import './kit.css';
 
 /** The most controls the kit draws. */
 export const KIT_MAX = 2;
+
+/** How long one click holds a hold control, in ms. */
+export const HOLD_PULSE_MS = 1000;
+/** The words a hold's hidden description ends with. */
+export const HOLD_PULSE_HELP = 'Or press it again and again: each press holds for one second.';
 
 const swallow = (e: { preventDefault(): void }) => e.preventDefault();
 const isActivation = (e: KeyboardEvent) => e.key === ' ' || e.key === 'Enter';
@@ -31,22 +44,35 @@ function Hold({ control }: { readonly control: Extract<KitControl, { kind: 'hold
   const live = useRef(control);
   live.current = control;
   const holding = useRef(false);
+  /* A pointer or a key is down: it owns the control, and a click that arrives meanwhile is not its pulse. */
+  const owned = useRef(false);
+  const pulse = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const clearPulse = () => { clearTimeout(pulse.current); pulse.current = undefined; };
   const start = () => { holding.current = true; control.start(); };
-  const stop = () => { holding.current = false; control.stop(); };
-  /* Gone mid-hold (the post scrolled away, the card taken off): stopped once, as the hold would have been by a release. */
-  useEffect(() => () => { if (holding.current) live.current.stop(); }, []);
+  const stop = () => { clearPulse(); owned.current = false; holding.current = false; control.stop(); };
+  const grab = () => { owned.current = true; start(); };
+  /* A click holds for one second: it starts the hold if none runs, and sets the one timer that ends it a second from now, so a click while it runs only moves the end. */
+  const click = () => {
+    if (owned.current) return;
+    if (!holding.current) start();
+    clearPulse();
+    pulse.current = setTimeout(stop, HOLD_PULSE_MS);
+  };
+  /* Gone mid-hold (the post scrolled away, the card taken off): stopped once, as the hold would have been by a release; a pulse's timer goes with it. */
+  useEffect(() => () => { clearTimeout(pulse.current); if (holding.current) live.current.stop(); }, []);
   return (
     <>
       <Tile
-        data-kb-hold="" data-kb-lit="" aria-describedby={control.describe ? help : undefined}
-        onPointerDown={(e: PointerEvent) => { swallow(e); start(); }} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop} onBlur={stop}
+        data-kb-hold="" data-kb-lit="" aria-describedby={help}
+        onPointerDown={(e: PointerEvent) => { swallow(e); grab(); }} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop} onBlur={stop}
+        onClick={click}
         onContextMenu={swallow}
-        onKeyDown={(e: KeyboardEvent) => { if (!isActivation(e)) return; e.preventDefault(); if (!e.repeat) start(); }}
+        onKeyDown={(e: KeyboardEvent) => { if (!isActivation(e)) return; e.preventDefault(); if (!e.repeat) grab(); }}
         onKeyUp={(e: KeyboardEvent) => { if (isActivation(e)) stop(); }}
       >
         {control.label}
       </Tile>
-      {control.describe && <span id={help} className="kb-visually-hidden">{control.describe}</span>}
+      <span id={help} className="kb-visually-hidden">{control.describe ? `${control.describe} ${HOLD_PULSE_HELP}` : HOLD_PULSE_HELP}</span>
     </>
   );
 }

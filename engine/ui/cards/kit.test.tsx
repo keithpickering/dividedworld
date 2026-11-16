@@ -1,7 +1,7 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, renderIn } from '../test-world.tsx';
-import { Kit } from './Kit.tsx';
+import { HOLD_PULSE_HELP, HOLD_PULSE_MS, Kit } from './Kit.tsx';
 import type { KitControl } from './types.ts';
 
 const draw = (controls: readonly KitControl[]) => renderIn(buildWorld(), <Kit card="whoops" controls={controls} ink="var(--kb-glass-neon)" />);
@@ -73,7 +73,139 @@ describe('hold', () => {
     fireEvent.blur(b);
     expect(stop).toHaveBeenCalledTimes(1);
     expect(fireEvent.contextMenu(b)).toBe(false);
-    expect(b).toHaveAccessibleDescription('Hold Space to scrub.');
+    expect(b).toHaveAccessibleDescription(`Hold Space to scrub. ${HOLD_PULSE_HELP}`);
+  });
+});
+
+/*
+ * A click holds for one second (hot box and fog design, section 4.3). A screen reader in browse mode sends a button a click
+ * and never a held key, so without this it could not hold at all; a click is one second, so nothing latches and runs unattended.
+ * Fake timers drive the second; each test's poison is named beside it and was run red against the code that carries it.
+ */
+describe('a click holds for one second', () => {
+  const press = (b: HTMLElement) => fireEvent.click(b);
+
+  test('a bare click starts once and stops once, a second later', () => {
+    vi.useFakeTimers();
+    try {
+      const start = vi.fn(), stop = vi.fn();
+      draw([hold(start, stop)]);
+      press(screen.getByRole('button', { name: 'Hold to scrub' }));
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(stop).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(HOLD_PULSE_MS - 1);
+      expect(stop).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(start).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('a click while a pulse runs only moves its end: no second start, one stop, a second after the last click', () => {
+    vi.useFakeTimers();
+    try {
+      const start = vi.fn(), stop = vi.fn();
+      draw([hold(start, stop)]);
+      const b = screen.getByRole('button', { name: 'Hold to scrub' });
+      press(b);
+      vi.advanceTimersByTime(600);
+      press(b);
+      expect(start).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(999);
+      expect(stop, 'the first click\'s second has passed, the second click\'s has not').not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(stop).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(5000);
+      expect(stop).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('blur ends a pulse at once, and its timer firing later does not stop it again', () => {
+    vi.useFakeTimers();
+    try {
+      const start = vi.fn(), stop = vi.fn();
+      draw([hold(start, stop)]);
+      const b = screen.getByRole('button', { name: 'Hold to scrub' });
+      press(b);
+      vi.advanceTimersByTime(300);
+      fireEvent.blur(b);
+      expect(stop).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(5000);
+      expect(stop).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('a pointer hold owns the control: a click under it changes nothing, and the click after the release is a pulse', () => {
+    vi.useFakeTimers();
+    try {
+      const start = vi.fn(), stop = vi.fn();
+      draw([hold(start, stop)]);
+      const b = screen.getByRole('button', { name: 'Hold to scrub' });
+      fireEvent.pointerDown(b);
+      expect(start).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(500);
+      press(b);
+      vi.advanceTimersByTime(3000);
+      expect(start, 'the click did not start it again').toHaveBeenCalledTimes(1);
+      expect(stop, 'the click did not end it, nor set a timer that would').not.toHaveBeenCalled();
+      fireEvent.pointerUp(b);
+      expect(stop).toHaveBeenCalledTimes(1);
+      press(b);
+      expect(start).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(HOLD_PULSE_MS);
+      expect(stop).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('a key hold owns the control the same way', () => {
+    vi.useFakeTimers();
+    try {
+      const start = vi.fn(), stop = vi.fn();
+      draw([hold(start, stop)]);
+      const b = screen.getByRole('button', { name: 'Hold to scrub' });
+      fireEvent.keyDown(b, { key: ' ' });
+      press(b);
+      vi.advanceTimersByTime(3000);
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(stop).not.toHaveBeenCalled();
+      fireEvent.keyUp(b, { key: ' ' });
+      expect(stop).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('unmounted mid-pulse, it stops once and the timer does not stop it again', () => {
+    vi.useFakeTimers();
+    try {
+      const start = vi.fn(), stop = vi.fn();
+      const held = draw([hold(start, stop)]);
+      press(screen.getByRole('button', { name: 'Hold to scrub' }));
+      held.unmount();
+      expect(stop).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(5000);
+      expect(stop).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('pointer leave during a pulse ends it', () => {
+    vi.useFakeTimers();
+    try {
+      const stop = vi.fn();
+      draw([hold(vi.fn(), stop)]);
+      const b = screen.getByRole('button', { name: 'Hold to scrub' });
+      press(b);
+      fireEvent.pointerLeave(b);
+      expect(stop).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(5000);
+      expect(stop).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('the description is the card\'s words and then the pulse help; a hold with no words has the help alone', () => {
+    const held = draw([hold()]);
+    expect(screen.getByRole('button', { name: 'Hold to scrub' })).toHaveAccessibleDescription(`Hold Space to scrub. ${HOLD_PULSE_HELP}`);
+    held.unmount();
+    draw([{ kind: 'hold', label: 'Hold to scrub', start: vi.fn(), stop: vi.fn() }]);
+    expect(screen.getByRole('button', { name: 'Hold to scrub' })).toHaveAccessibleDescription(HOLD_PULSE_HELP);
   });
 });
 
