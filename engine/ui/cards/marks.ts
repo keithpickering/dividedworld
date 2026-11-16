@@ -134,3 +134,17 @@ export const untakenWords = (): string => 'Didn\'t take. Its text never arrived,
 export const OVER_STATE = 'Over';
 /** The Lens's heading for a kind whose plays a trap caught: a short status, the same for every kind; what caught it is each play's note (`caughtWords`). */
 export const CAUGHT_STATE = 'Caught, did nothing';
+
+/**
+ * The mark of a kind on the post a host sits in (Marks.tsx draws it): an effect whose words go inert sends focus here, where
+ * the mark names the state and opens the cards on the post. The search is within the nearest post, and the kind is compared
+ * as an attribute value, never spliced into a selector.
+ */
+export function markOf(host: Element, kind: string): HTMLElement | null {
+  const post = host.closest('.kb-act');
+  if (!post) return null;
+  for (const mark of post.querySelectorAll<HTMLElement>('button.kb-mark[data-kb-card]')) {
+    if (mark.getAttribute('data-kb-card') === kind) return mark;
+  }
+  return null;
+}

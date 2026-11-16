@@ -15,6 +15,7 @@ import { buildWorld, renderIn, tapThread, testInstance } from '../test-world.tsx
 import { ThreadScreen } from '../thread/Thread.tsx';
 import type { CardUi, CardView, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
+import { markOf } from './marks.ts';
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -497,5 +498,65 @@ describe('a play that did not take', () => {
     expect(marks(post)[0]).not.toHaveTextContent('×');
     expect(marks(post)[0]).toHaveAttribute('data-kb-caught', 'true');
     expect(marks(post)[0]).toHaveAccessibleName("Card W, 1 play, Didn't take. Opens the cards on this post.");
+  });
+});
+
+/* An effect whose words go inert finds its post's mark by kind, from its own place in the DOM (Marks.tsx writes the mark, markOf reads it). */
+describe('markOf', () => {
+  const mounted: Element[] = [];
+  afterEach(() => { for (const el of mounted.splice(0)) el.remove(); });
+
+  /** A post as Marks.tsx draws it: a date row holding a strip of one mark per kind, and a body the words sit in. */
+  function post(kinds: readonly string[]): { post: HTMLElement; words: HTMLElement } {
+    const article = document.createElement('article');
+    article.className = 'kb-act';
+    const meta = document.createElement('header');
+    meta.className = 'kb-act-meta';
+    const strip = document.createElement('span');
+    strip.className = 'kb-marks';
+    for (const kind of kinds) {
+      const mark = document.createElement('button');
+      mark.type = 'button';
+      mark.className = 'kb-mark';
+      mark.setAttribute('data-kb-card', kind);
+      strip.append(mark);
+    }
+    meta.append(strip);
+    const body = document.createElement('div');
+    body.className = 'kb-act-body';
+    const words = document.createElement('p');
+    body.append(words);
+    article.append(meta, body);
+    document.body.append(article);
+    mounted.push(article);
+    return { post: article, words };
+  }
+
+  test('finds the mark of the kind from a host inside the post\'s body', () => {
+    const { post: el, words } = post(['some-card', 'other-card']);
+    const found = markOf(words, 'some-card');
+    expect(found).not.toBeNull();
+    expect(found).toBe(el.querySelector('button.kb-mark[data-kb-card="some-card"]'));
+  });
+
+  test('is null for a kind the post does not carry a mark of', () => {
+    const { words } = post(['some-card']);
+    expect(markOf(words, 'other-card')).toBeNull();
+  });
+
+  test('is null for a host outside any post, even where a post elsewhere carries the kind', () => {
+    post(['some-card']);
+    const loose = document.createElement('p');
+    document.body.append(loose);
+    mounted.push(loose);
+    expect(markOf(loose, 'some-card')).toBeNull();
+  });
+
+  test('with two posts each holding the kind, finds the mark of the host\'s own post', () => {
+    const first = post(['some-card']);
+    const second = post(['some-card']);
+    const mine = second.post.querySelector('button.kb-mark[data-kb-card="some-card"]');
+    expect(first.post.querySelector('button.kb-mark[data-kb-card="some-card"]')).not.toBe(mine);
+    expect(markOf(second.words, 'some-card')).toBe(mine);
   });
 });
