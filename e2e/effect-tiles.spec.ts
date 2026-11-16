@@ -20,7 +20,9 @@ import { MAX_TILE_DENSITY, MAX_TILE_PIXELS, TILE_NEAR_PX, TILE_PX, mostTiles } f
  *   `mostTiles(window height)` times the effect's sheets; no place in the post holds more canvases with pixels than the effect's sheets; none that holds
  *   any lies more than `TILE_NEAR_PX` plus one tile (`TILE_PX`) outside the window. A tile's sheets are the canvases that share its place in the post, and
  *   an effect's sheets are declared by its budget story (the tag `effect-sheets-N`), not inferred from the frame, so a layer that leaks by stacking
- *   canvases is not given room by doing so. A canvas holds pixels where its width and height are not 0 (a layer frees one by sizing it to 0 by 0).
+ *   canvases is not given room by doing so. An effect may ask the layer for a lower density (`TileLayerOptions.density`; Hot Box's fog asks for 1): its budget
+ *   story declares that too (the tag `effect-density-N`, at most the cap; none is the cap), and on those screens some canvas is drawn at the ask and none denser,
+ *   so a regression that drops the ask and draws at the cap is red. A canvas holds pixels where its width and height are not 0 (a layer frees one by sizing it to 0 by 0).
  * - Own time. The 95th percentile of the tile loop's own time in a frame (engine/ui/cards/tileLoop.ts `probe.work`, the loop's step timed on the
  *   page's own clock) is under `OWN_BUDGET`, half a 16.7 ms frame, leaving the rest to the page. A run that gave the loop fewer than `MIN_LOOP_FRAMES`
  *   frames is a tripwire that says so (the machine is too slow to measure on), and for a poison it counts as a miss of the budget. As e2e/shine.spec.ts does it: a warm-up run that
@@ -108,6 +110,15 @@ export function declaredSheets(tags: readonly string[]): number | undefined {
   return found.length === 1 ? found[0] : undefined;
 }
 
+/**
+ * The density a budget story declares its effect asks of the layer (the tag `effect-density-N`, N a positive number up to `MAX_TILE_DENSITY`), or
+ * undefined where it declares none, two, or one that is not a number in that range: such a story draws at the cap.
+ */
+export function declaredDensity(tags: readonly string[]): number | undefined {
+  const found = tags.flatMap((t) => { const m = /^effect-density-(\d+(?:\.\d+)?)$/.exec(t); return m ? [Number(m[1])] : []; });
+  return found.length === 1 && found[0]! > 0 && found[0]! <= MAX_TILE_DENSITY ? found[0] : undefined;
+}
+
 const TAGS = storyTags();
 const BUDGET_STORIES = storiesTagged('effect-budget', TAGS);
 const HIDING_STORIES = new Set(storiesTagged('effect-hides-words', TAGS));
@@ -155,12 +166,24 @@ export function pixelProblems(samples: readonly Sample[], sheets: number): strin
   return out.slice(0, 12);
 }
 
-/** On a screen as dense as the layer's cap or more, some canvas with pixels is drawn at the cap (its box times it, rounded up): else the cap was never in play. */
-export function densityProblems(samples: readonly Sample[]): string[] {
+/**
+ * On a screen as dense as the layer's cap or more, some canvas with pixels is drawn at the density the effect draws at, `min(cap, ask)` (its box times
+ * it, rounded up), and none is drawn denser: else the cap was never in play, or the effect's ask was dropped. `ask` is what the budget story declares
+ * (`declaredDensity`); with none the effect draws at the cap.
+ */
+export function densityProblems(samples: readonly Sample[], ask?: number): string[] {
   const dense = samples.filter((s) => s.dpr >= MAX_TILE_DENSITY);
   if (dense.length === 0) return ['no frame was taken on a screen as dense as the cap'];
-  const drawn = dense.some((s) => s.canvases.some((c) => holdsPixels(c) && c.w + 1 > c.cw * MAX_TILE_DENSITY && c.h + 1 > c.ch * MAX_TILE_DENSITY));
-  return drawn ? [] : [`no canvas with pixels was drawn at ${MAX_TILE_DENSITY} per CSS px on a screen of ${dense[0]!.dpr}, so the density cap was never in play`];
+  const d = Math.min(MAX_TILE_DENSITY, ask ?? MAX_TILE_DENSITY);
+  const drawn = dense.some((s) => s.canvases.some((c) => holdsPixels(c) && c.w + 1 > c.cw * d && c.h + 1 > c.ch * d));
+  if (!drawn) {
+    return [ask === undefined
+      ? `no canvas with pixels was drawn at ${MAX_TILE_DENSITY} per CSS px on a screen of ${dense[0]!.dpr}, so the density cap was never in play`
+      : `no canvas with pixels was drawn at ${d} per CSS px on a screen of ${dense[0]!.dpr}, so the density the effect asks for (${ask}) was never in play`];
+  }
+  if (ask === undefined) return [];
+  const over = dense.flatMap((s) => s.canvases.filter((c) => holdsPixels(c) && (c.w > Math.ceil(c.cw * d) || c.h > Math.ceil(c.ch * d))));
+  return over.length === 0 ? [] : [`a ${over[0]!.w}x${over[0]!.h} canvas is drawn denser than the ${d} per CSS px the effect asks for (its box is ${over[0]!.cw}x${over[0]!.ch} CSS px), so its ask of ${ask} was dropped`];
 }
 
 /** The bands of the post that cross the window in some frame with neither a tile that holds pixels nor a stand-in with a color. */
@@ -358,6 +381,28 @@ test.describe('the planted samples, red where they should be', () => {
     expect(declaredSheets(['effect-sheets-1', 'effect-sheets-2'])).toBeUndefined();
     expect(declaredSheets(['effect-sheets-0'])).toBeUndefined();
   });
+  test('the tags give a story its density: one tag with a positive number up to the cap, and none, two, zero, over the cap or not a number give none', () => {
+    expect(declaredDensity(['effect-budget', 'effect-density-1'])).toBe(1);
+    expect(declaredDensity([`effect-density-${MAX_TILE_DENSITY}`])).toBe(MAX_TILE_DENSITY);
+    expect(declaredDensity(['effect-density-1.5'])).toBe(1.5);
+    expect(declaredDensity(['effect-budget'])).toBeUndefined();
+    expect(declaredDensity(['effect-density-1', 'effect-density-2'])).toBeUndefined();
+    expect(declaredDensity(['effect-density-0'])).toBeUndefined();
+    expect(declaredDensity([`effect-density-${MAX_TILE_DENSITY + 1}`])).toBeUndefined();
+    expect(declaredDensity(['effect-density-fast'])).toBeUndefined();
+  });
+  test('an effect that asks for a density is held to it: a canvas at the ask passes, one at the cap or none with pixels is named, and no ask is the cap as before', () => {
+    const ask1 = canvas(0, { w: 600, h: 512 });
+    expect(densityProblems([frame([ask1], [], { dpr: 3 })], 1)).toEqual([]);
+    expect(densityProblems([frame([canvas(0)], [], { dpr: 3 })], 1).join()).toContain('denser than the 1 per CSS px the effect asks for');
+    expect(densityProblems([frame([ask1, canvas(512)], [], { dpr: 3 })], 1).join()).toContain('denser than the 1 per CSS px the effect asks for');
+    expect(densityProblems([frame([canvas(0, { w: 0, h: 0 })], [], { dpr: 3 })], 1).join()).toContain('was never in play');
+    expect(densityProblems([frame([], [], { dpr: 3 })], 1).join()).toContain('was never in play');
+    expect(densityProblems([frame([ask1], [], { dpr: 1 })], 1).join()).toContain('no frame was taken on a screen as dense as the cap');
+    /* No ask: the three assertions above are unchanged. */
+    expect(densityProblems([frame([canvas(0)], [], { dpr: 3 })], undefined)).toEqual([]);
+    expect(densityProblems([frame([ask1], [], { dpr: 3 })], undefined).join()).toContain('the density cap was never in play');
+  });
 });
 
 /* The two screens are under one serial describe: the config runs tests of a file on every worker (fullyParallel), and a timing test
@@ -399,7 +444,7 @@ test.describe('the tile layer\'s frames and pixels', () => {
             expect(run.samples.some((s) => s.canvases.some(holdsPixels)), 'a canvas held pixels during the scroll (the pixel check can see one)').toBe(true);
             /* Pixels, in every run, warm-up too: the first scroll is the likeliest to show a canvas the layer should not hold. */
             expect(pixelProblems(run.samples, sheets), `pixels held, ${id} ${size}, run ${attempt}`).toEqual([]);
-            expect(densityProblems(run.samples), `density, ${id} ${size}, run ${attempt}`).toEqual([]);
+            expect(densityProblems(run.samples, declaredDensity(TAGS.get(id)!)), `density, ${id} ${size}, run ${attempt}`).toEqual([]);
             if (HIDING_STORIES.has(id)) {
               expect(run.samples.some((s) => s.bands.length > 0), 'the post has bands (the never-bare check can see one)').toBe(true);
               expect(sawHeld(run.samples), 'some frame had a band in the window held with a canvas (the held branch of the never-bare check is exercised)').toBe(true);

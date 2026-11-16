@@ -73,6 +73,8 @@ const RUN_EVERY_MS = 1000;
 function useParted(on: boolean, thread: string | null, ready: boolean) {
   useEffect(() => {
     if (!on || !ready || thread === null) return;
+    /* Where the page cannot measure a line (jsdom's `Range` has no `getClientRects`, as in web/a11y.test.tsx), there is no second line to walk: do nothing, and start no timer. */
+    if (typeof Range.prototype.getClientRects !== 'function') return;
     const timers = new Set<ReturnType<typeof setTimeout>>();
     let every: ReturnType<typeof setInterval> | undefined;
     const secondLine = () => {
