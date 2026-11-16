@@ -78,7 +78,9 @@ over tape that will not move for the author):
 - **Readers** see nothing new. The countdown is drawn only where the screen's own `reader.author` is true, computed on the reader's
   screen from their own characters, as today.
 - **The card's description** gains: "The author can't peel any of a play's tape for the first 24 hours after it lands." (with the
-  setting's number). The log line of a play gains the same in the log's words: "Its author can't peel it for 24 hours."
+  setting's number). A play's log line says nothing of the hold: `CardUi.logPlay` is given no settings, so it could not say the hours,
+  and a sentence without them would be untrue at 0 ("The fiction may lie; the log never does"). The description, the Lens and the
+  refusal each say the hold exactly.
 
 ## 5. Ways out
 

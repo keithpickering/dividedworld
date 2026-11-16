@@ -517,7 +517,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.holdHours': 0 } })).not.toContain("can't peel any");
     expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.volumeStep': 40 } })).toContain('every 40 characters');
     expect(ac.surcharge!(instance.settings)).toBe('Covers a lot, +0.25 per 50 characters covered');
-    expect(ac.logPlay!({ phrase: 'Mario', replacement: 'Luigi' }, {})).toBe('It covers “Mario” with “Luigi”. Its author can\'t peel it at first.');
+    expect(ac.logPlay!({ phrase: 'Mario', replacement: 'Luigi' }, {})).toBe('It covers “Mario” with “Luigi”.');
     expect(ac.logPlay!({}, {})).toBeUndefined();
     expect(ac.logSave!({ peeled: [0, 2] })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
     expect(ac.logSave!({ peeled: [0], clean: true })).toEqual({ what: 'Peeled clean', said: 'You peeled every strip it had then. An edit that brings the phrase back brings a strip with it.' });

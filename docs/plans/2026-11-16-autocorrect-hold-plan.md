@@ -66,8 +66,8 @@ Model: sonnet
     once.
 - **Words** `instances/divided-world/ui/cards/autocorrect/ui.ts`: `describe` gains, after "Only the post's author can peel strips
   off, slowly, for everyone": " The author can't peel any of a play's tape for the first ${holdHours} hours after it lands." (left out
-  at 0). `logPlay` takes the settings if its type allows, else the sentence is "Its author can't peel it at first." Check
-  `CardUi.logPlay`'s signature in `engine/ui/cards/types.ts` and use the settings only if it is given them.
+  at 0). `logPlay` is given no settings (`CardUi.logPlay`, `engine/ui/cards/types.ts`), so it says nothing of the hold (design
+  section 4).
 - **Stories** `instances/divided-world/ui/autocorrect/Autocorrect.board.stories.tsx`: the plays must be landed before the hold, so
   the author stories and `e2e/autocorrect.spec.ts` keep peeling. Find how the fake dates a seeded Act (`engine/ui/data/fake.ts:1318`)
   and date the plays 2 days back. Add a `held` case (`OneAuthorHeld`): the author, a play landed an hour ago. The fake's `saveEffect`

@@ -47,7 +47,7 @@ import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake, SPAN_MARGIN } from '../../../../engine/ui/shine/loop.ts';
 import { seeded } from '../../ui/seeded.ts';
 import type { Stretch } from '../autocorrect.ts';
-import { withCardEconomy } from '../../../../engine/ui/cards/faces.ts';
+import { economyNow } from '../../../../engine/ui/economy.ts';
 import { heldUntil } from '../autocorrect.ts';
 import { dropRoll } from './drop.ts';
 import { Hands, type HandEvent, type HandSettings, type PieceSpec, type PieceView } from './hands.ts';
@@ -571,7 +571,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
    * latest hold ends. A reader's screen, and an author's with no hold running, sets no timer.
    */
   /* The economy as the server holds it now over the compiled one: a screen that has not read the server's holds the compiled hours. */
-  const economy = useMemo(() => withCardEconomy(instance.settings, settings.economy), [instance, settings.economy]);
+  const economy = useMemo(() => ({ economy: economyNow(instance.settings, settings.economy) }), [instance, settings.economy]);
   const holds = useMemo(() => new Map(plays.map((p) => [p.id, heldUntil(economy, p.playedAt)?.getTime()] as const)), [plays, economy]);
   const [clock, setClock] = useState(() => Date.now());
   const heldAt = (s: TapeStrip): number | undefined => {
