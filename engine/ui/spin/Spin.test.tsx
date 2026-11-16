@@ -595,6 +595,21 @@ describe('the ORIGIN box\'s content area', () => {
     expect(box.querySelector('.kb-origin-head')!.closest('.kb-origin-area')).toBeNull();
   });
 
+  test('an edited post origin: Last edited is inside the area, under the effect, and the box itself is what lifts over ink above it', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    openSpun(w, spun);
+    const box = await origin();
+    await act(async () => {
+      w.fake.clock.advance(10 * 60_000);
+      await w.fake.edit(w.ids[1]!, w.pipe, 'post 2, rewritten');
+    });
+    await waitFor(() => expect(box).toHaveTextContent('Last edited'));
+    const line = within(box).getByText(/Last edited/u);
+    expect(area(box)!, 'Last edited is inside the area').toContainElement(line);
+    expect(line.closest('[data-kb-over-ink]'), 'Last edited lies under the effect, not lifted over it').toBe(box);
+  });
+
   test('the box\'s own effect finds the area as its body, and never the opening post\'s', async () => {
     const w = threadWorld(3);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });

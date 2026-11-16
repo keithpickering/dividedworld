@@ -65,6 +65,12 @@ describe('the ORIGIN box', () => {
     expect(spin).not.toMatch(/\.kb-origin-head \*?:focus-visible/u);
   });
 
+  test('the open History panel ground covers it whole: the rule that paints the lifted panel also contains the margins of its children, so no strip of ink shows above or below the list', () => {
+    const ground = rules(spin, '.kb-origin-lift > :not(:empty)').join(';');
+    expect(ground).toMatch(/background:\s*var\(--kb-post-bg\)/u);
+    expect(ground).toMatch(/display:\s*flow-root/u);
+  });
+
   test('bright ink: no rule in spin.css or thread.css whose selector names data-kb-bright-ink names .kb-origin-head, so the bright ink never reaches the band', () => {
     let seen = 0;
     for (const css of [spin, thread]) {

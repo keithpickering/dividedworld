@@ -62,6 +62,15 @@
 }
 
 /*
+ * The open panel's list and items carry vertical margins that would collapse out through the grounded child and leave a strip of the effect's ink
+ * above and below the ground. A flow-root child contains them, so the ground covers the panel whole; it is on the child itself (no :has() needed), and a
+ * shut wrapper's child is :empty, so it still has no height, ground or gap.
+ */
+.kb-origin-lift > :not(:empty) {
+  display: flow-root;
+}
+
+/*
  * The link on the band is the band's ink, visited or not, and keeps it under the pointer with a heavier underline: --kb-link-hover is
  * held only against the page and the rows (contrast.ts), never the band. Its ring is the column head's. The mark tiles keep their own.
  */
