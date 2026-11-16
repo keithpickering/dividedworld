@@ -10,7 +10,7 @@
  * skip the measuring. A key's story is the export named for it (`hot-box` is `HotBox`), and EffectBudget.test.tsx holds that none is missing, since a
  * module's exports cannot be made from a map.
  *
- * Telling the stories apart, for the spec: a budget story's id is `boards-25-effect-budget--<key>` and carries the tag `effect-budget`; a poison's id begins
+ * Telling the stories apart, for the spec: a budget story's id is `boards-25-effect-budget--<key>` and carries the tag `effect-budget` (and `effect-hides-words` where the effect covers the post's words, which the spec holds are never bare); a poison's id begins
  * `boards-25-effect-budget--poison-` and carries the tag `effect-poison`. The page hands the spec the tile loop's probe as `window.__kbTiles`
  * (engine/ui/cards/tileLoop.ts: `work`, `held`, `frames`, `running`, `reset`), as Shine.board.stories.tsx hands over the shine loop's; the application exposes
  * nothing.
@@ -148,7 +148,8 @@ export default meta;
 type Story = StoryObj<typeof Budgeted>;
 
 /* A budget story for each key of `BUDGET`, named for it: a key with no story here is held by EffectBudget.test.tsx. */
-export const HotBox: Story = { args: { effect: 'hot-box' }, tags: ['effect-budget'] };
+/* `effect-hides-words`: the effect covers the post's words, so the spec holds that no band of the post is ever bare (e2e/effect-tiles.spec.ts). */
+export const HotBox: Story = { args: { effect: 'hot-box' }, tags: ['effect-budget', 'effect-hides-words'] };
 
 export const PoisonSlow: Story = { args: { poison: 'slow' }, tags: ['effect-poison'] };
 export const PoisonWhole: Story = { args: { poison: 'whole' }, tags: ['effect-poison'] };
