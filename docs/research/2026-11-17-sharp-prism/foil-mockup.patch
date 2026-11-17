@@ -1,0 +1,188 @@
+--- a/engine/ui/shine/foil.ts
++++ b/engine/ui/shine/foil.ts
+@@ -60,6 +60,12 @@
+    * is drawn smoothed to the canvas, so a coarser cell is the same pattern a little softer; the facets and the starbursts keep their size.
+    */
+   readonly cell?: number;
++  /** MOCKUP: the prism's facets as shapes at full density, flat color each, with thin seams. */
++  readonly sharp?: boolean;
++  /** MOCKUP: seam width in CSS px for the sharp prism. */
++  readonly seam?: number;
++  /** MOCKUP: the prism at full density from a facet map built once per layout and density; a frame is a table lookup a pixel. */
++  readonly lookup?: boolean;
+   /** Where canvases come from; tests pass a fake. */
+   readonly createCanvas?: (w: number, h: number) => FoilCanvas;
+ };
+@@ -90,6 +96,8 @@
+   /* What no light moves, per cell: the pearl's swirl; the prism's hue before the light and whether the cell is on a seam. */
+   swirl?: Float64Array; hue?: Float64Array; seam?: Uint8Array; scratch?: Float64Array; row?: Float64Array;
+   small?: FoilCanvas; img?: ImageData;
++  polys?: ({ path: Path2D; cx: number; cy: number } | null)[];
++  px?: { cw: number; ch: number; map: Uint32Array; img: ImageData; u32: Uint32Array; ctr: Float64Array };
+   /* The canvas size this layout last drew whole on: a span is honored only on a canvas of that size, which holds that whole draw. */
+   whole?: { readonly cw: number; readonly ch: number };
+ };
+@@ -440,6 +448,8 @@
+   };
+ 
+   function paint(ctx: CanvasRenderingContext2D, L: Layout, density: number, light: Light, band: Band, now: number, idle: boolean, span: Span | null): void {
++    if (opts.lookup && opts.pattern === 'prism') { paintLookup(ctx, L, density, light, band); starsOf(ctx, L, density, light, band, now, idle); return; }
++    if (opts.sharp && opts.pattern === 'prism') { paintSharp(ctx, L, density, light, band); starsOf(ctx, L, density, light, band, now, idle); return; }
+     if (!L.small) L.small = make(L.gw, L.gh);
+     const sg = L.small.getContext('2d');
+     if (!sg) return;
+@@ -467,6 +477,10 @@
+     }
+     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low';
+     ctx.drawImage(L.small as unknown as CanvasImageSource, 0, 0, L.gw, L.gh, 0, 0, cw, ch);
++    starsOf(ctx, L, density, light, band, now, idle);
++  }
++
++  function starsOf(ctx: CanvasRenderingContext2D, L: Layout, density: number, light: Light, band: Band, now: number, idle: boolean): void {
+     ctx.setTransform(density, 0, 0, density, 0, 0);
+     /* Starbursts: each faces its own way and flares when the light lines up with it. Their white is let through only as
+      * far as the band allows it, and a band lets pure white through only when its ceiling is 1: on any lower ceiling
+@@ -486,6 +500,143 @@
+       ctx.drawImage(sprite as unknown as CanvasImageSource, sx - z / 2, sy - z / 2, z, z);
+     }
+   }
++
++  /** MOCKUP: each facet's Voronoi polygon in CSS px, clipped to the box, built once per layout (no light moves it). */
++  function polysOf(L: Layout) {
++    if (L.polys) return L.polys;
++    facetsOf(L);
++    const pts = L.cells!;
++    const cols = Math.ceil((L.W + 2 * FACET) / FACET);
++    const polys: ({ path: Path2D; cx: number; cy: number } | null)[] = new Array(pts.length).fill(null);
++    for (let k = 0; k < pts.length; k++) {
++      const p = pts[k]!;
++      const ci = k % cols, cj = Math.floor(k / cols);
++      let poly: [number, number][] = [[0, 0], [L.W, 0], [L.W, L.H], [0, L.H]];
++      for (let dj = -2; dj <= 2 && poly.length; dj++) for (let di = -2; di <= 2 && poly.length; di++) {
++        if (!di && !dj) continue;
++        const ni = ci + di, nj = cj + dj;
++        if (ni < 0 || ni >= cols) continue;
++        const q = pts[nj * cols + ni];
++        if (!q) continue;
++        /* Keep the half-plane nearer p than q: (x - m)·(q - p) <= 0. */
++        const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2, ax = q.x - p.x, ay = q.y - p.y;
++        const side = (v: [number, number]) => (v[0] - mx) * ax + (v[1] - my) * ay;
++        const out: [number, number][] = [];
++        for (let a = 0; a < poly.length; a++) {
++          const u = poly[a]!, v = poly[(a + 1) % poly.length]!, su = side(u), sv = side(v);
++          if (su <= 0) out.push(u);
++          if ((su <= 0) !== (sv <= 0)) { const t = su / (su - sv); out.push([u[0] + (v[0] - u[0]) * t, u[1] + (v[1] - u[1]) * t]); }
++        }
++        poly = out;
++      }
++      if (poly.length < 3) continue;
++      const path = new Path2D();
++      let cx = 0, cy = 0;
++      poly.forEach(([x, y], a) => { if (a) path.lineTo(x, y); else path.moveTo(x, y); cx += x; cy += y; });
++      path.closePath();
++      polys[k] = { path, cx: cx / poly.length, cy: cy / poly.length };
++    }
++    L.polys = polys;
++    return polys;
++  }
++
++  /** MOCKUP: the prism with the same per-facet arithmetic, one color per facet (hue at its center), filled as shapes. */
++  function paintSharp(ctx: CanvasRenderingContext2D, L: Layout, density: number, light: Light, band: Band): void {
++    const polys = polysOf(L), cells = L.cells!, n = cells.length;
++    const { W, H } = L, lx = light.x, ly = light.y;
++    const alt = palAt(seed + 0.5 + 0.3 * lx);
++    const f: Finish = { dark: band.board === 'dark', lo: band.lo, hi: band.hi, ar: alt[0]!, ag: alt[1]!, ab: alt[2]! };
++    const face = new Float64Array(n * 4), seamRow = new Float64Array(n * 4);
++    const shift = 0.25 * lx, sh = f.dark ? 0.78 : 0.94;
++    for (let k = 0; k < n; k++) {
++      const c = cells[k]!, poly = polys[k];
++      if (!poly) continue;
++      const rr = Math.hypot((poly.cx - W / 2) / W, (poly.cy - H / 2) / H);
++      const t = seed + c.ph * 0.45 + rr * 1.6 + 0.55 * (c.nx * lx + c.ny * ly) + shift;
++      const col = palAt(t);
++      const h = Math.exp(-((c.nx - lx) ** 2 + (c.ny - ly) ** 2) / 0.07) * 0.7;
++      face[k * 4] = col[0]!; face[k * 4 + 1] = col[1]!; face[k * 4 + 2] = col[2]!; face[k * 4 + 3] = h;
++      seamRow[k * 4] = col[0]! * sh; seamRow[k * 4 + 1] = col[1]! * sh; seamRow[k * 4 + 2] = col[2]! * sh; seamRow[k * 4 + 3] = h * 0.5;
++    }
++    const fb = new Uint8ClampedArray(n * 4), sb = new Uint8ClampedArray(n * 4);
++    finishRow(face, n, f, fb, null, 0); finishRow(seamRow, n, f, sb, null, 0);
++    ctx.setTransform(density, 0, 0, density, 0, 0);
++    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
++    const sw = opts.seam ?? 1;
++    for (let k = 0; k < n; k++) {
++      const poly = polys[k];
++      if (!poly) continue;
++      ctx.fillStyle = `rgb(${fb[k * 4]},${fb[k * 4 + 1]},${fb[k * 4 + 2]})`;
++      ctx.fill(poly.path);
++      /* Antialiased neighbours leave a hairline of what was under them; a stroke in the face color closes it. */
++      ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 0.75 / density; ctx.stroke(poly.path);
++    }
++    if (sw > 0) {
++      ctx.lineWidth = sw; ctx.lineJoin = 'round';
++      for (let k = 0; k < n; k++) {
++        const poly = polys[k];
++        if (!poly) continue;
++        ctx.strokeStyle = `rgb(${sb[k * 4]},${sb[k * 4 + 1]},${sb[k * 4 + 2]})`;
++        ctx.stroke(poly.path);
++      }
++    }
++  }
++
++  /** MOCKUP: per device pixel, the facet it lies in, times two, plus one on a seam (within half the seam's width of a bisector). */
++  function pixelMap(L: Layout, cw: number, ch: number, ctx: CanvasRenderingContext2D) {
++    if (L.px && L.px.cw === cw && L.px.ch === ch) return L.px;
++    facetsOf(L);
++    const pts = L.cells!, cols = Math.ceil((L.W + 2 * FACET) / FACET);
++    const half = (opts.seam ?? 1) / 2, sx = L.W / cw, sy = L.H / ch;
++    const map = new Uint32Array(cw * ch);
++    const ctr = new Float64Array(pts.length * 3);
++    for (let py = 0; py < ch; py++) {
++      const y = (py + 0.5) * sy, cj = Math.floor((y + FACET) / FACET);
++      for (let pxi = 0; pxi < cw; pxi++) {
++        const x = (pxi + 0.5) * sx, ci = Math.floor((x + FACET) / FACET);
++        let b1 = 0, d1 = 1e18, b2 = 0, d2 = 1e18;
++        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
++          const k = (cj + dj) * cols + (ci + di), q = pts[k];
++          if (!q) continue;
++          const d = (q.x - x) ** 2 + (q.y - y) ** 2;
++          if (d < d1) { b2 = b1; d2 = d1; b1 = k; d1 = d; } else if (d < d2) { b2 = k; d2 = d; }
++        }
++        const p = pts[b1]!, q = pts[b2]!;
++        /* Distance to the bisector of the two nearest centers: (d2 - d1) / (2 |p - q|). */
++        const edge = (d2 - d1) / (2 * Math.hypot(p.x - q.x, p.y - q.y));
++        map[py * cw + pxi] = b1 * 2 + (half > 0 && edge < half ? 1 : 0);
++        ctr[b1 * 3] += x; ctr[b1 * 3 + 1] += y; ctr[b1 * 3 + 2] += 1;
++      }
++    }
++    const img = ctx.createImageData(cw, ch);
++    L.px = { cw, ch, map, img, u32: new Uint32Array(img.data.buffer), ctr };
++    return L.px;
++  }
++
++  function paintLookup(ctx: CanvasRenderingContext2D, L: Layout, density: number, light: Light, band: Band): void {
++    const cw = ctx.canvas?.width ?? Math.round(L.W * density), ch = ctx.canvas?.height ?? Math.round(L.H * density);
++    const P = pixelMap(L, cw, ch, ctx), cells = L.cells!, n = cells.length;
++    const { W, H } = L, lx = light.x, ly = light.y;
++    const alt = palAt(seed + 0.5 + 0.3 * lx);
++    const f: Finish = { dark: band.board === 'dark', lo: band.lo, hi: band.hi, ar: alt[0]!, ag: alt[1]!, ab: alt[2]! };
++    const row = scratch(L, n * 8);
++    const shift = 0.25 * lx, sh = f.dark ? 0.78 : 0.94;
++    for (let k = 0; k < n; k++) {
++      const c = cells[k]!, m = P.ctr[k * 3 + 2]!;
++      const cx = m ? P.ctr[k * 3]! / m : c.x, cy = m ? P.ctr[k * 3 + 1]! / m : c.y;
++      const rr = Math.hypot((cx - W / 2) / W, (cy - H / 2) / H);
++      const col = palAt(seed + c.ph * 0.45 + rr * 1.6 + 0.55 * (c.nx * lx + c.ny * ly) + shift);
++      const h = Math.exp(-((c.nx - lx) ** 2 + (c.ny - ly) ** 2) / 0.07) * 0.7;
++      const a = k * 8;
++      row[a] = col[0]!; row[a + 1] = col[1]!; row[a + 2] = col[2]!; row[a + 3] = h;
++      row[a + 4] = col[0]! * sh; row[a + 5] = col[1]! * sh; row[a + 6] = col[2]! * sh; row[a + 7] = h * 0.5;
++    }
++    const table = new Uint32Array(n * 2);
++    finishRow(row, n * 2, f, new Uint8ClampedArray(table.buffer), table, 0);
++    const { map, u32 } = P;
++    for (let i = 0, e = map.length; i < e; i++) u32[i] = table[map[i]!]!;
++    ctx.putImageData(P.img, 0, 0);
++  }
+ }
+ 
+ /** Every cell's color as `#rrggbb`, for the readable-band check (cells only: the starbursts add white only where the band allows it). */
