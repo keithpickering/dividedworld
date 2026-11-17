@@ -727,12 +727,12 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(instanceUi.reasonWords('card.boost', { card: 'gone' })).toMatch(/^A card added:/u);
   });
   test('a flat boost says its size from the entry, a boost with a share or with none keeps its words, and a cushion says its share as a fraction', () => {
-    expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 })).toBe('Heat Magnet: three quarters of a vote more for each reaction it named, from players who first reacted while it was up');
-    expect(instanceUi.reasonWords('card.boost', { card: 'hype-up', flat: 1 })).toBe('Hype-Up: a vote more for each reaction it named, from players who first reacted while it was up');
-    expect(instanceUi.reasonWords('card.boost', { card: 'publicity-tour', flat: 0.5 })).toBe('Publicity Tour: half a vote more for each reaction it named, from players who first reacted while it was up');
+    expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 })).toBe('Heat Magnet: up to three quarters of a vote more for each reaction it named, from players who first reacted while it was up');
+    expect(instanceUi.reasonWords('card.boost', { card: 'hype-up', flat: 1 })).toBe('Hype-Up: up to a vote more for each reaction it named, from players who first reacted while it was up');
+    expect(instanceUi.reasonWords('card.boost', { card: 'publicity-tour', flat: 0.5 })).toBe('Publicity Tour: up to half a vote more for each reaction it named, from players who first reacted while it was up');
     expect(instanceUi.reasonWords('card.boost', { card: 'publicity-tour', by: 0.2 })).toBe("Publicity Tour added: what the card's boost on a reaction earned");
     expect(instanceUi.reasonWords('card.boost', { card: 'publicity-tour' })).toBe("Publicity Tour added: what the card's boost on a reaction earned");
-    expect(instanceUi.reasonWords('card.boost', { card: 'gone', flat: 0.5 })).toBe('A card: half a vote more for each reaction it named, from players who first reacted while it was up');
+    expect(instanceUi.reasonWords('card.boost', { card: 'gone', flat: 0.5 })).toBe('A card: up to half a vote more for each reaction it named, from players who first reacted while it was up');
     expect(REASON_KEYS).toContain('card.cushion');
     expect(instanceUi.reasonWords('card.cushion', { card: 'gone', share: 0.5 })).toBe('A card: half of each loss from a reaction, given back');
     expect(instanceUi.reasonWords('card.cushion', { share: 0.5 })).toBe('A card: half of each loss from a reaction, given back');
@@ -1288,6 +1288,6 @@ describe('the four flat earn cards say their sizes in votes, from their rules', 
     }
   });
   test('Hype-Up', () => {
-    expect(ui('hype-up').describe!(instance.settings)).toBe(`A Sweet card, common, cast on any post, yours or another's. For 3 days, each positive reaction (excited or calm) to that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. Only reactions after it lands count, and a post carries one at a time. It takes nothing from you. Where two cards pay on the same reaction, only the larger pays. A Mod Bot earns nothing, so its posts gain nothing from one. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.`);
+    expect(ui('hype-up').describe!(instance.settings)).toBe(`A Sweet card, common, cast on any post, yours or another's. For 3 days, each positive reaction (excited or calm) to that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. It counts reactions from players who first react to a post while it is up. A post carries one at a time. It takes nothing from you. Where two cards pay on the same reaction, only the larger pays. A Mod Bot earns nothing, so its posts gain nothing from one. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.`);
   });
 });
