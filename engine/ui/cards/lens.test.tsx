@@ -17,7 +17,8 @@ import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
-import { createPlays } from './plays.ts';
+import { asThen, createPlays } from './plays.ts';
+import { PostMarks } from './Marks.tsx';
 import { endsWords } from './marks.ts';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine } from '../reactions/mine.ts';
@@ -870,21 +871,21 @@ export type { World };
 
 /*
  * As it landed (docs/plans/2026-11-03-effect-history-plan.md, Task 5): a play's moment drawn in the post's body, in a glass frame,
- * one on the page at a time and gone with its Lens. Card 1 stacks, so a moment draws it still from what it had saved then; Card 2 is
+ * one on the page at a time and gone with its Lens. Card 1 stacks, so a moment runs it as live at the moment, from what it had saved then; Card 2 is
  * a takeover that lifts the post, which a moment never replaces.
  */
 describe('As it landed', () => {
   const strokes = vi.fn();
-  function Washy({ plays, states, still, show, children }: EffectProps) {
+  function Washy({ plays, states, still, moment, show, children }: EffectProps) {
     const washed = plays.map((p) => (states[p.id]?.state as { washed?: number } | undefined)?.washed ?? 0);
     useEffect(() => { show({ progress: null, state: `washed ${washed.join(', ')}`, yours: false, controls: [], notes: {} }); }, [show, washed.join()]);
-    return <div data-kb-washy={still ? 'still' : 'live'} data-kb-washed={washed.join()} onPointerDown={still ? undefined : strokes}>{children}</div>;
+    return <div data-kb-washy={moment ? 'moment' : 'live'} data-kb-still={String(still)} data-kb-washed={washed.join()} onPointerDown={moment ? undefined : strokes}>{children}</div>;
   }
   const Lift = ({ children }: EffectProps) => <div data-kb-lift>{children}</div>;
   const lifted = cards.map((c) => (c.key === 'k1' ? { ...c, Effect: Washy } : c.key === 'k2' ? { ...c, Effect: Lift, takeover: true } : c));
 
   /* Card 1 lands on post 2 over nothing, is saved at 40%, then the post is edited, Card 2 lifts it, and the wash is finished. */
-  async function landed(before?: (w: World) => void) {
+  async function landed(before?: (w: World) => void, ui: readonly CardUi[] = lifted) {
     width(false);
     const w = world();
     before?.(w);
@@ -898,7 +899,7 @@ describe('As it landed', () => {
     await w.fake.saveEffect(k1, w.spritey, { washed: 1 });
     w.fake.signInAs(w.me);
     expect(saved.ok).toBe(true);
-    open(w, lifted);
+    open(w, ui);
     await userEvent.click(await markOf(2, 'Card 1'));
     await userEvent.click(whoButton());
     return { w, k1, k1b };
@@ -919,15 +920,59 @@ describe('As it landed', () => {
     expect(within(box).getByText('post 2')).toBeInTheDocument();
     expect(within(post).queryByText('post 2, edited')).toBeNull();
     await waitFor(() => expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4,0'));
-    expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'still');
+    expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'moment');
+    expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-still', 'false');
     expect(post.querySelector('[data-kb-washy="live"]')).toBeNull();
-    /* The tag, and the frame's words: the still card's own, and what is named. */
+    /* The tag, and the card's own words, which are the Lens's now (the moment's view reaches the strip). */
     expect(within(box).getByText(/^As it landed/u)).toBeInTheDocument();
-    expect(await within(box).findByText(/washed 0\.4, 0/u)).toBeInTheDocument();
+    expect(await within(lens()).findByText('washed 0.4, 0')).toBeInTheDocument();
     /* Pressed again, it is gone. */
     await userEvent.click(button);
     expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
     expect(within(await article(2)).getByText('post 2, edited')).toBeInTheDocument();
+  });
+
+  /* An effect whose view says whether it is the live effect or a moment's, with a control of each: what the Lens shows tells which effect said it. */
+  const pressed = { live: vi.fn(), moment: vi.fn() };
+  function Voiced({ moment, show, children }: EffectProps) {
+    const which = moment ? 'moment' : 'live';
+    useEffect(() => { show({ progress: null, state: `${which} view`, yours: false, controls: [{ kind: 'press', label: `${which} press`, run: pressed[which] }], notes: {} }); }, [show, which]);
+    return <div data-kb-voiced={which}>{children}</div>;
+  }
+  const voiced = lifted.map((c) => (c.key === 'k1' ? { ...c, Effect: Voiced } : c));
+
+  test('over a post the open Lens shows the moment effect\'s view and its controls work; after Back to now the live effect\'s view is back', async () => {
+    const { k1b } = await landed(undefined, voiced);
+    expect(await within(lens()).findByText('live view')).toBeInTheDocument();
+    await userEvent.click(landedButton(k1b));
+    await frame();
+    expect(await within(lens()).findByText('moment view')).toBeInTheDocument();
+    expect(within(lens()).queryByText('live view')).toBeNull();
+    await userEvent.click(within(lens()).getByRole('button', { name: 'moment press' }));
+    expect(pressed.moment).toHaveBeenCalledTimes(1);
+    expect(pressed.live).not.toHaveBeenCalled();
+    await userEvent.click(within(await frame()).getByRole('button', { name: 'Back to now' }));
+    expect(await within(lens()).findByText('live view')).toBeInTheDocument();
+    expect(within(lens()).queryByText('moment view')).toBeNull();
+    await userEvent.click(within(lens()).getByRole('button', { name: 'live press' }));
+    expect(pressed.live).toHaveBeenCalledTimes(1);
+  });
+
+  test("after Reset the Lens still shows the moment's view and its control still works, the live view absent; Back to now brings the live view back", async () => {
+    const { k1b } = await landed(undefined, voiced);
+    await userEvent.click(landedButton(k1b));
+    const box = await frame();
+    expect(await within(lens()).findByText('moment view')).toBeInTheDocument();
+    pressed.moment.mockClear();
+    await userEvent.click(within(box).getByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(box.querySelector('[data-kb-voiced]')).toHaveAttribute('data-kb-voiced', 'moment'));
+    expect(await within(lens()).findByText('moment view')).toBeInTheDocument();
+    expect(within(lens()).queryByText('live view')).toBeNull();
+    await userEvent.click(within(lens()).getByRole('button', { name: 'moment press' }));
+    expect(pressed.moment).toHaveBeenCalledTimes(1);
+    await userEvent.click(within(await frame()).getByRole('button', { name: 'Back to now' }));
+    expect(await within(lens()).findByText('live view')).toBeInTheDocument();
+    expect(within(lens()).queryByText('moment view')).toBeNull();
   });
 
   test('a moment taken before Card 2 names nothing of it, and one taken over Card 1 lists what else was there', async () => {
@@ -1042,6 +1087,52 @@ describe('As it landed', () => {
     await userEvent.click(landedButton(k1b));
     await frame();
     expect(read).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('plays shown as they stood (then)', () => {
+  /* A play an ORIGIN box draws in its moment, ended by an admin since: the moment still draws its effect, so its mark and Lens say the effect's view, not the play's end now. */
+  const stood = vi.fn();
+  function strip(then: ReadonlySet<Id> | undefined) {
+    const w = world();
+    const plays = createPlays();
+    const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+    plays.add([
+      { ...base, id: 'then-play', kind: 'card', payload: { card: 'k2' }, currentPayload: { card: 'k2' } },
+      { ...base, id: 'then-end', kind: 'card_end', targetActId: 'then-play', payload: { why: 'reversed', by: 'admin' }, currentPayload: {} },
+    ]);
+    plays.setBilling(w.second, ['then-play']);
+    plays.setView(w.second, 'k2', { progress: null, state: 'then view', yours: false, controls: [{ kind: 'press', label: 'then press', run: stood }], notes: {} });
+    function Strip() {
+      return <PostMarks post={w.second} plays={plays} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} {...(then ? { then } : {})} />;
+    }
+    renderIn(w.fake, <LensProvider><Strip /></LensProvider>, { path: '/', instance, cards });
+  }
+
+  test('a play in then, ended since, keeps its mark, its view and its controls', async () => {
+    width(false);
+    strip(new Set(['then-play']));
+    const mark = await screen.findByRole('button', { name: /^Card 2, 1 play/u });
+    expect(mark).toHaveAccessibleName(/then view/u);
+    await userEvent.click(mark);
+    expect(await within(lens()).findByText('then view')).toBeInTheDocument();
+    await userEvent.click(within(lens()).getByRole('button', { name: 'then press' }));
+    expect(stood).toHaveBeenCalledTimes(1);
+  });
+
+  test('only an end can come after a moment: a play in then that never took (untaken) stays untaken', () => {
+    const play = (id: string, extra: object) => ({ id, card: 'k2', layer: 1, caster: 'c', message: '', config: {}, playedAt: '2026-10-01T00:00:00Z', post: 'p', ...extra });
+    const plays = [play('ended', { reversed: true }), play('never', { untaken: true })] as never[];
+    const out = asThen(plays, new Set(['ended', 'never']));
+    expect(out.map((p) => [p.id, p.reversed ?? false, p.untaken ?? false])).toEqual([['ended', false, false], ['never', false, true]]);
+    expect(asThen(plays, new Set(['never']))).toBe(plays);
+  });
+
+  test("the same play, not in then, is ended: its effect's view is not said", async () => {
+    width(false);
+    strip(undefined);
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+    expect(within(lens()).queryByText('then view')).toBeNull();
   });
 });
 

@@ -242,6 +242,14 @@ describe('a post\'s history version nests the same way', () => {
   test('a beneath card is inside a card without it', () => {
     expect(outward(version([ui('one'), ui('two', { beneath: true })], ['one', 'two']))).toEqual(['two', 'one']);
   });
+
+  test('it still gives a writing card still: true and moment: null', () => {
+    let got: EffectProps | null = null;
+    version([ui('one', { Effect: (props: EffectProps) => { got = props; return <>{props.children}</>; } })], ['one']);
+    expect(got).not.toBeNull();
+    expect(got!.still).toBe(true);
+    expect(got!.moment).toBeNull();
+  });
 });
 
 describe('a card that folds the row is given the row\'s fold (CardUi.foldsRow)', () => {

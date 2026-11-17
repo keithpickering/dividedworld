@@ -9,13 +9,17 @@ import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { useAt } from '../../../../engine/ui/cards/plays.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 
-export function BlindStudyEffect({ plays, reader, show, met, still, children }: EffectProps) {
+export function BlindStudyEffect({ plays, reader, show, met, moment, children }: EffectProps) {
   const play = plays.find((p) => !p.reversed && !p.untaken && !p.caught && !p.faceDown);
   const ends = play?.ends;
   const endsAt = ends === undefined ? Number.NaN : Date.parse(ends);
-  const now = useAt(Number.isNaN(endsAt) ? [] : [endsAt]);
-  /* A moment (`still`) drew the play while it was up (the engine drops a play whose end is not after the moment's time), so it is up whatever the clock says. */
-  const over = !still && !Number.isNaN(endsAt) && endsAt <= now;
+  /*
+   * The hook is always called. In a play's moment the time is the moment's, which does not advance (the engine drops a play whose end is not after
+   * it before drawing), so the play is up whatever today's clock says (`docs/plans/2026-11-16-playable-moments-design.md`, section 3).
+   */
+  const clock = useAt(Number.isNaN(endsAt) || moment !== null ? [] : [endsAt]);
+  const now = moment?.at ?? clock;
+  const over = !Number.isNaN(endsAt) && endsAt <= now;
   const there = play !== undefined;
   const sees = reader.author || reader.caster;
 
@@ -35,10 +39,10 @@ export function BlindStudyEffect({ plays, reader, show, met, still, children }: 
   /* The reader has met the card when its post is first drawn with the veil up; a play already over, and a moment, meet nothing. */
   const met1 = useRef(false);
   useEffect(() => {
-    if (still || !there || over || met1.current) return;
+    if (moment !== null || !there || over || met1.current) return;
     met1.current = true;
     met();
-  }, [met, still, there, over]);
+  }, [met, moment, there, over]);
 
   return <>{children}</>;
 }

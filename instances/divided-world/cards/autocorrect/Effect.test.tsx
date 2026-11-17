@@ -49,7 +49,7 @@ const playOf = (n: number, phrase: string, replacement: string): CardPlay => ({ 
 const ok = async (play: string) => ({ ok: true as const, value: { play, savedAt: '2026-11-03T11:00:00.000Z' } });
 const savedOf = (state: unknown): EffectState => ({ state, savedAt: '2026-11-03T10:30:00.000Z', savedBy: 'author' }) as unknown as EffectState;
 
-interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly states?: Record<string, EffectState>; readonly author?: boolean; readonly save?: EffectProps['save']; readonly still?: boolean; readonly around?: readonly TextRun[] }
+interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly states?: Record<string, EffectState>; readonly author?: boolean; readonly save?: EffectProps['save']; readonly moment?: { readonly at: number }; readonly around?: readonly TextRun[] }
 
 function mount(o: Options = {}) {
   const save = vi.fn(o.save ?? (ok as unknown as EffectProps['save']));
@@ -67,7 +67,7 @@ function mount(o: Options = {}) {
     const effect = (
       <AutocorrectEffect
         post={postOf(body)} plays={o.plays ?? [playOf(1, 'mario', 'Luigi')]} states={held} released={new Set()} written={new Map()} reader={{ author: o.author ?? false, caster: false }}
-        place="thread" reach="post" still={o.still ?? false} save={save} release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={(v) => { views.push(v); }} met={() => {}}
+        place="thread" reach="post" still={false} moment={o.moment ?? null} save={save} release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={(v) => { views.push(v); }} met={() => {}}
         ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
       >
         <BbCode text={body} />
@@ -93,6 +93,7 @@ const letGo = (el: HTMLElement | undefined) => { if (el) fireEvent.keyUp(el, { k
 /** How long it takes the key to peel a piece `w` pixels wide: the pick, then the pace, and a few frames' grace. */
 const through = (w: number) => PICK + (w / PACE) * 1000 + 80;
 const stuckOnPage = () => pieces().map((p) => p.getAttribute('data-kb-ac-stuck'));
+const MOMENT = { at: Date.parse('2026-11-03T10:30:00.000Z') };
 const last = (m: ReturnType<typeof mount>) => m.views.filter(Boolean).at(-1)!;
 
 /* The stand-in layout: every segment, room and Range on one line. */
@@ -439,16 +440,61 @@ describe('Autocorrect: the tape', () => {
     expect(pieces()[0]).not.toHaveAttribute('data-kb-focus');
   });
 
-  test('a play\'s moment (still) draws the pieces but no pressable anchor, and nothing is saved', async () => {
+  test('in a play\'s moment the pieces are drawn, the anchors are buttons, the size observer is bound, and nothing is saved', async () => {
     vi.useFakeTimers();
-    const m = mount({ author: true, still: true });
+    const m = mount({ author: true, moment: MOMENT });
     expect(pieces()).toHaveLength(3);
-    expect(screen.queryAllByRole('button')).toHaveLength(0);
-    expect(anchors()).toHaveLength(3);
-    for (const a of anchors()) { expect(a).toHaveAttribute('data-kb-quotable', 'shown'); expect(a).not.toHaveAttribute('tabindex'); }
-    expect(resizes.every((r) => r.watching.size === 0)).toBe(true);
-    expect(probe.running()).toBe(false);
+    expect(screen.queryAllByRole('button')).toHaveLength(3);
+    expect(buttons()).toHaveLength(3);
+    for (const a of anchors()) { expect(a).toHaveAttribute('data-kb-quotable', 'shown'); expect(a).toHaveAttribute('tabindex', '0'); }
+    expect(resizes.some((r) => r.watching.size > 0)).toBe(true);
+    await pass(2000);
     expect(m.save).not.toHaveBeenCalled();
+  });
+
+  test('in a moment a strip the author had peeled starts peeled', () => {
+    mount({ moment: MOMENT, states: { k1: savedOf({ peeled: [0] }) } });
+    expect(pieces()).toHaveLength(2);
+    expect(buttons()).toHaveLength(2);
+    expect(document.querySelector('.dw-ac-residue')).not.toBeNull();
+  });
+
+  test('in a moment a reader\'s held Enter on a stuck strip lifts it, it lays back, and save is never called', async () => {
+    vi.useFakeTimers();
+    const m = mount({ moment: MOMENT, body: 'Mario' });
+    await hold(buttons()[0]!, 300);
+    expect(document.querySelector('.dw-ac-flap')).not.toBeNull();
+    letGo(buttons()[0]!);
+    await pass(5000);
+    expect(document.querySelector('.dw-ac-flap')).toBeNull();
+    expect(buttons()).toHaveLength(1);
+    expect(pieces()).toHaveLength(1);
+    expect(m.save).not.toHaveBeenCalled();
+  });
+
+  test('in a moment with reader.author forced true a peel still lays back and nothing is saved', async () => {
+    vi.useFakeTimers();
+    const m = mount({ moment: MOMENT, author: true, body: 'Mario' });
+    const w = wide(pieces()[0]!);
+    expect(buttons()[0]!.getAttribute('aria-label')).toContain('lift it and read under it');
+    await hold(buttons()[0]!, through(w));
+    letGo(buttons()[0]!);
+    await pass(5000);
+    expect(buttons()).toHaveLength(1);
+    expect(pieces()).toHaveLength(1);
+    expect(stuckOnPage()).toEqual([`0.0-${wide(pieces()[0]!).toFixed(1)}`]);
+    expect(m.save).not.toHaveBeenCalled();
+    m.unmount();
+    expect(m.save).not.toHaveBeenCalled();
+  });
+
+  test('in a moment no "Stuck on for" hold is shown, even for a forced author on a fresh play', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-16T12:00:00.000Z') });
+    const fresh = { ...playOf(1, 'mario', 'Luigi'), playedAt: new Date(Date.now() - 3_600_000).toISOString() };
+    const m = mount({ moment: MOMENT, author: true, body: 'Mario', plays: [fresh] });
+    expect(last(m).ends).toBe(LENS.readerEnds);
+    expect(last(m).ends).not.toContain('Stuck on');
+    expect(buttons()[0]!.getAttribute('aria-label')).not.toContain('Stuck on');
   });
 
   test('measuring runs on mount and on a resize of the post, and never on a pointer move', () => {
@@ -1013,11 +1059,11 @@ describe('Autocorrect: review fixes', () => {
     vi.stubGlobal('document', document);
     Object.defineProperty(document, 'fonts', { configurable: true, value: { load: () => Promise.resolve([]), ready: Promise.resolve() } });
     try {
-      mount({ body: 'Mario', still: true });
+      mount({ body: 'Mario', moment: MOMENT });
       const n = measures.mock.calls.length;
       await act(async () => { await Promise.resolve(); await Promise.resolve(); });
       expect(measures.mock.calls.length).toBeGreaterThan(n);
-      expect(resizes.every((r) => r.watching.size === 0)).toBe(true);
+      expect(resizes.some((r) => r.watching.size > 0)).toBe(true);
     } finally {
       delete (document as unknown as { fonts?: unknown }).fonts;
     }

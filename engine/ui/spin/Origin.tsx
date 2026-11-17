@@ -7,7 +7,9 @@
  * arrives on the origin thread's channel and shows here, as does a play, a saved state and a tally; the subscription is dropped when the thread is left. A page
  * read again (a rejoined channel, a catch-up) brings the origin again and the box takes it in: the newer of the Act held and the Act read, the plays added, the
  * billing set once. It says plainly when the Act is not there (the origin's `act` is null). A thread spun from a card play on a post shows that play's moment
- * instead (the post as it read when the play landed), which never changes, under the play's mark. When the player has just spun the thread, focus is on this box.
+ * instead (the post as it read when the play landed), under the play's mark. The moment is read once and never changes, but it is playable (docs/plans/2026-11-16-playable-moments-design.md): each effect in
+ * it runs live from the state it had then, saves and sends nothing, and is as it landed again on Reset, which the head carries ("… · as it landed · Reset"). The box has a mark for every card drawn in
+ * it (the spun play's row keeps React and Spin; the other plays' rows say their state then, hold their controls and link Go to post), so an older card's obstacle has its Lens and its keyboard path. When the player has just spun the thread, focus is on this box.
  *
  * A thread spun from a card on a character (docs/plans/2026-11-12-spin-at-post-design.md) shows a post of that character, as it was, never live. Where the
  * spin was pressed from the card's mark on a postbit (the place has `at`), that is the pressed post as it was when the spin was written (the spin's own
@@ -15,20 +17,20 @@
  * no post (every spin made before this, and any made another way), it is the cast-from post as the play landed (the play's moment, "As it landed"; a play from
  * before the snapshot reads the version current then, and says what else was on the post was not recorded), and the head says "as it landed" on one line:
  * never an error or an empty box. In both the character's name and avatar are one link to its profile, the box has a byline (that link and the version's date)
- * above the words, the card's effect is drawn still on the words, and the mark's Go to post leads to the pressed post where there is one, else the cast-from
+ * above the words, the card's effect is drawn on the words as a live one (a moment is playable), and the mark's Go to post leads to the pressed post where there is one, else the cast-from
  * post. A thread's play and a board's play draw no mark of their own in the box today (the mark is keyed by a post they have not): the box is the head and
  * nothing under it. Everything under the band stands in one content area (`div.kb-origin-area`, marked `data-kb-content-area`, drawn only where something stands there), which is what an
- * effect on the box fills and finds as its body; the History button, its panel and the "More than" note are lifted over it, and the box itself over the opening post's effect (spin.css). The moment the page carried is kept in the Lens's store under the key the frame reads it by (`seedMoment`), so the frame reads nothing.
+ * effect on the box fills and finds as its body; the History button, its panel and the "More than" note are lifted over it, and the box itself over the opening post's effect (spin.css). What a moment says under its post stands in the box's foot (`div.kb-origin-foot`), under the content area and outside it, so no effect that fills the area passes under it and nothing arrives late inside the area an effect has measured. The moment the page carried is kept in the Lens's store under the key the frame reads it by (`seedMoment`), so the frame reads nothing.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { billPost, drawnOf } from '../cards/billing.ts';
-import { PostEffects } from '../cards/Effects.tsx';
+import { PostEffects, momentParts } from '../cards/Effects.tsx';
 import { useLensStore } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { MomentView, useMomentRead } from '../cards/Moment.tsx';
-import { createPlays, effectCards, holdsEffects, homeOf, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
-import type { CardPlay } from '../cards/types.ts';
+import { createPlays, effectCards, holdsEffects, homeOf, keepingKeys, markedPlays, playOf, readEffects, shownPlays, usePlays, type Plays } from '../cards/plays.ts';
+import type { CardPlay, CardView } from '../cards/types.ts';
 import { useKayfa } from '../context.tsx';
 import { PLAY_FROM, type Act, type Character, type Id, type OriginPlace, type PageOrigin, type ThreadSummary } from '../data/api.ts';
 import { CharacterLink } from '../mini.tsx';
@@ -122,12 +124,14 @@ function useCast(cast: readonly Character[], ids: readonly (Id | null)[]): { rea
 
 /**
  * The box of a thread spun from a card on a character: a byline (the character's avatar and name, one link to its profile, and the
- * version's date), then the post as a moment, drawn still with the card's effect on it. `spin` is the spin's own Act where the spin was
+ * version's date), then the post as a moment, drawn with the card's effect on it, playable. `spin` is the spin's own Act where the spin was
  * pressed on a post (its moment, "As it was spun"); without it the play's own moment is the cast-from post as it landed. The moment is
  * read through the same store the frame reads it by, so it is read once.
  */
-function CharacterMoment({ play, spin, nameOf, characterOf }: {
-  readonly play: CardPlay; readonly spin: Id | null;
+function CharacterMoment({ play, spin, nameOf, characterOf, onView, listInto }: {
+  readonly play: CardPlay; readonly spin: Id | null; readonly onView: (card: string, view: CardView | null) => void;
+  /** The box's foot, where the moment's list stands. */
+  readonly listInto: HTMLElement | null;
   readonly nameOf: (id: Id | null) => string; readonly characterOf: (id: Id) => Character | undefined;
 }) {
   const { api } = useKayfa();
@@ -140,7 +144,7 @@ function CharacterMoment({ play, spin, nameOf, characterOf }: {
         <CharacterLink id={who} character={characterOf(who)} name={nameOf(who)} />
         {version && <> · <time dateTime={version.editedAt ?? version.createdAt}>{when(version.editedAt ?? version.createdAt)}</time></>}
       </p>
-      <MomentView play={play} place="origin" nameOf={nameOf} now={null} {...(spin ? { source: { spin } } : {})}
+      <MomentView play={play} place="origin" nameOf={nameOf} now={null} onView={onView} listInto={listInto} {...(spin ? { source: { spin } } : {})}
         bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />} />
     </>
   );
@@ -155,7 +159,7 @@ function postOf(place: Extract<OriginPlace, { kind: 'play' }>, which: 'at' | typ
 
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const { perPage, tallies, mine, origin: held, originPlays } = useThread();
-  const { instance } = useKayfa();
+  const { api, instance, ui } = useKayfa();
   const originId = summary.originActId!;
   const from = held ?? NOT_THERE;
   /* The box's store is the thread screen's, which gives it the saved states and releases the page carried; a box drawn without one keeps a store of its own. */
@@ -191,13 +195,51 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   useMemo(() => {
     if (cardPlay && (onCharacter || !cardPlay.reach)) lens.seedMoment(onCharacter ? spinAt ?? cardPlay.id : cardPlay.id, from.moment);
   }, [lens, cardPlay, onCharacter, spinAt, from.moment]);
+  /* The key the box's moment is kept and run under, and whether the box draws one now (read, and not null): Reset is drawn only then. */
+  const momentKey = cardPlay && (onCharacter || !cardPlay.reach) ? (onCharacter ? spinAt ?? cardPlay.id : cardPlay.id) : null;
+  /* The box's foot, where what the moment says under its post stands (outside the content area, so no effect that fills the area passes under it); drawn only where the box shows a moment. */
+  const [foot, setFoot] = useState<HTMLElement | null>(null);
+  const kept = useSyncExternalStore(lens.subscribe, () => (momentKey === null ? undefined : lens.kept(momentKey)), () => undefined);
+  const reset = momentKey !== null && kept !== undefined && kept !== null ? (
+    <button type="button" className="kb-origin-reset" onClick={(e) => { e.currentTarget.focus(); lens.reset(momentKey); }}>Reset</button>
+  ) : null;
+  /*
+   * What the moment's effects say reaches the strip of the post they are drawn on, under the moment's post: a mark's Lens reads the moment's views as a post's reads its live effects'. Only
+   * an effect on the post's own reach says a view (`MomentEffect`), so a card played on a character, drawn around the post as the spun play, says none to the character's strip or to any other.
+   */
+  const postKey = kept === undefined || kept === null ? null : kept.version.id;
+  const onView = useCallback((card: string, view: CardView | null) => { if (postKey !== null) plays.setView(postKey, card, view); }, [plays, postKey]);
+  /*
+   * A mark for each card the moment draws on the post (the Acts of its drawn plays join the box's store, kept by id so a box drawn again adds none twice): the Lens lists each of those plays as it
+   * stood then (`then`). A moment not read, or null, adds nothing. The spun play's own row is the box's one strip's (keyed by its post); a card on a character is drawn around the post of another thread,
+   * so its strip is the character's, and the post's drawn plays are a second strip of their own beside it, keyed by the moment's post, every row of it a `then` row.
+   */
+  const shown = useMemo(() => {
+    if (cardPlay === null || kept === undefined || kept === null) return null;
+    const parts = momentParts(kept, instance.cards, ui.cards, () => '').drawn;
+    const drawn = new Set(parts.map((p) => p.id));
+    const acts = kept.layers.map((l) => l.act).filter((a) => drawn.has(a.id));
+    /* How many of them the strip will mark (the strip's own filter), so no empty strip is drawn. */
+    const marked = markedPlays(shownPlays(parts, api.now()), api.now(), keepingKeys(instance.cards)).length;
+    return { acts, marked, post: kept.version.id, then: new Set(acts.map((a) => a.id).filter((id) => id !== cardPlay.id)) as ReadonlySet<Id> };
+  }, [api, cardPlay, kept, instance.cards, ui.cards]);
+  useEffect(() => { if (shown) plays.add(shown.acts); }, [plays, shown]);
   const link = <OriginLink place={summary.origin} perPage={perPage} {...(onCharacter ? { faces: characterOf } : {})} />;
+
+  /* A card on a character: the post's own drawn cards have a strip beside the character's, every row of it a `then` row (state, controls, Go to post). */
+  const to = cardPlay ? (pressed?.href ?? castFrom?.href ?? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null)) : backHref;
+  const postMarks = onCharacter && shown && shown.marked > 0 ? (
+    <PostMarks
+      post={shown.post} compare={false} moments={false} then={shown.then} plays={plays} to={to} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
+      onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
+    />
+  ) : null;
 
   /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
   const marks = act && (act.kind === 'card' ? cardPlay !== null : holdsEffects(act.kind)) ? (
     <PostMarks
-      post={cardPlay ? (onCharacter ? homeOf(cardPlay) : cardPlay.post) : originId} {...(onCharacter ? { where: 'character' } : {})} compare={cardPlay === null} moments={cardPlay === null} plays={plays}
-      to={cardPlay ? (pressed?.href ?? castFrom?.href ?? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null)) : backHref}
+      post={cardPlay ? (onCharacter ? homeOf(cardPlay) : cardPlay.post) : originId} {...(onCharacter ? { where: 'character' } : {})} compare={cardPlay === null} moments={cardPlay === null} {...(shown && !onCharacter ? { then: shown.then } : {})} plays={plays}
+      to={to}
       nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
       onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
     />
@@ -228,10 +270,10 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
          */
         if (cardPlay.reach === 'character' && cardPlay.on !== undefined) {
           /* A card on a character: a post of that character, as it was spun where the spin names one, else as the play landed on the cast-from post. */
-          return <CharacterMoment play={cardPlay} spin={spinAt} nameOf={nameOf} characterOf={characterOf} />;
+          return <CharacterMoment play={cardPlay} spin={spinAt} nameOf={nameOf} characterOf={characterOf} onView={onView} listInto={foot} />;
         }
         return cardPlay.reach ? null : (
-          <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null}
+          <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null} onView={onView} listInto={foot}
             bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />} />
         );
       case 'draw':
@@ -263,11 +305,11 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         <p className="kb-origin-head">
           {/* A play's moment is the box's content, framed by the box: the head says it is the post as the play found it, where a ring and a tag would say it again. */}
           <span className="kb-origin-head-text">
-            <b>ORIGIN</b> · Spun from {link}{cardPlay && !cardPlay.reach && <> · as it landed</>}{onCharacter && <> · {spinAt !== null ? 'as it was spun' : 'as it landed'}</>}
+            <b>ORIGIN</b> · Spun from {link}{cardPlay && !cardPlay.reach && <> · as it landed{reset && <> · </>}{reset}</>}{onCharacter && <> · {spinAt !== null ? 'as it was spun' : 'as it landed'}{reset && <> · </>}{reset}</>}
             {spinAt !== null && castFrom && <span className="kb-origin-head-line">Cast from <Link to={castFrom.href}>{castFrom.words}</Link></span>}
           </span>
           {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}
-          {marks}
+          {marks}{postMarks}
         </p>
         {(content !== null || note) && (
           <div className="kb-origin-area" data-kb-content-area>
@@ -275,6 +317,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
             {note && <p className="kb-small kb-muted kb-origin-note" data-kb-over-ink>More than {CARDS_SHOWN} cards were played on this Act; the rest are in {link}.</p>}
           </div>
         )}
+        {momentKey !== null && <div ref={setFoot} className="kb-origin-foot" data-kb-over-ink />}
       </div>
       {spinOrigin && (
         <SpinForm

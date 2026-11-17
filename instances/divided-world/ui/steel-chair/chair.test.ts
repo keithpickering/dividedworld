@@ -235,7 +235,7 @@ describe('the room', () => {
     /* What the sample holds, so that a body that stopped lying flat is noticed: flat is the bulk. The tallest rest is under the room, which is a bound. */
     assert.ok(flat > 300 && rests >= 600, `${flat} flat of ${rests}`);
     console.log(`# the tallest of ${rests} rests is drawn ${tallest.toFixed(1)} px above the border, the room is ${ROOM_HEIGHT}`);
-    /* The reduced and moment pictures settle for at most SETTLE_S: a run that needed more would be drawn with a chair in mid-air. */
+    /* The reduced picture settles for at most SETTLE_S: a run that needed more would be drawn with a chair in mid-air. */
     assert.ok(slowest * STEP <= SETTLE_S / 2, `the slowest run took ${(slowest * STEP).toFixed(2)} s to sleep, past half of SETTLE_S ${SETTLE_S}`);
     assert.ok(tallest > 28 && tallest <= ROOM_HEIGHT, `the tallest rest ${tallest} against the room ${ROOM_HEIGHT}`);
   });
