@@ -81,7 +81,7 @@ describe('dentHeight: a height map, pressed in with a lip', () => {
 });
 
 describe('dentShade: lit from the upper left, in front', () => {
-  test('its darkest pixel is 128 (within 1) and flat metal is 255; every pixel at rho of 0.98 or more is 255', () => {
+  test('its darkest pixel is 128 and flat metal is 255; every pixel at rho of 0.98 or more is 255', () => {
     for (const [w, h] of SIZES) for (const id of IDS) {
       const s = dentShade(mapOf(id, w, h), w, h);
       assert.equal(s.length, w * h * 4);
@@ -91,7 +91,7 @@ describe('dentShade: lit from the upper left, in front', () => {
         lo = Math.min(lo, g); hi = Math.max(hi, g);
         assert.ok(s[i * 4] === 0 && s[i * 4 + 1] === 0 && s[i * 4 + 2] === 0, 'black');
       }
-      assert.ok(Math.abs(lo - 128) <= 1, `${id}: darkest ${lo}`);
+      assert.equal(lo, 128, `${id}: darkest ${lo}`);
       assert.equal(hi, 255);
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (uv(x, y, w, h).rho >= 0.98) assert.equal(255 - s[(y * w + x) * 4 + 3]!, 255, `${id} at ${x},${y}`);
     }
@@ -437,7 +437,7 @@ const dentAt = (play: string, x: number, y: number, w = 80, h = 80) => {
 
 describe('the shade and the light are alpha images', () => {
   const [w, h] = [96, 88];
-  test('the shade is black with alpha 255 - g: flat is alpha 0 and the darkest is exactly 127 or 128', () => {
+  test('the shade is black with alpha 255 - g: flat is alpha 0 and the darkest is exactly 127', () => {
     for (const id of IDS.slice(0, 6)) {
       const s = dentShade(mapOf(id, w, h), w, h);
       let top = 0;
@@ -445,7 +445,7 @@ describe('the shade and the light are alpha images', () => {
         assert.deepEqual([s[i * 4], s[i * 4 + 1], s[i * 4 + 2]], [0, 0, 0]);
         top = Math.max(top, s[i * 4 + 3]!);
       }
-      assert.ok(top === 127 || top === 128, `${id}: the darkest alpha is ${top}`);
+      assert.equal(top, 127, `${id}: the darkest alpha is ${top}`);
       assert.equal(s[3], 0, 'a corner is flat');
     }
   });
@@ -531,6 +531,130 @@ describe('capped: a dent over earlier ones takes the darker and the lighter, not
     assert.deepEqual(Array.from(out.light), Array.from(b.light));
     const alone = capped(b, []);
     assert.deepEqual(Array.from(alone.shade), Array.from(b.shade));
+  });
+});
+
+describe('capped: off the grid, at density 2, in unequal boxes, past an edge', () => {
+  /** A dent whose grid is `density` times its box (so its pixels are smaller than the area's). */
+  const dentAtD = (play: string, x: number, y: number, w: number, h: number, density: number) => {
+    const gw = Math.round(w * density), gh = Math.round(h * density);
+    const map = dentHeight(dentShape(play), gw, gh);
+    return { box: { x, y, width: w, height: h }, width: gw, height: gh, shade: shadeGray(dentShade(map, gw, gh)), light: lightGray(dentLight(map, gw, gh)) };
+  };
+  /** The test's own bilinear read of a gray map at the area point (px, py): the earlier dent's own function, not `capped`'s code. */
+  const readAt = (e: ReturnType<typeof dentAtD>, map: Uint8Array, px: number, py: number): number => {
+    const gx = Math.min(e.width - 1, Math.max(0, ((px - e.box.x) / e.box.width) * e.width - 0.5));
+    const gy = Math.min(e.height - 1, Math.max(0, ((py - e.box.y) / e.box.height) * e.height - 0.5));
+    const x0 = Math.floor(gx), y0 = Math.floor(gy), x1 = Math.min(e.width - 1, x0 + 1), y1 = Math.min(e.height - 1, y0 + 1), fx = gx - x0, fy = gy - y0;
+    return (map[y0 * e.width + x0]! * (1 - fx) + map[y0 * e.width + x1]! * fx) * (1 - fy) + (map[y1 * e.width + x0]! * (1 - fx) + map[y1 * e.width + x1]! * fx) * fy;
+  };
+  const check = (label: string, own: ReturnType<typeof dentAtD>, earlier: ReturnType<typeof dentAtD>[]) => {
+    const out = capped(own, earlier);
+    const sx = own.box.width / own.width, sy = own.box.height / own.height;
+    let worstShade = 0, worstLight = 0, inside = 0, shaded = 0;
+    for (let y = 0; y < own.height; y++) for (let x = 0; x < own.width; x++) {
+      const i = y * own.width + x, px = own.box.x + (x + 0.5) * sx, py = own.box.y + (y + 0.5) * sy;
+      const hit = earlier.filter((e) => px >= e.box.x && px <= e.box.x + e.box.width && py >= e.box.y && py <= e.box.y + e.box.height);
+      if (hit.length === 0) {
+        assert.equal(out.shade[i], own.shade[i], `${label}: shade outside at ${x},${y}`);
+        assert.equal(out.light[i], own.light[i], `${label}: light outside at ${x},${y}`);
+        continue;
+      }
+      inside++;
+      const m = Math.min(...hit.map((e) => readAt(e, e.shade, px, py))), big = Math.max(...hit.map((e) => readAt(e, e.light, px, py)));
+      const comp = (m * out.shade[i]!) / 255, screen = 255 - ((255 - big) * (255 - out.light[i]!)) / 255;
+      worstShade = Math.max(worstShade, Math.abs(comp - Math.min(m, own.shade[i]!)));
+      worstLight = Math.max(worstLight, Math.abs(screen - Math.max(big, own.light[i]!)));
+      if (m < 250 && own.shade[i]! < 250) shaded++;
+    }
+    assert.ok(inside > 0, `${label}: the dents overlap`);
+    assert.ok(shaded > 10, `${label}: the dents shade each other somewhere (${shaded})`);
+    assert.ok(worstShade <= 2, `${label}: the shade is off by ${worstShade}`);
+    assert.ok(worstLight <= 2, `${label}: the light is off by ${worstLight}`);
+    return { worstShade, worstLight };
+  };
+  test('a fractional offset (40.5, 13.25), where the bilinear read really interpolates', () => {
+    for (const [pa, pb] of [['off-a', 'off-b'], ['off-c', 'off-d']] as const) check(pa, dentAtD(pb, 40.5, 13.25, 80, 80, 1), [dentAtD(pa, 0, 0, 80, 80, 1)]);
+  });
+  test('grids at density 2, the grid twice the box', () => {
+    check('density 2', dentAtD('d2-b', 40.5, 13.25, 80, 80, 2), [dentAtD('d2-a', 0, 0, 80, 80, 2)]);
+    check('own at 2, earlier at 1', dentAtD('d2-d', 37.25, 10.5, 80, 80, 2), [dentAtD('d2-c', 0, 0, 80, 80, 1)]);
+  });
+  test('two dents of different sizes in non-square boxes', () => {
+    check('sizes', dentAtD('size-b', 50.5, 20, 70, 90, 1), [dentAtD('size-a', 0, 0, 100, 60, 1)]);
+    check('sizes, small over large', dentAtD('size-d', 30.25, 5.5, 64, 48, 1), [dentAtD('size-c', 0, 0, 110, 120, 1)]);
+  });
+  test("a later dent that passes the earlier one's edge on two sides", () => {
+    check('right and bottom', dentAtD('edge-b', 20.5, 25.25, 80, 80, 1), [dentAtD('edge-a', 0, 0, 80, 80, 1)]);
+    check('left and top, density 2', dentAtD('edge-d', -25.5, -20.25, 80, 80, 2), [dentAtD('edge-c', 0, 0, 80, 80, 2)]);
+  });
+  test('two earlier dents, one off the grid, at once', () => {
+    check('two earlier', dentAtD('two-c', 30.5, 12.75, 80, 80, 1), [dentAtD('two-a', 0, 0, 80, 80, 1), dentAtD('two-b', 55.25, 30, 70, 60, 2)]);
+  });
+});
+
+describe('dentImages with earlier dents: the capped images and their cache', () => {
+  const box = { x: 0, y: 0, size: 80, width: 80, height: 80 };
+  const at = (x: number, y = 0) => ({ x, y, width: 80, height: 80 });
+  /** An address that is the image's content (a hash of its bytes), so two images are equal exactly when their pixels are. */
+  const hashing = () => {
+    const calls: string[] = [];
+    return {
+      calls,
+      toUrl: (px: Uint8ClampedArray, w: number, h: number) => {
+        let a = 2166136261;
+        for (let i = 0; i < px.length; i++) a = Math.imul(a ^ px[i]!, 16777619);
+        const url = `${w}x${h}:${a >>> 0}`;
+        calls.push(url);
+        return url;
+      },
+    };
+  };
+  test('an intersecting earlier dent changes the shade and the light, and the bend is the kept one', () => {
+    const { toUrl } = hashing();
+    const alone = dentImages('ei-own', box, 1, [], toUrl);
+    const over = dentImages('ei-own', box, 1, [{ play: 'ei-before', box: at(40) }], toUrl);
+    assert.equal(over.bend, alone.bend);
+    assert.notEqual(over.shade, alone.shade);
+    assert.notEqual(over.light, alone.light);
+  });
+  test('an earlier dent that does not intersect leaves the kept images', () => {
+    const { toUrl, calls } = hashing();
+    const alone = dentImages('ei-far', box, 1, [], toUrl);
+    const before = calls.length;
+    const far = dentImages('ei-far', box, 1, [{ play: 'ei-far-before', box: at(200) }], toUrl);
+    assert.deepEqual(far, alone);
+    assert.equal(calls.length, before, 'nothing new was made');
+  });
+  test('the same arrangement twice is one made image: a hit makes nothing', () => {
+    const { toUrl, calls } = hashing();
+    const a = dentImages('ei-twice', box, 1, [{ play: 'ei-twice-before', box: at(40) }], toUrl);
+    const before = calls.length;
+    const b = dentImages('ei-twice', box, 1, [{ play: 'ei-twice-before', box: at(40) }], toUrl);
+    assert.equal(calls.length, before);
+    assert.deepEqual(a, b);
+  });
+  test('another offset of the same earlier play, or another earlier play at the same offset, is another image', () => {
+    const { toUrl } = hashing();
+    const base = dentImages('ei-key', box, 1, [{ play: 'ei-key-before', box: at(40) }], toUrl);
+    const moved = dentImages('ei-key', box, 1, [{ play: 'ei-key-before', box: at(41) }], toUrl);
+    const other = dentImages('ei-key', box, 1, [{ play: 'ei-key-other', box: at(40) }], toUrl);
+    assert.notEqual(moved.shade, base.shade);
+    assert.notEqual(other.shade, base.shade);
+    assert.notEqual(other.light, base.light);
+  });
+  test('the capped cache keeps at most 8: the ninth arrangement drops the first', () => {
+    const { toUrl, calls } = hashing();
+    const arrange = (k: number) => dentImages('ei-evict', box, 1, [{ play: 'ei-evict-before', box: at(20 + k) }], toUrl);
+    for (let k = 0; k < 9; k++) arrange(k);
+    let before = calls.length;
+    arrange(8);
+    assert.equal(calls.length, before, 'the newest is kept');
+    arrange(1);
+    assert.equal(calls.length, before, 'the second is kept');
+    before = calls.length;
+    arrange(0);
+    assert.equal(calls.length, before + 2, 'the first is made again: its shade and its light');
   });
 });
 

@@ -126,12 +126,7 @@ export function dentsOverlap(a: DentBox, b: DentBox): boolean {
   return dist < reach(a) + reach(b);
 }
 
-/**
- * Each dent's `feImage` numbers, in order. A dent's larger axis is at most `FULL_DENT` (160) px, at most 60% of the box's width (a narrow post
- * would otherwise be mostly dent) and at most the box's height (the caller gives the height a dent may land in, `zoneHeight`); a dent with a `shape` has its two axes scaled by it, divided by `AXIS_MAX` so that the larger can never pass that limit. The
- * dent's box is centered on its point. The dent's height map is made in this (axis-aligned) box (`dentImages`), so an elliptical box gives an
- * elliptical dent, and the bend, the shade and the light, all from that one map, agree.
- */
+/** The most a dent's larger axis may be, in px (`dentPrimitives`). */
 export const FULL_DENT = 160;
 /** The least height a dent's zone may have where the area has room for the chairs below it; below that the room is given up (`zoneHeight`). */
 export const LEAST_ZONE = 80;
@@ -144,6 +139,13 @@ export function zoneHeight(areaHeight: number): number {
   return above >= LEAST_ZONE ? above : areaHeight;
 }
 
+/**
+ * Each dent's `feImage` numbers, in order. A dent's larger axis is at most `FULL_DENT` (160) px, at most 60% of the box's width (a narrow post
+ * would otherwise be mostly dent) and at most the box's height (the caller gives the height a dent may land in, `zoneHeight`); a dent with a `shape` has its two axes scaled by it,
+ * divided by `AXIS_MAX` so that the larger can never pass that limit. The
+ * dent's box is centered on its point. The dent's height map is made in this (axis-aligned) box (`dentImages`), so an elliptical box gives an
+ * elliptical dent, and the bend, the shade and the light, all from that one map, agree.
+ */
 export function dentPrimitives(dents: readonly { x: number; y: number; shape?: DentShape }[], box: { width: number; height: number }): DentPrimitive[] {
   const base = Math.min(FULL_DENT, 0.6 * box.width, box.height);
   return dents.map((d) => {
@@ -294,7 +296,7 @@ function lighting(h: Float32Array, width: number, height: number): Lit {
 }
 
 /**
- * The shade, RGBA black with an alpha: flat metal is alpha 0 and the darkest pixel's alpha is 127 (or 128), so that laid over the post it never
+ * The shade, RGBA black with an alpha: flat metal is alpha 0 and the darkest pixel's alpha is exactly 127 (its gray is 128), so that laid over the post it never
  * darkens a word below half. A sample's gray is `255 × (1 + (N·LIGHT - flat)·g)` (clamped), `flat = LIGHT.z`, with `g` chosen so the map's
  * least lit sample lands on 128/255; its alpha is 255 less that gray, so black at that alpha over a color `c` leaves `c × gray / 255`, which is what
  * multiplying by the gray gave. A map with no slope (which no shape gives) is alpha 0 everywhere.
@@ -470,8 +472,9 @@ export function capped(own: CapDent, earlier: readonly CapDent[]): { shade: Uint
       let m = 255, big = 0;
       for (const e of near) {
         if (px < e.box.x || px > e.box.x + e.box.width || py < e.box.y || py > e.box.y + e.box.height) continue;
-        m = Math.min(m, sample(e.shade, e.width, e.height, ((px - e.box.x) / e.box.width) * e.width - 0.5, ((py - e.box.y) / e.box.height) * e.height - 0.5));
-        big = Math.max(big, sample(e.light, e.width, e.height, ((px - e.box.x) / e.box.width) * e.width - 0.5, ((py - e.box.y) / e.box.height) * e.height - 0.5));
+        const gx = ((px - e.box.x) / e.box.width) * e.width - 0.5, gy = ((py - e.box.y) / e.box.height) * e.height - 0.5;
+        m = Math.min(m, sample(e.shade, e.width, e.height, gx, gy));
+        big = Math.max(big, sample(e.light, e.width, e.height, gx, gy));
       }
       const g = own.shade[i]!, l = own.light[i]!;
       shade[i] = m > 0 ? Math.round((255 * Math.min(m, g)) / m) : 255;
