@@ -19,6 +19,7 @@ import { classClown, price as classClownPrice } from './class-clown.ts';
 import { feelinFab, price as feelinFabPrice } from './feelin-fab.ts';
 import { feelinGlam, price as feelinGlamPrice } from './feelin-glam.ts';
 import { forceField, price as forceFieldPrice } from './force-field.ts';
+import { frontRow, price as frontRowPrice } from './front-row.ts';
 import { glitterBomb, price as glitterBombPrice } from './glitter-bomb.ts';
 import { goodVibes, price as goodVibesPrice } from './good-vibes.ts';
 import { graffiti, price as graffitiPrice } from './graffiti.ts';
@@ -60,6 +61,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [feelinFab as CardRules, feelinFabPrice],
   [feelinGlam as CardRules, feelinGlamPrice],
   [forceField as CardRules, forceFieldPrice],
+  [frontRow as CardRules, frontRowPrice],
   [glitterBomb as CardRules, glitterBombPrice],
   [goodVibes as CardRules, goodVibesPrice],
   [graffiti as CardRules, graffitiPrice],
