@@ -1,9 +1,13 @@
+import { ROOM_HEIGHT } from './chair.ts';
 import { rng, THROW_INSET_X, THROW_INSET_Y, THROW_SPAN_X, THROW_SPAN_Y } from './body.ts';
 
 /**
  * Steel Chair's dent (docs/plans/2026-11-15-steel-chair-plan.md, Task 4; docs/plans/2026-11-16-steel-chair-dent-plan.md, Task 1): one height
  * map per play (`dentHeight`, from the play's `DentShape`), lit by one light into three images: the bend an SVG filter moves the words with
- * (`dentBend`, the map's slope), the shade that darkens the metal (`dentShade`) and the light that brightens it (`dentLight`). Pure
+ * (`dentBend`, the map's slope), the shade that darkens the metal (`dentShade`, black with an alpha) and the light that brightens it
+ * (`dentLight`, white with an alpha); both are laid on plainly, with no blend mode, so flat metal is alpha 0 and draws nothing over any backdrop
+ * (docs/plans/2026-11-16-steel-chair-origin-design.md, section 2). A dent that overlaps earlier ones is drawn from an image corrected against
+ * them (`capped`), so the cap the blend gave (the darker of two shades, the lighter of two lights) is done in the pixels. Pure
  * TypeScript apart from `pixelsUrl`, the file's one canvas, which `dentImages` draws each image on once per play. The filter itself (a flood
  * of neutral gray; each dent's `feImage` laid over neutral and added to the running map by an arithmetic `feComposite`, 0.5 + the sum of
  * (d - 0.5), so overlapping dents add and do not cut each other; one `feDisplacementMap` on the words) is written as JSX by the effect from
@@ -123,13 +127,25 @@ export function dentsOverlap(a: DentBox, b: DentBox): boolean {
 }
 
 /**
- * Each dent's `feImage` numbers, in order. A dent's larger axis is at most 160 px and at most 60% of the box (a narrow post would otherwise
- * be mostly dent); a dent with a `shape` has its two axes scaled by it, divided by `AXIS_MAX` so that the larger can never pass that limit. The
+ * Each dent's `feImage` numbers, in order. A dent's larger axis is at most `FULL_DENT` (160) px, at most 60% of the box's width (a narrow post
+ * would otherwise be mostly dent) and at most the box's height (the caller gives the height a dent may land in, `zoneHeight`); a dent with a `shape` has its two axes scaled by it, divided by `AXIS_MAX` so that the larger can never pass that limit. The
  * dent's box is centered on its point. The dent's height map is made in this (axis-aligned) box (`dentImages`), so an elliptical box gives an
  * elliptical dent, and the bend, the shade and the light, all from that one map, agree.
  */
+export const FULL_DENT = 160;
+/** The least height a dent's zone may have where the area has room for the chairs below it; below that the room is given up (`zoneHeight`). */
+export const LEAST_ZONE = 80;
+/**
+ * The height a dent may land in, from the content area's height: the area less the chairs' room (`ROOM_HEIGHT`, chair.ts) where that leaves at
+ * least `LEAST_ZONE`, else the whole area (a short area gives up the room, so the dent is held to the area alone, never outside it).
+ */
+export function zoneHeight(areaHeight: number): number {
+  const above = areaHeight - ROOM_HEIGHT;
+  return above >= LEAST_ZONE ? above : areaHeight;
+}
+
 export function dentPrimitives(dents: readonly { x: number; y: number; shape?: DentShape }[], box: { width: number; height: number }): DentPrimitive[] {
-  const base = Math.min(160, 0.6 * box.width);
+  const base = Math.min(FULL_DENT, 0.6 * box.width, box.height);
   return dents.map((d) => {
     const width = d.shape ? (base * d.shape.rx) / AXIS_MAX : base;
     const height = d.shape ? (base * d.shape.ry) / AXIS_MAX : base;
@@ -278,37 +294,46 @@ function lighting(h: Float32Array, width: number, height: number): Lit {
 }
 
 /**
- * The shade, RGBA gray and opaque: flat metal is 255 and the darkest pixel exactly 128, so that multiplied over the post it never darkens a
- * word below half. A sample is `1 + (N·LIGHT - flat)·g` (clamped), `flat = LIGHT.z`, with `g` chosen so the map's least lit sample lands on
- * 128/255. A map with no slope (which no shape gives) is all 255.
+ * The shade, RGBA black with an alpha: flat metal is alpha 0 and the darkest pixel's alpha is 127 (or 128), so that laid over the post it never
+ * darkens a word below half. A sample's gray is `255 × (1 + (N·LIGHT - flat)·g)` (clamped), `flat = LIGHT.z`, with `g` chosen so the map's
+ * least lit sample lands on 128/255; its alpha is 255 less that gray, so black at that alpha over a color `c` leaves `c × gray / 255`, which is what
+ * multiplying by the gray gave. A map with no slope (which no shape gives) is alpha 0 everywhere.
  */
 export function dentShade(h: Float32Array, width: number, height: number): Uint8ClampedArray {
-  return shadeOf(lighting(h, width, height));
+  return alphaPixels(shadeGray(lighting(h, width, height)), 0, true);
 }
-function shadeOf({ lam }: Lit): Uint8ClampedArray {
+/** Gray bytes as RGBA of one color with an alpha: the gray itself, or (`flip`) 255 less it. */
+function alphaPixels(gray: Uint8Array, rgb: number, flip: boolean): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(gray.length * 4);
+  for (let i = 0; i < gray.length; i++) {
+    out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = rgb;
+    out[i * 4 + 3] = flip ? 255 - gray[i]! : gray[i]!;
+  }
+  return out;
+}
+/** The shade's gray map (255 flat, 128 darkest), one byte a pixel: what the multiply gave, and what `capped` works on. */
+function shadeGray({ lam }: Lit): Uint8Array {
   const flat = LIGHT[2];
   let lo = Infinity;
   for (let i = 0; i < lam.length; i++) lo = Math.min(lo, lam[i]!);
   const g = flat - lo > 1e-12 ? (1 - 128 / 255) / (flat - lo) : 0;
-  const out = new Uint8ClampedArray(lam.length * 4);
-  for (let i = 0; i < lam.length; i++) {
-    const b = Math.round(255 * Math.min(1, Math.max(128 / 255, 1 + (lam[i]! - flat) * g)));
-    out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = b;
-    out[i * 4 + 3] = 255;
-  }
+  const out = new Uint8Array(lam.length);
+  for (let i = 0; i < lam.length; i++) out[i] = Math.round(255 * Math.min(1, Math.max(128 / 255, 1 + (lam[i]! - flat) * g)));
   return out;
 }
 
 /**
- * The light, RGBA gray and opaque, screened over the post: a soft sheen (`N·LIGHT` above flat, its largest 71/255) and a small glint (a
+ * The light, RGBA white with an alpha, laid over the post (white at alpha `l` over `c` is `c + (255 - c)·l/255`, which is what screening the gray `l`
+ * gave): a soft sheen (`N·LIGHT` above flat, its largest 71/255) and a small glint (a
  * specular term `(N·HALF)^P`, its largest 140/255), summed and held to 140; 0 where the metal is flat. The glint must stay small: the samples
  * brighter than 71 are at most 4% of those inside the circle. While they are more, `P` is multiplied by 1.5 (at most 8 times; after that the
  * glint, at that `P`, is scaled to 71, which is a last resort and not a place the shapes reach).
  */
 export function dentLight(h: Float32Array, width: number, height: number): Uint8ClampedArray {
-  return lightOf(lighting(h, width, height), width, height);
+  return alphaPixels(lightGray(lighting(h, width, height), width, height), 255, false);
 }
-function lightOf({ lam, spec }: Lit, width: number, height: number): Uint8ClampedArray {
+/** The light's gray map (0 where flat, at most 140), one byte a pixel: the alpha, and what `capped` works on. */
+function lightGray({ lam, spec }: Lit, width: number, height: number): Uint8Array {
   const n = width * height;
   const flat = LIGHT[2];
   const soft = new Float64Array(n);
@@ -323,7 +348,7 @@ function lightOf({ lam, spec }: Lit, width: number, height: number): Uint8Clampe
       if (hypot2(((x + 0.5) / width) * 2 - 1, v) < 1) { inside[y * width + x] = 1; insideCount++; }
     }
   }
-  const out = new Uint8ClampedArray(n * 4);
+  const out = new Uint8Array(n);
   const glint = new Float64Array(n);
   /* A sample whose `N·HALF` is below `HALF.z` by a clear margin has `spec ** P` below the floor for every `P` here, so its glint is 0 and it is
      left out of the exponent loop (the large majority of a dent's samples; the margin is far wider than any rounding of `**`). */
@@ -349,8 +374,7 @@ function lightOf({ lam, spec }: Lit, width: number, height: number): Uint8Clampe
     let bright = 0;
     for (let i = 0; i < n; i++) {
       const b = Math.round(255 * Math.min(140 / 255, soft[i]! * softScale + glint[i]! * glintScale));
-      out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = b;
-      out[i * 4 + 3] = 255;
+      out[i] = b;
       if (inside[i] && b > 71) bright++;
     }
     return bright;
@@ -417,18 +441,58 @@ export function pixelsUrl(px: Uint8ClampedArray, width: number, height: number):
 
 export interface DentImages { readonly bend: string; readonly shade: string; readonly light: string }
 const IMAGE_CACHE_MAX = 32;
-const imageCache = new Map<string, DentImages>();
+const CAPPED_CACHE_MAX = 8;
+/** What is kept for a play at a size and density: the three addresses, and the two gray maps the shade and the light were drawn from. */
+interface Kept extends DentImages { readonly shadeMap: Uint8Array; readonly lightMap: Uint8Array; readonly sw: number; readonly sh: number }
+const imageCache = new Map<string, Kept>();
+const cappedCache = new Map<string, DentImages>();
+
+/** A dent for `capped`: its box in the area's px, the size of its grid in pixels, and its two gray maps (the shade's, 255 flat; the light's, 0 flat). */
+export interface CapDent { readonly box: DentBox; readonly width: number; readonly height: number; readonly shade: Uint8Array; readonly light: Uint8Array }
 
 /**
- * A dent's three images as addresses. `box` is the dent's primitive: the bend is made at its size in px (the `feImage` stretches it), the
- * shade and the light at that times `density` (the caller gives `min(devicePixelRatio, 2)`), so no image passes 320 by 320. Made once per
- * play, size and density and kept in a cache of at most 32, the oldest dropped first (a `Map`'s order). A box that rounds to under 1 px on
- * either side gets three empty addresses, is not drawn and is not cached.
+ * `own`'s shade and light corrected against the `earlier` dents, so that laid over them (and over the post) each makes what the blend made: the
+ * darker of the shades and the lighter of the lights, so a word is never darkened below half. At each pixel of `own`, at its center, `m` is the
+ * least of the earlier dents' shade grays there and `M` the greatest of their lights (each sampled bilinearly in that dent's own grid; 255 and 0
+ * outside its box). The corrected shade gray is `255 × min(m, g) / m` (so `m × that / 255 = min(m, g)`) and the corrected light is
+ * `255 × (1 - (255 - max(M, l)) / (255 - M))` (so screening it over `M` gives `max(M, l)`). Outside every earlier box nothing changes: `m` is 255
+ * and `M` is 0. Pure; returns the two gray maps.
  */
-export function dentImages(play: string, box: DentPrimitive, density: number, toUrl: typeof pixelsUrl = pixelsUrl): DentImages {
-  const w = Math.round(box.width), h = Math.round(box.height);
-  // a box under 1 px on a side (not yet measured, or a very narrow post) has no image to make: `new ImageData` would throw on it
-  if (w < 1 || h < 1) return { bend: '', shade: '', light: '' };
+export function capped(own: CapDent, earlier: readonly CapDent[]): { shade: Uint8Array; light: Uint8Array } {
+  const shade = new Uint8Array(own.width * own.height), light = new Uint8Array(own.width * own.height);
+  const near = earlier.filter((e) => intersects(own.box, e.box));
+  const sx = own.box.width / own.width, sy = own.box.height / own.height;
+  for (let y = 0; y < own.height; y++) {
+    const py = own.box.y + (y + 0.5) * sy;
+    for (let x = 0; x < own.width; x++) {
+      const px = own.box.x + (x + 0.5) * sx;
+      const i = y * own.width + x;
+      let m = 255, big = 0;
+      for (const e of near) {
+        if (px < e.box.x || px > e.box.x + e.box.width || py < e.box.y || py > e.box.y + e.box.height) continue;
+        m = Math.min(m, sample(e.shade, e.width, e.height, ((px - e.box.x) / e.box.width) * e.width - 0.5, ((py - e.box.y) / e.box.height) * e.height - 0.5));
+        big = Math.max(big, sample(e.light, e.width, e.height, ((px - e.box.x) / e.box.width) * e.width - 0.5, ((py - e.box.y) / e.box.height) * e.height - 0.5));
+      }
+      const g = own.shade[i]!, l = own.light[i]!;
+      shade[i] = m > 0 ? Math.round((255 * Math.min(m, g)) / m) : 255;
+      light[i] = big < 255 ? Math.round(255 * (1 - (255 - Math.max(big, l)) / (255 - big))) : 0;
+    }
+  }
+  return { shade, light };
+}
+const intersects = (a: DentBox, b: DentBox) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+/** A gray map sampled bilinearly at the grid coordinates `(gx, gy)` (a pixel's center is at its integer index), held to the grid's edge. */
+function sample(map: Uint8Array, width: number, height: number, gx: number, gy: number): number {
+  const x = Math.min(width - 1, Math.max(0, gx)), y = Math.min(height - 1, Math.max(0, gy));
+  const x0 = Math.floor(x), y0 = Math.floor(y), x1 = Math.min(width - 1, x0 + 1), y1 = Math.min(height - 1, y0 + 1);
+  const fx = x - x0, fy = y - y0;
+  const top = map[y0 * width + x0]! * (1 - fx) + map[y0 * width + x1]! * fx;
+  const bottom = map[y1 * width + x0]! * (1 - fx) + map[y1 * width + x1]! * fx;
+  return top * (1 - fy) + bottom * fy;
+}
+
+/** A play's images at a size and density, made once and kept (the three addresses and the two gray maps). */
+function keptOf(play: string, w: number, h: number, density: number, toUrl: typeof pixelsUrl): Kept {
   const key = `${play}|${w}|${h}|${density}`;
   const kept = imageCache.get(key);
   if (kept) return kept;
@@ -437,13 +501,55 @@ export function dentImages(play: string, box: DentPrimitive, density: number, to
   const bendMap = dentHeight(shape, w, h);
   const map = sw === w && sh === h ? bendMap : dentHeight(shape, sw, sh);
   const lit = lighting(map, sw, sh);
-  const made = {
+  const shadeMap = shadeGray(lit), lightMap = lightGray(lit, sw, sh);
+  const made: Kept = {
     bend: toUrl(dentBend(bendMap, w, h), w, h),
-    shade: toUrl(shadeOf(lit), sw, sh),
-    light: toUrl(lightOf(lit, sw, sh), sw, sh),
+    shade: toUrl(alphaPixels(shadeMap, 0, true), sw, sh),
+    light: toUrl(alphaPixels(lightMap, 255, false), sw, sh),
+    shadeMap, lightMap, sw, sh,
   };
   imageCache.set(key, made);
   if (imageCache.size > IMAGE_CACHE_MAX) imageCache.delete(imageCache.keys().next().value!);
+  return made;
+}
+
+/**
+ * A dent's three images as addresses. `box` is the dent's primitive: the bend is made at its size in px (the `feImage` stretches it), the
+ * shade and the light at that times `density` (the caller gives `min(devicePixelRatio, 2)`), so no image passes 320 by 320. Made once per
+ * play, size and density and kept in a cache of at most 32, the oldest dropped first (a `Map`'s order). A box that rounds to under 1 px on
+ * either side gets three empty addresses, is not drawn and is not cached.
+ *
+ * `earlier` are the dents drawn before this one, each with its play and its box in the same space as `box`. Where none of them intersects
+ * `box` the images are the kept ones. Otherwise the bend is as kept, and the shade and the light are made from `capped` against the earlier
+ * dents that intersect, and kept in a second cache of at most 8, keyed by the play, size, density and each such dent's play, size and offset
+ * from this one (rounded to 1 / density px).
+ */
+export function dentImages(
+  play: string, box: DentPrimitive, density: number,
+  earlier: readonly { readonly play: string; readonly box: DentBox }[] = [], toUrl: typeof pixelsUrl = pixelsUrl,
+): DentImages {
+  const w = Math.round(box.width), h = Math.round(box.height);
+  // a box under 1 px on a side (not yet measured, or a very narrow post) has no image to make: `new ImageData` would throw on it
+  if (w < 1 || h < 1) return { bend: '', shade: '', light: '' };
+  const own = keptOf(play, w, h, density, toUrl);
+  const near = earlier.filter((e) => Math.round(e.box.width) >= 1 && Math.round(e.box.height) >= 1 && intersects(box, e.box));
+  if (near.length === 0) return { bend: own.bend, shade: own.shade, light: own.light };
+  const step = (v: number) => Math.round(v * density) / density;
+  const key = `${play}|${w}|${h}|${density}|` + near.map((e) => `${e.play}@${step(e.box.x - box.x)},${step(e.box.y - box.y)}:${Math.round(e.box.width)}x${Math.round(e.box.height)}`).join('|');
+  const hit = cappedCache.get(key);
+  if (hit) return hit;
+  const others: CapDent[] = near.map((e) => {
+    const k = keptOf(e.play, Math.round(e.box.width), Math.round(e.box.height), density, toUrl);
+    return { box: e.box, width: k.sw, height: k.sh, shade: k.shadeMap, light: k.lightMap };
+  });
+  const out = capped({ box, width: own.sw, height: own.sh, shade: own.shadeMap, light: own.lightMap }, others);
+  const made: DentImages = {
+    bend: own.bend,
+    shade: toUrl(alphaPixels(out.shade, 0, true), own.sw, own.sh),
+    light: toUrl(alphaPixels(out.light, 255, false), own.sw, own.sh),
+  };
+  cappedCache.set(key, made);
+  if (cappedCache.size > CAPPED_CACHE_MAX) cappedCache.delete(cappedCache.keys().next().value!);
   return made;
 }
 
@@ -455,8 +561,9 @@ export const THROW_Y = [THROW_INSET_Y, THROW_INSET_Y + THROW_SPAN_Y] as const;
 
 /**
  * The box to hand `throwOf` for a dent of `dent`'s size, from the box the text takes (`text`, in the content area's px) in an area of `area`
- * size. Where the text is at least a dent's diameter (its larger axis) tall, the box is the text's, as it was. Where it is shorter (one
- * line, a few), a throw aimed only at it would stack every dent on the line, so the box grows (owner, 2026-11-15: widen the
+ * size. Where the text is at least a dent's diameter (its larger axis) tall, the zone of centers is the range `throwOf` would reach in the
+ * text's own box, each end held in so the dent's box stays inside the area (a text lying against a border would otherwise put the center
+ * closer to it than the dent's radius). Where it is shorter (one line, a few), a throw aimed only at it would stack every dent on the line, so the box grows (owner, 2026-11-15: widen the
  * zone so the dents can land outside the single line, which looks more natural than tightly packed dents with perfect aim): the dent's center
  * may fall up to one full dent diameter (its extent on that axis) beyond the text's box to the left, to the right and below, so a dent may land
  * wholly beside the text, and up to its radius above it (the area's top is close above the first line anyway). Its circle is kept inside the
@@ -472,15 +579,20 @@ export function hitZone(
   dent: { width: number; height: number },
 ): { left: number; top: number; width: number; height: number } {
   const diameter = Math.max(dent.width, dent.height);
-  if (text.height >= diameter) return text;
   const span = (lo: number, hi: number, radius: number, extent: number): [number, number] => {
     if (extent <= 2 * radius) return [extent / 2, extent / 2];
     const clamp = (v: number) => Math.min(extent - radius, Math.max(radius, v));
     return [clamp(lo), clamp(hi)];
   };
-  const [x0, x1] = span(text.left - dent.width, text.left + text.width + dent.width, dent.width / 2, area.width);
-  const [y0, y1] = span(text.top - dent.height / 2, text.top + text.height + dent.height, dent.height / 2, area.height);
+  const tall = text.height >= diameter;
+  const [x0, x1] = span(
+    tall ? text.left + THROW_X[0] * text.width : text.left - dent.width, tall ? text.left + THROW_X[1] * text.width : text.left + text.width + dent.width,
+    dent.width / 2, area.width,
+  );
+  const [y0, y1] = span(
+    tall ? text.top + THROW_Y[0] * text.height : text.top - dent.height / 2, tall ? text.top + THROW_Y[1] * text.height : text.top + text.height + dent.height,
+    dent.height / 2, area.height,
+  );
   const width = (x1 - x0) / (THROW_X[1] - THROW_X[0]), height = (y1 - y0) / (THROW_Y[1] - THROW_Y[0]);
   return { left: x0 - THROW_X[0] * width, top: y0 - THROW_Y[0] * height, width, height };
 }
-

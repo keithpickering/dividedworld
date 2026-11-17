@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { rng, throwOf } from './body.ts';
 import {
-  AXIS_MAX, AXIS_MIN, DENT_SCALE, HALF, LIGHT, RELIEF, SPREAD, dentBend, dentHeight, dentImages, dentLight, dentPrimitives, dentShade, dentShape, dentsOverlap, filterTrusted,
-  hitZone, THROW_X, THROW_Y,
+  AXIS_MAX, AXIS_MIN, DENT_SCALE, FULL_DENT, HALF, LEAST_ZONE, LIGHT, RELIEF, SPREAD, capped, dentBend, dentHeight, dentImages, dentLight, dentPrimitives, dentShade, dentShape,
+  dentsOverlap, filterTrusted, hitZone, zoneHeight, THROW_X, THROW_Y,
 } from './dent.ts';
 
 const IDS = Array.from({ length: 20 }, (_, i) => `height-play-${i}`);
@@ -87,12 +87,13 @@ describe('dentShade: lit from the upper left, in front', () => {
       assert.equal(s.length, w * h * 4);
       let lo = 255, hi = 0;
       for (let i = 0; i < w * h; i++) {
-        lo = Math.min(lo, s[i * 4]!); hi = Math.max(hi, s[i * 4]!);
-        assert.ok(s[i * 4] === s[i * 4 + 1] && s[i * 4] === s[i * 4 + 2] && s[i * 4 + 3] === 255, 'gray and opaque');
+        const g = 255 - s[i * 4 + 3]!;
+        lo = Math.min(lo, g); hi = Math.max(hi, g);
+        assert.ok(s[i * 4] === 0 && s[i * 4 + 1] === 0 && s[i * 4 + 2] === 0, 'black');
       }
       assert.ok(Math.abs(lo - 128) <= 1, `${id}: darkest ${lo}`);
       assert.equal(hi, 255);
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (uv(x, y, w, h).rho >= 0.98) assert.equal(s[(y * w + x) * 4], 255, `${id} at ${x},${y}`);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (uv(x, y, w, h).rho >= 0.98) assert.equal(255 - s[(y * w + x) * 4 + 3]!, 255, `${id} at ${x},${y}`);
     }
   });
   /* The point of the spread (owner, 2026-11-16): the dent fills its box as the approved mock's does. The pixels the shade darkens at all (by 5 of 255 or
@@ -102,7 +103,7 @@ describe('dentShade: lit from the upper left, in front', () => {
     for (const id of IDS) {
       const s = dentShade(mapOf(id, w, h), w, h);
       let x0: number = w, x1 = -1, y0: number = h, y1 = -1;
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (s[(y * w + x) * 4]! <= 250) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (255 - s[(y * w + x) * 4 + 3]! <= 250) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
       assert.ok((x1 - x0 + 1) / w >= 0.7 && (y1 - y0 + 1) / h >= 0.7, `${id}: shade spans ${(x1 - x0 + 1) / w} of the width, ${(y1 - y0 + 1) / h} of the height`);
     }
   });
@@ -110,8 +111,8 @@ describe('dentShade: lit from the upper left, in front', () => {
     for (const id of IDS) {
       const [w, h] = [160, 140] as const;
       const s = dentShade(mapOf(id, w, h), w, h);
-      const upperLeft = meanOver(w, h, (p) => p.u < -0.1 * SPREAD && p.v < -0.1 * SPREAD && p.rho < 0.5 * SPREAD, (i) => s[i * 4]!);
-      const lowerRight = meanOver(w, h, (p) => p.u > 0.1 * SPREAD && p.v > 0.1 * SPREAD && p.rho < 0.5 * SPREAD, (i) => s[i * 4]!);
+      const upperLeft = meanOver(w, h, (p) => p.u < -0.1 * SPREAD && p.v < -0.1 * SPREAD && p.rho < 0.5 * SPREAD, (i) => 255 - s[i * 4 + 3]!);
+      const lowerRight = meanOver(w, h, (p) => p.u > 0.1 * SPREAD && p.v > 0.1 * SPREAD && p.rho < 0.5 * SPREAD, (i) => 255 - s[i * 4 + 3]!);
       assert.ok(upperLeft < lowerRight, `${id}: upper left ${upperLeft}, lower right ${lowerRight}`);
     }
   });
@@ -125,11 +126,11 @@ describe('dentLight: a soft sheen and a small glint', () => {
       let inside = 0, bright = 0, top = 0;
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
         const i = (y * w + x) * 4, p = uv(x, y, w, h);
-        assert.ok(l[i] === l[i + 1] && l[i] === l[i + 2] && l[i + 3] === 255, 'gray and opaque');
-        assert.ok(l[i]! <= 140, `${id}: ${l[i]}`);
-        top = Math.max(top, l[i]!);
-        if (p.rho < 1) { inside++; if (l[i]! > 71) bright++; }
-        if (p.rho >= 0.98) assert.equal(l[i], 0, `${id} at ${x},${y}`);
+        assert.ok(l[i] === 255 && l[i + 1] === 255 && l[i + 2] === 255, 'white');
+        assert.ok(l[i + 3]! <= 140, `${id}: ${l[i + 3]}`);
+        top = Math.max(top, l[i + 3]!);
+        if (p.rho < 1) { inside++; if (l[i + 3]! > 71) bright++; }
+        if (p.rho >= 0.98) assert.equal(l[i + 3], 0, `${id} at ${x},${y}`);
       }
       assert.ok(bright <= 0.04 * inside, `${id}: ${bright} of ${inside} are over 71`);
       assert.ok(top >= 71, `${id}: the largest byte is ${top}, there is no light`);
@@ -171,7 +172,7 @@ describe('dentLight: the last resort', () => {
       if (rho < 1) { inside++; if (expected[i]! > 71) bright++; }
     }
     assert.ok(bright > 0.04 * inside, 'the map is one the glint cannot be made small on');
-    assert.deepEqual(Array.from(got).filter((_, i) => i % 4 === 0), expected);
+    assert.deepEqual(Array.from(got).filter((_, i) => i % 4 === 3), expected);
   });
 });
 
@@ -217,40 +218,40 @@ describe('dentImages: three images a dent, made once a play', () => {
   };
   test('the same key twice calls toUrl three times, not six', () => {
     const { calls, toUrl } = counting();
-    const a = dentImages('cache-twice', box, 1, toUrl);
-    const b = dentImages('cache-twice', box, 1, toUrl);
+    const a = dentImages('cache-twice', box, 1, undefined, toUrl);
+    const b = dentImages('cache-twice', box, 1, undefined, toUrl);
     assert.equal(calls.length, 3);
     assert.deepEqual(a, b);
     assert.equal(new Set([a.bend, a.shade, a.light]).size, 3);
   });
   test('the key is play, size and density: another density is made again', () => {
     const { calls, toUrl } = counting();
-    dentImages('cache-density', box, 1, toUrl);
-    dentImages('cache-density', box, 2, toUrl);
+    dentImages('cache-density', box, 1, undefined, toUrl);
+    dentImages('cache-density', box, 2, undefined, toUrl);
     assert.equal(calls.length, 6);
   });
   test('after 32 other keys the first is made again', () => {
     const { calls, toUrl } = counting();
-    dentImages('cache-first', box, 1, toUrl);
-    for (let i = 0; i < 32; i++) dentImages(`cache-other-${i}`, box, 1, toUrl);
+    dentImages('cache-first', box, 1, undefined, toUrl);
+    for (let i = 0; i < 32; i++) dentImages(`cache-other-${i}`, box, 1, undefined, toUrl);
     const before = calls.length;
-    dentImages('cache-first', box, 1, toUrl);
+    dentImages('cache-first', box, 1, undefined, toUrl);
     assert.equal(calls.length, before + 3);
   });
   test("the bend is the box's size and the shade's and light's are the box's times the density", () => {
     const { calls, toUrl } = counting();
-    dentImages('cache-sizes', { x: 3, y: 4, size: 150.4, width: 150.4, height: 120.6 }, 2, toUrl);
+    dentImages('cache-sizes', { x: 3, y: 4, size: 150.4, width: 150.4, height: 120.6 }, 2, undefined, toUrl);
     assert.deepEqual(calls.map((c) => [c.w, c.h]), [[150, 121], [300, 242], [300, 242]]);
     assert.deepEqual(calls.map((c) => c.length), [150 * 121 * 4, 300 * 242 * 4, 300 * 242 * 4]);
   });
   test('a box that rounds to under 1 px on either side draws nothing: empty images, toUrl not called, nothing cached', () => {
     const { calls, toUrl } = counting();
     for (const [width, height] of [[0, 0], [0.4, 120], [120, 0.4]] as const) {
-      const made = dentImages('cache-empty', { x: 0, y: 0, size: Math.max(width, height), width, height }, 1, toUrl);
+      const made = dentImages('cache-empty', { x: 0, y: 0, size: Math.max(width, height), width, height }, 1, undefined, toUrl);
       assert.deepEqual(made, { bend: '', shade: '', light: '' }, `${width} by ${height}`);
     }
     assert.equal(calls.length, 0);
-    dentImages('cache-empty', box, 1, toUrl);
+    dentImages('cache-empty', box, 1, undefined, toUrl);
     assert.equal(calls.length, 3, 'a real box under the same play is still made');
   });
   test('is empty for each image where there is no document (the default toUrl)', () => {
@@ -279,7 +280,7 @@ describe('dentPrimitives', () => {
   test('a round dent is 160 px centered on its point, and never wider than 60% of the box', () => {
     const a = dentPrimitives([{ x: 300, y: 100 }], { width: 600, height: 300 })[0]!;
     assert.deepEqual(a, { x: 220, y: 20, size: 160, width: 160, height: 160 });
-    const b = dentPrimitives([{ x: 100, y: 50 }], { width: 200, height: 100 })[0]!;
+    const b = dentPrimitives([{ x: 100, y: 50 }], { width: 200, height: 300 })[0]!;
     assert.ok(Math.abs(b.size - 120) < 1e-6);
     assert.ok(Math.abs(b.x - 40) < 1e-6);
   });
@@ -379,11 +380,14 @@ describe('hitZone: a short text box grows so that dents can land off the line', 
     }
     assert.ok(lowX < z.x0 + 5 && highY > z.y1 - 5, 'the zone is reached, not just bounded');
   });
-  test('a text box as tall as a dent or taller is handed back unchanged', () => {
-    const tall = { left: 10, top: 8, width: 700, height: 160 };
-    assert.deepEqual(hitZone(tall, area, dent), tall);
-    const taller = { left: 10, top: 8, width: 700, height: 300 };
-    assert.deepEqual(hitZone(taller, { width: 900, height: 400 }, dent), taller);
+  test('a text box as tall as a dent or taller, whose zone of centers lies inside the area, is handed back unchanged', () => {
+    const same = (a: { left: number; top: number; width: number; height: number }, b: typeof a) => {
+      for (const k of ['left', 'top', 'width', 'height'] as const) assert.ok(Math.abs(a[k] - b[k]) < 1e-9, `${k}: ${a[k]} vs ${b[k]}`);
+    };
+    const tall = { left: 10, top: 90, width: 700, height: 160 };
+    same(hitZone(tall, { width: 900, height: 400 }, dent), tall);
+    const taller = { left: 10, top: 90, width: 700, height: 300 };
+    same(hitZone(taller, { width: 900, height: 600 }, dent), taller);
   });
   test('a one-line box grows: a dent may land a full diameter beside or below the line, its circle inside the area', () => {
     const line = { left: 300, top: 100, width: 80, height: 18 };
@@ -418,5 +422,162 @@ describe('hitZone: a short text box grows so that dents can land off the line', 
   test('a short wide line still spreads sideways within the area', () => {
     const z = zone(hitZone({ left: 10, top: 9, width: 800, height: 18 }, { width: 900, height: 300 }, dent));
     assert.ok(z.x0 >= 80 - 1e-9 && z.x1 <= 820 + 1e-9 && z.x1 > z.x0);
+  });
+});
+
+/* ---------- the images carry their own alpha, the cap, and the room (docs/plans/2026-11-16-steel-chair-origin-plan.md, Task 1) ---------- */
+
+const shadeGray = (px: Uint8ClampedArray) => Uint8Array.from({ length: px.length / 4 }, (_, i) => 255 - px[i * 4 + 3]!);
+const lightGray = (px: Uint8ClampedArray) => Uint8Array.from({ length: px.length / 4 }, (_, i) => px[i * 4 + 3]!);
+/** A dent of `play` at `w` by `h` px (density 1) with its box at `x`, `y`, as `capped` takes it. */
+const dentAt = (play: string, x: number, y: number, w = 80, h = 80) => {
+  const map = dentHeight(dentShape(play), w, h);
+  return { box: { x, y, width: w, height: h }, width: w, height: h, shade: shadeGray(dentShade(map, w, h)), light: lightGray(dentLight(map, w, h)) };
+};
+
+describe('the shade and the light are alpha images', () => {
+  const [w, h] = [96, 88];
+  test('the shade is black with alpha 255 - g: flat is alpha 0 and the darkest is exactly 127 or 128', () => {
+    for (const id of IDS.slice(0, 6)) {
+      const s = dentShade(mapOf(id, w, h), w, h);
+      let top = 0;
+      for (let i = 0; i < w * h; i++) {
+        assert.deepEqual([s[i * 4], s[i * 4 + 1], s[i * 4 + 2]], [0, 0, 0]);
+        top = Math.max(top, s[i * 4 + 3]!);
+      }
+      assert.ok(top === 127 || top === 128, `${id}: the darkest alpha is ${top}`);
+      assert.equal(s[3], 0, 'a corner is flat');
+    }
+  });
+  test('the light is white with the old gray as its alpha: 0 where flat, at most 140, the glint over 71 at most 4%', () => {
+    for (const id of IDS.slice(0, 6)) {
+      const l = dentLight(mapOf(id, w, h), w, h);
+      let top = 0, bright = 0, inside = 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        assert.deepEqual([l[i], l[i + 1], l[i + 2]], [255, 255, 255]);
+        top = Math.max(top, l[i + 3]!);
+        if (uv(x, y, w, h).rho < 1) { inside++; if (l[i + 3]! > 71) bright++; }
+      }
+      assert.ok(top <= 140 && top >= 71, `${id}: ${top}`);
+      assert.ok(bright <= 0.04 * inside);
+      assert.equal(l[3], 0, 'a corner is flat');
+    }
+  });
+  test('laid over a color, each is what the multiply and the screen gave, within half a level', () => {
+    for (const id of IDS.slice(0, 4)) {
+      const s = dentShade(mapOf(id, w, h), w, h), l = dentLight(mapOf(id, w, h), w, h);
+      for (let i = 0; i < w * h; i += 7) {
+        const g = 255 - s[i * 4 + 3]!, lv = l[i * 4 + 3]!;
+        for (const c of [247, 30, 128]) {
+          const shaded = c * (1 - s[i * 4 + 3]! / 255), multiplied = (c * g) / 255;
+          assert.ok(Math.abs(shaded - multiplied) <= 0.5, `${id} shade over ${c}`);
+          const lit = c + ((255 - c) * l[i * 4 + 3]!) / 255, screened = 255 - ((255 - c) * (255 - lv)) / 255;
+          assert.ok(Math.abs(lit - screened) <= 0.5, `${id} light over ${c}`);
+        }
+      }
+    }
+  });
+});
+
+describe('capped: a dent over earlier ones takes the darker and the lighter, not the product', () => {
+  /** The shades laid over white in arithmetic: the color left, out of 255. */
+  const over = (grays: number[]) => grays.reduce((acc, g) => (acc * g) / 255, 255);
+  test('two dents overlapping by half: the composite is min(g1, g2) within 2 levels, and outside the overlap the capped image is the uncapped one', () => {
+    for (const [pa, pb] of [['cap-a', 'cap-b'], ['cap-c', 'cap-d'], ['cap-e', 'cap-f']] as const) {
+      const a = dentAt(pa, 0, 0), b = dentAt(pb, 40, 0);
+      const out = capped(b, [a]);
+      assert.equal(out.shade.length, 80 * 80);
+      let overlapSeen = 0;
+      for (let y = 0; y < 80; y++) for (let x = 0; x < 80; x++) {
+        const i = y * 80 + x;
+        if (x < 40) {
+          const ga = a.shade[y * 80 + x + 40]!, la = a.light[y * 80 + x + 40]!;
+          assert.ok(Math.abs(over([ga, out.shade[i]!]) - Math.min(ga, b.shade[i]!)) <= 2, `${pa} shade at ${x},${y}`);
+          assert.ok(Math.abs(255 - ((255 - la) * (255 - out.light[i]!)) / 255 - Math.max(la, b.light[i]!)) <= 2, `${pa} light at ${x},${y}`);
+          assert.ok(over([ga, out.shade[i]!]) >= 128 - 2, 'never below half the color');
+          if (ga < 250 && b.shade[i]! < 250) overlapSeen++;
+        } else {
+          assert.equal(out.shade[i], b.shade[i], `${pa} shade outside at ${x},${y}`);
+          assert.equal(out.light[i], b.light[i], `${pa} light outside at ${x},${y}`);
+        }
+      }
+      assert.ok(overlapSeen > 20, 'the dents shade each other somewhere');
+    }
+  });
+  test('three dents overlapping at one point: the third is capped against the first two', () => {
+    const a = dentAt('cap-3a', 0, 0), b = dentAt('cap-3b', 30, 0), c = dentAt('cap-3c', 15, 0);
+    const bc = capped(b, [a]);
+    const cc = capped(c, [a, b]);
+    let seen = 0;
+    for (let y = 0; y < 80; y++) for (let x = 15; x < 65; x++) {
+      // c's pixel x is a's pixel x + 15 and b's pixel x - 15 (all boxes sit on whole pixels)
+      const ia = y * 80 + x + 15, ib = y * 80 + x - 15, ic = y * 80 + x;
+      const ga = a.shade[ia]!, gb = b.shade[ib]!, gc = c.shade[ic]!;
+      const comp = over([ga, bc.shade[ib]!, cc.shade[ic]!]);
+      assert.ok(Math.abs(comp - Math.min(ga, gb, gc)) <= 2, `shade at ${x},${y}: ${comp} vs ${Math.min(ga, gb, gc)}`);
+      assert.ok(comp >= 128 - 2);
+      const la = a.light[ia]!, lb = b.light[ib]!, lc = c.light[ic]!;
+      const screen = 255 - ((255 - la) * (255 - bc.light[ib]!) * (255 - cc.light[ic]!)) / 255 ** 2;
+      assert.ok(Math.abs(screen - Math.max(la, lb, lc)) <= 2, `light at ${x},${y}`);
+      if (ga < 250 && gb < 250 && gc < 250) seen++;
+    }
+    assert.ok(seen > 10, 'the three shade one another somewhere');
+  });
+  test('a dent that overlaps nothing is not corrected', () => {
+    const a = dentAt('cap-far-a', 0, 0), b = dentAt('cap-far-b', 200, 0);
+    const out = capped(b, [a]);
+    assert.deepEqual(Array.from(out.shade), Array.from(b.shade));
+    assert.deepEqual(Array.from(out.light), Array.from(b.light));
+    const alone = capped(b, []);
+    assert.deepEqual(Array.from(alone.shade), Array.from(b.shade));
+  });
+});
+
+describe('dentPrimitives: the height a dent may land in', () => {
+  const larger = (p: { width: number; height: number }) => Math.max(p.width, p.height);
+  test('the larger axis is at most 160, at most 60% of the width and at most the height', () => {
+    assert.equal(FULL_DENT, 160);
+    assert.ok(Math.abs(larger(dentPrimitives([{ x: 300, y: 200 }], { width: 600, height: 400 })[0]!) - 160) < 1e-9);
+    assert.ok(Math.abs(larger(dentPrimitives([{ x: 300, y: 30 }], { width: 600, height: 62 })[0]!) - 62) < 1e-9, '62 high');
+    assert.ok(Math.abs(larger(dentPrimitives([{ x: 50, y: 200 }], { width: 100, height: 400 })[0]!) - 60) < 1e-9, '100 wide');
+  });
+  test('a dent with a shape keeps its proportions under the height limit', () => {
+    for (let i = 0; i < 30; i++) {
+      const shape = dentShape(`limit-${i}`);
+      const p = dentPrimitives([{ x: 300, y: 30, shape }], { width: 600, height: 62 })[0]!;
+      assert.ok(larger(p) <= 62 + 1e-9, `${p.width} by ${p.height}`);
+      assert.ok(Math.abs(p.width / p.height - shape.rx / shape.ry) < 1e-9);
+    }
+  });
+});
+
+describe('hitZone: a tall text keeps the dent in the area too', () => {
+  const dent = { width: 160, height: 160 };
+  const corners = (b: { left: number; top: number; width: number; height: number }) =>
+    THROW_X.flatMap((fx) => THROW_Y.map((fy) => ({ x: b.left + fx * b.width, y: b.top + fy * b.height })));
+  const inside = (area: { width: number; height: number }, text: { left: number; top: number; width: number; height: number }) => {
+    for (const t of corners(hitZone(text, area, dent))) {
+      assert.ok(t.x - 80 >= -1e-9 && t.x + 80 <= area.width + 1e-9 && t.y - 80 >= -1e-9 && t.y + 80 <= area.height + 1e-9, `${t.x}, ${t.y} in ${area.width} by ${area.height}`);
+    }
+  };
+  test('a text against the left border, the right border and the bottom', () => {
+    inside({ width: 900, height: 400 }, { left: 0, top: 50, width: 300, height: 300 });
+    inside({ width: 900, height: 400 }, { left: 600, top: 50, width: 300, height: 300 });
+    inside({ width: 900, height: 300 }, { left: 100, top: 140, width: 500, height: 160 });
+  });
+  test('a text at the corner, and a text as wide as the area', () => {
+    inside({ width: 900, height: 300 }, { left: 0, top: 0, width: 200, height: 200 });
+    inside({ width: 900, height: 400 }, { left: 0, top: 0, width: 900, height: 400 });
+  });
+});
+
+describe("zoneHeight: the area less the chairs' room, where that leaves a dent a place", () => {
+  test('237 gives the full dent, 157 the least, below that the room is given up, 0 stays 0', () => {
+    assert.equal(LEAST_ZONE, 80);
+    assert.equal(zoneHeight(237), 160);
+    assert.equal(zoneHeight(157), 80);
+    assert.equal(zoneHeight(156), 156);
+    assert.equal(zoneHeight(0), 0);
   });
 });
