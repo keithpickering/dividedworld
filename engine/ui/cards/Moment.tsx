@@ -204,7 +204,7 @@ function backToNow(button: HTMLElement, play: CardPlay, back: () => void) {
  * While it loads, or where it failed, the frame holds the post's words as they are now (`now`), so the post never empties, with the
  * tag saying so and Try again under it.
  */
-export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
+export function MomentView({ play, place, nameOf, bodyOf, back, now, source, onView }: {
   readonly play: CardPlay; readonly place: EffectPlace;
   /** A spin's moment in place of the play's own: the pressed post as it was when the spin was written, labeled "As it was spun". */
   readonly source?: { readonly spin: Id };
@@ -212,6 +212,8 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   readonly bodyOf: (version: Act) => ReactNode;
   readonly back?: () => void;
   readonly now: ReactNode;
+  /** Where the drawn effects' views go, by card (null when an effect is gone): the strip of the post the moment shows on, where its Lens reads them. */
+  readonly onView: (card: string, view: CardView | null) => void;
 }) {
   const { api, instance, ui } = useKayfa();
   const key = source ? source.spin : play.id;
@@ -221,16 +223,6 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   /* Reset: each run of the moment's effects is keyed by the run, so a press remounts every one from the moment's states; the read moment is kept. */
   const lens = useLensStore();
   const run = useSyncExternalStore(lens.subscribe, () => lens.run(key), () => 0);
-  /* The view each drawn effect shows, by card; the frame's words are read from it below (Task 3 of the playable-moments plan replaces them). */
-  const [seen, setSeen] = useState<Readonly<Record<string, CardView>>>({});
-  const onView = useCallback((card: string, view: CardView | null) => {
-    setSeen((s) => {
-      if ((s[card] ?? null) === view) return s;
-      const next = { ...s };
-      if (view === null) delete next[card]; else next[card] = view;
-      return next;
-    });
-  }, []);
   if (read.status !== 'read' || read.moment === null) {
     return (
       <MomentFrame frame={frame} play={play} at={source ? undefined : play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
@@ -241,16 +233,8 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   }
   const moment = read.moment;
   const parts = momentParts(moment, instance.cards, ui.cards, nameOf);
-  const name = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
-  /* A card's words are its view's notes, a play's each, top first, where it gives any; a view with no notes gives its heading. */
-  const said = (k: string, view: CardView): string => {
-    const plays = [...parts.drawn.filter((p) => p.card === k), ...(parts.above && parts.above.card === k ? [parts.above] : [])];
-    const notes = [...plays].reverse().map((p) => view.notes[p.id]).filter((n): n is string => n !== undefined && n !== '');
-    return notes.length > 0 ? notes.join('; ') : view.state;
-  };
-  const words = Object.keys(seen).sort().map((k) => `${name(k)}: ${said(k, seen[k]!)}`);
   return (
-    <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} reset={() => lens.reset(key)} run={run} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
+    <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} reset={() => lens.reset(key)} run={run} own={parts.own} named={parts.named} words={[]} unrecorded={!moment.recorded}>
       <MomentEffects key={run} moment={moment} place={place} nameOf={nameOf} onView={onView}>{bodyOf(moment.version)}</MomentEffects>
     </MomentFrame>
   );

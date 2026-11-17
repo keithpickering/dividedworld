@@ -6,7 +6,7 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { LensProvider } from './Lens.tsx';
 import { fakeSound } from '../audio/test-sound.ts';
 import { resetSound, setSoundPreference } from '../audio/sound.ts';
@@ -21,6 +21,7 @@ import { MomentView } from './Moment.tsx';
 import { when } from '../thread/lines.tsx';
 import type { CardPlay } from './types.ts';
 import { MomentEffects, momentParts, playsInMoment } from './Effects.tsx';
+import { createPlays } from './plays.ts';
 import type { CardUi, EffectProps } from './types.ts';
 
 const base = { alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
@@ -63,7 +64,7 @@ const moment = (layers: PlayMoment['layers'], above: PlayMoment['above'] = [], t
 function draw(m: PlayMoment, onView = vi.fn()) {
   const api = buildWorld({}, instance);
   const kayfa = { api, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
-  const spies = { api, meets: vi.spyOn(api, 'meetCard'), save: vi.spyOn(api, 'saveEffect'), release: vi.spyOn(api, 'releaseEffect'), faces: vi.spyOn(api, 'myFaceDown') };
+  const spies = { api, meets: vi.spyOn(api, 'meetCard'), save: vi.spyOn(api, 'saveEffect'), release: vi.spyOn(api, 'releaseEffect'), give: vi.spyOn(api, 'donate'), faces: vi.spyOn(api, 'myFaceDown') };
   const view = render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><MomentEffects moment={m} place="thread" nameOf={(c) => (c === 'c-spritey' ? 'Spritey' : 'someone')} onView={onView}><span data-kb-words>then</span></MomentEffects></CalloutProvider></KayfaProvider>);
   return { ...view, spies, onView };
 }
@@ -125,6 +126,7 @@ describe('a moment draws still', () => {
       expect(calls[0]).toMatchObject({ error: 'nothing in a moment is saved' });
       expect(spies.save).not.toHaveBeenCalled();
       expect(spies.release).not.toHaveBeenCalled();
+      expect(spies.give).not.toHaveBeenCalled();
       expect(localStorage.length).toBe(0);
     } finally {
       cards[0] = ui('smear');
@@ -183,6 +185,36 @@ describe('a moment draws still', () => {
       await vi.waitFor(() => expect(onView).toHaveBeenCalledWith('smear', whole));
       unmount();
       expect(onView).toHaveBeenLastCalledWith('smear', null);
+    } finally {
+      cards[0] = ui('smear');
+    }
+  });
+
+  test('an effect that builds a fresh view whenever its show or plays change settles: a bounded number of views, and the store holds it', async () => {
+    const built: unknown[] = [];
+    cards[0] = ui('smear', {
+      Effect: ({ children, show, plays }: EffectProps) => {
+        useEffect(() => { const view = { progress: null, state: `fresh (${plays.length})`, yours: false, controls: [{ kind: 'press' as const, label: 'Go', run: () => {} }], notes: {} }; built.push(view); show(view); }, [show, plays]);
+        return <div data-kb-wrap="smear">{children}</div>;
+      },
+    });
+    try {
+      const plays = createPlays();
+      const set = vi.spyOn(plays, 'setView');
+      let heard = 0;
+      /* A caller that re-renders for every view it hears, as a frame holding the views would; the cap keeps a loop from hanging the run. */
+      function Caller({ m }: { readonly m: PlayMoment }) {
+        const [, wake] = useState(0);
+        return <MomentEffects moment={m} place="thread" nameOf={() => ''} onView={(c, v) => { heard += 1; if (heard < 40) wake((n) => n + 1); plays.setView('p1', c, v); }}><span>then</span></MomentEffects>;
+      }
+      const api = buildWorld({}, instance);
+      const kayfa = { api, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
+      render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><Caller m={moment([{ act: card('k1', 'smear', 1), state: null }])} /></CalloutProvider></KayfaProvider>);
+      await vi.waitFor(() => expect(plays.view('p1', 'smear')?.state).toBe('fresh (1)'));
+      await new Promise((r) => setTimeout(r, 30));
+      expect(built.length).toBeLessThanOrEqual(2);
+      expect(heard).toBeLessThanOrEqual(2);
+      expect(set.mock.calls.length).toBeLessThanOrEqual(2);
     } finally {
       cards[0] = ui('smear');
     }
@@ -260,7 +292,7 @@ describe('Reset over a post', () => {
     return render(
       <KayfaProvider value={kayfa}><LensProvider><CalloutProvider met={[]}>
         <article><button type="button" className="kb-mark" data-kb-card="smear">mark</button>
-          <MomentView play={play} place="thread" nameOf={() => ''} bodyOf={() => <span>then</span>} back={back} now={<span>now</span>} /></article>
+          <MomentView play={play} place="thread" onView={() => {}} nameOf={() => ''} bodyOf={() => <span>then</span>} back={back} now={<span>now</span>} /></article>
       </CalloutProvider></LensProvider></KayfaProvider>,
     );
   }
@@ -452,7 +484,7 @@ describe('MomentView with a spin as its source', () => {
   const spunMoment = moment([{ act: card('k1', 'sparkly', 5, { reach: 'character', character: 'c-author', ends: at(60) }), state: null }], [], at(30));
   const view = (spin: string, api: ReturnType<typeof buildWorld>, back?: () => void) => {
     const kayfa = { api, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
-    return render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><MomentView play={play} place={back ? 'thread' : 'origin'} source={{ spin }} nameOf={() => ''} bodyOf={() => <span>then</span>} back={back} now={<span>now</span>} /></CalloutProvider></KayfaProvider>);
+    return render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><MomentView play={play} place={back ? 'thread' : 'origin'} onView={() => {}} source={{ spin }} nameOf={() => ''} bodyOf={() => <span>then</span>} back={back} now={<span>now</span>} /></CalloutProvider></KayfaProvider>);
   };
 
   test('reads the spin\'s moment, not the play\'s; names no time until it lands (never the play\'s), then the moment\'s', async () => {

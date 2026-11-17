@@ -263,12 +263,16 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
     }
     return wrapped;
   };
-  /* A shown moment replaces the words and every effect inside the takeovers (`MomentView` is given the words as they are drawn without it). */
+  /*
+   * A shown moment replaces the words and every effect inside the takeovers (`MomentView` is given the words as they are drawn without it). Its effects say their views to the
+   * post's own store, as the live effects they replace did: those unmount in this commit and clear theirs before the moment's effects mount and say theirs (React runs a commit's
+   * unmount cleanups ahead of its mounts), and Back to now is the same turned about.
+   */
   if (momentAct && bodyOf) {
     const shown = (
       <MomentView
         play={momentAct} place={place} nameOf={nameOf} bodyOf={bodyOf} now={plain(children)}
-        back={() => lens.showMoment(null)}
+        back={() => lens.showMoment(null)} onView={(card, view) => plays.setView(post.id, card, view)}
       />
     );
     return <>{slot(wrapIn(shown, takeovers, 0))}</>;
@@ -567,6 +571,8 @@ const momentSurface = (most: number): NonNullable<EffectProps['surface']> => ({
 });
 const nothing = () => {};
 const NONE_RELEASED: ReadonlySet<Id> = new Set();
+/** Nobody in particular reads a moment: the same for every reader, and one object so an effect may list it in its dependencies. */
+const MOMENT_READER: EffectProps['reader'] = Object.freeze({ author: false, caster: false });
 
 /**
  * A play's moment, drawn: `children` (the moment's version of the post, as the caller draws a post's words) wrapped in the effects of
@@ -606,20 +612,27 @@ export function MomentEffects({ moment, place, nameOf, onView, children }: {
   const tailRows = useTails(moment.version, writingPlays.map((p) => p.id));
   const drawnAt = useMomentVersion(moment.version, writingPlays.length > 0);
   const written = useMemo(() => resolveWritten(tailRows, [], drawnAt, 'version'), [tailRows, drawnAt]);
-  /* The moment's own play on a character is ordered as PostEffects orders a post's author's (`nestOrder`): given before the post's own cards, so inside them, and inside every takeover. */
-  const wraps = [
-    ...(parts.above ? [{ key: parts.above.card, reach: 'character' as const, mine: [parts.above] }] : []),
-    ...[...new Set(here.plays.map((p) => p.card))].map((key) => ({ key, reach: 'post' as const, mine: here.plays.filter((p) => p.card === key) })),
-  ];
-  const order = nestOrder(wraps, ui.cards, writing);
+  /*
+   * The moment's own play on a character is ordered as PostEffects orders a post's author's (`nestOrder`): given before the post's own cards, so inside them, and inside every takeover.
+   * Built once for the moment's plays, so each drawn card is handed the same `plays` and `written` on every render of this one: an effect that says a fresh view in an effect listing
+   * them in its dependencies says it once, not once for each render its own view causes.
+   */
+  const order = useMemo(() => {
+    const wraps = [
+      ...(parts.above ? [{ key: parts.above.card, reach: 'character' as const, mine: [parts.above] }] : []),
+      ...[...new Set(here.plays.map((p) => p.card))].map((key) => ({ key, reach: 'post' as const, mine: here.plays.filter((p) => p.card === key) })),
+    ];
+    const nested = nestOrder(wraps, ui.cards, writing);
+    return [...nested.writing, ...nested.rest, ...nested.takeovers].map((w) => ({ ...w, written: w.reach === 'post' ? writtenOf(written, w.mine, writing) : NOTHING_WRITTEN }));
+  }, [here, parts.above, ui.cards, writing, written]);
   let wrapped = children;
-  for (const [rank, { key, reach, mine }] of [...order.writing, ...order.rest, ...order.takeovers].entries()) {
+  for (const [rank, { key, reach, mine, written: tails }] of order.entries()) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
       <MomentEffect key={`${reach}:${key}`} Effect={Effect} card={key} at={at} onView={onView}
         post={moment.version} plays={mine} states={reach === 'post' ? here.states : NO_STATES} released={NONE_RELEASED}
-        written={reach === 'post' ? writtenOf(written, mine, writing) : NOTHING_WRITTEN} {...(drawnAt !== null && reach === 'post' ? { version: drawnAt } : {})}
-        reader={{ author: false, caster: false }} place={place} reach={reach} nameOf={nameOf} ink={claims.at(`${reach}:${key}`, rank)}>
+        written={tails} {...(drawnAt !== null && reach === 'post' ? { version: drawnAt } : {})}
+        reader={MOMENT_READER} place={place} reach={reach} nameOf={nameOf} ink={claims.at(`${reach}:${key}`, rank)}>
         {wrapped}
       </MomentEffect>
     );
@@ -684,8 +697,11 @@ function MomentEffect({ Effect, card, at, onView, ...props }: Omit<EffectProps, 
   const rules = instance.cards.find((c) => c.key === card);
   const surface = useMemo(() => (rules?.surface ? momentSurface(surfaceMost(card, rules.surface.limitKey, instance.settings)) : undefined), [rules, card, instance.settings]);
   const moment = useMemo(() => ({ at }), [at]);
-  const show = useCallback((view: CardView | null) => onView(card, view), [onView, card]);
-  useEffect(() => () => onView(card, null), [onView, card]);
+  /* The caller's `onView` may be a new function every render; `show` is stable for the card, so an effect may list it in its dependencies. */
+  const latest = useRef(onView);
+  latest.current = onView;
+  const show = useCallback((view: CardView | null) => latest.current(card, view), [card]);
+  useEffect(() => () => latest.current(card, null), [card]);
   useWarmSounds(ui.cards.find((c) => c.key === card)?.sounds);
   return <Suspense fallback={props.children}><Effect {...props} still={false} moment={moment} show={show} met={nothing} holdScreen={nothing} marks={null} save={momentSave} release={momentRelease} give={momentGive} moreGifts={momentMore} wallet={null} {...(surface ? { surface } : {})} /></Suspense>;
 }

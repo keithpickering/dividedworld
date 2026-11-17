@@ -884,7 +884,7 @@ describe('As it landed', () => {
   const lifted = cards.map((c) => (c.key === 'k1' ? { ...c, Effect: Washy } : c.key === 'k2' ? { ...c, Effect: Lift, takeover: true } : c));
 
   /* Card 1 lands on post 2 over nothing, is saved at 40%, then the post is edited, Card 2 lifts it, and the wash is finished. */
-  async function landed(before?: (w: World) => void) {
+  async function landed(before?: (w: World) => void, ui: readonly CardUi[] = lifted) {
     width(false);
     const w = world();
     before?.(w);
@@ -898,7 +898,7 @@ describe('As it landed', () => {
     await w.fake.saveEffect(k1, w.spritey, { washed: 1 });
     w.fake.signInAs(w.me);
     expect(saved.ok).toBe(true);
-    open(w, lifted);
+    open(w, ui);
     await userEvent.click(await markOf(2, 'Card 1'));
     await userEvent.click(whoButton());
     return { w, k1, k1b };
@@ -922,13 +922,39 @@ describe('As it landed', () => {
     expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'moment');
     expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-still', 'false');
     expect(post.querySelector('[data-kb-washy="live"]')).toBeNull();
-    /* The tag, and the frame's words: the still card's own, and what is named. */
+    /* The tag, and the card's own words, which are the Lens's now (the moment's view reaches the strip). */
     expect(within(box).getByText(/^As it landed/u)).toBeInTheDocument();
-    expect(await within(box).findByText(/washed 0\.4, 0/u)).toBeInTheDocument();
+    expect(await within(lens()).findByText('washed 0.4, 0')).toBeInTheDocument();
     /* Pressed again, it is gone. */
     await userEvent.click(button);
     expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
     expect(within(await article(2)).getByText('post 2, edited')).toBeInTheDocument();
+  });
+
+  /* An effect whose view says whether it is the live effect or a moment's, with a control of each: what the Lens shows tells which effect said it. */
+  const pressed = { live: vi.fn(), moment: vi.fn() };
+  function Voiced({ moment, show, children }: EffectProps) {
+    const which = moment ? 'moment' : 'live';
+    useEffect(() => { show({ progress: null, state: `${which} view`, yours: false, controls: [{ kind: 'press', label: `${which} press`, run: pressed[which] }], notes: {} }); }, [show, which]);
+    return <div data-kb-voiced={which}>{children}</div>;
+  }
+  const voiced = lifted.map((c) => (c.key === 'k1' ? { ...c, Effect: Voiced } : c));
+
+  test('over a post the open Lens shows the moment effect\'s view and its controls work; after Back to now the live effect\'s view is back', async () => {
+    const { k1b } = await landed(undefined, voiced);
+    expect(await within(lens()).findByText('live view')).toBeInTheDocument();
+    await userEvent.click(landedButton(k1b));
+    await frame();
+    expect(await within(lens()).findByText('moment view')).toBeInTheDocument();
+    expect(within(lens()).queryByText('live view')).toBeNull();
+    await userEvent.click(within(lens()).getByRole('button', { name: 'moment press' }));
+    expect(pressed.moment).toHaveBeenCalledTimes(1);
+    expect(pressed.live).not.toHaveBeenCalled();
+    await userEvent.click(within(await frame()).getByRole('button', { name: 'Back to now' }));
+    expect(await within(lens()).findByText('live view')).toBeInTheDocument();
+    expect(within(lens()).queryByText('moment view')).toBeNull();
+    await userEvent.click(within(lens()).getByRole('button', { name: 'live press' }));
+    expect(pressed.live).toHaveBeenCalledTimes(1);
   });
 
   test('a moment taken before Card 2 names nothing of it, and one taken over Card 1 lists what else was there', async () => {

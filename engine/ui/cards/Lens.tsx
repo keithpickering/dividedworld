@@ -347,6 +347,8 @@ interface RowProps {
   readonly now: number;
   /** Whether each play on a post offers As it landed: not where the moment is already the content (a play-spun ORIGIN box). */
   readonly moments: boolean;
+  /** The plays shown as they stood in a moment and not as the post has them: their rows draw the notes, head, message and Go to post alone. */
+  readonly then?: ReadonlySet<Id> | undefined;
 }
 
 /**
@@ -504,7 +506,8 @@ function TakeBack({ play, store }: { readonly play: CardPlay; readonly store: Pl
 export const endable = (play: CardPlay, now: number, keeps: boolean): boolean =>
   !play.faceDown && play.caught === undefined && !play.reversed && !play.untaken && (keeps || !(play.ends !== undefined && Date.parse(play.ends) <= now));
 
-function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
+function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now, then }: RowProps) {
+  const past = then?.has(play.id) === true;
   const { characters } = usePlayer();
   const { instance } = useKayfa();
   const name = playName(caster, card);
@@ -550,21 +553,21 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
         <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
       </div>
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
-      {more && <p className="kb-lens-more">More reactions than the post</p>}
-      {yours && <p className="kb-lens-yours">Your play</p>}
+      {!past && more && <p className="kb-lens-more">More reactions than the post</p>}
+      {!past && yours && <p className="kb-lens-yours">Your play</p>}
       <div ref={foot} className="kb-lens-row-foot">
-        <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} pickerAt="button" />
+        {!past && <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} pickerAt="button" />}
         <div className="kb-lens-actions">
-          {staged ? null : hosted
+          {past || staged ? null : hosted
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
             : <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(play, name)}><span className="kb-kit-tile-label">Spin thread</span></button>}
-          {moments && !play.reach && <AsItLanded play={play.id} />}
-          {backTakeable && <TakeBack play={play} store={store} />}
-          {admin && endable(play, now, instance.cards.find((c) => c.key === play.card)?.keeps === true) && <EndCard play={play.id} card={card} caster={caster} store={store} />}
+          {!past && moments && !play.reach && <AsItLanded play={play.id} />}
+          {!past && backTakeable && <TakeBack play={play} store={store} />}
+          {!past && admin && endable(play, now, instance.cards.find((c) => c.key === play.card)?.keeps === true) && <EndCard play={play.id} card={card} caster={caster} store={store} />}
           {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
         </div>
       </div>
-      {!staged && <Spun play={play.id} />}
+      {!staged && !past && <Spun play={play.id} />}
     </li>
   );
 }
@@ -672,6 +675,8 @@ export interface LensProps {
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
   /** Whether a play's row offers As it landed (true but where the moment is already shown: a play-spun ORIGIN box). */
   readonly moments?: boolean;
+  /** Plays shown as they stood in a moment and not as the post has them (`RowProps.then`). */
+  readonly then?: ReadonlySet<Id> | undefined;
   /** The post's visit: a tab ahead of the card kinds (Visit.tsx), "On a visit" or how it ended. */
   readonly visit?: {
     readonly visit: Visit; readonly thread: Id; readonly author: Id | null;
@@ -700,7 +705,7 @@ const PreparedTab = forwardRef<HTMLButtonElement, {
   );
 });
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, author = null, faceOf, strip, onSpin, where = 'post', postAt, moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, reportTo }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, author = null, faceOf, strip, onSpin, where = 'post', postAt, moments = true, then, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, reportTo }: LensProps) {
   const { api, instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useSheet();
@@ -909,7 +914,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         {!onVisit && !onForm && <Who
-          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={shownView} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
+          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={shownView} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} then={then} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}
         {reportTo && <p className="kb-report-foot"><ReportLink post={reportTo.post} version={reportTo.version} kicker={reportTo.kicker} className="kb-report-link" /></p>}
