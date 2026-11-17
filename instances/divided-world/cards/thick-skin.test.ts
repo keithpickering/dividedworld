@@ -67,7 +67,7 @@ test("Thick Skin gives half of a Technician's heat loss back, as a card.cushion"
 test("Thick Skin leaves a Face's gain alone: no cushion", () => {
   const r = settle(board('face', [use('g1', 'thick-skin')], [hype('tp1')]), instance);
   assert.equal(r.entries.filter((e) => e.reason === 'card.cushion').length, 0);
-  assert.equal(r.entries.filter((e) => e.character === 'tom-1' && e.amount > 0).reduce((t, e) => t + e.amount, 0), 10);
+  assert.deepEqual(r.entries.filter((e) => e.character === 'tom-1').map((e) => [e.reason, e.amount]), [['face.cheered', 10]]);
 });
 
 test('Thick Skin halves a loss on a card the character played, not only on a post', () => {
