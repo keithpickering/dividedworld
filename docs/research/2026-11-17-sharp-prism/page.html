@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sharper Prism Mockup</title>
+<style>
+:root{--bg:#f4f4f2;--fg:#1b1d20;--muted:#5b6168;--rule:#d5d7da;--card:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15181c;--fg:#e8eaed;--muted:#9aa2ab;--rule:#2c3137;--card:#1d2126}}
+:root[data-theme="dark"]{--bg:#15181c;--fg:#e8eaed;--muted:#9aa2ab;--rule:#2c3137;--card:#1d2126}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:22px;margin:0 0 6px}
+p.lede{margin:0 0 18px;color:var(--muted);max-width:76ch}
+.controls{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:0 0 22px;font-size:14px}
+.controls input{accent-color:#7a5cff}
+h2{font-size:15px;margin:26px 0 10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media (max-width:860px){.row{grid-template-columns:1fr}}
+figure{margin:0}
+figcaption{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin:0 0 6px}
+figcaption b{font-weight:600}
+.ms{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.post{position:relative;border:2px solid var(--pb);background:var(--pbg);color:var(--pfg);padding:14px 16px;min-height:230px;isolation:isolate;overflow:hidden}
+.post canvas{position:absolute;inset:0;z-index:-1;pointer-events:none}
+.post .words{text-shadow:0 0 2px var(--pbg),0 0 6px var(--pbg);font:14px/1.55 Verdana,Geneva,sans-serif}
+.post .who{font-weight:700;margin-bottom:6px}
+.post a{color:var(--plink)}
+.light{--pbg:#e5e5e5;--pfg:#000;--pb:#7b8792;--plink:#00507a}
+.dark{--pbg:#0c121b;--pfg:#d8dee6;--pb:#3a4756;--plink:#9cc9ff}
+.notes{margin-top:30px;max-width:80ch;color:var(--muted);font-size:14px}
+.notes li{margin:4px 0}
+</style></head><body><main>
+<h1>Feelin' Fab level 3: sharper prism</h1>
+<p class="lede">The same post and seed, drawn three ways by the real foil code. Move your pointer to move the light (it drifts by itself when you stop). Left: today on a short post. Middle: today where the body is bigger than the words (6 px cells at half density). Right: the proposal. Each screen pixel's facet (and whether it lies on a seam) is worked out once per layout; a frame computes one color per facet and copies those colors into the pixels.</p>
+<div class="controls"><label for="seam">Seam width (proposal)</label><input id="seam" type="range" min="0" max="3" step="0.25" value="1"><span id="seamv">1 px</span></div>
+<h2>Light theme (Blue Steel)</h2><div class="row"><figure><figcaption><b>Today</b><span class="ms">–</span></figcaption><div class="post light"><canvas data-board="light" data-variant="today"></canvas><div class="words"><div class="who">Shy Guy Prime</div>Okay, I'm finally posting in the Feelin' Fab thread. Three of you stacked it on me, so I guess this is my life now. Every time I scroll past I see a disco ball. <a href="#">The old board</a> never had anything like this and honestly I don't know how to feel about it.<br><br>Anyway, here's my real question: who keeps playing Fab on the posts about the patch notes?</div></div></figure><figure><figcaption><b>Today, tall post</b><span class="ms">–</span></figcaption><div class="post light"><canvas data-board="light" data-variant="tall"></canvas><div class="words"><div class="who">Shy Guy Prime</div>Okay, I'm finally posting in the Feelin' Fab thread. Three of you stacked it on me, so I guess this is my life now. Every time I scroll past I see a disco ball. <a href="#">The old board</a> never had anything like this and honestly I don't know how to feel about it.<br><br>Anyway, here's my real question: who keeps playing Fab on the posts about the patch notes?</div></div></figure><figure><figcaption><b>Proposed</b><span class="ms">–</span></figcaption><div class="post light"><canvas data-board="light" data-variant="sharp"></canvas><div class="words"><div class="who">Shy Guy Prime</div>Okay, I'm finally posting in the Feelin' Fab thread. Three of you stacked it on me, so I guess this is my life now. Every time I scroll past I see a disco ball. <a href="#">The old board</a> never had anything like this and honestly I don't know how to feel about it.<br><br>Anyway, here's my real question: who keeps playing Fab on the posts about the patch notes?</div></div></figure></div><h2>Dark theme (Midnight)</h2><div class="row"><figure><figcaption><b>Today</b><span class="ms">–</span></figcaption><div class="post dark"><canvas data-board="dark" data-variant="today"></canvas><div class="words"><div class="who">Shy Guy Prime</div>Okay, I'm finally posting in the Feelin' Fab thread. Three of you stacked it on me, so I guess this is my life now. Every time I scroll past I see a disco ball. <a href="#">The old board</a> never had anything like this and honestly I don't know how to feel about it.<br><br>Anyway, here's my real question: who keeps playing Fab on the posts about the patch notes?</div></div></figure><figure><figcaption><b>Today, tall post</b><span class="ms">–</span></figcaption><div class="post dark"><canvas data-board="dark" data-variant="tall"></canvas><div class="words"><div class="who">Shy Guy Prime</div>Okay, I'm finally posting in the Feelin' Fab thread. Three of you stacked it on me, so I guess this is my life now. Every time I scroll past I see a disco ball. <a href="#">The old board</a> never had anything like this and honestly I don't know how to feel about it.<br><br>Anyway, here's my real question: who keeps playing Fab on the posts about the patch notes?</div></div></figure><figure><figcaption><b>Proposed</b><span class="ms">–</span></figcaption><div class="post dark"><canvas data-board="dark" data-variant="sharp"></canvas><div class="words"><div class="who">Shy Guy Prime</div>Okay, I'm finally posting in the Feelin' Fab thread. Three of you stacked it on me, so I guess this is my life now. Every time I scroll past I see a disco ball. <a href="#">The old board</a> never had anything like this and honestly I don't know how to feel about it.<br><br>Anyway, here's my real question: who keeps playing Fab on the posts about the patch notes?</div></div></figure></div>
+<ul class="notes">
+<li>Each facet's color uses the same arithmetic as today: hue, turn with the light, flash, and the readable-band clamp. The only difference is that a facet takes one color, sampled at its center, instead of one per 3 px cell.</li>
+<li>Facet outlines don't move with the light, so the pixel-to-facet map is built once per layout and density. A frame is one color per facet plus a single pass copying them into the pixels, with no shapes to rasterize.</li>
+<li>The draw times are this browser's main thread for a single post, for comparison only. The real foil runs in a worker.</li>
+</ul>
+</main><script>/*JS*/</script></body></html>
