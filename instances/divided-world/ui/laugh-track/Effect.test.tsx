@@ -709,6 +709,22 @@ describe('Laugh Track: a play\'s moment', () => {
     expect(lastView(m).state).toBe('0 of 5 places heard');
   });
 
+  test('a moment ended mid-cue (Reset) after a press leaves no place registered', () => {
+    const m = mount({ moment: { at: 1 } });
+    act(() => { fireEvent.click(buttons()[0]!); });
+    expect(live().length).toBeGreaterThan(0);
+    m.unmount();
+    expect(live()).toHaveLength(0);
+  });
+
+  test('a moment with the mixer locked (the play answers nothing): a click does not throw and the place still shows as fired', () => {
+    heard.play.mockImplementation(async () => null);
+    mount({ moment: { at: 1 } });
+    expect(() => { act(() => { fireEvent.click(buttons()[0]!); }); }).not.toThrow();
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    expect(buttons()[0]).toHaveClass('dw-lt-fired');
+  });
+
   test('a moment with no place says "No cues in this version"', () => {
     const m = mount({ moment: { at: 1 }, body: 'Nothing here.' });
     expect(lastView(m).state).toBe('No cues in this version');
@@ -800,6 +816,17 @@ describe('Laugh Track: on a real page', () => {
   });
   const see = () => act(() => { const io = FakeObserver.all[0]!; io.cb([...io.seen].map((target) => ({ target, isIntersecting: true }))); });
   const LUIGI = { body: 'Luigi wins.', plays: [playOf([{ phrase: 'Luigi', sound: 'boo' }])] };
+
+  test('a moment ended mid-cue (Reset) stops the murmur it raised', async () => {
+    const m = mount({ moment: { at: 1 }, ...LUIGI });
+    see();
+    let t = 0;
+    for (let i = 0; i < 50; i++) { t += 100; await step(t); }
+    expect(heard.loop).toHaveBeenCalledTimes(1);
+    expect(heard.handle.stop).not.toHaveBeenCalled();
+    m.unmount();
+    expect(heard.handle.stop).toHaveBeenCalledTimes(1);
+  });
 
   test('a place resting on the line for five seconds plays no take: its mark is full and the titter\'s loop is raised, one loop however many posts there are; a click plays the take and holds the loop at nothing', async () => {
     const m = mount({ posts: 2, ...LUIGI });
