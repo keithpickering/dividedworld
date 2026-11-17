@@ -513,6 +513,8 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
     if (act.kind === 'spring' || act.kind === 'card_end') continue;
     const play = playOf(act);
     if (!play) continue;
+    /* A play whose first generation failed never took: a live post leaves it out (`PostEffects`), so a moment of that post does too, drawing and naming nothing of it. */
+    if (play.untaken) continue;
     if (play.reach) {
       /* The moment's own play on a character: not a layer on the post, drawn around it where it was live and its card has an effect. */
       if (act.id === self && play.reach === 'character' && !play.caught && !endedBy.has(play.id) && (play.ends === undefined || Date.parse(play.ends) > at) && ui.find((c) => c.key === play.card)?.Effect) above = play;

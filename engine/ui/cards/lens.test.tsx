@@ -17,7 +17,7 @@ import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
-import { createPlays } from './plays.ts';
+import { asThen, createPlays } from './plays.ts';
 import { PostMarks } from './Marks.tsx';
 import { endsWords } from './marks.ts';
 import { createTallies } from '../thread/tallies.ts';
@@ -1118,6 +1118,14 @@ describe('plays shown as they stood (then)', () => {
     expect(await within(lens()).findByText('then view')).toBeInTheDocument();
     await userEvent.click(within(lens()).getByRole('button', { name: 'then press' }));
     expect(stood).toHaveBeenCalledTimes(1);
+  });
+
+  test('only an end can come after a moment: a play in then that never took (untaken) stays untaken', () => {
+    const play = (id: string, extra: object) => ({ id, card: 'k2', layer: 1, caster: 'c', message: '', config: {}, playedAt: '2026-10-01T00:00:00Z', post: 'p', ...extra });
+    const plays = [play('ended', { reversed: true }), play('never', { untaken: true })] as never[];
+    const out = asThen(plays, new Set(['ended', 'never']));
+    expect(out.map((p) => [p.id, p.reversed ?? false, p.untaken ?? false])).toEqual([['ended', false, false], ['never', false, true]]);
+    expect(asThen(plays, new Set(['never']))).toBe(plays);
   });
 
   test("the same play, not in then, is ended: its effect's view is not said", async () => {

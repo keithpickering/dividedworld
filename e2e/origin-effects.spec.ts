@@ -219,6 +219,12 @@ test('3b. with a Whoops! moment in the box, the ink is solid in the area\'s bott
   const a = await padBox(area(page));
   const l = await borderBox(list);
   expect(l.top >= a.bottom - 0.5 || l.bottom <= a.top + 0.5 || l.left >= a.right - 0.5 || l.right <= a.left + 0.5, `the list stands outside the content area: its box (${JSON.stringify(l)}) does not intersect the area's (${JSON.stringify(a)})`).toBe(true);
+  /* The foot is lifted by its own rule, not by the opening post's `[data-kb-content-area] [data-kb-over-ink]` rule (thread.css): with that ancestor's mark taken off, the foot is still positioned and on top. */
+  await box(page).evaluate((el) => { for (let up = el.parentElement; up; up = up.parentElement) up.removeAttribute('data-kb-content-area'); });
+  const foot = await box(page).locator('.kb-origin-foot').evaluate((el) => { const c = getComputedStyle(el); return { position: c.position, zIndex: c.zIndex }; });
+  expect(foot, 'the foot is positioned and lifted by its own rule').toEqual({ position: 'relative', zIndex: '2' });
+  const hit = await list.evaluate((el) => { const r = el.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return top !== null && el.closest('.kb-origin-foot')!.contains(top); });
+  expect(hit, "the topmost element at the list's center is inside the foot").toBe(true);
   /* The corner is as solid as the wash saved in the story's moment (its ink there is untouched), so this asks only that the moment's ink is drawn there. */
   const atCorner = await inkAlpha(page, '.kb-origin canvas.kb-whoops-ink', a.left + 2, a.bottom - 2);
   expect(atCorner, "the moment's ink canvas can be sampled at a point 2px inside the area's bottom-left corner").not.toBeNull();
@@ -651,6 +657,32 @@ test.describe('9. the phone', () => {
     const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(wide, 'the page\'s scroll width over its client width').toBeLessThanOrEqual(0);
     await fills(box(page).locator('canvas.kb-whoops-ink'), area(page), 'the ink');
+  });
+
+  /* The character-spun box with a second strip (`GlitterOverWhoops`): its head holds the text, the character's mark, the post card's mark and Reset, at the phone's width. */
+  test('a character-spun box with two strips does not overflow, and its head text, the marks of both strips and Reset do not overlap', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await open(page, 'glitter-over-whoops-phone');
+    const marks = box(page).locator('.kb-origin-head .kb-mark');
+    await expect(marks).toHaveCount(2);
+    await expect(band(page).locator('.kb-origin-reset')).toBeVisible();
+    const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(wide, 'the page does not scroll sideways').toBeLessThanOrEqual(0);
+    const own = await box(page).evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(own, 'the box does not overflow itself').toBeLessThanOrEqual(0);
+    const parts = { text: await borderBox(band(page).locator('.kb-origin-head-text')), first: await borderBox(marks.nth(0)), second: await borderBox(marks.nth(1)), reset: await borderBox(band(page).locator('.kb-origin-reset')) };
+    const whole = await borderBox(box(page));
+    for (const [name, b] of Object.entries(parts)) expect(b.left >= whole.left - 0.5 && b.right <= whole.right + 0.5, `${name} is inside the box (${JSON.stringify(b)} in ${JSON.stringify(whole)})`).toBe(true);
+    const names = Object.keys(parts) as (keyof typeof parts)[];
+    for (const [i, a] of names.entries()) {
+      for (const b of names.slice(i + 1)) {
+        /* Reset is a word of the head's text (it stands in its line), so it lies inside the text's box by design. */
+        if ((a === 'text' && b === 'reset')) continue;
+        const x = parts[a], y = parts[b];
+        const apart = x.right <= y.left + 0.5 || y.right <= x.left + 0.5 || x.bottom <= y.top + 0.5 || y.bottom <= x.top + 0.5;
+        expect(apart, `${a} (${JSON.stringify(x)}) and ${b} (${JSON.stringify(y)}) do not overlap`).toBe(true);
+      }
+    }
   });
 });
 

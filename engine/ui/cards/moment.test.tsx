@@ -253,6 +253,13 @@ describe('a moment draws still', () => {
   });
 });
 
+test('a play that never took (untaken) is neither drawn nor named, as a live post leaves it out', () => {
+  const m = moment([{ act: { ...card('k1', 'smear', 1), untaken: true }, state: null }, { act: card('k2', 'ripple', 2), state: null }]);
+  const parts = momentParts(m, instance.cards, cards, () => '');
+  expect(parts.drawn.map((p) => p.id)).toEqual(['k2']);
+  expect(parts.named).toEqual([]);
+});
+
 test('a takeover in a moment is named, so the drawn cards wrap as they were first played', () => {
   draw(moment([{ act: card('k2', 'smear', 5), state: null }, { act: card('k1', 'lifty', 1), state: null }, { act: card('k3', 'ripple', 7), state: null }]));
   expect(chain()).toEqual(['smear', 'ripple']);
@@ -535,6 +542,44 @@ describe('a character play is the moment\'s own play when it is the first layer'
       expect(el.getAttribute('data-kb-reach')).toBe('character');
       expect(plays.at(-1)).toEqual(['k1']);
       expect(screen.queryByText(/Sparkly/)).toBeNull();
+    } finally {
+      cards[5] = ui('sparkly');
+    }
+  });
+
+  test("a play above the post says no view: onView is not called on mount, on show or on unmount, while a post card's is", () => {
+    const say = vi.fn();
+    cards[5] = ui('sparkly', { Effect: ({ children, show }: EffectProps) => { useEffect(() => { show({ progress: null, state: 'above', yours: false, controls: [], notes: {} }); say(); }, [show]); return <>{children}</>; } });
+    try {
+      const onView = vi.fn();
+      const view = draw(moment([{ act: onAuthor('k1', 5, 60), state: null }, { act: card('k2', 'smear', 1), state: null }]), onView);
+      expect(say).toHaveBeenCalled();
+      expect(onView.mock.calls.map((c) => c[0])).toEqual(['smear']);
+      view.unmount();
+      expect(onView.mock.calls.map((c) => `${c[0]}:${c[1] === null}`)).toEqual(['smear:false', 'smear:true']);
+    } finally {
+      cards[5] = ui('sparkly');
+    }
+  });
+
+  test("the same card above the post and on it: the post card's view survives the above effect unmounting", async () => {
+    cards[5] = ui('sparkly', { Effect: ({ children, show, reach }: EffectProps) => { useEffect(() => { show({ progress: null, state: `${reach} view`, yours: false, controls: [], notes: {} }); }, [show, reach]); return <>{children}</>; } });
+    try {
+      const last = new Map<string, string | null>();
+      const onView = (card: string, view: { state: string } | null) => { last.set(card, view === null ? null : view.state); };
+      const both = moment([{ act: onAuthor('k1', 5, 60), state: null }, { act: card('k2', 'sparkly', 1), state: null }]);
+      const post = moment([{ act: card('k2', 'sparkly', 1), state: null }]);
+      const api = buildWorld({}, instance);
+      const kayfa = { api, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
+      function Host() {
+        const [m, setM] = useState(both);
+        return <><button type="button" onClick={() => setM(post)}>drop the above</button><MomentEffects moment={m} place="thread" nameOf={() => ''} onView={onView}><span>then</span></MomentEffects></>;
+      }
+      render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><Host /></CalloutProvider></KayfaProvider>);
+      await waitFor(() => expect(last.get('sparkly')).toBe('post view'));
+      await userEvent.click(screen.getByRole('button', { name: 'drop the above' }));
+      await waitFor(() => expect(last.get('sparkly')).toBe('post view'));
+      expect(last.get('sparkly'), 'the above effect leaving cleared the post card view').not.toBeNull();
     } finally {
       cards[5] = ui('sparkly');
     }

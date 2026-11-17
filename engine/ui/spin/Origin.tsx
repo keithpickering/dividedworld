@@ -29,7 +29,7 @@ import { PostEffects, momentParts } from '../cards/Effects.tsx';
 import { useLensStore } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { MomentView, useMomentRead } from '../cards/Moment.tsx';
-import { createPlays, effectCards, holdsEffects, homeOf, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
+import { createPlays, effectCards, holdsEffects, homeOf, keepingKeys, markedPlays, playOf, readEffects, shownPlays, usePlays, type Plays } from '../cards/plays.ts';
 import type { CardPlay, CardView } from '../cards/types.ts';
 import { useKayfa } from '../context.tsx';
 import { PLAY_FROM, type Act, type Character, type Id, type OriginPlace, type PageOrigin, type ThreadSummary } from '../data/api.ts';
@@ -159,7 +159,7 @@ function postOf(place: Extract<OriginPlace, { kind: 'play' }>, which: 'at' | typ
 
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const { perPage, tallies, mine, origin: held, originPlays } = useThread();
-  const { instance, ui } = useKayfa();
+  const { api, instance, ui } = useKayfa();
   const originId = summary.originActId!;
   const from = held ?? NOT_THERE;
   /* The box's store is the thread screen's, which gives it the saved states and releases the page carried; a box drawn without one keeps a store of its own. */
@@ -216,16 +216,19 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
    */
   const shown = useMemo(() => {
     if (cardPlay === null || kept === undefined || kept === null) return null;
-    const drawn = new Set(momentParts(kept, instance.cards, ui.cards, () => '').drawn.map((p) => p.id));
+    const parts = momentParts(kept, instance.cards, ui.cards, () => '').drawn;
+    const drawn = new Set(parts.map((p) => p.id));
     const acts = kept.layers.map((l) => l.act).filter((a) => drawn.has(a.id));
-    return { acts, post: kept.version.id, then: new Set(acts.map((a) => a.id).filter((id) => id !== cardPlay.id)) as ReadonlySet<Id> };
-  }, [cardPlay, kept, instance.cards, ui.cards]);
+    /* How many of them the strip will mark (the strip's own filter), so no empty strip is drawn. */
+    const marked = markedPlays(shownPlays(parts, api.now()), api.now(), keepingKeys(instance.cards)).length;
+    return { acts, marked, post: kept.version.id, then: new Set(acts.map((a) => a.id).filter((id) => id !== cardPlay.id)) as ReadonlySet<Id> };
+  }, [api, cardPlay, kept, instance.cards, ui.cards]);
   useEffect(() => { if (shown) plays.add(shown.acts); }, [plays, shown]);
   const link = <OriginLink place={summary.origin} perPage={perPage} {...(onCharacter ? { faces: characterOf } : {})} />;
 
   /* A card on a character: the post's own drawn cards have a strip beside the character's, every row of it a `then` row (state, controls, Go to post). */
   const to = cardPlay ? (pressed?.href ?? castFrom?.href ?? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null)) : backHref;
-  const postMarks = onCharacter && shown && shown.acts.length > 0 ? (
+  const postMarks = onCharacter && shown && shown.marked > 0 ? (
     <PostMarks
       post={shown.post} compare={false} moments={false} then={shown.then} plays={plays} to={to} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
       onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}

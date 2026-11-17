@@ -15,7 +15,6 @@ import type { CardUi, EffectProps } from '../cards/types.ts';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { bodyOf, liftedOver } from '../cards/body.ts';
-import spinCss from './spin.css?raw';
 
 beforeEach(() => {
   localStorage.clear();
@@ -799,12 +798,6 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect([...box.children].map((c) => c.className)).toEqual(['kb-origin-head', 'kb-origin-area', 'kb-origin-foot']);
   });
 
-  test("the box's foot is lifted by its own rule, so an effect that leaves the content area cannot paint over what the moment says", () => {
-    const rule = /\.kb-origin-foot\s*\{([^}]*)\}/u.exec(spinCss)![1]!;
-    expect(rule).toMatch(/position:\s*relative/u);
-    expect(rule).toMatch(/z-index:\s*2/u);
-  });
-
   test('a box spun from a post has no Reset, and neither has a box with no moment to show', async () => {
     const { w } = await spunFromHold();
     const fromPost = await spinFrom(w, w.ids[1]!, 'About the post');
@@ -1502,6 +1495,28 @@ describe('a thread spun from a card on a character', () => {
       expect(within(lens).queryByText('glint view')).toBeNull();
       expect(within(lens).queryByText('whoops view')).toBeNull();
       expect(said.glint).not.toHaveBeenCalled();
+    });
+
+    test("the same card on the character and on the post: the post card's view survives the spun play's effect mounting, Reset and unmounting", async () => {
+      const Reach = ({ show, reach, children }: EffectProps) => {
+        useEffect(() => { show({ progress: null, state: `${reach} view`, yours: false, controls: [], notes: {} }); }, [show, reach]);
+        return <>{children}</>;
+      };
+      const w = world(inked);
+      w.fake.seed.card(w.spritey, w.pressed, 'glint', { message: 'on the post' });
+      w.fake.clock.advance(60_000);
+      const thread = await spun(w, w.pressed);
+      const view = renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: inked, cards: [{ ...inkedCards[0]!, Effect: Reach }, inkedCards[1]!] });
+      const box = await origin();
+      await waitFor(() => expect(box.querySelectorAll('.kb-marks-anchor')).toHaveLength(2));
+      const second = () => within(box.querySelectorAll<HTMLElement>('.kb-marks-anchor')[1]!).getByRole('button', { name: /^Glint, 1 play/u });
+      await userEvent.click(second());
+      expect(await within(screen.getByRole('dialog', { name: 'Cards on this post' })).findByText('post view')).toBeInTheDocument();
+      await userEvent.click(within(box).getByRole('button', { name: 'Reset' }));
+      await settle();
+      expect(within(screen.getByRole('dialog', { name: 'Cards on this post' })).getByText('post view')).toBeInTheDocument();
+      expect(screen.queryByText('character view')).toBeNull();
+      view.unmount();
     });
 
     test('a character-spun box whose post carries no card has no second strip', async () => {
