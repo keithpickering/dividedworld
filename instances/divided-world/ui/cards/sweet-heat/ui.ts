@@ -9,10 +9,10 @@ import { earnWords, FIRST_REACTORS, LARGEST, spanWords } from '../words.ts';
 
 export const ui: CardUi = {
   key: 'sweet-heat',
-  art: { color: '#d24a2c', ink: '#0d0301', canvas: sweetHeatCanvas, mark: sweetHeatMark, credit: sweetHeatArt.credit, tagline: 'Earn more from excited reactions.' },
-  summary: `Used on your own character. For ${spanWords(sweetHeat.lasts!)}, each excited reaction to its posts, positive or negative, pays ${earnWords(sweetHeat)}.`,
-  status: 'Paid more for excited reactions',
+  art: { color: '#d24a2c', ink: '#0d0301', canvas: sweetHeatCanvas, mark: sweetHeatMark, credit: sweetHeatArt.credit, tagline: 'Earn more from excited votes.' },
+  summary: `Used on your own character. For ${spanWords(sweetHeat.lasts!)}, each excited vote on its posts, positive or negative, pays ${earnWords(sweetHeat)}.`,
+  status: 'Paid more for excited votes',
   describe: (settings: Settings) =>
-    `A Pepperoni card, ${sweetHeat.rarity}, used on your own character, the one playing it. For ${spanWords(sweetHeat.lasts!)}, each excited reaction to its posts, positive or negative, pays ${earnWords(sweetHeat)}, whatever its class makes of that reaction, and then it stops by itself. ${FIRST_REACTORS} ${LARGEST} It costs nothing more to use.`,
-  logPlay: () => `Each excited reaction to that character's posts, positive or negative, pays ${earnWords(sweetHeat)} until it ends.`,
+    `A Pepperoni card, ${sweetHeat.rarity}, used on your own character, the one playing it. For ${spanWords(sweetHeat.lasts!)}, each excited vote on its posts, positive or negative, pays ${earnWords(sweetHeat)}, whatever its class makes of that vote, and then it stops by itself. ${FIRST_REACTORS} ${LARGEST} It costs nothing more to use.`,
+  logPlay: () => `Each excited vote on that character's posts, positive or negative, pays up to ${earnWords(sweetHeat)} until it ends.`,
 };

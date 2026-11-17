@@ -9,10 +9,10 @@ import { earnWords, FIRST_REACTORS, LARGEST, spanWords } from '../words.ts';
 
 export const ui: CardUi = {
   key: 'publicity-tour',
-  art: { color: '#2ee6ff', ink: '#03141a', canvas: publicityTourCanvas, mark: publicityTourMark, credit: publicityTourArt.credit, tagline: 'Earn more from positive reactions.' },
-  summary: `Used on your own character. For ${spanWords(publicityTour.lasts!)}, each positive reaction to its posts pays ${earnWords(publicityTour)}.`,
-  status: 'Earns more from positive reactions',
+  art: { color: '#2ee6ff', ink: '#03141a', canvas: publicityTourCanvas, mark: publicityTourMark, credit: publicityTourArt.credit, tagline: 'Earn more from positive votes.' },
+  summary: `Used on your own character. For ${spanWords(publicityTour.lasts!)}, each positive vote on its posts pays ${earnWords(publicityTour)}.`,
+  status: 'Earns more from positive votes',
   describe: (settings: Settings) =>
-    `A Sweet card, ${publicityTour.rarity}, used on your own character, the one playing it. For ${spanWords(publicityTour.lasts!)}, each positive reaction (excited or calm) to its posts pays ${earnWords(publicityTour)}, whatever its class makes of that reaction, and then it stops by itself. ${FIRST_REACTORS} ${LARGEST} It costs nothing more to use.`,
-  logPlay: () => `Each positive reaction to that character's posts pays ${earnWords(publicityTour)} until it ends.`,
+    `A Sweet card, ${publicityTour.rarity}, used on your own character, the one playing it. For ${spanWords(publicityTour.lasts!)}, each positive vote (excited or calm) on its posts pays ${earnWords(publicityTour)}, whatever its class makes of that vote, and then it stops by itself. ${FIRST_REACTORS} ${LARGEST} It costs nothing more to use.`,
+  logPlay: () => `Each positive vote on that character's posts pays up to ${earnWords(publicityTour)} until it ends.`,
 };

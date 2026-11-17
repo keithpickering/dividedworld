@@ -1103,6 +1103,15 @@ describe('a card\'s boost in a settlement', () => {
     expect(said).toContain('Publicity Tour added +0.10');
     expect(said).not.toContain('publicity Tour');
   });
+  test('is said with the line\'s own amount given to the instance\'s words, so a line that takes pay back can be worded apart from one that pays', () => {
+    const at = '2026-10-30T08:17:00.000Z';
+    const w: Words = { ...words, ui: { ...words.ui, reasonWords: (r, _params, amount) => (r === 'card.boost' ? `${amount !== undefined && amount < 0 ? 'Heat Magnet took back' : 'Heat Magnet paid'}: what the boost did` : r) } };
+    const log = { ...empty, settlements: [settled(1, at, [{ character: 'p', reason: 'card.boost', amount: 10, params: { card: 'pt' }, shares: [] }, { character: 'p', reason: 'card.boost', amount: -4, params: { card: 'hm' }, shares: [] }])] };
+    const rows = logRows(data({ log, mine: [char('p', 'Pipewrench', 'face')] }), w, 600, null);
+    const said = rows.map((r) => `${r.what} ${r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('')}`).join(' | ');
+    expect(said).toContain('Heat Magnet paid +0.10');
+    expect(said).toContain('Heat Magnet took back −0.04');
+  });
 });
 
 /**

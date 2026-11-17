@@ -305,7 +305,7 @@ export function inOrder(lines: readonly LogLine[]): LogLine[] {
 function scoredWords(lines: readonly LogLine[], words: Words): string {
   /* A reason that names a card (a boost's `{ card }`) keeps the card's capital: only a reason's own first word is lowered into the sentence. */
   return inOrder(lines).map((l) => {
-    const said = reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy)));
+    const said = reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy), l.amount));
     return `${typeof l.params?.['card'] === 'string' ? said : lowerFirst(said)} ${signed(l.amount)}`;
   }).join(', ');
 }

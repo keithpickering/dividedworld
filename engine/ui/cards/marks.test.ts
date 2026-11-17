@@ -69,8 +69,8 @@ describe('a card back, a ward and a caught play, in words', () => {
     assert.deepEqual(gimmickWords({ kind: 'price', flavors: ['salty'], add: 25 }, end, now), { state: 'Salty cards cost 0.25 more here', ends: `Ends ${dayAndTime(end)}` });
     assert.deepEqual(gimmickWords({ kind: 'earn', by: 0.1 }, end, now), { state: 'Earns 10% more from some reactions', ends: `Ends ${dayAndTime(end)}` });
     /* A flat earn says what each reaction pays more, from the effect's own size, and a cushion the share of a loss it gives back; each heading is within the Lens's word rule. */
-    assert.deepEqual(gimmickWords({ kind: 'earn', flat: 0.75 }, end, now), { state: 'Pays more for some reactions', ends: `Ends ${dayAndTime(end)}`, report: 'Each vote from a player who first reacts while it is up pays three quarters of a vote more.' });
-    assert.equal(gimmickWords({ kind: 'earn', flat: 1 }, end, now).report, 'Each vote from a player who first reacts while it is up pays a vote more.');
+    assert.deepEqual(gimmickWords({ kind: 'earn', flat: 0.75 }, end, now), { state: 'Pays more for some reactions', ends: `Ends ${dayAndTime(end)}`, report: 'Each vote it names, from a player who first reacts while it is up, pays three quarters of a vote more.' });
+    assert.equal(gimmickWords({ kind: 'earn', flat: 1 }, end, now).report, 'Each vote it names, from a player who first reacts while it is up, pays a vote more.');
     assert.deepEqual(gimmickWords({ kind: 'cushion', share: 0.5 }, end, now), { state: 'Softens losses from reactions', ends: `Ends ${dayAndTime(end)}`, report: 'Gives back 50% of each loss a reaction causes.' });
     /* A ride says its author is paid, with the share the card's rules hold (retuned, the new share is said), in a heading within the Lens's word rule. */
     assert.deepEqual(gimmickWords({ kind: 'ride', share: 0.5 }, end, now), { state: 'Pays its author for votes here', ends: `Ends ${dayAndTime(end)}`, report: 'Each vote on a card another player casts here pays its author half a vote.' });

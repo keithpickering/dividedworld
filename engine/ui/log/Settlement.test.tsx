@@ -113,6 +113,20 @@ describe('the settlement\'s summary', () => {
     expect(errors.mock.calls.map((c) => String(c[0])).filter((m) => /same key/u.test(m))).toEqual([]);
   });
 
+  test('gives each line\'s amount to the instance\'s words, so a boost that takes pay back is worded apart from one that pays', async () => {
+    const { fake, me, pipe } = world();
+    fake.seed.settle({
+      at: at(30, 8, 17),
+      ledger: [
+        { character: pipe, reason: 'card.boost', amount: 6, params: { card: 'y' } },
+        { character: pipe, reason: 'card.boost', amount: -4, params: { card: 'x' } },
+      ],
+    });
+    await openSummary(fake, me, pipe);
+    const list = await screen.findByRole('list', { name: /^Why, in plain words/u });
+    expect(within(list).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Boost: paid more+0.06', 'Boost: took pay back−0.04']);
+  });
+
   test('shows the rank change and the Turn that took effect, as the log\'s lines do', async () => {
     const { fake, me, pipe } = world();
     await openSummary(fake, me, pipe);
