@@ -1739,10 +1739,11 @@ test('a flat earn on a second Act of the window from one voter pays half, and th
   assert.equal(estimate.entries.filter((e) => e.reason === 'card.boost').reduce((s, e) => s + e.amount, 0), 20, 'each reaction a whole vote');
   assert.equal(estimate.lines.filter((l) => l.reason === 'card.boost').reduce((s, l) => s + l.amount, 0), 20);
 });
-test('a flat earn that names a reaction kind, in the estimate, pays a reaction of that kind whole at its own time and a reaction of another kind of its quadrant nothing', () => {
-  const input = flatBoard([onTom('g1', 'fireFlat', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'heart', FROM + 6 * H)]);
+test('a flat earn that names a reaction kind: one player leaving a heart then a fire is one voter in the settlement (first kind, the heart, pays nothing) and two in the estimate (the fire is its own voter and pays)', () => {
+  const input = flatBoard([onTom('g1', 'fireFlat', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'fire', FROM + 6 * H)]);
   const lines = estimateForOwner(input, cardsWorld, 'tom').lines.filter((l) => l.reason === 'card.boost');
-  assert.deepEqual(lines.map((l) => [l.at, l.amount]), [[FROM + 5 * H, 5]], 'the fire paid whole at its own time; the heart (each reaction is its own voter, so its first kind is the heart) paid nothing');
+  assert.deepEqual(lines.map((l) => [l.at, l.amount]), [[FROM + 6 * H, 5]], 'in the estimate each reaction is a voter of its own: the fire is paid whole at its own time and the heart nothing');
+  assert.equal(boostTo(settle(input, cardsWorld), 'tom-1'), 0, 'the settlement is exact: the voter first kind in the quadrant is the heart, so the fire is not paid');
 });
 test('a flat earn pays nothing outside its time, at its end, in a quadrant it does not name, with no `ends`, or for the character\'s own player', () => {
   const one = (r: InputReaction, ends: number | null = FROM + 10 * H) => boostTo(settle(flatBoard([onTom('g1', 'calmHalf', FROM + 2 * H, ends)], [r]), cardsWorld), 'tom-1');
@@ -1802,7 +1803,8 @@ test('a vote that moves away after the play ended takes back nothing, and one th
 });
 test('over many seeded sequences of windows, flat earns that name quadrants or reactions never cost the character: all its boost entries sum to zero or more, in the whole and after every window', () => {
   // A tiny LCG, so every run draws the same few hundred sequences.
-  const lcg = (seed: number) => { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 2 ** 32; }; };
+  // Its first outputs of nearby seeds are correlated (seeds 1 to 400 span a narrow band of the first), so each seed's generator discards its first few.
+  const lcg = (seed: number) => { let s = seed >>> 0; const next = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 2 ** 32; }; for (let i = 0; i < 8; i++) next(); return next; };
   const WINDOWS = 5;
   const voters = ['bob', 'cat', 'dee', 'eve', 'fay'];
   // The hot quadrant's two kinds are drawn twice as often, so a voter often leaves two kinds of one quadrant, which is where a kind-named play and a quadrant-named one part.
@@ -1817,15 +1819,19 @@ test('over many seeded sequences of windows, flat earns that name quadrants or r
   let withEarlyFirst = 0;
   let withManyVoters = 0;
   let withHot = 0;
+  let wide = 0;
+  let wideTakeBack = 0;
+  let wideKindedCrowd = 0;
+  let wideEarlyFirst = 0;
   for (let seed = 1; seed <= 400; seed++) {
     const rand = lcg(seed);
     const int = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1));
     const pick = <T,>(xs: readonly T[]): T => xs[int(0, xs.length - 1)]!;
-    // A third of the sequences are hot: the quarter-vote play of the hot quadrant beside a kind-named play of it, one voter on one post who first reacts early in the hot quadrant and then reacts again,
+    // Every third seed is hot, so exactly a third of the sequences are: the quarter-vote play of the hot quadrant beside a kind-named play of it, one voter on one post who first reacts early in the hot quadrant and then reacts again,
     // each time most often a window later, which is where a take-back can be priced by another play than the one that paid. The rest are wide: up to five voters on two posts, plays that start anywhere
     // and last a few hours or days, and first reactions before, inside and after the plays; any play may name quadrants or reaction kinds.
-    const hot = rand() < 1 / 3;
-    if (hot) withHot++;
+    const hot = seed % 3 === 0;
+    if (hot) withHot++; else wide++;
     const plays: InputAct[] = [];
     const reactions: InputReaction[] = [];
     if (hot) {
@@ -1871,8 +1877,13 @@ test('over many seeded sequences of windows, flat earns that name quadrants or r
     // The guard counts: a voter whose first reaction on an Act is before a play started, and three or more voters.
     const firstOf = new Map<string, number>();
     for (const r of reactions) firstOf.set(`${r.act}|${r.player}`, Math.min(firstOf.get(`${r.act}|${r.player}`) ?? Infinity, r.at));
-    if ([...firstOf.values()].some((first) => plays.some((g) => first < g.at))) withEarlyFirst++;
-    if (new Set(reactions.map((r) => r.player)).size >= 3) withManyVoters++;
+    const earlyFirst = [...firstOf.values()].some((first) => plays.some((g) => first < g.at));
+    const manyVoters = new Set(reactions.map((r) => r.player)).size >= 3;
+    const hasKinded = plays.some((g) => kinded.includes(g.card ?? ''));
+    if (earlyFirst) withEarlyFirst++;
+    if (manyVoters) withManyVoters++;
+    if (!hot && earlyFirst) wideEarlyFirst++;
+    if (!hot && hasKinded && manyVoters) wideKindedCrowd++;
     const windows = [...Array(WINDOWS)].map((_, k) => ({ id: `w${k}`, from: FROM + k * 24 * H, to: FROM + (k + 1) * 24 * H }));
     const paidSoFar = new Map<string, SettlementInput['paid'] extends readonly (infer P)[] | undefined ? P : never>();
     let all = 0;
@@ -1891,11 +1902,16 @@ test('over many seeded sequences of windows, flat earns that name quadrants or r
     assert.ok(all >= 0, `seed ${seed}: the plays cost the character ${all}`);
     // One play's own lines can sum below zero (the next test), so only the character's boosts as a whole are held to the bound.
     if (sawNegative) withTakeBack++;
+    if (sawNegative && !hot) wideTakeBack++;
   }
   assert.ok(withTakeBack >= 20, `the draws must include take-backs (${withTakeBack}), or the property is not tested`);
   assert.ok(withEarlyFirst >= 40, `the draws must include a first reaction before a play (${withEarlyFirst}), or the gate is not tested`);
   assert.ok(withManyVoters >= 80, `the draws must include three or more voters (${withManyVoters}), or crowds are not tested`);
   assert.ok(withHot >= 80, `the draws must include hot sequences (${withHot})`);
+  assert.ok(wide >= 200, `the draws must include wide sequences (${wide})`);
+  assert.ok(wideTakeBack >= 15, `the wide draws must include take-backs (${wideTakeBack})`);
+  assert.ok(wideKindedCrowd >= 100, `the wide draws must include a kind-named play with three or more voters (${wideKindedCrowd})`);
+  assert.ok(wideEarlyFirst >= 150, `the wide draws must include a first reaction before a play (${wideEarlyFirst})`);
 });
 test('a take-back falls on the largest play still up, so one play\'s lines can sum below zero while the character\'s never do', () => {
   // A vote of 400, so that no amount rounds. The larger play (heatChillFlat, a half) ends at +10h; the smaller (heatFlat, a quarter) stays up. Bob first reacts while both are up.
