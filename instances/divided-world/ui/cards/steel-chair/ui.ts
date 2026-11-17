@@ -18,7 +18,7 @@ export const ui: CardUi = {
   key: 'steel-chair',
   Effect: SteelChairEffect,
   sounds: ['steel-chair.hit', 'steel-chair.settle-1', 'steel-chair.settle-2', 'steel-chair.settle-3', 'steel-chair.settle-4'],
-  art:{ color: '#ff3d7f', ink: '#14030a', canvas: steelChairCanvas, mark: steelChairMark, credit: steelChairArt.credit, tagline: 'Dent a post.' },
+  art: { color: '#ff3d7f', ink: '#14030a', canvas: steelChairCanvas, mark: steelChairMark, credit: steelChairArt.credit, tagline: 'Dent a post.' },
   summary: 'Hits a post with a folding chair and leaves a dent.',
   status: (plays) => (plays.length <= 1 ? 'Dented by a chair' : `Dented by ${plays.length} chairs`),
   hint: 'Someone took a chair to this post. The Lens says who.',

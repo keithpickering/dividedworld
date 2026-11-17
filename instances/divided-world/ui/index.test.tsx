@@ -349,7 +349,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(whoops.describe(instance.settings)).toContain('0.25 more for every 500 characters');
     expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.perLength': 250 } })).toContain('2.50 more');
   });
-  test('Steel Chair and Laugh Track name the sounds their effects play, each key once', () => {
+  test('Steel Chair and Laugh Track name the sounds their effects play', () => {
     const steel = instanceUi.cards.find((c) => c.key === 'steel-chair')!;
     expect(steel.sounds).toEqual(['steel-chair.hit', 'steel-chair.settle-1', 'steel-chair.settle-2', 'steel-chair.settle-3', 'steel-chair.settle-4']);
     const laugh = instanceUi.cards.find((c) => c.key === 'laugh-track')!;
