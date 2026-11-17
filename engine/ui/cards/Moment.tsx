@@ -5,10 +5,12 @@
  *
  * Shown over a live post (As it landed, with Back to now) it is glass laid on a board post, in plain words and never in character: a
  * chamfered ring in the play's ink (`inkOf`), or its card's alignment's color, with its glow; a tag at the ring's top ("As it landed ·
- * Back to now", the time being the Lens's); and under the words, the plays named in words and each still card's own words, so the
- * moment can be read as well as seen. Where the moment is the content (a play-spun ORIGIN box, with no Back to now) the box's own
- * border and head already frame it and say "as it landed", so it draws no ring and no tag, and its words are the board's own small
- * print under the post (the owner, 2026-11-07: the ring, the tag and the box were "lots of different borders" saying one thing). In the thread the ring
+ * Back to now", the time being the Lens's); and under the words, what no mark says (docs/plans/2026-11-16-playable-moments-design.md,
+ * section 7): what became of the play, the plays on the post then, and that nothing done here is saved. A drawn card has no line: its
+ * mark names it and its effect speaks as it does on a live post. Where the moment is the content (a play-spun ORIGIN box, with no Back to now) the box's own
+ * border and head already frame it and say "as it landed", so it draws no ring and no tag, and what it says is the board's own small
+ * print in the box's foot, under the content area and outside it (the owner, 2026-11-07: the ring, the tag and the box were "lots of
+ * different borders" saying one thing). In the thread the ring
  * is the post body's own edge (`.kb-act-main`, bar to bar), since a card's effect paints the whole body and the moment shows it as it
  * landed (the owner, 2026-11-06: the frame "should extend all the way to the edges accordingly, so it can show the effect
  * accurately"); it is laid over the body and clips nothing. Elsewhere (the ORIGIN box) the ring is the moment's own box. The post's own
@@ -18,6 +20,7 @@
  * (`useMomentRead`, kept by the Lens store), and it never changes.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, PlayMoment } from '../data/api.ts';
 import { when } from '../thread/lines.tsx';
@@ -58,10 +61,10 @@ export function useMomentRead(key: Id, load: () => Promise<PlayMoment | null>): 
 
 /**
  * The frame a moment is drawn in. `back` is Back to now's press (none in an ORIGIN box, whose moment is its content, and then the frame
- * is the box's: no ring, no tag); `own` (what became of the play itself), `named` and `words` are what the frame says under the post;
+ * is the box's: no ring, no tag); `own` (what became of the play itself) and `named` are what the frame says under the post;
  * `unrecorded` says what else was on the post then wasn't recorded.
  */
-export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As it landed', own = null, named, words, unrecorded, frame, children }: {
+export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As it landed', own = null, named, unrecorded, listInto, frame, children }: {
   /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
   readonly play: CardPlay; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
@@ -73,7 +76,9 @@ export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As 
   readonly label?: string;
   /** The moment's time; none while it is not known (a spin's moment before it is read), and then the frame names none. */
   readonly at?: string | undefined;
-  readonly own?: string | null; readonly named: readonly string[]; readonly words: readonly string[]; readonly unrecorded: boolean;
+  readonly own?: string | null; readonly named: readonly string[]; readonly unrecorded: boolean;
+  /** Where the list stands: an element (an ORIGIN box's foot) it is portaled into, null while that element is not there yet (nothing is drawn, so nothing arrives late in the box's content area), and left out for the frame's own foot over a post. */
+  readonly listInto?: HTMLElement | null | undefined;
   /** The frame's element, for a control inside it to give focus to (Try again's answer). */
   readonly frame?: RefObject<HTMLDivElement | null>;
   readonly children: ReactNode;
@@ -88,6 +93,15 @@ export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As 
   const content = back === undefined;
   const status = read === 'read' ? null : read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.';
   const said = content && status !== null;
+  /* The list is said only of a moment that is read and shown: it ends with the line that nothing done here is saved. */
+  const list = read === 'read' ? (
+    <div className={content ? 'kb-moment-list kb-small kb-muted' : 'kb-moment-list'}>
+      {own !== null && <p>{own}.</p>}
+      {named.length > 0 && <p>Also on the post then: {named.join(', ')}</p>}
+      {unrecorded && <p>What else was on the post then wasn't recorded.</p>}
+      <p>Nothing you do here is saved.</p>
+    </div>
+  ) : null;
   return (
     <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={at === undefined ? label : `${label}, ${when(at)}`} data-kb-alignment={rules?.alignment} data-kb-content={content ? '' : undefined} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
       {said && <p className="kb-moment-status kb-small kb-muted">{status}</p>}
@@ -104,14 +118,7 @@ export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As 
           {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
         </p>
       )}
-      {(own !== null || named.length > 0 || words.length > 0 || unrecorded) && (
-        <div className={content ? 'kb-moment-list kb-small kb-muted' : 'kb-moment-list'}>
-          {own !== null && <p>{own}.</p>}
-          {words.map((w) => <p key={w}>{w}</p>)}
-          {named.length > 0 && <p>Also on the post then: {named.join(', ')}</p>}
-          {unrecorded && <p>What else was on the post then wasn't recorded.</p>}
-        </div>
-      )}
+      {list !== null && (listInto === undefined ? list : listInto !== null && createPortal(list, listInto))}
     </div>
   );
 }
@@ -200,11 +207,11 @@ function backToNow(button: HTMLElement, play: CardPlay, back: () => void) {
 }
 
 /**
- * A play's moment, read and drawn: the frame, the moment's version drawn by `bodyOf` inside its still effects, and the frame's words.
+ * A play's moment, read and drawn: the frame, and the moment's version drawn by `bodyOf` inside the effects of its plays.
  * While it loads, or where it failed, the frame holds the post's words as they are now (`now`), so the post never empties, with the
  * tag saying so and Try again under it.
  */
-export function MomentView({ play, place, nameOf, bodyOf, back, now, source, onView }: {
+export function MomentView({ play, place, nameOf, bodyOf, back, now, source, onView, listInto }: {
   readonly play: CardPlay; readonly place: EffectPlace;
   /** A spin's moment in place of the play's own: the pressed post as it was when the spin was written, labeled "As it was spun". */
   readonly source?: { readonly spin: Id };
@@ -214,6 +221,8 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source, onV
   readonly now: ReactNode;
   /** Where the drawn effects' views go, by card (null when an effect is gone): the strip of the post the moment shows on, where its Lens reads them. */
   readonly onView: (card: string, view: CardView | null) => void;
+  /** The frame's list goes here where given (the ORIGIN box's foot, under its content area); see `MomentFrame`. */
+  readonly listInto?: HTMLElement | null | undefined;
 }) {
   const { api, instance, ui } = useKayfa();
   const key = source ? source.spin : play.id;
@@ -223,9 +232,11 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source, onV
   /* Reset: each run of the moment's effects is keyed by the run, so a press remounts every one from the moment's states; the read moment is kept. */
   const lens = useLensStore();
   const run = useSyncExternalStore(lens.subscribe, () => lens.run(key), () => 0);
+  /* The store's run outlives the view (Back to now, then As it landed again reopens it), so the status is said only of a Reset pressed while this view is mounted. */
+  const runAtMount = useRef(run);
   if (read.status !== 'read' || read.moment === null) {
     return (
-      <MomentFrame frame={frame} play={play} at={source ? undefined : play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
+      <MomentFrame frame={frame} play={play} at={source ? undefined : play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} unrecorded={false}>
         {now}
         {read.status === 'failed' && <button type="button" className="kb-moment-retry" onClick={() => { frame.current?.focus(); read.retry(); }}>Try again</button>}
       </MomentFrame>
@@ -234,7 +245,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source, onV
   const moment = read.moment;
   const parts = momentParts(moment, instance.cards, ui.cards, nameOf);
   return (
-    <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} reset={() => lens.reset(key)} run={run} own={parts.own} named={parts.named} words={[]} unrecorded={!moment.recorded}>
+    <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} reset={() => lens.reset(key)} run={run - runAtMount.current} own={parts.own} named={parts.named} unrecorded={!moment.recorded} listInto={listInto}>
       <MomentEffects key={run} moment={moment} place={place} nameOf={nameOf} onView={onView}>{bodyOf(moment.version)}</MomentEffects>
     </MomentFrame>
   );

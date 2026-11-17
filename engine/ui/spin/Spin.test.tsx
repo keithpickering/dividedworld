@@ -778,8 +778,24 @@ describe('the ORIGIN box of a play-spun thread', () => {
     await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).not.toBe(before));
     expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4');
     expect(document.activeElement).toBe(within(head as HTMLElement).getByRole('button', { name: 'Reset' }));
-    expect(within(box).getByRole('status')).toHaveTextContent('As it landed again.');
+    expect(within(box).getByRole('status').textContent).toBe('As it landed again.');
+    /* A second press is said again, by a no-break space on the end. */
+    await userEvent.click(within(head as HTMLElement).getByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(within(box).getByRole('status').textContent).toBe('As it landed again. '));
     expect(read).not.toHaveBeenCalled();
+  });
+
+  test('what the moment says under its post stands in a foot of the box, outside the content area, and ends "Nothing you do here is saved."', async () => {
+    const { w, spun } = await spunFromHold();
+    openWith(w, spun);
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
+    await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
+    const list = await within(box).findByText('Nothing you do here is saved.');
+    expect(box.querySelector('.kb-origin-area')!.contains(list), 'the list is not inside the content area').toBe(false);
+    expect(list.closest('.kb-origin-foot'), 'the list stands in the box\'s foot').not.toBeNull();
+    expect(list.closest('.kb-origin')).toBe(box);
+    expect([...box.children].map((c) => c.className)).toEqual(['kb-origin-head', 'kb-origin-area', 'kb-origin-foot']);
   });
 
   test('a box spun from a post has no Reset, and neither has a box with no moment to show', async () => {
@@ -1346,9 +1362,11 @@ describe('a thread spun from a card on a character', () => {
     const made = await w.fake.spin(old, w.pipe, 'Spun from an old one', 'about it');
     if (!made.ok) throw new Error(made.error);
     open(w, made.value.thread.id);
-    const frame = await within(await origin()).findByRole('group', { name: /^As it landed/u });
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
     expect(await within(frame).findByText('cast-from words')).toBeInTheDocument();
-    await waitFor(() => expect(frame).toHaveTextContent(/wasn.t recorded/u));
+    /* What the moment says under its post stands in the box's foot, outside the frame. */
+    await waitFor(() => expect(box.querySelector('.kb-origin-foot')).toHaveTextContent(/wasn.t recorded/u));
   });
 
   test('a spin refused for its post says so and the next press spins from the card without the post, keeping what was typed', async () => {

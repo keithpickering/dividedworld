@@ -126,8 +126,10 @@ function useCast(cast: readonly Character[], ids: readonly (Id | null)[]): { rea
  * pressed on a post (its moment, "As it was spun"); without it the play's own moment is the cast-from post as it landed. The moment is
  * read through the same store the frame reads it by, so it is read once.
  */
-function CharacterMoment({ play, spin, nameOf, characterOf, onView }: {
+function CharacterMoment({ play, spin, nameOf, characterOf, onView, listInto }: {
   readonly play: CardPlay; readonly spin: Id | null; readonly onView: (card: string, view: CardView | null) => void;
+  /** The box's foot, where the moment's list stands. */
+  readonly listInto: HTMLElement | null;
   readonly nameOf: (id: Id | null) => string; readonly characterOf: (id: Id) => Character | undefined;
 }) {
   const { api } = useKayfa();
@@ -140,7 +142,7 @@ function CharacterMoment({ play, spin, nameOf, characterOf, onView }: {
         <CharacterLink id={who} character={characterOf(who)} name={nameOf(who)} />
         {version && <> · <time dateTime={version.editedAt ?? version.createdAt}>{when(version.editedAt ?? version.createdAt)}</time></>}
       </p>
-      <MomentView play={play} place="origin" nameOf={nameOf} now={null} onView={onView} {...(spin ? { source: { spin } } : {})}
+      <MomentView play={play} place="origin" nameOf={nameOf} now={null} onView={onView} listInto={listInto} {...(spin ? { source: { spin } } : {})}
         bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />} />
     </>
   );
@@ -193,6 +195,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   }, [lens, cardPlay, onCharacter, spinAt, from.moment]);
   /* The key the box's moment is kept and run under, and whether the box draws one now (read, and not null): Reset is drawn only then. */
   const momentKey = cardPlay && (onCharacter || !cardPlay.reach) ? (onCharacter ? spinAt ?? cardPlay.id : cardPlay.id) : null;
+  /* The box's foot, where what the moment says under its post stands (outside the content area, so no effect that fills the area passes under it); drawn only where the box shows a moment. */
+  const [foot, setFoot] = useState<HTMLElement | null>(null);
   const kept = useSyncExternalStore(lens.subscribe, () => (momentKey === null ? undefined : lens.kept(momentKey)), () => undefined);
   const reset = momentKey !== null && kept !== undefined && kept !== null ? (
     <button type="button" className="kb-origin-reset" onClick={(e) => { e.currentTarget.focus(); lens.reset(momentKey); }}>Reset</button>
@@ -251,10 +255,10 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
          */
         if (cardPlay.reach === 'character' && cardPlay.on !== undefined) {
           /* A card on a character: a post of that character, as it was spun where the spin names one, else as the play landed on the cast-from post. */
-          return <CharacterMoment play={cardPlay} spin={spinAt} nameOf={nameOf} characterOf={characterOf} onView={onView} />;
+          return <CharacterMoment play={cardPlay} spin={spinAt} nameOf={nameOf} characterOf={characterOf} onView={onView} listInto={foot} />;
         }
         return cardPlay.reach ? null : (
-          <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null} onView={onView}
+          <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null} onView={onView} listInto={foot}
             bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />} />
         );
       case 'draw':
@@ -298,6 +302,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
             {note && <p className="kb-small kb-muted kb-origin-note" data-kb-over-ink>More than {CARDS_SHOWN} cards were played on this Act; the rest are in {link}.</p>}
           </div>
         )}
+        {momentKey !== null && <div ref={setFoot} className="kb-origin-foot" data-kb-over-ink />}
       </div>
       {spinOrigin && (
         <SpinForm

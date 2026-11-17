@@ -312,12 +312,72 @@ describe('Reset over a post', () => {
     expect(mounted[1]!.states).toEqual({ k1: saved });
     expect(screen.getByText('then')).toBeInTheDocument();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reset' }));
-    expect(screen.getByRole('status')).toHaveTextContent('As it landed again.');
-    /* A second Reset is said again, and a first press is not the last. */
+    expect(screen.getByRole('status').textContent).toBe('As it landed again.');
+    /* A second Reset is said again (a no-break space is appended, which is not collapsed), and a third is the first form again. */
     await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
     await waitFor(() => expect(mounted).toHaveLength(3));
-    expect(screen.getByRole('status')).toHaveTextContent('As it landed again.');
+    expect(screen.getByRole('status').textContent).toBe('As it landed again. ');
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reset' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(mounted).toHaveLength(4));
+    expect(screen.getByRole('status').textContent).toBe('As it landed again.');
+  });
+
+  test('a Reset pressed before this view mounted is not said: the status is empty until one is pressed while it is shown', async () => {
+    const api = buildWorld({}, instance);
+    vi.spyOn(api, 'playMoment').mockResolvedValue(moment([{ act: card('k1', 'smear', 1), state: saved }]));
+    cards[0] = ui('smear', { Effect: Counted });
+    const kayfa = { api, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
+    /* The moment's view comes and goes (Back to now, then As it landed again) over one Lens store. */
+    function Host() {
+      const [on, setOn] = useState(true);
+      return (
+        <article>
+          <button type="button" onClick={() => setOn((v) => !v)}>toggle</button>
+          {on && <MomentView play={play} place="thread" onView={() => {}} nameOf={() => ''} bodyOf={() => <span>then</span>} back={() => {}} now={<span>now</span>} />}
+        </article>
+      );
+    }
+    render(<KayfaProvider value={kayfa}><LensProvider><CalloutProvider met={[]}><Host /></CalloutProvider></LensProvider></KayfaProvider>);
+    await userEvent.click(await screen.findByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('As it landed again.'));
+    await userEvent.click(screen.getByRole('button', { name: 'toggle' }));
+    expect(screen.queryByRole('status')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'toggle' }));
+    await screen.findByRole('button', { name: 'Reset' });
+    expect(screen.getByRole('status').textContent).toBe('');
+    await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('As it landed again.'));
+  });
+
+  test('a read moment\'s list has no line for a drawn card and ends "Nothing you do here is saved."', async () => {
+    const api = buildWorld({}, instance);
+    vi.spyOn(api, 'playMoment').mockResolvedValue(moment([{ act: card('k1', 'smear', 1), state: saved }, { act: card('k2', 'ripple', 2), state: null }, { act: card('k3', 'slabby', 3), state: null }]));
+    over(api);
+    await screen.findByRole('button', { name: 'Reset' });
+    const list = document.querySelector('.kb-moment-list')!;
+    const lines = [...list.querySelectorAll('p')].map((p) => p.textContent);
+    expect(lines).toEqual(['Also on the post then: Slabby', 'Nothing you do here is saved.']);
+    expect(list.textContent).not.toMatch(/Smear|Ripple/u);
+  });
+
+  test('a moment that is loading, failed or null does not say nothing is saved', async () => {
+    const loading = buildWorld({}, instance);
+    vi.spyOn(loading, 'playMoment').mockReturnValue(new Promise(() => {}));
+    const first = over(loading);
+    expect(document.body.textContent).not.toContain('Nothing you do here is saved.');
+    first.unmount();
+    const failed = buildWorld({}, instance);
+    vi.spyOn(failed, 'playMoment').mockRejectedValue(new Error('no'));
+    const second = over(failed);
+    await screen.findByText('The moment did not load.');
+    expect(document.body.textContent).not.toContain('Nothing you do here is saved.');
+    second.unmount();
+    const none = buildWorld({}, instance);
+    vi.spyOn(none, 'playMoment').mockResolvedValue(null);
+    over(none);
+    await screen.findByText(/no moment to show/u);
+    expect(document.body.textContent).not.toContain('Nothing you do here is saved.');
   });
 
   test('Back to now still returns focus to the play\'s mark', async () => {

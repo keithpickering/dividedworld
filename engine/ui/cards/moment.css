@@ -146,24 +146,12 @@
 
 /*
  * The moment as the content (a play-spun ORIGIN box): the box's double rule and its head ("Spun from … · as it landed") frame it, so
- * there is no ring and no tag, and the frame's words are the board's own small print under the post, left-aligned with it, on the
- * post's ground over any ink an effect lays in the moment.
+ * there is no ring and no tag. What the frame says under the post is not here: it stands in the box's foot (spin.css), outside the
+ * content area.
  */
 .kb-moment[data-kb-content] {
   margin: 0;
   padding: 0;
-}
-
-.kb-moment[data-kb-content] .kb-moment-list {
-  align-self: stretch;
-  max-width: none;
-  margin-top: 0.4em;
-  padding: 0.3em 0 0;
-  border-top: 1px dotted var(--kb-rule);
-  background: var(--kb-post-bg);
-  color: var(--kb-muted);
-  font-family: var(--kb-font-body);
-  font-size: var(--kb-size-small);
 }
 
 .kb-moment-status {

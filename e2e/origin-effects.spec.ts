@@ -203,6 +203,25 @@ for (const name of ['whoops-landed', 'glitter-spun'] as const) {
   });
 }
 
+/*
+ * What a moment says under its post stands in the box's foot, outside the area (docs/plans/2026-11-16-playable-moments-plan.md, Task 4), so an effect that fills the
+ * area is solid in its bottom-left corner as a live box's is (case 2), and the list's box is clear of the area's.
+ */
+test('3b. with a Whoops! moment in the box, the ink is solid in the area\'s bottom-left corner, and the list stands outside the area', async ({ page }) => {
+  /* Poison: the list drawn inside the area again (it then stands over the corner and meets the area's box). */
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await open(page, 'whoops-landed');
+  await built(page, '.kb-origin .kb-whoops');
+  const list = box(page).locator('.kb-origin-foot .kb-moment-list');
+  await expect(list).toBeVisible();
+  const a = await padBox(area(page));
+  const l = await borderBox(list);
+  expect(l.top >= a.bottom - 0.5 || l.bottom <= a.top + 0.5 || l.left >= a.right - 0.5 || l.right <= a.left + 0.5, `the list's box (${JSON.stringify(l)}) does not intersect the area's (${JSON.stringify(a)})`).toBe(true);
+  const atCorner = await inkAlpha(page, '.kb-origin canvas.kb-whoops-ink', a.left + 2, a.bottom - 2);
+  expect(atCorner, 'the ink at a point 2px inside the area\'s bottom-left corner').not.toBeNull();
+  expect(atCorner!, 'the ink is solid in the corner').toBeGreaterThan(40);
+});
+
 /* ------------------------------------------------------------------------------------------ 4. Feelin' Fab ---- */
 
 test('4. Feelin\' Fab fills the area at the density its words cost, and lies under the words', async ({ page }) => {

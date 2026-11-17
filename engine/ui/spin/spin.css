@@ -49,6 +49,31 @@
 }
 
 /*
+ * The foot (`.kb-origin-foot`): what a moment says under its post (cards/Moment.tsx, docs/plans/2026-11-16-playable-moments-design.md, section 7) in the board's small
+ * print on the box's own ground, under the content area and outside it, so no effect that fills the area passes under it. It takes no room while it is empty.
+ */
+.kb-origin-foot {
+  padding: 0 var(--kb-origin-inset) 0.4em;
+}
+
+.kb-origin-foot:empty {
+  display: none;
+}
+
+.kb-origin-foot .kb-moment-list {
+  margin-top: 0.1em;
+  background: var(--kb-post-bg);
+  color: var(--kb-muted);
+  font-family: var(--kb-font-body);
+  font-size: var(--kb-size-small);
+  line-height: 1.3;
+}
+
+.kb-origin-foot .kb-moment-list p {
+  margin: 0;
+}
+
+/*
  * What is lifted over an effect in the box stands on the box's ground, so it reads over any ink. The panel's wrapper is always there and is empty until History
  * opens, so the ground is on what it holds; it is the area's full width, not the engine's fit-content for chips (the selector outranks the engine's rule).
  */
