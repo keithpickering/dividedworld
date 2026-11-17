@@ -45,7 +45,7 @@ test('a spin pressed on a later post shows that post as it was spun, under a hea
   await expect(box).toBeVisible();
   const frame = box.getByRole('group', { name: /^As it was spun/u });
   await expect(frame).toBeVisible();
-  /* The glitter is painted under the post's words in the box: a canvas, with pixels. */
+  /* The glitter is painted under the post's words in the box: a canvas, with pixels. It is the live glitter's, drawn by the page's shine loop as on any post (a moment is playable, docs/plans/2026-11-16-playable-moments-design.md), and not a still one painted once. */
   const canvas = box.locator('[data-kb-glitter] canvas.dw-glitter-under').first();
   await expect(canvas).toBeAttached();
   await expect.poll(() => canvas.evaluate((cv: HTMLCanvasElement) => {

@@ -760,7 +760,7 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect(box.querySelector('.kb-origin-head-text')!.textContent).toMatch(/ · as it landed · Reset$/u);
     expect(frame.querySelector('.kb-moment-ring, .kb-moment-tag')).toBeNull();
     expect(within(frame).queryByRole('button', { name: 'Back to now' })).toBeNull();
-    /* The mark is the box's one, and its Go to post still leads to the post as it is now. */
+    /* The box has a mark for each card drawn in the moment (Whoops!) and for the spun play's own (Stick Around), and Go to post still leads to the post as it is now. */
     expect(marks(box).sort()).toEqual(['stick-around:1', 'whoops:1']);
   });
 

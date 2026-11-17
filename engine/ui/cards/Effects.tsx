@@ -18,6 +18,14 @@
  * plays wrap as their own layers do. The moment (`MomentEffects`) and a History version (`VersionEffects`) nest by the same
  * function. Only a takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws
  * them on the post it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
+ *
+ * **A play's moment is playable** (docs/plans/2026-11-16-playable-moments-design.md; the frame is Moment.tsx). `MomentEffects` draws each play that `playsInMoment` says is drawn
+ * (it has an effect, is no takeover, and until issue #774 its rules have no surface or drive; the engine names no card) and names the rest (`momentParts`). Each effect is the
+ * live effect, started from the state it had then and run at the moment's own time (`EffectProps.moment`: null on a live post, `{ at }` in a moment), so it takes input, moves and
+ * sounds as it does live; the reader is nobody in particular (`{ author: false, caster: false }`, the same for everyone), `save`, `release`, `give` and a surface's `draw` and `wash`
+ * refuse without asking, `met` and `holdScreen` do nothing, and no marks or wallet are handed in: nothing a reader does in a moment is saved or sent. Each effect's `show` reaches the
+ * strip where the moment is drawn (`onView`), so its mark and Lens speak in the moment. `EffectProps.still` is now History's alone (`VersionEffects`, through `StillEffect`): a
+ * writing card's tail drawn whole from one version's rows, with no input.
  */
 import { createPortal } from 'react-dom';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
@@ -461,7 +469,7 @@ export interface MomentParts {
   readonly own: string | null;
   /**
    * The moment's own play where its reach is a character (a spin's moment: the play the spin was made from, which is no layer on the post): its
-   * card's effect is drawn around the post, still, and it is named nowhere. Null for a play on a post.
+   * card's effect is drawn around the post, playable like every other in the moment, and it is named nowhere. Null for a play on a post.
    */
   readonly above: CardPlay | null;
 }

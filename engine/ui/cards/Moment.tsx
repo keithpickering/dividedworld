@@ -1,23 +1,22 @@
 /**
- * A play's moment on the post (docs/plans/2026-11-03-effect-history-design.md, section 4): the post as it read when the play landed,
- * with every play on it then as each stood, drawn in place of the post's live body when a reader presses As it landed in the play's
- * Lens row, and in the ORIGIN box of a thread spun from the play.
+ * A play's moment on the post (docs/plans/2026-11-03-effect-history-design.md, section 4, as docs/plans/2026-11-16-playable-moments-design.md replaces its still mode): the post as it
+ * read when the play landed, with every play on it then as each stood, drawn in place of the post's live body when a reader presses As it landed in the play's Lens row, and in the
+ * ORIGIN box of a thread spun from the play. **A moment is playable** (design, sections 1 to 4): each effect drawn in it starts from the state it had then (`PlayMoment`'s saved
+ * states, the post's version then, the plays then) and runs as it runs on a live post, taking input, moving and sounding, at the moment's own time, which does not advance
+ * (`EffectProps.moment`). Nothing a reader does in it is saved or sent, and it is as it landed again on Reset (the frame remounts each effect from the moment's states, so chairs fly
+ * again, a tail types in again and ink is back), on Back to now, and on a reload. The moment itself is read once for the page (`useMomentRead`, kept by the Lens store) and never changes;
+ * what a reader does inside it is their own screen's, nothing is broadcast, and the log is unchanged.
  *
- * Shown over a live post (As it landed, with Back to now) it is glass laid on a board post, in plain words and never in character: a
- * chamfered ring in the play's ink (`inkOf`), or its card's alignment's color, with its glow; a tag at the ring's top ("As it landed ·
- * Back to now", the time being the Lens's); and under the words, what no mark says (docs/plans/2026-11-16-playable-moments-design.md,
- * section 7): what became of the play, the plays on the post then, and that nothing done here is saved. A drawn card has no line: its
- * mark names it and its effect speaks as it does on a live post. Where the moment is the content (a play-spun ORIGIN box, with no Back to now) the box's own
- * border and head already frame it and say "as it landed", so it draws no ring and no tag, and what it says is the board's own small
- * print in the box's foot, under the content area and outside it (the owner, 2026-11-07: the ring, the tag and the box were "lots of
- * different borders" saying one thing). In the thread the ring
- * is the post body's own edge (`.kb-act-main`, bar to bar), since a card's effect paints the whole body and the moment shows it as it
- * landed (the owner, 2026-11-06: the frame "should extend all the way to the edges accordingly, so it can show the effect
- * accurately"); it is laid over the body and clips nothing. Elsewhere (the ORIGIN box) the ring is the moment's own box. The post's own
- * words are not restyled.
- *
- * A moment is the reader's own screen state: nothing is broadcast, and the log is unchanged. It is read once for the page
- * (`useMomentRead`, kept by the Lens store), and it never changes.
+ * Shown over a live post (As it landed, with Reset and Back to now) it is glass laid on a board post, in plain words and never in character: a chamfered ring in the play's ink
+ * (`inkOf`), or its card's alignment's color, with its glow; a tag at the ring's top ("As it landed · Reset · Back to now", the time being the Lens's); and under the words, what
+ * no mark says (design, section 7): what became of the play, the plays on the post then, and that nothing done here is saved. A drawn card has no line: its mark names it, its
+ * Lens says its state then and its way out (each effect's `show` reaches the strip of the post the moment is drawn on, `onView`), and its effect speaks as it does on a live post.
+ * Where the moment is the content (a play-spun ORIGIN box, with no Back to now) the box's own border and head already frame it and say "as it landed" with its own Reset, so it
+ * draws no ring and no tag, and what it says is the board's own small print in the box's foot, under the content area and outside it, so no effect that fills the area passes
+ * under it (the owner, 2026-11-07: the ring, the tag and the box were "lots of different borders" saying one thing). In the thread the ring is the post body's own edge
+ * (`.kb-act-main`, bar to bar), since a card's effect paints the whole body and the moment shows it as it landed (the owner, 2026-11-06: the frame "should extend all the way to
+ * the edges accordingly, so it can show the effect accurately"); it is laid over the body and clips nothing. Elsewhere (the ORIGIN box) the ring is the moment's own box. The post's
+ * own words are not restyled.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -114,7 +113,7 @@ export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As 
           <span>{label}</span>
           {/* The time the play landed is the frame's label and the Lens's (the owner, 2026-11-06: "the date is in the Lens already"); the tag says only what is not. */}
           {status !== null && read !== 'loading' && <><span aria-hidden="true"> · </span><span>{status}</span></>}
-          {reset && back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-reset" onClick={(e) => { e.currentTarget.focus(); reset(); }}>Reset</button></>}
+          {reset && back !== undefined && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-reset" onClick={(e) => { e.currentTarget.focus(); reset(); }}>Reset</button></>}
           {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
         </p>
       )}

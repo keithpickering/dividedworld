@@ -7,7 +7,9 @@
  * arrives on the origin thread's channel and shows here, as does a play, a saved state and a tally; the subscription is dropped when the thread is left. A page
  * read again (a rejoined channel, a catch-up) brings the origin again and the box takes it in: the newer of the Act held and the Act read, the plays added, the
  * billing set once. It says plainly when the Act is not there (the origin's `act` is null). A thread spun from a card play on a post shows that play's moment
- * instead (the post as it read when the play landed), which never changes, under the play's mark. When the player has just spun the thread, focus is on this box.
+ * instead (the post as it read when the play landed), under the play's mark. The moment is read once and never changes, but it is playable (docs/plans/2026-11-16-playable-moments-design.md): each effect in
+ * it runs live from the state it had then, saves and sends nothing, and is as it landed again on Reset, which the head carries ("… · as it landed · Reset"). The box has a mark for every card drawn in
+ * it (the spun play's row keeps React and Spin; the other plays' rows say their state then, hold their controls and link Go to post), so an older card's obstacle has its Lens and its keyboard path. When the player has just spun the thread, focus is on this box.
  *
  * A thread spun from a card on a character (docs/plans/2026-11-12-spin-at-post-design.md) shows a post of that character, as it was, never live. Where the
  * spin was pressed from the card's mark on a postbit (the place has `at`), that is the pressed post as it was when the spin was written (the spin's own
@@ -15,10 +17,10 @@
  * no post (every spin made before this, and any made another way), it is the cast-from post as the play landed (the play's moment, "As it landed"; a play from
  * before the snapshot reads the version current then, and says what else was on the post was not recorded), and the head says "as it landed" on one line:
  * never an error or an empty box. In both the character's name and avatar are one link to its profile, the box has a byline (that link and the version's date)
- * above the words, the card's effect is drawn still on the words, and the mark's Go to post leads to the pressed post where there is one, else the cast-from
+ * above the words, the card's effect is drawn on the words as a live one (a moment is playable), and the mark's Go to post leads to the pressed post where there is one, else the cast-from
  * post. A thread's play and a board's play draw no mark of their own in the box today (the mark is keyed by a post they have not): the box is the head and
  * nothing under it. Everything under the band stands in one content area (`div.kb-origin-area`, marked `data-kb-content-area`, drawn only where something stands there), which is what an
- * effect on the box fills and finds as its body; the History button, its panel and the "More than" note are lifted over it, and the box itself over the opening post's effect (spin.css). The moment the page carried is kept in the Lens's store under the key the frame reads it by (`seedMoment`), so the frame reads nothing.
+ * effect on the box fills and finds as its body; the History button, its panel and the "More than" note are lifted over it, and the box itself over the opening post's effect (spin.css). What a moment says under its post stands in the box's foot (`div.kb-origin-foot`), under the content area and outside it, so no effect that fills the area passes under it and nothing arrives late inside the area an effect has measured. The moment the page carried is kept in the Lens's store under the key the frame reads it by (`seedMoment`), so the frame reads nothing.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
@@ -122,7 +124,7 @@ function useCast(cast: readonly Character[], ids: readonly (Id | null)[]): { rea
 
 /**
  * The box of a thread spun from a card on a character: a byline (the character's avatar and name, one link to its profile, and the
- * version's date), then the post as a moment, drawn still with the card's effect on it. `spin` is the spin's own Act where the spin was
+ * version's date), then the post as a moment, drawn with the card's effect on it, playable. `spin` is the spin's own Act where the spin was
  * pressed on a post (its moment, "As it was spun"); without it the play's own moment is the cast-from post as it landed. The moment is
  * read through the same store the frame reads it by, so it is read once.
  */

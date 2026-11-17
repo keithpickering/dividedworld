@@ -136,6 +136,10 @@ function fit(points: readonly Pt[], box: Box): { aspect: number; points: [number
 export function Effect({ plays, reader, surface, ink: registry, place, show, met, still, children }: EffectProps) {
   const { session, hudCharacter } = usePlayer();
   const account = session.signedIn ? session.account : null;
+  /*
+   * Every use of `still` in this file is the old still moment's, and is unreachable until issue #774: a moment draws neither this card nor any with a surface
+   * (`playsInMoment`, engine/ui/cards/Effects.tsx), since it holds no read of a wall's acts. Plan 2 of docs/plans/2026-11-16-playable-moments-design.md replaces it.
+   */
   const canDraw = !still && surface !== undefined && account !== null && hudCharacter !== null;
   const acts = (surface?.acts ?? null) as readonly SurfaceAct[] | null;
 

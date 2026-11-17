@@ -26,6 +26,8 @@ import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.t
  * Cases 15 to 19 are Task 4 of docs/plans/2026-11-16-steel-chair-origin-plan.md (issue #768): Steel Chair's shading and chairs in the ORIGIN box on a post that reads `!` (`ChairLanded`, and at the phone's width `ChairLandedPhone`). Its case 5 (the cap still holds)
  * is e2e/steel-chair.spec.ts's `theLineCanBeRead`, whose browser's union is read against the minimum of each dent's own uncapped shade (from dent.ts) at the same 0.12; its case 1 on `WithFab`, and the axe case on it, are in that spec. Case 7's loop reads `ChairLanded` too (the plan's case 4).
  *
+ * Cases 3b, 3c and 13b are Tasks 4 and 13 of docs/plans/2026-11-16-playable-moments-plan.md: a moment's list stands in the box's foot, a moment is playable (scrub, Reset, no request), and a moment's ink is freed out of view.
+ *
  * Case 10 of the plan (a box with nothing under its band draws no area) is not here: no story's box is the band alone (the plan's own condition), so
  * engine/ui/spin/Spin.test.tsx's case 4 holds it.
  */
@@ -220,6 +222,37 @@ test('3b. with a Whoops! moment in the box, the ink is solid in the area\'s bott
   const atCorner = await inkAlpha(page, '.kb-origin canvas.kb-whoops-ink', a.left + 2, a.bottom - 2);
   expect(atCorner, 'the ink at a point 2px inside the area\'s bottom-left corner').not.toBeNull();
   expect(atCorner!, 'the ink is solid in the corner').toBeGreaterThan(40);
+});
+
+/*
+ * A moment is playable (docs/plans/2026-11-16-playable-moments-design.md, sections 1 and 4): a scrub across the box's Whoops! washes its ink, Reset in the head brings it back from the moment's own state,
+ * and nothing is requested between the two: what a reader does in a moment leaves their screen no further than the canvas.
+ */
+test("3c. scrubbing in the box's Whoops! moment washes ink, Reset brings it back, and no request is made between the two", async ({ page }) => {
+  /* Poison: Reset's press does nothing (the ink stays washed), or a moment's scrub sends a save (a request is then made). */
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await open(page, 'whoops-landed');
+  await built(page, '.kb-origin .kb-whoops');
+  const INK = '.kb-origin canvas.kb-whoops-ink';
+  await expect.poll(() => inked(page, INK)).toBeGreaterThan(1000);
+  /* The moment's own markup has no byline row to find, so the ink is looked for along the area's rows: the longest stretch of solid ink on 24 of them. */
+  const a = await padBox(area(page));
+  const along = await solidRun(page, INK, linesIn(a.top, a.bottom, 24), a.left, a.right, 3);
+  expect(along, 'the ink has a stretch of solid ink in the area to scrub across').not.toBeNull();
+  expect(along![1] - along![0], `the stretch is long enough to scrub across (${along})`).toBeGreaterThanOrEqual(24);
+  const before = await inked(page, INK);
+  const requests: string[] = [];
+  page.on('request', (r) => { requests.push(`${r.method()} ${r.resourceType()} ${r.url()}`); });
+  const [from, to, y] = along!;
+  const mid = (from + to) / 2;
+  await page.mouse.move(mid, y);
+  await page.mouse.down();
+  for (let pass = 0; pass < 6; pass++) await page.mouse.move(mid + (pass % 2 === 0 ? 1 : -1) * Math.max(8, (to - from) / 2 - 4), y, { steps: 20 });
+  await page.mouse.up();
+  await expect.poll(() => inked(page, INK), { message: 'a scrub in the moment washes ink' }).toBeLessThan(before);
+  await box(page).locator('.kb-origin-head .kb-origin-reset').click();
+  await expect.poll(() => inked(page, INK), { message: 'Reset brings the ink back' }).toBeGreaterThan(before * 0.95);
+  expect(requests, 'no request is made between the scrub and Reset').toEqual([]);
 });
 
 /* ------------------------------------------------------------------------------------------ 4. Feelin' Fab ---- */
@@ -754,6 +787,20 @@ test('13. scrolled out of view, nothing is drawn for the box and its canvas hold
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect.poll(draws, { message: 'back in view the box is drawn again' }).toBeGreaterThan(at);
   await expect.poll(async () => { const z = await size(); return z === null ? 0 : z.w * z.h; }, { message: 'back in view the foil has a backing store again' }).toBeGreaterThan(0);
+});
+
+test("13b. in a moment's box, scrolled out of view, the Whoops! ink holds no pictures; back in view, they are built again", async ({ page }) => {
+  /* Poison: the picture bands of a moment's Whoops! kept built out of view (the effect's near-band reading left out of its moment form). */
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await open(page, 'whoops-landed');
+  await built(page, '.kb-origin .kb-whoops');
+  const pictures = () => page.evaluate(() => { const el = document.querySelector('.kb-origin .kb-whoops'); return { bands: (el?.getAttribute('data-kb-bands') ?? '').split(' ').filter(Boolean).length, pictures: Number(el?.getAttribute('data-kb-pictures') ?? '0') }; });
+  expect((await pictures()).pictures, 'in view, the ink has its pictures').toBeGreaterThan(0);
+  await page.evaluate(() => { const s = document.createElement('div'); s.style.height = '4000px'; document.body.append(s); window.scrollTo(0, document.documentElement.scrollHeight); });
+  expect(await page.evaluate(() => document.querySelector('.kb-origin')!.getBoundingClientRect().bottom < 0), 'the box is scrolled fully out of view').toBe(true);
+  await expect.poll(pictures, { message: 'out of view the ink holds no pictures', timeout: 10_000 }).toEqual({ bands: 0, pictures: 0 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect.poll(async () => (await pictures()).pictures, { message: 'back in view the ink is built again', timeout: 10_000 }).toBeGreaterThan(0);
 });
 
 test('14. with the opening post\'s foil and the box\'s both on the page, two hosts are registered and each is held to its own allowance', async ({ page }) => {
