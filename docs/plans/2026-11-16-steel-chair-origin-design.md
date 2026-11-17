@@ -108,32 +108,32 @@ A size observer is no input and no animation, so the still mode's contract (`Eff
 The owner asked in this session whether a moment should be drawn still at all (section 7). This fix is right under
 today's rule and goes with the still path if that rule changes.
 
-## 6. A moment's own words in the ORIGIN box (engine)
+## 6. A moment's own words: left as they are
 
-**The owner's choice:** in an ORIGIN box whose content is a moment, the lines that say what a drawn card did
-("Steel Chair: Dented by a chair") are no longer drawn under the post. The owner: "There is already a Mark there to
-explain the effect, which speaks for itself regardless. We'd be keeping it just to fit the rule when the rule itself
-might be flawed." The words stay in the page for screen readers (`kb-visually-hidden`), since the effect's layers are
-hidden from them and the effect-history design gave the line so that a moment "can be read as well as seen".
+The line under the post ("Steel Chair: Dented by a chair") is the engine's moment frame, drawn for every card, on a
+ground of its own over any effect. With section 2 the dent passes under it as Whoops!'s ink does, and the line cuts a
+strip through the dent (`mock-a-box-grows.png`).
 
-This session's reading of that choice, for the owner to confirm in review: only the drawn cards' own words are
-hidden. The lines that say what is **not** drawn stay as they are, on their ground: what became of the play, "Also on
-the post then: …", and "What else was on the post then wasn't recorded." No mark in the box says those.
-
-A moment shown over a post in a thread (As it landed) keeps its glass panel. The engine names no card in any of this.
+The owner weighed changing it here ("There is already a Mark there to explain the effect, which speaks for itself
+regardless. We'd be keeping it just to fit the rule when the rule itself might be flawed"), and then took it out of
+this design: "remove 'Status line' from this plan and focus only on Steel Chair specifically, leaving the out-of-scope
+concerns to the other design." So nothing in the engine changes here, and what a moment says under its post is
+section 7's design to settle.
 
 ## 7. What the owner asked that is not designed here
 
 "'As it landed's propensity to show a 'frozen' version of the effect may also be flawed. Part of an effect when it
 landed is the way it can be interacted with at the time." The record's reason for the still mode is that a change
 made in a moment has nowhere true to be saved; that is a reason to refuse saving, not to refuse input or motion.
-Fifteen effects honor the still mode. The owner chose a design session of its own: issue #770.
+Fifteen effects honor the still mode. The owner chose a design session of its own: issue #770. That design also
+takes section 6's question, what a moment says under its post.
 
 ## 8. Open
 
 - **Not seen on a real iPhone.** Playwright's WebKit showed the six faults exactly as Chromium did, and section 2
   leaves nothing that depends on the browser beyond a PNG's alpha. The owner looks at the built stories on a phone.
-- **The band.** No fault was found in it. If the third line is still cut on the owner's phone once the dent stays in
+- **The band.** No fault was found in it, and this plan adds no test of the band's own, since it is the engine's
+  and not Steel Chair's; the plan holds that no dent lies above the area's top. If the third line is still cut on the owner's phone once the dent stays in
   its area, that is a fault of the band's own and a new issue.
 - **No spec runs in WebKit.** The story build does not parse in Playwright's WebKit when minified (issue #769), which
   is why neither Steel Chair PR was seen there. Whether CI should run any spec in WebKit is the owner's to decide.

@@ -12,19 +12,20 @@ tests for the changed code (`node --experimental-strip-types --test <file>` for 
 and `npm run build` once after the last task, with the tail in the PR. No deployed database, bucket or connector is
 touched, and there is no migration.
 
-**The layers.** Tasks 1, 2 and 5's stories are Divided World's (`instances/divided-world/`). Task 3 is the engine's
-(`engine/ui/cards/`), and names no card. Task 4 is a build tool. The instance imports the engine's `body.ts` as it
-does today; the engine imports nothing new.
+**The layers.** Tasks 1, 2 and 4's stories are Divided World's (`instances/divided-world/`). Task 3 is a build tool.
+**This build edits no file under `engine/`.** If a task cannot be done without one, stop and ask the owner. The
+instance imports the engine's `body.ts` as it does today.
 
 **No state is added** to a player, a character or a post, so there is no way out to name. **No response, payload,
 event or timing is added**: every image is made on the reader's own screen from a play's public id and the measured
 box, as today.
 
 **What stays as built:** the throw, the chairs and their physics (`body.ts`, `chair.ts`), the room's 77 px and its
-mark (`data-dw-chair-room`), the sound, the Lens, `filterTrusted`, the bend and the filter, `dentShape`,
-`dentHeight`, the lighting, `LIGHT`, `RELIEF`, `SPREAD`, `W0`, `W1`, the two shading layers and their place
-(`placeLayer`, `data-kb-effect-ink`), forced colors hiding the shading and the chairs, and what the owner approved by
-eye: a dent that fills its box at up to 160 px.
+mark (`data-dw-chair-room`), the sound, the Lens, the line a moment draws under its post (the engine's, left to
+issue #770's design), `filterTrusted`, the bend and the filter, `dentShape`, `dentHeight`, the lighting, `LIGHT`,
+`RELIEF`, `SPREAD`, `W0`, `W1`, the two shading layers and their place (`placeLayer`, `data-kb-effect-ink`), forced
+colors hiding the shading and the chairs, and what the owner approved by eye: a dent that fills its box at up to
+160 px.
 
 **Expected to move:** the unit harness's area is 200 px tall (`Effect.test.tsx`, `size = { h: 200 }`), so Task 1's
 height limit changes the dent sizes some tests pin; give those the new size or a taller area, and say which in the PR.
@@ -143,29 +144,7 @@ Model: sonnet
     `still`).
   - The header comment: the shading's sentence, the still run's, and the zone's.
 
-## Task 3. A moment's drawn cards' words are not drawn under the post in the ORIGIN box (engine)
-
-Model: sonnet
-
-**Files:** `engine/ui/cards/Moment.tsx`, `moment.css`, `moment.test.tsx`, `engine/ui/spin/Spin.test.tsx`.
-
-**Tests first:**
-
-1. (`moment.test.tsx`) A `MomentFrame` with no `back` (the content of an ORIGIN box) and `words: ['Whoops!: 40%
-   washed']`: the words are in the document inside an element with class `kb-visually-hidden`, and no
-   `.kb-moment-list` holds them. With `words` only (no `own`, `named` or `unrecorded`), no `.kb-moment-list` is
-   rendered at all.
-2. The same frame with `named: ['Stick Around']`, `unrecorded: true` and `own` set: those three lines are in
-   `.kb-moment-list`, not hidden, as today.
-3. A `MomentFrame` with `back` (over a post in a thread): `words` are in `.kb-moment-list` as today.
-4. (`Spin.test.tsx`) In a play-spun box whose moment draws a card, the box's accessible text holds the card's words
-   and the area holds no visible list for them.
-
-**Code:** in `MomentFrame`, where `content` is true, `words` render in `<div className="kb-visually-hidden">` (one
-`<p>` each) after the body, and the list renders only `own`, `named` and `unrecorded`. Where `content` is false
-nothing changes. Update the file's and `moment.css`'s comments. `kb-visually-hidden` is `engine/ui/base.css`'s.
-
-## Task 4. A build check: no effect blends with what is behind it
+## Task 3. A build check: no effect blends with what is behind it
 
 Model: sonnet
 
@@ -185,13 +164,13 @@ planted `.tsx` with `style={{ mixBlendMode: 'screen' }}` fires; `mix-blend-mode:
 `background-blend-mode`, and a test file stay clean; and the real tree is clean (which is red until Task 2 has
 landed, so this task comes after it).
 
-## Task 5. The stories and the browser
+## Task 4. The stories and the browser
 
 Model: sonnet
 
 **Files:** `instances/divided-world/ui/OriginEffects.board.stories.tsx`,
 `instances/divided-world/ui/steel-chair/Chair.board.stories.tsx`, `e2e/origin-effects.spec.ts`,
-`e2e/steel-chair.spec.ts`, `e2e/origin-band.spec.ts`, and whatever lists the board stories
+`e2e/steel-chair.spec.ts`, and whatever lists the board stories
 (`e2e/board-stories.ts`).
 
 **Stories:**
@@ -200,8 +179,6 @@ Model: sonnet
   `WhoopsLanded` is, with the cards met so no tip covers the box). `ChairLandedPhone`: the same at the phone's width
   (`globals: phone`).
 - `WithFab` in the Steel Chair stories: the three-paragraph post with Steel Chair and Feelin' Fab both on it.
-- A spun thread whose band wraps to three lines or more at 390 wide, if no story has one (`ChairLandedPhone` does:
-  "ORIGIN · Spun from Steel Chair on #2 in Ranking every Mario Kart · as it landed").
 
 **Cases, each with its poison:**
 
@@ -209,7 +186,7 @@ Model: sonnet
    four corners of each dent's box (4 px squares, where the image's alpha is 0) are the same pixels with the shading
    shown and hidden, within 2 levels. Poison: the shade image made opaque again (alpha 255, gray kept).
 2. *The dent is in the area.* In `ChairLanded` at both widths and `chair-short`: every dent's box is inside the
-   area's padding box and its top is at or below the band's bottom. Poison: `zoneHeight` returning the area's
+   area's padding box and its top is at or below the band's bottom (so no dent lies over the band's words). Poison: `zoneHeight` returning the area's
    height plus 40.
 3. *The box grew.* In `ChairLanded` at both widths the area's content height is at least 237 px and the dent's
    larger axis is over 100 px. Poison: the `min-height` rule deleted.
@@ -217,20 +194,14 @@ Model: sonnet
    case 7 (floor, walls, room). Then the viewport is set from 1440 to 390 wide: `fills` holds for the three layers
    again and the chair's bottom is within `ROOM_HEIGHT` of the area's bottom. Poison: the still run's size observer
    not bound.
-5. *Nothing is drawn under the post.* In `ChairLanded` no element with text "Dented by a chair" has a box with area,
-   and the box's accessible text (`innerText` is not enough: read the text content of the area) holds it. Poison:
-   Task 3's branch removed.
-6. *The band holds its words at a phone's width* (`origin-band.spec.ts`, 390 wide, the three-line story): every
-   client rect of `.kb-origin-head-text`'s text lies inside the band's padding box, and no element of the area has a
-   box above the area's top. Poison: `.kb-origin-head { height: 2em; overflow: hidden }` planted.
-7. *The cap still holds.* The present `theLineCanBeRead` cases (`worstGap`, `deepest`, the 4.5:1 glyph contrast, the
+5. *The cap still holds.* The present `theLineCanBeRead` cases (`worstGap`, `deepest`, the 4.5:1 glyph contrast, the
    dark theme's tenths) stay green with no bound changed.
-8. *axe* finds nothing on the three new stories.
+6. *axe* finds nothing on the three new stories.
 
 **Seen in WebKit, once, by the build session.** If Playwright's WebKit is installed locally (`npx playwright
 install --dry-run` lists it; do not download one): build with `npx vite build web --mode e2e --minify false` (the
 minified build does not parse there, issue #769), serve it on a port of its own (`KB_E2E_PORT`), and run cases 1 to
-6 with `--browser=webkit`. Put the output in the PR. If it is not installed, say so plainly in the PR. CI stays on
+4 with `--browser=webkit`. Put the output in the PR. If it is not installed, say so plainly in the PR. CI stays on
 Chromium.
 
 **Screenshots for the owner's word:** `ChairLanded`, `ChairLandedPhone` and `WithFab`, light and dark, in the shared
@@ -253,7 +224,8 @@ notes folder and linked from the PR. The owner looks at the phone story on a pho
   is smaller than it was, and a tall text's dent may land a few pixels further in.
 - The 237 px applies to any content area the effect marks. A place added later that shows a post in a small bordered
   box gets it too; whether that is wanted there is that place's design.
-- Task 3 hides only the drawn cards' own words. That is this session's reading of the owner's choice; the design's
-  section 6 asks the owner to confirm it.
+- The moment's line under the post stays on its own ground and cuts a strip through the dent, and it is what makes
+  the area grow after a still run's first measure. Both are as the engine has them; issue #770's design decides the
+  line.
 - Not seen on a real iPhone. The moment's rule itself (drawn still) is under question in issue #770; nothing here
   depends on its answer except Task 2's still-run change, which goes with the still path if that rule changes.
