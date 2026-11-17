@@ -686,7 +686,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   }, [states]);
 
   /* A moment meets nothing: it sends nothing at all, the reader's own first-time callout included. */
-  const meet = useRef(met);
+  const meet = useRef<(() => void) | null>(null);
   meet.current = moment === null ? met : null;
   const onMeet = useCallback(() => meet.current?.(), []);
   const model = useRef({ live, strips, text, author });
