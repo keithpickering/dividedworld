@@ -103,8 +103,8 @@ test('the shares sent for a boost entry carry its card, and the entry names it i
   const { db, calls } = fakeDb(boosted);
   await runSettlement(db, instance, new Date(TO).toISOString());
   const apply = calls.find((c) => c.fn === 'apply_settlement')!.args;
-  const boost = (apply.entries as { character: string; reason: string; params?: { card?: string } }[]).find((e) => e.reason === 'card.boost');
-  assert.deepEqual(boost?.params, { card: 'heat-magnet' }, 'the entry names its card');
+  const boost = (apply.entries as { character: string; reason: string; params?: { card?: string; flat?: number } }[]).find((e) => e.reason === 'card.boost');
+  assert.deepEqual(boost?.params, { card: 'heat-magnet', flat: 0.75 }, 'the entry names its card and the flat it paid');
   const shares = (apply.shares as { reason: string; card?: string }[]).filter((s) => s.reason === 'card.boost');
   assert.ok(shares.length > 0, 'the boost is shared');
   assert.ok(shares.every((s) => s.card === 'heat-magnet'), `each boost share carries its card: ${JSON.stringify(shares)}`);

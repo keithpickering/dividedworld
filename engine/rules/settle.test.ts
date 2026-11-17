@@ -1134,14 +1134,19 @@ const cardsWorld: Instance = {
     { ...splat, key: 'fireBoost', gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5 } },
     { ...splat, key: 'laughBoost', gimmick: { kind: 'earn', reactions: ['laughing'], by: 0.5 } },
     { ...splat, key: 'dustBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1e-8 } },
-    { ...splat, key: 'useGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
-    { ...splat, key: 'castGrouped', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
-    { ...splat, key: 'castPostGrouped', reaches: ['post'] as const, lasts: { unit: 'day', count: 3 }, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1, group: 'publicity' } },
-    { ...splat, key: 'castCharGrouped', reaches: ['character'] as const, lasts: { unit: 'day', count: 3 }, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.2, group: 'publicity' } },
-    { ...splat, key: 'bigGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.2, group: 'warm' } },
-    { ...splat, key: 'fireGrouped', play: 'use' as const, gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5, group: 'warm' } },
-    { ...splat, key: 'heatGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['excitedPositive'], by: 0.1, group: 'warm' } },
-    { ...splat, key: 'coolGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.3, group: 'cool' } },
+    { ...splat, key: 'castBoost', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 } },
+    { ...splat, key: 'calmHalf', gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 0.5 } },
+    { ...splat, key: 'calmHalfB', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 0.5 } },
+    { ...splat, key: 'calmWhole', gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 1 } },
+    { ...splat, key: 'fireFlat', gimmick: { kind: 'earn', reactions: ['fire'], flat: 0.5 } },
+    { ...splat, key: 'heartFlat', gimmick: { kind: 'earn', reactions: ['heart'], flat: 1 } },
+    { ...splat, key: 'teaFlat', gimmick: { kind: 'earn', reactions: ['tea'], flat: 0.25 } },
+    { ...splat, key: 'tomatoFlat', gimmick: { kind: 'earn', reactions: ['tomato'], flat: 0.5 } },
+    { ...splat, key: 'heatFlat', gimmick: { kind: 'earn', quadrants: ['excitedPositive'], flat: 0.25 } },
+    { ...splat, key: 'heatChillFlat', gimmick: { kind: 'earn', quadrants: ['excitedPositive', 'boredNegative'], flat: 0.5 } },
+    { ...splat, key: 'cardFlat', gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 0.5, acts: ['card', 'spring'] } },
+    { ...splat, key: 'dustFlat', gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 1e-8 } },
+    { ...splat, key: 'softCushion', gimmick: { kind: 'cushion', share: 0.5 } },
   ],
 };
 function springBoard(castBy: string, extra: InputAct[] = [], unscoredTargets: SettlementInput['unscoredTargets'] = []): SettlementInput {
@@ -1240,7 +1245,7 @@ test('an earn gimmick raises positive earnings from its quadrants inside its win
   ]), cardsWorld);
   assert.equal(amountOf(r, 'tom-1', 'kinded.nod'), 30);
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1, '10% of the one vote inside [at, ends)');
-  assert.deepEqual(r.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'calmBoost' });
+  assert.deepEqual(r.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'calmBoost', by: 0.1 });
 });
 test('an earn gimmick never raises a negative earning, and one from a quadrant it does not name is left alone', () => {
   const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H)], [
@@ -1300,7 +1305,7 @@ test('a gimmick on a post raises that post\'s earnings alone, and two gimmicks e
     react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'fire', FROM + 5 * H),
   ]), cardsWorld);
   assert.equal(amountOf(both, 'tom-1', 'card.boost'), 1 + 5, 'the calm vote by 10%, the fire vote by 50%');
-  assert.deepEqual(both.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost' }, 1], [{ card: 'fireBoost' }, 5]], 'one entry per card, each naming its own');
+  assert.deepEqual(both.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost', by: 0.1 }, 1], [{ card: 'fireBoost', by: 0.5 }, 5]], 'one entry per card, each naming its own');
   assert.equal(both.details.filter((d) => d.reason === 'card.boost').reduce((s, d) => s + d.amount, 0), 6, 'the log\'s lines add up to the entries');
 });
 test('two Earn cards on different posts split each boost entry over its own card\'s posts alone', () => {
@@ -1328,7 +1333,7 @@ test('a boost that rounds to nothing makes no card.boost entry', () => {
 test('the same card on a character and on one of its posts is one entry, each play boosting', () => {
   const onPost: InputAct = { id: 'g2', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'calmBoost', ends: FROM + 20 * H };
   const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H), onPost], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost' }, 2]]);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost', by: 0.1 }, 2]]);
 });
 test('an earn gimmick played before the window, still up in it, boosts the window\'s earnings', () => {
   const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM - 2 * H, FROM + 10 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'tea', FROM + 11 * H)]), cardsWorld);
@@ -1686,80 +1691,335 @@ test('card payouts are in no class\'s total, the log adds up to the entries, and
 /* Earns that do not add, and an earn a cast card carries (docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 1). */
 const castOn = (id: string, character: string, card: string, at: number, on: string, ends: number = FROM + 20 * H): InputAct => ({ id, character, kind: 'card', at, thread: 't1', card, reach: 'character', on, ends });
 test('a cast earn on another player\'s character boosts that character\'s earnings, by the target\'s player, and pays the caster nothing', () => {
-  const r = settle(earnBoard([castOn('g1', 'bob-1', 'castGrouped', FROM + 2 * H, 'tom-1', FROM + 10 * H)], [
+  const r = settle(earnBoard([castOn('g1', 'bob-1', 'castBoost', FROM + 2 * H, 'tom-1', FROM + 10 * H)], [
     react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
     react('tp1', 'dee', 'dee-1', 'tea', FROM + 12 * H),
   ]), cardsWorld);
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1, 'inside [at, ends) only');
   const boost = r.entries.find((e) => e.reason === 'card.boost')!;
   assert.equal(boost.player, 'tom');
-  assert.deepEqual(boost.params, { card: 'castGrouped' });
+  assert.deepEqual(boost.params, { card: 'castBoost', by: 0.1 });
   assert.equal(r.entries.filter((e) => e.player === 'bob' && e.reason === 'card.boost').length, 0, 'the caster is paid nothing for it');
 });
-test('a cast earn on a post boosts the post earning alone, and shares its group with a cast earn on the character: the larger, per earning', () => {
-  const onPost: InputAct = { id: 'h1', character: 'bob-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'castPostGrouped', ends: FROM + 20 * H };
-  const r = settle(earnBoard([onPost, castOn('h2', 'bob-1', 'castCharGrouped', FROM + 3 * H, 'tom-1')], [
-    react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
-    react('tp2', 'dee', 'dee-1', 'tea', FROM + 5 * H),
+/* The flat Earn (docs/plans/2026-11-16-settlement-engine-plan.md, Task 2): a share of a vote for each vote, to any class, on posts unless the
+   card names `acts`. The test classes: "kinded" gains from every quadrant but a groan and loses from a groan, "quiet" pays nothing for a vote. */
+function flatBoard(gimmicks: InputAct[], reactions: InputReaction[], extra: InputAct[] = [], over: Partial<SettlementInput> = {}): SettlementInput {
+  return {
+    window: { id: 'w1', from: FROM, to: TO },
+    characters: [
+      { id: 'tom-1', player: 'tom', classes: [{ class: 'kinded', from: 0 }] },
+      { id: 'tom-2', player: 'tom', classes: [{ class: 'quiet', from: 0 }] },
+      { id: 'uma-1', player: 'uma', classes: [{ class: 'quiet', from: 0 }] },
+      ...['bob', 'cat', 'dee', 'eve', 'fay'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+    acts: [post('tp1', 'tom-1', FROM + 1 * H), post('tp2', 'tom-1', FROM + 1 * H + 1), post('up1', 'uma-1', FROM + 1 * H), ...extra, ...gimmicks],
+    reactions,
+    ...over,
+  };
+}
+const onUma = (id: string, card: string, at: number, ends = FROM + 20 * H): InputAct => ({ ...onTom(id, card, at, ends), character: 'uma-1', on: 'uma-1' });
+const onPostBy = (id: string, character: string, card: string, target: string, at: number, ends = FROM + 20 * H): InputAct => ({ id, character, kind: 'card', at, thread: 't1', target, card, ends });
+const boostsOf = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.reason === 'card.boost');
+const boostTo = (r: ReturnType<typeof settle>, character: string) => amountOf(r, character, 'card.boost');
+
+test('a flat earn pays its share of a vote for a vote in its quadrant to a class that gains there, one that loses there and one that ignores it, the same each', () => {
+  const r = settle(flatBoard([onTom('g1', 'heatChillFlat', FROM + 2 * H), onUma('g2', 'heatChillFlat', FROM + 2 * H)], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H), react('up1', 'dee', 'dee-1', 'fire', FROM + 5 * H),
   ]), cardsWorld);
-  const byAct = (act: string) => r.details.filter((d) => d.reason === 'card.boost' && d.act === act).map((d) => [d.params, d.amount]);
-  assert.deepEqual(byAct('tp1'), [[{ card: 'castPostGrouped' }, 10]], 'the post earning gets the 1, the larger of the group');
-  assert.deepEqual(byAct('tp2'), [[{ card: 'castCharGrouped' }, 2]], 'another post of the same character gets the 0.2');
-  assert.equal(r.entries.filter((e) => e.player === 'bob' && e.reason === 'card.boost').length, 0, 'the caster is paid nothing for it');
+  assert.equal(amountOf(r, 'tom-1', 'kinded.nod'), 10, 'tom gains from the fire');
+  assert.equal(amountOf(r, 'tom-1', 'kinded.groan'), -10, 'and loses from the groan');
+  assert.deepEqual(r.details.filter((d) => d.character === 'tom-1' && d.reason === 'card.boost').map((d) => d.amount), [5, 5], 'half a vote (5) each, the gain and the loss alike');
+  assert.equal(boostTo(r, 'tom-1'), 10);
+  assert.equal(boostTo(r, 'uma-1'), 5, 'a class that ignores a vote is paid the same');
 });
-test('two earns of one group on one character make one boost per earning, by the earlier play\'s card', () => {
-  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H), castOn('g2', 'bob-1', 'castGrouped', FROM + 3 * H, 'tom-1')], [
-    react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
-  ]), cardsWorld);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'useGrouped' }, 1]], 'one boost, not two');
-  assert.equal(r.details.filter((d) => d.reason === 'card.boost').length, 1);
+test('a flat earn on a second Act of the window from one voter pays half, and the estimate pays whole', () => {
+  const input = flatBoard([onTom('g1', 'calmWhole', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp2', 'bob', 'bob-1', 'tea', FROM + 6 * H)]);
+  assert.equal(boostTo(settle(input, cardsWorld), 'tom-1'), 10 + 5, 'a whole vote, then half of one');
+  const estimate = estimateForOwner(input, cardsWorld, 'tom');
+  assert.equal(estimate.entries.filter((e) => e.reason === 'card.boost').reduce((s, e) => s + e.amount, 0), 20, 'each reaction a whole vote');
+  assert.equal(estimate.lines.filter((l) => l.reason === 'card.boost').reduce((s, l) => s + l.amount, 0), 20);
 });
-test('of two earns in a group the larger alone applies, whichever was played first', () => {
-  for (const order of [['useGrouped', 'bigGrouped'], ['bigGrouped', 'useGrouped']]) {
-    const r = settle(earnBoard(order.map((card, i) => onTom(`g${i}`, card, FROM + (2 + i) * H)), [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
-    assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'bigGrouped' }, 2]], order.join(' then '));
-  }
+test('a flat earn that names a reaction kind: one player leaving a heart then a fire is one voter in the settlement (first kind, the heart, pays nothing) and two in the estimate (the fire is its own voter and pays)', () => {
+  const input = flatBoard([onTom('g1', 'fireFlat', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'fire', FROM + 6 * H)]);
+  const lines = estimateForOwner(input, cardsWorld, 'tom').lines.filter((l) => l.reason === 'card.boost');
+  assert.deepEqual(lines.map((l) => [l.at, l.amount]), [[FROM + 6 * H, 5]], 'in the estimate each reaction is a voter of its own: the fire is paid whole at its own time and the heart nothing');
+  assert.equal(boostTo(settle(input, cardsWorld), 'tom-1'), 0, 'the settlement is exact: the voter first kind in the quadrant is the heart, so the fire is not paid');
 });
-test('of two earns in a group whose windows overlap in part, an earning inside only one window is boosted by that one', () => {
-  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H, FROM + 10 * H), onTom('g2', 'bigGrouped', FROM + 6 * H, FROM + 20 * H)], [
-    react('tp1', 'bob', 'bob-1', 'tea', FROM + 4 * H),
-    react('tp1', 'cat', 'cat-1', 'tea', FROM + 8 * H),
-    react('tp1', 'dee', 'dee-1', 'tea', FROM + 15 * H),
-  ]), cardsWorld);
-  const lines = r.details.filter((d) => d.reason === 'card.boost').map((d) => [d.at, d.amount]).sort();
-  assert.deepEqual(lines, [[FROM + 4 * H, 1], [FROM + 8 * H, 2], [FROM + 15 * H, 2]], 'the smaller alone, then the larger alone where both are up, then the larger alone');
+test('a flat earn pays nothing outside its time, at its end, in a quadrant it does not name, with no `ends`, or for the character\'s own player', () => {
+  const one = (r: InputReaction, ends: number | null = FROM + 10 * H) => boostTo(settle(flatBoard([onTom('g1', 'calmHalf', FROM + 2 * H, ends)], [r]), cardsWorld), 'tom-1');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)), 5, 'inside it');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tea', FROM + 2 * H - 1)), 0, 'before it');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tea', FROM + 10 * H)), 0, 'at its end');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tea', FROM + 12 * H)), 0, 'after it');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H)), 0, 'a quadrant it does not name');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), null), 0, 'a play with no `ends`');
+  assert.equal(one(react('tp1', 'tom', 'tom-2', 'tea', FROM + 5 * H)), 0, 'the character\'s own player');
 });
-test('a grouped earn beside an ungrouped one naming the same quadrant: both boost', () => {
-  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H), onTom('g2', 'calmBoost', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
-  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 2);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => e.params?.card).sort(), ['calmBoost', 'useGrouped']);
-});
-test('earns of two different groups both apply to one earning', () => {
-  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H), onTom('g2', 'coolGrouped', FROM + 3 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]).sort((x, y) => String((x[0] as { card: string }).card).localeCompare(String((y[0] as { card: string }).card))), [[{ card: 'coolGrouped' }, 3], [{ card: 'useGrouped' }, 1]], 'one boost per group');
-});
-test('within one group, an earn that matches by reaction kind and one that matches by quadrant do not add: the larger applies', () => {
-  const r = settle(earnBoard([onTom('g1', 'heatGrouped', FROM + 2 * H), onTom('g2', 'fireGrouped', FROM + 3 * H)], [
+test('a flat earn that names a reaction pays it and leaves another of its quadrant and a post-local one alone', () => {
+  const r = settle(flatBoard([onTom('g1', 'fireFlat', FROM + 2 * H)], [
     react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
     react('tp2', 'cat', 'cat-1', 'heart', FROM + 5 * H),
+    local('tp1', 'dee', 'dee-1', 'x-1f480', FROM + 5 * H, 'excitedPositive'),
   ]), cardsWorld);
-  const byAct = (act: string) => r.details.filter((d) => d.reason === 'card.boost' && d.act === act).map((d) => [d.params, d.amount]);
-  assert.deepEqual(byAct('tp1'), [[{ card: 'fireGrouped' }, 5]], 'a fire vote is in both arms; the larger alone');
-  assert.deepEqual(byAct('tp2'), [[{ card: 'heatGrouped' }, 1]], 'a heart vote is in the quadrant arm alone');
+  assert.equal(boostTo(r, 'tom-1'), 5, 'the fire alone');
 });
-test('a group spans the boosts on an earning\'s character and on its post: one boost for an earning both apply to', () => {
-  const onPost: InputAct = { id: 'g1', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'useGrouped', ends: FROM + 20 * H };
-  const r = settle(earnBoard([onPost, castOn('g2', 'bob-1', 'castGrouped', FROM + 3 * H, 'tom-1')], [
-    react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
+test('with no `acts` a flat earn pays on a post and a spin and not on the character\'s card Act; with `acts` it pays on a card Act and a spring Act and not on a post', () => {
+  const extra: InputAct[] = [
+    { id: 'sn', character: 'tom-1', kind: 'spin', at: FROM + 1 * H + 3, thread: 's1' },
+    { id: 'ck', character: 'tom-1', kind: 'card', at: FROM + 1 * H + 4, thread: 't1', target: 'tp1', card: 'splat' },
+    { id: 'sg', character: 'tom-1', kind: 'spring', at: FROM + 1 * H + 5, thread: 't1', target: 'tp1', card: 'splat' },
+  ];
+  const votes = [react('tp1', 'dee', 'dee-1', 'tea', FROM + 5 * H), react('sn', 'eve', 'eve-1', 'tea', FROM + 5 * H), react('ck', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('sg', 'cat', 'cat-1', 'tea', FROM + 5 * H)];
+  const posts = settle(flatBoard([onTom('g1', 'calmWhole', FROM + 2 * H)], votes, extra), cardsWorld);
+  assert.deepEqual(posts.details.filter((d) => d.reason === 'card.boost').map((d) => [d.act, d.amount]).sort(), [['sn', 10], ['tp1', 10]], 'the post and the spin');
+  const cards = settle(flatBoard([onTom('g1', 'cardFlat', FROM + 2 * H)], votes, extra), cardsWorld);
+  assert.deepEqual(cards.details.filter((d) => d.reason === 'card.boost').map((d) => [d.act, d.amount]).sort(), [['ck', 5], ['sg', 5]], 'the card Act and the spring Act');
+});
+test('a voter who first reacted before the play is never paid for, though they add a reaction in its quadrant while it is up', () => {
+  const r = settle(flatBoard([onTom('g1', 'heatChillFlat', FROM + 2 * H)], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 1 * H + 10), react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'heart', FROM + 5 * H),
   ]), cardsWorld);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'useGrouped' }, 1]], 'the earlier play, once');
+  assert.equal(boostTo(r, 'tom-1'), 5, 'Cat alone');
 });
-test('a tie in a group goes to the earliest play, then the smaller play id', () => {
-  const r = settle(earnBoard([castOn('b', 'bob-1', 'castGrouped', FROM + 2 * H, 'tom-1'), onTom('a', 'useGrouped', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => e.params), [{ card: 'useGrouped' }], 'same time and size: the smaller id, a');
+test('a vote paid in one window that splits to another quadrant in the next, while the play is up, takes back that share\'s pay', () => {
+  const play = onTom('g1', 'calmWhole', FROM + 2 * H, FROM + 100 * H);
+  const first = settle(flatBoard([play], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(boostTo(first, 'tom-1'), 10);
+  const second = settle(flatBoard([play], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: first.paid }), cardsWorld);
+  assert.equal(boostTo(second, 'tom-1'), -5, 'half the vote left the calm quadrant');
+  assert.ok(boostTo(first, 'tom-1') + boostTo(second, 'tom-1') >= 0, 'the play never costs its holder');
+});
+test('a vote that moves away after the play ended takes back nothing, and one that was there before the play never paid', () => {
+  const ended = onTom('g1', 'calmWhole', FROM + 2 * H, FROM + 10 * H);
+  const first = settle(flatBoard([ended], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  const second = settle(flatBoard([ended], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: first.paid }), cardsWorld);
+  assert.equal(boostTo(first, 'tom-1'), 10);
+  assert.equal(boostTo(second, 'tom-1'), 0, 'the play had ended');
+  const up = onTom('g1', 'calmWhole', FROM + 2 * H, FROM + 100 * H);
+  const early = settle(flatBoard([up], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 1 * H + 10)]), cardsWorld);
+  const moved = settle(flatBoard([up], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 1 * H + 10), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: early.paid }), cardsWorld);
+  assert.equal(boostTo(early, 'tom-1') + boostTo(moved, 'tom-1'), 0, 'a vote there before the play was never paid and takes nothing back');
+});
+test('over many seeded sequences of windows, flat earns that name quadrants or reactions never cost the character: all its boost entries sum to zero or more, in the whole and after every window', () => {
+  // A tiny LCG, so every run draws the same few hundred sequences.
+  // Its first outputs of nearby seeds are correlated (seeds 1 to 400 span a narrow band of the first), so each seed's generator discards its first few.
+  const lcg = (seed: number) => { let s = seed >>> 0; const next = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 2 ** 32; }; for (let i = 0; i < 8; i++) next(); return next; };
+  const WINDOWS = 5;
+  const voters = ['bob', 'cat', 'dee', 'eve', 'fay'];
+  // The hot quadrant's two kinds are drawn twice as often, so a voter often leaves two kinds of one quadrant, which is where a kind-named play and a quadrant-named one part.
+  const kinds = ['tea', 'tomato', 'fire', 'heart', 'fire', 'heart', 'tea', 'zzz'];
+  const named = ['calmWhole', 'heatChillFlat', 'heatFlat', 'calmHalf'];
+  const kinded = ['fireFlat', 'heartFlat', 'teaFlat', 'tomatoFlat'];
+  // A vote of 1440 makes every amount a whole number, and the test asserts that, so the bound is exact and no tolerance is allowed: a share of a vote is a fraction with a denominator
+  // that divides 60 (one to six reactions on a post, a fifth and a sixth of a vote), halving weight (a whole, a half) times flat (a quarter, a half, a whole) is a multiple of an eighth, and 60 times 8 divides 1440.
+  // A loss of any size, even one hundredth, fails.
+  const exact: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 1440 } };
+  let withTakeBack = 0;
+  let withEarlyFirst = 0;
+  let withManyVoters = 0;
+  let withHot = 0;
+  let wide = 0;
+  let wideTakeBack = 0;
+  let wideKindedCrowd = 0;
+  let wideEarlyFirst = 0;
+  for (let seed = 1; seed <= 400; seed++) {
+    const rand = lcg(seed);
+    const int = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1));
+    const pick = <T,>(xs: readonly T[]): T => xs[int(0, xs.length - 1)]!;
+    // Every third seed is hot, so exactly a third of the sequences are: the quarter-vote play of the hot quadrant beside a kind-named play of it, one voter on one post who first reacts early in the hot quadrant and then reacts again,
+    // each time most often a window later, which is where a take-back can be priced by another play than the one that paid. The rest are wide: up to five voters on two posts, plays that start anywhere
+    // and last a few hours or days, and first reactions before, inside and after the plays; any play may name quadrants or reaction kinds.
+    const hot = seed % 3 === 0;
+    if (hot) withHot++; else wide++;
+    const plays: InputAct[] = [];
+    const reactions: InputReaction[] = [];
+    if (hot) {
+      const aAt = FROM + int(0, 8) * H;
+      const mode = int(0, 3);
+      if (mode !== 1) plays.push(onTom('gA', 'heatFlat', aAt, aAt + int(60, 200) * H));
+      if (mode !== 0) {
+        const bAt = FROM + int(0, 8) * H;
+        const bEnds = bAt + int(60, 200) * H;
+        const card = pick(['fireFlat', 'heartFlat']);
+        plays.push(rand() < 0.5 ? onPostBy('gB', 'tom-1', card, pick(['tp1', 'tp2']), bAt, bEnds) : onTom('gB', card, bAt, bEnds));
+      }
+      if (mode === 3) {
+        const cAt = FROM + int(0, 8) * H;
+        plays.push(onTom('gC', pick(kinded), cAt, cAt + int(60, 200) * H));
+      }
+      let at = FROM + int(9, 14) * H + int(0, 59) * 60_000;
+      for (let n = pick([1, 2, 3, 5, 6]); n > 0; n--) {
+        reactions.push(react('tp1', 'bob', 'bob-1', pick(['heart', 'fire', 'tea', 'tomato']), at));
+        at += int(15, 40) * H + int(0, 59) * 60_000;
+      }
+    } else {
+      // One flat earn on the character, and (usually) a second of another size on a post or the character, overlapping in part, each of a quadrant or of a kind.
+      const aAt = FROM + int(0, 70) * H;
+      plays.push(onTom('gA', pick([...named, ...kinded]), aAt, aAt + int(3, 80) * H));
+      if (rand() < 0.8) {
+        const bAt = FROM + int(0, 70) * H;
+        const bEnds = bAt + int(3, 80) * H;
+        const card = pick([...named, ...kinded]);
+        plays.push(rand() < 0.5 ? onPostBy('gB', 'tom-1', card, pick(['tp1', 'tp2']), bAt, bEnds) : onTom('gB', card, bAt, bEnds));
+      }
+      for (const p of voters) {
+        for (const act of ['tp1', 'tp2']) {
+          if (rand() < 0.35) continue;
+          let at = FROM + int(0, WINDOWS * 24 - 30) * H + int(0, 59) * 60_000;
+          for (let n = int(1, 3); n > 0; n--) {
+            reactions.push(react(act, p, `${p}-1`, pick(kinds), at));
+            at += int(1, 40) * H + int(0, 59) * 60_000;
+          }
+        }
+      }
+    }
+    // The guard counts: a voter whose first reaction on an Act is before a play started, and three or more voters.
+    const firstOf = new Map<string, number>();
+    for (const r of reactions) firstOf.set(`${r.act}|${r.player}`, Math.min(firstOf.get(`${r.act}|${r.player}`) ?? Infinity, r.at));
+    const earlyFirst = [...firstOf.values()].some((first) => plays.some((g) => first < g.at));
+    const manyVoters = new Set(reactions.map((r) => r.player)).size >= 3;
+    const hasKinded = plays.some((g) => kinded.includes(g.card ?? ''));
+    if (earlyFirst) withEarlyFirst++;
+    if (manyVoters) withManyVoters++;
+    if (!hot && earlyFirst) wideEarlyFirst++;
+    if (!hot && hasKinded && manyVoters) wideKindedCrowd++;
+    const windows = [...Array(WINDOWS)].map((_, k) => ({ id: `w${k}`, from: FROM + k * 24 * H, to: FROM + (k + 1) * 24 * H }));
+    const paidSoFar = new Map<string, SettlementInput['paid'] extends readonly (infer P)[] | undefined ? P : never>();
+    let all = 0;
+    let sawNegative = false;
+    for (const [k, window] of windows.entries()) {
+      const r = settle(flatBoard(plays, reactions, [], { window, paid: [...paidSoFar.values()] }), exact);
+      for (const p of r.paid) paidSoFar.set(`${p.player}|${p.act}`, p);
+      for (const e of boostsOf(r)) {
+        assert.equal(e.character, 'tom-1');
+        assert.ok(Number.isInteger(e.amount), `seed ${seed}: an amount of ${e.amount} is rounded, so the bound is not exact`);
+        all += e.amount;
+        if (e.amount < 0) sawNegative = true;
+      }
+      assert.ok(all >= 0, `seed ${seed}: after window ${k} the plays have cost the character ${all}`);
+    }
+    assert.ok(all >= 0, `seed ${seed}: the plays cost the character ${all}`);
+    // One play's own lines can sum below zero (the next test), so only the character's boosts as a whole are held to the bound.
+    if (sawNegative) withTakeBack++;
+    if (sawNegative && !hot) wideTakeBack++;
+  }
+  assert.ok(withTakeBack >= 20, `the draws must include take-backs (${withTakeBack}), or the property is not tested`);
+  assert.ok(withEarlyFirst >= 40, `the draws must include a first reaction before a play (${withEarlyFirst}), or the gate is not tested`);
+  assert.ok(withManyVoters >= 80, `the draws must include three or more voters (${withManyVoters}), or crowds are not tested`);
+  assert.ok(withHot >= 80, `the draws must include hot sequences (${withHot})`);
+  assert.ok(wide >= 200, `the draws must include wide sequences (${wide})`);
+  assert.ok(wideTakeBack >= 15, `the wide draws must include take-backs (${wideTakeBack})`);
+  assert.ok(wideKindedCrowd >= 100, `the wide draws must include a kind-named play with three or more voters (${wideKindedCrowd})`);
+  assert.ok(wideEarlyFirst >= 150, `the wide draws must include a first reaction before a play (${wideEarlyFirst})`);
+});
+test('a take-back falls on the largest play still up, so one play\'s lines can sum below zero while the character\'s never do', () => {
+  // A vote of 400, so that no amount rounds. The larger play (heatChillFlat, a half) ends at +10h; the smaller (heatFlat, a quarter) stays up. Bob first reacts while both are up.
+  const bigVote: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 400 } };
+  const larger = onTom('big', 'heatChillFlat', FROM + 2 * H, FROM + 10 * H);
+  const smaller = onTom('small', 'heatFlat', FROM + 2 * H, FROM + 100 * H);
+  const first = settle(flatBoard([larger, smaller], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H)]), bigVote);
+  const second = settle(flatBoard([larger, smaller], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: first.paid }), bigVote);
+  const by = (card: string) => [first, second].flatMap((r) => boostsOf(r).filter((e) => (e.params as { card: string }).card === card)).reduce((t, e) => t + e.amount, 0);
+  assert.deepEqual([boostTo(first, 'tom-1'), boostTo(second, 'tom-1')], [200, -50], 'paid under the larger play, taken back under the smaller one that is still up');
+  assert.equal(by('heatChillFlat'), 200);
+  assert.equal(by('heatFlat'), -50);
+  assert.ok(by('heatFlat') < 0 && by('heatChillFlat') > 0, 'one play\'s lines sum below zero');
+  assert.equal(by('heatChillFlat') + by('heatFlat'), 150);
+  assert.ok(boostTo(first, 'tom-1') + boostTo(second, 'tom-1') > 0, 'the character\'s boosts as a whole are above zero');
+});
+/* A play that names a reaction kind applies to a vote line by the kind of the voter's FIRST reaction in the line's quadrant on that Act, which never
+   changes (a reaction cannot be removed). So a line applies the same way when it is paid and when it is taken back, and no play takes back what it
+   did not pay. */
+const bigVote1200: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 1200 } };
+const W3 = { id: 'wed', from: TO + 24 * H, to: TO + 48 * H };
+test('a flat earn that names a reaction kind applies by the voter\'s first reaction in the quadrant, so it never takes back what it did not pay', () => {
+  const play = onTom('g1', 'fireFlat', FROM + 2 * H, FROM + 100 * H);
+  const heart = react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H);
+  const fire = react('tp1', 'bob', 'bob-1', 'fire', TO + 3 * H);
+  const away = react('tp1', 'bob', 'bob-1', 'tomato', TO + 24 * H + 3 * H);
+  const one = settle(flatBoard([play], [heart]), bigVote1200);
+  const two = settle(flatBoard([play], [heart, fire], [], { window: W2, paid: one.paid }), bigVote1200);
+  const three = settle(flatBoard([play], [heart, fire, away], [], { window: W3, paid: two.paid }), bigVote1200);
+  assert.deepEqual([one, two, three].map((r) => boostTo(r, 'tom-1')), [0, 0, 0], 'the first reaction there was a heart, not the fire the play names: nothing paid, so nothing taken back');
+});
+test('a flat earn that names a reaction kind prices a take-back by the play that paid it: paid on the first kind, then another kind of the quadrant, then another quadrant', () => {
+  const play = onTom('g1', 'fireFlat', FROM + 2 * H, FROM + 100 * H);
+  const fire = react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H);
+  const heart = react('tp1', 'bob', 'bob-1', 'heart', TO + 3 * H);
+  const away = react('tp1', 'bob', 'bob-1', 'tomato', TO + 24 * H + 3 * H);
+  const one = settle(flatBoard([play], [fire]), bigVote1200);
+  const two = settle(flatBoard([play], [fire, heart], [], { window: W2, paid: one.paid }), bigVote1200);
+  const three = settle(flatBoard([play], [fire, heart, away], [], { window: W3, paid: two.paid }), bigVote1200);
+  assert.deepEqual([one, two, three].map((r) => boostTo(r, 'tom-1')), [600, 0, -200], 'a half of 1200 paid; the heart is the same quadrant as the fire, so no share moves and the amount is 0; the tomato takes back a third of it');
+  assert.ok(boostTo(one, 'tom-1') + boostTo(two, 'tom-1') + boostTo(three, 'tom-1') >= 0);
+});
+test('a quadrant-named earn and a kind-named earn on one character never leave it below zero (heart, then fire, then six teas)', () => {
+  // A vote of 1440, so that no amount rounds: shares of a half and an eighth, flats of a quarter and a half.
+  const vote: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 1440 } };
+  const plays = [onTom('quad', 'heatFlat', FROM + 2 * H, FROM + 100 * H), onTom('kind', 'fireFlat', FROM + 2 * H, FROM + 100 * H)];
+  const heart = react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H);
+  const fire = react('tp1', 'bob', 'bob-1', 'fire', TO + 3 * H);
+  const teas = [...Array(6)].map((_, i) => react('tp1', 'bob', 'bob-1', 'tea', TO + 24 * H + (3 + i) * 60_000));
+  const one = settle(flatBoard(plays, [heart]), vote);
+  const two = settle(flatBoard(plays, [heart, fire], [], { window: W2, paid: one.paid }), vote);
+  const three = settle(flatBoard(plays, [heart, fire, ...teas], [], { window: W3, paid: two.paid }), vote);
+  assert.deepEqual([one, two, three].map((r) => boostTo(r, 'tom-1')), [360, 0, -270], 'the quarter-vote play pays a vote (360), the fire changes no share, and the six teas take back 3/4 of a vote at the quarter');
+  assert.ok([one, two, three].reduce((t, r) => t + boostTo(r, 'tom-1'), 0) >= 0, 'the character is not below zero');
+});
+test('inside one window the first reaction of the quadrant decides, not the last: another kind then the named kind pays nothing, the named kind then another pays the play', () => {
+  const play = onTom('g1', 'fireFlat', FROM + 2 * H, FROM + 100 * H);
+  const heart = react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H);
+  assert.equal(boostTo(settle(flatBoard([play], [heart, react('tp1', 'bob', 'bob-1', 'fire', FROM + 6 * H)]), cardsWorld), 'tom-1'), 0, 'heart first: the play names the fire, so it pays nothing');
+  assert.equal(boostTo(settle(flatBoard([play], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 4 * H), react('tp1', 'bob', 'bob-1', 'heart', FROM + 6 * H)]), cardsWorld), 'tom-1'), 5, 'fire first: the play pays its half of a vote');
+});
+test('two flat earns on one vote, one on the character and one on the post, are one entry by the larger\'s card; a tie goes to the earlier play, then the smaller id', () => {
+  const vote = [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)];
+  const larger = settle(flatBoard([onTom('g1', 'calmHalf', FROM + 2 * H), onPostBy('g2', 'tom-1', 'calmWhole', 'tp1', FROM + 2 * H)], vote), cardsWorld);
+  assert.deepEqual(boostsOf(larger).map((e) => [e.params, e.amount]), [[{ card: 'calmWhole', flat: 1 }, 10]], 'one entry, not two');
+  assert.equal(larger.details.filter((d) => d.reason === 'card.boost').length, 1);
+  const earlier = settle(flatBoard([castOn('b', 'bob-1', 'calmHalfB', FROM + 2 * H, 'tom-1'), onTom('a', 'calmHalf', FROM + 3 * H)], vote), cardsWorld);
+  assert.deepEqual(boostsOf(earlier).map((e) => e.params), [{ card: 'calmHalfB', flat: 0.5 }], 'the earlier play');
+  const sameTime = settle(flatBoard([castOn('b', 'bob-1', 'calmHalfB', FROM + 2 * H, 'tom-1'), onTom('a', 'calmHalf', FROM + 2 * H)], vote), cardsWorld);
+  assert.deepEqual(boostsOf(sameTime).map((e) => e.params), [{ card: 'calmHalf', flat: 0.5 }], 'same time and size: the smaller id, a');
+  const overlap = settle(flatBoard([onTom('g1', 'calmHalf', FROM + 2 * H, FROM + 10 * H), onTom('g2', 'calmWhole', FROM + 6 * H, FROM + 20 * H)], [
+    react('tp1', 'bob', 'bob-1', 'tea', FROM + 4 * H), react('tp1', 'cat', 'cat-1', 'tea', FROM + 8 * H), react('tp1', 'dee', 'dee-1', 'tea', FROM + 15 * H),
+  ]), cardsWorld);
+  assert.deepEqual(overlap.details.filter((d) => d.reason === 'card.boost').map((d) => [d.at, d.amount]).sort(), [[FROM + 4 * H, 5], [FROM + 8 * H, 10], [FROM + 15 * H, 10]], 'the smaller alone, the larger where both are up, the larger alone');
+});
+test('a flat earn and a `by` earn on one vote both pay', () => {
+  const r = settle(flatBoard([onTom('g1', 'calmBoost', FROM + 2 * H), onTom('g2', 'calmHalf', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.deepEqual(boostsOf(r).map((e) => [e.params, e.amount]).sort((x, y) => String((x[0] as { card: string }).card).localeCompare(String((y[0] as { card: string }).card))), [[{ card: 'calmBoost', by: 0.1 }, 1], [{ card: 'calmHalf', flat: 0.5 }, 5]]);
+});
+test('a cast flat earn on another player\'s post pays the post\'s author and the caster nothing', () => {
+  const r = settle(flatBoard([onPostBy('h1', 'bob-1', 'calmHalf', 'tp1', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H), react('tp2', 'dee', 'dee-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.deepEqual(boostsOf(r).map((e) => [e.player, e.character, e.amount]), [['tom', 'tom-1', 5]], 'the post tp1 alone');
+  assert.equal(r.entries.filter((e) => e.player === 'bob' && e.reason === 'card.boost').length, 0);
+});
+test('a flat earn\'s entry carries { card, flat }, its details carry the card and add up to it, and it is in no class\'s total', () => {
+  const input = flatBoard([onTom('g1', 'heatFlat', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'fire', FROM + 6 * H), react('tp2', 'dee', 'dee-1', 'fire', FROM + 7 * H)]);
+  const r = settle(input, cardsWorld);
+  const [entry] = boostsOf(r);
+  assert.deepEqual(entry!.params, { card: 'heatFlat', flat: 0.25 });
+  assert.equal(entry!.amount, 8, '2.5 for each of three votes, 7.5 rounded');
+  const details = r.details.filter((d) => d.reason === 'card.boost');
+  assert.equal(details.length, 3);
+  assert.equal(details.reduce((s, d) => s + d.amount, 0), entry!.amount);
+  assert.ok(details.every((d) => d.params?.card === 'heatFlat' && Object.keys(d.params).length === 1 && d.quadrant === 'excitedPositive' && d.at !== undefined));
+  assert.equal(r.byClass.kinded, amountOf(r, 'tom-1', 'kinded.nod'), 'a flat earn has no class');
+});
+test('a flat earn that rounds to nothing makes no entry, and a cushion play is no earn', () => {
+  const dust = settle(flatBoard([onTom('g1', 'dustFlat', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(boostsOf(dust).length, 0);
+  assert.equal(dust.details.filter((d) => d.reason === 'card.boost').length, 0);
+  const cushion = settle(flatBoard([onTom('g1', 'softCushion', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(boostsOf(cushion).length, 0);
+});
+test('a flat earn an admin ended is not in the input, so it pays nothing', () => {
+  assert.equal(boostTo(settle(flatBoard([], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld), 'tom-1'), 0);
 });
 test('a cast earn on one\'s own other mask boosts like a use', () => {
-  const base = earnBoard([castOn('g1', 'tom-2', 'castGrouped', FROM + 2 * H, 'tom-1')], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]);
+  const base = earnBoard([castOn('g1', 'tom-2', 'castBoost', FROM + 2 * H, 'tom-1')], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]);
   const input: SettlementInput = { ...base, characters: [...base.characters, { id: 'tom-2', player: 'tom', classes: [{ class: 'quiet', from: 0 }] }] };
   const r = settle(input, cardsWorld);
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1);
@@ -1772,4 +2032,183 @@ test('entryKey is the player and the line key, and the line key tells two cards,
   assert.equal(entryKey({ player: 'u', character: 'c', reason: 'card.ride', params: { card: '' } }), 'u\u0000c\u0000card.ride\u0000');
   assert.notEqual(lineKey('c', 'card.ride', 'x'), lineKey('c', 'card.ride', 'y'));
   assert.notEqual(lineKey('c', 'card.ride', 'x'), lineKey('c', 'card.ride', null));
+});
+
+/* The cushion (docs/plans/2026-11-16-settlement-engine-plan.md, Task 3): a share of a loss from a reaction given back. The test classes: "voted" pays
+   a vote's worth for each reaction it receives, positive in the positive quadrants and negative in the others, and sets `votes` to the reaction's
+   signed votes; "costly" charges 10 for each reaction it receives and sets no `votes`, a cost no reaction caused. */
+const voted: ClassRules = {
+  key: 'voted',
+  name: 'Voted',
+  earn: (input, settings) => input.received.map((r): Earning => {
+    const gain = r.quadrant === 'excitedPositive' || r.quadrant === 'calmPositive';
+    return { reason: gain ? 'voted.nod' : 'voted.sting', amount: (gain ? 1 : -1) * settings.vote * r.votes, votes: r.votes, act: r.act, quadrant: r.quadrant, at: r.at };
+  }),
+};
+const costly: ClassRules = {
+  key: 'costly',
+  name: 'Costly',
+  earn: (input) => input.received.map((r): Earning => ({ reason: 'costly.fee', amount: -10, act: r.act, quadrant: r.quadrant, at: r.at })),
+};
+const cushionWorld: Instance = {
+  ...cardsWorld,
+  classes: [...cardsWorld.classes, voted, costly],
+  cards: [
+    ...cardsWorld.cards,
+    { ...splat, key: 'softCushionB', reaches: ['character'] as const, gimmick: { kind: 'cushion', share: 0.5 } },
+    { ...splat, key: 'wholeCushion', gimmick: { kind: 'cushion', share: 1 } },
+    { ...splat, key: 'quarterCushion', gimmick: { kind: 'cushion', share: 0.25 } },
+  ],
+};
+function cushionBoard(gimmicks: InputAct[], reactions: InputReaction[], extra: InputAct[] = [], over: Partial<SettlementInput> = {}): SettlementInput {
+  return flatBoard(gimmicks, reactions, extra, {
+    characters: [
+      { id: 'tom-1', player: 'tom', classes: [{ class: 'voted', from: 0 }] },
+      { id: 'tom-2', player: 'tom', classes: [{ class: 'quiet', from: 0 }] },
+      { id: 'uma-1', player: 'uma', classes: [{ class: 'costly', from: 0 }] },
+      ...['bob', 'cat', 'dee', 'eve', 'fay'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+    ...over,
+  });
+}
+const cushionsOf = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.reason === 'card.cushion');
+const cushionTo = (r: ReturnType<typeof settle>, character: string) => amountOf(r, character, 'card.cushion');
+
+test('a loss from a reaction is half given back under a 0.5 cushion; a gain is untouched; a loss outside its time is untouched', () => {
+  const one = (r: InputReaction, ends = FROM + 10 * H) => cushionTo(settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H, ends)], [r]), cushionWorld), 'tom-1');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)), 5, 'half of a loss of 10');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tomato', FROM + 5 * H)), 5, 'a loss from any negative quadrant');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H)), 0, 'a gain');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'zzz', FROM + 2 * H - 1)), 0, 'before it');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'zzz', FROM + 10 * H)), 0, 'at its end');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'zzz', FROM + 12 * H)), 0, 'after it');
+  const r = settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]), cushionWorld);
+  assert.equal(amountOf(r, 'tom-1', 'voted.sting'), -10, 'the class\'s own loss is whole');
+});
+test('a cushion with no `ends` gives nothing back', () => {
+  assert.equal(cushionTo(settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H, null)], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]), cushionWorld), 'tom-1'), 0);
+});
+test('an earning with a negative amount and no `votes`, a cost no reaction caused, is untouched', () => {
+  const r = settle(cushionBoard([onUma('g1', 'softCushion', FROM + 2 * H)], [react('up1', 'dee', 'dee-1', 'zzz', FROM + 5 * H)]), cushionWorld);
+  assert.equal(amountOf(r, 'uma-1', 'costly.fee'), -10);
+  assert.equal(cushionsOf(r).length, 0);
+});
+test('a gain taken back and a loss taken back are untouched', () => {
+  const play = onTom('g1', 'softCushion', FROM + 2 * H, FROM + 100 * H);
+  const taken = (firstKind: string, thenKind: string) => {
+    const first = settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', firstKind, FROM + 5 * H)]), cushionWorld);
+    return settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', firstKind, FROM + 5 * H), react('tp1', 'bob', 'bob-1', thenKind, TO + 3 * H)], [], { window: W2, paid: first.paid }), cushionWorld);
+  };
+  const gain = taken('tea', 'fire');
+  assert.ok(gain.details.some((d) => d.reason === 'voted.nod' && d.amount < 0), 'the calm vote was taken back (a negative amount on negative votes)');
+  assert.equal(cushionsOf(gain).length, 0, 'a gain taken back is no loss');
+  const loss = taken('zzz', 'tea');
+  assert.equal(amountOf(loss, 'tom-1', 'voted.sting'), 5, 'a loss taken back pays back');
+  assert.equal(cushionsOf(loss).length, 0, 'a loss taken back (positive amount) is untouched');
+});
+test('two cushions on one loss give back the larger alone; a tie goes to the earlier play, then the smaller id', () => {
+  const loss = [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H)];
+  const larger = settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H), onPostBy('g2', 'tom-1', 'wholeCushion', 'tp1', FROM + 2 * H)], loss), cushionWorld);
+  assert.deepEqual(cushionsOf(larger).map((e) => [e.params, e.amount]), [[{ card: 'wholeCushion', share: 1 }, 10]], 'one entry, not two');
+  assert.equal(larger.details.filter((d) => d.reason === 'card.cushion').length, 1);
+  const earlier = settle(cushionBoard([castOn('b', 'bob-1', 'softCushionB', FROM + 2 * H, 'tom-1'), onTom('a', 'softCushion', FROM + 3 * H)], loss), cushionWorld);
+  assert.deepEqual(cushionsOf(earlier).map((e) => e.params), [{ card: 'softCushionB', share: 0.5 }], 'the earlier play');
+  const sameTime = settle(cushionBoard([castOn('b', 'bob-1', 'softCushionB', FROM + 2 * H, 'tom-1'), onTom('a', 'softCushion', FROM + 2 * H)], loss), cushionWorld);
+  assert.deepEqual(cushionsOf(sameTime).map((e) => e.params), [{ card: 'softCushion', share: 0.5 }], 'same time and size: the smaller id, a');
+});
+test('a cushion on a post softens that post\'s losses alone', () => {
+  const r = settle(cushionBoard([onPostBy('g1', 'bob-1', 'softCushion', 'tp1', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H), react('tp2', 'dee', 'dee-1', 'zzz', FROM + 5 * H)]), cushionWorld);
+  assert.deepEqual(cushionsOf(r).map((e) => [e.player, e.character, e.amount]), [['tom', 'tom-1', 5]], 'the post tp1 alone, to its author, never the caster');
+  assert.deepEqual(r.details.filter((d) => d.reason === 'card.cushion').map((d) => d.act), ['tp1']);
+});
+test('a cushion beside a flat earn on the same vote: both entries, each as it would be alone', () => {
+  const loss = [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H)];
+  const flat = onTom('g1', 'heatChillFlat', FROM + 2 * H);
+  const soft = onTom('g2', 'softCushion', FROM + 2 * H);
+  const both = settle(cushionBoard([flat, soft], loss), cushionWorld);
+  const flatAlone = settle(cushionBoard([flat], loss), cushionWorld);
+  const softAlone = settle(cushionBoard([soft], loss), cushionWorld);
+  assert.deepEqual(boostsOf(both).map((e) => [e.params, e.amount]), boostsOf(flatAlone).map((e) => [e.params, e.amount]));
+  assert.deepEqual(cushionsOf(both).map((e) => [e.params, e.amount]), cushionsOf(softAlone).map((e) => [e.params, e.amount]));
+  assert.deepEqual(boostsOf(both).map((e) => e.amount), [5], 'the flat earn pays half a vote for the groan');
+  assert.deepEqual(cushionsOf(both).map((e) => e.amount), [5], 'and the cushion gives half the loss back');
+});
+test('a cushion reads the class\'s own earnings alone: a `by` boost and a flat earn beside it are never cushioned', () => {
+  const r = settle(cushionBoard([onTom('g1', 'calmBoost', FROM + 2 * H), onTom('g2', 'heatChillFlat', FROM + 2 * H), onTom('g3', 'softCushion', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H)]), cushionWorld);
+  assert.deepEqual(cushionsOf(r).map((e) => e.amount), [5], 'one cushion line, for the class\'s own loss alone');
+});
+test('a cushion entry carries { card, share }, its details carry the card and add up to it, and it is in no class\'s total', () => {
+  const input = cushionBoard([onTom('g1', 'quarterCushion', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'zzz', FROM + 6 * H), react('tp2', 'dee', 'dee-1', 'tomato', FROM + 7 * H)]);
+  const r = settle(input, cushionWorld);
+  const [entry] = cushionsOf(r);
+  assert.deepEqual(entry!.params, { card: 'quarterCushion', share: 0.25 });
+  assert.equal(entry!.amount, 8, '2.5 for each of three losses, 7.5 rounded');
+  const details = r.details.filter((d) => d.reason === 'card.cushion');
+  assert.equal(details.length, 3);
+  assert.equal(details.reduce((s, d) => s + d.amount, 0), entry!.amount);
+  assert.ok(details.every((d) => d.params?.card === 'quarterCushion' && Object.keys(d.params).length === 1 && d.quadrant !== undefined && d.at !== undefined));
+  assert.equal(r.byClass.voted, amountOf(r, 'tom-1', 'voted.sting'), 'a cushion has no class');
+});
+test('the estimate shows the cushion\'s line at the reaction\'s time', () => {
+  const input = cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]);
+  const estimate = estimateForOwner(input, cushionWorld, 'tom');
+  assert.deepEqual(estimate.entries.filter((e) => e.reason === 'card.cushion').map((e) => [e.params, e.amount]), [[{ card: 'softCushion' }, 5]]);
+  assert.deepEqual(estimate.lines.filter((l) => l.reason === 'card.cushion').map((l) => [l.act, l.quadrant, l.at, l.amount]), [['tp1', 'boredNegative', FROM + 5 * H, 5]]);
+});
+
+/* Review round for Task 3. "stray" pays a loss of 10, with `votes`, for each reaction its character receives, but names the Act "up1", which is not
+   its character's own: a cushion keys on the Act an earning names, so only the owner check keeps it from reaching another character's loss. */
+const stray: ClassRules = {
+  key: 'stray',
+  name: 'Stray',
+  earn: (input) => input.received.map((r): Earning => ({ reason: 'stray.loss', amount: -10, votes: 1, act: 'up1', quadrant: r.quadrant, at: r.at })),
+};
+const strayWorld: Instance = { ...cushionWorld, classes: [...cushionWorld.classes, stray] };
+test('a cushion on an Act reaches a loss that names the Act only when the Act is the earning character\'s own', () => {
+  const input = cushionBoard([onPostBy('g1', 'bob-1', 'softCushion', 'up1', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H)], [], {
+    characters: [
+      { id: 'tom-1', player: 'tom', classes: [{ class: 'stray', from: 0 }] },
+      { id: 'uma-1', player: 'uma', classes: [{ class: 'quiet', from: 0 }] },
+      ...['bob', 'cat'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+  });
+  const r = settle(input, strayWorld);
+  assert.equal(amountOf(r, 'tom-1', 'stray.loss'), -10, 'the loss is there');
+  assert.equal(cushionsOf(r).length, 0, 'a cushion on uma\'s post never softens a loss of tom\'s');
+});
+test('a tie between a play on the Act and a play on the character goes to the Act\'s play when it is earlier, or at the same time has the smaller id', () => {
+  const loss = [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H)];
+  const cards = (e: ReturnType<typeof settle>) => cushionsOf(e).map((x) => (x.params as { card: string }).card);
+  const earlier = settle(cushionBoard([onPostBy('z', 'bob-1', 'softCushion', 'tp1', FROM + 2 * H), castOn('a', 'bob-1', 'softCushionB', FROM + 3 * H, 'tom-1')], loss), cushionWorld);
+  assert.deepEqual(cards(earlier), ['softCushion'], 'the Act\'s play is earlier, though its id is larger and the character\'s play is met first');
+  const smaller = settle(cushionBoard([onPostBy('a', 'bob-1', 'softCushion', 'tp1', FROM + 2 * H), castOn('b', 'bob-1', 'softCushionB', FROM + 2 * H, 'tom-1')], loss), cushionWorld);
+  assert.deepEqual(cards(smaller), ['softCushion'], 'at the same time the Act\'s play has the smaller id');
+});
+test('the same cushion play pays with an `ends` and not without one', () => {
+  const loss = [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)];
+  assert.equal(cushionTo(settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H, FROM + 10 * H)], loss), cushionWorld), 'tom-1'), 5, 'with an `ends` it pays');
+  /* The `ends !== undefined` guard where the plays are indexed is not what turns the `no ends` test red when it is removed: with no `ends`, the
+     window test `e.at < undefined` is false anyway. The pair shows the play is the same and only the `ends` differs. */
+  assert.equal(cushionTo(settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H, null)], loss), cushionWorld), 'tom-1'), 0, 'without one it pays nothing');
+});
+test('a voter who moves one vote across two loss quadrants draws a quarter of a vote more than a half cushion\'s share of the loss that stands', () => {
+  /* A vote is worth 100 here so that no half of a half rounds: the entries are whole numbers. */
+  const big: Instance = { ...cushionWorld, settings: { ...cushionWorld.settings, vote: 100 } };
+  const play = onTom('g1', 'softCushion', FROM + 2 * H, FROM + 100 * H);
+  const first = settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]), big);
+  const second = settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: first.paid }), big);
+  const sum = (rs: ReturnType<typeof settle>[], reason: string) => rs.flatMap((r) => r.details.filter((d) => d.character === 'tom-1' && d.reason === reason)).reduce((t, d) => t + d.amount, 0);
+  const stands = sum([first, second], 'voted.sting');
+  const given = sum([first, second], 'card.cushion');
+  assert.equal(stands, -100, 'one vote stands as a loss of 100');
+  assert.equal(given - -0.5 * stands, 25, 'the cushion gave 75 against the 50 that half of 100 is: a quarter of a vote over');
+});
+test('a voter who moves one vote from a loss quadrant to one that is no loss leaves the same quarter of a vote of cushion behind', () => {
+  const big: Instance = { ...cushionWorld, settings: { ...cushionWorld.settings, vote: 100 } };
+  const play = onTom('g1', 'softCushion', FROM + 2 * H, FROM + 100 * H);
+  const first = settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]), big);
+  const second = settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'tea', TO + 3 * H)], [], { window: W2, paid: first.paid }), big);
+  const sum = (rs: ReturnType<typeof settle>[], reason: string) => rs.flatMap((r) => r.details.filter((d) => d.character === 'tom-1' && d.reason === reason)).reduce((t, d) => t + d.amount, 0);
+  assert.equal(sum([first, second], 'voted.sting'), -50, 'half a vote of loss stands');
+  assert.equal(sum([first, second], 'card.cushion'), 50, 'the cushion given stays at 50, a quarter of a vote over half of what stands');
 });

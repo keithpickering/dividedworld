@@ -7,7 +7,7 @@
  */
 import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
 import { spanWords } from '../../../engine/ui/characters/format.ts';
-import { shareWords } from '../../../engine/ui/copy-words.ts';
+import { fractionWords, shareWords } from '../../../engine/ui/copy-words.ts';
 import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
 import { quadrantLabels } from './quadrant-labels.ts';
@@ -95,7 +95,17 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
   'tweener.splitTheRoom': 'Split the room: hype and heat on the character\'s post or card, paid on the smaller side, each player counted once by where they lean',
   'tweener.stirredThePot': 'Stirred the pot: hype and heat drawn to another\'s post by players who came after the character\'s card, paid on the smaller side',
   /* A card's boost (settlement's `card.boost`, params `{ card }`): the card's key is public (it is on the post), so its name is said; a card this instance does not have is "a card". */
-  'card.boost': (n) => `${instanceCards.find((c) => c.key === n['card'])?.name ?? 'A card'} added: what the card's boost on a reaction earned`,
+  'card.boost': (n) => {
+    const name = instanceCards.find((c) => c.key === n['card'])?.name ?? 'A card';
+    /* An entry settled with a flat size says it; one with a `by`, or none (a row settled before the flat earn), keeps the words it had. */
+    const flat = n['flat'];
+    return typeof flat === 'number' ? `${name}: ${shareWords(flat)} more for each reaction it named, from players who first reacted while it was up` : `${name} added: what the card's boost on a reaction earned`;
+  },
+  /* A card's cushion (settlement's `card.cushion`, params `{ card, share }`): the share is the entry's own, said as a fraction; a card this instance does not have is "A card". */
+  'card.cushion': (n) => {
+    const share = n['share'];
+    return `${instanceCards.find((c) => c.key === n['card'])?.name ?? 'A card'}: ${typeof share === 'number' ? fractionWords(share) : 'part'} of each loss from a reaction, given back`;
+  },
   /* A card's payout (settlement's `card.skim` and `card.ride`, params `{ card }`): the card is named and its share said from its own rules, never restated here; a card this instance does not have, or one that is not the kind this reason is for, is "A card". */
   'card.skim': (n) => {
     const card = instanceCards.find((c) => c.key === n['card']);

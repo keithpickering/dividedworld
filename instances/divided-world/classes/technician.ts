@@ -30,7 +30,7 @@ export const technician: ClassRules = {
       ...perVote(input, settings, 'calmPositive', 1, 'technician.respected'),
       ...input.received
         .filter((r) => r.actKind === 'post' && r.quadrant === 'calmPositive' && r.at - r.actAt >= evergreenDays * DAY)
-        .map((r): Earning => ({ reason: 'technician.evergreen', amount: evergreen * r.votes, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind })),
+        .map((r): Earning => ({ reason: 'technician.evergreen', amount: evergreen * r.votes, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind, votes: r.votes })),
       ...perVote(input, settings, 'excitedNegative', -1, 'technician.draggedIn'),
     ];
   },
