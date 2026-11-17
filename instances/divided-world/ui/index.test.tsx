@@ -218,6 +218,49 @@ describe('Divided World\'s Gimmick cards in plain words', () => {
   });
 });
 
+describe('Required Reading\'s face and sheet', () => {
+  const entry = instanceUi.cards.find((c) => c.key === 'required-reading');
+  /* Wrap greedily at spaces, as the plate does. Issue #772's check of every tagline against the plate replaces this when it lands. */
+  const wrap = (text: string, width: number) => {
+    const lines: string[] = [];
+    for (const word of text.split(' ')) {
+      const last = lines.length - 1;
+      if (last >= 0 && lines[last].length + 1 + word.length <= width) lines[last] += ` ${word}`;
+      else lines.push(word);
+    }
+    return lines;
+  };
+
+  test('its face and its sheet say what the plan says', () => {
+    expect(entry, 'a required-reading entry in the card list').toBeDefined();
+    expect(entry!.art.color).toBe('#2ee6ff');
+    expect(entry!.art.ink).toBe('#03141a');
+    expect(entry!.art.tagline).toBe('Earn more from calm praise on a post.');
+    expect(entry!.summary).toBe('Used on your post. For a week, each calm positive reaction to it pays a vote more.');
+    expect(entry!.status).toBe('Paid more for calm positive reactions');
+    expect(entry!.describe(instance.settings)).toBe(
+      'A Sweet card, common, used on one of your own posts. For a week, each calm positive reaction to that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. Only reactions after it is played count, and a post carries one at a time. Where two cards pay on the same reaction, only the larger pays. It costs nothing more to use.',
+    );
+    expect(entry!.logPlay()).toBe('Each calm positive reaction to that post pays a vote more until it ends.');
+    expect('Effect' in entry!, 'no Effect').toBe(false);
+    expect('ConfigForm' in entry!, 'no ConfigForm').toBe(false);
+  });
+
+  test('its tagline fits the plate: two lines of at most 20 characters', () => {
+    const lines = wrap(entry!.art.tagline, 20);
+    expect(lines.length).toBeLessThanOrEqual(2);
+    for (const line of lines) expect(line.length, line).toBeLessThanOrEqual(20);
+  });
+
+  test('its words hold no percent sign and no class\'s name', () => {
+    const words = [entry!.art.tagline, entry!.summary, entry!.status, entry!.describe(instance.settings), entry!.logPlay()];
+    for (const w of words) {
+      expect(w, w).not.toMatch(/%/u);
+      for (const c of instance.classes) expect(w.toLowerCase(), `${c.name} in "${w}"`).not.toContain(c.name.toLowerCase());
+    }
+  });
+});
+
 describe('Divided World\'s InstanceUi covers its rules', () => {
   /* The bundler resolves a small SVG to a data URI and a larger one to a file ending .svg; either is an SVG the card draws. */
   const SVG_URL = /\.svg$|^data:image\/svg\+xml/u;
