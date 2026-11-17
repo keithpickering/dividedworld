@@ -165,6 +165,22 @@ describe('My log', () => {
     expect(said).toEqual(['Posted too much: a post past three in one day', 'Posted too much: a post past four in one day']);
   });
 
+  test('gives each line\'s amount to the instance\'s words, so a boost that takes pay back is worded apart from one that pays', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
+    fake.seed.settle({ at: at(29, 8, 17), ledger: [{ character: pipe, reason: 'card.boost', amount: 6, params: { card: 'y' } }, { character: pipe, reason: 'card.boost', amount: -4, params: { card: 'x' } }] });
+    fake.signInAs(me);
+    localStorage.clear();
+    localStorage.setItem(hudKey(me), pipe);
+    renderIn(fake, <LoadedLog />, { path: '/log' });
+    await screen.findByRole('table');
+    await userEvent.click(await screen.findByRole('button', { name: 'Show posts' }));
+    const sections = [...document.querySelectorAll('.kb-log-reason')];
+    expect(sections.map((e) => e.querySelector('[data-kb-reason]')!.textContent)).toEqual(['Boost: paid more', 'Boost: took pay back']);
+    expect(sections.map((e) => e.getAttribute('aria-label'))).toEqual(['Boost', 'Boost']);
+  });
+
   test('puts the open window\'s estimate first, labeled as one, with "up to" and no reactor', async () => {
     const { fake, me, hoo } = world();
     await open(fake, me, hoo);

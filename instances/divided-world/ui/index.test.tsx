@@ -207,9 +207,9 @@ describe('Divided World\'s Gimmick cards in plain words', () => {
       const f = faces.find((x) => x.key === key)!;
       return `${f.describe} ${f.summary}`;
     };
-    expect(say('publicity-tour'), 'publicity-tour').toMatch(/3 days[\s\S]*positive reaction[\s\S]*pays half a vote more/u);
-    expect(say('heat-magnet'), 'heat-magnet').toMatch(/3 days[\s\S]*negative reaction[\s\S]*pays three quarters of a vote more/u);
-    expect(say('hype-up')).toMatch(/3 days[\s\S]*positive reaction[\s\S]*pays its author a vote more/u);
+    expect(say('publicity-tour'), 'publicity-tour').toMatch(/3 days[\s\S]*positive vote[\s\S]*pays half a vote more/u);
+    expect(say('heat-magnet'), 'heat-magnet').toMatch(/3 days[\s\S]*negative vote[\s\S]*pays three quarters of a vote more/u);
+    expect(say('hype-up')).toMatch(/3 days[\s\S]*positive vote[\s\S]*pays its author a vote more/u);
     expect(say('sugar-coat')).toMatch(/a week[\s\S]*Salty or Pepperoni/u);
     expect(say('last-word')).toMatch(/a week[\s\S]*refused before it is written/u);
     expect(say('class-clown')).toMatch(/3 days[\s\S]*each 😂 and each 🙄 on its posts pays a vote more/u);
@@ -236,12 +236,12 @@ describe('Required Reading\'s face and sheet', () => {
     expect(entry!.art.color).toBe('#2ee6ff');
     expect(entry!.art.ink).toBe('#03141a');
     expect(entry!.art.tagline).toBe('Earn more from calm praise on a post.');
-    expect(entry!.summary).toBe('Used on your post. For a week, each calm positive reaction to it pays a vote more.');
-    expect(entry!.status).toBe('Paid more for calm positive reactions');
+    expect(entry!.summary).toBe('Used on your post. For a week, each calm positive vote on it pays a vote more.');
+    expect(entry!.status).toBe('Paid more for calm positive votes');
     expect(entry!.describe(instance.settings)).toBe(
-      'A Sweet card, common, used on one of your own posts. For a week, each calm positive reaction to that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. It counts reactions from players who first react to a post while it is up. A post carries one at a time. Where two cards pay on the same reaction, only the larger pays. It costs nothing more to use.',
+      'A Sweet card, common, used on one of your own posts. For a week, each calm positive vote on that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. It counts votes from players who first react to a post while it is up. A post carries one at a time. Where two cards pay on the same vote, only the larger pays. It costs nothing more to use.',
     );
-    expect(entry!.logPlay!({}, {})).toBe('Each calm positive reaction to that post pays a vote more until it ends.');
+    expect(entry!.logPlay!({}, {})).toBe('Each calm positive vote on that post pays up to a vote more until it ends.');
     expect('Effect' in entry!, 'no Effect').toBe(false);
     expect('ConfigForm' in entry!, 'no ConfigForm').toBe(false);
   });
@@ -727,12 +727,18 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(instanceUi.reasonWords('card.boost', { card: 'gone' })).toMatch(/^A card added:/u);
   });
   test('a flat boost says its size from the entry, a boost with a share or with none keeps its words, and a cushion says its share as a fraction', () => {
-    expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 })).toBe('Heat Magnet: up to three quarters of a vote more for each reaction it named, from players who first reacted while it was up');
-    expect(instanceUi.reasonWords('card.boost', { card: 'hype-up', flat: 1 })).toBe('Hype-Up: up to a vote more for each reaction it named, from players who first reacted while it was up');
-    expect(instanceUi.reasonWords('card.boost', { card: 'publicity-tour', flat: 0.5 })).toBe('Publicity Tour: up to half a vote more for each reaction it named, from players who first reacted while it was up');
+    expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 })).toBe('Heat Magnet: up to three quarters of a vote more for each vote it named, from players who first reacted while it was up');
+    expect(instanceUi.reasonWords('card.boost', { card: 'hype-up', flat: 1 })).toBe('Hype-Up: up to a vote more for each vote it named, from players who first reacted while it was up');
+    expect(instanceUi.reasonWords('card.boost', { card: 'publicity-tour', flat: 0.5 })).toBe('Publicity Tour: up to half a vote more for each vote it named, from players who first reacted while it was up');
     expect(instanceUi.reasonWords('card.boost', { card: 'publicity-tour', by: 0.2 })).toBe("Publicity Tour added: what the card's boost on a reaction earned");
     expect(instanceUi.reasonWords('card.boost', { card: 'publicity-tour' })).toBe("Publicity Tour added: what the card's boost on a reaction earned");
-    expect(instanceUi.reasonWords('card.boost', { card: 'gone', flat: 0.5 })).toBe('A card: up to half a vote more for each reaction it named, from players who first reacted while it was up');
+    expect(instanceUi.reasonWords('card.boost', { card: 'gone', flat: 0.5 })).toBe('A card: up to half a vote more for each vote it named, from players who first reacted while it was up');
+    /* A line that takes pay back (its amount is below zero) has words of its own; one that pays, or whose amount is not given, keeps the paying words. */
+    expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 }, -38)).toBe('Heat Magnet: up to three quarters of a vote taken back for each vote it named that a player withdrew or moved');
+    expect(instanceUi.reasonWords('card.boost', { card: 'hype-up', flat: 1 }, -1)).toBe('Hype-Up: up to a vote taken back for each vote it named that a player withdrew or moved');
+    expect(instanceUi.reasonWords('card.boost', { card: 'gone', flat: 0.5 }, -25)).toBe('A card: up to half a vote taken back for each vote it named that a player withdrew or moved');
+    expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 }, 38)).toBe('Heat Magnet: up to three quarters of a vote more for each vote it named, from players who first reacted while it was up');
+    expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 }, 0)).toBe('Heat Magnet: up to three quarters of a vote more for each vote it named, from players who first reacted while it was up');
     expect(REASON_KEYS).toContain('card.cushion');
     expect(instanceUi.reasonWords('card.cushion', { card: 'gone', share: 0.5 })).toBe('A card: half of each loss from a reaction, given back');
     expect(instanceUi.reasonWords('card.cushion', { share: 0.5 })).toBe('A card: half of each loss from a reaction, given back');
@@ -872,12 +878,13 @@ describe('Sugar Coat, Hype-Up and Last Word in plain words (card notes Part 4, T
       expect(typeof ui(key).status === 'string' ? (ui(key).status as string).split(' ').length : 0, key).toBeLessThanOrEqual(6);
     }
     expect(ui('sugar-coat').summary).toBe('Used on your post. Turns away Salty and Pepperoni cards for a week.');
-    expect(ui('hype-up').summary).toBe('Cast on a post. For 3 days, each positive reaction to it pays its author a vote more.');
+    expect(ui('hype-up').summary).toBe('Cast on a post. For 3 days, each positive vote on it pays its author a vote more.');
+    expect(ui('hype-up').status).toBe('Earns more from positive votes');
     expect(ui('last-word').summary).toBe('Used on your post. Nobody can quote it for a week.');
     const sugarWords = ui('sugar-coat').describe!({} as never);
     expect(sugarWords).toContain('It does not stop a card from being set face down there.');
     expect(sugarWords).not.toContain('It never stops a card set face down.');
-    expect(ui('hype-up').logPlay!({}, {})).toBe('Each positive reaction to that post pays its author a vote more until it ends.');
+    expect(ui('hype-up').logPlay!({}, {})).toBe('Each positive vote on that post pays its author up to a vote more until it ends.');
     expect(ui('last-word').logPlay!({}, {})).toBe('Nobody can quote that post until it ends.');
   });
 });
@@ -1274,14 +1281,16 @@ describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
 
 describe('the flat earn cards say their sizes in votes, from their rules', () => {
   const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
-  const tail = (key: string) => `whatever its class makes of that reaction, and then it stops by itself. It counts reactions from players who first react to a post while it is up.${key === 'class-clown' ? " A 😂 counts where it is the first excited, positive reaction its player leaves on that post, and a 🙄 where it is the first bored, negative one. If another excited, positive reaction came first, a later 😂 pays nothing, and the same goes for a 🙄 after another bored, negative one." : ''} Where two cards pay on the same reaction, only the larger pays. It costs nothing more to use.`;
+  const tail = (key: string) => `whatever its class makes of that ${key === 'class-clown' ? 'reaction' : 'vote'}, and then it stops by itself. It counts votes from players who first react to a post while it is up.${key === 'class-clown' ? " A 😂 counts where it is the first excited, positive reaction its player leaves on that post, and a 🙄 where it is the first bored, negative one. If another excited, positive reaction came first, a later 😂 pays nothing, and the same goes for a 🙄 after another bored, negative one." : ''} Where two cards pay on the same vote, only the larger pays. It costs nothing more to use.`;
   test('Heat Magnet, Publicity Tour and Class Clown', () => {
-    const cases: ReadonlyArray<readonly [string, string, string, string, string, string]> = [
-      ['heat-magnet', 'each negative reaction to its posts pays three quarters of a vote more', 'Each negative reaction to that character\'s posts pays three quarters of a vote more until it ends.', 'A Salty card, uncommon', 'each negative reaction (excited or bored) to its posts pays three quarters of a vote more', ''],
-      ['publicity-tour', 'each positive reaction to its posts pays half a vote more', 'Each positive reaction to that character\'s posts pays half a vote more until it ends.', 'A Sweet card, uncommon', 'each positive reaction (excited or calm) to its posts pays half a vote more', ''],
-      ['class-clown', 'each 😂 and each 🙄 on its posts pays a vote more', 'Each 😂 and each 🙄 on that character\'s posts pays a vote more until it ends.', 'A Pepperoni card, uncommon', 'each 😂 and each 🙄 on its posts pays a vote more', ''],
+    const cases: ReadonlyArray<readonly [string, string, string, string, string, string, string]> = [
+      ['heat-magnet', 'each negative vote on its posts pays three quarters of a vote more', 'Each negative vote on that character\'s posts pays up to three quarters of a vote more until it ends.', 'A Salty card, uncommon', 'each negative vote (excited or bored) on its posts pays three quarters of a vote more', 'Earn more from negative votes.', 'Earns more from negative votes'],
+      ['publicity-tour', 'each positive vote on its posts pays half a vote more', 'Each positive vote on that character\'s posts pays up to half a vote more until it ends.', 'A Sweet card, uncommon', 'each positive vote (excited or calm) on its posts pays half a vote more', 'Earn more from positive votes.', 'Earns more from positive votes'],
+      ['class-clown', 'each 😂 and each 🙄 on its posts pays a vote more', 'Each 😂 and each 🙄 on that character\'s posts pays up to a vote more until it ends.', 'A Pepperoni card, uncommon', 'each 😂 and each 🙄 on its posts pays a vote more', 'Earn more from laughs and eye rolls.', 'Earns more from laughs'],
     ];
-    for (const [key, sizeSentence, log, lead, earnSentence] of cases) {
+    for (const [key, sizeSentence, log, lead, earnSentence, tagline, status] of cases) {
+      expect(ui(key).art.tagline, key).toBe(tagline);
+      expect(ui(key).status, key).toBe(status);
       expect(ui(key).summary, key).toBe(`Used on your own character. For 3 days, ${sizeSentence}.`);
       expect(ui(key).logPlay!({}, {}), key).toBe(log);
       expect(ui(key).describe!(instance.settings), key).toBe(`${lead}, used on your own character, the one playing it. For 3 days, ${earnSentence}, ${tail(key)}`);
@@ -1291,11 +1300,11 @@ describe('the flat earn cards say their sizes in votes, from their rules', () =>
     const card = ui('front-row');
     expect(card.art.color).toBe('#d24a2c');
     expect(card.art.ink).toBe('#0d0301');
-    expect(card.art.tagline).toBe('Earn more from your cards\' reactions.');
-    expect(card.summary).toBe('Used on your own character. For 3 days, each reaction to a card it plays pays half a vote more.');
-    expect(card.status).toBe("Earns more from its cards' reactions");
-    expect(card.describe!(instance.settings)).toBe('A Pepperoni card, uncommon, used on your own character, the one playing it. For 3 days, each reaction to a card that character plays, whatever the reaction, pays half a vote more, and then it stops by itself. A card it plays is a Move it casts, a Gimmick it uses, or a Reversal of its own when it springs. Reactions to its posts are not counted. It counts reactions from players who first react to the card while it is up. It costs nothing more to use.');
-    expect(card.logPlay!({}, {})).toBe('Each reaction to a card that character plays pays half a vote more until it ends.');
+    expect(card.art.tagline).toBe('Earn more from your cards\' votes.');
+    expect(card.summary).toBe('Used on your own character. For 3 days, each vote on a card it plays pays half a vote more.');
+    expect(card.status).toBe("Earns more from its cards' votes");
+    expect(card.describe!(instance.settings)).toBe('A Pepperoni card, uncommon, used on your own character, the one playing it. For 3 days, each vote on a card that character plays, whatever the reaction, pays half a vote more, and then it stops by itself. A card it plays is a Move it casts, a Gimmick it uses, or a card of its own when it springs. Votes on its posts are not counted. It counts votes from players who first react to the card while it is up. It costs nothing more to use.');
+    expect(card.logPlay!({}, {})).toBe('Each vote on a card that character plays pays up to half a vote more until it ends.');
     expect(card.Effect).toBeUndefined();
     expect(card.ConfigForm).toBeUndefined();
     expect(card.hint).toBeUndefined();
@@ -1323,7 +1332,7 @@ describe('the flat earn cards say their sizes in votes, from their rules', () =>
     for (const c of instance.classes) expect(words, c.name).not.toContain(c.name.toLowerCase());
   });
   test('Hype-Up', () => {
-    expect(ui('hype-up').describe!(instance.settings)).toBe(`A Sweet card, common, cast on any post, yours or another's. For 3 days, each positive reaction (excited or calm) to that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. It counts reactions from players who first react to a post while it is up. A post carries one at a time. It takes nothing from you. Where two cards pay on the same reaction, only the larger pays. A Mod Bot earns nothing, so its posts gain nothing from one. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.`);
+    expect(ui('hype-up').describe!(instance.settings)).toBe(`A Sweet card, common, cast on any post, yours or another's. For 3 days, each positive vote (excited or calm) on that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. It counts votes from players who first react to a post while it is up. A post carries one at a time. It takes nothing from you. Where two cards pay on the same vote, only the larger pays. A Mod Bot earns nothing, so its posts gain nothing from one. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.`);
   });
 });
 
@@ -1344,17 +1353,17 @@ describe('Sweet Heat, the fifth flat earn card, says its size in votes from its 
   test('its face and its words are the ones the plan gives', () => {
     expect(sweet.art.color).toBe('#d24a2c');
     expect(sweet.art.ink).toBe('#0d0301');
-    expect(sweet.art.tagline).toBe('Earn more from excited reactions.');
-    expect(sweet.summary).toBe('Used on your own character. For 3 days, each excited reaction to its posts, positive or negative, pays half a vote more.');
-    expect(sweet.status).toBe('Paid more for excited reactions');
-    expect(sweet.describe!(instance.settings)).toBe('A Pepperoni card, uncommon, used on your own character, the one playing it. For 3 days, each excited reaction to its posts, positive or negative, pays half a vote more, whatever its class makes of that reaction, and then it stops by itself. It counts reactions from players who first react to a post while it is up. Where two cards pay on the same reaction, only the larger pays. It costs nothing more to use.');
-    expect(sweet.logPlay!({}, {})).toBe("Each excited reaction to that character's posts, positive or negative, pays half a vote more until it ends.");
+    expect(sweet.art.tagline).toBe('Earn more from excited votes.');
+    expect(sweet.summary).toBe('Used on your own character. For 3 days, each excited vote on its posts, positive or negative, pays half a vote more.');
+    expect(sweet.status).toBe('Paid more for excited votes');
+    expect(sweet.describe!(instance.settings)).toBe('A Pepperoni card, uncommon, used on your own character, the one playing it. For 3 days, each excited vote on its posts, positive or negative, pays half a vote more, whatever its class makes of that vote, and then it stops by itself. It counts votes from players who first react to a post while it is up. Where two cards pay on the same vote, only the larger pays. It costs nothing more to use.');
+    expect(sweet.logPlay!({}, {})).toBe("Each excited vote on that character's posts, positive or negative, pays up to half a vote more until it ends.");
     expect(sweet.Effect).toBeUndefined();
     expect(sweet.ConfigForm).toBeUndefined();
   });
 
   test('its tagline fits the plate: at most two lines of at most 20 characters', () => {
-    expect(wrap('Earn more from excited reactions.', 20)).toEqual(['Earn more from', 'excited reactions.']);
+    expect(wrap('Earn more from excited votes.', 20)).toEqual(['Earn more from', 'excited votes.']);
     const lines = wrap(sweet.art.tagline!, 20);
     expect(lines.length, lines.join(' / ')).toBeLessThanOrEqual(2);
     for (const line of lines) expect(line.length, line).toBeLessThanOrEqual(20);

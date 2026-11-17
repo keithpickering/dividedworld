@@ -785,13 +785,13 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  test('what the moment says under its post stands in a foot of the box, outside the content area, and ends "Nothing you do here is saved."', async () => {
+  test('what the moment says under its post stands in a foot of the box, outside the content area, and ends "Nothing you do to this post is saved."', async () => {
     const { w, spun } = await spunFromHold();
     openWith(w, spun);
     const box = await origin();
     const frame = await within(box).findByRole('group', { name: /^As it landed/u });
     await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
-    const list = await within(box).findByText('Nothing you do here is saved.');
+    const list = await within(box).findByText('Nothing you do to this post is saved.');
     expect(box.querySelector('.kb-origin-area')!.contains(list), 'the list is not inside the content area').toBe(false);
     expect(list.closest('.kb-origin-foot'), 'the list stands in the box\'s foot').not.toBeNull();
     expect(list.closest('.kb-origin')).toBe(box);

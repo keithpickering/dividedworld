@@ -385,14 +385,14 @@ describe('Reset over a post', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('As it landed again.'));
   });
 
-  test('a read moment\'s list has no line for a drawn card and ends "Nothing you do here is saved."', async () => {
+  test('a read moment\'s list has no line for a drawn card and ends "Nothing you do to this post is saved."', async () => {
     const api = buildWorld({}, instance);
     vi.spyOn(api, 'playMoment').mockResolvedValue(moment([{ act: card('k1', 'smear', 1), state: saved }, { act: card('k2', 'ripple', 2), state: null }, { act: card('k3', 'slabby', 3), state: null }]));
     over(api);
     await screen.findByRole('button', { name: 'Reset' });
     const list = document.querySelector('.kb-moment-list')!;
     const lines = [...list.querySelectorAll('p')].map((p) => p.textContent);
-    expect(lines).toEqual(['Also on the post then: Slabby', 'Nothing you do here is saved.']);
+    expect(lines).toEqual(['Also on the post then: Slabby', 'Nothing you do to this post is saved.']);
     expect(list.textContent).not.toMatch(/Smear|Ripple/u);
   });
 
@@ -400,19 +400,19 @@ describe('Reset over a post', () => {
     const loading = buildWorld({}, instance);
     vi.spyOn(loading, 'playMoment').mockReturnValue(new Promise(() => {}));
     const first = over(loading);
-    expect(document.body.textContent).not.toContain('Nothing you do here is saved.');
+    expect(document.body.textContent).not.toContain('Nothing you do to this post is saved.');
     first.unmount();
     const failed = buildWorld({}, instance);
     vi.spyOn(failed, 'playMoment').mockRejectedValue(new Error('no'));
     const second = over(failed);
     await screen.findByText('The moment did not load.');
-    expect(document.body.textContent).not.toContain('Nothing you do here is saved.');
+    expect(document.body.textContent).not.toContain('Nothing you do to this post is saved.');
     second.unmount();
     const none = buildWorld({}, instance);
     vi.spyOn(none, 'playMoment').mockResolvedValue(null);
     over(none);
     await screen.findByText(/no moment to show/u);
-    expect(document.body.textContent).not.toContain('Nothing you do here is saved.');
+    expect(document.body.textContent).not.toContain('Nothing you do to this post is saved.');
   });
 
   test('Back to now still returns focus to the play\'s mark', async () => {
