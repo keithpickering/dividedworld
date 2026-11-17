@@ -4,9 +4,12 @@
  * it, and a takeover, which is outermost. The cards are the engine's own
  * test cards, never an instance's.
  */
-import { render } from '@testing-library/react';
-import { useEffect, type ReactNode } from 'react';
-import { describe, expect, test, vi } from 'vitest';
+import { act, render, waitFor } from '@testing-library/react';
+import { lazy, useEffect, type ReactNode } from 'react';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { fakeSound } from '../audio/test-sound.ts';
+import { resetSound, setSoundPreference } from '../audio/sound.ts';
+import type { SoundSlot } from '../audio/types.ts';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
@@ -114,6 +117,38 @@ function drawn(cards: CardUi[], played: (string | Act)[], more?: ReactNode, fold
   const view = render(<KayfaProvider value={kayfa}><PlayerProvider api={kayfa.api}><PlayProvider><RowFoldCtx.Provider value={fold}><PostEffects plays={store} post={words} place="thread" nameOf={() => 'x'}><span data-kb-words>hi</span></PostEffects></RowFoldCtx.Provider>{more}</PlayProvider></PlayerProvider></KayfaProvider>);
   return { ...view, words: view.container.querySelector('[data-kb-words]')! };
 }
+
+describe('a card names the sounds its effect may play', () => {
+  afterEach(() => { resetSound(); });
+  const slot = (key: string): SoundSlot => ({ key, src: `/${key}.mp3`, bus: 'game', caption: key });
+  const setup = (sounds?: readonly string[]) => {
+    const { fetched } = fakeSound();
+    setSoundPreference({ gameSound: 'on', gameVolume: 100, interfaceSound: 'off', interfaceVolume: 100 });
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => { open = resolve; });
+    const Effect = lazy(async () => { await gate; return { default: wrap('late') }; });
+    const kayfa = { api: buildWorld({}, instance), instance, ui: { cards: [ui('one', { Effect, ...(sounds ? { sounds } : {}) })], glass: testGlass, sounds: { slots: [slot('x.one'), slot('x.two')] } }, settings: {} } as unknown as Kayfa;
+    const store = createPlays();
+    store.add([play('one', 1)]);
+    const view = render(<KayfaProvider value={kayfa}><PlayerProvider api={kayfa.api}><PostEffects plays={store} post={words} place="thread" nameOf={() => 'x'}><span data-kb-words>hi</span></PostEffects></PlayerProvider></KayfaProvider>);
+    return { fetched, open, view };
+  };
+
+  test('a post wearing the card fetches its sounds before the effect\'s code has loaded, and no others', async () => {
+    const { fetched, open, view } = setup(['x.one']);
+    expect(view.container.querySelector('[data-kb-wrap="late"]')).toBeNull();
+    expect(fetched.mock.calls.map((c) => c[0])).toEqual(['/x.one.mp3']);
+    await act(async () => { open(); await Promise.resolve(); });
+    await waitFor(() => expect(view.container.querySelector('[data-kb-wrap="late"]')).not.toBeNull());
+    expect(fetched).toHaveBeenCalledTimes(1);
+  });
+
+  test('a card that names no sounds fetches none', async () => {
+    const { fetched, open } = setup();
+    await act(async () => { open(); await Promise.resolve(); });
+    expect(fetched).not.toHaveBeenCalled();
+  });
+});
 
 describe('a card that writes nests innermost', () => {
   test('played last, it is innermost: the tail is the words\' next sibling', () => {

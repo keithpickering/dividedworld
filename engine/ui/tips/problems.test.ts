@@ -147,6 +147,15 @@ describe('instanceUiProblems', () => {
     assert.deepEqual(instanceUiProblems(withCards([{ key: 'fab', status: 'Rainbowed', Effect }, { ...lent, drawnBy: 'fab', Effect }]), rules), ['the card "glam" has both drawnBy and an Effect; a card is drawn by another or draws itself, never both']);
     assert.deepEqual(instanceUiProblems(withCards([{ key: 'fab', status: 'Rainbowed', Effect }, { key: 'mid', status: 'Handing on', drawnBy: 'fab' }, { ...lent, drawnBy: 'mid' }]), rules), ['the card "glam" is drawnBy "mid", which is itself drawn by "fab"; a chain is refused']);
   });
+  test('refuses a card that names a sound the instance\'s sounds do not have, naming both (CardUi.sounds)', () => {
+    const withSounds = (sounds: readonly string[]) => ({
+      ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, { key: 'feelin-fab', status: 'Rainbowed', sounds }] as unknown as readonly CardUi[],
+      sounds: { slots: [{ key: 'x.one', src: '/x1.mp3', bus: 'game' as const, caption: 'One' }, { key: 'x.two', src: '/x2.mp3', bus: 'game' as const, caption: 'Two' }] },
+    });
+    assert.deepEqual(instanceUiProblems(withSounds(['x.one', 'x.two']), rules), [], 'every sound it names is one the instance has');
+    assert.deepEqual(instanceUiProblems(withSounds(['x.one', 'x.nope']), rules), ['the card "feelin-fab" names the sound "x.nope", which the instance\'s sounds do not have']);
+    assert.deepEqual(instanceUiProblems({ ...withSounds(['x.one']), sounds: undefined }, rules), ['the card "feelin-fab" names the sound "x.one", which the instance\'s sounds do not have'], 'an instance with no sounds has none');
+  });
   test('refuses a function status that answers with a sentence, naming the card', () => {
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
     const problems = instanceUiProblems(withCards([{ key: 'feelin-fab', status: (p: readonly unknown[]) => `Stacked ${p.length}. Grander now.` }]), rules);

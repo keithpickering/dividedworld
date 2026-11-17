@@ -8,9 +8,23 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { captions } from './captions.ts';
-import { CAPTION_MS, HELD_FROM, resetSound, setSoundPreference, useSound } from './sound.ts';
+import { CAPTION_MS, HELD_FROM, resetSound, setSoundPreference, useSound, useWarmSounds } from './sound.ts';
 import type { AudioContextLike, GainNodeLike, SourceLike } from './mixer.ts';
 import type { SoundSlot } from './types.ts';
+
+/** Every `warm` the page's mixer is asked for, so a test can tell a hook that warmed again from a mixer that merely deduped it. */
+const warmed = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+vi.mock('./mixer.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./mixer.ts')>();
+  return {
+    ...real,
+    createMixer: (deps: Parameters<typeof real.createMixer>[0]) => {
+      const mixer = real.createMixer(deps);
+      const warm = mixer.warm.bind(mixer);
+      return { ...mixer, warm: (slots: Parameters<typeof warm>[0]) => { warmed.calls.push([...slots].map((s) => s.key)); warm(slots); } };
+    },
+  };
+});
 
 const param = () => ({ value: 1, cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), setTargetAtTime: vi.fn() });
 let gains: GainNodeLike[];
@@ -48,7 +62,7 @@ const loopLoaded = async (play: ReturnType<typeof useSound>, key: string, opts: 
 const gesture = (type = 'pointerdown') => act(async () => { document.dispatchEvent(new Event(type, { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
 
 beforeEach(() => {
-  gains = []; sources = [];
+  gains = []; sources = []; warmed.calls.length = 0;
   makeContext.mockClear(); fetchBytes.mockClear();
   resetSound({ makeContext, fetchBytes });
   captions.reset();
@@ -339,5 +353,97 @@ describe('the page sound', () => {
       expect(await result.current.play('nope')).toBeNull();
       expect(captions.current()).toBeNull();
     } finally { vi.unstubAllEnvs(); }
+  });
+});
+
+describe('the page warms the sounds a screen names', () => {
+  const warmSlots = [slot('a', 'game'), slot('b', 'game'), slot('c', 'game')];
+  const warmWrap = withWarmSlots(warmSlots);
+  function withWarmSlots(slots: SoundSlot[]) {
+    return ({ children }: { readonly children: ReactNode }) => (
+      <KayfaProvider value={{ ui: { sounds: { slots } } } as unknown as Kayfa}>{children}</KayfaProvider>
+    );
+  }
+
+  test('useWarmSounds fetches the named sounds and no others, and makes no context before a gesture', () => {
+    on('game');
+    renderHook(() => useWarmSounds(['a', 'b']), { wrapper: warmWrap });
+    expect(fetchBytes.mock.calls.map((c) => (c as unknown[])[0]).sort()).toEqual(['/a.mp3', '/b.mp3']);
+    expect(makeContext).not.toHaveBeenCalled();
+  });
+
+  test('an unknown key is skipped and does not throw in development', () => {
+    expect(import.meta.env.DEV).toBe(true);
+    on('game');
+    expect(() => renderHook(() => useWarmSounds(['a', 'nope']), { wrapper: warmWrap })).not.toThrow();
+    expect(fetchBytes.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['/a.mp3']);
+  });
+
+  test('rendering again with an equal but new array (and a new ui.sounds) does not warm again', () => {
+    on('game');
+    const { rerender } = renderHook(({ keys }: { keys: string[] }) => useWarmSounds(keys), { wrapper: warmWrap, initialProps: { keys: ['a', 'b'] } });
+    expect(fetchBytes).toHaveBeenCalledTimes(2);
+    expect(warmed.calls).toHaveLength(1);
+    rerender({ keys: ['a', 'b'] });
+    expect(fetchBytes).toHaveBeenCalledTimes(2);
+    expect(warmed.calls).toHaveLength(1);
+  });
+
+  test('a changed key list warms the new keys', () => {
+    on('game');
+    const { rerender } = renderHook(({ keys }: { keys: string[] }) => useWarmSounds(keys), { wrapper: warmWrap, initialProps: { keys: ['a'] } });
+    rerender({ keys: ['a', 'c'] });
+    expect(warmed.calls).toEqual([['a'], ['a', 'c']]);
+    expect(fetchBytes.mock.calls.map((c) => (c as unknown[])[0]).sort()).toEqual(['/a.mp3', '/c.mp3']);
+  });
+
+  test('a play the mixer answers late says the game caption for CAPTION_MS', async () => {
+    vi.useFakeTimers();
+    try {
+      let t = 0;
+      resetSound({ makeContext, fetchBytes, now: () => (t += 1000) });
+      on('game');
+      const { result } = renderHook(() => useSound(), { wrapper: wrap });
+      await gesture();
+      let played: { lengthMs: number } | null = { lengthMs: 0 };
+      await act(async () => { played = await result.current.play('boo', { lateMs: 10 }); });
+      expect(played).toBeNull();
+      expect(captions.current()).toMatchObject({ text: 'boo caption', held: false });
+      act(() => { vi.advanceTimersByTime(CAPTION_MS - 1); });
+      expect(captions.current()?.text).toBe('boo caption');
+      act(() => { vi.advanceTimersByTime(2); });
+      expect(captions.current()).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('the same play with no lateMs sounds', async () => {
+    let t = 0;
+    resetSound({ makeContext, fetchBytes, now: () => (t += 1000) });
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture();
+    let played: { lengthMs: number } | null = null;
+    await act(async () => { played = await result.current.play('boo'); });
+    expect(played).not.toBeNull();
+  });
+
+  test('a late play on the interface bus says no caption', async () => {
+    let t = 0;
+    resetSound({ makeContext, fetchBytes, now: () => (t += 1000) });
+    on('interface');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture();
+    let played: { lengthMs: number } | null = { lengthMs: 0 };
+    await act(async () => { played = await result.current.play('click', { lateMs: 10 }); });
+    expect(played).toBeNull();
+    expect(captions.current()).toBeNull();
+  });
+
+  test('no keys, or an empty list, warms nothing', () => {
+    on('game');
+    renderHook(() => useWarmSounds(undefined), { wrapper: warmWrap });
+    renderHook(() => useWarmSounds([]), { wrapper: warmWrap });
+    expect(warmed.calls).toEqual([]);
+    expect(fetchBytes).not.toHaveBeenCalled();
   });
 });

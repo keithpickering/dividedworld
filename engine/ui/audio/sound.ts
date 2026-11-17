@@ -18,7 +18,7 @@
  *
  * Engine code: it names no card and no instance.
  */
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useKayfa } from '../context.tsx';
 import { captions } from './captions.ts';
 import { createMixer, type AudioContextLike, type LoopHandle, type Mixer, type MixerDeps } from './mixer.ts';
@@ -99,6 +99,7 @@ const realDeps: MixerDeps = {
     if (!r.ok) throw new Error(`the sound ${src} answered ${r.status}`);
     return r.arrayBuffer();
   },
+  now: () => performance.now(),
 };
 
 let page = createSound(realDeps);
@@ -115,8 +116,11 @@ export function setSoundPreference(p: SoundPreference): void {
 }
 
 export interface SoundPlay {
-  /** Plays the slot through the mixer and says its caption. Resolves with what the mixer answered (null when nothing sounded). */
-  play(key: string, opts?: { group?: string; fadeMs?: number; tailMs?: number }): Promise<{ lengthMs: number } | null>;
+  /**
+   * Plays the slot through the mixer and says its caption. Resolves with what the mixer answered (null when nothing sounded). A play
+   * the mixer drops for being later than `lateMs` answers null like any skipped play, so it is captioned through the game-bus branch below.
+   */
+  play(key: string, opts?: { group?: string; fadeMs?: number; tailMs?: number; lateMs?: number }): Promise<{ lengthMs: number } | null>;
   /**
    * Starts a loop and returns its handle at once; the handle works before the sound has loaded (a gain set meanwhile applies when it does, the
    * latest winning; a `stop` meanwhile means it never sounds). The loop starts silent, and `setGain` holds the slot's caption under `id` while
@@ -136,6 +140,27 @@ function missing(key: string): void {
 const INERT: LoopHandle = { setGain() { /* nothing sounds */ }, stop() { /* nothing sounds */ } };
 
 const wordsOf = (slot: SoundSlot) => ({ text: slot.caption, ...(slot.ink ? { ink: slot.ink } : {}) });
+
+/**
+ * Warm the sounds a screen or a card is about to use, so they are fetched (and decoded once the page unlocks) before anything plays
+ * them (docs/plans/2026-11-17-sound-preload-design.md). A key the instance does not supply is skipped silently, since the instance's
+ * own checks hold that there is none; this never throws, even in development. The effect depends on the keys joined, so a new array
+ * of the same keys does not warm again.
+ */
+export function useWarmSounds(keys: readonly string[] | undefined): void {
+  const sounds = useKayfa().ui.sounds;
+  const joined = (keys ?? []).join('\n');
+  /* The latest sounds, read when the effect runs; a new `ui.sounds` object of its own does not warm again. */
+  const latest = useRef(sounds);
+  latest.current = sounds;
+  useEffect(() => {
+    if (!joined) return;
+    const wanted = new Set(joined.split('\n'));
+    const slots = (latest.current?.slots ?? []).filter((s) => wanted.has(s.key));
+    page.arm();
+    page.mixer.warm(slots);
+  }, [joined]);
+}
 
 export function useSound(): SoundPlay {
   const sounds = useKayfa().ui.sounds;

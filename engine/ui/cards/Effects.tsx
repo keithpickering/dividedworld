@@ -24,6 +24,7 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { useKayfa } from '../context.tsx';
 import type { Act, EffectState, Id, KayfaApi, PlayAbove, PlayMoment, SurfaceAct } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
+import { useWarmSounds } from '../audio/sound.ts';
 import { usePlay, type Composing, type PlayControls } from './play.tsx';
 import { useMeet } from './Callout.tsx';
 import { useHoldScreen } from '../tips/Tips.tsx';
@@ -432,6 +433,8 @@ function BoundEffect({ Effect, store, marks, cardKey: card, ...props }: Omit<Eff
   useEffect(() => () => { if (own) store.setView(post, card, null); }, [store, post, card, own]);
   const met = useMeet(card);
   const holdScreen = useHoldScreen();
+  /* The card's sounds warm while its effect's code loads, so they are ready when the effect asks (`CardUi.sounds`). */
+  useWarmSounds(useKayfa().ui.cards.find((c) => c.key === card)?.sounds);
   /* An effect may load on first use: until it lands the post shows its words (`children`), so a post never pops in without them. */
   return <Suspense fallback={props.children}><Effect {...props} still={false} show={show} met={met} holdScreen={holdScreen} marks={marks} /></Suspense>;
 }
