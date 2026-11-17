@@ -6,6 +6,7 @@ import { signInUnseasonedOnBoard } from './onboarding.ts';
 import type * as Gatherer from './glass-text-page.ts';
 import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, SETTLEMENT, STORIES, open, type Probe, type Screen } from './glass-screens.ts';
 import { settled } from './settled.ts';
+import { holdScrollDriven } from './scroll-driven.ts';
 
 /**
  * The rendered glass measurement (the web plan's glass amendment to Task 12; the glass build's
@@ -89,7 +90,11 @@ async function measure(page: Page, panel?: string): Promise<string[]> {
     if (fresh.length) {
       const shoot = async (smoke: boolean) => {
         await page.evaluate((s) => (globalThis as Bundled).kbGlassText.hideText(true, s), smoke);
-        return (await page.screenshot({ animations: 'disabled', caret: 'hide' })).toString('base64');
+        /* The capture disables animations, and would draw the phone hand's scroll-driven card poses as though they were not there: they are held as drawn. */
+        const release = await holdScrollDriven(page);
+        try {
+          return (await page.screenshot({ animations: 'disabled', caret: 'hide' })).toString('base64');
+        } finally { await release(); }
       };
       const png = await shoot(true);
       /* Under high contrast, the same window with the smoke taken away: solid ground is ground the smoke changes nothing on. */
