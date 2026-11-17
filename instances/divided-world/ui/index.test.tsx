@@ -1231,7 +1231,7 @@ describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
 
 describe('the four flat earn cards say their sizes in votes, from their rules', () => {
   const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
-  const tail = 'whatever its class makes of that reaction, and then it stops by itself. It counts reactions from players who first react to a post while it is up. Where two cards pay on the same reaction, only the larger pays. It costs nothing more to use.';
+  const tail = (key: string) => `whatever its class makes of that reaction, and then it stops by itself. It counts reactions from players who first react to a post while it is up.${key === 'class-clown' ? " A 😂 counts where it is the first excited, positive reaction its player leaves on that post, and a 🙄 where it is the first bored, negative one, and either added after another reaction of that kind pays nothing." : ''} Where two cards pay on the same reaction, only the larger pays. It costs nothing more to use.`;
   test('Heat Magnet, Publicity Tour and Class Clown', () => {
     const cases: ReadonlyArray<readonly [string, string, string, string, string, string]> = [
       ['heat-magnet', 'each negative reaction to its posts pays three quarters of a vote more', 'Each negative reaction to that character\'s posts pays three quarters of a vote more until it ends.', 'A Salty card, uncommon', 'each negative reaction (excited or bored) to its posts pays three quarters of a vote more', ''],
@@ -1241,7 +1241,7 @@ describe('the four flat earn cards say their sizes in votes, from their rules', 
     for (const [key, sizeSentence, log, lead, earnSentence] of cases) {
       expect(ui(key).summary, key).toBe(`Used on your own character. For 3 days, ${sizeSentence}.`);
       expect(ui(key).logPlay!({}, {}), key).toBe(log);
-      expect(ui(key).describe!(instance.settings), key).toBe(`${lead}, used on your own character, the one playing it. For 3 days, ${earnSentence}, ${tail}`);
+      expect(ui(key).describe!(instance.settings), key).toBe(`${lead}, used on your own character, the one playing it. For 3 days, ${earnSentence}, ${tail(key)}`);
     }
   });
   test('Hype-Up', () => {

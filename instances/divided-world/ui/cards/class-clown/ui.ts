@@ -13,6 +13,6 @@ export const ui: CardUi = {
   summary: `Used on your own character. For ${spanWords(classClown.lasts!)}, each 😂 and each 🙄 on its posts pays ${earnWords(classClown)}.`,
   status: 'Earns more from laughs',
   describe: (settings: Settings) =>
-    `A Pepperoni card, ${classClown.rarity}, used on your own character, the one playing it. For ${spanWords(classClown.lasts!)}, each 😂 and each 🙄 on its posts pays ${earnWords(classClown)}, whatever its class makes of that reaction, and then it stops by itself. It counts reactions from players who first react to a post while it is up. ${LARGEST} It costs nothing more to use.`,
+    `A Pepperoni card, ${classClown.rarity}, used on your own character, the one playing it. For ${spanWords(classClown.lasts!)}, each 😂 and each 🙄 on its posts pays ${earnWords(classClown)}, whatever its class makes of that reaction, and then it stops by itself. It counts reactions from players who first react to a post while it is up. A 😂 counts where it is the first excited, positive reaction its player leaves on that post, and a 🙄 where it is the first bored, negative one, and either added after another reaction of that kind pays nothing. ${LARGEST} It costs nothing more to use.`,
   logPlay: () => `Each 😂 and each 🙄 on that character's posts pays ${earnWords(classClown)} until it ends.`,
 };

@@ -39,17 +39,16 @@
  *   A `by` earn adds `by` times each positive earning of that character's Act that carries a time and a quadrant, falls in the gimmick's window
  *   [at, ends) and is in a quadrant or of a reaction kind it names; each `by` earn boosts on its own, and its entry's params are `{ card, by }`.
  *   A flat earn pays `flat` of a vote for each vote, whatever class the character holds and whatever the class earns for it: for each vote line
- *   (a player's share in one quadrant on one Act, positive or negative, times the halving) in the play's window [at, ends), in a quadrant or of a
- *   reaction kind it names, on an Act of the play's character or on the play's post, of a kind it names in `acts` (with none, on a post: a post
- *   or a spin), whose voter first reacted to that Act no earlier than the play. Of the flat earns that apply to one line the largest pays (a tie:
+ *   (a player's share in one quadrant on one Act, positive or negative, times the halving) in the play's window [at, ends), in a quadrant it names or
+ *   where the kind of the voter's first reaction in that quadrant on that Act is one it names, on an Act of the play's character or on the play's
+ *   post, of a kind it names in `acts` (with none, on a post: a post or a spin), whose voter first reacted to that Act no earlier than the play. Of the flat earns that apply to one line the largest pays (a tie:
  *   the earliest play, then the smaller play id), as `tidy(flat * vote * votes)` with `{ card, flat }` in the entry's params. It follows the halving,
  *   where a skim and a ride do not, so a negative line (a vote that moved away) takes its pay back, and only where the voter first reacted while
- *   the play was up. A take-back is priced by the largest flat earn that applies when the line is taken back, not by the play that paid it. For
- *   earns that name quadrants every play that applies at a take-back also applied when the share was paid, so the character's flat boosts as
- *   a whole never sum below zero; one play's own lines can, when a larger play paid and ended and a smaller one still up takes the share back. An
- *   earn that names reaction kinds can take back what no play paid: a line carries one reaction kind, a paying line the kind of the voter's latest
- *   reaction in that quadrant in the window, a take-back line the kind of their latest reaction there before the window, so a play that names a kind can
- *   take back a share that left under that kind though the share was paid under another or not at all, and the character can end below zero.
+ *   the play was up. A take-back is priced by the largest flat earn that applies when the line is taken back, not by the play that paid it. A line applies
+ *   to a play the same way when it is paid and when it is taken back: a quadrant is the line's, and the voter's first reaction in a quadrant on an Act
+ *   is a fact a reaction that cannot be removed never changes. So every play that applies at a take-back also applied when the share was paid, and
+ *   a flat earn, whether it names quadrants or reaction kinds, never costs the character: its flat boosts as a whole never sum below zero. One play's own
+ *   lines can, when a larger play paid and ended and a smaller one still up takes the share back.
  *   An earn may be a cast card's on a character or a post.
  * - A cushion play (a use card whose gimmick is `cushion`), on a character or a post and not ended, with an `ends`, gives back
  *   `share` of a loss from a reaction: each earning of the character's own class that has a time, an Act of that character, a negative amount and
@@ -289,10 +288,13 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   /* Each Act's reactors by first reaction, each player's shares there and the mask that says
      each, and the Act's lean: one pass over the reactions, which are in time order. */
   const zero = (): Record<Quadrant, number> => ({ excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 });
-  const onAct = new Map<string, { first: Map<string, number>; owner: Map<string, string>; lean: Record<Quadrant, number>; of: Map<string, { shares: Record<Quadrant, number>; voice: Partial<Record<Quadrant, { character: string; at: number }>> }> }>();
+  const onAct = new Map<string, { first: Map<string, number>; firstKind: Map<string, string>; owner: Map<string, string>; lean: Record<Quadrant, number>; of: Map<string, { shares: Record<Quadrant, number>; voice: Partial<Record<Quadrant, { character: string; at: number }>> }> }>();
   for (const r of shared) {
-    const a = onAct.get(r.act) ?? { first: new Map(), owner: new Map(), lean: zero(), of: new Map() };
+    const a = onAct.get(r.act) ?? { first: new Map(), firstKind: new Map(), owner: new Map(), lean: zero(), of: new Map() };
     if (!a.first.has(r.player)) { a.first.set(r.player, r.at); a.owner.set(r.player, r.owner); }
+    // The kind of each player's first reaction in each quadrant, which a reaction that cannot be removed never changes.
+    const inQuadrant = `${r.player}\u0000${r.quadrant}`;
+    if (!a.firstKind.has(inQuadrant)) a.firstKind.set(inQuadrant, r.kind);
     a.lean[r.quadrant] += r.share;
     const p = a.of.get(r.player) ?? { shares: zero(), voice: {} };
     p.shares[r.quadrant] += r.share;
@@ -655,19 +657,21 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   /* Flat earns: one pass over the window's votes, each read against the flat plays on its Act's character and on the Act, indexed once above, so
      the work grows with the votes and the plays on each. A vote line is `votes` of a vote (halved, and negative where a vote moved away). The
      largest `flat` among the plays that apply pays, a take-back as much as a pay, so a negative line is priced by the play that applies now, not
-     by the play that paid. A play pays only for a voter who first reacted to the Act no earlier than the play. For plays that name quadrants every
-     play applying at a take-back applied at the pay, so the character's flat boosts never sum below zero, though a smaller play still up can take
-     back more than it paid after a larger one has ended. A play that names reaction kinds can take back a share it never paid, since a line
-     carries one kind, and the character can end below zero. */
+     by the play that paid. A play pays only for a voter who first reacted to the Act no earlier than the play. A line applies to a play that names
+     quadrants by its quadrant and to one that names reaction kinds by the kind of the voter's first reaction in that quadrant on the Act, which never
+     changes, so every play applying at a take-back applied at the pay, and the character's flat boosts never sum below zero, though a smaller play
+     still up can take back more than it paid after a larger one has ended. */
   if (flatsOn.size) {
     for (const v of windowVotes) {
       const t = actOf(v.act);
-      const first = onAct.get(v.act)!.first.get(v.player)!;
+      const on = onAct.get(v.act)!;
+      const first = on.first.get(v.player)!;
+      const firstKind = on.firstKind.get(`${v.player}\u0000${v.quadrant}`)!;
       let best: Flat | undefined;
       for (const list of [flatsOn.get(t.character), flatsOn.get(v.act)]) {
         for (const g of list ?? []) {
           if (!(v.at >= g.from && v.at < g.ends) || first < g.from) continue;
-          if (!(g.quadrants.includes(v.quadrant) || g.reactions.includes(v.kind))) continue;
+          if (!(g.quadrants.includes(v.quadrant) || g.reactions.includes(firstKind))) continue;
           if (!(g.acts ? g.acts.includes(t.kind!) : isPost(t.kind!))) continue;
           if (!best || g.flat > best.flat || (g.flat === best.flat && (g.from < best.from || (g.from === best.from && g.play < best.play)))) best = g;
         }

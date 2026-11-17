@@ -1139,6 +1139,9 @@ const cardsWorld: Instance = {
     { ...splat, key: 'calmHalfB', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 0.5 } },
     { ...splat, key: 'calmWhole', gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 1 } },
     { ...splat, key: 'fireFlat', gimmick: { kind: 'earn', reactions: ['fire'], flat: 0.5 } },
+    { ...splat, key: 'heartFlat', gimmick: { kind: 'earn', reactions: ['heart'], flat: 1 } },
+    { ...splat, key: 'teaFlat', gimmick: { kind: 'earn', reactions: ['tea'], flat: 0.25 } },
+    { ...splat, key: 'tomatoFlat', gimmick: { kind: 'earn', reactions: ['tomato'], flat: 0.5 } },
     { ...splat, key: 'heatFlat', gimmick: { kind: 'earn', quadrants: ['excitedPositive'], flat: 0.25 } },
     { ...splat, key: 'heatChillFlat', gimmick: { kind: 'earn', quadrants: ['excitedPositive', 'boredNegative'], flat: 0.5 } },
     { ...splat, key: 'cardFlat', gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 0.5, acts: ['card', 'spring'] } },
@@ -1792,13 +1795,14 @@ test('a vote that moves away after the play ended takes back nothing, and one th
   const moved = settle(flatBoard([up], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 1 * H + 10), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: early.paid }), cardsWorld);
   assert.equal(boostTo(early, 'tom-1') + boostTo(moved, 'tom-1'), 0, 'a vote there before the play was never paid and takes nothing back');
 });
-test('over many seeded sequences of windows, flat earns that name quadrants never cost the character: all its boost entries sum to zero or more, in the whole and after every window', () => {
+test('over many seeded sequences of windows, flat earns that name quadrants or reactions never cost the character: all its boost entries sum to zero or more, in the whole and after every window', () => {
   // A tiny LCG, so every run draws the same few hundred sequences.
   const lcg = (seed: number) => { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 2 ** 32; }; };
   const WINDOWS = 5;
   const voters = ['bob', 'cat', 'dee', 'eve', 'fay'];
-  const kinds = ['tea', 'tomato', 'fire', 'heart', 'zzz'];
-  // Rounding is made to vanish, so the bound is exact: a vote of 720 times every share (a half, a third, two thirds, a sixth of a vote), halving weight (a whole, a half)
+  // The hot quadrant's two kinds are drawn twice as often, so a voter often leaves two kinds of one quadrant, which is where a kind-named play and a quadrant-named one part.
+  const kinds = ['tea', 'tomato', 'fire', 'heart', 'fire', 'heart', 'tea', 'zzz'];
+  // Rounding is made to vanish, so the bound is exact: a vote of 720 times every share (a half, a third, two thirds, a fifth, a sixth of a vote, from one to six reactions on a post and not four), halving weight (a whole, a half)
   // and flat (a quarter, a half, a whole) in these draws is a whole number, and no entry is ever rounded. A loss of any size, even one hundredth, fails.
   const exact: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 720 } };
   let withTakeBack = 0;
@@ -1807,22 +1811,36 @@ test('over many seeded sequences of windows, flat earns that name quadrants neve
     const int = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1));
     const pick = <T,>(xs: readonly T[]): T => xs[int(0, xs.length - 1)]!;
     // One flat earn on the character, and (usually) a second of another size on a post or the character, overlapping in part.
-    const aAt = FROM + int(0, 70) * H;
-    const plays: InputAct[] = [onTom('gA', pick(['calmWhole', 'heatChillFlat']), aAt, aAt + int(3, 80) * H)];
-    if (rand() < 0.8) {
-      const bAt = FROM + int(0, 70) * H;
-      const bEnds = bAt + int(3, 80) * H;
-      plays.push(rand() < 0.5 ? onPostBy('gB', 'tom-1', pick(['calmHalf', 'heatFlat']), pick(['tp1', 'tp2']), bAt, bEnds) : onTom('gB', pick(['calmHalf', 'heatFlat']), bAt, bEnds));
+    const aAt = FROM + int(0, 8) * H;
+    // A play names quadrants or reactions: a quadrant-named play alone, a kind-named play alone, or both beside each other (of different sizes), and sometimes a second kind-named one.
+    // Half the sequences are hot: the quarter-vote play of the hot quadrant beside a kind-named play of it, and only the hot quadrant's kinds and a few others drawn, which is where a take-back can be priced by another play than the one that paid.
+    const hot = rand() < 0.5;
+    const named = hot ? 'heatFlat' : pick(['calmWhole', 'heatChillFlat', 'heatFlat', 'calmHalf']);
+    const kinded = hot ? pick(['fireFlat', 'heartFlat']) : pick(['fireFlat', 'heartFlat', 'teaFlat', 'tomatoFlat']);
+    const drawn = hot ? ['heart', 'fire', 'tea', 'tomato'] : kinds;
+    const mode = int(0, 3);
+    const plays: InputAct[] = [];
+    if (mode !== 1) plays.push(onTom('gA', named, aAt, aAt + int(60, 200) * H));
+    if (mode !== 0) {
+      const bAt = FROM + int(0, 8) * H;
+      const bEnds = bAt + int(60, 200) * H;
+      plays.push(rand() < 0.5 ? onPostBy('gB', 'tom-1', kinded, pick(['tp1', 'tp2']), bAt, bEnds) : onTom('gB', kinded, bAt, bEnds));
+    }
+    if (mode === 3) {
+      const cAt = FROM + int(0, 8) * H;
+      plays.push(onTom('gC', pick(['fireFlat', 'heartFlat', 'teaFlat', 'tomatoFlat']), cAt, cAt + int(60, 200) * H));
     }
     // Several voters react to the character's posts across quadrants, the first reaction before, inside or after a play, and later ones in other quadrants.
     const reactions: InputReaction[] = [];
-    for (const p of voters) {
-      for (const act of ['tp1', 'tp2']) {
-        if (rand() < 0.35) continue;
-        let at = FROM + int(0, WINDOWS * 24 - 30) * H + int(0, 59) * 60_000;
-        for (let n = int(1, 3); n > 0; n--) {
-          reactions.push(react(act, p, `${p}-1`, pick(kinds), at));
-          at += int(1, 40) * H + int(0, 59) * 60_000;
+    // One or two voters a sequence, so that one voter's take-back is not hidden by other voters' pays in the character's total.
+    // A hot sequence has one voter on one post, who first reacts early in the hot quadrant and then reacts again, each time most often a window later.
+    for (const p of hot ? voters.slice(0, 1) : voters.slice(0, int(1, 2))) {
+      for (const act of hot ? ['tp1'] : ['tp1', 'tp2']) {
+        if (!hot && rand() < 0.35) continue;
+        let at = FROM + int(hot ? 9 : 10, hot ? 14 : WINDOWS * 24 - 30) * H + int(0, 59) * 60_000;
+        for (let n = pick([1, 2, 3, 5, 6]); n > 0; n--) {
+          reactions.push(react(act, p, `${p}-1`, pick(drawn), at));
+          at += int(hot ? 15 : 1, 40) * H + int(0, 59) * 60_000;
         }
       }
     }
@@ -1861,21 +1879,50 @@ test('a take-back falls on the largest play still up, so one play\'s lines can s
   assert.equal(by('heatChillFlat') + by('heatFlat'), 150);
   assert.ok(boostTo(first, 'tom-1') + boostTo(second, 'tom-1') > 0, 'the character\'s boosts as a whole are above zero');
 });
-// KNOWN SHORTFALL. A vote line carries one reaction kind: a paying line the kind of the voter's latest reaction in that quadrant in the window, a
-// take-back line the kind of their latest reaction in that quadrant before the window. So a play that names a reaction kind can take back a share
-// it never paid. Whether that is right is an open question for the owner (keithpickering/dividedworld#778); this test pins today's behavior so that a
-// change of rule shows up here.
-test('a flat earn that names a reaction kind can take back what it never paid', () => {
-  const bigVote: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 1200 } };
+/* A play that names a reaction kind applies to a vote line by the kind of the voter's FIRST reaction in the line's quadrant on that Act, which never
+   changes (a reaction cannot be removed). So a line applies the same way when it is paid and when it is taken back, and no play takes back what it
+   did not pay. */
+const bigVote1200: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 1200 } };
+const W3 = { id: 'wed', from: TO + 24 * H, to: TO + 48 * H };
+test('a flat earn that names a reaction kind applies by the voter\'s first reaction in the quadrant, so it never takes back what it did not pay', () => {
   const play = onTom('g1', 'fireFlat', FROM + 2 * H, FROM + 100 * H);
-  const W3 = { id: 'wed', from: TO + 24 * H, to: TO + 48 * H };
   const heart = react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H);
   const fire = react('tp1', 'bob', 'bob-1', 'fire', TO + 3 * H);
   const away = react('tp1', 'bob', 'bob-1', 'tomato', TO + 24 * H + 3 * H);
-  const one = settle(flatBoard([play], [heart]), bigVote);
-  const two = settle(flatBoard([play], [heart, fire], [], { window: W2, paid: one.paid }), bigVote);
-  const three = settle(flatBoard([play], [heart, fire, away], [], { window: W3, paid: two.paid }), bigVote);
-  assert.deepEqual([one, two, three].map((r) => boostTo(r, 'tom-1')), [0, 0, -200], 'a heart is not the fire it names, the fire moves no share, and the third of a vote that then leaves is taken back as the fire: a half of 1200 times a third');
+  const one = settle(flatBoard([play], [heart]), bigVote1200);
+  const two = settle(flatBoard([play], [heart, fire], [], { window: W2, paid: one.paid }), bigVote1200);
+  const three = settle(flatBoard([play], [heart, fire, away], [], { window: W3, paid: two.paid }), bigVote1200);
+  assert.deepEqual([one, two, three].map((r) => boostTo(r, 'tom-1')), [0, 0, 0], 'the first reaction there was a heart, not the fire the play names: nothing paid, so nothing taken back');
+});
+test('a flat earn that names a reaction kind prices a take-back by the play that paid it: paid on the first kind, then another kind of the quadrant, then another quadrant', () => {
+  const play = onTom('g1', 'fireFlat', FROM + 2 * H, FROM + 100 * H);
+  const fire = react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H);
+  const heart = react('tp1', 'bob', 'bob-1', 'heart', TO + 3 * H);
+  const away = react('tp1', 'bob', 'bob-1', 'tomato', TO + 24 * H + 3 * H);
+  const one = settle(flatBoard([play], [fire]), bigVote1200);
+  const two = settle(flatBoard([play], [fire, heart], [], { window: W2, paid: one.paid }), bigVote1200);
+  const three = settle(flatBoard([play], [fire, heart, away], [], { window: W3, paid: two.paid }), bigVote1200);
+  assert.deepEqual([one, two, three].map((r) => boostTo(r, 'tom-1')), [600, 0, -200], 'a half of 1200 paid; the heart splits the share and the play takes half back and pays half; the tomato takes back a third of it');
+  assert.ok(boostTo(one, 'tom-1') + boostTo(two, 'tom-1') + boostTo(three, 'tom-1') >= 0);
+});
+test('a quadrant-named earn and a kind-named earn on one character never leave it below zero (heart, then fire, then six teas)', () => {
+  // A vote of 1440, so that no amount rounds: shares of a half and an eighth, flats of a quarter and a half.
+  const vote: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 1440 } };
+  const plays = [onTom('quad', 'heatFlat', FROM + 2 * H, FROM + 100 * H), onTom('kind', 'fireFlat', FROM + 2 * H, FROM + 100 * H)];
+  const heart = react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H);
+  const fire = react('tp1', 'bob', 'bob-1', 'fire', TO + 3 * H);
+  const teas = [...Array(6)].map((_, i) => react('tp1', 'bob', 'bob-1', 'tea', TO + 24 * H + (3 + i) * 60_000));
+  const one = settle(flatBoard(plays, [heart]), vote);
+  const two = settle(flatBoard(plays, [heart, fire], [], { window: W2, paid: one.paid }), vote);
+  const three = settle(flatBoard(plays, [heart, fire, ...teas], [], { window: W3, paid: two.paid }), vote);
+  assert.deepEqual([one, two, three].map((r) => boostTo(r, 'tom-1')), [360, 0, -270], 'the quarter-vote play pays a vote (360), the fire changes no share, and the six teas take back 3/4 of a vote at the quarter');
+  assert.ok([one, two, three].reduce((t, r) => t + boostTo(r, 'tom-1'), 0) >= 0, 'the character is not below zero');
+});
+test('inside one window the first reaction of the quadrant decides, not the last: another kind then the named kind pays nothing, the named kind then another pays the play', () => {
+  const play = onTom('g1', 'fireFlat', FROM + 2 * H, FROM + 100 * H);
+  const heart = react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H);
+  assert.equal(boostTo(settle(flatBoard([play], [heart, react('tp1', 'bob', 'bob-1', 'fire', FROM + 6 * H)]), cardsWorld), 'tom-1'), 0, 'heart first: the play names the fire, so it pays nothing');
+  assert.equal(boostTo(settle(flatBoard([play], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 4 * H), react('tp1', 'bob', 'bob-1', 'heart', FROM + 6 * H)]), cardsWorld), 'tom-1'), 5, 'fire first: the play pays its half of a vote');
 });
 test('two flat earns on one vote, one on the character and one on the post, are one entry by the larger\'s card; a tie goes to the earlier play, then the smaller id', () => {
   const vote = [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)];
