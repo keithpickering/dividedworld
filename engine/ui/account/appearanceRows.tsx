@@ -6,7 +6,7 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Preferences } from '../data/api.ts';
-import { useSound } from '../audio/sound.ts';
+import { useSound, useWarmSounds } from '../audio/sound.ts';
 import type { SoundBus } from '../audio/types.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { allowTilt, subscribeTilt, tiltAskFailed, tiltState, tiltSupported, watchTilt, type TiltState } from '../shine/tilt.ts';
@@ -109,6 +109,8 @@ export function SoundRow({ bus, value, volume, onChange, onVolume, level }: {
   const words = SOUND_ROW[bus];
   const none = bus === 'interface' && !(ui.sounds?.slots ?? []).some((s) => s.bus === 'interface');
   const preview = ui.sounds?.preview?.[bus];
+  /* The preview is fetched when the row is drawn, so the first release is heard on time. */
+  useWarmSounds(preview === undefined ? undefined : [preview]);
   /* The number follows the drag; the account's volume is what a release saves. */
   const [shown, setShown] = useState(volume);
   useEffect(() => { setShown(volume); }, [volume]);

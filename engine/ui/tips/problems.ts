@@ -2,7 +2,7 @@
  * What an instance's UI must fill exactly, checked beside `instanceProblems` (engine/rules/instance.ts), which checks its
  * rules: `onboarding.tips` has every tip key the engine knows and none it does not, each with a title and a line, and the
  * welcome letter is text; the code of conduct has a positive whole version and sections with unique keys, each with a title and text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; `copy.badges`, when given, is a non-empty list of pairs of two words of 12 characters between them; the front door names only cast
- * members, reactions and ranks the instance has, and cards with a `CardUi`. Pure, so the self-test can plant each defect; the build runs it
+ * members, reactions and ranks the instance has, and cards with a `CardUi`; and a card's `sounds`, when it names any, are keys of the instance's `sounds.slots`. Pure, so the self-test can plant each defect; the build runs it
  * against the real instance (instances/divided-world/ui/index.test.tsx).
  */
 import type { Instance } from '../../rules/types.ts';
@@ -20,7 +20,7 @@ export const BADGE_MAX = 12;
 /** The most badges the footer shows: a row of them wraps (engine/ui/frame/frame.css), but a footer of a dozen is a wall. */
 export const BADGES_MAX = 6;
 
-export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks' | 'conduct'> & Partial<Pick<InstanceUi, 'themes'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
+export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks' | 'conduct'> & Partial<Pick<InstanceUi, 'themes' | 'sounds'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const out: string[] = [];
   /* A theme's `modes` and its preview's keys are one list (tools/theme-preview.mjs reads the keys from the theme's file). */
   for (const t of ui.themes ?? []) {
@@ -81,8 +81,11 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   if (typeof on.letter !== 'string' || on.letter.trim() === '') out.push('the onboarding has no letter');
   out.push(...frontDoorProblems(ui, instance));
   out.push(...classLookProblems(ui.classLooks, instance));
+  /* A card's `sounds` are keys of the instance's own sound slots, so a typo fails the build and not a play (docs/plans/2026-11-17-sound-preload-design.md). */
+  const slotKeys = new Set((ui.sounds?.slots ?? []).map((s) => s.key));
   /* The Lens's heading for a card with no live view: a short status, never a sentence (cards/lens-words.ts). */
   for (const card of ui.cards ?? []) {
+    for (const sound of card.sounds ?? []) if (!slotKeys.has(sound)) out.push(`the card "${card.key}" names the sound "${sound}", which the instance's sounds do not have`);
     out.push(...drawnByProblems(card, ui.cards ?? []), ...foldsRowProblems(card));
     if (card.status === undefined) out.push(`the card "${card.key}" has no status, so its Lens heading would be a sentence`);
     else for (const words of statusWords(card.status, instance.cards?.find((c) => c.key === card.key)?.stack ?? 1)) out.push(...wordsProblems('status', words).map((p) => `the card "${card.key}": ${p}`));

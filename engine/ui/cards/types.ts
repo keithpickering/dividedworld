@@ -419,6 +419,11 @@ export interface CardUi {
   /** The effect covers the post (the reader cannot read it as it stands), so the Lens leads with the card's controls. */
   readonly takeover?: boolean;
   /**
+   * The keys of the instance's sounds (`InstanceUi.sounds`) this card's effect may play. The engine warms them when a post wearing the card is drawn, so they are ready
+   * before the effect asks (docs/plans/2026-11-17-sound-preload-design.md).
+   */
+  readonly sounds?: readonly string[];
+  /**
    * A live play of this card on a post folds the post's whole row behind a bar the engine draws (thread/fold.tsx). The card's effect is given `fold` where the post has a row,
    * and draws its own fold where it has none (`EffectProps.fold`). It must have an `Effect` and must not be a `takeover` (`instanceUiProblems`).
    */

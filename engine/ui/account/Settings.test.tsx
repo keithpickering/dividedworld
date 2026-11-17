@@ -14,6 +14,7 @@ import { onToastChoice } from '../alerts/toast-choice.ts';
 import { LoadedSettings } from '../loaded.tsx';
 import { fakeSound } from '../audio/test-sound.ts';
 import { resetSound } from '../audio/sound.ts';
+import { captions } from '../audio/captions.ts';
 import type { SoundsUi } from '../audio/types.ts';
 
 const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-motion-feel', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-effects', 'data-kb-glass-key'];
@@ -896,7 +897,7 @@ describe('Settings › Sound', () => {
     renderIn(w.fake, <LoadedSettings />, { path: '/settings?section=sound', ...(sounds ? { sounds } : {}) });
     return w;
   };
-  afterEach(() => { resetSound(); });
+  afterEach(() => { resetSound(); captions.reset(); });
 
   test('is a section after Accessibility, headed Sound, with a row for game sounds and one for interface sounds, each Off and On and off to start', async () => {
     fakeSound();
@@ -990,6 +991,16 @@ describe('Settings › Sound', () => {
     await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ interfaceVolume: 35, gameVolume: 80 }));
   });
 
+  test('a row with a preview warms it when it mounts with its bus on, so the first release is heard on time', async () => {
+    const { fetched } = fakeSound();
+    const w = world();
+    await w.fake.setPreferences({ gameSound: 'on' });
+    renderIn(w.fake, <LoadedSettings />, { path: '/settings?section=sound', sounds: BOTH });
+    await screen.findByRole('radiogroup', { name: 'Game sounds' });
+    await waitFor(() => expect(fetched).toHaveBeenCalledWith('/boo.mp3'));
+    expect(fetched).not.toHaveBeenCalledWith('/click.mp3');
+  });
+
   test('releasing a volume plays the bus\'s preview where the instance names one', async () => {
     const { fetched } = fakeSound();
     sound(BOTH);
@@ -998,9 +1009,11 @@ describe('Settings › Sound', () => {
     const slider = await screen.findByRole('slider', { name: 'Game volume' });
     fireEvent.input(slider, { target: { value: '30' } });
     await act(async () => { await Promise.resolve(); });
-    expect(fetched).not.toHaveBeenCalled();
+    /* The preview is warmed (fetched) once its bus is on, but nothing plays on input: no caption is said until the release. */
+    expect(captions.current()).toBeNull();
     fireEvent.change(slider, { target: { value: '30' } });
-    await waitFor(() => expect(fetched).toHaveBeenCalledWith('/boo.mp3'));
+    await waitFor(() => expect(captions.current()).not.toBeNull());
+    expect(fetched).toHaveBeenCalledWith('/boo.mp3');
     await userEvent.click(radio('Interface sounds', 'On'));
     fireEvent.change(await screen.findByRole('slider', { name: 'Interface volume' }), { target: { value: '60' } });
     await waitFor(() => expect(fetched).toHaveBeenCalledWith('/click.mp3'));
