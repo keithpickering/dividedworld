@@ -19,7 +19,7 @@ import type { Act } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { bodies, cornersOf, DEPTH, HALF } from './body.ts';
 import { depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from './chair.ts';
-import { DENT_SCALE } from './dent.ts';
+import { DENT_SCALE, FULL_DENT } from './dent.ts';
 import { LATE_MS, SteelChairEffect } from './Effect.tsx';
 
 const hub = vi.hoisted(() => ({
@@ -154,10 +154,6 @@ const rulesOf = (source: string, selector: string) => [...source.matchAll(/([^{}
 const ruleOf = (selector: string) => rulesOf(guarded.rest, selector);
 /** The rules that only apply where `:has()` does. */
 const ruleWithHas = (selector: string) => rulesOf(guarded.inner ?? '', selector);
-/** The blended look lives in its own `@supports (mix-blend-mode: ...)` block; what is outside it is what a browser without blending draws. */
-const blended = atRule(guarded.rest, '@supports (mix-blend-mode: multiply)');
-const blendRule = (selector: string) => rulesOf(blended.inner ?? '', selector);
-const plainRule = (selector: string) => rulesOf(blended.rest, selector);
 
 const rect = (left: number, top: number, width: number, height: number) => ({ x: left, y: top, left, top, right: left + width, bottom: top + height, width, height, toJSON: () => ({}) });
 const areaHeight = (el: Element) => size.h + (roomAdds && el.querySelector('.dw-chair') ? ROOM_HEIGHT : 0);
@@ -209,9 +205,11 @@ function expectOnFloor(group: HTMLElement, floor: number): void {
  * the same sequence of seeds (every run a test makes gets the next one, so two runs still differ), and a test that needs one throw pins it.
  */
 /** A seed for which sc1 and sc3 lie on the floor and not on sc2 (seed 4, for one, lands a chair on sc2: it falls when sc2 goes). */
-const PINNED_SEED = 2;
+const PINNED_SEED = 4;
 /** A seed that puts sc1 and sc3's dents about 35 px apart (overlapping) and sc2's more than 136 px from both (seed 23, found by hand). */
 const SEED_TWO_AND_ONE = 23;
+/** A seed that lays the three dents on the one-line text over one another (found by hand). */
+const OVERLAPPING_SEED = 1;
 let seeds = 0;
 /** The seed the nth unpinned run gets. */
 const seedAt = (n: number) => Math.imul(n, 2654435761) >>> 0;
@@ -640,8 +638,9 @@ describe('what a re-arm and a reflow leave behind', () => {
     run();
     expect(dents()).toHaveLength(2);
     const centers = dents().map((d) => parseFloat(d.style.left) + parseFloat(d.style.width) / 2);
-    /* Each dent has its own size now; the effect's own check uses the largest a dent can be (the base: 60% of the 280 px wrapper, or 160). */
-    const radius = Math.min(160, 0.6 * 280) / 2;
+    /* Each dent has its own size now; the effect's own check uses the largest a dent can be (the base: 60% of the 280 px wrapper, 160, or the
+       zone a dent may land in: the 200 px area less the room). */
+    const radius = Math.min(160, 0.6 * 280, 200 - ROOM_HEIGHT) / 2;
     /* The post narrows until the right edge of the box cuts the farther dent's circle, and not the nearer one's. */
     const farther = Math.max(...centers), nearer = Math.min(...centers);
     expect(farther - nearer, 'the seed puts the two dents apart').toBeGreaterThan(2);
@@ -743,21 +742,13 @@ describe('a dent: its own images, and how its shading combines', () => {
     expect(document.querySelector('.dw-chair-crease-layer')).toBeNull();
   });
 
-  test('the shading is two layers with their own blends: shade multiplied (dents darkened against each other), light screened (lightened), images from variables, hidden without blending and in forced colors', () => {
-    const blend = (selector: string) => /mix-blend-mode:\s*([a-z-]+)/u.exec(blendRule(selector))?.[1];
-    expect(blend('.dw-chair-dents')).toBe('multiply');
-    expect(blend('.dw-chair-dent')).toBe('darken');
-    expect(blend('.dw-chair-glows')).toBe('screen');
-    expect(blend('.dw-chair-glow')).toBe('lighten');
-    expect(blendRule('.dw-chair-dent')).toContain('var(--dw-dent-img');
-    expect(blendRule('.dw-chair-glow')).toContain('var(--dw-glow-img');
+  test('1. no blend: the sheet holds no mix-blend-mode and no @supports, the two layers are shown outside forced colors, and the images come from variables', () => {
+    expect(sheet, 'a blend takes its backdrop from the nearest stacking context, which a place that shows a post may leave empty (#768)').not.toMatch(/mix-blend-mode/u);
+    expect(sheet, 'nothing is gated on a blend any more').not.toMatch(/@supports/u);
+    for (const sel of ['.dw-chair-dents', '.dw-chair-glows']) expect(ruleOf(sel), sel).not.toMatch(/display:\s*none/u);
+    expect(ruleOf('.dw-chair-dent')).toMatch(/background:[^;]*var\(--dw-dent-img/u);
+    expect(ruleOf('.dw-chair-glow')).toMatch(/background:[^;]*var\(--dw-glow-img/u);
     expect(sheet, 'the images replaced every gradient').not.toMatch(/radial-gradient/u);
-    /* Outside the block (a browser that cannot blend) an opaque gray image would cover the words, so the shading layers are not displayed. */
-    for (const sel of ['.dw-chair-dents', '.dw-chair-glows']) {
-      expect(plainRule(sel), sel).toMatch(/display:\s*none/u);
-      expect(plainRule(sel), sel).not.toMatch(/mix-blend-mode/u);
-    }
-    for (const sel of ['.dw-chair-dent', '.dw-chair-glow']) expect(plainRule(sel), sel).not.toMatch(/background|mix-blend-mode/u);
     expect(sheet).toMatch(/forced-colors: active\)\s*\{\s*\.dw-chair-shading,\s*\.dw-chair-layer\s*\{\s*display: none/u);
     mount();
     run();
@@ -814,6 +805,99 @@ describe("the dents stay above the floor's room", () => {
       }
       w.unmount();
     }
+  });
+});
+
+describe('a dent fits the room it has', () => {
+  const dentBox = (d: HTMLElement) => ({ x: parseFloat(d.style.left), y: parseFloat(d.style.top), width: parseFloat(d.style.width), height: parseFloat(d.style.height) });
+  const inside = (b: { x: number; y: number; width: number; height: number }, w: number, h: number, label: string) => {
+    expect(b.x, `${label}: left`).toBeGreaterThanOrEqual(-0.5);
+    expect(b.y, `${label}: top`).toBeGreaterThanOrEqual(-0.5);
+    expect(b.x + b.width, `${label}: right`).toBeLessThanOrEqual(w + 0.5);
+    expect(b.y + b.height, `${label}: bottom`).toBeLessThanOrEqual(h + 0.5);
+  };
+
+  test('2. a later dent is drawn capped against the dents before it, and the first is drawn as it is alone', () => {
+    /* The stub's images are fixed addresses, so here they say what they were asked with: where an earlier dent is handed over the address differs
+       (dent.ts `dentImages` does the pixels, dent.test.ts). */
+    hub.images = vi.fn((id: string, ...rest: unknown[]) => {
+      const earlier = (rest[2] as { play: string }[] | undefined) ?? [];
+      const tag = earlier.length > 0 ? `+${earlier.map((e) => e.play).join('+')}` : '';
+      return { bend: `data:image/png;base64,B${id}`, shade: `data:image/png;base64,S${id}${tag}`, light: `data:image/png;base64,L${id}${tag}` };
+    });
+    textRects = [{ left: 10, top: 9, width: 80, height: 18 }];
+    pin(OVERLAPPING_SEED);
+    mount({ plays: [play(1), play(2), play(3)] });
+    run();
+    const found = dents();
+    expect(found).toHaveLength(3);
+    const boxes = found.map(dentBox);
+    type Rect = typeof boxes[number];
+    const near = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    expect(near(boxes[0]!, boxes[1]!) && (near(boxes[0]!, boxes[2]!) || near(boxes[1]!, boxes[2]!)), 'the seed lays the three dents over one another').toBe(true);
+    const calls = hub.images.mock.calls.slice(-3) as unknown as [string, Rect, number, { play: string; box: Rect }[] | undefined][];
+    found.forEach((d, i) => {
+      const id = d.dataset.play!;
+      const alone = `url("data:image/png;base64,S${id}")`;
+      const shade = d.style.getPropertyValue('--dw-dent-img');
+      if (i === 0) expect(shade, 'the first is its own image').toBe(alone);
+      else expect(shade, `dent ${i} is not its image alone`).not.toBe(alone);
+      expect(calls[i]![0]).toBe(id);
+      expect(calls[i]![1], `dent ${i}'s box, in the area's px`).toMatchObject(boxes[i]!);
+      expect(calls[i]![3] ?? [], `dent ${i}: the dents before it, with their boxes in the area's px`)
+        .toMatchObject(found.slice(0, i).map((e, j) => ({ play: e.dataset.play, box: boxes[j] })));
+    });
+  });
+
+  test('3. the dent fits a short area: its box lies inside a 120 px area and is at most 120 tall', () => {
+    size = { h: 120 };
+    textRects = [{ left: 10, top: 9, width: 80, height: 18 }];
+    for (let seed = 1; seed <= 12; seed++) {
+      pin(seed);
+      const w = mount({ plays: [play(1), play(2), play(3)] });
+      run();
+      expect(dents(), `seed ${seed}`).toHaveLength(3);
+      for (const d of dents()) {
+        const b = dentBox(d);
+        inside(b, 300, 120, `seed ${seed}`);
+        expect(b.height, `seed ${seed}: height`).toBeLessThanOrEqual(120 + 0.01);
+      }
+      w.unmount();
+    }
+  });
+
+  test('4. the dent fits above the room where there is room: 200 px less ROOM_HEIGHT', () => {
+    size = { h: 200 };
+    textRects = [{ left: 10, top: 9, width: 80, height: 18 }];
+    for (let seed = 1; seed <= 12; seed++) {
+      pin(seed);
+      const w = mount({ plays: [play(1), play(2), play(3)] });
+      run();
+      for (const d of dents()) {
+        const b = dentBox(d);
+        expect(b.height, `seed ${seed}: height`).toBeLessThanOrEqual(200 - ROOM_HEIGHT + 0.01);
+        expect(b.y + b.height, `seed ${seed}: bottom`).toBeLessThanOrEqual(200 - ROOM_HEIGHT + 0.5);
+      }
+      w.unmount();
+    }
+  });
+
+  test("5. the tall text's dents are inside: a text as wide as the area and 300 px tall in a 400 px area", () => {
+    size = { h: 400 };
+    textRects = [{ left: 0, top: 0, width: 300, height: 300 }];
+    for (let seed = 1; seed <= 12; seed++) {
+      pin(seed);
+      const w = mount({ plays: [play(1), play(2), play(3)] });
+      run();
+      expect(dents(), `seed ${seed}`).toHaveLength(3);
+      for (const d of dents()) inside(dentBox(d), 300, 400, `seed ${seed}`);
+      w.unmount();
+    }
+  });
+
+  test('6. the least height of a marked area is the full dent and the room, held equal to the constants', () => {
+    expect(FULL_DENT + ROOM_HEIGHT).toBe(237);
+    expect(ruleOf('[data-dw-chair-room]')).toMatch(new RegExp(`min-height:\\s*${FULL_DENT + ROOM_HEIGHT}px`, 'u'));
   });
 });
 
@@ -1202,10 +1286,11 @@ describe('a moment (still)', () => {
     expect(picture([play(7), play(8)]).html).not.toBe(one.html);
   });
 
-  test('it binds no observer, no frame, no sound and nothing is inert, and the Lens gets the state with no controls', () => {
+  test('it binds a size observer on the host and the body and nothing else: no view observer, no frame, no sound, nothing inert, and the Lens gets the state with no controls', () => {
     mount({ plays: [play(1), play(2)], still: true });
-    expect(watching).toHaveLength(0);
-    expect(sized).toHaveLength(0);
+    expect(watching, 'no view observer').toHaveLength(0);
+    expect(sized, 'one size observer').toHaveLength(1);
+    expect([...sized[0]!.watching], 'on the host and the body and nothing else').toEqual([host(), document.querySelector('.kb-act-main')]);
     expect(requested).toBe(0);
     expect(hub.sound.play).not.toHaveBeenCalled();
     expect(made.met).not.toHaveBeenCalled();
@@ -1213,6 +1298,34 @@ describe('a moment (still)', () => {
     expect(document.querySelector('.dw-chair-words')).not.toHaveAttribute('data-shake');
     expect(groups().every((g) => g.hasAttribute('data-rest'))).toBe(true);
     expect(lastView()).toMatchObject({ state: 'Dented by 2 chairs', controls: [] });
+  });
+
+  test('7. a still run is drawn again when its box changes, from the same seed, and not again when nothing changed', () => {
+    const plays = [play(1), play(2), play(3)];
+    const html = () => (document.querySelector('.dw-chair') as HTMLElement).outerHTML.replace(/id="[^"]*"/gu, 'id=""').replace(/url\(&quot;#[^)]*\)/gu, 'url()');
+    mount({ plays, still: true });
+    const layerList = () => [...document.querySelectorAll<HTMLElement>('.dw-chair-layer, .dw-chair-dents, .dw-chair-glows')];
+    expect(layerList()).toHaveLength(3);
+    for (const l of layerList()) expect(l.style.height).toBe('200px');
+    size = { h: 260 };
+    act(() => { for (const r of sized) r.cb(); });
+    for (const l of layerList()) {
+      expect([l.style.left, l.style.top, l.style.width, l.style.height], 'the layers are placed at the new height').toEqual(['-10px', '-8px', '300px', '260px']);
+    }
+    expect(groups(), 'a chair for every play').toHaveLength(3);
+    expect(groups().every((g) => g.hasAttribute('data-rest')), 'every chair is at rest').toBe(true);
+    expect(dents(), 'the dents are drawn').toHaveLength(3);
+    for (const g of groups()) expectOnFloor(g, 260);
+    expect(requested, 'no frame').toBe(0);
+    expect(sized, 'the observer is kept').toHaveLength(1);
+    const again = html();
+    const drawn = hub.images.mock.calls.length, world = hub.world;
+    act(() => { for (const r of sized) r.cb(); });
+    expect(hub.images.mock.calls.length, 'nothing changed, so nothing is drawn again').toBe(drawn);
+    expect(hub.world, 'nor is the world built again').toBe(world);
+    cleanup();
+    mount({ plays, still: true });
+    expect(html(), 'the picture a fresh mount at 260 gives for the same plays').toBe(again);
   });
 
   test('a moment draws its plays as they were, ended ones included', () => {
