@@ -22,8 +22,8 @@
  *
  * The page's one loop (engine/ui/shine/loop.ts) serves the post: it draws only while the post is in view, when the light moved, and
  * on the idle shimmer's cadence; reduced motion holds the light at rest, so it draws once. The accessible path is that stillness,
- * and it gives the same foil ("An accessible path costs what the obstacle costs"). A play's moment (`still`) is drawn once at
- * the rest light and registers nothing that moves. Nothing here reads who owns a post, who played on it, or any class: the seed is
+ * and it gives the same foil ("An accessible path costs what the obstacle costs"). A play's moment runs this same live foil (the
+ * engine gives it the moment's own clock and no reader; this effect never reads either). Nothing here reads who owns a post, who played on it, or any class: the seed is
  * `post.id` and the plays' ids, which are public.
  *
  * Where the browser has a Worker, an OffscreenCanvas and a canvas that can hand over control (`offscreenFoils`), the foil is drawn in a
@@ -32,9 +32,9 @@
  * spec, the box, the density, the light and band read here on the main thread, the time) instead of painting; the worker makes the
  * same foil and calls the same `foil.draw`, so the look and the motion are the same. The loop still decides when the post draws, eases
  * its light and counts its draws. Everywhere else, where a worker cannot start (the hand-over is refused before anything is
- * transferred), and for a play's moment (`still`, drawn once, so a worker would only add a hop), the post draws on the main thread as
+ * transferred), the post draws on the main thread as
  * it always did. A transferred canvas can never be drawn on from the page again, nor handed over
- * a second time, so the `<canvas>` carries a `key` of level, seed and still: an effect that runs again (a level or a seed change)
+ * a second time, so the `<canvas>` carries a `key` of level and seed: an effect that runs again (a level or a seed change)
  * gets a fresh element. A development build under React's StrictMode would run the effect twice on one element and the second
  * hand-over is refused after the first transferred it (logged, the post bare); the app does not use StrictMode.
  *
@@ -65,7 +65,7 @@ import { makeFoil, type Foil, type FoilPattern } from '../../../../engine/ui/shi
 import { adoptFoil, isTransferred, offscreenFoils, type FoilHandle } from '../../../../engine/ui/shine/foilClient.ts';
 import type { FoilSpec } from '../../../../engine/ui/shine/foilProtocol.ts';
 import { bodyBox, bodyOf, markBrightInk, paintScale, paintShare, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
-import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
+import { type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake, type Span } from '../../../../engine/ui/shine/loop.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import './fab.css';
@@ -95,7 +95,7 @@ type PaletteKey = 'bright' | 'light' | 'dark';
 const paletteOf = (band: Band): PaletteKey => (band.bright ? 'bright' : band.board);
 const PALETTES: Record<PaletteKey, readonly string[]> = { bright: FAB_BRIGHT, light: FAB_STOPS.light, dark: FAB_STOPS.dark };
 
-export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
+export function FeelinFabEffect({ post, plays, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const level = Math.max(1, Math.min(MOST, plays.length));
@@ -105,9 +105,9 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
     const el = host.current, cv = canvas.current;
     if (!el || !cv) return;
     const pattern = PATTERN[level] as FoilPattern;
-    /* In a worker, unless this is a play's moment: the canvas is handed over now and cannot be drawn on from here again. */
+    /* In a worker where the browser can: the canvas is handed over now and cannot be drawn on from here again. */
     let remote: FoilHandle | null = null;
-    if (!still && offscreenFoils()) {
+    if (offscreenFoils()) {
       try { remote = adoptFoil(cv); } catch (err) {
         console.error(err);
         /* Refused before the canvas was handed over (no worker could start): the post draws on the page. Handed over already: it cannot be drawn on, and stays bare. */
@@ -202,12 +202,6 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       const share = paintShare(own.width * own.height, box.w * box.h);
       /* In quarter px, so a resize by a pixel or two keeps the foil it has. */
       cell = Math.max(CELL, Math.round((CELL / scale) * 4) / 4);
-      if (still) {
-        density = Math.min(2, Math.max(1, window.devicePixelRatio || 1)) * scale;
-        size();
-        paint(REST, 0, false);
-        return;
-      }
       density = register(el, cv, box, Math.min(2, window.devicePixelRatio || 1) * scale, (frame) => {
         if (freed) { if (!remote) size(); freed = false; }
         last = { light: frame.light, t: frame.t };
@@ -230,7 +224,7 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
     setup();
 
     /* The board or Brighter effects switched (the player's choices on the root, or the device's color scheme) while nothing was drawing. */
-    const boardChanged = (): void => { band = readBand(); ink(); if (still) paint(REST, 0, false); else wake(el); };
+    const boardChanged = (): void => { band = readBand(); ink(); wake(el); };
     const mode = typeof MutationObserver === 'function' ? new MutationObserver(boardChanged) : null;
     mode?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode', 'data-kb-effects'] });
     const scheme = window.matchMedia?.('(prefers-color-scheme: dark)');
@@ -240,17 +234,17 @@ export function FeelinFabEffect({ post, plays, still, children }: EffectProps) {
       scheme?.removeEventListener?.('change', boardChanged);
       mode?.disconnect();
       resize?.disconnect();
-      if (!still) unregister(el);
+      unregister(el);
       remote?.drop();
       release();
       markBrightInk(body, false);
       el.removeAttribute('data-kb-bleed');
     };
-  }, [level, seed, still]);
+  }, [level, seed]);
 
   return (
     <div ref={host} className="dw-fab" data-kb-fab="" data-kb-level={level}>
-      <canvas key={`${level}:${seed}:${still ? 'still' : 'live'}`} ref={canvas} className="dw-fab-foil" aria-hidden="true" />
+      <canvas key={`${level}:${seed}`} ref={canvas} className="dw-fab-foil" aria-hidden="true" />
       <div className="dw-fab-words">{children}</div>
     </div>
   );

@@ -3,6 +3,9 @@
  * receipt at the foot of the words for a phrase edited out. jsdom has no layout, so the drawing's tests need none (the search and the arithmetic are place.test.ts's);
  * the measuring is driven once with stand-in boxes, to show that it writes each height and place once and that a second pass over its own result writes nothing.
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act, cleanup, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useState, type ReactNode } from 'react';
@@ -34,7 +37,7 @@ const postOf = (body: string) => ({ id: 'post-1', character: 'author', kind: 'po
 const playOf = (id: string, phrase: string, words = '', extra: Partial<CardPlay> = {}): CardPlay => ({ id, card: 'this', layer: 1, caster: 'c1', message: '', config: { phrase, words }, playedAt: '2026-11-13T10:01:00.000Z', post: 'post-1', ...extra }) as CardPlay;
 const A = playOf('a', 'People blame the engine', 'finally somebody said it');
 
-interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly still?: boolean; readonly other?: 'autocorrect' | 'laugh-track'; readonly order?: 'this-outer' | 'this-inner' }
+interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly moment?: { readonly at: number }; readonly spies?: { readonly save: ReturnType<typeof vi.fn>; readonly release: ReturnType<typeof vi.fn>; readonly met: ReturnType<typeof vi.fn> }; readonly other?: 'autocorrect' | 'laugh-track'; readonly order?: 'this-outer' | 'this-inner' }
 
 let resizes: { cb: () => void; watching: Set<Element> }[] = [];
 class FakeResize {
@@ -58,8 +61,8 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 const propsOf = (o: Options, body: string, views: (CardView | null)[], plays: CardPlay[]) => ({
-  post: postOf(body), plays, states: {}, released: new Set<string>(), written: new Map(), reader: { author: false, caster: false }, place: 'thread' as const, reach: 'post' as const, still: o.still ?? false,
-  save: async () => ({ ok: false as const, error: 'no' }), release: async (play: string) => ({ ok: true as const, value: { play, releasedAt: '' } }), show: (v: CardView | null) => { views.push(v); }, met: () => {},
+  post: postOf(body), plays, states: {}, released: new Set<string>(), written: new Map(), reader: { author: false, caster: false }, place: 'thread' as const, reach: 'post' as const, still: false, moment: o.moment ?? null,
+  save: (o.spies?.save as EffectProps['save'] | undefined) ?? (async () => ({ ok: false as const, error: 'no' })), release: (o.spies?.release as EffectProps['release'] | undefined) ?? (async (play: string) => ({ ok: true as const, value: { play, releasedAt: '' } })), show: (v: CardView | null) => { views.push(v); }, met: o.spies?.met ?? (() => {}),
   holdScreen: () => {}, ink: NO_INK, marks: null, nameOf: () => 'Spritey', give: async () => ({ ok: false as const, error: 'no' }), moreGifts: async () => {}, wallet: null,
 }) as unknown as EffectProps;
 
@@ -68,12 +71,14 @@ function mount(o: Options = {}) {
   let setBody: (b: string) => void = () => {};
   let setPlays: (p: CardPlay[]) => void = () => {};
   let bump: () => void = () => {};
+  let setStill: (b: boolean) => void = () => {};
   function Host() {
     const [body, sb] = useState(o.body ?? BODY);
     const [plays, sp] = useState(o.plays ?? [A]);
     const [, setN] = useState(0);
-    setBody = sb; setPlays = sp; bump = () => setN((n) => n + 1);
-    const mine = (kids: ReactNode) => <ThisEffect {...propsOf(o, body, views, plays)}>{kids}</ThisEffect>;
+    const [still, ss] = useState(false);
+    setStill = ss; setBody = sb; setPlays = sp; bump = () => setN((n) => n + 1);
+    const mine = (kids: ReactNode) => <ThisEffect {...propsOf(o, body, views, plays)} still={still}>{kids}</ThisEffect>;
     const text = <BbCode text={body} />;
     const other = (kids: ReactNode): ReactNode => {
       if (o.other === 'autocorrect') return <AutocorrectEffect {...propsOf(o, body, [], [{ id: 'ac1', card: 'autocorrect', layer: 1, caster: 'c2', message: '', config: { phrase: 'People blame the engine', replacement: 'Luigi' }, playedAt: '2026-11-13T10:02:00.000Z', post: 'post-1' } as CardPlay])}>{kids}</AutocorrectEffect>;
@@ -83,7 +88,7 @@ function mount(o: Options = {}) {
     return o.order === 'this-inner' ? other(mine(text)) : mine(other(text));
   }
   const world = renderInWorld(<Host />);
-  return { ...world, views, edit: (b: string) => act(() => setBody(b)), setPlays: (p: CardPlay[]) => act(() => setPlays(p)), rerender: () => act(() => bump()) };
+  return { ...world, views, edit: (b: string) => act(() => setBody(b)), setPlays: (p: CardPlay[]) => act(() => setPlays(p)), rerender: () => act(() => bump()), flip: () => act(() => setStill(true)) };
 }
 const q = <T extends HTMLElement = HTMLElement>(s: string) => [...document.querySelectorAll<T>(s)];
 const hl = () => q('.dw-this-hl');
@@ -232,13 +237,14 @@ describe('THIS: a play\'s moment', () => {
       fireEvent.keyDown(el, { key: 'Enter' });
     }
   };
-  test('it draws the same from the same props, only watches its own size, and no press or key changes it or says anything new', () => {
+  test('it draws the same in a moment as live, only watches its own size, no press or key changes it or says anything new, and save, release and met are never called', () => {
     const live = mount();
     const liveHtml = document.body.innerHTML;
     expect(live.views.length).toBeGreaterThan(0);
     cleanup();
     resizes = [];
-    const m = mount({ still: true });
+    const spies = { save: vi.fn(), release: vi.fn(), met: vi.fn() };
+    const m = mount({ moment: { at: Date.parse('2026-11-13T10:30:00.000Z') }, spies });
     expect(document.body.innerHTML).toBe(liveHtml);
     /* It watches the wrapper's size (a moment can be drawn folded or hidden and shown later) and binds nothing a player can reach. */
     expect(resizes).toHaveLength(1);
@@ -248,6 +254,19 @@ describe('THIS: a play\'s moment', () => {
     expect(document.body.innerHTML).toBe(html);
     expect(m.views.length).toBe(said);
     expect(q('[tabindex], button, [role="button"]').filter((e) => e.closest('.dw-this'))).toHaveLength(0);
+    expect(spies.save).not.toHaveBeenCalled();
+    expect(spies.release).not.toHaveBeenCalled();
+    expect(spies.met).not.toHaveBeenCalled();
+  });
+
+  test('a stale still flag changes nothing: flipping it on a mounted post draws the same and does not set the size watch up again', () => {
+    const m = mount();
+    const html = document.body.innerHTML;
+    expect(resizes).toHaveLength(1);
+    m.flip();
+    expect(document.body.innerHTML).toBe(html);
+    expect(resizes).toHaveLength(1);
+    expect(resizes[0]!.watching.size).toBe(1);
   });
 
   test('the note takes no press: nothing on the live note changes or is said when it is pressed', () => {

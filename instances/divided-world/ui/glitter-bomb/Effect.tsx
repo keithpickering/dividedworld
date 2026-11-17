@@ -17,8 +17,8 @@
  * passes the spot fires nothing. The burst fires once per mount: leaving and coming back shows every flake landed. Out of view the flakes object is released and dropped (it is deterministic, so it is built
  * again from its seed when the post returns, at ~4,200 flakes a post this is the memory of a long scroll), and so is the cling
  * registration. The surface is `sticky` for cling (a mouse passing over picks glitter up, which lands loose on a post, the reader's own
- * and never saved or sent; the pointer is over it as the body it covers, since it takes none itself), and unmounting unregisters it and drops the loose glitter. A play's moment (`still`) draws every flake
- * landed, at rest, once: no burst, no cling, nothing registered that moves. A kept post (`kept`, docs/plans/2026-11-12-glitter-keeps-design.md,
+ * and never saved or sent; the pointer is over it as the body it covers, since it takes none itself), and unmounting unregisters it and drops the loose glitter. A play's moment runs this same live effect (the engine gives it the moment's own
+ * clock and no reader; this effect never reads either). A kept post (`kept`, docs/plans/2026-11-12-glitter-keeps-design.md,
  * section 4: written while the play was up, loaded after it wore off) starts as a post that has already fired: no burst point is
  * watched and the flakes are built landed, while the loop, the glints, cling and the shake run as for any live post. `kept` is read once, at
  * mount, and is no dependency of the effect: a post on screen when the week ends gets `kept` from the engine mid-life and must not be
@@ -26,7 +26,7 @@
  *
  * The seed is `${play.id}:${post.id}`, both public, then a draw made for this mount (`loadSeed`), so each load's burst goes off
  * from its own spot and leaves its own glitter, and two posts of one character differ; the mount keeps it, so a post that
- * leaves view and returns shows the same glitter. A play's moment (`still`) is the public seed alone, the same on every device.
+ * leaves view and returns shows the same glitter.
  * Nothing here reads who owns a post, who played on it, or any class. The page's one loop (loop.ts) draws the post only while
  * it is in view. The band is read from the tokens the board resolves for this post, after mount, and held: they change only
  * with `data-kb-mode` or `data-kb-effects` (Brighter effects: a bright band, free of the readable band,
@@ -57,7 +57,7 @@
  * band already held.
  *
  * Memory: the over canvas has a backing store only while a burst is in the air (sized when it runs, zeroed when it ends, never
- * sized for `still`); a post out of view zeroes all three. Reduced motion turned on mid-burst lands what is in the air at rest. The
+ * sized without one); a post out of view zeroes all three. Reduced motion turned on mid-burst lands what is in the air at rest. The
  * 40% watcher stops once the burst has fired.
  */
 import { useEffect, useRef } from 'react';
@@ -67,7 +67,7 @@ import { bodyBox, bodyOf, liftedOver, paintScale, paintShare, placeLayer, sameBo
 import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { burst, cling, dropLoose, drawBurst, drawLoose, landAll, loose, makeFlakes, release, stepBurst, type Flakes } from '../../../../engine/ui/shine/flakes.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
-import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
+import { type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake, type Span } from '../../../../engine/ui/shine/loop.ts';
 import './glitter.css';
 
@@ -91,7 +91,7 @@ const loadSeed = (): string => {
   return Math.floor(Math.random() * 2 ** 32).toString(36);
 };
 
-export function GlitterBombEffect({ post, plays, still, kept, children }: EffectProps) {
+export function GlitterBombEffect({ post, plays, kept, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
   const surface = useRef<HTMLDivElement>(null);
   const under = useRef<HTMLCanvasElement>(null);
@@ -108,13 +108,13 @@ export function GlitterBombEffect({ post, plays, still, kept, children }: Effect
   useEffect(() => {
     const el = host.current, face = surface.current, below = under.current, lit = flash.current, above = over.current, spot = mark.current;
     if (!el || !face || !below || !lit || !above || !spot) return;
-    /* This mount's glitter: its own burst point and resting places, kept until it unmounts (a moment's is the public seed's). */
-    const drawn = still ? seed : `${seed}:${loadSeed()}`;
+    /* This mount's glitter: its own burst point and resting places, kept until it unmounts . */
+    const drawn = `${seed}:${loadSeed()}`;
     let flakes: Flakes | null = null;
     let unclung: (() => void) | null = null;
     /* Whether this mount's burst has fired; whether the burst point is in the middle of the view, and since when by the loop's
        clock (null until a draw sees it there): all outlive a flakes object. */
-    let fired = still || keptAtMount.current;
+    let fired = keptAtMount.current;
     let aimed = false;
     let aimedAt: number | null = null;
     /* The size painted (what the loop and the drawing are handed) and where it stands from the host (the layer's placement). */
@@ -145,7 +145,7 @@ export function GlitterBombEffect({ post, plays, still, kept, children }: Effect
       if (flakes) release(flakes);
       flakes = null;
     };
-    const redraw = (): void => { if (still) paint(REST, 0, false); else wake(el); };
+    const redraw = (): void => { wake(el); };
     /* The flakes, built from the seed on first use; one built after the burst fired is built landed. */
     const ensure = (): Flakes | null => {
       if (flakes) return flakes;
@@ -162,7 +162,7 @@ export function GlitterBombEffect({ post, plays, still, kept, children }: Effect
        pointer is over it as the element it covers, the body, else the host (`hit`, issue #399). Registered again when that changes. */
     const clingTo = (): void => {
       unclingNow();
-      if (flakes && !still) unclung = cling.register(face, { sticky: true, flakes, landed: redraw, hit: body ?? el, refuses: (t) => liftedOver(t, body) });
+      if (flakes) unclung = cling.register(face, { sticky: true, flakes, landed: redraw, hit: body ?? el, refuses: (t) => liftedOver(t, body) });
     };
     /* The over canvas has a backing store only while a burst is in the air. */
     const sizeOver = (): void => {
@@ -191,7 +191,7 @@ export function GlitterBombEffect({ post, plays, still, kept, children }: Effect
       if (!fired && (motionReduced() || (aimed && !arming))) { fired = true; stopWatching(); burst(f, now); }
       /* Reduced motion turned on mid-burst: what is in the air lands where it was headed (release), and the over canvas goes. */
       if (f.flying > 0 && motionReduced()) release(f);
-      const busy = fired && !still ? stepBurst(f, now) : false;
+      const busy = fired ? stepBurst(f, now) : false;
       /* The unlit flakes, only when what they depend on changed; what the light changes goes over them, fresh each draw. */
       const key = f.baseKey(band);
       if (based?.f !== f || based.key !== key) {
@@ -226,7 +226,7 @@ export function GlitterBombEffect({ post, plays, still, kept, children }: Effect
     const passing = (e: PointerEvent): void => cling.over(e);
     let heard: HTMLElement | null = null;
     const hear = (on: HTMLElement | null): void => {
-      if (still || on === heard) return;
+      if (on === heard) return;
       heard?.removeEventListener('pointermove', passing);
       on?.addEventListener('pointermove', passing);
       heard = on;
@@ -256,12 +256,6 @@ export function GlitterBombEffect({ post, plays, still, kept, children }: Effect
       /* And redrawn at the share of the rate that changes as much screen a second as the words' box did (`paintShare`). */
       const share = paintShare(own.width * own.height, box.w * box.h);
       drop();
-      if (still) {
-        density = Math.min(2, Math.max(1, window.devicePixelRatio || 1)) * scale;
-        size();
-        paint(REST, 0, false);
-        return;
-      }
       density = register(el, below, box, Math.min(2, window.devicePixelRatio || 1) * scale, (frame) => {
         if (freed) size();
         last = { light: frame.light, t: frame.t };
@@ -284,7 +278,7 @@ export function GlitterBombEffect({ post, plays, still, kept, children }: Effect
     }) : null;
     resize?.observe(el);
     setup();
-    if (!still && !fired) {
+    if (!fired) {
       stopWatch = watchInView(spot, (showing) => {
         aimed = showing;
         aimedAt = null;
@@ -304,13 +298,13 @@ export function GlitterBombEffect({ post, plays, still, kept, children }: Effect
       mode?.disconnect();
       resize?.disconnect();
       stopWatching();
-      if (!still) unregister(el);
+      unregister(el);
       drop();
       dropLoose(face);
       hear(null);
       el.removeAttribute('data-kb-bleed');
     };
-  }, [seed, still]);
+  }, [seed]);
 
   return (
     <div ref={host} className="dw-glitter" data-kb-glitter="">

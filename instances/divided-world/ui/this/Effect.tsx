@@ -21,7 +21,7 @@
  * the gaps make it taller, ends after one more look. It runs in a layout effect when the places or words change, on that observer, and when the
  * marker's face has loaded. It measures against its own `.dw-this`, never an ancestor, and not at all while the wrapper has no width (a folded post).
  * A gap with no boxes (the phrase is inside a closed [spoiler]) is skipped and its note is hidden; opening the spoiler resizes the wrapper, and the
- * observer places it. A play's moment (`still`) draws the same and watches the same size, since it can be mounted folded and shown later.
+ * observer places it. A play's moment draws the same and watches the same size, since it can be mounted folded and shown later.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
@@ -47,7 +47,7 @@ function lineHeightOf(el: HTMLElement): number {
   return Number.parseFloat(style.lineHeight) || 1.25 * (Number.parseFloat(style.fontSize) || 16);
 }
 
-export function ThisEffect({ post, plays, show, still, children }: EffectProps) {
+export function ThisEffect({ post, plays, show, children }: EffectProps) {
   const body = typeof post.currentPayload.body === 'string' ? post.currentPayload.body : '';
   const text = useMemo(() => visibleText(parse(body)), [body]);
   /* The plays by content, so a new array of equal plays is not a new set of places. */
@@ -146,7 +146,7 @@ export function ThisEffect({ post, plays, show, still, children }: EffectProps) 
   useEffect(() => {
     let live = true;
     const again = () => { if (live) measureNow.current(); };
-    /* Watched in a moment too: a still moment can be mounted folded or hidden and shown later, and looking at a size binds nothing a player can reach and saves nothing. A `<details>` opening or closing changes the wrapper's size, so this observer alone re-measures a spoiler; no `toggle` listener is needed. */
+    /* Watched in a moment too: a moment can be mounted folded or hidden and shown later, and looking at a size binds nothing a player can reach and saves nothing. A `<details>` opening or closing changes the wrapper's size, so this observer alone re-measures a spoiler; no `toggle` listener is needed. */
     /* Looked at in the next frame, not in the observer's own delivery: a pass that writes a height changes the wrapper's size, and a write made while the observer is delivering is the browser's "ResizeObserver loop completed with undelivered notifications" error. */
     let queued = false;
     let frame = 0;
@@ -161,7 +161,7 @@ export function ThisEffect({ post, plays, show, still, children }: EffectProps) 
     const fonts = typeof document !== 'undefined' ? document.fonts : undefined;
     void Promise.all([fonts?.load?.('1em "Permanent Marker"'), fonts?.ready]).then(again, () => {});
     return () => { live = false; resize?.disconnect(); cancelAnimationFrame(frame); };
-  }, [still]);
+  }, []);
 
   const receipts = places.filter((p) => p.at === null);
   return (
