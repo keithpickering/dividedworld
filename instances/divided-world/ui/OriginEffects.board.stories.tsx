@@ -35,6 +35,8 @@ import { BRUSH_PX, brushOf } from '../cards/whoops/scrub.ts';
 declare global {
   interface Window {
     /** The nth foil canvas of the ORIGIN box, as the worker that draws it holds it (the canvas's own size where the page draws it): e2e/origin-effects.spec.ts reads the backing size through it, since a handed-over canvas cannot be read on the page. */
+    /** How many times the page asked the backend to save or release an effect's state since the story mounted (the fake's own `saveEffect` and `releaseEffect`, counted as they are called): e2e/origin-effects.spec.ts holds a moment to none. */
+    __kbOriginSaves?: () => number;
     __kbOriginFab?: { size(nth: number): Promise<{ w: number; h: number } | null> };
     /**
      * What e2e/origin-effects.spec.ts reads of the shine loop and the cling layer, as e2e/shine.spec.ts reads `window.__kbShine` (Shine.board.stories.tsx, which this page does not mount): each
@@ -218,6 +220,16 @@ interface Args { readonly shown: Case; readonly mode?: 'light' | 'dark'; readonl
 
 function Spun({ mode = 'light', bright = false }: Args) {
   const spun = useSpun();
+  const { api } = useKayfa();
+  useEffect(() => {
+    /* The backend is the in-page fake, so a save is never a network request: it is counted where the fake takes it. */
+    let saves = 0;
+    const { saveEffect, releaseEffect } = api;
+    api.saveEffect = (...a) => { saves++; return saveEffect.apply(api, a); };
+    api.releaseEffect = (...a) => { saves++; return releaseEffect.apply(api, a); };
+    window.__kbOriginSaves = () => saves;
+    return () => { api.saveEffect = saveEffect; api.releaseEffect = releaseEffect; delete window.__kbOriginSaves; };
+  }, [api]);
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-kb-mode', mode);

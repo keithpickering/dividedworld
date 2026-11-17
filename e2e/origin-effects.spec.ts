@@ -243,6 +243,9 @@ test("3c. scrubbing in the box's Whoops! moment washes ink, Reset brings it back
   expect(along![1] - along![0], `the stretch is long enough to scrub across (${along})`).toBeGreaterThanOrEqual(24);
   const before = await inked(page, INK);
   const requests: string[] = [];
+  /* The backend is the page's own fake, so a save is no network request: it is counted where the fake takes it (the story's `__kbOriginSaves`). */
+  const saves = () => page.evaluate(() => window.__kbOriginSaves!());
+  const savesBefore = await saves();
   page.on('request', (r) => { requests.push(`${r.method()} ${r.resourceType()} ${r.url()}`); });
   const [from, to, y] = along!;
   const mid = (from + to) / 2;
@@ -254,6 +257,7 @@ test("3c. scrubbing in the box's Whoops! moment washes ink, Reset brings it back
   await box(page).locator('.kb-origin-head .kb-origin-reset').click();
   await expect.poll(() => inked(page, INK), { message: 'Reset brings the ink back' }).toBeGreaterThan(before * 0.95);
   expect(requests, 'no request is made between the scrub and Reset').toEqual([]);
+  expect(await saves(), 'the fake backend is asked to save or release nothing between the scrub and Reset').toBe(savesBefore);
 });
 
 /* ------------------------------------------------------------------------------------------ 4. Feelin' Fab ---- */

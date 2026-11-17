@@ -7,7 +7,7 @@
  */
 import { act, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import type { CardPlay, EffectProps } from '../../../engine/ui/cards/types.ts';
+import type { CardPlay, CardView, EffectProps } from '../../../engine/ui/cards/types.ts';
 import { MomentEffects, playsInMoment } from '../../../engine/ui/cards/Effects.tsx';
 import type { Act, PlayMoment } from '../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../engine/ui/test-world.tsx';
@@ -46,38 +46,78 @@ test('the cards a moment draws are these, Stick Around, Graffiti and Jimmy Wails
   for (const key of ['stick-around', 'graffiti', 'jimmy-wails']) expect(drawn.map((c) => c.key)).not.toContain(key);
 });
 
-test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn in a moment, saves, releases, gives, meets and holds nothing, whatever is pressed', async (key, card) => {
+/** Cards that draw nothing but the words in jsdom (no canvas context, no layout, no motion), listed by name so that a card drawing nothing never passes by accident. The two veils change nothing on the post's words in a moment (they only say their state to the Lens), so the contract test holds them to having said a view instead. */
+const BARE: readonly string[] = ['whodunnit', 'blind-study'];
+const WORDS = '<p>hi</p>';
+
+test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn in a moment, saves, releases, gives, meets and holds nothing, whatever is pressed, held, keyed, touched or chosen in its Lens', async (key, card) => {
   const plays: CardPlay[] = [1, 2].map((n) => ({ id: `${key}-${n}`, card: key, layer: n, caster: 'c2', message: '', config: { color: '#ffd93d', seed: n }, playedAt: `2026-11-03T12:0${n}:00.000Z`, post: POST.id, ends: n === 1 ? '2026-11-06T12:00:00.000Z' : '2099-01-01T00:00:00.000Z' }));
   const save = vi.fn(async (play: string) => ({ ok: true as const, value: { play, savedAt: '2026-11-03T13:00:00.000Z' } }));
   const release = vi.fn(async (play: string) => ({ ok: true as const, value: { play, releasedAt: '2026-11-03T13:00:00.000Z' } }));
   const give = vi.fn(async () => ({ ok: false as const, error: 'no' }));
   const met = vi.fn();
   const holdScreen = vi.fn();
+  let view: CardView | null = null;
   const Effect = card.Effect!;
   /* The engine hands a moment's effect `{ author: false, caster: false }`; this holds the effect to the contract even when told otherwise. */
   const props: EffectProps = {
     post: POST, plays, states: {}, released: new Set(), written: new Map(), reader: { author: true, caster: true }, place: 'thread', reach: 'post', still: false, moment: { at: AT },
-    show: () => {}, met, holdScreen, ink: NO_INK, marks: null, save, release, nameOf: () => 'Spritey', give, moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
+    show: (v) => { view = v; }, met, holdScreen, ink: NO_INK, marks: null, save, release, nameOf: () => 'Spritey', give, moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
   };
-  const { container } = renderInWorld(<Effect {...props} />, { settings: { cardSettings: { 'whoops.clean': 95 } } });
+  const { container, unmount } = renderInWorld(<Effect {...props} />, { settings: { cardSettings: { 'whoops.clean': 95 } } });
+  const later = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
   /* A card's effect loads on first use (`lazy`): it is awaited, or what is pressed below is the words alone. */
   await act(async () => { await vi.dynamicImportSettled(); await vi.advanceTimersByTimeAsync(100); });
-  /* A press and a drag across every element, and every key a hold or a scrub answers to. */
+  if (!BARE.includes(key)) expect(container.innerHTML, `${key} draws more than the words in jsdom (or is listed in BARE by name)`).not.toBe(WORDS);
+  if (BARE.includes(key)) expect(view, `${key} is bare in jsdom, so it must at least have said a view to the Lens`).not.toBeNull();
+  /* Every control the card's Lens reports, driven as the Lens drives it, read again after each pass since a control changes what is reported. */
+  const drive = async () => {
+    for (const c of [...((view as CardView | null)?.controls ?? [])]) {
+      if (c.kind === 'hold') { await act(async () => { c.start(); }); await later(3_000); await act(async () => { c.stop(); }); }
+      else if (c.kind === 'press') await act(async () => { c.run(); });
+      else if (c.kind === 'toggle') { await act(async () => { c.set(!c.on); }); await act(async () => { c.set(c.on); }); }
+      else if (c.kind === 'choose') for (const o of c.options) await act(async () => { c.choose(o.value); });
+      await later(200);
+    }
+  };
+  await drive();
+  await drive();
+  /* A press and a drag across every element, held 1.5 s of the clock before each release, and every key a hold or a scrub answers to; then a touch. */
+  const KEYS = [' ', 'Backspace', 'Enter', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
   for (const el of [...container.querySelectorAll<HTMLElement>('*')]) {
-    act(() => {
+    await act(async () => {
       fireEvent.pointerDown(el, { clientX: 100, clientY: 100, pointerId: 1, button: 0, pointerType: 'mouse' });
+      await vi.advanceTimersByTimeAsync(1_500);
       for (let x = 100; x <= 700; x += 50) fireEvent.pointerMove(el, { clientX: x, clientY: 100 + x / 4, pointerId: 1, pointerType: 'mouse' });
       fireEvent.pointerUp(el, { clientX: 700, clientY: 275, pointerId: 1, pointerType: 'mouse' });
-      fireEvent.keyDown(el, { key: ' ' });
-      fireEvent.keyUp(el, { key: ' ' });
+      for (const key of KEYS) {
+        fireEvent.keyDown(el, { key });
+        await vi.advanceTimersByTimeAsync(1_500);
+        fireEvent.keyUp(el, { key });
+      }
+      const at = (x: number, y: number) => ({ touches: [{ identifier: 2, clientX: x, clientY: y, target: el }], changedTouches: [{ identifier: 2, clientX: x, clientY: y, target: el }] });
+      fireEvent.pointerDown(el, { clientX: 150, clientY: 150, pointerId: 2, pointerType: 'touch', isPrimary: true });
+      fireEvent.touchStart(el, at(150, 150));
+      await vi.advanceTimersByTimeAsync(1_500);
+      for (let x = 150; x <= 650; x += 100) { fireEvent.pointerMove(el, { clientX: x, clientY: 150 + x / 5, pointerId: 2, pointerType: 'touch', isPrimary: true }); fireEvent.touchMove(el, at(x, 150 + x / 5)); }
+      fireEvent.touchEnd(el, { touches: [], changedTouches: [{ identifier: 2, clientX: 650, clientY: 280, target: el }] });
+      fireEvent.pointerUp(el, { clientX: 650, clientY: 280, pointerId: 2, pointerType: 'touch', isPrimary: true });
     });
   }
-  act(() => { vi.advanceTimersByTime(10_000); });
-  expect(save).not.toHaveBeenCalled();
-  expect(release).not.toHaveBeenCalled();
-  expect(give).not.toHaveBeenCalled();
-  expect(met).not.toHaveBeenCalled();
-  expect(holdScreen.mock.calls.filter(([held]) => held === true)).toEqual([]);
+  await drive();
+  /* An awaited, debounced save is seen only after the timers run through async turns; and a flush on leave only after the effect is unmounted. */
+  await later(10_000);
+  const nothing = () => {
+    expect(save).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
+    expect(give).not.toHaveBeenCalled();
+    expect(met).not.toHaveBeenCalled();
+    expect(holdScreen.mock.calls.filter(([held]) => held === true)).toEqual([]);
+  };
+  nothing();
+  unmount();
+  await later(10_000);
+  nothing();
 });
 
 /*
@@ -108,7 +148,9 @@ test.each(unreactive.map((c) => [c.key, c] as const))('%s draws the same markup 
     unmount();
     return html;
   };
-  expect(await draw(true)).toBe(await draw(false));
+  const [still, live] = [await draw(true), await draw(false)];
+  expect(still).toBe(live);
+  if (!BARE.includes(key)) expect(live, `${key} draws more than the words in jsdom (or is listed in BARE by name)`).not.toBe(WORDS);
 });
 
 /* A play in a moment was up at the moment's time (the engine drops one whose end is not after it), so a veil whose end is behind the clock is still up: no wore-off line, no "name is back", no "totals are showing". */
