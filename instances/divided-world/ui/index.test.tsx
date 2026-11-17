@@ -349,6 +349,17 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(whoops.describe(instance.settings)).toContain('0.25 more for every 500 characters');
     expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.perLength': 250 } })).toContain('2.50 more');
   });
+  test('Steel Chair and Laugh Track name the sounds their effects play, each key once', () => {
+    const steel = instanceUi.cards.find((c) => c.key === 'steel-chair')!;
+    expect(steel.sounds).toEqual(['steel-chair.hit', 'steel-chair.settle-1', 'steel-chair.settle-2', 'steel-chair.settle-3', 'steel-chair.settle-4']);
+    const laugh = instanceUi.cards.find((c) => c.key === 'laugh-track')!;
+    expect(laugh.sounds).toEqual([
+      'laugh-track.laugh-1', 'laugh-track.laugh-2', 'laugh-track.laugh-3',
+      'laugh-track.cheer-1', 'laugh-track.cheer-2', 'laugh-track.cheer-3',
+      'laugh-track.boo-1', 'laugh-track.boo-2', 'laugh-track.boo-3',
+      'laugh-track.titter', 'laugh-track.ooh', 'laugh-track.grumble',
+    ]);
+  });
   /* postcard.css writes the play tag's words 8% toward white (color-mix in sRGB), which is rounded per channel here. */
   const playTagInk = (hex: string) => `#${[1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.92 + 255 * 0.08).toString(16).padStart(2, '0')).join('')}`;
   /* The small words on a face (the alignment tag in the card's ink on its color, the play's tag in its color on the card's ground) are 11px at the
