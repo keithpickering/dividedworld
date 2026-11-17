@@ -538,14 +538,16 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       if (!still) stopLeave = watchInView(el, (showing) => { if (!showing) clearRun(true); });
       if (size || typeof ResizeObserver !== 'function') return;
       size = new ResizeObserver(() => {
-        if (!world) return;
         if (still) {
+          /* A moment's observer is bound whatever the first measure said and works with no world: a box that measured nothing (hidden,
+             collapsed) is drawn when it gets a size. */
           /* Nothing measured differently, nothing drawn: the run's own drawing changes no size, so this does not loop. The observer stays. */
           if (!measure()) return;
           clearRun(true, true);
           startRun();
           return;
         }
+        if (!world) return;
         const was = box;
         if (!measure()) return;
         resize(world, box.w - 2 * INSET, box.h - INSET, box.h - INSET);
@@ -567,6 +569,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     const startRun = (): void => {
       if (running) return;
       measure();
+      if (still) startWatching();
       if (box.w <= 0 || box.h <= 0) return;
       running = true;
       loud = !still && !reduced;

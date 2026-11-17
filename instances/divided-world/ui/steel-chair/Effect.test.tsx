@@ -204,7 +204,7 @@ function expectOnFloor(group: HTMLElement, floor: number): void {
  * Every run draws its throws from a generator seeded from `crypto.getRandomValues`. So that the file does not depend on luck, each test has
  * the same sequence of seeds (every run a test makes gets the next one, so two runs still differ), and a test that needs one throw pins it.
  */
-/** A seed for which sc1 and sc3 lie on the floor and not on sc2 (seed 4, for one, lands a chair on sc2: it falls when sc2 goes). */
+/** A seed for which sc1 and sc3 lie on the floor and not on sc2. It was 2 until the dent was sized and aimed in the height it may land in (Task 2) moved every throw: under that aim seed 2 lands sc3 on sc2, so sc3 falls when sc2 goes, and seed 4 is one where both lie on the floor. */
 const PINNED_SEED = 4;
 /** A seed that puts sc1 and sc3's dents about 35 px apart (overlapping) and sc2's more than 136 px from both (seed 23, found by hand). */
 const SEED_TWO_AND_ONE = 23;
@@ -1326,6 +1326,54 @@ describe('a moment (still)', () => {
     cleanup();
     mount({ plays, still: true });
     expect(html(), 'the picture a fresh mount at 260 gives for the same plays').toBe(again);
+  });
+
+  describe('a box that measures nothing', () => {
+    const html = () => (document.querySelector('.dw-chair') as HTMLElement).outerHTML.replace(/id="[^"]*"/gu, 'id=""').replace(/url\(&quot;#[^)]*\)/gu, 'url()');
+    const plays = [play(1), play(2), play(3)];
+    const fresh = (): string => {
+      mount({ plays, still: true });
+      const out = html();
+      cleanup();
+      sized.length = 0;
+      return out;
+    };
+
+    test('A. a moment mounted at zero size is drawn when its box gets a size, and unmounting still disconnects the observer', () => {
+      const want = fresh();
+      size = { h: 0 };
+      const w = mount({ plays, still: true });
+      expect(groups(), 'nothing is drawn at zero').toHaveLength(0);
+      expect(sized, 'a size observer is bound').toHaveLength(1);
+      expect(sized[0]!.watching.size, 'on the host and the body').toBeGreaterThan(0);
+      size = { h: 200 };
+      act(() => { for (const r of sized) r.cb(); });
+      expect(groups(), 'a chair for every play').toHaveLength(3);
+      expect(html(), 'the picture a fresh mount at 200 gives').toBe(want);
+      expect(requested, 'no frame').toBe(0);
+      w.unmount();
+      expect(sized.every((r) => r.watching.size === 0), 'the observer is disconnected').toBe(true);
+    });
+
+    test('A2. a moment mounted at zero size and unmounted disconnects the observer', () => {
+      size = { h: 0 };
+      const w = mount({ plays, still: true });
+      expect(sized[0]!.watching.size).toBeGreaterThan(0);
+      w.unmount();
+      expect(sized.every((r) => r.watching.size === 0), 'the observer is disconnected').toBe(true);
+    });
+
+    test('B. a moment whose box collapses to zero is drawn again when the box gets its size back', () => {
+      const want = fresh();
+      mount({ plays, still: true });
+      expect(html()).toBe(want);
+      size = { h: 0 };
+      act(() => { for (const r of sized) r.cb(); });
+      size = { h: 200 };
+      act(() => { for (const r of sized) r.cb(); });
+      expect(groups(), 'a chair for every play').toHaveLength(3);
+      expect(html(), 'the picture a fresh mount at 200 gives').toBe(want);
+    });
   });
 
   test('a moment draws its plays as they were, ended ones included', () => {
