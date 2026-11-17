@@ -933,7 +933,7 @@ for (const [kind, seed] of [['tight', SEEDS['short-three'][0]], ['spread', SPREA
 test('with-fab: no block: the four corners of each dent\'s box are the same with the shading shown and hidden', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await open(page, 'with-fab');
-  await atRest(page, 1, 2000);
+  await atRest(page, 1);
   await expect(page.locator('.kb-act-main:has(.dw-chair) canvas.dw-fab-foil'), 'Feelin\' Fab\'s foil is on the post').toHaveCount(1);
   const s = await shading(page);
   expect(s.dents.length, 'a dent').toBeGreaterThan(0);
@@ -950,6 +950,14 @@ test('with-fab: no block: the four corners of each dent\'s box are the same with
       const worst = Math.max(...shown.map((v, j) => Math.abs(v - hidden[j]!)));
       expect(worst, `dent ${i}, corner ${k} (${JSON.stringify(clip)}): the shading changes a pixel there by ${worst} levels of 255`).toBeLessThanOrEqual(2);
     }
+    const whole = { x: Math.ceil(d.left), y: Math.ceil(d.top), width: Math.floor(d.width) - 1, height: Math.floor(d.height) - 1 };
+    const drawn = (await pixelsOf(page, whole)).px;
+    await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = 'hidden'; });
+    const bare = (await pixelsOf(page, whole)).px;
+    await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = ''; });
+    let most = 0;
+    for (let j = 0; j < drawn.length; j++) most = Math.max(most, Math.abs(drawn[j]! - bare[j]!));
+    expect(most, `dent ${i}: the dent is drawn: inside its box some pixel differs with the shading shown and hidden by more than 2 levels (the most is ${most})`).toBeGreaterThan(2);
   }
 });
 

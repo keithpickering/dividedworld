@@ -24,7 +24,7 @@ import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.t
  * with the opening post's foil and the box's together. They read the loop through the story's `window.__kbOriginShine`.
  *
  * Cases 15 to 19 are Task 4 of docs/plans/2026-11-16-steel-chair-origin-plan.md (issue #768): Steel Chair's shading and chairs in the ORIGIN box on a post that reads `!` (`ChairLanded`, and at the phone's width `ChairLandedPhone`). Its case 5 (the cap still holds)
- * is e2e/steel-chair.spec.ts's `theLineCanBeRead`, unchanged; its case 1 on `WithFab`, and the axe case on it, are in that spec. Case 7's loop reads `ChairLanded` too (the plan's case 4).
+ * is e2e/steel-chair.spec.ts's `theLineCanBeRead`, whose browser's union is read against the minimum of each dent's own uncapped shade (from dent.ts) at the same 0.12; its case 1 on `WithFab`, and the axe case on it, are in that spec. Case 7's loop reads `ChairLanded` too (the plan's case 4).
  *
  * Case 10 of the plan (a box with nothing under its band draws no area) is not here: no story's box is the band alone (the plan's own condition), so
  * engine/ui/spin/Spin.test.tsx's case 4 holds it.
@@ -807,6 +807,14 @@ for (const [name, size] of [['chair-landed', { width: 1440, height: 1120 }], ['c
         const worst = Math.max(...shown.map((v, j) => Math.abs(v - hidden[j]!)));
         expect(worst, `dent ${i}, corner ${k} (${JSON.stringify(clip)}): the shading changes a pixel there by ${worst} levels of 255`).toBeLessThanOrEqual(2);
       }
+      const whole = { x: Math.ceil(d.left), y: Math.ceil(d.top), width: Math.floor(d.width) - 1, height: Math.floor(d.height) - 1 };
+      const drawn = await pixelsOf(page, whole);
+      await area(page).evaluate((a) => { for (const el of a.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = 'hidden'; });
+      const bare = await pixelsOf(page, whole);
+      await area(page).evaluate((a) => { for (const el of a.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = ''; });
+      let most = 0;
+      for (let j = 0; j < drawn.length; j++) most = Math.max(most, Math.abs(drawn[j]! - bare[j]!));
+      expect(most, `dent ${i}: the dent is drawn: inside its box some pixel differs with the shading shown and hidden by more than 2 levels (the most is ${most})`).toBeGreaterThan(2);
     }
   });
 }

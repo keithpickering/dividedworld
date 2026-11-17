@@ -88,9 +88,9 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'chair' ? THREE
     : shown === 'chair-short' ? SHORT
       : shown === 'chair-landed' ? BANG
-      : shown === 'bright' ? QUOTED
-        : shown === 'under' || shown === 'over' ? PLAIN
-          : ONE;
+        : shown === 'bright' ? QUOTED
+          : shown === 'under' || shown === 'over' ? PLAIN
+            : ONE;
   const post = fake.seed.post(made.thread, author, words);
   if (shown === 'whoops' || shown === 'landed') fake.seed.edit(post, author, THREE_EDITED);
   /* The seed (2591) holds the area's bottom-left corner at both widths (field about 2 at 2px in, over the ink's threshold of 0.42, at every area from 300 to 1000 wide and 180 to 400 tall that was tried) and ink along the byline at 965 by 220 and at 348 by 328 (found by running `makeSplat`/`fieldAt` over seeds against the measured areas).
