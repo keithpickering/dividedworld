@@ -57,9 +57,9 @@
  * the flakes again and, because sizing the backing stores clears them, repaints the canvases under the words at once with the last light and the
  * band already held.
  *
- * Memory: the over canvas has a backing store only while a burst is in the air (sized when it runs, zeroed when it ends, never
- * sized when it runs, zeroed when it ends); a post out of view zeroes all three. Reduced motion turned on mid-burst lands what is in the air at rest. The
- * 40% watcher stops once the burst has fired.
+ * Memory: the over canvas has a backing store only while a burst is in the air (sized when it runs, zeroed when it ends);
+ * a post out of view zeroes all three. Reduced motion turned on mid-burst lands what is in the air at rest. The 40% watcher
+ * stops once the burst has fired.
  */
 import { useEffect, useRef } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';

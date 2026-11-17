@@ -34,8 +34,9 @@
  * its light and counts its draws. Everywhere else, where a worker cannot start (the hand-over is refused before anything is
  * transferred), the post draws on the main thread as it always did. A transferred canvas can never be drawn on from the page
  * again, nor handed over a second time, so the `<canvas>` carries a `key` of level and seed: an effect that runs again (a level
- * or a seed change) gets a fresh element. A development build under React's StrictMode would run the effect twice on one element and the second
- * hand-over is refused after the first transferred it (logged, the post bare); the app does not use StrictMode.
+ * or a seed change) gets a fresh element. A development build under React's StrictMode would run the effect twice on one
+ * element and the second hand-over is refused after the first transferred it (logged, the post bare); the app does not use
+ * StrictMode.
  *
  * Where. The foil fills the post, not only its words (2026-11-06: "the card effect should apply to the entire post in all cases"): in
  * the thread the box is the post body's padding box (engine/ui/cards/body.ts, `.kb-act-main`, bar to bar), in the ORIGIN box the box's
