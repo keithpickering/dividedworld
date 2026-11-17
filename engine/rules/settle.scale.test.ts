@@ -134,6 +134,22 @@ test('earn gimmicks on many characters cost their earnings times the gimmicks on
   assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
 });
 
+test('flat earns on many characters cost the votes times the plays on each character, not the instance\'s', () => {
+  const input = busyWindow(500, 20_000, 100_000);
+  const next = rng(13);
+  const flatWorld: Instance = { ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'flat', gimmick: { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], flat: 0.5 } }] };
+  // Two flat earns on each of 3,000 characters, 6,000 in all, each up for the whole window from before any reaction.
+  const gimmicks: InputAct[] = input.characters.flatMap((c, i): InputAct[] => [0, 1].map((n) => ({
+    id: `f${i}-${n}`, character: c.id, kind: 'card', at: 500 + n, thread: 'g', card: 'flat', reach: 'character', on: c.id, ends: 9_000_000 + Math.floor(next() * 100),
+  })));
+  const start = performance.now();
+  const r = settle({ ...input, acts: [...input.acts, ...gimmicks] }, flatWorld);
+  const ms = performance.now() - start;
+  console.log(`  settled with ${gimmicks.length} flat earns into ${r.entries.length} entries in ${Math.round(ms)} ms`);
+  assert.ok(r.entries.some((e) => e.reason === 'card.boost' && e.params?.flat === 0.5));
+  assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
+});
+
 /* Skim and ride (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 3): their indexes are built once, so a window's cost grows with the
    plays and votes it reads and never with their product. */
 const payWorld: Instance = {

@@ -1134,14 +1134,16 @@ const cardsWorld: Instance = {
     { ...splat, key: 'fireBoost', gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5 } },
     { ...splat, key: 'laughBoost', gimmick: { kind: 'earn', reactions: ['laughing'], by: 0.5 } },
     { ...splat, key: 'dustBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1e-8 } },
-    { ...splat, key: 'useGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
-    { ...splat, key: 'castGrouped', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
-    { ...splat, key: 'castPostGrouped', reaches: ['post'] as const, lasts: { unit: 'day', count: 3 }, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1, group: 'publicity' } },
-    { ...splat, key: 'castCharGrouped', reaches: ['character'] as const, lasts: { unit: 'day', count: 3 }, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.2, group: 'publicity' } },
-    { ...splat, key: 'bigGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.2, group: 'warm' } },
-    { ...splat, key: 'fireGrouped', play: 'use' as const, gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5, group: 'warm' } },
-    { ...splat, key: 'heatGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['excitedPositive'], by: 0.1, group: 'warm' } },
-    { ...splat, key: 'coolGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.3, group: 'cool' } },
+    { ...splat, key: 'castBoost', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 } },
+    { ...splat, key: 'calmHalf', gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 0.5 } },
+    { ...splat, key: 'calmHalfB', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 0.5 } },
+    { ...splat, key: 'calmWhole', gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 1 } },
+    { ...splat, key: 'fireFlat', gimmick: { kind: 'earn', reactions: ['fire'], flat: 0.5 } },
+    { ...splat, key: 'heatFlat', gimmick: { kind: 'earn', quadrants: ['excitedPositive'], flat: 0.25 } },
+    { ...splat, key: 'heatChillFlat', gimmick: { kind: 'earn', quadrants: ['excitedPositive', 'boredNegative'], flat: 0.5 } },
+    { ...splat, key: 'cardFlat', gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 0.5, acts: ['card', 'spring'] } },
+    { ...splat, key: 'dustFlat', gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 1e-8 } },
+    { ...splat, key: 'softCushion', gimmick: { kind: 'cushion', share: 0.5 } },
   ],
 };
 function springBoard(castBy: string, extra: InputAct[] = [], unscoredTargets: SettlementInput['unscoredTargets'] = []): SettlementInput {
@@ -1240,7 +1242,7 @@ test('an earn gimmick raises positive earnings from its quadrants inside its win
   ]), cardsWorld);
   assert.equal(amountOf(r, 'tom-1', 'kinded.nod'), 30);
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1, '10% of the one vote inside [at, ends)');
-  assert.deepEqual(r.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'calmBoost' });
+  assert.deepEqual(r.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'calmBoost', by: 0.1 });
 });
 test('an earn gimmick never raises a negative earning, and one from a quadrant it does not name is left alone', () => {
   const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H)], [
@@ -1300,7 +1302,7 @@ test('a gimmick on a post raises that post\'s earnings alone, and two gimmicks e
     react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'fire', FROM + 5 * H),
   ]), cardsWorld);
   assert.equal(amountOf(both, 'tom-1', 'card.boost'), 1 + 5, 'the calm vote by 10%, the fire vote by 50%');
-  assert.deepEqual(both.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost' }, 1], [{ card: 'fireBoost' }, 5]], 'one entry per card, each naming its own');
+  assert.deepEqual(both.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost', by: 0.1 }, 1], [{ card: 'fireBoost', by: 0.5 }, 5]], 'one entry per card, each naming its own');
   assert.equal(both.details.filter((d) => d.reason === 'card.boost').reduce((s, d) => s + d.amount, 0), 6, 'the log\'s lines add up to the entries');
 });
 test('two Earn cards on different posts split each boost entry over its own card\'s posts alone', () => {
@@ -1328,7 +1330,7 @@ test('a boost that rounds to nothing makes no card.boost entry', () => {
 test('the same card on a character and on one of its posts is one entry, each play boosting', () => {
   const onPost: InputAct = { id: 'g2', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'calmBoost', ends: FROM + 20 * H };
   const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H), onPost], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost' }, 2]]);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost', by: 0.1 }, 2]]);
 });
 test('an earn gimmick played before the window, still up in it, boosts the window\'s earnings', () => {
   const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM - 2 * H, FROM + 10 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'tea', FROM + 11 * H)]), cardsWorld);
@@ -1686,80 +1688,157 @@ test('card payouts are in no class\'s total, the log adds up to the entries, and
 /* Earns that do not add, and an earn a cast card carries (docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 1). */
 const castOn = (id: string, character: string, card: string, at: number, on: string, ends: number = FROM + 20 * H): InputAct => ({ id, character, kind: 'card', at, thread: 't1', card, reach: 'character', on, ends });
 test('a cast earn on another player\'s character boosts that character\'s earnings, by the target\'s player, and pays the caster nothing', () => {
-  const r = settle(earnBoard([castOn('g1', 'bob-1', 'castGrouped', FROM + 2 * H, 'tom-1', FROM + 10 * H)], [
+  const r = settle(earnBoard([castOn('g1', 'bob-1', 'castBoost', FROM + 2 * H, 'tom-1', FROM + 10 * H)], [
     react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
     react('tp1', 'dee', 'dee-1', 'tea', FROM + 12 * H),
   ]), cardsWorld);
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1, 'inside [at, ends) only');
   const boost = r.entries.find((e) => e.reason === 'card.boost')!;
   assert.equal(boost.player, 'tom');
-  assert.deepEqual(boost.params, { card: 'castGrouped' });
+  assert.deepEqual(boost.params, { card: 'castBoost', by: 0.1 });
   assert.equal(r.entries.filter((e) => e.player === 'bob' && e.reason === 'card.boost').length, 0, 'the caster is paid nothing for it');
 });
-test('a cast earn on a post boosts the post earning alone, and shares its group with a cast earn on the character: the larger, per earning', () => {
-  const onPost: InputAct = { id: 'h1', character: 'bob-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'castPostGrouped', ends: FROM + 20 * H };
-  const r = settle(earnBoard([onPost, castOn('h2', 'bob-1', 'castCharGrouped', FROM + 3 * H, 'tom-1')], [
-    react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
-    react('tp2', 'dee', 'dee-1', 'tea', FROM + 5 * H),
+/* The flat Earn (docs/plans/2026-11-16-settlement-engine-plan.md, Task 2): a share of a vote for each vote, to any class, on posts unless the
+   card names `acts`. The test classes: "kinded" gains from every quadrant but a groan and loses from a groan, "quiet" pays nothing for a vote. */
+function flatBoard(gimmicks: InputAct[], reactions: InputReaction[], extra: InputAct[] = [], over: Partial<SettlementInput> = {}): SettlementInput {
+  return {
+    window: { id: 'w1', from: FROM, to: TO },
+    characters: [
+      { id: 'tom-1', player: 'tom', classes: [{ class: 'kinded', from: 0 }] },
+      { id: 'tom-2', player: 'tom', classes: [{ class: 'quiet', from: 0 }] },
+      { id: 'uma-1', player: 'uma', classes: [{ class: 'quiet', from: 0 }] },
+      ...['bob', 'cat', 'dee', 'eve', 'fay'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+    acts: [post('tp1', 'tom-1', FROM + 1 * H), post('tp2', 'tom-1', FROM + 1 * H + 1), post('up1', 'uma-1', FROM + 1 * H), ...extra, ...gimmicks],
+    reactions,
+    ...over,
+  };
+}
+const onUma = (id: string, card: string, at: number, ends = FROM + 20 * H): InputAct => ({ ...onTom(id, card, at, ends), character: 'uma-1', on: 'uma-1' });
+const onPostBy = (id: string, character: string, card: string, target: string, at: number, ends = FROM + 20 * H): InputAct => ({ id, character, kind: 'card', at, thread: 't1', target, card, ends });
+const boostsOf = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.reason === 'card.boost');
+const boostTo = (r: ReturnType<typeof settle>, character: string) => amountOf(r, character, 'card.boost');
+
+test('a flat earn pays its share of a vote for a vote in its quadrant to a class that gains there, one that loses there and one that ignores it, the same each', () => {
+  const r = settle(flatBoard([onTom('g1', 'heatChillFlat', FROM + 2 * H), onUma('g2', 'heatChillFlat', FROM + 2 * H)], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H), react('up1', 'dee', 'dee-1', 'fire', FROM + 5 * H),
   ]), cardsWorld);
-  const byAct = (act: string) => r.details.filter((d) => d.reason === 'card.boost' && d.act === act).map((d) => [d.params, d.amount]);
-  assert.deepEqual(byAct('tp1'), [[{ card: 'castPostGrouped' }, 10]], 'the post earning gets the 1, the larger of the group');
-  assert.deepEqual(byAct('tp2'), [[{ card: 'castCharGrouped' }, 2]], 'another post of the same character gets the 0.2');
-  assert.equal(r.entries.filter((e) => e.player === 'bob' && e.reason === 'card.boost').length, 0, 'the caster is paid nothing for it');
+  assert.equal(amountOf(r, 'tom-1', 'kinded.nod'), 10, 'tom gains from the fire');
+  assert.equal(amountOf(r, 'tom-1', 'kinded.groan'), -10, 'and loses from the groan');
+  assert.deepEqual(r.details.filter((d) => d.character === 'tom-1' && d.reason === 'card.boost').map((d) => d.amount), [5, 5], 'half a vote (5) each, the gain and the loss alike');
+  assert.equal(boostTo(r, 'tom-1'), 10);
+  assert.equal(boostTo(r, 'uma-1'), 5, 'a class that ignores a vote is paid the same');
 });
-test('two earns of one group on one character make one boost per earning, by the earlier play\'s card', () => {
-  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H), castOn('g2', 'bob-1', 'castGrouped', FROM + 3 * H, 'tom-1')], [
-    react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
-  ]), cardsWorld);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'useGrouped' }, 1]], 'one boost, not two');
-  assert.equal(r.details.filter((d) => d.reason === 'card.boost').length, 1);
+test('a flat earn on a second Act of the window from one voter pays half, and the estimate pays whole', () => {
+  const input = flatBoard([onTom('g1', 'calmWhole', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp2', 'bob', 'bob-1', 'tea', FROM + 6 * H)]);
+  assert.equal(boostTo(settle(input, cardsWorld), 'tom-1'), 10 + 5, 'a whole vote, then half of one');
+  const estimate = estimateForOwner(input, cardsWorld, 'tom');
+  assert.equal(estimate.entries.filter((e) => e.reason === 'card.boost').reduce((s, e) => s + e.amount, 0), 20, 'each reaction a whole vote');
+  assert.equal(estimate.lines.filter((l) => l.reason === 'card.boost').reduce((s, l) => s + l.amount, 0), 20);
 });
-test('of two earns in a group the larger alone applies, whichever was played first', () => {
-  for (const order of [['useGrouped', 'bigGrouped'], ['bigGrouped', 'useGrouped']]) {
-    const r = settle(earnBoard(order.map((card, i) => onTom(`g${i}`, card, FROM + (2 + i) * H)), [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
-    assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'bigGrouped' }, 2]], order.join(' then '));
-  }
+test('a flat earn pays nothing outside its time, at its end, in a quadrant it does not name, with no `ends`, or for the character\'s own player', () => {
+  const one = (r: InputReaction, ends: number | null = FROM + 10 * H) => boostTo(settle(flatBoard([onTom('g1', 'calmHalf', FROM + 2 * H, ends)], [r]), cardsWorld), 'tom-1');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)), 5, 'inside it');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tea', FROM + 2 * H - 1)), 0, 'before it');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tea', FROM + 10 * H)), 0, 'at its end');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tea', FROM + 12 * H)), 0, 'after it');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H)), 0, 'a quadrant it does not name');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), null), 0, 'a play with no `ends`');
+  assert.equal(one(react('tp1', 'tom', 'tom-2', 'tea', FROM + 5 * H)), 0, 'the character\'s own player');
 });
-test('of two earns in a group whose windows overlap in part, an earning inside only one window is boosted by that one', () => {
-  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H, FROM + 10 * H), onTom('g2', 'bigGrouped', FROM + 6 * H, FROM + 20 * H)], [
-    react('tp1', 'bob', 'bob-1', 'tea', FROM + 4 * H),
-    react('tp1', 'cat', 'cat-1', 'tea', FROM + 8 * H),
-    react('tp1', 'dee', 'dee-1', 'tea', FROM + 15 * H),
-  ]), cardsWorld);
-  const lines = r.details.filter((d) => d.reason === 'card.boost').map((d) => [d.at, d.amount]).sort();
-  assert.deepEqual(lines, [[FROM + 4 * H, 1], [FROM + 8 * H, 2], [FROM + 15 * H, 2]], 'the smaller alone, then the larger alone where both are up, then the larger alone');
-});
-test('a grouped earn beside an ungrouped one naming the same quadrant: both boost', () => {
-  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H), onTom('g2', 'calmBoost', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
-  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 2);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => e.params?.card).sort(), ['calmBoost', 'useGrouped']);
-});
-test('earns of two different groups both apply to one earning', () => {
-  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H), onTom('g2', 'coolGrouped', FROM + 3 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]).sort((x, y) => String((x[0] as { card: string }).card).localeCompare(String((y[0] as { card: string }).card))), [[{ card: 'coolGrouped' }, 3], [{ card: 'useGrouped' }, 1]], 'one boost per group');
-});
-test('within one group, an earn that matches by reaction kind and one that matches by quadrant do not add: the larger applies', () => {
-  const r = settle(earnBoard([onTom('g1', 'heatGrouped', FROM + 2 * H), onTom('g2', 'fireGrouped', FROM + 3 * H)], [
+test('a flat earn that names a reaction pays it and leaves another of its quadrant and a post-local one alone', () => {
+  const r = settle(flatBoard([onTom('g1', 'fireFlat', FROM + 2 * H)], [
     react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
     react('tp2', 'cat', 'cat-1', 'heart', FROM + 5 * H),
+    local('tp1', 'dee', 'dee-1', 'x-1f480', FROM + 5 * H, 'excitedPositive'),
   ]), cardsWorld);
-  const byAct = (act: string) => r.details.filter((d) => d.reason === 'card.boost' && d.act === act).map((d) => [d.params, d.amount]);
-  assert.deepEqual(byAct('tp1'), [[{ card: 'fireGrouped' }, 5]], 'a fire vote is in both arms; the larger alone');
-  assert.deepEqual(byAct('tp2'), [[{ card: 'heatGrouped' }, 1]], 'a heart vote is in the quadrant arm alone');
+  assert.equal(boostTo(r, 'tom-1'), 5, 'the fire alone');
 });
-test('a group spans the boosts on an earning\'s character and on its post: one boost for an earning both apply to', () => {
-  const onPost: InputAct = { id: 'g1', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'useGrouped', ends: FROM + 20 * H };
-  const r = settle(earnBoard([onPost, castOn('g2', 'bob-1', 'castGrouped', FROM + 3 * H, 'tom-1')], [
-    react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
+test('with no `acts` a flat earn pays on a post and a spin and not on the character\'s card Act; with `acts` it pays on a card Act and a spring Act and not on a post', () => {
+  const extra: InputAct[] = [
+    { id: 'sn', character: 'tom-1', kind: 'spin', at: FROM + 1 * H + 3, thread: 's1' },
+    { id: 'ck', character: 'tom-1', kind: 'card', at: FROM + 1 * H + 4, thread: 't1', target: 'tp1', card: 'splat' },
+    { id: 'sg', character: 'tom-1', kind: 'spring', at: FROM + 1 * H + 5, thread: 't1', target: 'tp1', card: 'splat' },
+  ];
+  const votes = [react('tp1', 'dee', 'dee-1', 'tea', FROM + 5 * H), react('sn', 'eve', 'eve-1', 'tea', FROM + 5 * H), react('ck', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('sg', 'cat', 'cat-1', 'tea', FROM + 5 * H)];
+  const posts = settle(flatBoard([onTom('g1', 'calmWhole', FROM + 2 * H)], votes, extra), cardsWorld);
+  assert.deepEqual(posts.details.filter((d) => d.reason === 'card.boost').map((d) => [d.act, d.amount]).sort(), [['sn', 10], ['tp1', 10]], 'the post and the spin');
+  const cards = settle(flatBoard([onTom('g1', 'cardFlat', FROM + 2 * H)], votes, extra), cardsWorld);
+  assert.deepEqual(cards.details.filter((d) => d.reason === 'card.boost').map((d) => [d.act, d.amount]).sort(), [['ck', 5], ['sg', 5]], 'the card Act and the spring Act');
+});
+test('a voter who first reacted before the play is never paid for, though they add a reaction in its quadrant while it is up', () => {
+  const r = settle(flatBoard([onTom('g1', 'heatChillFlat', FROM + 2 * H)], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 1 * H + 10), react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'heart', FROM + 5 * H),
   ]), cardsWorld);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'useGrouped' }, 1]], 'the earlier play, once');
+  assert.equal(boostTo(r, 'tom-1'), 5, 'Cat alone');
 });
-test('a tie in a group goes to the earliest play, then the smaller play id', () => {
-  const r = settle(earnBoard([castOn('b', 'bob-1', 'castGrouped', FROM + 2 * H, 'tom-1'), onTom('a', 'useGrouped', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
-  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => e.params), [{ card: 'useGrouped' }], 'same time and size: the smaller id, a');
+test('a vote paid in one window that splits to another quadrant in the next, while the play is up, takes back that share\'s pay', () => {
+  const play = onTom('g1', 'calmWhole', FROM + 2 * H, FROM + 100 * H);
+  const first = settle(flatBoard([play], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(boostTo(first, 'tom-1'), 10);
+  const second = settle(flatBoard([play], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: first.paid }), cardsWorld);
+  assert.equal(boostTo(second, 'tom-1'), -5, 'half the vote left the calm quadrant');
+  assert.ok(boostTo(first, 'tom-1') + boostTo(second, 'tom-1') >= 0, 'the play never costs its holder');
+});
+test('a vote that moves away after the play ended takes back nothing, and one that was there before the play never paid', () => {
+  const ended = onTom('g1', 'calmWhole', FROM + 2 * H, FROM + 10 * H);
+  const first = settle(flatBoard([ended], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  const second = settle(flatBoard([ended], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: first.paid }), cardsWorld);
+  assert.equal(boostTo(first, 'tom-1'), 10);
+  assert.equal(boostTo(second, 'tom-1'), 0, 'the play had ended');
+  const up = onTom('g1', 'calmWhole', FROM + 2 * H, FROM + 100 * H);
+  const early = settle(flatBoard([up], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 1 * H + 10)]), cardsWorld);
+  const moved = settle(flatBoard([up], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 1 * H + 10), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: early.paid }), cardsWorld);
+  assert.equal(boostTo(early, 'tom-1') + boostTo(moved, 'tom-1'), 0, 'a vote there before the play was never paid and takes nothing back');
+});
+test('two flat earns on one vote, one on the character and one on the post, are one entry by the larger\'s card; a tie goes to the earlier play, then the smaller id', () => {
+  const vote = [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)];
+  const larger = settle(flatBoard([onTom('g1', 'calmHalf', FROM + 2 * H), onPostBy('g2', 'tom-1', 'calmWhole', 'tp1', FROM + 2 * H)], vote), cardsWorld);
+  assert.deepEqual(boostsOf(larger).map((e) => [e.params, e.amount]), [[{ card: 'calmWhole', flat: 1 }, 10]], 'one entry, not two');
+  assert.equal(larger.details.filter((d) => d.reason === 'card.boost').length, 1);
+  const earlier = settle(flatBoard([castOn('b', 'bob-1', 'calmHalfB', FROM + 2 * H, 'tom-1'), onTom('a', 'calmHalf', FROM + 3 * H)], vote), cardsWorld);
+  assert.deepEqual(boostsOf(earlier).map((e) => e.params), [{ card: 'calmHalfB', flat: 0.5 }], 'the earlier play');
+  const sameTime = settle(flatBoard([castOn('b', 'bob-1', 'calmHalfB', FROM + 2 * H, 'tom-1'), onTom('a', 'calmHalf', FROM + 2 * H)], vote), cardsWorld);
+  assert.deepEqual(boostsOf(sameTime).map((e) => e.params), [{ card: 'calmHalf', flat: 0.5 }], 'same time and size: the smaller id, a');
+  const overlap = settle(flatBoard([onTom('g1', 'calmHalf', FROM + 2 * H, FROM + 10 * H), onTom('g2', 'calmWhole', FROM + 6 * H, FROM + 20 * H)], [
+    react('tp1', 'bob', 'bob-1', 'tea', FROM + 4 * H), react('tp1', 'cat', 'cat-1', 'tea', FROM + 8 * H), react('tp1', 'dee', 'dee-1', 'tea', FROM + 15 * H),
+  ]), cardsWorld);
+  assert.deepEqual(overlap.details.filter((d) => d.reason === 'card.boost').map((d) => [d.at, d.amount]).sort(), [[FROM + 4 * H, 5], [FROM + 8 * H, 10], [FROM + 15 * H, 10]], 'the smaller alone, the larger where both are up, the larger alone');
+});
+test('a flat earn and a `by` earn on one vote both pay', () => {
+  const r = settle(flatBoard([onTom('g1', 'calmBoost', FROM + 2 * H), onTom('g2', 'calmHalf', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.deepEqual(boostsOf(r).map((e) => [e.params, e.amount]).sort((x, y) => String((x[0] as { card: string }).card).localeCompare(String((y[0] as { card: string }).card))), [[{ card: 'calmBoost', by: 0.1 }, 1], [{ card: 'calmHalf', flat: 0.5 }, 5]]);
+});
+test('a cast flat earn on another player\'s post pays the post\'s author and the caster nothing', () => {
+  const r = settle(flatBoard([onPostBy('h1', 'bob-1', 'calmHalf', 'tp1', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H), react('tp2', 'dee', 'dee-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.deepEqual(boostsOf(r).map((e) => [e.player, e.character, e.amount]), [['tom', 'tom-1', 5]], 'the post tp1 alone');
+  assert.equal(r.entries.filter((e) => e.player === 'bob' && e.reason === 'card.boost').length, 0);
+});
+test('a flat earn\'s entry carries { card, flat }, its details carry the card and add up to it, and it is in no class\'s total', () => {
+  const input = flatBoard([onTom('g1', 'heatFlat', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'fire', FROM + 6 * H), react('tp2', 'dee', 'dee-1', 'fire', FROM + 7 * H)]);
+  const r = settle(input, cardsWorld);
+  const [entry] = boostsOf(r);
+  assert.deepEqual(entry!.params, { card: 'heatFlat', flat: 0.25 });
+  assert.equal(entry!.amount, 8, '2.5 for each of three votes, 7.5 rounded');
+  const details = r.details.filter((d) => d.reason === 'card.boost');
+  assert.equal(details.length, 3);
+  assert.equal(details.reduce((s, d) => s + d.amount, 0), entry!.amount);
+  assert.ok(details.every((d) => d.params?.card === 'heatFlat' && Object.keys(d.params).length === 1 && d.quadrant === 'excitedPositive' && d.at !== undefined));
+  assert.equal(r.byClass.kinded, amountOf(r, 'tom-1', 'kinded.nod'), 'a flat earn has no class');
+});
+test('a flat earn that rounds to nothing makes no entry, and a cushion play is no earn', () => {
+  const dust = settle(flatBoard([onTom('g1', 'dustFlat', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(boostsOf(dust).length, 0);
+  assert.equal(dust.details.filter((d) => d.reason === 'card.boost').length, 0);
+  const cushion = settle(flatBoard([onTom('g1', 'softCushion', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(boostsOf(cushion).length, 0);
+});
+test('a flat earn an admin ended is not in the input, so it pays nothing', () => {
+  assert.equal(boostTo(settle(flatBoard([], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld), 'tom-1'), 0);
 });
 test('a cast earn on one\'s own other mask boosts like a use', () => {
-  const base = earnBoard([castOn('g1', 'tom-2', 'castGrouped', FROM + 2 * H, 'tom-1')], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]);
+  const base = earnBoard([castOn('g1', 'tom-2', 'castBoost', FROM + 2 * H, 'tom-1')], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]);
   const input: SettlementInput = { ...base, characters: [...base.characters, { id: 'tom-2', player: 'tom', classes: [{ class: 'quiet', from: 0 }] }] };
   const r = settle(input, cardsWorld);
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1);

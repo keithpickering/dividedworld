@@ -34,12 +34,17 @@
  *   setter's, so for no class: the quote that sprang it is in `by` too, but the card the spring lands
  *   on the quoting post is the play there, and the two are one play (#420). A spring with no `by`
  *   (older rows) is scored on its trapped post. A caught play settles as the play it is.
- * - An earn gimmick (a use card whose gimmick is `earn`), on a character or a post and not ended
- *   (an admin-ended play is not in the input), adds a `card.boost` earning of `by` times each
- *   positive earning of that character's Act that carries a time and a quadrant, falls in the
- *   gimmick's window [at, ends) (a play with no `ends` boosts nothing) and is in a quadrant or of a reaction kind it names. An earn may be a
- *   cast card's on a character. Each gimmick boosts on its own, except that earns sharing a `group` do not add: for
- *   each earning, a group spans the boosts on its character and on its post, and the largest `by` among the applicable ones applies (a tie: the earliest play, then the smaller play id), under its card.
+ * - An earn gimmick (a use card whose gimmick is `earn`, or a cast card's), on a character or a post and not ended (an admin-ended play is not in
+ *   the input), is a `by` earn or a flat earn, and pays under the reason `card.boost`; a play with no `ends` pays nothing. A cushion play is no earn.
+ *   A `by` earn adds `by` times each positive earning of that character's Act that carries a time and a quadrant, falls in the gimmick's window
+ *   [at, ends) and is in a quadrant or of a reaction kind it names; each `by` earn boosts on its own, and its entry's params are `{ card, by }`.
+ *   A flat earn pays `flat` of a vote for each vote, whatever class the character holds and whatever the class earns for it: for each vote line
+ *   (a player's share in one quadrant on one Act, positive or negative, times the halving) in the play's window [at, ends), in a quadrant or of a
+ *   reaction kind it names, on an Act of the play's character or on the play's post, of a kind it names in `acts` (with none, on a post: a post
+ *   or a spin), whose voter first reacted to that Act no earlier than the play. Of the flat earns that apply to one line the largest pays (a tie:
+ *   the earliest play, then the smaller play id), as `tidy(flat * vote * votes)` with `{ card, flat }` in the entry's params. It follows the halving,
+ *   where a skim and a ride do not, so a negative line (a vote that moved away) takes its pay back, and only where the voter first reacted while
+ *   the play was up, so a play never costs its holder. An earn may be a cast card's on a character or a post.
  * - A skim play (a cast card with a `skim`, a target post, a `quadrant` and an `ends`) pays its caster's character the skim's share of a vote, as
  *   `card.skim`, for each vote on the target in that quadrant after the play and before `ends` whose voter first reacted to the post after the
  *   play, never the caster's own player's, on a post that is not the caster's own player's. A vote moving out of the quadrant inside the
@@ -69,7 +74,7 @@ import type {
   ActKind, ActStanding, Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
   LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing, UnscoredTarget,
 } from './types.ts';
-import { QUADRANTS } from './types.ts';
+import { QUADRANTS, isPost } from './types.ts';
 import type { GimmickEffect } from './cards.ts';
 
 /** One ledger row: whole hundredths for one player and character, for one reason, in one window. */
@@ -503,17 +508,20 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   /* The earn gimmicks up in the input, indexed once by what they are on: a character (a character-reach play) or a post. An admin-ended
      play is not in the input. Each character's pass below reads only its own and its posts' lists, so the pass costs its earnings
      times the gimmicks on that character and the post of each earning, never the instance's gimmicks. */
-  type Boost = { card: string; play: string; group?: string; from: number; ends: number; by: number; quadrants: readonly Quadrant[]; reactions: readonly string[] };
+  type Boost = { card: string; from: number; ends: number; by: number; quadrants: readonly Quadrant[]; reactions: readonly string[] };
+  type Flat = { card: string; play: string; from: number; ends: number; flat: number; quadrants: readonly Quadrant[]; reactions: readonly string[]; acts?: readonly ActKind[] };
   const boostsOn = new Map<string, Boost[]>();
+  const flatsOn = new Map<string, Flat[]>();
+  const push = <T>(m: Map<string, T[]>, key: string, x: T) => { const list = m.get(key); if (list) list.push(x); else m.set(key, [x]); };
   for (const a of acts.values()) {
     const earn = a.kind === 'card' && a.card ? earnOf.get(a.card) : undefined;
     const on = a.reach === 'character' ? a.on : a.reach === undefined ? a.target : undefined;
-    if (!earn || on === undefined) continue;
-    const list = boostsOn.get(on) ?? [];
-    // A use card lasts and so does a cast card's earn, so a play of an earn card in effect always has `ends`; a caught play is never in effect and comes without one (0370), and a row without one boosts nothing.
-    if (a.ends === undefined) continue;
-    list.push({ card: a.card!, play: a.id, ...(earn.group !== undefined ? { group: earn.group } : {}), from: a.at, ends: a.ends, by: earn.by, quadrants: earn.quadrants ?? [], reactions: earn.reactions ?? [] });
-    boostsOn.set(on, list);
+    // A use card lasts and so does a cast card's earn, so a play of an earn card in effect always has `ends`; a caught play is never in effect and comes without one (0370), and a row without one pays nothing.
+    if (!earn || on === undefined || a.ends === undefined) continue;
+    const quadrants = earn.quadrants ?? [];
+    const reactions = earn.reactions ?? [];
+    if ('flat' in earn) push(flatsOn, on, { card: a.card!, play: a.id, from: a.at, ends: a.ends, flat: earn.flat, quadrants, reactions, ...(earn.acts ? { acts: earn.acts } : {}) });
+    else push(boostsOn, on, { card: a.card!, from: a.at, ends: a.ends, by: earn.by, quadrants, reactions });
   }
   for (const c of characters.values()) {
     const firstOfCharacter = contributions.length;
@@ -543,23 +551,16 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}) });
       }
     }
-    /* Earn: each positive earning of the character's own Act, with a time and a quadrant, inside a gimmick's window and in what it
-       names, adds `by` times itself under the reason `card.boost`. Boosts are added after, so none is boosted in turn. */
+    /* Earn by a percentage: each positive earning of the character's own Act, with a time and a quadrant, inside a gimmick's window and in what it
+       names, adds `by` times itself under the reason `card.boost`, each gimmick on its own. Boosts are added after, so none is boosted in turn. */
     if (!boostsOn.size) continue;
     for (const e of contributions.slice(firstOfCharacter)) {
       if (!(e.amount > 0) || e.at === undefined || !e.quadrant || e.act === undefined || acts.get(e.act)?.character !== c.id) continue;
       const applicable = [...(boostsOn.get(c.id) ?? []), ...(boostsOn.get(e.act) ?? [])].filter((g) => e.at! >= g.from && e.at! < g.ends && (g.quadrants.includes(e.quadrant!) || (e.kind !== undefined && g.reactions.includes(e.kind))));
-      // Earns of one group do not add, and per earning a group spans the boosts on its character and on its post: the largest `by` applies, then the earliest play, then the smaller play id.
-      const best = new Map<string, Boost>();
       for (const g of applicable) {
-        if (g.group === undefined) continue;
-        const was = best.get(g.group);
-        if (!was || g.by > was.by || (g.by === was.by && (g.from < was.from || (g.from === was.from && g.play < was.play)))) best.set(g.group, g);
-      }
-      for (const g of applicable.filter((x) => x.group === undefined || best.get(x.group) === x)) {
         const boost = tidy(e.amount * g.by);
         if (!boost) continue;
-        contributions.push({ player: e.player, character: e.character, class: e.class, reason: 'card.boost', amount: boost, params: { card: g.card }, act: e.act, quadrant: e.quadrant, at: e.at });
+        contributions.push({ player: e.player, character: e.character, class: e.class, reason: 'card.boost', amount: boost, params: { card: g.card, by: g.by }, act: e.act, quadrant: e.quadrant, at: e.at });
       }
     }
   }
@@ -607,6 +608,31 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     const up = (gimmicksOn.get(cast.target) ?? []).filter((g) => g.id !== cast.id && g.at <= cast.at && cast.at < g.ends);
     for (const g of up) for (const v of votes) if (v.at < g.ends && v.owner !== playerOf(g.user)) payout('card.ride', g.card, g.user, g.share, v);
     for (const s of springsBy.get(cast.id) ?? []) for (const v of votes) if (v.quadrant === s.quadrant && v.owner !== playerOf(s.setter)) payout('card.ride', s.card, s.setter, s.share, v);
+  }
+
+  /* Flat earns: one pass over the window's votes, each read against the flat plays on its Act's character and on the Act, indexed once above, so
+     the work grows with the votes and the plays on each. A vote line is `votes` of a vote (halved, and negative where a vote moved away). The
+     largest `flat` among the plays that apply pays; a play pays only for a voter who first reacted to the Act no earlier than the play, so a
+     line taken back was paid at the same or a larger size by the same play. */
+  if (flatsOn.size) {
+    for (const v of windowVotes) {
+      const t = actOf(v.act);
+      const first = onAct.get(v.act)!.first.get(v.player)!;
+      let best: Flat | undefined;
+      const consider = (list: readonly Flat[] | undefined) => {
+        for (const g of list ?? []) {
+          if (!(v.at >= g.from && v.at < g.ends) || first < g.from) continue;
+          if (!(g.quadrants.includes(v.quadrant) || g.reactions.includes(v.kind))) continue;
+          if (!(g.acts ? g.acts.includes(t.kind!) : isPost(t.kind!))) continue;
+          if (!best || g.flat > best.flat || (g.flat === best.flat && (g.from < best.from || (g.from === best.from && g.play < best.play)))) best = g;
+        }
+      };
+      consider(flatsOn.get(t.character));
+      consider(flatsOn.get(v.act));
+      if (!best) continue;
+      const amount = tidy((best as Flat).flat * settings.vote * v.votes);
+      if (amount) contributions.push({ player: playerOf(t.character), character: t.character, reason: 'card.boost', amount, params: { card: (best as Flat).card, flat: (best as Flat).flat }, act: v.act, quadrant: v.quadrant, at: v.at });
+    }
   }
 
   /* ---- summed, then rounded ---- */
