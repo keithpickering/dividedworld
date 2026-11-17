@@ -26,11 +26,15 @@ test('Sweet Heat has its facts: a pepperoni uncommon use on a character, half a 
 });
 
 test('Sweet Heat lands on a character through decideUse for free, is refused by decidePlay, and a second live one is refused', () => {
-  assert.deepEqual(decideUse(sweetHeat, settings, character, [], {}, '').ok, true);
-  assert.equal((decideUse(sweetHeat, settings, character, [], {}, '') as { value: { price: number } }).value.price, 0);
-  assert.equal(decidePlay(sweetHeat, settings, character, [], {}, '').ok, false, 'a Gimmick is not cast');
+  const used = decideUse(sweetHeat, settings, character, [], {}, '');
+  assert.equal(used.ok && used.value.price, 0);
+  const cast = decidePlay(sweetHeat, settings, character, [], {}, '');
+  assert.ok(!cast.ok && cast.why.startsWith('Sweet Heat is used'), 'a Gimmick is not cast');
   const live = [{ card: 'sweet-heat', act: 'k1', reach: 'character' as const, ends: new Date(Date.now() + 86_400_000).toISOString() }];
-  assert.equal(decideUse(sweetHeat, settings, character, live, {}, '').ok, false);
+  assert.deepEqual(decideUse(sweetHeat, settings, character, live, {}, ''), { ok: false, why: 'this character already carries that card' });
+  // An ended play holds no place.
+  const ended = [{ ...live[0]!, ends: new Date(Date.now() - 86_400_000).toISOString() }];
+  assert.equal(decideUse(sweetHeat, settings, character, ended, {}, '').ok, true);
 });
 
 test('the instance is whole with Sweet Heat in its pool', () => {
@@ -53,7 +57,7 @@ function board(cls: string, plays: InputAct[], reactions: InputReaction[]): Sett
     reactions,
   };
 }
-const use = (id: string, card: string, at = W_FROM + 2 * HR): InputAct => ({ id, character: 'tom-1', kind: 'card', at, thread: 't1', card, reach: 'character', on: 'tom-1', ends: at + 18 * HR });
+const use = (id: string, card: string, at = W_FROM + 2 * HR): InputAct => ({ id, character: 'tom-1', kind: 'card', at, thread: 't1', card, reach: 'character', on: 'tom-1', ends: at + 3 * 24 * HR });
 const vote = (kind: string, player = 'bob', at = W_FROM + 5 * HR, act = 'tp1'): InputReaction => ({ act, player, character: `${player}-1`, kind, at });
 const amountFor = (r: ReturnType<typeof settle>, reason: string) => r.entries.filter((e) => e.character === 'tom-1' && e.reason === reason).reduce((t, e) => t + e.amount, 0);
 const boosts = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.character === 'tom-1' && e.reason === 'card.boost');
@@ -79,6 +83,7 @@ test('a Tweener under Sweet Heat with one hype and one heat vote from two player
   assert.equal(amountFor(bare, 'tweener.splitTheRoom'), 20);
   assert.equal(amountFor(r, 'tweener.splitTheRoom'), amountFor(bare, 'tweener.splitTheRoom'));
   assert.equal(amountFor(r, 'card.boost'), 10);
+  assert.deepEqual(boosts(r).map((e) => e.amount), [10], 'one settled line carries both votes');
   assert.ok(boosts(r).every((e) => (e.params as { card: string; flat: number }).card === 'sweet-heat' && (e.params as { flat: number }).flat === 0.5));
 });
 

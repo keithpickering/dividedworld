@@ -1285,6 +1285,6 @@ describe('Sweet Heat, the fifth flat earn card, says its size in votes from its 
   test('its words hold no "%" and no class\'s name', () => {
     const words = [sweet.summary, sweet.status as string, sweet.describe!(instance.settings), sweet.logPlay!({}, {}), sweet.art.tagline].join('\n');
     expect(words).not.toMatch(/%/u);
-    for (const c of instance.classes) expect(words, c.name).not.toMatch(new RegExp(`\b${c.name}\b`, 'iu'));
+    for (const c of instance.classes) expect(words, c.name).not.toMatch(new RegExp(`\\b${c.name}\\b`, 'iu'));
   });
 });
