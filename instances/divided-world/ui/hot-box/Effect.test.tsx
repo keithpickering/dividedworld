@@ -2062,9 +2062,25 @@ describe('a moment', () => {
     pass(SWEEP_MS);
     release(s);
     act(() => { link.focus(); });
+    expect(document.activeElement).toBe(link);
     pass(SMOKE.waved + 200);
     expect(inert(s)).toBe(true);
-    expect(() => document.activeElement).not.toThrow();
+    expect(document.activeElement).toBe(link);
+  });
+
+  test('a moment sets no thinning wake for the end of the play, where a live post does', () => {
+    /* The page's rest timer is 50 ms and its stagger's a frame (16 ms); anything else is the model's timer. */
+    const modelTimers = (over: Partial<EffectProps>) => {
+      const set = vi.spyOn(globalThis, 'setTimeout');
+      const s = setup(over);
+      pass(200, 50);
+      const n = set.mock.calls.filter((c) => c[1] !== 50 && c[1] !== 16).length;
+      s.unmount();
+      set.mockRestore();
+      return n;
+    };
+    expect(modelTimers({})).toBeGreaterThan(0);
+    expect(modelTimers({ moment })).toBe(0);
   });
 
   test('save, release and met are never called, even with the post in view', () => {
