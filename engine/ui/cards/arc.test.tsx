@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { ARC_FLOOR, ARC_SPAN, CARD_WIDTH, GROUP_GAP, TURN_FROM, TURN_TO, arcSlots, handOrder, swipeMiddle, swipePose } from './arc.ts';
+import { ARC_FLOOR, ARC_SPAN, CARD_WIDTH, GROUP_GAP, SWIPE_REACH, SWIPE_SPREAD, SWIPE_STEP, TURN_FROM, TURN_TO, arcSlots, handOrder, swipeKeyframes, swipeMiddle, swipePose } from './arc.ts';
 import type { CardFace } from './faces.ts';
 
 const face = (key: string, play: CardFace['play'], unknown = false): CardFace => ({
@@ -114,31 +114,94 @@ describe('the slots of an arc', () => {
 
 describe('the swipe pose', () => {
   /** Each field to nine digits, so a -0 and a 0 for `deg` are the same pose. */
-  const expectPose = (d: number, want: { y: number; deg: number; scale: number }) => {
+  const expectPose = (d: number, want: { x: number; y: number; deg: number; scale: number }) => {
     const got = swipePose(d);
+    expect(got.x).toBeCloseTo(want.x, 9);
     expect(got.y).toBeCloseTo(want.y, 9);
     expect(got.deg).toBeCloseTo(want.deg, 9);
     expect(got.scale).toBeCloseTo(want.scale, 9);
   };
 
-  test('the middle card stands 14px up, upright and 1.18 times its size', () => {
-    expectPose(0, { y: -14, deg: 0, scale: 1.18 });
+  test('the middle card stands 14px up, upright, 1.18 times its size and where the row puts it', () => {
+    expectPose(0, { x: 0, y: -14, deg: 0, scale: 1.18 });
   });
 
-  test('a card one step from the middle turns 6 degrees and drops 5px, at its own size', () => {
-    expectPose(1, { y: 5, deg: 6, scale: 1 });
+  test('a card one step from the middle turns 6 degrees and drops 5px, at its own size, pushed 40px out from the middle', () => {
+    expectPose(1, { x: 40, y: 5, deg: 6, scale: 1 });
   });
 
-  test('a card two steps to the left turns -12 degrees and drops 20px', () => {
-    expectPose(-2, { y: 20, deg: -12, scale: 1 });
+  test('a card two steps to the left turns -12 degrees and drops 20px, pushed 40px further left', () => {
+    expectPose(-2, { x: -40, y: 20, deg: -12, scale: 1 });
   });
 
   test('a card five steps out turns at most 18 degrees and drops at most 40px', () => {
-    expectPose(5, { y: 40, deg: 18, scale: 1 });
+    expectPose(5, { x: 40, y: 40, deg: 18, scale: 1 });
   });
 
-  test('half a step out is lifted half way, and turns and drops in between', () => {
-    expectPose(0.5, { y: 0.625 - 7, deg: 3, scale: 1.09 });
+  test('half a step out is lifted half way, turns and drops in between, and is pushed most of the way out', () => {
+    expectPose(0.5, { x: 40 * Math.sin((Math.PI / 2) * (0.5 / 0.7)), y: 0.625 - 7, deg: 3, scale: 1.09 });
+  });
+
+  test('the pose stops changing at SWIPE_REACH steps out, on either side', () => {
+    for (const side of [1, -1]) {
+      for (const beyond of [0.01, 1, 40]) expect(swipePose(side * (SWIPE_REACH + beyond))).toEqual(swipePose(side * SWIPE_REACH));
+      expect(swipePose(side * (SWIPE_REACH - 0.1))).not.toEqual(swipePose(side * SWIPE_REACH));
+    }
+  });
+
+  /*
+   * The card in the middle stands above the rest, so as the middle passes from one card to its neighbor, half a step out, the two
+   * change which stands above the other. Pushed out by SWIPE_SPREAD, the two stand apart for a stretch around that moment, so the
+   * change shows nothing; at 66px apart and unspread, the middle card's neighbor would pop over it. The phone's postcard is 104 by
+   * 156 and turns about its center.
+   */
+  const corners = (d: number) => {
+    const { x, y, deg, scale } = swipePose(d);
+    const a = (deg * Math.PI) / 180;
+    const cx = d * SWIPE_STEP + x;
+    return ([[-52, -78], [52, -78], [52, 78], [-52, 78]] as const).map(([u, v]) => [cx + scale * (u * Math.cos(a) - v * Math.sin(a)), y + scale * (u * Math.sin(a) + v * Math.cos(a))] as const);
+  };
+  /** The gap between two convex outlines along the axis that parts them most (negative where they overlap). */
+  const gap = (p: ReturnType<typeof corners>, q: ReturnType<typeof corners>) => Math.max(...[p, q].flatMap((poly) => poly.map((_, i) => {
+    const [x1, y1] = poly[i]!;
+    const [x2, y2] = poly[(i + 1) % 4]!;
+    const n = [y2 - y1, x1 - x2] as const;
+    const along = (pts: typeof p) => pts.map(([x, y]) => x * n[0] + y * n[1]);
+    const [a, b] = [along(p), along(q)];
+    return Math.max(Math.min(...b) - Math.max(...a), Math.min(...a) - Math.max(...b)) / Math.hypot(...n);
+  })));
+
+  test('where the middle passes from a card to its neighbor, and for a fifth of a step either side, the two stand apart', () => {
+    for (let at = 0.3; at <= 0.7 + 1e-9; at += 0.05) expect(gap(corners(-at), corners(1 - at)), `the middle ${at} steps from the left card`).toBeGreaterThan(0);
+  });
+
+  test('at rest the middle card still covers the edge of each neighbor, so the row reads as a hand', () => {
+    expect(gap(corners(0), corners(1))).toBeLessThan(0);
+    expect(gap(corners(0), corners(-1))).toBeLessThan(0);
+  });
+
+  test('SWIPE_SPREAD is what parts them: unspread, the two overlap where the middle passes', () => {
+    expect(SWIPE_SPREAD).toBe(40);
+    const unspread = (d: number) => corners(d).map(([x, y]) => [x - swipePose(d).x, y] as const);
+    expect(gap(unspread(-0.5), unspread(0.5))).toBeLessThan(0);
+  });
+});
+
+describe('the swipe pose as keyframes', () => {
+  test('they run from SWIPE_REACH steps right of the middle to SWIPE_REACH steps left, each the pose at its distance', () => {
+    const frames = swipeKeyframes();
+    expect(frames[0]!.offset).toBe(0);
+    expect(frames.at(-1)!.offset).toBe(1);
+    expect(frames.length).toBeGreaterThan(40);
+    for (const f of frames) {
+      const { x, y, deg, scale } = swipePose(SWIPE_REACH - 2 * SWIPE_REACH * f.offset);
+      expect(f).toEqual({ offset: f.offset, translate: `${x}px ${y}px`, rotate: `${deg}deg`, scale: String(scale) });
+    }
+  });
+
+  test('a stop stands at the middle and at each step, where the pose has its corners', () => {
+    const at = swipeKeyframes().map((f) => SWIPE_REACH - 2 * SWIPE_REACH * f.offset);
+    for (let d = -SWIPE_REACH; d <= SWIPE_REACH; d += 1) expect(at.some((a) => Math.abs(a - d) < 1e-9), `a stop at ${d}`).toBe(true);
   });
 });
 

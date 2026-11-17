@@ -142,19 +142,50 @@ export const SWIPE_DROP_MAX = 40;
 /** How far the middle card lifts, in pixels, and how much bigger it stands. */
 export const SWIPE_LIFT = 14;
 export const SWIPE_SCALE = 0.18;
+/**
+ * How far, in pixels, every other card stands pushed out from the middle card, and how many steps out the push is whole. The
+ * middle card stands above the rest, so as the middle passes from one card to its neighbor the two change which is above: pushed
+ * out, the two stand apart for a stretch around that moment (a fifth of a step either side), and the change shows nothing,
+ * where at 66px apart they would overlap by half a card and the new middle would pop over the old one. At rest the middle card
+ * still covers each neighbor's edge, so the row reads as a hand.
+ */
+export const SWIPE_SPREAD = 40;
+export const SWIPE_SPREAD_REACH = 0.7;
+/** How many steps out the pose stops changing: the turn and the drop reach their caps, the lift is gone and the push is whole. */
+export const SWIPE_REACH = Math.max(SWIPE_TURN_MAX / SWIPE_TURN, Math.sqrt(SWIPE_DROP_MAX / SWIPE_DROP), 1, SWIPE_SPREAD_REACH);
 
 /**
  * The pose of one card in the phone's swiped row, from its signed distance `d` from the row's middle, in steps: the
  * card's center's x less the middle's x, over SWIPE_STEP. The card in the middle stands up by SWIPE_LIFT and grows by
  * SWIPE_SCALE; each step away it turns and drops further, up to the caps, and at a distance of a whole step or more it
- * stands at its own size.
+ * stands at its own size. Every card but the middle one is pushed out from it by up to SWIPE_SPREAD (`x`), easing in over
+ * SWIPE_SPREAD_REACH steps so a card passing through the middle moves without a jolt.
  */
-export function swipePose(d: number): { readonly y: number; readonly deg: number; readonly scale: number } {
+export function swipePose(d: number): { readonly x: number; readonly y: number; readonly deg: number; readonly scale: number } {
   const w = Math.max(0, 1 - Math.abs(d));
   const deg = Math.min(Math.max(SWIPE_TURN * d, -SWIPE_TURN_MAX), SWIPE_TURN_MAX);
   const y = Math.min(SWIPE_DROP * d * d, SWIPE_DROP_MAX) * (1 - w) - SWIPE_LIFT * w;
   const scale = 1 + SWIPE_SCALE * w;
-  return { y, deg, scale };
+  const x = SWIPE_SPREAD * Math.sin((Math.PI / 2) * Math.min(Math.max(d / SWIPE_SPREAD_REACH, -1), 1));
+  return { x, y, deg, scale };
+}
+
+/** The keyframes' stops per step: enough that the drop's curve, drawn as straight pieces between them, is off by under half a pixel. */
+const STOPS_PER_STEP = 10;
+
+/**
+ * The swipe pose as keyframes over a card's passage through the row's middle, for a view timeline on the row (Hand.tsx): offset 0 is
+ * the card SWIPE_REACH steps right of the middle, offset 1 the same distance left, as the row scrolls it across, and each stop is
+ * `swipePose` at its distance. Beyond them the pose holds (the animation fills both ways), as `swipePose` does. A stop stands at
+ * each whole step, where the lift and the turn have their corners.
+ */
+export function swipeKeyframes(): { readonly offset: number; readonly translate: string; readonly rotate: string; readonly scale: string }[] {
+  const n = 2 * SWIPE_REACH * STOPS_PER_STEP;
+  return Array.from({ length: n + 1 }, (_, k) => {
+    const offset = k / n;
+    const { x, y, deg, scale } = swipePose(SWIPE_REACH - 2 * SWIPE_REACH * offset);
+    return { offset, translate: `${x}px ${y}px`, rotate: `${deg}deg`, scale: String(scale) };
+  });
 }
 
 /** The index of the center nearest `middle`, the lower index on a tie; -1 when there are no centers. */

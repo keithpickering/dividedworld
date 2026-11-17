@@ -19,13 +19,15 @@
  * The Phone board's sheet draws the same cards, one for each kind held in the same order, on one row that the player
  * swipes sideways, a card standing 66px from the next (`SWIPE_STEP`) so each overlaps its neighbor, half a step more
  * where a group changes (`data-kb-group-start`). The card nearest the row's middle (`data-kb-middle`) is the one being
- * read: it stands up, larger and above the rest, and the others turn and drop the further they stand from it
+ * read: it stands up, larger and above the rest, and the others turn and drop the further they stand from it and stand pushed
+ * out from it, so that as the middle passes from a card to its neighbor the two are apart when they change which is above
  * (`swipePose`). A card left of the middle says so (`data-kb-side="left"`, and "right" on the other side), because the
  * next card covers its right edge: its count stands at its left there, and at the right on every other card (frame.css).
- * The row snaps a card to the middle when a swipe ends, and every card can come to it, the first and the
- * last included. The pose follows the scroll continuously, written as custom properties on the cards within the row's
- * width and two steps beyond it, at most once a frame (`Hand`'s `pose`); a card that leaves that range gets the edge pose
- * once, so the cost of a scroll does not grow with the hand. A pointer press on a card that is not in the middle
+ * The row brings the nearest card to the middle once a swipe comes to rest (`settle`), and every card can come to it, the first and the
+ * last included. The pose follows the scroll continuously: where the browser has view timelines, each card's pose is an animation
+ * on one, drawn from the scroll on the frame the scroll is drawn (`animatePoses`); elsewhere it is written as custom properties on
+ * the cards within the row's width and two steps beyond it, at most once a frame (`Hand`'s `pose`), and a card that leaves that
+ * range gets the edge pose once, so the cost of a scroll does not grow with the hand. A pointer press on a card that is not in the middle
  * brings it there and does nothing else; a press on the middle card, and any click with no pointer (a keyboard or a
  * reader, whose focus has already brought the card there), is the caller's to answer, as on the Main board. Every
  * card's rules in plain words (`CardUi.describe`) are its button's description, and the one in the middle is also
@@ -48,7 +50,7 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Postcard, cardLabel } from './Postcard.tsx';
 import type { CardFace } from './faces.ts';
 import { CalmRegion } from '../glass/Calm.tsx';
-import { SWIPE_STEP, arcSlots, handOrder, swipeMiddle, swipePose } from './arc.ts';
+import { SWIPE_REACH, SWIPE_STEP, arcSlots, handOrder, swipeKeyframes, swipeMiddle, swipePose } from './arc.ts';
 
 /** An armed card's tag, and the end of its name: while it is being played they say where. */
 const tagOf = (playing: { readonly seq: number } | null): string => (playing ? `Playing · post #${playing.seq}` : 'Armed · pick a post');
@@ -56,10 +58,40 @@ const nameEnd = (playing: { readonly seq: number } | null): string => (playing ?
 
 /** Write a card's pose on its element: the row's CSS draws it with the individual transform properties (frame.css). */
 function writePose(li: HTMLElement, d: number): void {
-  const { y, deg, scale } = swipePose(d);
+  const { x, y, deg, scale } = swipePose(d);
+  li.style.setProperty('--kb-swipe-x', `${x}px`);
   li.style.setProperty('--kb-swipe-y', `${y}px`);
   li.style.setProperty('--kb-swipe-turn', `${deg}deg`);
   li.style.setProperty('--kb-swipe-scale', String(scale));
+}
+
+/** How long a scroll stands still, with no finger on the row, before the row settles on a card, where the browser does not say when a scroll ends (`scrollend`). */
+const SETTLE_AFTER = 120;
+
+/** The keyframes of the swipe pose, the same for every card and every row. */
+let keyframes: ReturnType<typeof swipeKeyframes> | null = null;
+
+/**
+ * Pose each card with an animation on a view timeline of the row, where the browser has them: the browser then draws the pose from
+ * the scroll on the frame the scroll is drawn, however fast the row moves, where a pose written from the scroll event lags the
+ * row by a frame or more and a fast swipe outruns it. The timeline is the card's passage across the row's middle, from SWIPE_REACH
+ * steps right of it to as far left, at any width of the row: its inset is the rest of the row on each side. Returns the animations,
+ * or null where the browser has no view timeline or refuses this one, and the pose is then written as the row scrolls (`writePose`).
+ */
+function animatePoses(lis: readonly HTMLElement[]): Animation[] | null {
+  const Timeline = (globalThis as { ViewTimeline?: new (o: { subject: Element; axis: string; inset: string }) => AnimationTimeline }).ViewTimeline;
+  if (typeof Timeline !== 'function' || lis.some((li) => typeof li.animate !== 'function')) return null;
+  const made: Animation[] = [];
+  try {
+    for (const li of lis) {
+      const timeline = new Timeline({ subject: li, axis: 'inline', inset: `calc(50% - ${SWIPE_REACH * SWIPE_STEP - li.offsetWidth / 2}px)` });
+      made.push(li.animate((keyframes ??= swipeKeyframes()), { timeline, fill: 'both' }));
+    }
+  } catch {
+    for (const a of made) a.cancel();
+    return null;
+  }
+  return made;
 }
 
 /** The first index in the ascending `xs` that is at least `x`. */
@@ -121,6 +153,13 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
   const frame = useRef(0);
   /* The key of the card that was the middle when the pointer press began, for the click that ends it. */
   const pressedMiddle = useRef<string | null>(null);
+  /* The cards' pose animations, where the browser draws the pose from a view timeline (`animatePoses`); null while the pose is written as the row scrolls. */
+  const animated = useRef<Animation[] | null>(null);
+  /* Whether a finger is on the row, so it is not settled under it; the timer that settles it once a scroll stands still; and the
+     scrollLeft the row was last sent to (a card a tap or the focus brought, or the settle's own), which a settle keeps to until a touch or a wheel frees the row. */
+  const touching = useRef(false);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aim = useRef<number | null>(null);
   /* The cards' elements, listed with the centers (`measure`), so a scroll frame does not query or build a list of the whole hand. */
   const items = useRef<readonly HTMLLIElement[]>([]);
   const cardsOf = () => [...(list.current?.querySelectorAll<HTMLLIElement>('li.kb-hand-card') ?? [])];
@@ -140,6 +179,10 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
     const hi = firstAtLeast(xs, ul.scrollLeft + ul.clientWidth + reach + 1e-6) - 1;
     if (hi < lo) return;
     const near = lo + swipeMiddle(xs.slice(lo, hi + 1), mid);
+    const key = lis[near]?.dataset.kbCard ?? null;
+    setMiddle((was) => (was === key ? was : key));
+    /* Where the browser draws the pose from the scroll, only the middle is the Hand's. */
+    if (animated.current) return;
     for (let i = lo; i <= hi; i++) writePose(lis[i]!, (xs[i]! - mid) / SWIPE_STEP);
     /* A card that leaves the range gets the edge pose, once; the first pass gives it to everything outside. */
     const before = posed.current;
@@ -151,8 +194,6 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
       for (let i = Math.min(before.lo, lo); i <= to; i++) if (i < lo || i > hi) edge(i);
     }
     posed.current = { lo, hi };
-    const key = lis[near]?.dataset.kbCard ?? null;
-    setMiddle((was) => (was === key ? was : key));
   }, []);
   /* At most once a frame, however many scroll events the frame brings. */
   const queue = () => {
@@ -165,8 +206,43 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
     const ul = list.current;
     const li = cardsOf().find((c) => c.dataset.kbCard === key);
     if (!ul || !li || typeof ul.scrollTo !== 'function') return;
-    ul.scrollTo({ left: li.offsetLeft + li.offsetWidth / 2 - ul.clientWidth / 2, behavior: now || instant ? 'instant' : 'smooth' });
+    const left = li.offsetLeft + li.offsetWidth / 2 - ul.clientWidth / 2;
+    const at = now || instant;
+    /* An eased scroll is on its way there until it lands; an instant one is there already. */
+    aim.current = at ? null : left;
+    ul.scrollTo({ left, behavior: at ? 'instant' : 'smooth' });
   };
+  /*
+   * Bring the card nearest the middle there once a scroll has come to rest, eased (at once under Off), and nothing while a finger is on
+   * the row. The row has no CSS snap: WebKit on iOS slows the swipe of any scroller with snap points to UIKit's fast deceleration, so
+   * a hard flick carried a few cards, and the browsers' own snap is not needed for a row whose stops the Hand knows. A row on its way
+   * to a card (`aim`) keeps to it: a scroll that ends short of it goes on there, and is not turned back to a nearer card.
+   */
+  const settle = () => {
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = null;
+    const ul = list.current;
+    const xs = centers.current;
+    if (touching.current || !ul || xs.length === 0 || typeof ul.scrollTo !== 'function') return;
+    const mid = ul.scrollLeft + ul.clientWidth / 2;
+    const left = aim.current ?? xs[swipeMiddle(xs, mid)]! - ul.clientWidth / 2;
+    if (Math.abs(ul.scrollLeft - left) < 1) { aim.current = null; return; }
+    aim.current = instant ? null : left;
+    ul.scrollTo({ left, behavior: instant ? 'instant' : 'smooth' });
+  };
+  /* A scroll frame: the pose and the middle at the next frame, and the settle once the scroll has stood still for SETTLE_AFTER. */
+  const onScroll = () => {
+    queue();
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = touching.current ? null : setTimeout(settle, SETTLE_AFTER);
+  };
+  /* A finger on the row, or a wheel, takes it from wherever it was going; lifting the finger lets it settle. */
+  const free = () => { aim.current = null; };
+  const onTouchStart = () => { touching.current = true; free(); if (settleTimer.current) clearTimeout(settleTimer.current); settleTimer.current = null; };
+  const onTouchEnd = () => { touching.current = false; if (settleTimer.current) clearTimeout(settleTimer.current); settleTimer.current = setTimeout(settle, SETTLE_AFTER); };
+  /* The handlers the row's listeners call, the latest render's (they read `instant`). */
+  const settleNow = useRef(settle);
+  settleNow.current = settle;
   const cardsSignature = arc.map((c) => c.face.key).join('|');
   /* Measure and pose when the cards change while the sheet is open (closed, it has no layout; the opening below does it). */
   useLayoutEffect(() => {
@@ -197,6 +273,34 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
       frame.current = 0;
     };
   }, [main, open]);
+
+  /* The pose animations, made each time the sheet opens or its cards change while it is open, and ended when it closes or goes. */
+  useLayoutEffect(() => {
+    if (main || !open || shown === 0) return;
+    const made = animatePoses(cardsOf());
+    animated.current = made;
+    if (made) for (const li of cardsOf()) for (const p of ['--kb-swipe-x', '--kb-swipe-y', '--kb-swipe-turn', '--kb-swipe-scale']) li.style.removeProperty(p);
+    return () => {
+      for (const a of made ?? []) a.cancel();
+      animated.current = null;
+    };
+  }, [main, open, cardsSignature]);
+  /* The browser's word that a scroll has ended, where it gives one, settles at once; and the settle's timer goes with the sheet. */
+  useLayoutEffect(() => {
+    const ul = list.current;
+    if (main || !open || !ul) return;
+    const onEnd = () => settleNow.current();
+    ul.addEventListener('scrollend', onEnd);
+    ul.addEventListener('wheel', free, { passive: true });
+    return () => {
+      ul.removeEventListener('scrollend', onEnd);
+      ul.removeEventListener('wheel', free);
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+      settleTimer.current = null;
+      touching.current = false;
+      aim.current = null;
+    };
+  }, [main, open, shown === 0]);
 
   /* The keys: arrows and Home/End move along the cards and stop at the ends. On the Main board Tab and Shift+Tab wrap at the ends;
      on the phone they are the dialog's own. */
@@ -229,7 +333,15 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
       {shown === 0 ? (
         <CalmRegion as="p" className="kb-hand-empty">No postcards in your hand. The Vending Machine sells them.</CalmRegion>
       ) : (
-        <ul className="kb-hand-cards" ref={list} onKeyDown={onKeys} onScroll={main ? undefined : queue}>
+        <ul
+          className="kb-hand-cards"
+          ref={list}
+          onKeyDown={onKeys}
+          onScroll={main ? undefined : onScroll}
+          onTouchStart={main ? undefined : onTouchStart}
+          onTouchEnd={main ? undefined : onTouchEnd}
+          onTouchCancel={main ? undefined : onTouchEnd}
+        >
           {arc.map(({ face, held: n, group }, i) => {
             const slot = slots[i]!;
             const isArmed = armed === face.key;
