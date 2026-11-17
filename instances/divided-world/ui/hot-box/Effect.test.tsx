@@ -25,7 +25,7 @@ import { makeTileLayer, mostTiles } from '../../../../engine/ui/cards/tiles.ts';
 import { renderIn, testInstance } from '../../../../engine/ui/test-world.tsx';
 import { SMOKE, fogAlpha, holeRadius, maskAlpha, strength } from './smoke.ts';
 import { makeField, paintFog, stepField } from './fog.ts';
-import { HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, forgetScratch, resetFogLadder } from './Effect.tsx';
+import { HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, nextWake, forgetScratch, resetFogLadder } from './Effect.tsx';
 
 /* A post's lines, as shares of the box's height, as Whoops!'s `readLines` gives them; and what a painter's call costs, for the ladder. */
 const { LINES, read, cost } = vi.hoisted(() => {
@@ -61,6 +61,9 @@ const HOST = { left: 0, top: 0, width: 800, height: 700 };
 /** Time for a sweep: a line is the box's width at Whoops!'s pace, 400 px a second. */
 const LINE_MS = 2000;
 const SWEEP_MS = 3 * LINE_MS;
+/** A moment's time: a day and a half into the play, so the smoke is neither full nor gone. */
+const AT = NOW + 1.5 * DAY;
+const moment = { at: AT } as const;
 
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-15T11:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null } as unknown as Act;
 const play = (over: Partial<CardPlay> = {}): CardPlay => ({ id: 'h1', card: 'hot-box', layer: 1, caster: 'c2', message: '', config: { color: 'teal' }, playedAt: iso(NOW), post: 'p1', ends: iso(ENDS), ...over });
@@ -170,7 +173,7 @@ function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, ne
   const save = vi.fn(async () => ({ ok: false as const, error: 'no' }));
   const release = vi.fn(async () => ({ ok: false as const, error: 'no' }));
   const props: EffectProps = {
-    post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false,
+    post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false, moment: null,
     show, met, ink: NO_INK, holdScreen: () => {}, marks: null, save, release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post. <a href="https://example.com/">A link</a></p>, ...over,
   };
@@ -1071,9 +1074,9 @@ describe('the in-body line', () => {
     expect(way(s)).toHaveTextContent(SMOKED_WAY);
   });
 
-  test('is not drawn in a moment', () => {
-    const s = setup({ still: true });
-    expect(way(s)).toBeNull();
+  test('is drawn in a moment as it is live', () => {
+    const s = setup({ moment });
+    expect(way(s)).toHaveTextContent(SMOKED_WAY);
   });
 });
 
@@ -1439,16 +1442,17 @@ describe('forced colors: a hard circular mask', () => {
     expect(window.requestAnimationFrame).not.toHaveBeenCalled();
   });
 
-  test('a moment (still) is the flat layer alone, drawn once: no ring, no circle on a pointer, no button', () => {
-    const s = setup({ still: true });
+  test('a moment is the flat layer at the strength then, and a pointer opens a circle and a ring as live', () => {
+    const s = setup({ moment });
     expect(layers(s)).toHaveLength(1);
-    expect(flat(s)!.alpha).toBeCloseTo(maskAlpha(1), 3);
+    expect(flat(s)!.alpha).toBeCloseTo(maskAlpha(strength(AT, NOW, ENDS)), 3);
+    expect(flat(s)!.alpha).not.toBeCloseTo(maskAlpha(1), 2);
     move(s);
-    touch(s);
-    expect(layers(s)).toHaveLength(1);
-    expect(rings(s)).toHaveLength(0);
+    pass(100, 50);
+    expect(circleLayers(s).length).toBeGreaterThan(0);
+    expect(rings(s).length).toBeGreaterThan(0);
     expect(host(s).querySelector('button')).toBeNull();
-    expect(inert(s)).toBe(false);
+    expect(inert(s)).toBe(true);
   });
 });
 
@@ -1628,14 +1632,13 @@ describe('the content area is the container', () => {
     expect(alphaAt(s, 300, 250)).toBe(whole());
   });
 
-  test('a moment fills the same area, drawn once, with no handler', () => {
-    const s = setup({ still: true });
+  test('a moment fills the same area at the strength then, and a pointer on it clears the fog as live', () => {
+    const s = setup({ moment });
     expect(canvas(s)!.style).toMatchObject({ left: '-20px', top: '50px', width: '900px', height: '512px' });
-    expect(alphaAt(s, 1, 1)).toBe(Math.round(SMOKE.full * 255));
-    const before = recOf(canvas(s))!.draws.at(-1)!.put!.data.slice();
+    expect(alphaAt(s, 1, 1)).toBe(whole(AT));
     pointer(area(s), 'pointermove', 100, 100);
-    pass(500);
-    expect(Buffer.from(recOf(canvas(s))!.draws.at(-1)!.put!.data).equals(Buffer.from(before))).toBe(true);
+    settle();
+    expect(alphaAt(s, 100, 100)).toBe(0);
   });
 
   describe('under forced colors', () => {
@@ -1740,8 +1743,8 @@ describe('what it tells the Lens', () => {
       expect(viewProblems(v, { holds: false, covers: true })).toEqual([]);
       expect(v.state.split(/\s+/u).length).toBeLessThanOrEqual(6);
     }
-    const still = setup({ still: true });
-    for (const v of views(still)) expect(viewProblems(v, { holds: false, covers: true })).toEqual([]);
+    const inMoment = setup({ moment });
+    for (const v of views(inMoment)) expect(viewProblems(v, { holds: false, covers: true })).toEqual([]);
   });
 
   test('is met once however often the post goes out of view and comes back', () => {
@@ -2001,29 +2004,91 @@ describe('the scratch canvas', () => {
   });
 });
 
-describe('a moment (still)', () => {
-  test('nothing is inert, no button or handler exists, no frame is requested, and nothing is met', () => {
-    const s = setup({ still: true });
-    const before0 = asked();
-    expect(s.container.querySelector('[inert]')).toBeNull();
-    expect(s.container.querySelector('button')).toBeNull();
-    expect(s.container.querySelector('[aria-live]')).toBeNull();
+describe('a moment', () => {
+  /* Today's clock is long past the play's end; the moment is a day and a half in. */
+  const past = (over: Partial<EffectProps> = {}) => { vi.setSystemTime(NOW + 4 * DAY); const s = setup({ moment, ...over }); expect(s.container.querySelector('.dw-hotbox'), 'the smoke is drawn in the moment').not.toBeNull(); return s; };
+
+  test('a play whose end is behind the clock is drawn at the strength it had at the moment: neither full nor gone, and the clock moving changes nothing', () => {
+    const s = past();
     expect(canvas(s)).not.toBeNull();
-    expect(picture(s)).toBe(true);
-    const before = recOf(canvas(s))!.draws.at(-1)!.put!.data.slice();
-    move(s); touch(s); leave(s);
-    pass(SMOKE.touchHold + SMOKE.roll);
-    expect(Buffer.from(recOf(canvas(s))!.draws.at(-1)!.put!.data).equals(Buffer.from(before))).toBe(true);
-    expect(asked()).toBe(before0);
-    expect(s.met).not.toHaveBeenCalled();
-    expect(s.show).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'Smoke over the words', controls: [] }));
+    expect(host(s)).not.toBeNull();
+    const a = whole(AT);
+    expect(a).toBeGreaterThan(0);
+    expect(a).toBeLessThan(Math.round(SMOKE.full * 255));
+    expect(alphas(recOf(canvas(s)))).toEqual(new Set([a]));
+    act(() => { vi.setSystemTime(NOW + 7 * DAY); });
+    pass(200, 50);
+    expect(alphas(recOf(canvas(s)))).toEqual(new Set([a]));
+    expect(host(s)).not.toBeNull();
   });
 
-  test('draws the fog as it stood: full, whatever the clock says', () => {
-    vi.setSystemTime(NOW + 2.5 * DAY);
-    const s = setup({ still: true, plays: [play({ ends: iso(NOW + DAY) })] });
-    expect(alphas(recOf(canvas(s)))).toEqual(new Set([Math.round(SMOKE.full * 255)]));
-    expect(s.container.querySelector('.dw-hotbox')).not.toBeNull();
+  test('the standing play is the one up at the moment: the first whose end is after it', () => {
+    const s = past({ plays: [play({ id: 'a', ends: iso(NOW + DAY), config: { color: 'red' } }), play({ id: 'b', config: { color: 'blue' } })] });
+    expect(rgbVar(s)).toBe('0 0 255');
+  });
+
+  test('pointing clears smoke locally', () => {
+    const s = past();
+    move(s, 300, 250);
+    settle();
+    expect(alphaAt(s, 300, 150)).toBe(0);
+    expect(alphaAt(s, 700, 500)).toBe(whole(AT));
+  });
+
+  test('the Lens hold sweeps and opens the waved window', () => {
+    const s = past();
+    expect(last(s).controls).toHaveLength(1);
+    press(s);
+    pass(LINE_MS);
+    expect(readout(s)).toBe('First line of the post.');
+    pass(SWEEP_MS - LINE_MS);
+    expect(inert(s)).toBe(false);
+    expect(last(s)).toMatchObject({ state: 'Waved clear for you' });
+    release(s);
+  });
+
+  test('the words are inert while smoked, with the way-line standing in them', () => {
+    const s = past();
+    expect(inert(s)).toBe(true);
+    expect(way(s)).toHaveTextContent(SMOKED_WAY);
+    expect(s.container.querySelector('[aria-live]')).not.toBeNull();
+    expect(last(s)).toMatchObject({ state: 'Smoke over the words' });
+  });
+
+  test('the waved window ending with focus in the words, in a post with no Hot Box mark, leaves focus where it is', () => {
+    const s = past();
+    const link = s.container.querySelector('a')!;
+    press(s);
+    pass(SWEEP_MS);
+    release(s);
+    act(() => { link.focus(); });
+    expect(document.activeElement).toBe(link);
+    pass(SMOKE.waved + 200);
+    expect(inert(s)).toBe(true);
+    expect(document.activeElement).toBe(link);
+  });
+
+  test('a moment sets no thinning wake: a finite end leaves the same pending timers as no end, and the wake itself is none where fixed and one where live', () => {
+    const timers = (over: Partial<EffectProps>) => { const s = setup(over); pass(100, 50); const n = vi.getTimerCount(); s.unmount(); return n; };
+    vi.setSystemTime(NOW + 4 * DAY);
+    expect(timers({ moment })).toBe(timers({ moment, plays: [play({ ends: undefined })] }));
+    const m = { mouse: null, touch: null, rest: [], trail: [], moves: [], mover: null, sweep: null, said: 0, wavedAt: null };
+    const o = { reduced: false, animate: false, frames: true, playedAt: NOW, ends: ENDS };
+    expect(nextWake(m, AT, { ...o, fixed: false })).not.toBeNull();
+    expect(nextWake(m, AT, { ...o, fixed: true })).toBeNull();
+  });
+
+  test('save, release and met are never called, even with the post in view', () => {
+    stubObserver();
+    const s = past();
+    act(() => { watch!([{ target: area(s), isIntersecting: true, intersectionRatio: 1 }]); });
+    move(s); touch(s);
+    press(s);
+    pass(SWEEP_MS + 100);
+    release(s);
+    expect(s.met).not.toHaveBeenCalled();
+    expect(s.save).not.toHaveBeenCalled();
+    expect(s.release).not.toHaveBeenCalled();
   });
 });
 

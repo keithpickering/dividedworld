@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WORDS, thisCard } from './this.ts';
 import { characters } from './phrase-bound.ts';
-import { drawnInMoment, postTarget } from '../../../engine/rules/cards.ts';
+import { postTarget } from '../../../engine/rules/cards.ts';
 import { defaults as settings } from '../settings.ts';
 import { on } from './test-kit.ts';
 
@@ -13,11 +13,10 @@ import { on } from './test-kit.ts';
 const thisConfig = (phrase: unknown, words?: unknown) => thisCard.validateConfig(words === undefined ? { phrase } : { phrase, words });
 const thisWhy = (v: unknown) => (v as { why: string }).why;
 
-test('THIS is a common Pepperoni Cast on a post that stacks three deep, free to set, and drawn in the moment', () => {
+test('THIS is a common Pepperoni Cast on a post that stacks three deep, free to set', () => {
   assert.deepEqual([thisCard.key, thisCard.name, thisCard.alignment, thisCard.rarity, thisCard.reaches, thisCard.stack, thisCard.lasts], ['this', 'THIS', 'pepperoni', 'common', ['post'], 3, undefined]);
   assert.equal(thisCard.setPhrase?.({ phrase: 'Mario', words: 'this' }), 'Mario');
   assert.equal(thisCard.playPrice(settings, on('Mario'), { phrase: 'Mario', words: '' }), 0);
-  assert.equal(drawnInMoment(thisCard), true);
 });
 
 test('THIS\'s configuration: no words is nothing, the words are one line of at most 60 characters, and both are trimmed', () => {

@@ -2,7 +2,7 @@
  * Glitter Bomb's effect on the flakes (docs/plans/2026-11-06-shine-plan.md, Task 10; the design's sections 2, 3, 5, 6 and 8): the
  * character's posts glitter while the card is up. Three canvases go around the words: under them the settled flakes unlit, painted
  * only when what they depend on changes, and over that what the light changes; over the words the burst; none takes the pointer; the burst fires once per mount, once its burst point has stayed in the
- * middle of the view for 300 ms, and never under reduced motion or `still`; the flakes are seeded from public ids and this mount's own
+ * middle of the view for 300 ms, and never under reduced motion; the flakes are seeded from public ids and this mount's own
  * draw; a post out of view gives its flakes back and builds them again, the same, landed, when it returns. The flakes themselves are the engine's (their tests are there); here the engine's functions
  * are spies over the real ones, so what the Effect hands them and when is what is read.
  */
@@ -58,11 +58,14 @@ const read = (p: string) => fs.readFileSync(path.resolve(here, p), 'utf8');
 
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-01T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null, shownEditedAt: null };
 const play: CardPlay = { id: 'g1', card: 'glitter-bomb', layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-01T12:00:00Z', post: 'p1', reach: 'character', on: 'c1', ends: '2099-01-01T00:00:00Z' };
-const props = (still = false, kept = false): EffectProps => ({
-  post, plays: [play], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'character', still, ...(kept ? { kept: true as const } : {}),
+const props = (kept = false): EffectProps => ({
+  post, plays: [play], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'character', still: false, moment: null, ...(kept ? { kept: true as const } : {}),
   show: () => {}, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
   children: <p data-kb-words>Hello there.</p>,
 });
+/* A play's moment, as the engine hands it: its own clock, and spies on everything that would save, release or count a view. */
+const moment = () => ({ save: vi.fn(async () => ({ ok: false as const, error: 'no' })), release: vi.fn(async () => ({ ok: false as const, error: 'no' })), met: vi.fn() });
+const inMoment = (spy = moment()): EffectProps => ({ ...props(), moment: { at: Date.parse('2026-11-01T12:30:00Z') }, ...spy });
 const box = () => document.querySelector('[data-kb-glitter]') as HTMLElement;
 const under = () => box().querySelector('canvas.dw-glitter-under') as HTMLCanvasElement;
 const flash = () => box().querySelector('canvas.dw-glitter-flash') as HTMLCanvasElement;
@@ -186,10 +189,10 @@ describe('Glitter Bomb', () => {
     see(1); frames(2, 100);
     expect(makeFlakes.mock.calls[1]![0].seed).not.toBe(opts.seed);
     expect(lastFlakes().origin).not.toEqual(first);
-    /* A play's moment is the public seed alone, the same on every device. */
+    /* A play's moment draws a seed of its own per mount, like a live post. */
     cleanup();
-    render(<GlitterBombEffect {...props(true)} />);
-    expect(makeFlakes.mock.calls.at(-1)![0].seed).toBe('g1:p1');
+    render(<GlitterBombEffect {...inMoment()} />);
+    expect(makeFlakes.mock.calls.at(-1)![0].seed).toMatch(/^g1:p1:[0-9a-z]+$/u);
     expect(opts.inks).toEqual(GLITTER_INKS);
     expect(opts.holo).toBe(GLITTER_HOLO);
     expect(opts.glint).toBe(GLITTER_GLINT);
@@ -251,7 +254,7 @@ describe('Glitter Bomb', () => {
   });
 
   test('a kept post (written in the play\'s week, loaded after it) is settled at once: no burst point watched, nothing over the words, while cling and the loop run as for any live post', () => {
-    render(<GlitterBombEffect {...props(false, true)} />);
+    render(<GlitterBombEffect {...props(true)} />);
     see(1);
     frames(3);
     const f = lastFlakes();
@@ -276,27 +279,50 @@ describe('Glitter Bomb', () => {
     frames(2);
     const built = makeFlakes.mock.calls.length;
     const seed = makeFlakes.mock.calls[0]![0].seed;
-    r.rerender(<GlitterBombEffect {...props(false, true)} />);
+    r.rerender(<GlitterBombEffect {...props(true)} />);
     frames(2, 100);
     expect(makeFlakes).toHaveBeenCalledTimes(built);
     expect(makeFlakes.mock.calls.at(-1)![0].seed).toBe(seed);
     expect(release).not.toHaveBeenCalled();
   });
 
-  test('a play\'s moment (still) draws every flake landed at rest, with no burst and no cling, and registers nothing that moves', () => {
-    render(<GlitterBombEffect {...props(true)} />);
+  test('a stale still flag changes nothing: still true with no moment is the live effect, its burst arms at mid-view, cling registers and the seed is the per-mount one', () => {
+    render(<GlitterBombEffect {...{ ...props(), still: true }} />);
+    see(1);
+    frames(3);
     const f = lastFlakes();
-    expect(f.flying).toBe(0);
-    expect(f.settled.length).toBe(f.total);
-    expect(landAll).toHaveBeenCalledWith(f);
+    expect(makeFlakes.mock.calls.at(-1)![0].seed).toMatch(/^g1:p1:[0-9a-z]+$/u);
+    expect(observers.some((o) => o.opts?.rootMargin === '-20% 0px -20% 0px')).toBe(true);
     expect(burst).not.toHaveBeenCalled();
-    expect(drawBurst).not.toHaveBeenCalled();
-    expect(spies.clingRegister).not.toHaveBeenCalled();
+    aim(true);
+    frames(30, 100);
+    expect(burst.mock.calls.filter(([x]) => x === f)).toHaveLength(1);
+    expect(spies.clingRegister).toHaveBeenCalled();
+    expect(probe.draws(box())).toBeGreaterThan(0);
+  });
+
+  test('a play\'s moment is the live effect: its burst arms when the origin is mid-view, the pointer picks glitter up, and save, release and met are never called', () => {
+    const spy = moment();
+    render(<GlitterBombEffect {...inMoment(spy)} />);
+    see(1);
+    frames(3);
+    const f = lastFlakes();
+    expect(observers.some((o) => o.opts?.rootMargin === '-20% 0px -20% 0px')).toBe(true);
+    expect(burst).not.toHaveBeenCalled();
+    aim(true);
+    frames(30, 100);
+    expect(burst.mock.calls.filter(([x]) => x === f)).toHaveLength(1);
+    expect(f.fired).toBe(true);
+    frames(10, 600);
+    expect(drawBurst).toHaveBeenCalled();
+    expect(spies.clingRegister).toHaveBeenCalled();
+    expect(spies.clingRegister.mock.calls.at(-1)![0]).toBe(box().querySelector('.dw-glitter-surface'));
     fireEvent.pointerMove(box(), { clientX: 10, clientY: 10, pointerType: 'mouse' });
-    expect(spies.clingOver).not.toHaveBeenCalled();
-    expect(observers).toHaveLength(0);
-    see(1); frames(3);
-    expect(probe.draws(box())).toBe(0);
+    expect(spies.clingOver).toHaveBeenCalled();
+    expect(probe.draws(box())).toBeGreaterThan(0);
+    expect(spy.save).not.toHaveBeenCalled();
+    expect(spy.release).not.toHaveBeenCalled();
+    expect(spy.met).not.toHaveBeenCalled();
   });
 
   test('the surface is sticky for cling, the host hands the pointer to it, and unmounting unregisters it, leaves the loop and drops the loose flakes', () => {
@@ -564,11 +590,35 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(makeFlakes).toHaveBeenCalledTimes(1);
   });
 
-  test('a moment (still) redraws when the board changes, with one more read', async () => {
-    render(<GlitterBombEffect {...props(true)} />);
+  test('a moment redraws when the board changes, with one more read, like a live post', async () => {
+    render(<GlitterBombEffect {...inMoment()} />);
+    see(1); frames(2);
     const before = vi.mocked(bandFor).mock.calls.length;
     await boardChange('dark');
     expect(vi.mocked(bandFor).mock.calls.length).toBe(before + 1);
+  });
+
+  test('an unmount mid-burst lets the flakes go, drops the over canvas and the cling registration, and the next mount fires its own burst', () => {
+    const r = render(<GlitterBombEffect {...props()} />);
+    fire(100);
+    const first = lastFlakes();
+    const canvasOver = over();
+    const face = box().querySelector<HTMLElement>('.dw-glitter-surface')!;
+    expect(first.flying).toBeGreaterThan(0);
+    expect(canvasOver.width).toBe(300);
+    r.unmount();
+    expect(release).toHaveBeenCalledWith(first);
+    expect(first.flying).toBe(0);
+    expect(spies.clingUnregister).toHaveBeenCalledWith(face);
+    expect(document.contains(canvasOver)).toBe(false);
+    expect(flakesModule.burstProbe.inFlight()).toBe(0);
+    render(<GlitterBombEffect {...props()} />);
+    fire(2000);
+    const second = lastFlakes();
+    expect(second).not.toBe(first);
+    expect(burst.mock.calls.filter(([f]) => f === second)).toHaveLength(1);
+    expect(second.flying).toBeGreaterThan(0);
+    expect(over().width).toBe(300);
   });
 
   test('the box is measured by getBoundingClientRect, fractions included, and the backing store is round(box x density)', () => {
@@ -583,7 +633,7 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(makeFlakes.mock.calls[0]![0].box).toEqual({ w: 300.4, h: 119.6 });
   });
 
-  test('the over canvas is sized only while a burst runs, zeroed when it ends, and never sized for still', () => {
+  test('the over canvas is sized only while a burst runs, zeroed when it ends', () => {
     render(<GlitterBombEffect {...props()} />);
     expect(over().width).toBe(0);
     see(0.2); frames(3);
@@ -596,10 +646,6 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(lastFlakes().flying).toBe(0);
     expect(over().width).toBe(0);
     expect(over().height).toBe(0);
-    expect(under().width).toBe(300);
-    cleanup();
-    render(<GlitterBombEffect {...props(true)} />);
-    expect(over().width).toBe(0);
     expect(under().width).toBe(300);
   });
 

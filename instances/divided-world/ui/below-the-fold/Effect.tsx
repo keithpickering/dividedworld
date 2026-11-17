@@ -18,8 +18,8 @@
  * scrub from a press on it (it would otherwise take the pointer and swallow the click once the post is open). Nothing is stopped: a
  * press on the bar reaches every listener above it, Stick Around's hold among them.
  *
- * In a play's moment (`still`) the post is drawn folded, with the bar disabled and no handler bound, and the Lens is given the
- * folded view with no controls. The Lens says how the fold ends (`show`): the reader's press on Show post.
+ * In a play's moment there is no `fold`, so the effect draws its own bar as in the ORIGIN box: the post starts folded, the bar opens it and folds it
+ * again, and the Lens is given the same press control. The Lens says how the fold ends (`show`): the reader's press on Show post.
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -28,10 +28,10 @@ import './fold.css';
 /** The Lens's way out of the fold, for either state (the bar is its own way out and its own way back). */
 export const LENS_ENDS = 'Ends when you press Show post.';
 
-export function BelowTheFoldEffect({ show, met, still, fold, children }: EffectProps) {
+export function BelowTheFoldEffect({ show, met, moment, fold, children }: EffectProps) {
   const [ownOpen, setOwnOpen] = useState(false);
   const region = useId();
-  const shown = fold ? fold.open : ownOpen && !still;
+  const shown = fold ? fold.open : ownOpen;
   const toggle = fold ? fold.toggle : () => setOwnOpen((o) => !o);
   const press = fold?.toggle;
 
@@ -44,27 +44,27 @@ export function BelowTheFoldEffect({ show, met, still, fold, children }: EffectP
       state: shown ? 'Open for you' : 'Folded for you',
       ends: LENS_ENDS,
       yours: !shown,
-      controls: still ? [] : [{ kind: 'press', label, run }],
+      controls: [{ kind: 'press', label, run }],
       notes: {},
     };
     show(view);
-  }, [show, shown, still, press]);
+  }, [show, shown, press]);
   useEffect(() => () => show(null), [show]);
 
-  /* The reader has met the card when the bar is first drawn; a moment meets nothing. */
+  /* The reader has met the card when the bar is first drawn (a moment meets nothing). */
   const met1 = useRef(false);
   useEffect(() => {
-    if (still || met1.current) return;
+    if (moment !== null || met1.current) return;
     met1.current = true;
     met();
-  }, [met, still]);
+  }, [met, moment]);
 
   /* In the post's row the engine draws the bar; this draws the words alone. */
   if (fold) return <>{children}</>;
 
   return (
     <div className="dw-fold" data-kb-fold>
-      <button type="button" className="dw-fold-bar" data-kb-over-ink="" aria-expanded={shown} aria-controls={region} disabled={still} onClick={still ? undefined : toggle}>
+      <button type="button" className="dw-fold-bar" data-kb-over-ink="" aria-expanded={shown} aria-controls={region} onClick={toggle}>
         <span className="dw-fold-words">{shown ? 'Hide post' : 'Show post'}</span>
         <svg className="dw-fold-chevron" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false" data-dw-open={shown ? '' : undefined}>
           <path d="M2 4.25 6 8.25 10 4.25" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

@@ -55,8 +55,8 @@ export function filterTrusted(env: FilterEnv = {}): boolean {
 export const AXIS_MIN = 0.85;
 export const AXIS_MAX = 1.15;
 /**
- * A hash (FNV-1a) of ids, so a play's id (public) gives the same number for every reader and on every replay. A moment's seed is made the same
- * way from the plays' ids (Effect.tsx).
+ * A hash (FNV-1a) of ids, so a play's id (public) gives the same number for every reader and on every replay. The effect seeds its settle sound's picks the same
+ * way (Effect.tsx).
  */
 export function seedOfIds(ids: readonly string[]): number {
   let h = 2166136261;
@@ -82,7 +82,7 @@ export interface DentShape {
 /**
  * A dent's shape, from its play's id alone, through the seeded generator of body.ts: nothing about the reader and not the run's own seed, so a
  * given play's dent has the same shape for every reader and on every replay, and three plays' dents are not copies. (Where it lands is
- * the run's, and changes each run.) The id is salted with `dent|` so the shape does not move in step with a moment's seed from the same id.
+ * the run's, and changes each run.) The id is salted with `dent|` so the shape does not move in step with the settle sound's seed from the same id.
  * The draws are in this order: `rx`, `ry`, `turn`, each wave's `amp` and `phase`, the lobe count, each lobe's distance, angle, `radius` and
  * `depth`, then the 81 lattice values.
  */

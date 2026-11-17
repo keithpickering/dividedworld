@@ -2,7 +2,7 @@
  * Feelin' Fab's effect on the foil (docs/plans/2026-11-06-shine-plan.md, Task 9; the design's sections 1, 3, 5 and 6): the count of
  * Feelin' Fabs up on the post picks the grade of holographic foil drawn on a canvas under the words (one pearl, two bands, three
  * prism), seeded from public ids only. The palette is the board's, chosen by the band the board leaves free; the loop (the page's
- * one animation loop) draws it in view and not otherwise, and a play's moment draws it once at rest. The foil itself and the band are
+ * one animation loop) draws it in view and not otherwise, and a play's moment draws it the same way. The foil itself and the band are
  * tested in the engine; here the foil is a spy, so what the Effect hands it is what is read.
  */
 import fs from 'node:fs';
@@ -51,10 +51,13 @@ const read = (p: string) => fs.readFileSync(path.resolve(here, p), 'utf8');
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-02T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null, shownEditedAt: null };
 const playOf = (n: number): CardPlay => ({ id: `f${n}`, card: 'feelin-fab', layer: n, caster: 'c2', message: '', config: {}, playedAt: '2026-11-02T12:00:00Z', post: 'p1' });
 const props = (level: number): EffectProps => ({
-  post, plays: Array.from({ length: level }, (_, i) => playOf(i + 1)), states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false,
+  post, plays: Array.from({ length: level }, (_, i) => playOf(i + 1)), states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false, moment: null,
   show: () => {}, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
   children: <p data-kb-words>Hello there.</p>,
 });
+/* A play's moment, as the engine hands it: its own clock, and spies on everything that would save, release or count a view. */
+const spies = () => ({ save: vi.fn(async () => ({ ok: false as const, error: 'no' })), release: vi.fn(async () => ({ ok: false as const, error: 'no' })), met: vi.fn() });
+const inMoment = (level: number, spy = spies()): EffectProps => ({ ...props(level), moment: { at: Date.parse('2026-11-02T12:30:00Z') }, ...spy });
 const box = () => document.querySelector('[data-kb-fab]') as HTMLElement;
 const canvas = () => box().querySelector('canvas') as HTMLCanvasElement;
 const foils = () => made;
@@ -412,21 +415,39 @@ describe("Feelin' Fab", () => {
     expect(made[1]!.release).toHaveBeenCalledTimes(1);
   });
 
-  test('a play\'s moment (still) draws once at the rest light and registers nothing that moves', () => {
+  test('a stale still flag changes nothing: with still true and no moment it is the live foil, registered with the loop, drawn in view at the moving light', () => {
     const r = render(<FeelinFabEffect {...props(3)} still />);
     const host = box();
-    expect(draws()).toBe(1);
-    expect(made[0]!.opts.pattern).toBe('prism');
-    const call = made[0]!.draw.mock.calls[0]!;
-    expect(call[3]).toEqual(REST);
-    expect(call[1]).toEqual({ w: 300, h: 120 });
-    expect(canvas().width).toBe(450);
+    expect(draws()).toBe(0);
     void see(canvas(), true);
-    frames(10);
-    expect(probe.draws(host)).toBe(0);
-    expect(probe.running()).toBe(false);
-    expect(draws()).toBe(1);
+    frames(4);
+    expect(draws()).toBeGreaterThanOrEqual(2);
+    expect(made[0]!.opts.pattern).toBe('prism');
+    expect(made[0]!.draw.mock.calls[0]![3]).not.toEqual(REST);
+    expect(probe.draws(host)).toBeGreaterThanOrEqual(1);
+    expect(probe.running()).toBe(true);
     r.unmount();
+    expect(probe.draws(host)).toBe(0);
+  });
+
+  test('a play\'s moment is the live foil: it registers with the loop, draws in view with the level by the plays, and calls save, release and met never', () => {
+    const spy = spies();
+    const r = render(<FeelinFabEffect {...inMoment(3, spy)} />);
+    const host = box();
+    expect(draws()).toBe(0);
+    void see(canvas(), true);
+    frames(4);
+    expect(draws()).toBeGreaterThanOrEqual(2);
+    expect(made[0]!.opts.pattern).toBe('prism');
+    expect(box()).toHaveAttribute('data-kb-level', '3');
+    expect(made[0]!.draw.mock.calls[0]![3]).not.toEqual(REST);
+    expect(probe.draws(host)).toBeGreaterThanOrEqual(1);
+    expect(probe.running()).toBe(true);
+    r.unmount();
+    expect(probe.draws(host)).toBe(0);
+    expect(spy.save).not.toHaveBeenCalled();
+    expect(spy.release).not.toHaveBeenCalled();
+    expect(spy.met).not.toHaveBeenCalled();
   });
 
   test('reduced motion draws the post once, at the rest light, and the loop stops', async () => {
@@ -486,10 +507,13 @@ describe("Feelin' Fab", () => {
     expect(made.some((f) => f.opts.palette === FAB_STOPS.dark && f.draw.mock.calls.length > 0)).toBe(true);
   });
 
-  test('a moment (still) redraws with the other board\'s palette when the board switches, too', async () => {
-    render(<FeelinFabEffect {...props(1)} still />);
+  test('a moment redraws with the other board\'s palette when the board switches, like a live post', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    render(<FeelinFabEffect {...inMoment(1)} />);
+    void see(canvas(), true); frames(3);
     expect(made[0]!.opts.palette).toEqual(FAB_STOPS.light);
     await act(async () => { document.documentElement.setAttribute('data-kb-mode', 'dark'); await Promise.resolve(); });
+    frames(3, 200);
     expect(made.some((f) => f.opts.palette === FAB_STOPS.dark && f.draw.mock.calls.length === 1)).toBe(true);
     expect(probe.running()).toBe(false);
   });
@@ -596,10 +620,12 @@ describe("Feelin' Fab, bright", () => {
     expect(probe.running()).toBe(false);
   });
 
-  test('a moment (still) draws bright once and redraws when the mark changes', async () => {
-    render(<div className="kb-act-main" data-kb-content-area><FeelinFabEffect {...props(1)} still /></div>);
+  test('a moment draws bright and redraws when the mark changes, like a live post', async () => {
+    render(<div className="kb-act-main" data-kb-content-area><FeelinFabEffect {...inMoment(1)} /></div>);
+    void see(canvas(), true); frames(3);
     expect(made.at(-1)!.opts.palette).toEqual(FAB_STOPS.light);
     await effects(true);
+    frames(10, 1000);
     expect(made.at(-1)!.opts.palette).toEqual(FAB_BRIGHT);
     expect(bodyOfPost()).toHaveAttribute('data-kb-bright-ink');
   });
@@ -901,12 +927,27 @@ describe("Feelin' Fab drawing in a worker", () => {
     } finally { vi.useRealTimers(); }
   });
 
-  test('a play\'s moment (still) never adopts: it is drawn once, at rest, on the page, with no worker', () => {
+  test('a stale still flag changes nothing in the worker either: still true with no moment hands the canvas over and posts draws', async () => {
     render(<FeelinFabEffect {...props(3)} still />);
-    expect(transferred).toEqual([]);
-    expect(FakeWorker.made).toHaveLength(0);
-    expect(draws()).toBe(1);
-    expect(canvas().width).toBe(450);
+    expect(transferred).toEqual([canvas()]);
+    void see(canvas(), true);
+    await run(2);
+    expect(made).toHaveLength(0);
+    expect(posted().length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('a play\'s moment is adopted by the worker like a live post, and its spies stay untouched', async () => {
+    const spy = spies();
+    render(<FeelinFabEffect {...inMoment(3, spy)} />);
+    expect(transferred).toEqual([canvas()]);
+    expect(worker().of('adopt')).toHaveLength(1);
+    void see(canvas(), true);
+    await run(2);
+    expect(made).toHaveLength(0);
+    expect(posted().length).toBeGreaterThanOrEqual(1);
+    expect(spy.save).not.toHaveBeenCalled();
+    expect(spy.release).not.toHaveBeenCalled();
+    expect(spy.met).not.toHaveBeenCalled();
   });
 
   test('a change of level gives the post a new canvas element (a transferred one cannot be handed over again), and lets the old go', async () => {

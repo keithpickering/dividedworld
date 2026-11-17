@@ -1,6 +1,6 @@
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect } from 'react';
+import { StrictMode, useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { CARD_NOT_ON_POST } from './SpinForm.tsx';
 import { Swapper, openThread, threadWorld } from '../composer/support.tsx';
@@ -209,7 +209,7 @@ describe('the ORIGIN box', () => {
     openSpun(w, fromCard);
     const box = await origin();
     const head = box.querySelector('.kb-origin-head-text') as HTMLElement;
-    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from Whoops! on #2 in A short thread · as it landed$/u));
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from Whoops! on #2 in A short thread · as it landed · Reset$/u));
     expect(head).not.toHaveTextContent('an Act');
     expect(within(head).getByRole('link', { name: 'Whoops! on #2 in A short thread' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
   });
@@ -274,7 +274,7 @@ describe('the ORIGIN box', () => {
     openSpun(w, spun);
     const box = await origin();
     const head = box.querySelector('.kb-origin-head-text') as HTMLElement;
-    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from Whoops! · as it landed$/u));
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from Whoops! · as it landed · Reset$/u));
     expect(within(head).queryByRole('link')).toBeNull();
   });
 
@@ -714,7 +714,7 @@ describe('the ORIGIN box\'s content area', () => {
 
 /*
  * A thread spun from a card play on a post draws that play's moment in its ORIGIN box (docs/plans/2026-11-03-effect-history-plan.md,
- * Task 6): the post as it read when the play landed, each play under it as it stood, drawn still, under the mark the box shows. The
+ * Task 6): the post as it read when the play landed, each play under it as it stood, run at the moment, under the mark the box shows. The
  * test instance's Whoops! here stacks three (so a moment draws it), and its Stick Around lifts the post (so a moment names it).
  */
 describe('the ORIGIN box of a play-spun thread', () => {
@@ -722,10 +722,10 @@ describe('the ORIGIN box of a play-spun thread', () => {
     ...testInstance,
     cards: [{ ...testInstance.cards[0]!, stack: 3 }, { ...testInstance.cards[0]!, key: 'stick-around', name: 'Stick Around' }],
   };
-  function Washy({ plays, states, still, show, children }: EffectProps) {
+  function Washy({ plays, states, still, moment, show, children }: EffectProps) {
     const washed = plays.map((p) => (states[p.id]?.state as { washed?: number } | undefined)?.washed ?? 0).join();
     useEffect(() => { show({ progress: null, state: `washed ${washed}`, yours: false, controls: [], notes: {} }); }, [show, washed]);
-    return <div data-kb-washy={still ? 'still' : 'live'} data-kb-washed={washed}>{children}</div>;
+    return <div data-kb-washy={moment ? 'moment' : 'live'} data-kb-still={String(still)} data-kb-washed={washed}>{children}</div>;
   }
   const Lift = ({ children }: EffectProps) => <div data-kb-lift>{children}</div>;
   const momentCards: CardUi[] = [
@@ -752,15 +752,148 @@ describe('the ORIGIN box of a play-spun thread', () => {
     const box = await origin();
     const frame = await within(box).findByRole('group', { name: /^As it landed/u });
     await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
-    expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'still');
+    expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'moment');
+    expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-still', 'false');
     expect(within(frame).getByText('post 2')).toBeInTheDocument();
     /* The play is the box's mark and its head's; the head says "as it landed", so the frame draws no ring or tag of its own. */
     expect(within(frame).queryByText(/Also on the post then/u)).toBeNull();
-    expect(box.querySelector('.kb-origin-head-text')!.textContent).toMatch(/ · as it landed$/u);
+    expect(box.querySelector('.kb-origin-head-text')!.textContent).toMatch(/ · as it landed · Reset$/u);
     expect(frame.querySelector('.kb-moment-ring, .kb-moment-tag')).toBeNull();
     expect(within(frame).queryByRole('button', { name: 'Back to now' })).toBeNull();
-    /* The mark is the box's one, and its Go to post still leads to the post as it is now. */
-    expect(marks(box)).toEqual(['stick-around:1']);
+    /* The box has a mark for each card drawn in the moment (Whoops!) and for the spun play's own (Stick Around), and Go to post still leads to the post as it is now. */
+    expect(marks(box).sort()).toEqual(['stick-around:1', 'whoops:1']);
+  });
+
+  test('the head has Reset, and pressing it remounts the box\'s effect from the same moment, with focus kept and the moment read once', async () => {
+    const { w, spun } = await spunFromHold();
+    const read = vi.spyOn(w.fake, 'playMoment');
+    openWith(w, spun);
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
+    await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
+    const before = frame.querySelector('[data-kb-washy]');
+    const head = box.querySelector('.kb-origin-head-text')!;
+    const reset = within(head as HTMLElement).getByRole('button', { name: 'Reset' });
+    await userEvent.click(reset);
+    await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).not.toBe(before));
+    expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4');
+    expect(document.activeElement).toBe(within(head as HTMLElement).getByRole('button', { name: 'Reset' }));
+    expect(within(box).getByRole('status').textContent).toBe('As it landed again.');
+    /* A second press is said again, by a no-break space on the end. */
+    await userEvent.click(within(head as HTMLElement).getByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(within(box).getByRole('status').textContent).toBe('As it landed again. '));
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test('what the moment says under its post stands in a foot of the box, outside the content area, and ends "Nothing you do here is saved."', async () => {
+    const { w, spun } = await spunFromHold();
+    openWith(w, spun);
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
+    await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
+    const list = await within(box).findByText('Nothing you do here is saved.');
+    expect(box.querySelector('.kb-origin-area')!.contains(list), 'the list is not inside the content area').toBe(false);
+    expect(list.closest('.kb-origin-foot'), 'the list stands in the box\'s foot').not.toBeNull();
+    expect(list.closest('.kb-origin')).toBe(box);
+    expect([...box.children].map((c) => c.className)).toEqual(['kb-origin-head', 'kb-origin-area', 'kb-origin-foot']);
+  });
+
+  test('a box spun from a post has no Reset, and neither has a box with no moment to show', async () => {
+    const { w } = await spunFromHold();
+    const fromPost = await spinFrom(w, w.ids[1]!, 'About the post');
+    const first = openWith(w, fromPost);
+    const live = await origin();
+    await waitFor(() => expect(live.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'live'));
+    expect(within(live).queryByRole('button', { name: 'Reset' })).toBeNull();
+    first.unmount();
+
+    const none = await spunFromHold();
+    /* The page carries the box's moment: the page that says none is the box with no moment to show. */
+    const page = none.w.fake.threadPage.bind(none.w.fake);
+    vi.spyOn(none.w.fake, 'threadPage').mockImplementation(async (...args) => {
+      const got = await page(...args);
+      return got && got.origin ? { ...got, origin: { ...got.origin, moment: null } } : got;
+    });
+    openWith(none.w, none.spun);
+    const box = await origin();
+    await within(box).findByText('This play has no moment to show.');
+    expect(within(box).queryByRole('button', { name: 'Reset' })).toBeNull();
+  });
+
+  /* A moment drawing two cards: Smear played first, then the Whoops! the thread is spun from. Each effect says a view with one control. */
+  const presses = { smear: vi.fn(), whoops: vi.fn() };
+  const Controlled = (key: 'smear' | 'whoops') => function Effect({ show, children }: EffectProps) {
+    useEffect(() => { show({ progress: null, state: `${key} view`, yours: false, controls: [{ kind: 'press', label: `${key} press`, run: presses[key] }], notes: {} }); }, [show]);
+    return <div data-kb-controlled={key}>{children}</div>;
+  };
+  const twoInstance = { ...testInstance, cards: [{ ...testInstance.cards[0]!, stack: 3 }, { ...testInstance.cards[0]!, key: 'smear', name: 'Smear', stack: 3 }] };
+  const twoCards: CardUi[] = [
+    { key: 'whoops', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'x', Effect: Controlled('whoops') },
+    { key: 'smear', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'x', Effect: Controlled('smear') },
+  ];
+  async function spunFromTwo() {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'smear', { message: 'smeared' });
+    w.fake.clock.advance(60_000);
+    const spunPlay = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const spun = await spinFrom(w, spunPlay, 'About that wash');
+    return { w, spun };
+  }
+  const openTwo = (w: ReturnType<typeof threadWorld>, thread: string) =>
+    renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: twoInstance, cards: twoCards });
+
+  test("a moment that draws two cards shows two marks; the spun play's row keeps React and Spin thread, the other's has neither and Go to post, with its effect's controls in the Act section", async () => {
+    const { w, spun } = await spunFromTwo();
+    /* An admin sees End this card on a live play's row, and on none of the moment's other rows. */
+    w.fake.seed.admin(w.me);
+    openTwo(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(marks(box).sort()).toEqual(['smear:1', 'whoops:1']));
+    await userEvent.click(within(box).getByRole('button', { name: /^Smear, 1 play/u }));
+    let lens = screen.getByRole('dialog', { name: 'Cards on this post' });
+    expect(await within(lens).findByText('smear view')).toBeInTheDocument();
+    await userEvent.click(within(lens).getByRole('button', { name: 'smear press' }));
+    expect(presses.smear).toHaveBeenCalledTimes(1);
+    const smearFold = within(lens).getByRole('button', { name: /^1 play · Spritey/u });
+    expect(smearFold).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(smearFold);
+    expect(smearFold).toHaveAttribute('aria-expanded', 'true');
+    expect(within(lens).queryByRole('button', { name: 'React' })).toBeNull();
+    expect(within(lens).queryByRole('button', { name: 'Spin thread' })).toBeNull();
+    expect(within(lens).queryByRole('button', { name: 'As it landed' })).toBeNull();
+    expect(within(lens).queryByRole('button', { name: 'End this card' })).toBeNull();
+    expect(within(lens).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', threadHref(w.thread, pageOf(2, 20), 2));
+    await userEvent.click(within(box).getByRole('button', { name: /^Smear, 1 play/u }));
+    await userEvent.click(within(box).getByRole('button', { name: /^Whoops!?, 1 play/u }));
+    lens = screen.getByRole('dialog', { name: 'Cards on this post' });
+    expect(await within(lens).findByText('whoops view')).toBeInTheDocument();
+    const fold = within(lens).getByRole('button', { name: /^1 play · Spritey/u });
+    /* The spun play's row is open on its own (the box's own play), the other's is folded until pressed. */
+    expect(fold).toHaveAttribute('aria-expanded', 'true');
+    expect(within(lens).getByRole('button', { name: 'React' })).toBeEnabled();
+    expect(within(lens).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
+    expect(within(lens).getByRole('button', { name: 'End this card' })).toBeInTheDocument();
+  });
+
+  test('a moment that draws only the spun play shows one mark, as before', async () => {
+    const w = threadWorld(3);
+    const only = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const spun = await spinFrom(w, only, 'About that wash');
+    openTwo(w, spun);
+    const box = await origin();
+    await within(box).findByRole('group', { name: /^As it landed/u });
+    await settle();
+    expect(marks(box)).toEqual(['whoops:1']);
+  });
+
+  test("the adding effect running twice in one mount (StrictMode) adds the moment's plays once", async () => {
+    const { w, spun } = await spunFromTwo();
+    renderIn(w.fake, <StrictMode><LoadedThread thread={spun} /></StrictMode>, { path: `/t/${spun}`, instance: twoInstance, cards: twoCards });
+    const box = await origin();
+    await waitFor(() => expect(marks(box).sort()).toEqual(['smear:1', 'whoops:1']));
+    await settle();
+    /* A play added twice would be two plays on its mark. */
+    expect(marks(box).sort()).toEqual(['smear:1', 'whoops:1']);
   });
 
   test('a later wash on the live post leaves the box as it was, read once', async () => {
@@ -1115,12 +1248,12 @@ describe('a thread spun from a card on a character', () => {
     lasts: { unit: 'day', count: 7 }, canApply: (t, e, _config, now) => landsOn({ key: 'glint', reaches: ['character'] }, t, e, now),
   };
   const glitterInstance: Instance = { ...testInstance, cards: [glint] };
-  const Glitter = ({ children, still }: EffectProps) => <div data-kb-glint={still ? 'still' : 'live'}>{children}</div>;
+  const Glitter = ({ children, moment }: EffectProps) => <div data-kb-glint={moment ? 'moment' : 'live'}>{children}</div>;
   const glitterCards: CardUi[] = [{ key: 'glint', art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Glitter.', Effect: Glitter }];
 
   /* Zed's first post (in "Kart tier list") is where Spritey's Glint was cast from; the post a reader presses it on is Zed's second in "Why are my posts shiny". */
-  function world() {
-    const fake = createFake({ instance: glitterInstance, now: () => Date.now() });
+  function world(instance: Instance = glitterInstance) {
+    const fake = createFake({ instance, now: () => Date.now() });
     const me = fake.seed.account('me');
     const other = fake.seed.account('other');
     const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
@@ -1171,8 +1304,8 @@ describe('a thread spun from a card on a character', () => {
     const box = await origin();
     const frame = await within(box).findByRole('group', { name: /^As it was spun/u });
     expect(await within(frame).findByText('pressed words')).toBeInTheDocument();
-    await waitFor(() => expect(frame.querySelector('[data-kb-glint]')).toHaveAttribute('data-kb-glint', 'still'));
-    expect(headText(box)).toMatch(/^ORIGIN · Spun from Glint on Zed, at #2 in Why are my posts shiny · as it was spunCast from #1 in Kart tier list/u);
+    await waitFor(() => expect(frame.querySelector('[data-kb-glint]')).toHaveAttribute('data-kb-glint', 'moment'));
+    expect(headText(box)).toMatch(/^ORIGIN · Spun from Glint on Zed, at #2 in Why are my posts shiny · as it was spun · ResetCast from #1 in Kart tier list/u);
     expect(within(box).getAllByRole('link', { name: 'Zed' }).map((a) => a.getAttribute('href'))).toEqual([`/c/${w.zed}`, `/c/${w.zed}`]);
     expect(within(box).getByRole('link', { name: '#2 in Why are my posts shiny' })).toHaveAttribute('href', href(w.shiny.thread, 2));
     expect(within(box).getByRole('link', { name: '#1 in Kart tier list' })).toHaveAttribute('href', href(w.cast.thread, 1));
@@ -1182,6 +1315,10 @@ describe('a thread spun from a card on a character', () => {
     expect(within(box).queryByText(/As it landed/u)).toBeNull();
     /* The card's mark is drawn, with its Go to post. */
     expect(marks(box)).toEqual(['glint:1']);
+    /* Reset in a box labelled as it was spun still says the one status the design fixes. */
+    await userEvent.click(within(box).getByRole('button', { name: 'Reset' }));
+    expect(within(box).getByRole('status')).toHaveTextContent('As it landed again.');
+    expect(within(box).getByRole('status')).not.toHaveTextContent('As it was spun');
   });
 
   test('an edit made to the pressed post afterwards leaves the box as it was', async () => {
@@ -1219,8 +1356,8 @@ describe('a thread spun from a card on a character', () => {
     const box = await origin();
     const frame = await within(box).findByRole('group', { name: /^As it landed/u });
     expect(await within(frame).findByText('cast-from words')).toBeInTheDocument();
-    await waitFor(() => expect(frame.querySelector('[data-kb-glint]')).toHaveAttribute('data-kb-glint', 'still'));
-    expect(headText(box)).toMatch(/^ORIGIN · Spun from Glint on Zed, cast from #1 in Kart tier list · as it landed$/u);
+    await waitFor(() => expect(frame.querySelector('[data-kb-glint]')).toHaveAttribute('data-kb-glint', 'moment'));
+    expect(headText(box)).toMatch(/^ORIGIN · Spun from Glint on Zed, cast from #1 in Kart tier list · as it landed · Reset$/u);
     expect(within(box).queryByText(/Cast from/u)).toBeNull();
     expect(within(box).queryByText(/as it was spun/u)).toBeNull();
   });
@@ -1231,9 +1368,11 @@ describe('a thread spun from a card on a character', () => {
     const made = await w.fake.spin(old, w.pipe, 'Spun from an old one', 'about it');
     if (!made.ok) throw new Error(made.error);
     open(w, made.value.thread.id);
-    const frame = await within(await origin()).findByRole('group', { name: /^As it landed/u });
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
     expect(await within(frame).findByText('cast-from words')).toBeInTheDocument();
-    await waitFor(() => expect(frame).toHaveTextContent(/wasn.t recorded/u));
+    /* What the moment says under its post stands in the box's foot, outside the frame. */
+    await waitFor(() => expect(box.querySelector('.kb-origin-foot')).toHaveTextContent(/wasn.t recorded/u));
   });
 
   test('a spin refused for its post says so and the next press spins from the card without the post, keeping what was typed', async () => {
@@ -1264,7 +1403,7 @@ describe('a thread spun from a card on a character', () => {
     open(w, made[0]!.id);
     const box = await origin();
     await within(box).findByRole('group', { name: /^As it landed/u });
-    expect(headText(box)).toMatch(/cast from #1 in Kart tier list · as it landed$/u);
+    expect(headText(box)).toMatch(/cast from #1 in Kart tier list · as it landed · Reset$/u);
   });
 
   test('any other refusal of a spin pressed on a post is shown as it was, and the next press still sends the post', async () => {
@@ -1294,7 +1433,7 @@ describe('a thread spun from a card on a character', () => {
     open(w, thread);
     const box = await origin();
     await within(box).findByRole('group', { name: /^As it landed/u });
-    expect(headText(box)).toMatch(/ · as it landed$/u);
+    expect(headText(box)).toMatch(/ · as it landed · Reset$/u);
     expect(within(box).queryByText(/Cast from/u)).toBeNull();
     expect(within(box).queryByRole('group', { name: /^As it was spun/u })).toBeNull();
     /* The moment the page carried is kept under the play's key: no read. */
@@ -1310,6 +1449,86 @@ describe('a thread spun from a card on a character', () => {
     expect(await within(frame).findByText('pressed words')).toBeInTheDocument();
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
     expect(readsMade(spies)).toEqual([]);
+  });
+
+  /* The post the pressed spin shows carries an older card too (a Whoops!): the box draws it, so it has a mark of its own, keyed by the post, beside the character's. */
+  describe('with older cards on the post', () => {
+    const inked: Instance = { ...testInstance, cards: [glint, { ...testInstance.cards[0]!, stack: 3 }] };
+    const said = { glint: vi.fn(), whoops: vi.fn() };
+    const Voiced = (key: 'glint' | 'whoops') => function Effect({ show, children }: EffectProps) {
+      useEffect(() => { show({ progress: null, state: `${key} view`, yours: false, controls: [{ kind: 'press', label: `${key} press`, run: said[key] }], notes: {} }); }, [show]);
+      return <div data-kb-voiced={key}>{children}</div>;
+    };
+    const art = { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' };
+    const inkedCards: CardUi[] = [
+      { key: 'glint', art, describe: () => 'Glitter.', Effect: Voiced('glint') },
+      { key: 'whoops', art, describe: () => 'x', Effect: Voiced('whoops') },
+    ];
+    const openInked = (w: World, thread: string) => renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: inked, cards: inkedCards });
+
+    test("a mark for the post's own card stands beside the character's; its row is a then row with the effect's controls and Go to post, and the spun play's effect says nothing to either strip", async () => {
+      const w = world(inked);
+      w.fake.seed.card(w.spritey, w.pressed, 'whoops', { message: 'ink' });
+      w.fake.clock.advance(60_000);
+      const thread = await spun(w, w.pressed);
+      openInked(w, thread);
+      const box = await origin();
+      await waitFor(() => expect(marks(box).sort()).toEqual(['glint:1', 'whoops:1']));
+      expect(box.querySelectorAll('.kb-marks-anchor')).toHaveLength(2);
+      await userEvent.click(within(box).getByRole('button', { name: /^Whoops!?, 1 play/u }));
+      let lens = screen.getByRole('dialog', { name: 'Cards on this post' });
+      expect(await within(lens).findByText('whoops view')).toBeInTheDocument();
+      expect(within(lens).queryByText('glint view')).toBeNull();
+      await userEvent.click(within(lens).getByRole('button', { name: 'whoops press' }));
+      expect(said.whoops).toHaveBeenCalledTimes(1);
+      const fold = within(lens).getByRole('button', { name: /^1 play · Spritey/u });
+      expect(fold).toHaveAttribute('aria-expanded', 'false');
+      await userEvent.click(fold);
+      expect(within(lens).queryByRole('button', { name: 'React' })).toBeNull();
+      expect(within(lens).queryByRole('button', { name: 'Spin thread' })).toBeNull();
+      expect(within(lens).queryByRole('button', { name: 'As it landed' })).toBeNull();
+      expect(within(lens).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', href(w.shiny.thread, 2));
+      await userEvent.click(within(box).getByRole('button', { name: /^Whoops!?, 1 play/u }));
+      await userEvent.click(within(box).getByRole('button', { name: /^Glint, 1 play/u }));
+      lens = screen.getByRole('dialog', { name: 'Cards on this character' });
+      await settle();
+      expect(within(lens).queryByText('glint view')).toBeNull();
+      expect(within(lens).queryByText('whoops view')).toBeNull();
+      expect(said.glint).not.toHaveBeenCalled();
+    });
+
+    test("the same card on the character and on the post: the post card's view survives the spun play's effect mounting, Reset and unmounting", async () => {
+      const Reach = ({ show, reach, children }: EffectProps) => {
+        useEffect(() => { show({ progress: null, state: `${reach} view`, yours: false, controls: [], notes: {} }); }, [show, reach]);
+        return <>{children}</>;
+      };
+      const w = world(inked);
+      w.fake.seed.card(w.spritey, w.pressed, 'glint', { message: 'on the post' });
+      w.fake.clock.advance(60_000);
+      const thread = await spun(w, w.pressed);
+      const view = renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: inked, cards: [{ ...inkedCards[0]!, Effect: Reach }, inkedCards[1]!] });
+      const box = await origin();
+      await waitFor(() => expect(box.querySelectorAll('.kb-marks-anchor')).toHaveLength(2));
+      const second = () => within(box.querySelectorAll<HTMLElement>('.kb-marks-anchor')[1]!).getByRole('button', { name: /^Glint, 1 play/u });
+      await userEvent.click(second());
+      expect(await within(screen.getByRole('dialog', { name: 'Cards on this post' })).findByText('post view')).toBeInTheDocument();
+      await userEvent.click(within(box).getByRole('button', { name: 'Reset' }));
+      await settle();
+      expect(within(screen.getByRole('dialog', { name: 'Cards on this post' })).getByText('post view')).toBeInTheDocument();
+      expect(screen.queryByText('character view')).toBeNull();
+      view.unmount();
+    });
+
+    test('a character-spun box whose post carries no card has no second strip', async () => {
+      const w = world(inked);
+      const thread = await spun(w, w.pressed);
+      openInked(w, thread);
+      const box = await origin();
+      await within(box).findByRole('group', { name: /^As it was spun/u });
+      await settle();
+      expect(marks(box)).toEqual(['glint:1']);
+      expect(box.querySelectorAll('.kb-marks-anchor')).toHaveLength(1);
+    });
   });
 });
 

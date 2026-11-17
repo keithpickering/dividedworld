@@ -4,8 +4,8 @@
  * once and falls to the floor as a rigid box (body.ts), where it tips, slides and sleeps. Up to three at once, each its own throw 0.35 s
  * of the world's own time after the last (see Frames). Nothing is seeded, saved or sent: each run draws its throws from a generator seeded
  * freshly from the reader's own screen (`crypto.getRandomValues`), so every run and every reader sees a different one, and the effect reads neither who wrote the post nor who
- * played the card. A play's moment (`still`) is the one exception to the freshness: seeded from the plays' ids, so it is the same each
- * time.
+ * played the card. A play's moment (`moment`) is the live run: the engine hands it the plays as they stood at the moment's time, and the post
+ * is thrown at as a live post's is, but its plays' ends are not judged (a moment draws every play handed).
  *
  * Where. The chairs' layer and the dents' shading fill the post's content area border to border, placed the way Feelin' Fab's foil and
  * Whoops!'s ink are (engine/ui/cards/body.ts: `bodyOf`, `bodyBox`, `placeLayer`, the bare `data-kb-effect-ink` mark the thread's CSS lifts
@@ -39,9 +39,6 @@
  * When. A run starts once the host's middle (`watchInView`, margin `-20% 0px -20% 0px`, as Glitter Bomb arms its burst) has been in view
  * for 300 ms, and is cleared when the post has wholly left the view, so coming back starts a new one. While a run is up a second observer,
  * without a margin, watches for that departure, and a size observer watches the box; out of view a post holds only the arming observer. A
- * moment holds no view observer but does bind the size observer: when its box changes (the moment's own words are drawn a render after it
- * mounts, and the area grows by them) the picture is drawn again from the same seed, in the box as it now is, so the layers fill the area and
- * the chairs lie on its bottom border. A callback that measures nothing different draws nothing, so the observer does not loop. A
  * play that lands while the run stands is thrown alone into the standing world, and one that ends (`useAt`) loses its chair and dent while
  * the others stay where they lie. Reduced motion has no flight, no shake and no wait (there is nothing to time): the world is built, run to
  * rest and drawn at once, without sound.
@@ -56,11 +53,11 @@
  * STAGGER_STEPS (0.35 s of simulated time), checked after every step, so a chair may enter between two steps of one frame. A wall-clock timer
  * would enter it at a step that depends on the frame rate (the cap above drops time on a slow frame), and the same seed would pile the
  * chairs differently on a slow machine and a fast one. With the count, a run's whole simulation is a pure function of its seed and the
- * content area's measured size; the reduced and moment pictures (`placeAll`) step the same STAGGER_STEPS between their throws, so they are
+ * content area's measured size; the reduced picture (`placeAll`) steps the same STAGGER_STEPS between their throws, so it is
  * the pile the animated run ends in for the same seed.
  *
  * Sound. Every animated run plays `steel-chair.hit` on each hit and one of the four settle sounds on each chair's first floor contact, in
- * the group `steel-chair`, whether it started from a scroll, from Throw again or from a new play landing; a reduced or still draw does not
+ * the group `steel-chair`, whether it started from a scroll, from Throw again or from a new play landing; a reduced draw does not
  * sound. Two limits keep a thread from being a wall of clangs: the one group (a new clang takes over the one still sounding) and the 300 ms
  * a post must be in view before a run starts. A sound that would start later than `LATE_MS` after its hit or settle is skipped.
  */
@@ -154,7 +151,7 @@ function keptRef<N>(
   return ref;
 }
 
-/** A dent: where it landed in the content area's px, and whether it is drawn at full depth from the start (reduced motion, a moment). */
+/** A dent: where it landed in the content area's px, and whether it is drawn at full depth from the start (reduced motion). */
 interface Dent { readonly play: string; readonly x: number; readonly y: number; readonly full: boolean }
 /**
  * Where the words wrapper stands in the content area, and how big it is: what the filter's coordinates are converted by; and `zone`, the height a dent
@@ -234,13 +231,14 @@ const PIECES = piecesOf(1);
 const HIT_LIFT = -project({ x: 0, y: 0, z: 0 }).y;
 
 export function SteelChairEffect(props: EffectProps) {
-  const { plays, still, show, children } = props;
+  const { plays, show, children } = props;
+  const inMoment = props.moment !== null;
   const ends = useMemo(() => plays.flatMap((p) => (p.ends !== undefined ? [Date.parse(p.ends)] : [])), [plays]);
-  const now = useAt(still ? [] : ends);
-  /* A moment draws its plays as they stood; a live post drops the plays whose end has passed (the engine goes on handing them over). */
+  const now = useAt(inMoment ? [] : ends);
+  /* A moment draws every play it is handed, as they stood; a live post drops the plays whose end has passed (the engine goes on handing them over). */
   const live = useMemo(
-    () => (still ? plays : plays.filter((p) => p.ends === undefined || Date.parse(p.ends) > now)).slice(0, MOST),
-    [plays, still, now],
+    () => (inMoment ? plays : plays.filter((p) => p.ends === undefined || Date.parse(p.ends) > now)).slice(0, MOST),
+    [plays, inMoment, now],
   );
   /* What holds for the life of the effect on the page, not of one stretch of live plays (the chairs component below unmounts when the last
      play ends and mounts again when a new one lands): whether the card has been met. */
@@ -254,7 +252,9 @@ function Bare({ show, children }: { show: EffectProps['show']; children: EffectP
   return <>{children}</>;
 }
 
-function Chairs({ live, still, show, met, children, memory }: EffectProps & { live: readonly CardPlay[]; memory: Memory }) {
+function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory }) {
+  const { live, show, met, children, memory } = props;
+  const inMoment = props.moment !== null;
   const reduced = useMotionReduced();
   const sound = useSound();
   const gameSound = useGameSound();
@@ -438,7 +438,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     };
 
     const shake = (): void => {
-      if (reduced || still) return;
+      if (reduced) return;
       wordsEl.removeAttribute('data-shake');
       void wordsEl.offsetWidth;
       wordsEl.setAttribute('data-shake', '');
@@ -504,7 +504,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     const release = (): void => {
       while (due.length > 0 && due[0]!.at <= steps) addPlay(due.shift()!.play);
     };
-    /* Reduced motion and a moment: every new throw placed and settled with the rest at once, its dent at full depth. Each throw after the
+    /* Reduced motion: every new throw placed and settled with the rest at once, its dent at full depth. Each throw after the
        first waits STAGGER_STEPS of the world's steps, as the animated run's do, so the pile is the one that run ends in for the same seed. */
     const placeAll = (plays: readonly CardPlay[]): void => {
       if (!world) return;
@@ -527,27 +527,18 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     };
 
     const meet = (): void => {
-      if (still || memory.met) return;
+      if (inMoment || memory.met) return;
       memory.met = true;
       latest.current.met();
     };
 
-    /* While a run stands: the post wholly leaving the view clears a live run, and the box's size is watched, a moment's too (its callback draws
-       the picture again from the same seed in the box as it now is; a size observer is no input and no animation). */
-    const startWatching = (): void => {
-      if (!still) stopLeave = watchInView(el, (showing) => { if (!showing) clearRun(true); });
+    /* The box's size is watched while a run stands, and also while the box measures nothing when the run arms (hidden, collapsed, a box not
+       laid out yet): the run starts when the box gets a size. Kept from the one run to the next only by `clearRun`'s disconnect; a second
+       call while an observer is bound binds nothing. */
+    const watchSize = (): void => {
       if (size || typeof ResizeObserver !== 'function') return;
       size = new ResizeObserver(() => {
-        if (still) {
-          /* A moment's observer is bound whatever the first measure said and works with no world: a box that measured nothing (hidden,
-             collapsed) is drawn when it gets a size. */
-          /* Nothing measured differently, nothing drawn: the run's own drawing changes no size, so this does not loop. The observer stays. */
-          if (!measure()) return;
-          clearRun(true, true);
-          startRun();
-          return;
-        }
-        if (!world) return;
+        if (!world) { if (measure()) startRun(); return; }
         const was = box;
         if (!measure()) return;
         resize(world, box.w - 2 * INSET, box.h - INSET, box.h - INSET);
@@ -565,31 +556,35 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       size.observe(el);
       if (body) size.observe(body);
     };
+    /* While a run stands: the post wholly leaving the view clears the run, and the box's size is watched. */
+    const startWatching = (): void => {
+      stopLeave = watchInView(el, (showing) => { if (!showing) clearRun(true); });
+      watchSize();
+    };
 
     const startRun = (): void => {
       if (running) return;
       measure();
-      if (still) startWatching();
-      if (box.w <= 0 || box.h <= 0) return;
+      if (box.w <= 0 || box.h <= 0) { watchSize(); return; }
       running = true;
-      loud = !still && !reduced;
-      const seed = still ? seedOfIds(latest.current.live.map((p) => p.id)) : freshSeed();
+      loud = !reduced;
+      const seed = freshSeed();
       rand = rng(seed);
       soundRand = rng(seedOfIds([String(seed), 'settle']));
       world = createWorld(box.w - 2 * INSET, box.h - INSET, box.h - INSET);
       const plays = latest.current.live;
       meet();
       startWatching();
-      if (still || reduced) { placeAll(plays); return; }
+      if (reduced) { placeAll(plays); return; }
       steps = 0;
       due = plays.slice(1).map((p, i) => ({ play: p, at: (i + 1) * STAGGER_STEPS }));
       if (plays[0]) addPlay(plays[0]);
       wake();
     };
 
-    const clearRun = (render: boolean, keepSize = false): void => {
+    const clearRun = (render: boolean): void => {
       stopLeave(); stopLeave = () => {};
-      if (!keepSize) { size?.disconnect(); size = null; }
+      size?.disconnect(); size = null;
       if (raf) cancelAnimationFrame(raf);
       raf = 0; lastT = 0; acc = 0;
       due = []; steps = 0;
@@ -619,22 +614,20 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
         setChairs((c) => c.filter((id) => ids.has(id)));
         setDents((d) => d.filter((x) => ids.has(x.play)));
         const fresh = plays.filter((p) => !bodyOfPlay.has(p.id) && !due.some((d) => d.play.id === p.id));
-        if (still || reduced) placeAll(fresh);
+        if (reduced) placeAll(fresh);
         else { for (const p of fresh) addPlay(p); wake(); }
       },
     };
 
-    /* A moment is drawn once and watched by nothing; a live post waits for its middle to be in view. */
-    let stopArm: () => void = () => {};
-    if (still) startRun();
-    else {
-      stopArm = watchInView(el, (showing) => {
-        clearTimeout(armTimer);
-        armTimer = undefined;
-        if (!showing || running) return;
-        if (reduced) startRun(); else armTimer = setTimeout(startRun, ARM_MS);
-      }, { rootMargin: ARM_ZONE });
-    }
+    /* A post, live or in a moment, waits for its middle to be in view. */
+    const stopArm = watchInView(el, (showing) => {
+      clearTimeout(armTimer);
+      armTimer = undefined;
+      /* A post that left the view before its box got a size waits for nothing: the arming observer starts it again. */
+      if (!showing && !running) { size?.disconnect(); size = null; }
+      if (!showing || running) return;
+      if (reduced) startRun(); else armTimer = setTimeout(startRun, ARM_MS);
+    }, { rootMargin: ARM_ZONE });
 
     return () => {
       stopArm();
@@ -647,14 +640,14 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       control.current = null;
       paintNow.current = () => {};
     };
-  }, [still, reduced, memory]);
+  }, [inMoment, reduced, memory]);
 
   /* Plays that came or went, after the run's own effect has run. */
   useEffect(() => { control.current?.sync(); }, [key]);
   /* A chair or a dent that was just rendered is placed at once, never waiting for a frame. */
   useLayoutEffect(() => { paintNow.current(); }, [chairs, dents]);
 
-  /* The Lens: how many chairs, when the first is gone, and the two controls (none in a moment). */
+  /* The Lens: how many chairs, when the first is gone, and the two controls. */
   const n = live.length;
   const soonest = live.reduce<number | null>(
     (m, p) => (p.ends === undefined ? m : m === null ? Date.parse(p.ends) : Math.min(m, Date.parse(p.ends))),
@@ -671,13 +664,13 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       state: n === 1 ? 'Dented by a chair' : `Dented by ${n} chairs`,
       ...(ends !== undefined ? { ends } : {}),
       yours: false,
-      controls: still ? [] : [
+      controls: [
         { kind: 'press', label: 'Throw again', run: replay },
         { kind: 'toggle', label: 'Game sounds', on: gameSound.on, set: gameSound.set },
       ],
       notes: {},
     };
-  }, [n, soonest, still, replay, gameSound.on, gameSound.set]);
+  }, [n, soonest, replay, gameSound.on, gameSound.set]);
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 

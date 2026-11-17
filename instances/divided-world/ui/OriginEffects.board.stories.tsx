@@ -5,10 +5,11 @@
  * renders no play function, so the spec moves the pointer itself. Open them at 1440 by 1120, the phone's twin at 390 by 844.
  *
  * - `Whoops`: a post of three lines, edited (so Last edited shows), with Whoops! on it, the box showing it live. `WhoopsLanded`: the same, spun from the
- *   Whoops! play, so the box shows the play's moment, "as it landed". `WhoopsPhone`: as `Whoops`, at the phone's width.
+ *   Whoops! play, so the box shows the play's moment, "as it landed", which is playable: a scrub washes its ink and Reset brings it back. `WhoopsPhone`: as `Whoops`, at the phone's width.
  * - `Fab`: one line with Feelin' Fab on it, live. `FabBright`: the same with a quote in it, Brighter effects on, and Feelin' Fab on the spin's opening
  *   post too.
- * - `GlitterSpun`: a Glitter Bomb on a character, spun from a post of theirs ("as it was spun"), its glitter still.
+ * - `GlitterSpun`: a Glitter Bomb on a character, spun from a post of theirs ("as it was spun"), its glitter live: a moment is playable (docs/plans/2026-11-16-playable-moments-design.md). `GlitterOverWhoops` (and its `Phone` twin): the same, the post carrying an older, part-washed Whoops!, so the box has a second strip of marks for it.
+ * - `HotBoxLanded`, `ChairOverWhoops`: a thread spun from a Hot Box play, so the box shows its moment (a smoke to clear by hand), and from a Steel Chair play on a post with an older, part-washed Whoops!, so the box draws both cards and has two marks. Each has a `Phone` twin.
  * - `ChairLanded`: a post that reads `!` with Steel Chair on it, spun from the play, so the box shows the play's moment (issue #768). `ChairLandedPhone`: the same at the phone's width.
  * - `HotBox`: three lines with Hot Box on it, live. `Chair`: three lines with Steel Chair on it, live. `ChairShort`: one short line with Steel Chair.
  * - `GlitterOver`: Glitter Bomb on the character who spun the thread (who also has a post on its first page, as the server requires), the box a plain post by another character, live, over the glittered opening post.
@@ -28,10 +29,14 @@ import { foilProbe } from '../../../engine/ui/shine/foilClient.ts';
 import { cling } from '../../../engine/ui/shine/flakes.ts';
 import { probe } from '../../../engine/ui/shine/loop.ts';
 import { cardOf, type World } from '../../../engine/ui/story.tsx';
+import { packStroke } from '../cards/whoops/points.ts';
+import { BRUSH_PX, brushOf } from '../cards/whoops/scrub.ts';
 
 declare global {
   interface Window {
     /** The nth foil canvas of the ORIGIN box, as the worker that draws it holds it (the canvas's own size where the page draws it): e2e/origin-effects.spec.ts reads the backing size through it, since a handed-over canvas cannot be read on the page. */
+    /** How many times the page asked the backend to save or release an effect's state since the story mounted (the fake's own `saveEffect` and `releaseEffect`, counted as they are called): e2e/origin-effects.spec.ts holds a moment to none. */
+    __kbOriginSaves?: () => number;
     __kbOriginFab?: { size(nth: number): Promise<{ w: number; h: number } | null> };
     /**
      * What e2e/origin-effects.spec.ts reads of the shine loop and the cling layer, as e2e/shine.spec.ts reads `window.__kbShine` (Shine.board.stories.tsx, which this page does not mount): each
@@ -47,9 +52,10 @@ declare global {
   }
 }
 
-type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'chair' | 'chair-short' | 'chair-landed' | 'under' | 'over';
+type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'chair-landed' | 'chair-whoops' | 'glitter-whoops' | 'under' | 'over';
 
 const DAY = 86_400_000;
+const MINUTE = 60_000;
 /** The spun thread's title, which the page finds it by. */
 const SPUN = 'Spun out of the box';
 /** The world's spin, done: a story's world is made before it renders, and the thread's page is read once, so it is read after this. */
@@ -58,6 +64,10 @@ let seeded: Promise<void> = Promise.resolve();
 let quiet = false;
 const CYAN = '#19e3ff';
 const PINK = '#ff69b4';
+
+/* Strokes across the top of the box's area, in shares with its aspect, a brush apart, packed as the card saves them: nine rows, washed twice each, so the older Whoops! of `ChairOverWhoops` is part washed when the chair lands. */
+const WHERE = brushOf(BRUSH_PX, { w: 988, h: 330 });
+const PARTLY = Array.from({ length: 18 }, (_, n) => packStroke({ tool: 'wash', ...WHERE, points: [[0, 0.05 + (n % 9) * (WHERE.width * WHERE.aspect) * 0.7], [1, 0.05 + (n % 9) * (WHERE.width * WHERE.aspect) * 0.7]] }));
 
 const THREE = [
   'The physics in the original engine were never the problem, and I will say so again.',
@@ -80,12 +90,13 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   const mine = fake.seed.character(player, 'Pipewrench', first!.key);
   /* The fake's clock is brought to the page's (a play's end, and the smoke's strength, are read against it), as the Jimmy Wails stories do. */
   fake.clock.advance(Date.now() - fake.clock.now());
-  const author = fake.seed.character(fake.seed.account('kooper'), 'Kooper Trooper', first!.key);
+  const kooper = fake.seed.account('kooper');
+  const author = fake.seed.character(kooper, 'Kooper Trooper', first!.key);
   const caster = fake.seed.character(fake.seed.account('spritey'), 'Spritey', (second ?? first)!.key);
   const board = instance.boards.find((b) => !b.system)!.slug;
   const made = fake.seed.thread(board, author, 'Ranking every Mario Kart', 'Ranking every Mario Kart, worst to best.');
   const now = fake.clock.now();
-  const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'chair' ? THREE
+  const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'hotbox-landed' || shown === 'chair' || shown === 'chair-whoops' ? THREE
     : shown === 'chair-short' ? SHORT
       : shown === 'chair-landed' ? BANG
         : shown === 'bright' ? QUOTED
@@ -97,7 +108,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
      A search over 60000 seeds for one that clears the threshold over a whole byline band and the corner at every size of that spread found none (a splat is centered, and the byline is a thin strip at the top-left), so the spec reads along the byline's own row for a run of solid ink and does not rely on one point. A splat is only where its seed put it. */
   const whoops = () => ({ layer: 1, live: true, config: { color: CYAN, seed: 2591 }, message: 'cyan, obviously' });
   fake.signInAs(player);
-  quiet = shown === 'under' || shown === 'bright' || shown === 'chair-landed';
+  quiet = shown === 'under' || shown === 'bright' || shown === 'chair-landed' || shown === 'chair-whoops' || shown === 'hotbox-landed' || shown === 'glitter-whoops';
   /*
    * The opening post's own plays, seeded on the spin's own Act once the spin has answered: a spun thread's opening Act is a post for every card (cards on a spun
    * thread, docs/plans/2026-11-16-cards-on-a-spun-thread-design.md), so `FabBright`'s Feelin' Fab and `Under`'s Whoops! and Hot Box on the opening post are plays the
@@ -110,21 +121,31 @@ const worldOf = (shown: Case): World => (fake, instance) => {
       fake.seed.card(author, act, cardOf(instance.cards, 'hot-box').key, { layer: 2, live: true, config: { color: PINK }, message: 'Smoke out', ends: new Date(now + 3 * DAY).toISOString() });
     }
   };
-  const spun = (from: string, at?: string) => {
-    seeded = fake.spin(from, mine, SPUN, 'Carrying on over here.', undefined, at).then((answer) => {
+  const spun = (from: string | Promise<string>, at?: string) => {
+    seeded = Promise.resolve(from).then((play) => fake.spin(play, mine, SPUN, 'Carrying on over here.', undefined, at)).then((answer) => {
       if (!answer.ok) throw new Error(`the spin was refused: ${answer.error}`);
       opening(answer.value.act.id);
       /* Glitter Bomb is a play on a character, and the server delivers a character's plays only with a post of that character on the page: so the spinner has a post on the first page too. */
       if (shown === 'over') fake.seed.post(answer.value.thread.id, mine, 'And a post of my own, so that the glitter on me is delivered with this page.');
     });
   };
-  if (shown === 'glitter') {
+  if (shown === 'glitter' || shown === 'glitter-whoops') {
     /* A card on a character, cast from a post of one thread and pressed on a post of that character's in another, as the spin-at-post stories do. */
     const cast = fake.seed.thread(board, author, 'Where the bomb was cast', 'The post the bomb was cast from.');
     const shiny = fake.seed.thread(board, mine, 'Why are my posts shiny', 'A post of mine.');
     const pressed = fake.seed.post(shiny.thread, author, THREE);
     const play = fake.seed.reach(caster, 'character', author, cardOf(instance.cards, 'glitter-bomb').key, { post: cast.act, ends: now + 5 * DAY, message: 'Sparkle.' });
-    spun(play, pressed);
+    if (shown === 'glitter') { spun(play, pressed); return; }
+    /* The pressed post carries an older, part-washed Whoops! (saved as its author, who is signed in only for it): the spin's moment draws it around the glitter, so the box has a second strip of marks beside the character's, for the post's own card. */
+    const older = fake.seed.card(caster, pressed, cardOf(instance.cards, 'whoops').key, whoops());
+    spun((async () => {
+      fake.clock.advance(MINUTE);
+      fake.signInAs(kooper);
+      const saved = await fake.saveEffect(older, author, { strokes: PARTLY });
+      fake.signInAs(player);
+      if (!saved.ok) throw new Error(`the wash was refused: ${saved.error}`);
+      return play;
+    })(), pressed);
     return;
   }
   if (shown === 'over') {
@@ -146,6 +167,27 @@ const worldOf = (shown: Case): World => (fake, instance) => {
     /* The thread is spun from the play, so the box shows the chair's moment, "as it landed" (the case of issue #768). */
     const play = fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
     spun(play);
+    return;
+  }
+  if (shown === 'hotbox-landed') {
+    /* The thread is spun from the smoke's play, so the box shows its moment: the smoke as thick as it was when it landed, on a page that has since run for minutes. */
+    const play = fake.seed.card(caster, post, cardOf(instance.cards, 'hot-box').key, { layer: 1, live: true, config: { color: PINK }, message: 'Smoke out', at: now, ends: new Date(now + 3 * DAY).toISOString() });
+    spun(play);
+    return;
+  }
+  if (shown === 'chair-whoops') {
+    /* A Whoops! that landed first and was part washed by the post's author, then a Steel Chair on top of it, and the thread spun from the chair: the box shows the chair's moment with both cards drawn, so it has two marks (the design's section 6). */
+    const older = fake.seed.card(caster, post, cardOf(instance.cards, 'whoops').key, whoops());
+    spun((async () => {
+      fake.clock.advance(MINUTE);
+      /* Saved as the post's author, who is signed in only for it: the story's reader is the player. */
+      fake.signInAs(kooper);
+      const saved = await fake.saveEffect(older, author, { strokes: PARTLY });
+      fake.signInAs(player);
+      if (!saved.ok) throw new Error(`the wash was refused: ${saved.error}`);
+      fake.clock.advance(MINUTE);
+      return fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 2, live: true, config: {}, message: 'Steel Chair' });
+    })());
     return;
   }
   if (shown === 'chair' || shown === 'chair-short') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
@@ -178,6 +220,16 @@ interface Args { readonly shown: Case; readonly mode?: 'light' | 'dark'; readonl
 
 function Spun({ mode = 'light', bright = false }: Args) {
   const spun = useSpun();
+  const { api } = useKayfa();
+  useEffect(() => {
+    /* The backend is the in-page fake, so a save is never a network request: it is counted where the fake takes it. */
+    let saves = 0;
+    const { saveEffect, releaseEffect } = api;
+    api.saveEffect = (...a) => { saves++; return saveEffect.apply(api, a); };
+    api.releaseEffect = (...a) => { saves++; return releaseEffect.apply(api, a); };
+    window.__kbOriginSaves = () => saves;
+    return () => { api.saveEffect = saveEffect; api.releaseEffect = releaseEffect; delete window.__kbOriginSaves; };
+  }, [api]);
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-kb-mode', mode);
@@ -229,6 +281,10 @@ export const Fab: Story = of('fab');
 export const FabBright: Story = of('bright', { bright: true });
 /** Glitter Bomb on a character, spun from a post of theirs: the box shows it as it was spun. */
 export const GlitterSpun: Story = of('glitter');
+/** Glitter Bomb on a character, spun from a post of theirs that carries an older, part-washed Whoops!: the box shows the post as it was spun with both drawn, the character's mark and a second one for the post's Whoops!. */
+export const GlitterOverWhoops: Story = of('glitter-whoops');
+/** The same at the phone's width. */
+export const GlitterOverWhoopsPhone: Story = { ...of('glitter-whoops'), globals: phone };
 /** Hot Box on a three-line post, live. */
 export const HotBox: Story = of('hotbox');
 /** Steel Chair on a three-line post, live. */
@@ -248,3 +304,11 @@ export const Under: Story = of('under');
 export const GlitterOver: Story = of('over');
 /** Whoops! at the phone's width. */
 export const WhoopsPhone: Story = { ...of('whoops'), globals: phone };
+/** Hot Box on a three-line post, the thread spun from the play: the box shows its moment, a smoke to clear by hand, and Reset in its head. */
+export const HotBoxLanded: Story = of('hotbox-landed');
+/** The same at the phone's width. */
+export const HotBoxLandedPhone: Story = { ...of('hotbox-landed'), globals: phone };
+/** A Steel Chair spun on a post that already has an older, part-washed Whoops!: the box shows the chair's moment with both drawn, and two marks. */
+export const ChairOverWhoops: Story = of('chair-whoops');
+/** The same at the phone's width. */
+export const ChairOverWhoopsPhone: Story = { ...of('chair-whoops'), globals: phone };

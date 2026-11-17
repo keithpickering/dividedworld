@@ -24,7 +24,7 @@ const play = (over: Partial<CardPlay> = {}): CardPlay => ({ id: 'b1', card: 'bli
 function setup(over: Partial<EffectProps> = {}) {
   const show = vi.fn<(view: CardView | null) => void>();
   const props: EffectProps = {
-    post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false,
+    post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false, moment: null,
     show, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post.</p>, ...over,
   };
@@ -72,17 +72,31 @@ describe('Blind Study', () => {
     }
   });
 
+  /* The moment's time is before the play's end; today's clock (NOW) is after it. */
+  const AT = Date.parse('2026-11-09T12:00:00Z');
   test('in a moment it says the same and meets nothing', () => {
     const met = vi.fn();
-    const { show } = setup({ still: true, met });
+    const { show } = setup({ moment: { at: AT }, met });
+    expect(last(show).state).toBe('Totals hidden from you');
     expect(last(show).controls).toEqual([]);
     expect(met).not.toHaveBeenCalled();
   });
 
-  test('in a moment the play was up whatever the clock says: the totals are not showing', () => {
-    const { show } = setup({ still: true, plays: [play({ ends: '2026-11-10T12:00:00Z' })] });
+  test('in a moment before the end the play is up whatever today\'s clock says: the totals are not showing, and nothing is met', () => {
+    const met = vi.fn();
+    const { show } = setup({ moment: { at: AT }, met, plays: [play({ ends: '2026-11-10T12:00:00Z' })] });
     expect(last(show).state).toBe('Totals hidden from you');
     expect(last(show).ends).toBeDefined();
+    expect(met).not.toHaveBeenCalled();
+  });
+
+  test('on a live post with the same clock the totals are showing, whatever a stale `still` flag says', () => {
+    const { show } = setup({ still: true, moment: null, plays: [play({ ends: '2026-11-10T12:00:00Z' })] });
+    expect(last(show).state).toBe('Totals are showing');
+    cleanup();
+    const met = vi.fn();
+    setup({ still: true, moment: null, met });
+    expect(met).toHaveBeenCalledTimes(1);
   });
 
   test('meets the card once when it is first drawn up, and not for a play already over', () => {

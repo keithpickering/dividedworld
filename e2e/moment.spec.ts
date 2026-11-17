@@ -119,3 +119,41 @@ for (const { story, size } of [
     expect(problems).toEqual([]);
   });
 }
+
+/**
+ * Reset is in the tag (docs/plans/2026-11-16-playable-moments-design.md, section 4): "As it landed · Reset · Back to now", Reset first, and the longer tag still stops short of the date
+ * bar's marks and stays inside the page, at a desktop's width and a phone's.
+ */
+for (const { story, size } of [
+  { story: 'boards-01-marks--as-it-landed', size: { width: 1440, height: 1120 } },
+  { story: 'boards-01-marks--as-it-landed-phone', size: { width: 390, height: 844 } },
+  { story: 'boards-01-lens--washed-clean-as-it-landed', size: { width: 1440, height: 1120 } },
+  { story: 'boards-01-lens--washed-clean-as-it-landed-phone', size: { width: 390, height: 844 } },
+]) {
+  test(`Reset is in the tag before Back to now, and the tag still clears the marks (${story})`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await page.goto(`/?fixture=boards&story=${story}`);
+    await expect(page.locator('#post-41 .kb-moment')).toBeVisible({ timeout: 15_000 });
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    const tag = page.locator('#post-41 .kb-moment-tag');
+    const reset = tag.getByRole('button', { name: 'Reset', exact: true });
+    const back = tag.getByRole('button', { name: 'Back to now', exact: true });
+    await expect(reset).toBeVisible();
+    await expect(back).toBeVisible();
+    const problems = await page.evaluate(() => {
+      const out: string[] = [];
+      const tagEl = document.querySelector<HTMLElement>('#post-41 .kb-moment-tag')!;
+      const t = tagEl.getBoundingClientRect();
+      const r = tagEl.querySelector('.kb-moment-reset')!.getBoundingClientRect();
+      const b = tagEl.querySelector('.kb-moment-back')!.getBoundingClientRect();
+      if (r.right > b.left + 1 && r.top < b.bottom && b.top < r.bottom) out.push('Reset is not before Back to now');
+      if (t.left < -1 || t.right > window.innerWidth + 1) out.push(`the tag runs off the page (${Math.round(t.left)} to ${Math.round(t.right)} of ${window.innerWidth})`);
+      for (const other of document.querySelectorAll<HTMLElement>('#post-41 .kb-act-meta > :not(time)')) {
+        const o = other.getBoundingClientRect();
+        if (o.width > 0 && t.right > o.left && t.left < o.right && t.top < o.bottom && o.top < t.bottom) out.push(`the tag runs into ${other.className}`);
+      }
+      return out;
+    });
+    expect(problems).toEqual([]);
+  });
+}

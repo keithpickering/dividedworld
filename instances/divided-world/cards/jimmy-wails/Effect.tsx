@@ -32,6 +32,10 @@ const GIFT_KEYS = ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', '
 export interface CarouselProps {
   readonly plays: readonly CardPlay[];
   readonly nameOf: EffectProps['nameOf'];
+  /*
+   * Every use of `still` in this file is the old still moment's, and is unreachable until issue #774: a moment draws neither this card nor any with a drive
+   * (`playsInMoment`, engine/ui/cards/Effects.tsx), since it holds no read of a drive's gifts. Plan 2 of docs/plans/2026-11-16-playable-moments-design.md replaces it.
+   */
   /** True where nothing moves by itself (a play's moment). */
   readonly still?: boolean;
 }

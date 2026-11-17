@@ -66,11 +66,11 @@ const postOf = (body: string) => ({ id: 'post-1', character: 'author', kind: 'po
 const CUES = [{ phrase: 'Luigi', sound: 'boo' }, { phrase: 'great', sound: 'cheer' }, { phrase: 'Mario is', sound: 'laugh' }];
 const playOf = (cues: unknown = CUES, seed = 7, id = 'lt1'): CardPlay => ({ id, card: 'laugh-track', layer: 1, caster: 'c1', message: '', config: { cues, seed }, playedAt: '2026-11-11T10:01:00.000Z', post: 'post-1' }) as CardPlay;
 
-interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly still?: boolean; readonly wrap?: 'none' | 'autocorrect-inside' | 'autocorrect-outside'; readonly posts?: number; readonly place?: 'thread' | 'origin'; readonly sounds?: boolean; readonly cardSettings?: Record<string, number> }
+interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly still?: boolean; readonly moment?: { readonly at: number } | null; readonly wrap?: 'none' | 'autocorrect-inside' | 'autocorrect-outside'; readonly posts?: number; readonly place?: 'thread' | 'origin'; readonly sounds?: boolean; readonly cardSettings?: Record<string, number> }
 
 const base = (o: Options, views: (CardView | null)[], met: () => void, body: string) => ({
   post: postOf(body), plays: o.plays ?? [playOf()], states: {}, released: new Set<string>(), written: new Map(), reader: { author: false, caster: false },
-  place: o.place ?? 'thread', reach: 'post' as const, still: o.still ?? false, save: async () => ({ ok: false as const, error: 'no' }), release: async (play: string) => ({ ok: true as const, value: { play, releasedAt: '' } }),
+  place: o.place ?? 'thread', reach: 'post' as const, still: o.still ?? false, moment: o.moment ?? null, save: async () => ({ ok: false as const, error: 'no' }), release: async (play: string) => ({ ok: true as const, value: { play, releasedAt: '' } }),
   show: (v: CardView | null) => { views.push(v); }, met, holdScreen: () => {}, marks: null, nameOf: () => 'Spritey', give: async () => ({ ok: false as const, error: 'no' }), moreGifts: async () => {}, wallet: null,
 }) as unknown as EffectProps;
 
@@ -671,35 +671,63 @@ describe('Laugh Track: the Lens', () => {
   });
 });
 
-describe('Laugh Track: a play\'s moment (still)', () => {
-  test('nothing registers, plays or binds, no piece is focusable, and the Lens says how many places with no controls', () => {
-    const m = mount({ still: true });
-    expect(hub.specs).toHaveLength(0);
-    expect(hub.offs).toHaveLength(0);
-    expect(pieces()).toHaveLength(5);
-    for (const p of pieces()) {
-      for (const a of ['tabindex', 'role', 'aria-label']) expect(p).not.toHaveAttribute(a);
-      expect(p).not.toHaveClass('dw-lt-fired');
-      fireEvent.pointerEnter(p, { pointerType: 'mouse' }); fireEvent.click(p); fireEvent.keyDown(p, { key: 'Enter' }); p.focus();
-    }
-    expect(heard.play).not.toHaveBeenCalled();
-    expect(heard.loop).not.toHaveBeenCalled();
-    expect(hub.quiets).toHaveLength(0);
-    expect(m.met).not.toHaveBeenCalled();
-    expect(lastView(m)).toMatchObject({ state: '5 places', controls: [], yours: false, notes: {} });
-    expect(lastView(m).progress).toBeNull();
-    expect(viewProblems(lastView(m), { holds: false, covers: false })).toEqual([]);
+describe('Laugh Track: a play\'s moment', () => {
+  test('in a moment its places register, are buttons, and a press on one asks the mixer for the cue', () => {
+    const m = mount({ moment: { at: 1 } });
+    expect(live()).toHaveLength(5);
+    expect(buttons()).toHaveLength(5);
+    act(() => { fireEvent.click(buttons()[0]!); });
+    expect(heard.play).toHaveBeenCalledWith(take('boo', 0), PLAYED);
+    expect(buttons()[0]).toHaveClass('dw-lt-fired');
+    expect(lastView(m).controls.map((c) => c.label)).toEqual(['Game sounds']);
   });
 
-  test('a moment with one place says "1 place"', () => {
-    const m = mount({ still: true, plays: [playOf([{ phrase: 'Mario is', sound: 'laugh' }])] });
-    expect(lastView(m).state).toBe('1 place');
+  test('in a moment nothing is met by a press on a place, where live it is met once', () => {
+    const m = mount({ moment: { at: 1 } });
+    act(() => { fireEvent.click(buttons()[0]!); fireEvent.click(buttons()[1]!); });
+    expect(m.met).not.toHaveBeenCalled();
+    cleanup();
+    const live1 = mount();
+    act(() => { fireEvent.click(buttons()[0]!); });
+    expect(live1.met).toHaveBeenCalledTimes(1);
+  });
+
+  test('in a moment the keyboard path works: arrows rove between places and Enter plays', () => {
+    mount({ moment: { at: 1 } });
+    const [a, b] = buttons();
+    act(() => { a!.focus(); fireEvent.keyDown(a!, { key: 'ArrowRight' }); });
+    expect(b).toHaveFocus();
+    act(() => { fireEvent.keyDown(b!, { key: 'Enter' }); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+  });
+
+  test('the live form does not depend on `still`: handed still: true with no moment, places register and the Lens holds Game sounds', () => {
+    const m = mount({ still: true, moment: null });
+    expect(live()).toHaveLength(5);
+    expect(buttons()).toHaveLength(5);
+    expect(lastView(m).controls.map((c) => c.label)).toEqual(['Game sounds']);
+    expect(lastView(m).state).toBe('0 of 5 places heard');
+  });
+
+  test('a moment ended mid-cue (Reset) after a press leaves no place registered', () => {
+    const m = mount({ moment: { at: 1 } });
+    act(() => { fireEvent.click(buttons()[0]!); });
+    expect(live().length).toBeGreaterThan(0);
+    m.unmount();
+    expect(live()).toHaveLength(0);
+  });
+
+  test('a moment with the mixer locked (the play answers nothing): a click does not throw and the place still shows as fired', () => {
+    heard.play.mockImplementation(async () => null);
+    mount({ moment: { at: 1 } });
+    expect(() => { act(() => { fireEvent.click(buttons()[0]!); }); }).not.toThrow();
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    expect(buttons()[0]).toHaveClass('dw-lt-fired');
   });
 
   test('a moment with no place says "No cues in this version"', () => {
-    const m = mount({ still: true, body: 'Nothing here.' });
+    const m = mount({ moment: { at: 1 }, body: 'Nothing here.' });
     expect(lastView(m).state).toBe('No cues in this version');
-    expect(lastView(m).progress).toBeNull();
   });
 
   test('the ORIGIN box behaves as the thread does', () => {
@@ -788,6 +816,17 @@ describe('Laugh Track: on a real page', () => {
   });
   const see = () => act(() => { const io = FakeObserver.all[0]!; io.cb([...io.seen].map((target) => ({ target, isIntersecting: true }))); });
   const LUIGI = { body: 'Luigi wins.', plays: [playOf([{ phrase: 'Luigi', sound: 'boo' }])] };
+
+  test('a moment ended mid-cue (Reset) stops the murmur it raised', async () => {
+    const m = mount({ moment: { at: 1 }, ...LUIGI });
+    see();
+    let t = 0;
+    for (let i = 0; i < 50; i++) { t += 100; await step(t); }
+    expect(heard.loop).toHaveBeenCalledTimes(1);
+    expect(heard.handle.stop).not.toHaveBeenCalled();
+    m.unmount();
+    expect(heard.handle.stop).toHaveBeenCalledTimes(1);
+  });
 
   test('a place resting on the line for five seconds plays no take: its mark is full and the titter\'s loop is raised, one loop however many posts there are; a click plays the take and holds the loop at nothing', async () => {
     const m = mount({ posts: 2, ...LUIGI });

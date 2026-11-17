@@ -6,7 +6,8 @@
  * name is `nameOf(post.character)`. An admin's end reverses the play and the effect is gone, so it draws no line.
  *
  * It never reads who played the card. The time is read against the clock (`useAt` redraws it when the end passes, and the engine re-reads
- * the page about a second after it); a moment (`still`) is drawn as the play was up, binds nothing and meets nothing.
+ * the page about a second after it). In a play's moment (`moment`) the time is the moment's, which does not advance, so the play is as it was
+ * then; a moment meets nothing (`docs/plans/2026-11-16-playable-moments-design.md`, section 3).
  */
 import { useContext, useEffect, useRef } from 'react';
 import type { CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -16,20 +17,22 @@ import { ThreadCtx } from '../../../../engine/ui/thread/context.ts';
 import { dayAndTime } from '../../../../engine/ui/characters/format.ts';
 import './whodunnit.css';
 
-export function WhodunnitEffect({ post, plays, reader, show, met, still, nameOf, children }: EffectProps) {
+export function WhodunnitEffect({ post, plays, reader, show, met, moment, nameOf, children }: EffectProps) {
   /* The veil's play: one fits on a post, and a play an admin ended, or that did not take, is no veil. */
   const play = plays.find((p) => !p.reversed && !p.untaken && !p.caught && !p.faceDown);
   const ends = play?.ends;
   const endsAt = ends === undefined ? Number.NaN : Date.parse(ends);
-  const now = useAt(Number.isNaN(endsAt) ? [] : [endsAt]);
+  /* The hook is always called; a moment's time is its own and fixed, so nothing wears off while a reader looks. */
+  const clock = useAt(Number.isNaN(endsAt) || moment !== null ? [] : [endsAt]);
+  const now = moment?.at ?? clock;
   /*
    * Over is the time passed AND the post's character no longer the stand-in. The engine re-reads the page about a second after the end, and until
    * then the post still carries the stand-in, so the line would name "Anonymous" and the Lens would say the name is back while it is not: the effect
-   * stays in its up view until the read that carries the true character arrives. A moment (`still`) drew the play while it was up (the engine drops a
-   * play whose end is not after the moment's time before drawing), so it is up whatever the clock says.
+   * stays in its up view until the read that carries the true character arrives. A moment judges the end at its own time (the engine drops a play
+   * whose end is not after the moment's time before drawing), so there the play is up whatever today's clock says.
    */
   const standIn = useContext(ThreadCtx)?.standIn;
-  const over = !still && !Number.isNaN(endsAt) && endsAt <= now && !(standIn?.(post.character) ?? false);
+  const over = !Number.isNaN(endsAt) && endsAt <= now && !(standIn?.(post.character) ?? false);
   const there = play !== undefined;
   const author = reader.author;
 
@@ -54,10 +57,10 @@ export function WhodunnitEffect({ post, plays, reader, show, met, still, nameOf,
   /* The reader has met the card when its post is first drawn; a moment meets nothing. */
   const met1 = useRef(false);
   useEffect(() => {
-    if (still || !there || met1.current) return;
+    if (moment !== null || !there || met1.current) return;
     met1.current = true;
     met();
-  }, [met, still, there]);
+  }, [met, moment, there]);
 
   return (
     <>

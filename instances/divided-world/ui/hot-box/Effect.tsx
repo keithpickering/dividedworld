@@ -6,7 +6,7 @@
  * reader's own and on this screen only: nothing is saved, sent, counted or broadcast, so the effect reads neither who wrote the post nor who played the
  * card, and calls neither `save` nor `release`.
  *
- * Which play. The engine goes on handing an ended play to an effect, so this decides for itself whether its play is still up, against the page's clock
+ * Which play. The engine goes on handing an ended play to an effect, so this decides for itself whether its play is still up, against the page's clock, or `moment.at` in a moment
  * (`useAt` redraws when the soonest end passes, as Whodunnit?'s does). The first play whose end is ahead is the one drawn, so a second Hot Box cast after
  * the first ended is the one that shows. With none, the words are drawn alone.
  *
@@ -51,8 +51,10 @@
  * Nothing here is stopped or prevented: the pointer is read passively on the content area, and a press reaches every listener above it. A finger's
  * vertical swipe scrolls the page as ever (`touch-action: pan-y` on the host); its drag across a line moves its clearing and leaves a wake.
  *
- * In a play's moment (`still`) the fog is drawn once as it stood, at full strength, from the model with nothing cleared: no handler, no control, nothing
- * inert, no timer, and nothing met. The page's clock is `api.now()` throughout, never the page's own `Date`; the painter's own cost is a duration on the
+ * In a play's moment (`moment`, docs/plans/2026-11-16-playable-moments-design.md) the effect is the live one in every way but the clock of the smoke: the
+ * standing play is the one up at `moment.at` and its strength is the strength then, fixed, so the fog does not thin as the page's time passes. The reader's
+ * own pointer, hold, wave and the rest are as live (the engine gives a moment's reader no save, release or give, and a `met` that does nothing). The
+ * reader's clearings and the held sweep run on the page's clock, `api.now()`, never the page's own `Date`; the painter's own cost is a duration on the
  * page's timer (`performance.now`), compared with no time the data holds.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
@@ -365,9 +367,9 @@ function velocityOf(m: Model, now: number): { x: number; y: number } {
 
 /**
  * When the model next needs to be looked at (an epoch ms), or null: a line of the sweep finishing, a post's wave ending, a clearing closing, a trail point
- * shutting (where no frame draws the trail: `frames` is false), the strength moving a hundredth. `animate` is the forced-colors mask in view, which is moved by this timer and nothing else.
+ * shutting (where no frame draws the trail: `frames` is false), the strength moving a hundredth (none where `fixed`: the strength is taken at a fixed moment, so no wake is needed as it thins). `animate` is the forced-colors mask in view, which is moved by this timer and nothing else.
  */
-function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonly animate: boolean; readonly still: boolean; readonly frames: boolean; readonly playedAt: number; readonly ends: number }): number | null {
+export function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonly animate: boolean; readonly fixed: boolean; readonly frames: boolean; readonly playedAt: number; readonly ends: number }): number | null {
   const at: number[] = [];
   const ticks = o.animate && !o.reduced;
   const sw = m.sweep;
@@ -401,7 +403,7 @@ function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonl
     if (now < clear) at.push(clear);
     else if (now < clear + SMOKE.roll) at.push(ticks ? now + TICK_MS : clear + SMOKE.roll);
   }
-  if (!o.still && Number.isFinite(o.ends) && o.ends > o.playedAt && now < o.ends) {
+  if (!o.fixed && Number.isFinite(o.ends) && o.ends > o.playedAt && now < o.ends) {
     const span = o.ends - o.playedAt;
     const s = strength(now, o.playedAt, o.ends);
     at.push(o.ends - (Math.floor(s * 100 - 1e-9) / 100) * span);
@@ -473,13 +475,14 @@ function maskFor(discs: readonly { readonly x: number; readonly y: number }[], r
 /* -------------------------------------------------------------------------------- the effect ---- */
 
 export function HotBoxEffect(props: EffectProps) {
-  const { plays, still, show, children } = props;
+  const { plays, moment, show, children } = props;
   /* A play an admin ended, or that did not take, or a trap caught, is no smoke. */
   const standing = plays.filter((p) => !p.reversed && !p.untaken && !p.caught && !p.faceDown);
   const endOf = (p: CardPlay): number => { const t = p.ends === undefined ? Number.NaN : Date.parse(p.ends); return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t; };
-  const now = useAt(still ? [] : standing.map(endOf).filter(Number.isFinite));
-  /* A moment draws the play as it was up (the engine drops a play whose end is not after the moment's time), so it takes the first as given. */
-  const play = still ? standing[0] : standing.find((p) => endOf(p) > now);
+  const live = useAt(moment ? [] : standing.map(endOf).filter(Number.isFinite));
+  /* A moment's time is fixed: the play drawn is the first whose end is after it, as at that time. */
+  const now = moment ? moment.at : live;
+  const play = standing.find((p) => endOf(p) > now);
   useEffect(() => { if (!play) show(null); }, [show, play]);
   if (!play) return <>{children}</>;
   /* Keyed by the play: a second cast after the first ended starts with nothing cleared. */
@@ -493,7 +496,7 @@ export function HotBoxEffect(props: EffectProps) {
  */
 interface Painter { field: FogField | null; level: number; steppedAt: number; stamp: number | null; seen: Set<number>; live: { readonly top: number; readonly bottom: number } | 'all' | null; paintedIn: number }
 
-function Smoke({ place, play, still, show, met, children }: EffectProps & { readonly play: CardPlay }) {
+function Smoke({ place, play, moment, show, met, children }: EffectProps & { readonly play: CardPlay }) {
   const { api } = useKayfa();
   const reduced = useMotionReduced();
   const forced = useForcedColors();
@@ -520,10 +523,12 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
   const seed = useMemo(() => seedOf(play.id), [play.id]);
 
   /* The fog moves with motion, off the forced-colors path (which has no layer), and not while the post is waved (nothing is drawn then; the render at the end of the wave draws again). The layer holds tiles only near the window, so whether the post is in view is not this flag's question. */
-  const waved = !still && isWaved(model.current.wavedAt, at);
-  const loop = !still && !reduced && !forced && !waved;
-  const latest = useRef({ frame, reduced, forced, still, loop, rgb, seed, playedAt, ends, inView });
-  useLayoutEffect(() => { latest.current = { frame, reduced, forced, still, loop, rgb, seed, playedAt, ends, inView }; });
+  const waved = isWaved(model.current.wavedAt, at);
+  const loop = !reduced && !forced && !waved;
+  /* The time the smoke's strength is taken at: a moment's, fixed, or null for the page's clock. */
+  const fixedAt = moment ? moment.at : null;
+  const latest = useRef({ frame, reduced, forced, fixedAt, loop, rgb, seed, playedAt, ends, inView });
+  useLayoutEffect(() => { latest.current = { frame, reduced, forced, fixedAt, loop, rgb, seed, playedAt, ends, inView }; });
 
   /*
    * Time. One timer, set for the soonest thing the model needs looked at after the last time it was (`seen`): a line of the sweep finishing, the wave's end,
@@ -537,7 +542,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
     clearTimeout(timer.current);
     timer.current = undefined;
     const L = latest.current;
-    const wake = nextWake(model.current, seen.current, { reduced: L.reduced, animate: L.forced && L.inView, still: L.still, frames: L.loop, playedAt: L.playedAt, ends: L.ends });
+    const wake = nextWake(model.current, seen.current, { reduced: L.reduced, animate: L.forced && L.inView, fixed: L.fixedAt !== null, frames: L.loop, playedAt: L.playedAt, ends: L.ends });
     if (wake === null) return;
     timer.current = setTimeout(() => stepRef.current(), Math.min(TIMER_MOST, Math.max(1, Math.ceil(wake - api.now()))));
   }, [api]);
@@ -649,17 +654,17 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
     const began = performance.now();
     const t = api.now();
     const m = model.current;
-    /* A moment draws the smoke as it stood at full strength. */
-    const s = L.still ? 1 : strength(t, L.playedAt, L.ends);
-    const g = L.still ? 0 : waveFactor(m.wavedAt, t, L.reduced);
+    /* A moment draws the smoke at the strength it had then. */
+    const s = strength(L.fixedAt ?? t, L.playedAt, L.ends);
+    const g = waveFactor(m.wavedAt, t, L.reduced);
     if (g >= 1) return;
     const rung = RUNGS[forcedLevel ?? p.level]!;
-    /* Drawn from the model with no field: a moment, reduced motion (still too), and the ladder's last rung (which drifts and fades as the full effect does). */
-    const direct = L.still || L.reduced || rung.direct;
+    /* Drawn from the model with no field: reduced motion (still), and the ladder's last rung (which drifts and fades as the full effect does). */
+    const direct = L.reduced || rung.direct;
     if (!p.field || p.field.width !== w || p.field.height !== h || p.field.cell !== rung.cell) p.field = makeField(w, h, rung.cell);
     const field = p.field, radius = holeRadius(w);
     /* The first tile painted in a frame turns it. A paint outside a frame (a commit that must not show bare words) draws the fog as it stands. */
-    if (!L.still && draw.frame !== null && (draw.frame !== p.stamp || p.seen.has(draw.index))) {
+    if (draw.frame !== null && (draw.frame !== p.stamp || p.seen.has(draw.index))) {
       p.stamp = draw.frame;
       p.seen.clear();
       turn(t, field, radius, direct, rung.rounds);
@@ -667,8 +672,8 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
     p.seen.add(draw.index);
     const alpha = fogAlpha(s) * (1 - g);
     const [r, gr, b] = L.rgb;
-    const cuts: Cuts = L.still ? { clearings: [], lead: null, rects: [] } : cutsAt(m, t, L.reduced);
-    const trail = L.still ? [] : m.trail;
+    const cuts: Cuts = cutsAt(m, t, L.reduced);
+    const trail = m.trail;
     const rows = rowsOf(field, draw.top, draw.top + draw.h), n = rows.y1 - rows.y0;
     const sc = scratchFor(field.gw, n);
     if (!sc) {
@@ -688,7 +693,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
           : { left: c.x - radius, top: c.y - radius, right: c.x + radius, bottom: c.y + radius };
       }
       paintFog(field, pageCloud(), sc.img.data, rows, {
-        color: L.rgb, alpha, t: L.reduced || L.still ? 0 : t - startedAt.current, phase: { x: L.seed % 4096, y: (L.seed >>> 12) % 4096 }, bands: cuts.rects,
+        color: L.rgb, alpha, t: L.reduced ? 0 : t - startedAt.current, phase: { x: L.seed % 4096, y: (L.seed >>> 12) % 4096 }, bands: cuts.rects,
         ...(direct ? { direct: { target: coverageOf(cuts.clearings, radius, t, L.reduced, trail), reach } } : {}),
       });
       sc.ctx.putImageData(sc.img, 0, 0);
@@ -776,22 +781,22 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
 
   /* ---- in view, and met ---- */
   useEffect(() => {
-    if (still || !areaEl) return;
+    if (!areaEl) return;
     /* The content area is what the smoke covers, so it is what is watched, with a margin above and below. */
     return watchInView(areaEl, setInView, { rootMargin: '200px 0px' });
-  }, [still, areaEl]);
-  useEffect(() => { if (!still) refresh(); }, [inView, still, refresh]);
+  }, [areaEl]);
+  useEffect(() => { refresh(); }, [inView, fixedAt, refresh]);
   /* Met waits for the first sight of the post: the layer holds tiles near the window and says nothing of them, so the observer on the area is asked for this alone. */
   const met1 = useRef(false);
   useEffect(() => {
-    if (still || !inView || met1.current) return;
+    if (moment !== null || !inView || met1.current) return;
     met1.current = true;
     met();
-  }, [still, inView, met]);
+  }, [moment, inView, met]);
 
   /* ---- the pointer: on the content area, passive, never prevented, never captured ---- */
   useEffect(() => {
-    if (still || !areaEl) return;
+    if (!areaEl) return;
     /* The pointer is read on the content area, which the smoke fills (the host where there is none), and placed in its padding box. */
     const area = areaEl;
     const at = (e: PointerEvent) => { const r = area.getBoundingClientRect(); return { x: e.clientX - r.left - area.clientLeft, y: e.clientY - r.top - area.clientTop }; };
@@ -865,12 +870,12 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
       area.removeEventListener('pointerdown', onDown);
       area.removeEventListener('pointerleave', onLeave);
     };
-  }, [still, api, changed, areaEl]);
+  }, [api, changed, areaEl]);
 
   /* ---- the hold ---- */
   const start = useCallback(() => {
     const m = model.current, L = latest.current;
-    if (L.still || (m.sweep && m.sweep.releasedAt === null) || isWaved(m.wavedAt, api.now())) return;
+    if ((m.sweep && m.sweep.releasedAt === null) || isWaved(m.wavedAt, api.now())) return;
     const words = wordsRef.current;
     const { wx, wy, ww: w, wh: h } = L.frame;
     if (!words || w <= 0 || h <= 0) return;
@@ -937,7 +942,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
   useEffect(() => {
     schedule();
     return () => clearTimeout(timer.current);
-  }, [schedule, reduced, forced, inView, still, playedAt, ends]);
+  }, [schedule, reduced, forced, inView, fixedAt, playedAt, ends]);
 
   /* The words go inert as the waved window ends. Focus is not thrown: only focus that was inside the words, which the browser would drop, goes to the post's Hot Box mark, the nearest thing that names the state and opens the way back. */
   const wasWaved = useRef(false);
@@ -949,27 +954,24 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
 
   /* ---- what the reader is shown, and what the Lens is told ---- */
   const m = model.current;
-  const held = !still && m.sweep !== null && m.sweep.releasedAt === null;
-  const s = still ? 1 : strength(at, playedAt, ends);
-  const g = still ? 0 : waveFactor(m.wavedAt, at, reduced);
+  const held = m.sweep !== null && m.sweep.releasedAt === null;
+  const s = strength(fixedAt ?? at, playedAt, ends);
+  const g = waveFactor(m.wavedAt, at, reduced);
   const state = waved ? STATE_WAVED : held ? STATE_WAVING : STATE_SMOKE;
-  /* A moment has no control to point at, so it gives the end alone. */
-  const endsText = still
-    ? (play.ends === undefined ? 'Ends when the smoke thins out.' : `${endsWords(play.ends)}.`)
-    : `Point at the words, or hold ${WAVE_LABEL}, to read.${play.ends === undefined ? '' : ` ${endsWords(play.ends)}.`}`;
-  const progress = still ? 0 : Math.round((1 - s) * 100) / 100;
+  const endsText = `Point at the words, or hold ${WAVE_LABEL}, to read.${play.ends === undefined ? '' : ` ${endsWords(play.ends)}.`}`;
+  const progress = Math.round((1 - s) * 100) / 100;
   const view = useMemo<CardView>(() => ({
-    progress, state, ends: endsText, yours: !waved && !still,
-    controls: still ? [] : [{ kind: 'hold', label: WAVE_LABEL, describe: WAVE_DESCRIBE, start, stop }],
+    progress, state, ends: endsText, yours: !waved,
+    controls: [{ kind: 'hold', label: WAVE_LABEL, describe: WAVE_DESCRIBE, start, stop }],
     notes: {},
-  }), [progress, state, endsText, waved, still, start, stop]);
+  }), [progress, state, endsText, waved, start, stop]);
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 
   void tick;
   const radius = holeRadius(frame.w);
   const cuts = forced ? cutsAt(m, at, reduced) : null;
-  const discs = cuts && !still ? hardDiscs(cuts.clearings, m.trail, at) : [];
+  const discs = cuts ? hardDiscs(cuts.clearings, m.trail, at) : [];
   const mask = cuts ? maskFor(discs, cuts.rects, s, g, radius, frame.wx, frame.wy) : undefined;
 
   /* The fog's color and alpha, for the stand-in of a band whose tile is not yet painted (hot-box.css): the same alpha the painter uses. */
@@ -978,8 +980,8 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
   return (
     <div ref={hostRef} className="dw-hotbox" data-kb-hotbox data-dw-fog-level={forcedLevel ?? 0} style={standIn}>
       {forced && <p className="dw-hotbox-sign"><strong>{state}.</strong> {endsText}</p>}
-      {!still && !waved && <p className="kb-visually-hidden dw-hotbox-way">{SMOKED_WAY}</p>}
-      <div ref={wordsRef} className="dw-hotbox-words" inert={!still && !waved} style={mask}>{children}</div>
+      {!waved && <p className="kb-visually-hidden dw-hotbox-way">{SMOKED_WAY}</p>}
+      <div ref={wordsRef} className="dw-hotbox-words" inert={!waved} style={mask}>{children}</div>
       {forced && (
         <div className="dw-hotbox-frame" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }}>
           {discs.map((c, i) => (
@@ -987,7 +989,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
           ))}
         </div>
       )}
-      {!still && <p className="kb-visually-hidden" aria-live="polite">{spoken}</p>}
+      <p className="kb-visually-hidden" aria-live="polite">{spoken}</p>
     </div>
   );
 }

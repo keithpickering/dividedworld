@@ -483,11 +483,11 @@ export function bodies(world: World): BodyView[] {
 
 /**
  * The gap between one play's throw and the next, in steps of the world's own time (0.35 s): the effect's animated run, its reduced
- * and moment pictures and the tests all stagger by this one number, so a seed's pile is the same in each.
+ * picture and the tests all stagger by this one number, so a seed's pile is the same in each.
  */
 export const STAGGER_STEPS = Math.round(0.35 / STEP);
 /**
- * The longest a run is settled for at once (reduced motion and a moment), in simulated seconds. A chair that lands on its end is nudged
+ * The longest a run is settled for at once (reduced motion), in simulated seconds. A chair that lands on its end is nudged
  * over, which can take several tries of a fall each: of 6000 seeded runs of three throws into rooms of four sizes the slowest took 20 s
  * (one body needing 11 nudges), and settling that one takes about 0.4 s of a reader's main thread. The tests hold the slowest world they
  * run to half of this, so that a run cut off with a chair in mid-air is not one seed away.
@@ -495,7 +495,7 @@ export const STAGGER_STEPS = Math.round(0.35 / STEP);
 export const SETTLE_S = 60;
 
 /**
- * Steps until every body sleeps or maxSeconds of simulated time have passed; for reduced motion and a moment. The return value says
+ * Steps until every body sleeps or maxSeconds of simulated time have passed; for reduced motion. The return value says
  * which of the two ended it: true if every body is asleep, false if the time ran out first with at least one still moving (or still in
  * the air), in which case the world is left where the last step put it and the caller may settle again or go on stepping.
  */

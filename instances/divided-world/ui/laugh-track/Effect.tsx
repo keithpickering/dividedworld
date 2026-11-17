@@ -32,8 +32,8 @@
  * the two share a stretch (Autocorrect's tape over a phrase) the tape's run is the one drawn there, whichever card was played first, so the
  * phrase has no place drawn and the underline never shows through the tape; the rest of the cue's places are drawn as usual.
  *
- * `still` (a play's moment in history) is a component of its own that draws the places unmarked and uses no sound, no watcher and no
- * handler; its Lens says how many places the play's cues have in this version's words.
+ * A play's moment in history is this same effect: the cues are matched against the post as given (the moment's version), and the places, the
+ * sound under Game sounds, the captions and the keyboard path work as live.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
@@ -107,23 +107,7 @@ const pieceOf = (spot: Spot, key: string, text: string, extra?: Record<string, u
   <span key={key} data-sound={spot.sound} data-lt-place={spot.key} data-lt-piece={key} {...extra} className={extra?.['className'] as string | undefined ?? 'dw-lt-cue'}>{text}</span>
 );
 
-/** A play's moment: the places drawn unmarked, with nothing registered, played or bound. */
-function Moment({ post, plays, show, children }: EffectProps) {
-  const spots = useSpots(post, plays);
-  const runs = useMemo<TextRun[]>(() => spots.map((s) => ({ start: s.start, end: s.end, key: `lt:${s.key}`, z: Z, mode: 'wrap', render: ({ text, key }) => pieceOf(s, key, text) })), [spots]);
-  /* The places, counted as the live Lens counts them: the uncaught plays' cues where they are in this version's words, outside links. */
-  const view: CardView = { progress: null, state: spots.length ? `${spots.length} ${spots.length === 1 ? 'place' : 'places'}` : 'No cues in this version', yours: false, controls: [], notes: {} };
-  const viewKey = JSON.stringify(view);
-  const now = useRef(view);
-  now.current = view;
-  const showRef = useRef(show);
-  showRef.current = show;
-  useEffect(() => { showRef.current(now.current); }, [viewKey]);
-  useEffect(() => () => { showRef.current(null); }, []);
-  return <div className="dw-lt"><TextLayer runs={runs}>{children}</TextLayer></div>;
-}
-
-function Live({ post, plays, show, met, children }: EffectProps) {
+export function LaughTrackEffect({ post, plays, show, met, moment, children }: EffectProps) {
   const { settings } = useKayfa();
   const sound = useSound();
   const gameSound = useGameSound();
@@ -144,8 +128,8 @@ function Live({ post, plays, show, met, children }: EffectProps) {
   firedNow.current = fired;
 
   /* What the callbacks below read, so a registration lives as long as its place does and not as long as a render. */
-  const now = useRef({ sound, show, met, screen, spots, markMost });
-  now.current = { sound, show, met, screen, spots, markMost };
+  const now = useRef({ sound, show, met, moment, screen, spots, markMost });
+  now.current = { sound, show, met, moment, screen, spots, markMost };
   const metOnce = useRef(false);
   const lastPlay = useRef<Record<string, number>>({});
 
@@ -160,7 +144,7 @@ function Live({ post, plays, show, met, children }: EffectProps) {
     }
     const { fadeMs } = now.current.screen;
     quiet(now.current.sound.play(spot.take, { group: 'audience', fadeMs, tailMs: fadeMs }), fadeMs);
-    if (!metOnce.current) { metOnce.current = true; now.current.met(); }
+    if (now.current.moment === null && !metOnce.current) { metOnce.current = true; now.current.met(); }
   }, []);
 
   /* A place's nearness becomes the mark's opacity, written to its pieces as they are now: no state, no render. */
@@ -320,9 +304,4 @@ function Live({ post, plays, show, met, children }: EffectProps) {
   useEffect(() => () => { now.current.show(null); }, []);
 
   return <div ref={root} className="dw-lt"><TextLayer runs={runs}>{children}</TextLayer></div>;
-}
-
-export function LaughTrackEffect(props: EffectProps) {
-  /* `still` is fixed for a post's life, so the two never swap hooks mid-life. */
-  return props.still ? <Moment {...props} /> : <Live {...props} />;
 }

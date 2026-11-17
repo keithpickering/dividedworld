@@ -44,6 +44,7 @@ import { ui as steelChairUi } from './cards/steel-chair/ui.ts';
 import { ui as stickAroundUi } from './cards/stick-around/ui.ts';
 import { ui as sugarCoatUi } from './cards/sugar-coat/ui.ts';
 import { ui as superHappyHeartUi } from './cards/super-happy-heart/ui.ts';
+import { ui as sweetHeatUi } from './cards/sweet-heat/ui.ts';
 import { ui as takeTheFallUi } from './cards/take-the-fall/ui.ts';
 import { ui as tattleTaleUi } from './cards/tattle-tale/ui.ts';
 import { ui as thickSkinUi } from './cards/thick-skin/ui.ts';
@@ -90,6 +91,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   stickAroundUi,
   sugarCoatUi,
   superHappyHeartUi,
+  sweetHeatUi,
   takeTheFallUi,
   tattleTaleUi,
   thickSkinUi,
