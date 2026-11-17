@@ -32,6 +32,9 @@ begin
   if why is not null then raise exception 'a use card with a cushion was refused: %', why; end if;
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": {"kind": "hex"}}]');
   if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn, price, ride, noQuote or cushion' then raise exception 'the kinds a gimmick may be: %', why; end if;
+  -- The widened kind list is for a use card alone: a cast card holds an earn and nothing else, a cushion included.
+  why := card_kinds_problem(('[{"key": "castcu", "rarity": "uncommon", "play": "cast", "reaches": ["character"], "lasts": {"unit": "day", "count": 3}, "gimmick": ' || cushion || '}]')::jsonb);
+  if why is distinct from 'card "castcu" has a gimmick, and only a use card has one, or a cast card on a character alone or a post alone an earn' then raise exception 'a cast card holding a cushion was not refused in the sentence: %', why; end if;
 end $$;
 
 -- ---- The settlement reads a cushion play made before the window and still up in it, with its end and its character; the estimate reads the caller's alone ----
@@ -44,12 +47,20 @@ declare
   w0 timestamptz; w1 timestamptz;
   t uuid := tests.thread('Cu settlement thread');
   pa uuid; pb uuid;
-  up uuid; bobs uuid; ended_play uuid; over uuid;
+  up uuid; bobs uuid; ended_play uuid; over uuid; longago uuid;
   input jsonb; est jsonb; got jsonb;
 begin
   insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values
     ('cuthick2', 'Cu Thick Two', 'sweet', 'uncommon', 'use', interval '3 days', '{character}', '{"kind": "cushion", "share": 0.5}')
   on conflict (key) do nothing;
+  -- An earn card with a SHORT time up (12 hours): the longest `lasts` earn_up looks back by is read from earn or cushion cards, so with the cushion in it the look-back is the cushion's three days, and with earn alone it would be these
+  -- 12 hours, which every cushion play below (24 hours or more before the window) is older than. No other card of this file or the fixtures is an earn, and the check below says so.
+  insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values
+    ('cuearn', 'Cu Earn', 'sweet', 'common', 'use', interval '12 hours', '{post,character}', '{"kind": "earn", "by": 0.5, "quadrants": ["fire"]}')
+  on conflict (key) do nothing;
+  if (select max(lasts) from card_kinds where gimmick ->> 'kind' = 'earn') is distinct from interval '12 hours' then
+    raise exception 'the fixtures hold an earn card whose time up is not 12 hours, so the longest-lasts check below cannot tell earn from earn-or-cushion';
+  end if;
   if not exists (select 1 from settlements) then
     perform set_config('role', 'service_role', true);
     perform apply_settlement(s1, s1 + interval '1 day', '[]');
@@ -67,10 +78,16 @@ begin
   perform set_config('kayfabb.card_end_writer', 'on', true);
   insert into acts (character, kind, thread, target_act_id, payload, created_at) values (null, 'card_end', t, ended_play, '{"why": "reversed", "by": "admin"}', w0 - interval '21 hours');
   perform set_config('kayfabb.card_end_writer', '', true);
+  -- Made 30 hours before the window, older than the 12 hours the one earn card lasts and inside the cushion card's three days, and up until the window's second day: carried only where the look-back reads cushion cards too.
+  longago := tests.act(a, 'card', t, jsonb_build_object('card', 'cuthick2', 'message', '', 'config', '{}'::jsonb, 'reach', 'character', 'character', a, 'ends', w0 + interval '36 hours', 'targetName', 'Cu Ann'), pa, w0 - interval '30 hours');
   over := tests.act(a, 'card', t, jsonb_build_object('card', 'cuthick2', 'message', '', 'config', '{}'::jsonb, 'reach', 'character', 'character', a, 'ends', w0 - interval '1 hour', 'targetName', 'Cu Ann'), pa, w0 - interval '60 hours');
 
   -- The settlement: earn_up finds the play made before the window and still up in it, with its end and the character it is on; the one an admin ended and the one that is over are not there.
   input := settlement_input(w0, w1);
+  got := pg_temp.entry(input, longago);
+  if got is null or (got ->> 'ends')::bigint is distinct from pg_temp.ms(w0 + interval '36 hours') then
+    raise exception 'a cushion made longer ago than the longest earn lasts, and still up, is not carried by the settlement (the look-back must read cushion cards too): %', got;
+  end if;
   got := pg_temp.entry(input, up);
   if got is null or (got ->> 'ends')::bigint is distinct from pg_temp.ms(w0 + interval '48 hours') or got ->> 'on' is distinct from a::text or got ->> 'card' is distinct from 'cuthick2' then
     raise exception 'a cushion made before the window and still up is not carried with its end and its character: %', got;
@@ -84,6 +101,7 @@ begin
   if got is null or (got ->> 'ends')::bigint is distinct from pg_temp.ms(w0 + interval '48 hours') or got ->> 'on' is distinct from a::text then
     raise exception 'the caller''s estimate does not carry the caller''s cushion: %', got;
   end if;
+  if pg_temp.entry(est, longago) is null then raise exception 'a cushion made longer ago than the longest earn lasts, and still up, is not carried by the caller''s estimate (the look-back must read cushion cards too)'; end if;
   if pg_temp.entry(est, bobs) is not null then raise exception 'a player''s estimate carries another player''s cushion'; end if;
   if pg_temp.entry(est, ended_play) is not null or pg_temp.entry(est, over) is not null then raise exception 'an estimate carries a cushion that was ended or is over'; end if;
   est := estimate_input(bob, w0 + interval '6 hours');
