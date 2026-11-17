@@ -622,6 +622,8 @@ describe('dentImages with earlier dents: the capped images and their cache', () 
     const { toUrl, calls } = hashing();
     const alone = dentImages('ei-far', box, 1, [], toUrl);
     const before = calls.length;
+    // The bend, the shade and the light, and no capped pair beside them.
+    assert.equal(before, 3, 'a dent alone makes its three images and no capped one');
     const far = dentImages('ei-far', box, 1, [{ play: 'ei-far-before', box: at(200) }], toUrl);
     assert.deepEqual(far, alone);
     assert.equal(calls.length, before, 'nothing new was made');
