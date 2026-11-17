@@ -519,6 +519,58 @@ describe('the fog', () => {
     expect(rec.clears).toBe(outAt);
   });
 
+  describe('a post of several held tiles at rest', () => {
+    const inView = (s: Setup, on: boolean) => act(() => { watch!([{ target: area(s), isIntersecting: on, intersectionRatio: on ? 1 : 0 }]); });
+    /* A tall window, so the layer holds at least three tiles. */
+    const innerHeight = window.innerHeight;
+    beforeEach(() => { window.innerHeight = 1400; });
+    afterEach(() => { window.innerHeight = innerHeight; });
+    const bigPost = () => {
+      stubObserver();
+      AREA = { ...BOX, height: 20_000 };
+      const s = setup();
+      inView(s, true);
+      pass(300, 16);
+      return s;
+    };
+
+    test('the rest repaints are spread: no frame paints more than one tile, and each held tile is painted 12 to 21 times in a second', () => {
+      const s = bigPost();
+      const recs_ = tiles(s).map((c) => recOf(c)!);
+      expect(recs_.length).toBeGreaterThanOrEqual(3);
+      const start = recs_.map((r) => r.clears);
+      let most = 0;
+      for (let i = 0; i < 62; i++) {
+        const before = recs_.map((r) => r.clears);
+        act(() => { vi.advanceTimersByTime(16); runFrame(); });
+        most = Math.max(most, recs_.reduce((n, r, k) => n + r.clears - before[k]!, 0));
+      }
+      expect(most, 'tiles painted in the busiest frame').toBeLessThanOrEqual(1);
+      recs_.forEach((r, k) => {
+        expect(r.clears - start[k]!, `tile ${k}`).toBeGreaterThanOrEqual(12);
+        expect(r.clears - start[k]!, `tile ${k}`).toBeLessThanOrEqual(21);
+      });
+    });
+
+    test('leaving the view, or unmounting, leaves no timer of the stagger pending', () => {
+      stubObserver();
+      AREA = { ...BOX, height: 20_000 };
+      const s = setup();
+      pass(300, 16);
+      const out = vi.getTimerCount();
+      inView(s, true);
+      /* Stop in the middle of a tick's run: the rest timer and the stagger's own timer are pending. */
+      act(() => { vi.advanceTimersByTime(60); });
+      expect(vi.getTimerCount(), 'the stagger is running').toBe(out + 2);
+      inView(s, false);
+      expect(vi.getTimerCount(), 'out of view').toBe(out);
+      inView(s, true);
+      act(() => { vi.advanceTimersByTime(60); });
+      s.unmount();
+      expect(vi.getTimerCount(), 'unmounted').toBe(0);
+    });
+  });
+
   test('fog at rest drifts: its picture moves from one rest frame to the next, its alpha never does', () => {
     const s = setup();
     pass(100, 50);
@@ -751,8 +803,8 @@ describe('what the field is given', () => {
       /* Anything that renders the effect sets the model timer again, with the trail it has by then. */
       if (i === 10) act(() => { watch!([{ target: area(s), isIntersecting: true, intersectionRatio: 1 }]); });
     }
-    /* The page's rest timer is 50 ms; anything else is the model's. */
-    const model = set.mock.calls.filter((c) => c[1] !== 50);
+    /* The page's rest timer is 50 ms and its stagger's a frame (16 ms), neither the model's; anything else is the model's. */
+    const model = set.mock.calls.filter((c) => c[1] !== 50 && c[1] !== 16);
     expect(model.length).toBeLessThan(10);
     expect(s.container).toBeTruthy();
   });

@@ -87,6 +87,8 @@ const SHIFT_PX = 0.5;
 const TICK_MS = 50;
 /** How often fog at rest is drawn again, ms: 20 times a second, which its fastest sheet (7 px a second) needs and no more. */
 const REST_MS = 50;
+/** A frame's worth: the gap between one tile's rest repaint and the next in the same post. */
+const REST_STEP_MS = 16;
 /** A pointer that has not moved for this long drags nothing, and its clearing is fog at rest to the painter, ms. */
 const IDLE_MS = 60;
 /** The color a smoke that names none the card can read is drawn in: `lightgray` (Whoops!'s table has no such name, so it is written out). */
@@ -717,7 +719,34 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
   /* Only a post in view joins the page's rest timer: one out of view holds no tiles that need to be drawn again, and a page of smoked posts would otherwise wake every 50 ms for them all. */
   useLayoutEffect(() => {
     if (!loop || !inView) return;
-    return joinRest(() => { layerRef.current?.stale(); });
+    /* The rest repaint is spread over frames, a tile a frame: the tiled layer's own budget is measured a frame at a time, and marking every held tile stale at once paints three or four whole tiles in one frame, which is the frame that is measured. Each tile is still drawn again about 20 times a second; the drift does not need its tiles in step (at 7 px a second, 16 ms is a tenth of a pixel at a seam). A tile already waiting is not queued twice, so a post with more tiles than fit in a tick runs into the next tick's turn and the queue never outgrows the held set. Tiles something live is happening under are repainted every frame by `turn`, and a mark on them changes nothing. */
+    const waiting: { index: number; top: number; bottom: number }[] = [];
+    const queued = new Set<number>();
+    const markedAt = new Map<number, number>();
+    let chain: ReturnType<typeof setTimeout> | undefined;
+    const step = (): void => {
+      chain = undefined;
+      const next = waiting.shift();
+      if (!next) return;
+      queued.delete(next.index);
+      markedAt.set(next.index, Date.now());
+      layerRef.current?.stale(next);
+      if (waiting.length > 0) chain = setTimeout(step, REST_STEP_MS);
+    };
+    const leave = joinRest(() => {
+      const layer = layerRef.current;
+      if (!layer) return;
+      for (const t of layer.held()) {
+        if (queued.has(t.index)) continue;
+        queued.add(t.index);
+        waiting.push({ index: t.index, top: t.top, bottom: t.top + t.h });
+      }
+      /* The tile drawn longest ago goes first, so a post with more tiles than fit in a tick shares the frames fairly. */
+      waiting.sort((a, b) => (markedAt.get(a.index) ?? -Infinity) - (markedAt.get(b.index) ?? -Infinity));
+      /* A run begins a frame after its tick, so it never marks a tile for the frame the last run's final mark was made for. */
+      if (chain === undefined && waiting.length > 0) chain = setTimeout(step, REST_STEP_MS);
+    });
+    return () => { leave(); if (chain !== undefined) clearTimeout(chain); chain = undefined; waiting.length = 0; queued.clear(); markedAt.clear(); };
   }, [loop, inView, forced, place, paintTile, take]);
   /* Without motion the tiles are drawn after every render: a render is how a change reaches them. */
   useLayoutEffect(() => { if (!loop) layerRef.current?.paintNow(); });
