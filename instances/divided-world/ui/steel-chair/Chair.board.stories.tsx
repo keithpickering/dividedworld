@@ -2,7 +2,7 @@
  * Steel Chair as stories for the owner's word (docs/plans/2026-11-15-steel-chair-plan.md, Task 7): a post of a thread with one chair thrown at it
  * (`OneLight`, `OneDark`), three chairs from three characters (`Three`), a post of one line of words (`ShortPost`, the worst case for the room under
  * the words), the same one line with three chairs from three characters (`ShortThree`, where the dents must leave the line readable) and the
- * one chair with motion reduced (`Reduced`, `data-kb-motion="reduce"`, where the chair is at rest and the dent drawn at once).
+ * one chair with motion reduced (`Reduced`, `data-kb-motion="reduce"`, where the chair is at rest and the dent drawn at once), and Steel Chair with Feelin' Fab on the same three paragraphs (`WithFab`, where the shading lies over a foil, issue #768).
  * Each throw is drawn on the reader's own screen when the post's middle has been in view for 300 ms, and differs every time; e2e/steel-chair.spec.ts
  * waits for it to rest. Open them at 1440 by 1120.
  */
@@ -22,7 +22,7 @@ const WORDS = [
 ].join('\n\n');
 
 /** A thread with a post by a character, and `throwers` characters (one to three) who each play Steel Chair on it. */
-const worldOf = (words: string, throwers: number): World => (fake, instance) => {
+const worldOf = (words: string, throwers: number, fab = false): World => (fake, instance) => {
   const rules = cardOf(instance.cards, 'steel-chair');
   const [first, second] = instance.classes;
   const player = fake.seed.account('story-player', { seasoned: true });
@@ -36,6 +36,8 @@ const worldOf = (words: string, throwers: number): World => (fake, instance) => 
     const who = fake.seed.character(account, names[i]!, (i % 2 === 0 ? first : (second ?? first))!.key);
     fake.seed.card(who, post, rules.key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
   }
+  /* Feelin' Fab on the same post: its foil fills the content area as the chair's shading does (issue #768). */
+  if (fab) fake.seed.card(fake.seed.character(fake.seed.account('fab-caster'), 'Glimmer', (second ?? first)!.key), post, cardOf(instance.cards, 'feelin-fab').key, { layer: 1, live: true, config: {}, message: 'Fab' });
   fake.signInAs(player);
   thread = made.thread;
 };
@@ -69,3 +71,5 @@ export const ShortPost: Story = { args: { mode: 'light' }, parameters: { world: 
 /** One line of words, three plays by three characters: the hard case for the dents, which must leave the line readable (e2e/steel-chair.spec.ts). */
 export const ShortThree: Story = { args: { mode: 'light' }, parameters: { world: worldOf('Luigi wins.', 3) } };
 export const Reduced: Story = { args: { mode: 'light', reduced: true } };
+/** The three-paragraph post with Steel Chair and Feelin' Fab both on it: the shading is an image with its own alpha and takes nothing from what is behind it (issue #768). */
+export const WithFab: Story = { args: { mode: 'light' }, parameters: { world: worldOf(WORDS, 1, true) } };

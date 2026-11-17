@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { DEPTH, HALF } from '../instances/divided-world/ui/steel-chair/body.ts';
 import { GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from '../instances/divided-world/ui/steel-chair/chair.ts';
-import { DENT_SCALE } from '../instances/divided-world/ui/steel-chair/dent.ts';
+import { DENT_SCALE, dentHeight, dentShade, dentShape } from '../instances/divided-world/ui/steel-chair/dent.ts';
 import { pageViolations } from './axe.ts';
 
 /**
@@ -61,10 +61,11 @@ const SEEDS = {
   'short-three': [172],
   three: [101],
   phone: [113],
+  'with-fab': [101],
 } as const;
 /** The short-three layout's second pinned seed: the spread case. */
 const SPREAD_SEED = 158;
-type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three';
+type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three' | 'with-fab';
 
 /** The post that wears the card: its content area (the world) and its parts. */
 const area = (page: Page) => page.locator('.kb-act-main:has(.dw-chair)').first();
@@ -689,7 +690,7 @@ async function shading(page: Page) {
   return area(page).evaluate((box) => {
     const dentRects = [...box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent')].map((d) => {
       const r = d.getBoundingClientRect();
-      return { left: r.left, top: r.top, width: r.width, height: r.height };
+      return { play: d.dataset.play ?? '', left: r.left, top: r.top, width: r.width, height: r.height };
     });
     const walker = document.createTreeWalker(box.querySelector('.dw-chair-words')!, NodeFilter.SHOW_TEXT);
     const range = document.createRange();
@@ -798,25 +799,34 @@ async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'sprea
   const unionClip = { x: ux0, y: uy0, width: ux1 - ux0, height: uy1 - uy0 };
   const union = await pair(page, unionClip);
   const deepDents = deepest(union);
-  /* Each dent alone (the others hidden): where dents overlap, the shade must be the darker of the dents there, pixel for pixel (`darken`),
-     which one opaque shade image laid over another, or two added, would not give. The bound of 0.12 is the allowance for the screenshot's
-     rounding and is kept from the first build. */
-  const alone1: number[][] = [];
-  for (let k = 0; k < s.dents.length; k++) {
-    await area(page).evaluate((box, keep) => {
-      box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent').forEach((el, i) => { el.style.visibility = i === keep ? '' : 'hidden'; });
-    }, k);
-    alone1.push((await pixelsOf(page, unionClip)).px);
-  }
-  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent')) el.style.visibility = ''; });
+  /* Where dents overlap, the shade is the darker of the dents there (`darken`): each later dent's shade image is corrected against the earlier
+     ones (dent.ts `capped`), so a dent read alone (the others hidden) is no longer its own shade and the alones' minimum is not the reference.
+     The reference is made here instead, in Node: each dent's UNCAPPED shade gray, from its play's id (the dent's `data-play`) and its box, by
+     dent.ts' pure functions (alpha is 255 less the gray), sampled bilinearly at each screenshot pixel's center (1 outside the box), and the
+     least over the dents is the ratio the browser's union should show. The bound of 0.12 is the allowance for the screenshot's rounding and
+     is kept from the first build. The grids are made at density 1, which is what the page's screenshots are drawn at. */
+  const grays = s.dents.map((d) => {
+    const w = Math.round(d.width), h = Math.round(d.height);
+    const alpha = dentShade(dentHeight(dentShape(d.play), w, h), w, h);
+    const g = new Float64Array(w * h);
+    for (let k = 0; k < g.length; k++) g[k] = 255 - alpha[k * 4 + 3]!;
+    return { d, w, h, g };
+  });
+  const grayAt = (e: (typeof grays)[number], px: number, py: number): number => {
+    if (px < e.d.left || px > e.d.left + e.d.width || py < e.d.top || py > e.d.top + e.d.height) return 255;
+    const x = Math.min(e.w - 1, Math.max(0, ((px - e.d.left) / e.d.width) * e.w - 0.5)), y = Math.min(e.h - 1, Math.max(0, ((py - e.d.top) / e.d.height) * e.h - 0.5));
+    const x0 = Math.floor(x), y0 = Math.floor(y), x1 = Math.min(e.w - 1, x0 + 1), y1 = Math.min(e.h - 1, y0 + 1), fx = x - x0, fy = y - y0;
+    const top = e.g[y0 * e.w + x0]! * (1 - fx) + e.g[y0 * e.w + x1]! * fx, bottom = e.g[y1 * e.w + x0]! * (1 - fx) + e.g[y1 * e.w + x1]! * fx;
+    return top * (1 - fy) + bottom * fy;
+  };
   let worstGap = 0, overlapPixels = 0;
   const flat = plain(union.bare.px);
   for (let i = 0; i < union.bare.px.length; i += 4) {
     if (!flat[i / 4] || luma(union.bare.px, i) <= 100) continue;
-    const ratio = (px: number[]) => luma(px, i) / luma(union.bare.px, i);
-    const each = alone1.map(ratio);
+    const p = i / 4, px = unionClip.x + (p % unionClip.width) + 0.5, py = unionClip.y + Math.floor(p / unionClip.width) + 0.5;
+    const each = grays.map((e) => grayAt(e, px, py) / 255);
     if (each.filter((r) => r < 0.97).length >= 2) overlapPixels++;
-    worstGap = Math.max(worstGap, Math.abs(ratio(union.shaded.px) - Math.min(...each)));
+    worstGap = Math.max(worstGap, Math.abs(luma(union.shaded.px, i) / luma(union.bare.px, i) - Math.min(...each)));
   }
   await onlyShade(false);
 
@@ -914,7 +924,44 @@ for (const [kind, seed] of [['tight', SEEDS['short-three'][0]], ['spread', SPREA
   });
 }
 
-for (const name of ['one-light', 'one-dark', 'reduced'] as const) {
+/**
+ * The shading draws no block (issue #768, plan Task 4, case 1), on the post Steel Chair and Feelin' Fab share: the four corners of each dent's box, 4 px
+ * squares where the dent is flat and its images' alpha is 0, are the same pixels with the shading shown and hidden, within 2 levels of 255. Feelin' Fab's foil
+ * is under the shading and is not still, so reduced motion is asked for (the foil is then drawn as it is and not moved on). Poison: the shade image made
+ * opaque again (alpha 255, the gray kept) in dent.ts, whose corners are then the shade's gray block.
+ */
+test('with-fab: no block: the four corners of each dent\'s box are the same with the shading shown and hidden', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await open(page, 'with-fab');
+  await atRest(page, 1);
+  await expect(page.locator('.kb-act-main:has(.dw-chair) canvas.dw-fab-foil'), 'Feelin\' Fab\'s foil is on the post').toHaveCount(1);
+  const s = await shading(page);
+  expect(s.dents.length, 'a dent').toBeGreaterThan(0);
+  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-layer')) el.style.visibility = 'hidden'; });
+  const SQ = 4;
+  for (const [i, d] of s.dents.entries()) {
+    const corners = [[d.left, d.top], [d.left + d.width - SQ, d.top], [d.left, d.top + d.height - SQ], [d.left + d.width - SQ, d.top + d.height - SQ]] as const;
+    for (const [k, [x, y]] of corners.entries()) {
+      const clip = { x: Math.ceil(x), y: Math.ceil(y), width: SQ, height: SQ };
+      const shown = (await pixelsOf(page, clip)).px;
+      await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = 'hidden'; });
+      const hidden = (await pixelsOf(page, clip)).px;
+      await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = ''; });
+      const worst = Math.max(...shown.map((v, j) => Math.abs(v - hidden[j]!)));
+      expect(worst, `dent ${i}, corner ${k} (${JSON.stringify(clip)}): the shading changes a pixel there by ${worst} levels of 255`).toBeLessThanOrEqual(2);
+    }
+    const whole = { x: Math.ceil(d.left), y: Math.ceil(d.top), width: Math.floor(d.width) - 1, height: Math.floor(d.height) - 1 };
+    const drawn = (await pixelsOf(page, whole)).px;
+    await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = 'hidden'; });
+    const bare = (await pixelsOf(page, whole)).px;
+    await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = ''; });
+    let most = 0;
+    for (let j = 0; j < drawn.length; j++) most = Math.max(most, Math.abs(drawn[j]! - bare[j]!));
+    expect(most, `dent ${i}: the dent is drawn: inside its box some pixel differs with the shading shown and hidden by more than 2 levels (the most is ${most})`).toBeGreaterThan(2);
+  }
+});
+
+for (const name of ['one-light', 'one-dark', 'reduced', 'with-fab'] as const) {
   test(`axe finds nothing on ${name}`, async ({ page }) => {
     await open(page, name);
     await atRest(page, 1);

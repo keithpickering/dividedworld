@@ -27,13 +27,21 @@
  * for every reader and on every replay, while where it lands is the run's, in an ellipse's box (within 15% of round). One light, fixed in the
  * world, falls on every dent from the upper left (dent.ts `LIGHT`), and the map is drawn as three images (`dentImages`): the bend, which the
  * displacement's `feImage` takes (stretched to the box), and a shade and a light, which the two shading layers lay over the words (a dark
- * side and a bright rim and glint). There is nothing else to a dent: no crease, no turned shading. The shading of overlapping dents is the
- * darkest (and the lightest) of them, not their sum (steel-chair.css). Where the text is shorter than a dent the throw aims at a box grown
- * around it (dent.ts `hitZone`), so three dents do not stack on one line.
+ * side and a bright rim and glint). There is nothing else to a dent: no crease, no turned shading. The shade is black and the light white, each
+ * with its own alpha and laid on plainly, with no blend (steel-chair.css): a blend takes its backdrop from the nearest stacking context, which a
+ * place that shows a post may leave empty. So that overlapping dents are still as dark as the darkest and as bright as the brightest of them, not
+ * their sum, a dent is drawn from an image corrected against the dents before it in the order they landed (`dentImages`' `earlier`, dent.ts
+ * `capped`), all in the content area's px. Where the text is shorter than a dent the throw aims at a box grown around it (dent.ts `hitZone`),
+ * so three dents do not stack on one line. A dent is sized and aimed in the zone it may land in (dent.ts `zoneHeight`, `Geo.zone`): the content
+ * area less the chairs' room where that leaves at least LEAST_ZONE, else the whole area. So its box is never larger than that and never leaves
+ * the area, and the marked area is at least a full dent and the room tall (steel-chair.css), so a one-line post's box grows to hold a dent.
  *
  * When. A run starts once the host's middle (`watchInView`, margin `-20% 0px -20% 0px`, as Glitter Bomb arms its burst) has been in view
  * for 300 ms, and is cleared when the post has wholly left the view, so coming back starts a new one. While a run is up a second observer,
  * without a margin, watches for that departure, and a size observer watches the box; out of view a post holds only the arming observer. A
+ * moment holds no view observer but does bind the size observer: when its box changes (the moment's own words are drawn a render after it
+ * mounts, and the area grows by them) the picture is drawn again from the same seed, in the box as it now is, so the layers fill the area and
+ * the chairs lie on its bottom border. A callback that measures nothing different draws nothing, so the observer does not loop. A
  * play that lands while the run stands is thrown alone into the standing world, and one that ends (`useAt`) loses its chair and dent while
  * the others stay where they lie. Reduced motion has no flight, no shake and no wait (there is nothing to time): the world is built, run to
  * rest and drawn at once, without sound.
@@ -71,8 +79,8 @@ import { STEEL_CHAIR_LASTS } from '../../cards/steel-chair.ts';
 import {
   addThrow, bodies, createWorld, remove, resize, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
-import { depthOf, INSET, piecesOf, project, ROOM_HEIGHT, shadeOf, transformOf, type Piece } from './chair.ts';
-import { DENT_SCALE, dentImages, dentPrimitives, dentShape, filterTrusted, hitZone, seedOfIds, type DentShape } from './dent.ts';
+import { depthOf, INSET, piecesOf, project, shadeOf, transformOf, type Piece } from './chair.ts';
+import { DENT_SCALE, dentImages, dentPrimitives, dentShape, filterTrusted, hitZone, seedOfIds, zoneHeight, type DentShape } from './dent.ts';
 import './steel-chair.css';
 
 /**
@@ -148,8 +156,11 @@ function keptRef<N>(
 
 /** A dent: where it landed in the content area's px, and whether it is drawn at full depth from the start (reduced motion, a moment). */
 interface Dent { readonly play: string; readonly x: number; readonly y: number; readonly full: boolean }
-/** Where the words wrapper stands in the content area, and how big it is: what the filter's coordinates are converted by. */
-interface Geo { readonly left: number; readonly top: number; readonly width: number; readonly height: number }
+/**
+ * Where the words wrapper stands in the content area, and how big it is: what the filter's coordinates are converted by; and `zone`, the height a dent
+ * may land in (dent.ts `zoneHeight` of the content area's height).
+ */
+interface Geo { readonly left: number; readonly top: number; readonly width: number; readonly height: number; readonly zone: number }
 /**
  * What the effect remembers while it stays mounted: whether `met` has been said.
  */
@@ -167,7 +178,7 @@ const overshoot = (d: { x: number; y: number }, radius: number, b: BodyBox): num
 
 const sameGeo = (a: Geo | null, b: Geo): boolean => {
   const near = (x: number, y: number) => Math.abs(x - y) < 0.01;
-  return a !== null && near(a.left, b.left) && near(a.top, b.top) && near(a.width, b.width) && near(a.height, b.height);
+  return a !== null && near(a.left, b.left) && near(a.top, b.top) && near(a.width, b.width) && near(a.height, b.height) && near(a.zone, b.zone);
 };
 
 /**
@@ -344,7 +355,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
          as the wrapper's place, change the filter's coordinates and wake the world. `shift` is what the transform adds to the client rects. */
       const shiftX = w.left - h.left - wordsEl.offsetLeft, shiftY = w.top - h.top - wordsEl.offsetTop;
       const g: Geo = {
-        left: wordsEl.offsetLeft - b.left, top: wordsEl.offsetTop - b.top, width: wordsEl.offsetWidth, height: wordsEl.offsetHeight,
+        left: wordsEl.offsetLeft - b.left, top: wordsEl.offsetTop - b.top, width: wordsEl.offsetWidth, height: wordsEl.offsetHeight, zone: zoneHeight(b.h),
       };
       const moved = !sameBox(b, box) || !sameGeo(geoNow, g);
       box = b;
@@ -468,18 +479,17 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     /*
      * The box a throw aims at (throwOf aims inside it, 15% in from its sides): the text's, where the text is a dent's diameter tall or more;
      * where it is shorter, one line or a few, grown around the text within the content area (dent.ts `hitZone`), so that three throws do not
-     * stack on one line and a dent may land beside it, as far as the dent's own circle (its shape, from its play's id) fits the area. Then lowered
+     * stack on one line and a dent may land beside it, as far as the dent's own circle (its shape, from its play's id) fits the zone. Then lowered
      * by the lift of the oblique view at the hit, so the drawn chair meets the dent drawn at the text. Where it lands inside the box is the
      * run's own generator's, as before.
      */
     const aim = (play: string): Box => {
-      const dent = dentPrimitives([{ x: 0, y: 0, shape: shapeOf(play) }], { width: geoNow?.width ?? box.w, height: box.h })[0]!;
-      /* The zone is cut at the room's top, so that a dent's circle stays above the last ROOM_HEIGHT px, where the chairs lie. A post's content area
-         is at least 22.5em tall (thread.css), so on a post this costs nothing; only where the area less the room is shorter than the dent
-         itself (a preview, a narrow box) is the whole area kept, since a dent inside the area matters more than one clear of the room. */
-      const above = box.h - ROOM_HEIGHT;
-      const zone = hitZone(target, { width: box.w, height: above >= Math.max(dent.width, dent.height) ? above : box.h }, dent);
-      return { left: zone.left - INSET, top: zone.top + HIT_LIFT, width: zone.width, height: zone.height };
+      /* A dent is sized and aimed in the height it may land in (dent.ts `zoneHeight`: the area less the room where that is at least LEAST_ZONE, else
+         the whole area), so its box stays inside the area and, where there is room, above the chairs' floor. */
+      const zone = zoneHeight(box.h);
+      const dent = dentPrimitives([{ x: 0, y: 0, shape: shapeOf(play) }], { width: geoNow?.width ?? box.w, height: zone })[0]!;
+      const aimed = hitZone(target, { width: box.w, height: zone }, dent);
+      return { left: aimed.left - INSET, top: aimed.top + HIT_LIFT, width: aimed.width, height: aimed.height };
     };
 
     /* A chair into the standing world, in flight. */
@@ -522,11 +532,21 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       latest.current.met();
     };
 
-    /* While a run stands: the post wholly leaving the view clears it, and the box's size is watched. */
+    /* While a run stands: the post wholly leaving the view clears a live run, and the box's size is watched, a moment's too (its callback draws
+       the picture again from the same seed in the box as it now is; a size observer is no input and no animation). */
     const startWatching = (): void => {
-      stopLeave = watchInView(el, (showing) => { if (!showing) clearRun(true); });
-      if (typeof ResizeObserver !== 'function') return;
+      if (!still) stopLeave = watchInView(el, (showing) => { if (!showing) clearRun(true); });
+      if (size || typeof ResizeObserver !== 'function') return;
       size = new ResizeObserver(() => {
+        if (still) {
+          /* A moment's observer is bound whatever the first measure said and works with no world: a box that measured nothing (hidden,
+             collapsed) is drawn when it gets a size. */
+          /* Nothing measured differently, nothing drawn: the run's own drawing changes no size, so this does not loop. The observer stays. */
+          if (!measure()) return;
+          clearRun(true, true);
+          startRun();
+          return;
+        }
         if (!world) return;
         const was = box;
         if (!measure()) return;
@@ -535,7 +555,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
            would poke out of it. Only the dent goes (it is decoration): its play, its chair and the Lens's count are unchanged. A dent that poked
            out as far before (it landed near a border) stays; only one that pokes out farther than it did is dropped. */
         const now = box;
-        const radius = dentPrimitives([{ x: 0, y: 0 }], { width: geoNow?.width ?? 0, height: geoNow?.height ?? 0 })[0]!.size / 2;
+        const radius = dentPrimitives([{ x: 0, y: 0 }], { width: geoNow?.width ?? 0, height: geoNow?.zone ?? 0 })[0]!.size / 2;
         setDents((d) => {
           const kept = d.filter((x) => overshoot(x, radius, now) <= overshoot(x, radius, was) + 0.01);
           return kept.length === d.length ? d : kept;
@@ -549,6 +569,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     const startRun = (): void => {
       if (running) return;
       measure();
+      if (still) startWatching();
       if (box.w <= 0 || box.h <= 0) return;
       running = true;
       loud = !still && !reduced;
@@ -558,7 +579,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       world = createWorld(box.w - 2 * INSET, box.h - INSET, box.h - INSET);
       const plays = latest.current.live;
       meet();
-      if (!still) startWatching();
+      startWatching();
       if (still || reduced) { placeAll(plays); return; }
       steps = 0;
       due = plays.slice(1).map((p, i) => ({ play: p, at: (i + 1) * STAGGER_STEPS }));
@@ -566,9 +587,9 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       wake();
     };
 
-    const clearRun = (render: boolean): void => {
+    const clearRun = (render: boolean, keepSize = false): void => {
       stopLeave(); stopLeave = () => {};
-      size?.disconnect(); size = null;
+      if (!keepSize) { size?.disconnect(); size = null; }
       if (raf) cancelAnimationFrame(raf);
       raf = 0; lastT = 0; acc = 0;
       due = []; steps = 0;
@@ -662,14 +683,17 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
 
   /* The filter and the shading, from the dents in the content area's px: the filter's coordinates are the words wrapper's. */
   const shown = dents.filter((d) => live.some((p) => p.id === d.play));
-  const off = geo ?? { left: 0, top: 0, width: 0, height: 0 };
+  const off = geo ?? { left: 0, top: 0, width: 0, height: 0, zone: 0 };
   /* Each dent's own shape comes from its play's id alone (dent.ts `dentShape`): the same for every reader and on every replay. */
   const shapesOf = shown.map((d) => shapeOf(d.play));
-  const prims = dentPrimitives(shown.map((d, i) => ({ x: d.x - off.left, y: d.y - off.top, shape: shapesOf[i]! })), { width: off.width, height: off.height });
+  const prims = dentPrimitives(shown.map((d, i) => ({ x: d.x - off.left, y: d.y - off.top, shape: shapesOf[i]! })), { width: off.width, height: off.zone });
   /* Each dent's three images (dent.ts `dentImages`: kept per play, box size and density, so a render makes them once): the bend for the filter,
      the shade and the light for the two shading layers. Where the images need a canvas that is not there each is '' and sets nothing. */
   const density = Math.min(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1, 2);
-  const images = shown.map((d, i) => dentImages(d.play, prims[i]!, density));
+  const inArea = (p: { x: number; y: number; width: number; height: number; size: number }) => ({ ...p, x: p.x + off.left, y: p.y + off.top });
+  const earlierOf = (i: number) => shown.slice(0, i).map((d, j) => ({ play: d.play, box: inArea(prims[j]!) }));
+  /* The dents are capped against the ones before them in `shown` (the order they landed in), in one space: the content area's px. */
+  const images = shown.map((d, i) => dentImages(d.play, inArea(prims[i]!), density, earlierOf(i)));
   const filterOn = trusted && shown.length > 0 && geo !== null && images.every((m) => m.bend !== '');
   /* The filter's region: the wrapper's box plus DENT_SCALE on every side, in the wrapper's px (as `primitiveUnits` is). The default region
      (-10% to 120% of the box) is too small for a one-line post, where a displacement of up to DENT_SCALE / 2 px moves the glyphs out of it
@@ -721,9 +745,8 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       ) : null}
       <div ref={words} className="dw-chair-words" style={filterOn ? { filter: `url("#${filterId}")` } : undefined}>{children}</div>
       <div className="dw-chair-room" aria-hidden="true" />
-      {/* The dents' shading, in two layers that each fill the content area: the shade (darkest of the overlapping dents, multiplied onto the
-          words) and the light (brightest, screened on). Each is its own stacking context, so a blend inside
-          it is among its own dents and the layer as a whole blends with the words (steel-chair.css). */}
+      {/* The dents' shading, in two layers that each fill the content area: the shade (black with an alpha) and the light (white with an alpha),
+          laid on the words plainly with no blend, each dent's image already corrected against the dents before it (steel-chair.css). */}
       <div ref={shading} className="dw-chair-dents dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
         {shown.map((d, i) => <div key={d.play} className="dw-chair-dent" data-play={d.play} style={shadeStyle(i)} />)}
       </div>

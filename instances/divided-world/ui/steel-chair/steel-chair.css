@@ -39,6 +39,12 @@
  * and the room is its last item; in a spun thread's ORIGIN box it is the area's last block. It is static: nothing measures or sets it, and the
  * effect's resize observer sees the area grow. The host is `data-kb-bleed` where a body was found, and then its own strip is hidden.
  */
+[data-dw-chair-room] {
+  /* A full dent (160, dent.ts `FULL_DENT`) and the room (77), held equal to the constants by Effect.test.tsx: a tiny post's box grows to hold a
+     dent, and the dent is not cut down to fit a small box. Where the engine gives the area a least height of its own (a post's body, 22.5em) that
+     rule stands. */
+  min-height: 237px;
+}
 [data-dw-chair-room]::after {
   content: '';
   display: block;
@@ -97,46 +103,30 @@
 
 /*
  * A dent's shading, in two layers (`.dw-chair-shading`, each filling the content area like the chairs' layer), so that overlapping dents never
- * bury the words. Each layer is its own stacking context (the engine's `[data-kb-effect-ink]` lift gives it a z-index), so a blend between its
- * dents is among those alone, and the layer as a whole blends with the post beneath it:
- *  - the shade layer is `multiply`, and each dent in it is an opaque gray image (dent.ts `dentShade`) that is white where the metal is flat and
- *    no darker than 128 on the side turned from the light, combined with the others by `darken` (the darker pixel of two, not their sum):
- *    where dents overlap the post is darkened as much as the darkest of them does alone, never more, and white leaves the post as it is;
- *  - the light layer is `screen`, each dent an opaque gray image (dent.ts `dentLight`: a soft sheen and a small glint, no brighter than 140)
- *    that is black where the metal is flat, combined by `lighten` (the lighter of two), so that the light of overlapping dents is capped the
- *    same way and never washes a line out.
+ * bury the words. Nothing here blends with what is behind it (docs/plans/2026-11-16-steel-chair-origin-design.md, 2): an element that blends takes
+ * its backdrop from the nearest stacking context, and a place that shows a post (the ORIGIN box's area) or another card's wrapper may make one with
+ * nothing painted in it, so a blended image was drawn as it was, an opaque white block. The images carry their own alpha instead, laid on plainly:
+ *  - the shade (dent.ts `dentShade`) is black, its alpha how much of the post's color is taken away: 0 where the metal is flat, and at most half
+ *    of it on the side turned from the light. Over a color that is what multiplying by a gray gave;
+ *  - the light (dent.ts `dentLight`: a soft sheen and a small glint, no brighter than 140) is white, its alpha how much of the way to white the
+ *    post is taken: 0 where the metal is flat. Over a color that is what screening a gray gave.
+ * Alpha laid over alpha compounds, where the blend took the darkest and the lightest of the overlapping dents, so a dent that lands on others is
+ * drawn from an image already corrected against them (dent.ts `capped`): where dents overlap the post is darkened as much as the darkest of them
+ * does alone, and lit as much as the brightest, so no word is ever darkened below half or washed out.
  * Both images are drawn from one height map per play, lit from one fixed direction, so every dent is lit alike; the effect sets each dent's
  * box and its image's address in `--dw-dent-img` and `--dw-glow-img` (an empty address sets none, and the dent shows nothing).
- * Where `mix-blend-mode` is not understood (`@supports`) the two layers are not displayed at all: an opaque gray image with no blend would
- * cover the words, so there is no translucent fallback (every current browser understands the blend, and the filter still bends the words).
- * Under `forced-colors` both are hidden too, below.
+ * Under `forced-colors` both layers are hidden, below.
  */
 .dw-chair-dent,
 .dw-chair-glow {
   position: absolute;
   pointer-events: none;
 }
-.dw-chair-dents,
-.dw-chair-glows {
-  display: none;
+.dw-chair-dent {
+  background: var(--dw-dent-img, none) center / 100% 100% no-repeat;
 }
-@supports (mix-blend-mode: multiply) {
-  .dw-chair-dents {
-    display: block;
-    mix-blend-mode: multiply;
-  }
-  .dw-chair-glows {
-    display: block;
-    mix-blend-mode: screen;
-  }
-  .dw-chair-dent {
-    mix-blend-mode: darken;
-    background: var(--dw-dent-img, none) center / 100% 100% no-repeat;
-  }
-  .dw-chair-glow {
-    mix-blend-mode: lighten;
-    background: var(--dw-glow-img, none) center / 100% 100% no-repeat;
-  }
+.dw-chair-glow {
+  background: var(--dw-glow-img, none) center / 100% 100% no-repeat;
 }
 
 /* No shake under reduced motion (the effect also draws the dent and the resting chairs at once and starts no frame). */
