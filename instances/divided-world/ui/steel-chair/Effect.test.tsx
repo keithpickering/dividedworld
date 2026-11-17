@@ -19,7 +19,7 @@ import type { Act } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { bodies, cornersOf, DEPTH, HALF } from './body.ts';
 import { depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from './chair.ts';
-import { DENT_SCALE, dentShape } from './dent.ts';
+import { DENT_SCALE } from './dent.ts';
 import { SteelChairEffect } from './Effect.tsx';
 
 const hub = vi.hoisted(() => ({
@@ -33,6 +33,8 @@ const hub = vi.hoisted(() => ({
   world: null as import('./body.ts').World | null,
   /** Puts every body to sleep after each step (a world that is quiet whatever was thrown), for the test that a due throw keeps the loop going. */
   sleepAll: false,
+  /** What the mocked `dentImages` calls (a spy made in `beforeEach`, so the effect's arguments can be read): fixed addresses from the play's id. */
+  images: undefined as unknown as import('vitest').Mock<(play: string, ...rest: unknown[]) => { bend: string; shade: string; light: string }>,
 }));
 vi.mock('./body.ts', async (original) => {
   const actual = await original<typeof import('./body.ts')>();
@@ -54,7 +56,8 @@ vi.mock('../../../../engine/ui/audio/sound.ts', async (original) => {
 });
 vi.mock('./dent.ts', async (original) => {
   const actual = await original<typeof import('./dent.ts')>();
-  return { ...actual, filterTrusted: () => hub.trusted, dentMapUrl: () => 'data:image/png;base64,AAAA' };
+  return { ...actual, filterTrusted: () => hub.trusted, dentImages: (play: string, ...rest: unknown[]) => hub.images(play, ...rest),
+  };
 });
 
 const post = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-10-29T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null } as unknown as Act;
@@ -248,6 +251,9 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-origin-area') ? originArea.h : this.classList.contains('kb-act-main') ? areaHeight(this) : 0; });
   document.documentElement.setAttribute('data-kb-motion', 'full');
   hub.trusted = true;
+  hub.images = vi.fn((play: string) => ({
+    bend: `data:image/png;base64,B${play}`, shade: `data:image/png;base64,S${play}`, light: `data:image/png;base64,L${play}`,
+  }));
   hub.gameOn = false;
   hub.set = vi.fn();
   hub.sound = { play: vi.fn(async () => null), loop: vi.fn(), caption: vi.fn() };
@@ -654,95 +660,108 @@ describe('what a re-arm and a reflow leave behind', () => {
   });
 });
 
-describe('a dent: its own shape and turn, its creases, and how its shading combines', () => {
+describe('a dent: its own images, and how its shading combines', () => {
   const dentBox = (d: HTMLElement) => {
     const width = parseFloat(d.style.width), height = parseFloat(d.style.height);
     return { x: parseFloat(d.style.left), y: parseFloat(d.style.top), width, height };
   };
-  const creasesOf = (play: string) => document.querySelectorAll(`.dw-chair-creases[data-play="${play}"]`).length;
-  const shapeOf = (d: HTMLElement) => [d.style.width, d.style.height, d.style.borderRadius, d.style.getPropertyValue('--dark-x'), d.style.getPropertyValue('--dark-y')].join('|');
+  const urlOf = (el: HTMLElement, name: string) => el.style.getPropertyValue(name);
+  const bends = () => [...document.querySelectorAll('filter feImage')].map((e) => e.getAttribute('href'));
 
-  test("three plays' dents carry three different shapes, each the shape its play's id gives", () => {
+  test("three plays' dents each carry their own play's shade and light, and each feImage its own bend", () => {
     mount({ plays: [play(1), play(2), play(3)] });
     run();
     const found = dents();
     expect(found).toHaveLength(3);
-    const shapes = found.map(shapeOf);
-    expect(new Set(shapes).size, `the three shapes: ${shapes.join(' / ')}`).toBe(3);
-    for (const d of found) {
-      const s = dentShape(d.dataset.play!);
-      const w = parseFloat(d.style.width), h = parseFloat(d.style.height);
-      expect(w / h).toBeCloseTo(s.rx / s.ry, 3);
-      const a = (s.turn * Math.PI) / 180;
-      expect(parseFloat(d.style.getPropertyValue('--dark-x'))).toBeCloseTo(50 + 25 * Math.cos(a), 0);
-      expect(parseFloat(d.style.getPropertyValue('--dark-y'))).toBeCloseTo(50 + 25 * Math.sin(a), 0);
-      expect(d.style.borderRadius).toContain('/');
-    }
-    /* The light is the shade turned half way round: the same dent's glow sits opposite. */
-    const glow = document.querySelector<HTMLElement>('.dw-chair-glow')!;
-    expect(glow.dataset.play).toBe(found[0]!.dataset.play);
-    expect(parseFloat(glow.style.getPropertyValue('--glow-x')) + parseFloat(found[0]!.style.getPropertyValue('--dark-x'))).toBeGreaterThan(80);
+    const glows = [...document.querySelectorAll<HTMLElement>('.dw-chair-glow')];
+    expect(glows).toHaveLength(3);
+    for (const d of found) expect(urlOf(d, '--dw-dent-img'), d.dataset.play).toBe(`url("data:image/png;base64,S${d.dataset.play}")`);
+    for (const g of glows) expect(urlOf(g, '--dw-glow-img'), g.dataset.play).toBe(`url("data:image/png;base64,L${g.dataset.play}")`);
+    expect(bends()).toEqual(found.map((d) => `data:image/png;base64,B${d.dataset.play}`));
+    expect(new Set(bends()).size).toBe(3);
   });
 
-  test("a play's dent has the same shape and turn on every run and for every reader: only where it lands changes", () => {
+  /* The effect's own call: which play, which box (the very one the dent's shade element is styled with), which density. */
+  const callsOf = () => hub.images.mock.calls as unknown as [string, { x: number; y: number; width: number; height: number }, number][];
+  const lastCallFor = (id: string) => callsOf().filter((c) => c[0] === id).at(-1)!;
+
+  test("each dent's images are asked for with its own play, its own box and the density", () => {
+    mount({ plays: [play(1), play(2), play(3)] });
+    run();
+    const found = dents();
+    expect(found).toHaveLength(3);
+    expect(new Set(found.map((d) => d.style.width + d.style.height)).size, 'the dents are not all one size').toBeGreaterThan(1);
+    for (const d of found) {
+      const [id, box, density] = lastCallFor(d.dataset.play!);
+      expect(id).toBe(d.dataset.play);
+      const own = dentBox(d);
+      expect(box.width).toBeCloseTo(own.width, 6);
+      expect(box.height).toBeCloseTo(own.height, 6);
+      expect(density).toBe(1);
+    }
+  });
+
+  test('the density is the device pixel ratio held to 2', () => {
+    vi.stubGlobal('devicePixelRatio', 3);
+    mount();
+    run();
+    expect(hub.images.mock.calls.length).toBeGreaterThan(0);
+    expect(new Set(callsOf().map((c) => c[2]))).toEqual(new Set([2]));
+    hub.images.mockClear();
+    vi.stubGlobal('devicePixelRatio', 1.5);
+    mount({ plays: [play(7)] });
+    run();
+    expect(new Set(callsOf().map((c) => c[2]))).toEqual(new Set([1.5]));
+  });
+
+  test("a play's dent has the same images on every run and for every reader: only where it lands changes", () => {
     const first = mount({ plays: [play(1), play(2), play(3)], reader: { author: false, caster: false } });
     run();
-    const shapes = dents().map(shapeOf);
+    const imgs = dents().map((d) => [urlOf(d, '--dw-dent-img'), d.dataset.play]);
     const places = dentAt();
+    const filter = bends();
     first.unmount();
     pin(9);
     mount({ plays: [play(1), play(2), play(3)], reader: { author: true, caster: true } });
     run();
-    expect(dents().map(shapeOf), 'the same shapes').toEqual(shapes);
+    expect(dents().map((d) => [urlOf(d, '--dw-dent-img'), d.dataset.play]), 'the same images').toEqual(imgs);
+    expect(bends(), 'the same bends').toEqual(filter);
     expect(dentAt(), 'in other places').not.toEqual(places);
   });
 
-  test('a dent that overlaps another draws no creases, and a lone dent draws its two', () => {
-    /* Fixed places, found by hand: with this seed the run puts sc1 and sc3 close together and sc2 far from both, and the test states that
-       geometry itself (the gaps between centers) before it looks at the creases, so what is expected does not come from `dentsOverlap`, the
-       unit under test. In this 300 px area a dent is at most 136 px across (a reach of 68) and at least about 100 (50): two centers closer than
-       100 px apart must overlap, and two farther than 136 cannot. */
+  test('no crease is drawn, with one dent or with three that overlap', () => {
+    mount();
+    run();
+    expect(document.querySelector('.dw-chair-creases')).toBeNull();
+    expect(document.querySelector('.dw-chair-crease-layer')).toBeNull();
+    cleanup();
     pin(SEED_TWO_AND_ONE);
     mount({ plays: [play(1), play(2), play(3)] });
     run();
-    const at = (id: string) => { const b = dentBox(dents().find((d) => d.dataset.play === id)!); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
-    const gap = (a: string, b: string) => Math.hypot(at(a).x - at(b).x, at(a).y - at(b).y);
-    expect(gap('sc1', 'sc3'), 'sc1 and sc3 plainly overlap').toBeLessThan(100);
-    expect(Math.min(gap('sc1', 'sc2'), gap('sc2', 'sc3')), `sc2 is plainly alone: ${gap('sc1', 'sc2')}, ${gap('sc2', 'sc3')}`).toBeGreaterThan(136);
-    expect([creasesOf('sc1'), creasesOf('sc2'), creasesOf('sc3')]).toEqual([0, 1, 0]);
+    expect(dents()).toHaveLength(3);
+    expect(document.querySelector('.dw-chair-creases')).toBeNull();
+    expect(document.querySelector('.dw-chair-crease-layer')).toBeNull();
   });
 
-  test('one dent alone keeps its creases, turned by its own angle', () => {
-    mount();
-    run();
-    const c = document.querySelector<HTMLElement>('.dw-chair-creases')!;
-    expect(c).not.toBeNull();
-    expect(c.style.transform).toBe(`rotate(${dentShape('sc1').turn.toFixed(1)}deg)`);
-  });
-
-  test('the shading is three layers with their own blends: shade multiplied (dents darkened against each other), light screened (lightened), creases plain, all hidden in forced colors', () => {
+  test('the shading is two layers with their own blends: shade multiplied (dents darkened against each other), light screened (lightened), images from variables, hidden without blending and in forced colors', () => {
     const blend = (selector: string) => /mix-blend-mode:\s*([a-z-]+)/u.exec(blendRule(selector))?.[1];
     expect(blend('.dw-chair-dents')).toBe('multiply');
     expect(blend('.dw-chair-dent')).toBe('darken');
     expect(blend('.dw-chair-glows')).toBe('screen');
     expect(blend('.dw-chair-glow')).toBe('lighten');
-    expect(blend('.dw-chair-creases')).toBeUndefined();
-    /* The shade's gray at its darkest is one dent's worth (128, as black at 50% was); nothing in it is darker, so overlap cannot be. */
-    expect(blendRule('.dw-chair-dent')).toMatch(/rgb\(128, 128, 128\) 0%/u);
-    expect(blendRule('.dw-chair-dent')).not.toMatch(/rgba\(/u);
-    /* Outside the block (a browser that cannot blend) no blend is set and no disc is opaque: the opaque gray and black discs would cover the words. */
-    for (const [sel, most] of [['.dw-chair-dent', 0.5], ['.dw-chair-glow', 0.28]] as const) {
-      const css = plainRule(sel);
-      expect(css, sel).not.toMatch(/mix-blend-mode/u);
-      expect(css, sel).not.toMatch(/rgb\(/u);
-      const alphas = [...css.matchAll(/rgba\([^)]*,\s*([0-9.]+)\)/gu)].map((m) => Number(m[1]));
-      expect(alphas.length, sel).toBeGreaterThan(1);
-      expect(Math.max(...alphas), sel).toBeLessThanOrEqual(most);
+    expect(blendRule('.dw-chair-dent')).toContain('var(--dw-dent-img');
+    expect(blendRule('.dw-chair-glow')).toContain('var(--dw-glow-img');
+    expect(sheet, 'the images replaced every gradient').not.toMatch(/radial-gradient/u);
+    /* Outside the block (a browser that cannot blend) an opaque gray image would cover the words, so the shading layers are not displayed. */
+    for (const sel of ['.dw-chair-dents', '.dw-chair-glows']) {
+      expect(plainRule(sel), sel).toMatch(/display:\s*none/u);
+      expect(plainRule(sel), sel).not.toMatch(/mix-blend-mode/u);
     }
+    for (const sel of ['.dw-chair-dent', '.dw-chair-glow']) expect(plainRule(sel), sel).not.toMatch(/background|mix-blend-mode/u);
     expect(sheet).toMatch(/forced-colors: active\)\s*\{\s*\.dw-chair-shading,\s*\.dw-chair-layer\s*\{\s*display: none/u);
     mount();
     run();
-    for (const cls of ['dw-chair-dents', 'dw-chair-glows', 'dw-chair-crease-layer']) {
+    for (const cls of ['dw-chair-dents', 'dw-chair-glows']) {
       const layer = document.querySelector<HTMLElement>(`.${cls}`)!;
       expect(layer, cls).not.toBeNull();
       expect(layer).toHaveClass('dw-chair-shading');
@@ -1257,6 +1276,20 @@ describe('the filter', () => {
     expect(wordsEl().getAttribute('style') ?? '').not.toContain('filter');
     expect(document.querySelector('filter')).toBeNull();
     expect(dents()).toHaveLength(1);
+  });
+});
+
+describe('the filter, where an image cannot be made', () => {
+  test("a dent whose bend is '' turns the filter off, and its shade and light are still set", () => {
+    hub.images = vi.fn((play: string) => ({ bend: '', shade: `data:image/png;base64,S${play}`, light: `data:image/png;base64,L${play}` }));
+    mount();
+    run();
+    expect(dents()).toHaveLength(1);
+    expect(wordsEl().style.filter).toBe('');
+    expect(wordsEl().getAttribute('style') ?? '').not.toContain('filter');
+    const d = dents()[0]!;
+    expect(d.style.getPropertyValue('--dw-dent-img')).toBe(`url("data:image/png;base64,S${d.dataset.play}")`);
+    expect(document.querySelector<HTMLElement>('.dw-chair-glow')!.style.getPropertyValue('--dw-glow-img')).toBe(`url("data:image/png;base64,L${d.dataset.play}")`);
   });
 });
 

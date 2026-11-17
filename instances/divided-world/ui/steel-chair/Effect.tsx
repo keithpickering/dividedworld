@@ -23,11 +23,13 @@
  * (`bodyBox`, the wrapper's offsets, the text's client rects), the room is the content area's last child so it stays at the floor however tall
  * the body is, and the floor is the area's bottom border.
  *
- * The dents. Each is an ellipse (within 15% of round) with an uneven edge, its light, shade and creases turned by an angle, all from its play's
- * id alone (dent.ts `dentShape`): the same for every reader and on every replay, while where it lands is the run's. The displacement's
- * `feImage` is stretched to the ellipse's axis-aligned box; only the shading turns. A dent that overlaps another has no creases, and the
- * shading of overlapping dents is the darkest (and the lightest) of them, not their sum (steel-chair.css). Where the text is shorter than a dent
- * the throw aims at a box grown around it (dent.ts `hitZone`), so three dents do not stack on one line.
+ * The dents. Each is a pressed-in plate of metal: a height map made from its play's id alone (dent.ts `dentShape`, `dentHeight`), the same
+ * for every reader and on every replay, while where it lands is the run's, in an ellipse's box (within 15% of round). One light, fixed in the
+ * world, falls on every dent from the upper left (dent.ts `LIGHT`), and the map is drawn as three images (`dentImages`): the bend, which the
+ * displacement's `feImage` takes (stretched to the box), and a shade and a light, which the two shading layers lay over the words (a dark
+ * side and a bright rim and glint). There is nothing else to a dent: no crease, no turned shading. The shading of overlapping dents is the
+ * darkest (and the lightest) of them, not their sum (steel-chair.css). Where the text is shorter than a dent the throw aims at a box grown
+ * around it (dent.ts `hitZone`), so three dents do not stack on one line.
  *
  * When. A run starts once the host's middle (`watchInView`, margin `-20% 0px -20% 0px`, as Glitter Bomb arms its burst) has been in view
  * for 300 ms, and is cleared when the post has wholly left the view, so coming back starts a new one. While a run is up a second observer,
@@ -68,12 +70,14 @@ import {
   addThrow, bodies, createWorld, remove, resize, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
 import { depthOf, INSET, piecesOf, project, ROOM_HEIGHT, shadeOf, transformOf, type Piece } from './chair.ts';
-import { DENT_SCALE, dentMapUrl, dentPrimitives, dentShape, dentsOverlap, filterTrusted, hitZone, seedOfIds, type DentShape } from './dent.ts';
+import { DENT_SCALE, dentImages, dentPrimitives, dentShape, filterTrusted, hitZone, seedOfIds, type DentShape } from './dent.ts';
 import './steel-chair.css';
 
 /**
- * A play's dent shape, computed once per play id: `dentShape` is a pure function of the id (the same for every reader and replay), so the
- * answer is kept and not recomputed on each render. Cleared when it grows past a few hundred plays, which only costs a recomputation.
+ * A play's dent shape (its box's proportions, which `dentPrimitives` sizes the dent's box from), computed once per play id: `dentShape` is a
+ * pure function of the id (the same for every reader and replay), so the answer is kept and not recomputed on each render. The height map
+ * and its three images are made from the same shape by `dentImages`, which keeps its own cache. Cleared when it grows past a few hundred
+ * plays, which only costs a recomputation.
  */
 const shapes = new Map<string, DentShape>();
 function shapeOf(play: string): DentShape {
@@ -238,13 +242,11 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
   const gameSound = useGameSound();
   const filterId = useId();
   const trusted = useMemo(() => filterTrusted(), []);
-  const mapUrl = useMemo(() => (trusted ? dentMapUrl() : ''), [trusted]);
   const host = useRef<HTMLDivElement>(null);
   const words = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const shading = useRef<HTMLDivElement>(null);
   const glows = useRef<HTMLDivElement>(null);
-  const creases = useRef<HTMLDivElement>(null);
   const [chairs, setChairs] = useState<readonly string[]>([]);
   const [dents, setDents] = useState<readonly Dent[]>([]);
   const [geo, setGeo] = useState<Geo | null>(null);
@@ -272,8 +274,8 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
   const key = live.map((p) => p.id).join('|');
   useEffect(() => {
     const el = host.current, wordsEl = words.current, chairLayer = layer.current, dentLayer = shading.current;
-    const glowLayer = glows.current, creaseLayer = creases.current;
-    if (!el || !wordsEl || !chairLayer || !dentLayer || !glowLayer || !creaseLayer) return;
+    const glowLayer = glows.current;
+    if (!el || !wordsEl || !chairLayer || !dentLayer || !glowLayer) return;
     let world: World | null = null;
     let running = false;
     let loud = false;
@@ -345,7 +347,6 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       placeLayer(chairLayer, b);
       placeLayer(dentLayer, b);
       placeLayer(glowLayer, b);
-      placeLayer(creaseLayer, b);
       if (moved) { geoNow = g; setGeo(g); }
       return moved;
     };
@@ -656,36 +657,30 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
   /* The filter and the shading, from the dents in the content area's px: the filter's coordinates are the words wrapper's. */
   const shown = dents.filter((d) => live.some((p) => p.id === d.play));
   const off = geo ?? { left: 0, top: 0, width: 0, height: 0 };
-  /* Each dent's own shape and turn come from its play's id alone (dent.ts `dentShape`): the same for every reader and on every replay. */
+  /* Each dent's own shape comes from its play's id alone (dent.ts `dentShape`): the same for every reader and on every replay. */
   const shapesOf = shown.map((d) => shapeOf(d.play));
   const prims = dentPrimitives(shown.map((d, i) => ({ x: d.x - off.left, y: d.y - off.top, shape: shapesOf[i]! })), { width: off.width, height: off.height });
-  /* A dent that overlaps another draws no creases: where they met they would strike through the words. A lone dent keeps its two. */
-  const lone = prims.map((p, i) => !prims.some((o, j) => j !== i && dentsOverlap(p, o)));
-  const filterOn = trusted && shown.length > 0 && geo !== null;
+  /* Each dent's three images (dent.ts `dentImages`: kept per play, box size and density, so a render makes them once): the bend for the filter,
+     the shade and the light for the two shading layers. Where the images need a canvas that is not there each is '' and sets nothing. */
+  const density = Math.min(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1, 2);
+  const images = shown.map((d, i) => dentImages(d.play, prims[i]!, density));
+  const filterOn = trusted && shown.length > 0 && geo !== null && images.every((m) => m.bend !== '');
   /* The filter's region: the wrapper's box plus DENT_SCALE on every side, in the wrapper's px (as `primitiveUnits` is). The default region
      (-10% to 120% of the box) is too small for a one-line post, where a displacement of up to DENT_SCALE / 2 px moves the glyphs out of it
      and clips them. */
   const region = { x: -DENT_SCALE, y: -DENT_SCALE, width: off.width + 2 * DENT_SCALE, height: off.height + 2 * DENT_SCALE };
-  /* A dent's box (the ellipse the displacement's `feImage` is stretched to), and what each layer of its shading takes from it: the shade and
-     the light the box and the uneven edge, and each its own direction (the light from the direction of its turn, the shade opposite, as a
-     pressed-in plate lit from one side); the creases only the box, which they turn about. */
+  /* A dent's box (the ellipse the displacement's `feImage` is stretched to), which each shading layer's image fills; the image carries the
+     dent's whole shape, so the box is all the style needs besides the image's address. */
   const boxStyle = (i: number): CSSProperties => {
     const p = prims[i]!;
     return { left: `${p.x + off.left}px`, top: `${p.y + off.top}px`, width: `${p.width}px`, height: `${p.height}px` };
   };
-  const edgeStyle = (i: number): CSSProperties => {
-    const [o0, o1, o2, o3] = shapesOf[i]!.outline;
-    return { ...boxStyle(i), borderRadius: `${o0}% ${100 - o0}% ${o2}% ${100 - o2}% / ${o1}% ${o3}% ${100 - o3}% ${100 - o1}%` };
-  };
-  const turnOf = (i: number) => (shapesOf[i]!.turn * Math.PI) / 180;
-  const shadeStyle = (i: number): CSSProperties => ({
-    ...edgeStyle(i),
-    '--dark-x': `${(50 + 25 * Math.cos(turnOf(i))).toFixed(1)}%`, '--dark-y': `${(50 + 25 * Math.sin(turnOf(i))).toFixed(1)}%`,
-  } as CSSProperties);
-  const lightStyle = (i: number): CSSProperties => ({
-    ...edgeStyle(i),
-    '--glow-x': `${(50 - 28 * Math.cos(turnOf(i))).toFixed(1)}%`, '--glow-y': `${(50 - 28 * Math.sin(turnOf(i))).toFixed(1)}%`,
-  } as CSSProperties);
+  const shadeStyle = (i: number): CSSProperties => (
+    images[i]!.shade ? { ...boxStyle(i), '--dw-dent-img': `url("${images[i]!.shade}")` } as CSSProperties : boxStyle(i)
+  );
+  const lightStyle = (i: number): CSSProperties => (
+    images[i]!.light ? { ...boxStyle(i), '--dw-glow-img': `url("${images[i]!.light}")` } as CSSProperties : boxStyle(i)
+  );
   const last = shown.length - 1;
   return (
     <div ref={host} className="dw-chair">
@@ -696,7 +691,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
             {shown.map((d, i) => (
               <Fragment key={d.play}>
                 <feImage
-                  href={mapUrl} x={prims[i]!.x} y={prims[i]!.y} width={prims[i]!.width} height={prims[i]!.height}
+                  href={images[i]!.bend} x={prims[i]!.x} y={prims[i]!.y} width={prims[i]!.width} height={prims[i]!.height}
                   preserveAspectRatio="none" result={`map-${i}`}
                 />
                 <feComponentTransfer in={`map-${i}`} result={`dent-${i}`} ref={depthRef(d.play)}>
@@ -720,19 +715,14 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       ) : null}
       <div ref={words} className="dw-chair-words" style={filterOn ? { filter: `url("#${filterId}")` } : undefined}>{children}</div>
       <div className="dw-chair-room" aria-hidden="true" />
-      {/* The dents' shading, in three layers that each fill the content area: the shade (darkest of the overlapping dents, multiplied onto the
-          words), the light (brightest, screened on), and the creases (lone dents only). Each is its own stacking context, so a blend inside
+      {/* The dents' shading, in two layers that each fill the content area: the shade (darkest of the overlapping dents, multiplied onto the
+          words) and the light (brightest, screened on). Each is its own stacking context, so a blend inside
           it is among its own dents and the layer as a whole blends with the words (steel-chair.css). */}
       <div ref={shading} className="dw-chair-dents dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
         {shown.map((d, i) => <div key={d.play} className="dw-chair-dent" data-play={d.play} style={shadeStyle(i)} />)}
       </div>
       <div ref={glows} className="dw-chair-glows dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
         {shown.map((d, i) => <div key={d.play} className="dw-chair-glow" data-play={d.play} style={lightStyle(i)} />)}
-      </div>
-      <div ref={creases} className="dw-chair-crease-layer dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
-        {shown.map((d, i) => (lone[i]
-          ? <div key={d.play} className="dw-chair-creases" data-play={d.play} style={{ ...boxStyle(i), transform: `rotate(${shapesOf[i]!.turn.toFixed(1)}deg)` }} />
-          : null))}
       </div>
       <div ref={layer} className="dw-chair-layer" data-kb-effect-ink="" aria-hidden="true">
         {chairs.filter((id) => live.some((p) => p.id === id)).map((id) => (
