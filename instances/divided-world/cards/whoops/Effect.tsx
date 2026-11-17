@@ -1023,7 +1023,7 @@ export function Effect({ post, plays, states, reader: given, save, place, show, 
 
   /* ------------------------------------------------------------------ a stroke ---- */
 
-  /* The ink's places are claimed on the post's registry, so a card beneath this one (a wall) takes a press only where this card has none. A moment claims nothing. */
+  /* The ink's places are claimed on the post's registry, so a card beneath this one (a wall) takes a press only where this card has none. */
   useEffect(() => {
     return registry.claim((x, y) => {
       const el = now.current.surface ?? frameRef.current;

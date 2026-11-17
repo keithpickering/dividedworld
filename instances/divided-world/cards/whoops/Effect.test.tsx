@@ -2074,11 +2074,13 @@ describe('in a moment', () => {
 
   test('save is never called, whatever is scrubbed, and no stroke is queued', () => {
     clock();
-    const { root, frame, save } = mount({ moment: MOMENT, states: { 'play-1': { state: savedWash(0, 0.4).state, savedAt: at } } });
+    const { root, frame, save, unmount } = mount({ moment: MOMENT, states: { 'play-1': { state: savedWash(0, 0.4).state, savedAt: at } } });
     scrubTo(frame, root, 0, inkOf(0), 0.9);
     act(() => { vi.advanceTimersByTime(SAVE_AFTER_MS * 4); });
     expect(washed(root)[0]!).toBeGreaterThan(0.4);
     expect(save).not.toHaveBeenCalled();
+    unmount();
+    expect(save, 'a stroke left dirty is not sent as the post leaves').not.toHaveBeenCalled();
   });
 
   test('the words are inert while a line is covered, the controls hold Hold to scrub, and holding it sweeps and reads each uncovered line, as live', () => {
@@ -2097,16 +2099,35 @@ describe('in a moment', () => {
     expect(region.textContent).toMatch(/L\d\d alpha beta gamma/u);
   }, 30_000);
 
+  test('held for the same frames, the sweep washes as much in a moment as live', () => {
+    clock();
+    const held = (o: { moment?: { at: number } }) => {
+      const { root, unmount } = mount(o);
+      const button = screen.getByRole('button', { name: 'Hold to scrub' });
+      act(() => { fireEvent.keyDown(button, { key: ' ' }); });
+      act(() => { vi.advanceTimersByTime(2000); });
+      act(() => { fireEvent.keyUp(button, { key: ' ' }); });
+      const share = washed(root)[0]!;
+      unmount();
+      return share;
+    };
+    const live = held({});
+    expect(live).toBeGreaterThan(0);
+    expect(held({ moment: MOMENT })).toBeCloseTo(live, 5);
+  });
+
   test('a reader forced to author in a moment still has no tool choice and never saves', () => {
     clock();
     const wash = savedWash(0, 0.4);
-    const { root, frame, shown, save } = mount({ moment: MOMENT, author: true, states: { 'play-1': { state: wash.state, savedAt: at } } });
+    const { root, frame, shown, save, unmount } = mount({ moment: MOMENT, author: true, states: { 'play-1': { state: wash.state, savedAt: at } } });
     const view = lastView(shown);
     expect(view.controls.map((c) => c.label)).toEqual(['Hold to scrub']);
     expect(view.yours).toBeFalsy();
     scrubTo(frame, root, 0, inkOf(0), 0.9);
     act(() => { vi.advanceTimersByTime(SAVE_AFTER_MS * 4); });
     expect(save).not.toHaveBeenCalled();
+    unmount();
+    expect(save, 'a stroke left dirty is not sent as the post leaves').not.toHaveBeenCalled();
   });
 
   test('remounted (Reset), it is 40% washed again', () => {
