@@ -495,7 +495,7 @@ export const STAGGER_STEPS = Math.round(0.35 / STEP);
 export const SETTLE_S = 60;
 
 /**
- * Steps until every body sleeps or maxSeconds of simulated time have passed; for reduced motion and a moment. The return value says
+ * Steps until every body sleeps or maxSeconds of simulated time have passed; for reduced motion. The return value says
  * which of the two ended it: true if every body is asleep, false if the time ran out first with at least one still moving (or still in
  * the air), in which case the world is left where the last step put it and the caller may settle again or go on stepping.
  */

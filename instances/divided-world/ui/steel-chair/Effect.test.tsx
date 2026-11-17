@@ -119,13 +119,13 @@ const arm = () => { aim(true); act(() => { vi.advanceTimersByTime(300); }); };
 /** The post's middle comes into view; a run begins and the world goes on to rest. */
 const run = () => { see(true); arm(); settled(); };
 
-interface Options { plays?: CardPlay[]; still?: boolean; place?: 'thread' | 'origin'; reader?: EffectProps['reader']; wrapped?: boolean | 'area' }
+interface Options { plays?: CardPlay[]; moment?: EffectProps['moment']; still?: boolean; place?: 'thread' | 'origin'; reader?: EffectProps['reader']; wrapped?: boolean | 'area' }
 const made = { show: vi.fn<(view: CardView | null) => void>(), met: vi.fn(), save: vi.fn(), release: vi.fn() };
 function Host({ o }: { o: Options }) {
   const [plays, setPlays] = useState(o.plays ?? [play(1)]);
   hub.setPlays = setPlays;
   const props: EffectProps = {
-    post, plays, states: {}, released: new Set(), written: new Map(), reader: o.reader ?? { author: false, caster: false }, place: o.place ?? 'thread', reach: 'post', still: o.still ?? false,
+    post, plays, states: {}, released: new Set(), written: new Map(), reader: o.reader ?? { author: false, caster: false }, place: o.place ?? 'thread', reach: 'post', still: o.still ?? false, moment: o.moment ?? null,
     show: made.show, met: made.met, ink: NO_INK, holdScreen: () => {}, marks: null, save: made.save, release: made.release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p data-kb-words>The words of the post.</p>,
   };
@@ -1267,118 +1267,120 @@ describe('reduced motion', () => {
   });
 });
 
-describe('a moment (still)', () => {
-  const picture = (plays: CardPlay[]) => {
-    const w = mount({ plays, still: true });
-    const html = (document.querySelector('.dw-chair') as HTMLElement).outerHTML.replace(/id="[^"]*"/gu, 'id=""').replace(/url\(&quot;#[^)]*\)/gu, 'url()');
-    const out = { html, groups: groups().length, dents: dents().length };
-    w.unmount();
-    return out;
-  };
+/** A moment's time: before the ended play's end below, and before the plays' far end too. */
+const AT = { at: Date.parse('1999-12-31T00:00:00Z') };
+const BEHIND = '2000-01-01T00:00:00Z';
 
-  test('it is the same picture for the same plays twice over, drawn at once and at rest', () => {
-    const plays = [play(1), play(2), play(3)];
-    const one = picture(plays);
-    const two = picture(plays);
-    expect(one.groups).toBe(3);
-    expect(one.dents).toBe(3);
-    expect(two.html).toBe(one.html);
-    expect(picture([play(7), play(8)]).html).not.toBe(one.html);
-  });
-
-  test('it binds a size observer on the host and the body and nothing else: no view observer, no frame, no sound, nothing inert, and the Lens gets the state with no controls', () => {
-    mount({ plays: [play(1), play(2)], still: true });
-    expect(watching, 'no view observer').toHaveLength(0);
-    expect(sized, 'one size observer').toHaveLength(1);
-    expect([...sized[0]!.watching], 'on the host and the body and nothing else').toEqual([host(), document.querySelector('.kb-act-main')]);
-    expect(requested).toBe(0);
-    expect(hub.sound.play).not.toHaveBeenCalled();
-    expect(made.met).not.toHaveBeenCalled();
-    expect(document.querySelector('[inert]')).toBeNull();
-    expect(document.querySelector('.dw-chair-words')).not.toHaveAttribute('data-shake');
-    expect(groups().every((g) => g.hasAttribute('data-rest'))).toBe(true);
-    expect(lastView()).toMatchObject({ state: 'Dented by 2 chairs', controls: [] });
-  });
-
-  test('7. a still run is drawn again when its box changes, from the same seed, and not again when nothing changed', () => {
-    const plays = [play(1), play(2), play(3)];
-    const html = () => (document.querySelector('.dw-chair') as HTMLElement).outerHTML.replace(/id="[^"]*"/gu, 'id=""').replace(/url\(&quot;#[^)]*\)/gu, 'url()');
-    mount({ plays, still: true });
-    const layerList = () => [...document.querySelectorAll<HTMLElement>('.dw-chair-layer, .dw-chair-dents, .dw-chair-glows')];
-    expect(layerList()).toHaveLength(3);
-    for (const l of layerList()) expect(l.style.height).toBe('200px');
-    size = { h: 260 };
-    act(() => { for (const r of sized) r.cb(); });
-    for (const l of layerList()) {
-      expect([l.style.left, l.style.top, l.style.width, l.style.height], 'the layers are placed at the new height').toEqual(['-10px', '-8px', '300px', '260px']);
-    }
-    expect(groups(), 'a chair for every play').toHaveLength(3);
-    expect(groups().every((g) => g.hasAttribute('data-rest')), 'every chair is at rest').toBe(true);
-    expect(dents(), 'the dents are drawn').toHaveLength(3);
-    for (const g of groups()) expectOnFloor(g, 260);
-    expect(requested, 'no frame').toBe(0);
-    expect(sized, 'the observer is kept').toHaveLength(1);
-    const again = html();
-    const drawn = hub.images.mock.calls.length, world = hub.world;
-    act(() => { for (const r of sized) r.cb(); });
-    expect(hub.images.mock.calls.length, 'nothing changed, so nothing is drawn again').toBe(drawn);
-    expect(hub.world, 'nor is the world built again').toBe(world);
-    cleanup();
-    mount({ plays, still: true });
-    expect(html(), 'the picture a fresh mount at 260 gives for the same plays').toBe(again);
-  });
-
-  describe('a box that measures nothing', () => {
-    const html = () => (document.querySelector('.dw-chair') as HTMLElement).outerHTML.replace(/id="[^"]*"/gu, 'id=""').replace(/url\(&quot;#[^)]*\)/gu, 'url()');
-    const plays = [play(1), play(2), play(3)];
-    const fresh = (): string => {
-      mount({ plays, still: true });
-      const out = html();
-      cleanup();
-      sized.length = 0;
-      return out;
-    };
-
-    test('A. a moment mounted at zero size is drawn when its box gets a size, and unmounting still disconnects the observer', () => {
-      const want = fresh();
-      size = { h: 0 };
-      const w = mount({ plays, still: true });
-      expect(groups(), 'nothing is drawn at zero').toHaveLength(0);
-      expect(sized, 'a size observer is bound').toHaveLength(1);
-      expect(sized[0]!.watching.size, 'on the host and the body').toBeGreaterThan(0);
-      size = { h: 200 };
-      act(() => { for (const r of sized) r.cb(); });
-      expect(groups(), 'a chair for every play').toHaveLength(3);
-      expect(html(), 'the picture a fresh mount at 200 gives').toBe(want);
-      expect(requested, 'no frame').toBe(0);
-      w.unmount();
-      expect(sized.every((r) => r.watching.size === 0), 'the observer is disconnected').toBe(true);
-    });
-
-    test('A2. a moment mounted at zero size and unmounted disconnects the observer', () => {
-      size = { h: 0 };
-      const w = mount({ plays, still: true });
-      expect(sized[0]!.watching.size).toBeGreaterThan(0);
-      w.unmount();
-      expect(sized.every((r) => r.watching.size === 0), 'the observer is disconnected').toBe(true);
-    });
-
-    test('B. a moment whose box collapses to zero is drawn again when the box gets its size back', () => {
-      const want = fresh();
-      mount({ plays, still: true });
-      expect(html()).toBe(want);
-      size = { h: 0 };
-      act(() => { for (const r of sized) r.cb(); });
-      size = { h: 200 };
-      act(() => { for (const r of sized) r.cb(); });
-      expect(groups(), 'a chair for every play').toHaveLength(3);
-      expect(html(), 'the picture a fresh mount at 200 gives').toBe(want);
-    });
-  });
-
-  test('a moment draws its plays as they were, ended ones included', () => {
-    mount({ plays: [play(1, '2000-01-01T00:00:00Z')], still: true });
+describe('a moment', () => {
+  test("a play whose end is behind today's clock is thrown in a moment, as the post stood then", () => {
+    mount({ plays: [play(1, BEHIND)], moment: AT });
+    run();
     expect(groups()).toHaveLength(1);
+    expect(dents()).toHaveLength(1);
+    cleanup();
+    mount({ plays: [play(1, BEHIND)] });
+    run();
+    expect(groups(), 'a live post drops it').toHaveLength(0);
+  });
+
+  test('the run waits for the post to be in view, and does not start before the arming wait', () => {
+    mount({ plays: [play(1), play(2)], moment: AT });
+    expect(groups(), 'nothing is drawn at mount').toHaveLength(0);
+    expect(requested).toBe(0);
+    see(true); aim(true);
+    act(() => { vi.advanceTimersByTime(299); });
+    expect(groups(), 'not before 300 ms in view').toHaveLength(0);
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(groups(), 'the first chair is thrown').toHaveLength(1);
+    settled();
+    expect(groups()).toHaveLength(2);
+  });
+
+  test('the run is cleared when the post leaves the view, and a new one starts when it comes back', () => {
+    mount({ plays: [play(1)], moment: AT });
+    run();
+    expect(groups()).toHaveLength(1);
+    see(false);
+    expect(groups()).toHaveLength(0);
+    expect(dents()).toHaveLength(0);
+    aim(false); aim(true); act(() => { vi.advanceTimersByTime(300); });
+    expect(groups()).toHaveLength(1);
+  });
+
+  test('the hit sounds are asked of the mixer, in the group and with lateMs', () => {
+    mount({ plays: [play(1)], moment: AT });
+    run();
+    expect(hub.sound.play).toHaveBeenCalledWith('steel-chair.hit', { group: 'steel-chair', lateMs: LATE_MS });
+  });
+
+  test('under reduced motion it is settled at once and silent, as live', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    mount({ plays: [play(1), play(2)], moment: AT });
+    see(true); aim(true);
+    expect(requested, 'no frame').toBe(0);
+    expect(groups()).toHaveLength(2);
+    expect(dents()).toHaveLength(2);
+    expect(groups().every((g) => g.hasAttribute('data-rest'))).toBe(true);
+    expect(hub.sound.play).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-shake]')).toBeNull();
+  });
+
+  test("Throw again is in the view's controls and throws again, with a different target", () => {
+    mount({ plays: [play(1)], moment: AT });
+    run();
+    expect(lastView().controls.map((c) => [c.kind, c.label])).toEqual([['press', 'Throw again'], ['toggle', 'Game sounds']]);
+    const first = dentAt();
+    act(() => { (lastView().controls[0] as { run: () => void }).run(); });
+    settled();
+    expect(groups()).toHaveLength(1);
+    expect(dentAt()).not.toEqual(first);
+  });
+
+  test('met is never called, and nothing is saved or released', () => {
+    mount({ plays: [play(1), play(2)], moment: AT });
+    run();
+    expect(groups()).toHaveLength(2);
+    expect(made.met).not.toHaveBeenCalled();
+    expect(made.save).not.toHaveBeenCalled();
+    expect(made.release).not.toHaveBeenCalled();
+  });
+});
+
+describe('a stale still flag is ignored', () => {
+  const stale = (plays: CardPlay[]) => mount({ plays, still: true, moment: null });
+
+  test('the run waits for the post to be in view: nothing is thrown at mount', () => {
+    stale([play(1)]);
+    expect(groups()).toHaveLength(0);
+    expect(requested).toBe(0);
+    see(true); aim(true);
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(groups()).toHaveLength(1);
+  });
+
+  test('the hit sound is asked of the mixer', () => {
+    stale([play(1)]);
+    run();
+    expect(hub.sound.play).toHaveBeenCalledWith('steel-chair.hit', { group: 'steel-chair', lateMs: LATE_MS });
+  });
+
+  test("Throw again is in the view's controls and throws again", () => {
+    stale([play(1)]);
+    run();
+    expect(lastView().controls.map((c) => c.label)).toEqual(['Throw again', 'Game sounds']);
+    const first = dentAt();
+    act(() => { (lastView().controls[0] as { run: () => void }).run(); });
+    settled();
+    expect(groups()).toHaveLength(1);
+    expect(dentAt()).not.toEqual(first);
+  });
+
+  test('the run is cleared on leaving view', () => {
+    stale([play(1)]);
+    run();
+    expect(groups()).toHaveLength(1);
+    see(false);
+    expect(groups()).toHaveLength(0);
   });
 });
 
@@ -1528,7 +1530,7 @@ describe('nobody is special', () => {
 
   test('props that differ only in reader render the same', () => {
     const html = (reader: EffectProps['reader']) => {
-      const w = mount({ plays: [play(1), play(2)], still: true, reader });
+      const w = mount({ plays: [play(1), play(2)], moment: AT, reader });
       const out = (document.querySelector('.dw-chair') as HTMLElement).outerHTML.replace(/id="[^"]*"/gu, 'id=""').replace(/url\(&quot;#[^)]*\)/gu, 'url()');
       w.unmount();
       return out;
