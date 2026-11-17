@@ -100,8 +100,8 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
     /* An entry settled with a flat size says it; one with a `by`, or none (a row settled before the flat earn), keeps the words it had. */
     const flat = n['flat'];
     if (typeof flat !== 'number') return `${name} added: what the card's boost on a reaction earned`;
-    /* A line below zero takes pay back: a vote the card paid for was withdrawn, or moved to a reaction the card does not name. It has words of its own (#799), since "more" reads as a gain. */
-    if (amount !== undefined && amount < 0) return `${name}: up to ${shareWords(flat)} taken back for each vote it named that a player withdrew or moved`;
+    /* A line below zero takes pay back: a vote the card paid for moved away (a reaction cannot be removed, but a player who adds one elsewhere moves part of their vote). It has words of its own (#799), since "more" reads as a gain. */
+    if (amount !== undefined && amount < 0) return `${name}: up to ${shareWords(flat)} taken back for each vote it named that later moved away`;
     return `${name}: up to ${shareWords(flat)} more for each vote it named, from players who first reacted while it was up`;
   },
   /* A card's cushion (settlement's `card.cushion`, params `{ card, share }`): the share is the entry's own, said as a fraction; a card this instance does not have is "A card". */

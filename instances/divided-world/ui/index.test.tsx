@@ -734,9 +734,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(instanceUi.reasonWords('card.boost', { card: 'publicity-tour' })).toBe("Publicity Tour added: what the card's boost on a reaction earned");
     expect(instanceUi.reasonWords('card.boost', { card: 'gone', flat: 0.5 })).toBe('A card: up to half a vote more for each vote it named, from players who first reacted while it was up');
     /* A line that takes pay back (its amount is below zero) has words of its own; one that pays, or whose amount is not given, keeps the paying words. */
-    expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 }, -38)).toBe('Heat Magnet: up to three quarters of a vote taken back for each vote it named that a player withdrew or moved');
-    expect(instanceUi.reasonWords('card.boost', { card: 'hype-up', flat: 1 }, -1)).toBe('Hype-Up: up to a vote taken back for each vote it named that a player withdrew or moved');
-    expect(instanceUi.reasonWords('card.boost', { card: 'gone', flat: 0.5 }, -25)).toBe('A card: up to half a vote taken back for each vote it named that a player withdrew or moved');
+    expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 }, -38)).toBe('Heat Magnet: up to three quarters of a vote taken back for each vote it named that later moved away');
+    expect(instanceUi.reasonWords('card.boost', { card: 'hype-up', flat: 1 }, -1)).toBe('Hype-Up: up to a vote taken back for each vote it named that later moved away');
+    expect(instanceUi.reasonWords('card.boost', { card: 'gone', flat: 0.5 }, -25)).toBe('A card: up to half a vote taken back for each vote it named that later moved away');
     expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 }, 38)).toBe('Heat Magnet: up to three quarters of a vote more for each vote it named, from players who first reacted while it was up');
     expect(instanceUi.reasonWords('card.boost', { card: 'heat-magnet', flat: 0.75 }, 0)).toBe('Heat Magnet: up to three quarters of a vote more for each vote it named, from players who first reacted while it was up');
     expect(REASON_KEYS).toContain('card.cushion');

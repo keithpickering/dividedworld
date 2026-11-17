@@ -418,7 +418,7 @@ export interface InstanceUi {
    * the live estimate, the economy as the server holds it now (`economyNow`).
    *
    * `amount` is a settled line's own, in hundredths, given so that a reason whose line can take pay back (a card's boost, when a vote it paid
-   * for is withdrawn or moved) can say so in words of its own; the live estimate gives none.
+   * for moves away) can say so in words of its own; the live estimate gives none.
    */
   readonly reasonWords: (reason: string, params: Readonly<Record<string, number | string>>, amount?: number) => string;
   readonly copy: UiCopy;
