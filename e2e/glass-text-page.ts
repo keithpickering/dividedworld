@@ -371,8 +371,20 @@ export async function gather(panel?: string): Promise<Gathered[]> {
       const full = inkBand(toBox(line), m);
       const box = visiblePart(full, el);
       if (!box || box.width < 2 || box.height < 2) return;
-      /* A line the dialog's own scroll cuts (a dialog capped to the room an anchored popover has) is read where the dialog has scrolled it whole: it is not in view until then. */
-      const cutByDialog = box.height < full.height - 0.5 && el.closest('.kb-glass-dialog') !== null;
+      /*
+       * A line the dialog's own scroll cuts (a dialog capped to the room an anchored popover has) is read where the dialog has scrolled it whole: it is not in view until then.
+       * A dialog that scrolls itself ends its scroll edge in a band while more lies below (engine/ui/glass/shell.css, the body's `::after`, stuck one border up from its
+       * foot, fading what stands under it to the ground): a line reaching into that band is at the edge, under the band and over the bottom left cut, and is read once
+       * scrolled clear of it.
+       */
+      const scroller = el.closest<HTMLElement>('.kb-glass-dialog[data-kb-place]');
+      const bandTop = (() => {
+        if (!scroller || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 0.5) return Infinity;
+        const band = scroller.querySelector(':scope > .kb-glass-dialog-body');
+        const h = band ? parseFloat(getComputedStyle(band, '::after').height) * zoomOf(scroller) : 0;
+        return scroller.getBoundingClientRect().bottom - (Number.isFinite(h) ? h : 0);
+      })();
+      const cutByDialog = (box.height < full.height - 0.5 && el.closest('.kb-glass-dialog') !== null) || box.y + box.height > bandTop + 0.5;
       /* The HUD is docked over the window's foot: a line of the page lying behind it is read in a later window, where it is clear. An open overlay stands above the HUD, so its lines are not behind it. */
       const seen = hud && hud.top > 0 && hud.top < view.height && !hud.contains(el) && !overlay?.contains(el) ? { ...view, height: hud.top } : view;
       const inView = !cutByDialog && intersect(box, seen)?.width === box.width && intersect(box, seen)?.height === box.height;

@@ -384,6 +384,20 @@ describe('what stands under a line is never the frame\'s neon', () => {
     expect(d['background-position']?.split(',')[0]?.trim()).toBe('bottom left');
     expect(d['background-size']?.split(',')[0]?.trim()).toBe('var(--kb-cut) var(--kb-cut)');
   });
+  test('a dialog that scrolls itself keeps its bottom left corner clear while scrolled short: its foot is a band at the scroll edge, cut along the corner, over the border', () => {
+    const css = sheet('shell.css');
+    /* The foot is the band's, not the box's: the box keeps one border, so what scrolls never stands on the bottom border. */
+    expect(declsOf(css, '.kb-glass-dialog[data-kb-place]')['padding-bottom']).toBe('var(--kb-border)');
+    const band = declsOf(css, '.kb-glass-dialog[data-kb-place] > .kb-glass-dialog-body::after');
+    expect(band.position).toBe('sticky');
+    expect(band.bottom).toBe('var(--kb-border)');
+    expect(band.height).toBe('calc(var(--kb-dialog-foot) - var(--kb-border))');
+    expect(band['pointer-events']).toBe('none');
+    expect(band['clip-path']).toBe('polygon(0 0, 100% 0, 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in)))');
+    expect(band.background).toMatch(/^linear-gradient\(to bottom, transparent, var\(--kb-glass-ground\)/u);
+    /* Shown only while more lies below, where the browser can say so; an unscrolled dialog's foot is its smoke, as before. */
+    expect(css).toMatch(/@container scroll-state\(scrollable: bottom\)\s*\{\s*\.kb-glass-dialog\[data-kb-place\] > \.kb-glass-dialog-body::after\s*\{\s*opacity: 1;/u);
+  });
   test('the Vending Machine\'s wallet words stand clear of the panel\'s border on the phone', () => {
     expect(declsOf(read('../vending/vending.css'), ":where(:root[data-kb-layout='phone']) .kb-vending-wallet-in")['padding-inline']).toBe('16px');
   });

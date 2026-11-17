@@ -29,8 +29,14 @@
  *    stands 53.6px right of the board's (the 2.75rem square and the row head's 0.6rem gap), and the message, held from that line, as far left of it.
  *  - The tabs: the board's order (Whoops!, Stick Around, Glitter Bomb, Autocorrect, Force Field) is the build's billing order (most drawn first, then the newest), which
  *    the story plays so that it is the same.
+ *  - The bar stands clear of the frame's top right cut (the owner, 2026-11-17: Close and the corners' words keep about 14px off the chamfer, glass/shell.css
+ *    `--kb-dialog-chamfer-clear`). The board draws Close 18px under the top and 20px in, its corner on the 40px cut; the bar's top is 40px where it was 16, so the
+ *    tabs, Close and the words under them stand `CHAMFER_CLEAR` lower (the 24px, less what the bar's middle line gives back), here and on board 29.
  */
 import type { BoardManifest, Landmark } from '../../board-match.ts';
+
+/** How much lower the bar and what stands under it are than the board draws them: the clearance from the top right cut (the header's last departure). */
+export const CHAMFER_CLEAR = 22;
 
 /** A part of the Lens, held by its place from the dialog's corner. */
 export const part = (id: string, role: string, name: string, more: Partial<Landmark> = {}): Landmark => ({ id, role, name, within: 'dialog', origin: 'dialog', box: 'position', type: false, ...more });
@@ -47,12 +53,12 @@ const manifest: BoardManifest = {
   build: { story: 'boards-01-lens--five-kinds' },
   landmarks: [
     { ...dialog(), box: 'full' },
-    part('tabs', 'tablist', '', { buildName: 'Card kinds', box: 'position' }),
-    part('tab-whoops', 'tab', 'WHOOPS!', { box: 'full', within: 'tabs' }),
-    part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position', within: 'tabs' }),
-    part('close', 'button', 'Close', { box: 'position' }),
-    part('headline', 'text', '41% washed for you', { buildName: '32% washed for you', box: 'position', buildShift: { y: -18.5 } }),
-    part('ends', 'text', 'Ends on your screen when you scrub every layer off. The author can wash it for everyone.', { box: 'position', buildShift: { y: -30 } }),
+    part('tabs', 'tablist', '', { buildName: 'Card kinds', box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
+    part('tab-whoops', 'tab', 'WHOOPS!', { box: 'full', within: 'tabs', buildShift: { y: CHAMFER_CLEAR } }),
+    part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position', within: 'tabs', buildShift: { y: CHAMFER_CLEAR } }),
+    part('close', 'button', 'Close', { box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
+    part('headline', 'text', '41% washed for you', { buildName: '32% washed for you', box: 'position', buildShift: { y: -18.5 + CHAMFER_CLEAR } }),
+    part('ends', 'text', 'Ends on your screen when you scrub every layer off. The author can wash it for everyone.', { box: 'position', buildShift: { y: -30 + CHAMFER_CLEAR } }),
     part('hold', 'button', 'HOLD TO SCRUB', { buildName: 'Hold to scrub', ...under('ends'), box: 'position' }),
     part('fold', 'button', '3 plays · Gloomba, Pipewrench, Mrs. Hooligan', { ...under('hold'), box: 'position', buildShift: { y: -14 } }),
     part('note', 'text', 'LAYER 3 OF 3, ON TOP · 41% WASHED', { buildName: 'Layer 3 of 3, on top · 97% washed', ...under('fold'), box: 'position', buildShift: { y: -13 } }),

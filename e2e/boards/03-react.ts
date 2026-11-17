@@ -63,6 +63,13 @@ const KINDS: readonly (readonly [string, string, string?])[] = [
 const LOWER = 28;
 const COUNT_LEFT = 67;
 /**
+ * The bar stands clear of the frame's top right cut (the owner, 2026-11-17: Close keeps about 14px off the chamfer, glass/shell.css `--kb-dialog-chamfer-clear`):
+ * the picker takes the clearance as Close's inset, 20px in from the side (CLOSE_IN, so the count beside it stands that much further left), and the bar's top is
+ * 20px where it was 14, with the title and the count on Close's middle line (BAR_LOWER, the two together). What stands under the bar is held by LOWER as before.
+ */
+const CLOSE_IN = 20;
+const BAR_LOWER = 14;
+/**
  * The group bar (docs/plans/2026-11-06-member-groups-design.md, the look the owner approved in docs/research/2026-11-06-member-groups/01-bars.html,
  * option A) stands under #42's author, which the board, drawn before it, does not: the post is 26.5px taller, so its reactions row, and the picker
  * under it, stand that much lower, and the picker fills the room left above the board's 700px foot (engine/ui/glass/Overlay.tsx's maxHeight), 17.8px
@@ -86,8 +93,8 @@ const manifest: BoardManifest = {
   press: [{ role: 'button', name: 'React' }],
   landmarks: [
     { id: 'picker', role: 'dialog', name: 'React to Mrs. Hooligan\'s post', box: 'size', buildShift: { height: LOWER - 12 - GROUP_BAR_ROOM - ROW_AT_FOOT } },
-    { id: 'heading', role: 'heading', name: 'React', within: 'picker', origin: 'picker' },
-    { id: 'left', role: 'text', name: '2 of 3 left', within: 'picker', origin: 'picker', buildShift: { x: -COUNT_LEFT } },
+    { id: 'heading', role: 'heading', name: 'React', within: 'picker', origin: 'picker', buildShift: { y: BAR_LOWER } },
+    { id: 'left', role: 'text', name: '2 of 3 left', within: 'picker', origin: 'picker', buildShift: { x: -COUNT_LEFT - CLOSE_IN, y: BAR_LOWER } },
     { id: 'excited', role: 'text', name: 'Excited', within: 'picker', origin: 'picker', buildShift: { y: LOWER } },
     { id: 'low-key', role: 'text', name: 'Low-key', within: 'picker', origin: 'picker', buildShift: { y: LOWER } },
     { id: 'heat', role: 'group', name: 'Heat', within: 'picker', origin: 'picker', type: false, buildShift: { y: LOWER } },
