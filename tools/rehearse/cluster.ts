@@ -14,8 +14,17 @@ export type Cluster = {
   /** The Postgres binaries and the libfaketime library this cluster runs with, for a line that starts it again. */
   bin: string;
   lib: string;
-  /** Writes the clock file. Call it with a minute plus one second (see the plan). */
+  /**
+   * Writes the clock file. Call it with a minute plus one second (see the plan). It refuses the time the file already says: libfaketime
+   * restarts its clock only when the file's text changes, so writing the same second again leaves the clock running on from the first
+   * write, and every real second spent between the two would count toward now() (a day-1 settings write did, and assertClock failed on CI).
+   */
   setClock(ms: number): void;
+  /**
+   * Stops the clock at `ms` (a line without libfaketime's `@`), for work that should take no simulated time, however long it takes
+   * (setup). A later setClock, even to the same second, is new text, and runs the clock from there.
+   */
+  holdClock(ms: number): void;
   stop(opts?: { keep?: boolean }): Promise<void>;
 };
 
@@ -68,8 +77,9 @@ function hookExit() {
   }
 }
 
-function clockLine(ms: number): string {
-  return `@${new Date(ms).toISOString().slice(0, 19).replace("T", " ")}\n`;
+/** The clock file's line: `@` and a time runs libfaketime's clock from that time; the time alone stops it there. */
+function clockLine(ms: number, running = true): string {
+  return `${running ? "@" : ""}${new Date(ms).toISOString().slice(0, 19).replace("T", " ")}\n`;
 }
 
 export async function startCluster(opts: { at: number; preload?: boolean; extraServerOptions?: string }): Promise<Cluster> {
@@ -85,6 +95,14 @@ export async function startCluster(opts: { at: number; preload?: boolean; extraS
   const root = process.getuid?.() === 0;
   const data = join(dir, "data");
   const clockFile = join(dir, "clock");
+  /* The text the clock file holds now: a write of the same text would not restart libfaketime's clock (setClock). */
+  let said = clockLine(opts.at);
+  const write = (line: string) => {
+    said = line;
+    // Written aside and renamed over, so libfaketime never reads an empty file mid-write.
+    writeFileSync(`${clockFile}.tmp`, line, { mode: 0o644 });
+    renameSync(`${clockFile}.tmp`, clockFile);
+  };
   const env = { ...process.env, LANG: "C", LC_ALL: "C" } as Record<string, string>;
   const run = (cmd: string, args: string[], extraEnv: Record<string, string> = {}) => {
     const envArgs = Object.entries(extraEnv).map(([k, v]) => `${k}=${v}`);
@@ -115,9 +133,14 @@ export async function startCluster(opts: { at: number; preload?: boolean; extraS
     bin,
     lib,
     setClock(ms) {
-      // Written aside and renamed over, so libfaketime never reads an empty file mid-write.
-      writeFileSync(`${clockFile}.tmp`, clockLine(ms), { mode: 0o644 });
-      renameSync(`${clockFile}.tmp`, clockFile);
+      const line = clockLine(ms);
+      if (line === said) {
+        throw new Error(`setClock: the clock already says ${line.slice(1).trim()}; libfaketime restarts its clock only on new text, so it would run on from the first write`);
+      }
+      write(line);
+    },
+    holdClock(ms) {
+      write(clockLine(ms, false));
     },
     async stop({ keep = false } = {}) {
       if (keep) {
@@ -131,7 +154,7 @@ export async function startCluster(opts: { at: number; preload?: boolean; extraS
   hookExit();
   live.add(entry);
   try {
-    writeFileSync(clockFile, clockLine(opts.at));
+    writeFileSync(clockFile, said);
     chmodSync(dir, 0o755);
     chmodSync(clockFile, 0o644);
     if (root) execFileSync("chown", ["postgres:postgres", dir]);

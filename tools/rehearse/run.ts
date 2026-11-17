@@ -236,16 +236,15 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
       const offset = minute - tl.clusterStart;
       const dayStarts = offset % DAY_MS === 0;
       const index = offset / DAY_MS;
-      if (minute === tl.day1) {
-        // The switch an operator's settings write makes (the settings table has no player write; the README does it in SQL), made at
-        // day 1's first minute with the clock on it.
-        cluster.setClock(minute + 1000);
-        clock.setSimulated(minute + 1000);
-        await conn.sql("update settings set value = 'true'::jsonb where key = 'systemEnabled'");
-        systemOnAt = minute;
-      }
+      /*
+       * The switch an operator's settings write makes (the settings table has no player write; the README does it in SQL), made at day 1's
+       * first minute with the clock on it, before the minute's jobs: inside the minute, which sets the clock once (schedule.ts, runMinute).
+       */
+      const switchOn = minute === tl.day1
+        ? async () => { await conn.sql("update settings set value = 'true'::jsonb where key = 'systemEnabled'"); systemOnAt = minute; }
+        : undefined;
       // A step inside the minute names itself first (dispatch.ts, Stalled); this is for whatever else the minute waits on.
-      await within(`the minute ${new Date(minute).toISOString()}`, runMinute(sched, minute), 2 * (o.stallMs ?? STALL_MS));
+      await within(`the minute ${new Date(minute).toISOString()}`, runMinute(sched, minute, switchOn), 2 * (o.stallMs ?? STALL_MS));
       if (dayStarts) {
         if (index > 0) o.onDay?.(`${dayName(minute - DAY_MS)}: ${dayPosts} filler actions through, ${filler.filter((f) => !f.ok && f.at >= minute - DAY_MS).length} refused, ${sched.dispatched.length} requests dispatched so far`);
         dayPosts = 0;

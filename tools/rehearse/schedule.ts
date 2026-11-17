@@ -33,13 +33,19 @@ export async function assertClock(conn: SqlConnection, at: number): Promise<void
   }
 }
 
-export async function runMinute(ctx: ScheduleCtx, minute: number): Promise<void> {
+/**
+ * One simulated minute. `first`, where given, runs once the clock is set and checked and before any job: what an operator does at the
+ * minute's start (day 1's switch on). It runs here, and not around this call, because the clock is set once a minute: libfaketime
+ * restarts its clock only on new text (cluster.ts, setClock), so a caller that set it too would leave it running on through its own work.
+ */
+export async function runMinute(ctx: ScheduleCtx, minute: number, first?: () => Promise<void>): Promise<void> {
   // One second in keeps date_trunc('minute', now()) on the minute: the clock file is read a hair before it is set.
   const now = minute + 1000;
   ctx.cluster.setClock(now);
   ctx.clock.setSimulated(now);
   // Checked against the minute, not minute + 1 s: now() reads a hair before the file's time (the spike's 11:59:59.99993).
   await assertClock(ctx.connection, minute);
+  await first?.();
   // Read each minute: a settings change reschedules a job.
   const jobs = await ctx.connection.sql("select jobid, jobname, schedule, command from cron.job where active order by jobid");
   for (const j of jobs) {
