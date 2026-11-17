@@ -12,10 +12,11 @@ import { buildWorld, renderIn, renderInWorld, testInstance } from '../test-world
 import { Welcome, WelcomeScreen } from './Welcome.tsx';
 import { fakeSound } from '../audio/test-sound.ts';
 import { resetSound } from '../audio/sound.ts';
+import { captions } from '../audio/captions.ts';
 import type { SoundsUi } from '../audio/types.ts';
 
 beforeEach(() => { localStorage.clear(); });
-afterEach(() => { resetSound(); });
+afterEach(() => { resetSound(); captions.reset(); });
 
 const instance: Instance = { ...testInstance, developer: { name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' } };
 const signedIn = (fake: ReturnType<typeof import('../test-world.tsx').buildWorld>) => { fake.signInAs(fake.seed.account('me')); };
@@ -132,10 +133,12 @@ describe('the welcome page', () => {
     fireEvent.input(slider, { target: { value: '45' } });
     expect(within(before).getByText('45%')).toBeInTheDocument();
     expect((await fake.preferences()).gameVolume).toBe(80);
-    expect(fetched).not.toHaveBeenCalled();
+    /* The preview is warmed (fetched) once its bus is on, but nothing plays on input: no caption is said until the release. */
+    expect(captions.current()).toBeNull();
     fireEvent.change(slider, { target: { value: '45' } });
     await waitFor(async () => expect((await fake.preferences()).gameVolume).toBe(45));
-    await waitFor(() => expect(fetched).toHaveBeenCalledWith('/boo.mp3'));
+    await waitFor(() => expect(captions.current()).not.toBeNull());
+    expect(fetched).toHaveBeenCalledWith('/boo.mp3');
     /* The interface bus names no preview here: releasing its volume plays nothing more. */
     await userEvent.click(within(within(before).getByRole('radiogroup', { name: 'Interface sounds' })).getByRole('radio', { name: 'On' }));
     await waitFor(async () => expect((await fake.preferences()).interfaceSound).toBe('on'));
