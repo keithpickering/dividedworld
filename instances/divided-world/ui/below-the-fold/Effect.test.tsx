@@ -1,7 +1,7 @@
 /**
  * Below the Fold's effect (docs/plans/2026-11-11-below-the-fold-plan.md, Task 3): a post that wears it is one bar until a reader
  * presses it. Read here: folded at mount, a press opens and a second folds, the keyboard presses the same button, the Lens is
- * told each state in the plan's words, a play's moment draws it folded and untouchable, and the effect clears its view when it goes.
+ * told each state in the plan's words, a play's moment draws it as the thread does, and the effect clears its view when it goes.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -20,7 +20,7 @@ function setup(over: Partial<EffectProps> = {}) {
   const show = vi.fn<(view: CardView | null) => void>();
   const met = vi.fn();
   const props: EffectProps = {
-    post, plays: [play], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false,
+    post, plays: [play], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false, moment: null,
     show, met, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post.</p>, ...over,
   };
@@ -102,16 +102,43 @@ describe('Below the Fold', () => {
     expect(met).toHaveBeenCalledTimes(1);
   });
 
-  test('in a play\'s moment it is drawn folded with the bar disabled: a click changes nothing, no controls are said, nothing is met', async () => {
+  test('in a play\'s moment it starts folded with an enabled bar; a press shows the words and a second press folds them again', async () => {
     const user = userEvent.setup();
-    const { show, met } = setup({ still: true });
-    expect(bar()).toBeDisabled();
+    setup({ still: false, moment: { at: 1 } });
+    expect(bar()).toBeEnabled();
+    expect(bar()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('The words of the post.')).not.toBeVisible();
+    await user.click(bar());
+    expect(bar()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('The words of the post.')).toBeVisible();
     await user.click(bar());
     expect(bar()).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByText('The words of the post.')).not.toBeVisible();
-    const view = last(show);
-    expect(view.state).toBe('Folded for you');
-    expect(view.controls).toEqual([]);
+  });
+
+  test('in a moment the Lens is given the press control, and it works', () => {
+    const { show } = setup({ still: false, moment: { at: 1 } });
+    expect(last(show).state).toBe('Folded for you');
+    expect(last(show).controls[0]).toMatchObject({ kind: 'press', label: 'Show post' });
+    act(() => { (last(show).controls[0] as { run: () => void }).run(); });
+    expect(bar()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('the live form does not depend on `still`: even handed still: true with no moment, the bar is enabled, opens and says its press control', async () => {
+    const user = userEvent.setup();
+    const { show } = setup({ still: true, moment: null });
+    expect(bar()).toBeEnabled();
+    expect(last(show).controls).toHaveLength(1);
+    await user.click(bar());
+    expect(bar()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('The words of the post.')).toBeVisible();
+  });
+
+  test('in a moment nothing is met, however the reader opens and folds it', async () => {
+    const user = userEvent.setup();
+    const { met } = setup({ still: false, moment: { at: 1 } });
+    await user.click(bar());
+    await user.click(bar());
     expect(met).not.toHaveBeenCalled();
   });
 
