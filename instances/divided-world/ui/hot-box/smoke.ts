@@ -1,7 +1,7 @@
 /**
  * Hot Box's pure half (docs/plans/2026-11-15-hot-box-plan.md, Task 3; design, section 2.2): the smoke over a post,
- * as numbers. No DOM, no clock and no Math.random: `Effect.tsx` hands it the time and a seed and draws what it
- * returns, on a canvas (fog, puffs, clearings cut out) or, under forced colors, as a hard-edged mask.
+ * as numbers. No DOM, no clock and no Math.random: `Effect.tsx` hands it the time and draws what it returns, as the
+ * fog of `fog.ts` (which it drives) or, under forced colors, as a hard-edged mask.
  *
  * The smoke is an obstacle read through by clearing it, and it is the same for every reader: nothing here knows who
  * wrote the post or who cast the card. It thins in a straight line over the play's life (`strength`), from `full` as
@@ -18,11 +18,13 @@
  * a short line costs what a long one does, as Whoops!'s sweep does. Its time depends on nothing but the elapsed
  * time, so reduced motion does not shorten it.
  *
- * The puffs are the drifting texture: placed by a seeded generator, drifting at a steady velocity and wrapping at
- * the box's edges, so where one is at any `t` is a pure function of the puff.
+ * A pointer also leaves a trail: the points it passed, each kept for `wake` and closing in a straight line over it, so
+ * the path just behind it stays partly open. `extendTrail` adds a point only after the pointer has moved a third of a
+ * radius and keeps the list to what a frame a point for one wake needs, so a trail's cost does not grow with a long
+ * visit. Under reduced motion a trail point is open for `trailHard` of the wake and then shut, as a clearing is. The
+ * forced-colors mask draws hard circles (`hardOpen`): a clearing at least `trailHard` open and a trail point still in
+ * the first `trailHard` of its wake.
  */
-import { mulberry32 } from '../../cards/whoops/splat.ts';
-
 export const SMOKE = {
   /** The fog's opacity when the play lands. */
   full: 0.94,
@@ -42,11 +44,12 @@ export const SMOKE = {
   touchHold: 4000,
   /** How long the post stays clear after a finished sweep, ms. */
   waved: 20000,
-  /** The area a puff stands for, px squared. */
-  puffArea: 1800,
-  /** The fewest and most puffs a box holds. */
-  puffsMin: 24,
-  puffsMax: 160,
+  /** How long a trail point stays partly open behind the pointer, ms. */
+  wake: 1500,
+  /** How far the pointer travels before the trail takes another point, as a share of a radius. */
+  trailStep: 1 / 3,
+  /** The share of the wake a trail point shows the words in forced colors and under reduced motion, and the least openness a clearing has to show them there. */
+  trailHard: 0.5,
 } as const;
 
 /** 1 as the play lands at `playedAt`, falling in a straight line to 0 at `ends` (ms), clamped. A time that is no time gives 1. */
@@ -85,46 +88,60 @@ export function openness(clearing: Clearing, now: number, reduced: boolean): num
   return Math.max(0, 1 - closing / SMOKE.roll);
 }
 
-/** The fog's share left at a point: 0 inside an open clearing, 1 away from all of them, the `edge` between; the most open clearing there wins. */
-export function covered(x: number, y: number, clearings: readonly Clearing[], radius: number, now: number, reduced: boolean): number {
+/** A point the pointer passed, in the box's px, and when it left it. */
+export interface TrailPoint { readonly x: number; readonly y: number; readonly leftAt: number }
+
+/** The most points a trail holds: a frame's worth (16 ms) for one wake, and one over. */
+const TRAIL_MAX = Math.ceil(SMOKE.wake / 16) + 1;
+
+/**
+ * The trail with the pointer's place at `now` added when it is a `trailStep` of `radius` from the last point (an empty
+ * trail takes it), and with points a wake old or more dropped. The distance is from the last point the trail held, so a
+ * still pointer adds nothing however long it stays. Never more than `TRAIL_MAX` points: the oldest go first. It returns a new list.
+ */
+export function extendTrail(trail: readonly TrailPoint[], x: number, y: number, now: number, radius: number): TrailPoint[] {
+  const last = trail[trail.length - 1];
+  const kept = trail.filter((p) => now - p.leftAt < SMOKE.wake);
+  if (!last || Math.hypot(x - last.x, y - last.y) >= SMOKE.trailStep * radius) kept.push({ x, y, leftAt: now });
+  return kept.length > TRAIL_MAX ? kept.slice(kept.length - TRAIL_MAX) : kept;
+}
+
+/** How open a trail point is: 1 as it is left, down to 0 over `wake`. Under reduced motion, 1 for the first `trailHard` of the wake, then 0. */
+export function trailOpenness(point: TrailPoint, now: number, reduced: boolean): number {
+  const age = now - point.leftAt;
+  if (reduced) return age < SMOKE.trailHard * SMOKE.wake ? 1 : 0;
+  return Math.min(1, Math.max(0, 1 - age / SMOKE.wake));
+}
+
+/** The fog's share left at a point: 0 inside an open clearing or trail point, 1 away from all of them, the `edge` between; the most open one there wins. */
+export function covered(x: number, y: number, clearings: readonly Clearing[], radius: number, now: number, reduced: boolean, trail: readonly TrailPoint[] = []): number {
   let fog = 1;
   const core = radius * (1 - SMOKE.edge);
-  for (const c of clearings) {
-    const o = openness(c, now, reduced);
-    if (o <= 0) continue;
-    const d = Math.hypot(x - c.x, y - c.y);
+  const open = (cx: number, cy: number, o: number): void => {
+    if (o <= 0) return;
+    /* Beyond the radius it changes nothing; asked first, since the fog's field asks about every cell a clearing or a trail point might reach. */
+    const dx = x - cx, dy = y - cy;
+    if (dx >= radius || -dx >= radius || dy >= radius || -dy >= radius) return;
+    const d = Math.sqrt(dx * dx + dy * dy);
     const local = d <= core ? 0 : d >= radius ? 1 : (d - core) / (radius - core);
     fog = Math.min(fog, 1 - (1 - local) * o);
-  }
+  };
+  for (const c of clearings) open(c.x, c.y, openness(c, now, reduced));
+  for (const p of trail) open(p.x, p.y, trailOpenness(p, now, reduced));
   return fog;
 }
 
-/** One puff of the drifting texture: where it was made, its radius, its drift in px a second and a phase for its shade. */
-export interface Puff { readonly x: number; readonly y: number; readonly r: number; readonly dx: number; readonly dy: number; readonly phase: number }
-
-/** The box's puffs for a seed: one to each `puffArea` px squared, from `puffsMin` to `puffsMax`. */
-export function puffs(seed: number, width: number, height: number): Puff[] {
-  const area = Number.isFinite(width) && Number.isFinite(height) ? Math.max(0, width) * Math.max(0, height) : 0;
-  const count = Math.min(SMOKE.puffsMax, Math.max(SMOKE.puffsMin, Math.round(area / SMOKE.puffArea)));
-  const rnd = mulberry32(seed);
-  const w = Math.max(0, width) || 0, h = Math.max(0, height) || 0;
-  return Array.from({ length: count }, () => {
-    const heading = rnd() * Math.PI * 2, speed = 4 + rnd() * 10;
-    return { x: rnd() * w, y: rnd() * h, r: 18 + rnd() * 24, dx: Math.cos(heading) * speed, dy: Math.sin(heading) * speed, phase: rnd() * Math.PI * 2 };
-  });
+/**
+ * The hard discs forced colors shows the words through, each a full radius: every clearing at least `trailHard` open, and every trail point in the first
+ * `trailHard` of its wake. A disc is there or it is not, under reduced motion too: nothing about it fades.
+ */
+export function hardDiscs(clearings: readonly Clearing[], trail: readonly TrailPoint[], now: number): { readonly x: number; readonly y: number }[] {
+  return [...clearings.filter((c) => openness(c, now, false) >= SMOKE.trailHard), ...trail.filter((p) => trailOpenness(p, now, true) === 1)];
 }
 
-const wrap = (v: number, size: number): number => (size > 0 ? ((v % size) + size) % size : 0);
-
-/** Where a puff is at `t` ms (0 under reduced motion), wrapped at the box's edges, and its shade in [-1, 1] (lighter above 0, darker below). */
-export function puffAt(puff: Puff, t: number, width: number, height: number): { x: number; y: number; r: number; shade: number } {
-  const s = t / 1000;
-  return {
-    x: wrap(puff.x + puff.dx * s, width),
-    y: wrap(puff.y + puff.dy * s, height),
-    r: puff.r,
-    shade: Math.sin(puff.phase + s / 3),
-  };
+/** Whether forced colors shows the words at a point: inside one of `hardDiscs`. */
+export function hardOpen(x: number, y: number, clearings: readonly Clearing[], trail: readonly TrailPoint[], radius: number, now: number): boolean {
+  return hardDiscs(clearings, trail, now).some((d) => Math.hypot(x - d.x, y - d.y) < radius);
 }
 
 /** A post's line in the box's px (a line's own left and right are not needed: a sweep spans the box). `readLines` gives shares of the box's height: scale them first. */

@@ -180,7 +180,7 @@ check('canvasUses counts each use with its line', JSON.stringify(canvasUses('a()
   check('the real tree has no canvas outside the layer beyond the list, and every effect on it a budget story', r.length === 0, JSON.stringify(r));
   check('every listed entry has a reason', Object.values(CANVASES).every((e) => e.why.length > 20));
   check('every until names a step', Object.values(CANVASES).every((e) => e.until === undefined || /^step [2-5]$/.test(e.until)));
-  check('Hot Box waits for nothing: its one entry is its sprite, with no until', Object.entries(CANVASES).filter(([f]) => f.includes('/hot-box/')).every(([, e]) => e.until === undefined));
+  check("Hot Box waits for nothing: its one entry is the fog's scratch canvas, with no until", Object.entries(CANVASES).filter(([f]) => f.includes('/hot-box/')).every(([, e]) => e.until === undefined));
 }
 
 console.log(`\n  ${pass} passed, ${failures.length} failed`);

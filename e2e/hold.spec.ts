@@ -422,3 +422,134 @@ test('on a phone the held mark\'s callout takes its own room, over neither the h
   expect(read.below, 'the callout is under the line').toBe(true);
   expect(read.inScroller, 'the callout is inside the post\'s width').toBe(true);
 });
+
+/* The Whoops! moment's ink sum and a page opened on it with the Lens open on the hold tile (shared by the click and key cases). */
+const whoopsLens = (page: Page) => {
+  const SPOT = '#post-41 canvas.kb-whoops-ink';
+  const inked = () => page.evaluate((sel) => {
+    let n = 0;
+    for (const c of document.querySelectorAll<HTMLCanvasElement>(sel)) {
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      for (let i = 3; i < d.length; i += 4) n += d[i]! / 255;
+    }
+    return Math.round(n);
+  }, SPOT);
+  /* A page opened at the Whoops! moment, its ink built, and the Lens open on the hold tile. */
+  const open = async () => {
+    await page.goto('/?fixture=boards&moment=01-main');
+    await ready(page);
+    await expect(page.locator('#post-41 .kb-whoops-ink').first()).toBeVisible();
+    await expect.poll(inked).toBeGreaterThan(1000);
+    await expect.poll(() => page.evaluate(() => {
+      const el = document.querySelector('#post-41 .kb-whoops')!;
+      const bands = (el.getAttribute('data-kb-bands') ?? '').split(' ').filter(Boolean).length;
+      const live = (el.getAttribute('data-kb-layers') ?? '').split(' ').filter((l) => l === 'live').length;
+      return bands > 0 && Number(el.getAttribute('data-kb-pictures')) === live * bands;
+    }), { timeout: 20_000 }).toBe(true);
+    await page.locator('#post-41 .kb-mark[data-kb-card="whoops"]:not(.kb-ghost-mark)').click();
+    const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+    const tile = lens.getByRole('button', { name: 'Hold to scrub' });
+    await expect(tile).toBeVisible();
+    /* The ink repaints as the Lens opens; it is read as a baseline once two reads half a second apart agree. */
+    let last = -1;
+    await expect.poll(async () => { const now = await inked(); const same = now === last; last = now; return same; }, { intervals: [500], timeout: 15_000 }).toBe(true);
+    return tile;
+  };
+  return { inked, open };
+};
+
+/*
+ * A click holds for one second (hot box and fog design, section 4.3; engine/ui/cards/Kit.tsx): a screen reader in browse mode sends
+ * a hold control a click and never a held key, so a click on Whoops!'s "Hold to scrub" in the Lens scrubs for about a second and then
+ * stops, and pressing it again and again scrubs no more than holding it for as long does. `dispatchEvent('click')` is the browser's own
+ * click with no pointer or key down, as a screen reader sends it. The ink is read as in whoops.spec.ts: the sum of every ink canvas's alpha.
+ */
+test('a click on "Hold to scrub" scrubs for about a second and stops; twelve of them do no more than twelve seconds of holding', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 980 });
+  const { inked, open } = whoopsLens(page);
+  /* One click: the ink falls for about a second, then stops falling. */
+  const tile = await open();
+  const start = await inked();
+  await tile.dispatchEvent('click');
+  await page.waitForTimeout(300);
+  const during = await inked();
+  expect(during, 'a click scrubs').toBeLessThan(start);
+  await page.waitForTimeout(1200);
+  const ended = await inked();
+  await page.waitForTimeout(1500);
+  const later = await inked();
+  expect(later, 'a pulse that ended stays ended: the ink no longer falls').toBe(ended);
+  const oneClick = start - later;
+  expect(oneClick).toBeGreaterThan(0);
+
+  /* Twelve clicks, each after the last pulse has ended, against twelve seconds of a held key, each from a fresh page. */
+  const twelve = await open();
+  const before12 = await inked();
+  for (let i = 0; i < 12; i += 1) {
+    await twelve.dispatchEvent('click');
+    await page.waitForTimeout(1100);
+  }
+  await page.waitForTimeout(500);
+  const byClicks = before12 - (await inked());
+
+  const held = await open();
+  const beforeHold = await inked();
+  await held.focus();
+  await page.keyboard.down('Space');
+  await page.waitForTimeout(12_000);
+  await page.keyboard.up('Space');
+  await page.waitForTimeout(500);
+  const byHolding = beforeHold - (await inked());
+
+  expect(byClicks, 'twelve clicks scrub').toBeGreaterThan(oneClick);
+  /* Slack for the frames a pulse's start and end each land in; a pulse that never ended would scrub far more than the held key. */
+  expect(byClicks, `twelve clicks took ${byClicks} of the ink, twelve seconds held took ${byHolding}`).toBeLessThanOrEqual(byHolding * 1.1);
+});
+
+/*
+ * A tap of a key is a click's equal (owner's decision, 2026-11-17): a tap of Space on the focused "Hold to scrub" scrubs for about a
+ * second and stops, and tapping it again and again scrubs no more than holding it for as long does. A key held down still holds.
+ */
+test('a tap of Space on "Hold to scrub" scrubs for about a second and stops; twelve of them do no more than twelve seconds of holding', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 980 });
+  const { inked, open } = whoopsLens(page);
+
+  const tile = await open();
+  const start = await inked();
+  await tile.focus();
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(300);
+  const during = await inked();
+  expect(during, 'a tap scrubs').toBeLessThan(start);
+  await page.waitForTimeout(1200);
+  const ended = await inked();
+  await page.waitForTimeout(1500);
+  const later = await inked();
+  expect(later, 'a pulse that ended stays ended: the ink no longer falls').toBe(ended);
+  const oneTap = start - later;
+  expect(oneTap).toBeGreaterThan(0);
+
+  const twelve = await open();
+  const before12 = await inked();
+  await twelve.focus();
+  for (let i = 0; i < 12; i += 1) {
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(1100);
+  }
+  await page.waitForTimeout(500);
+  const byTaps = before12 - (await inked());
+
+  const held = await open();
+  const beforeHold = await inked();
+  await held.focus();
+  await page.keyboard.down('Space');
+  await page.waitForTimeout(12_000);
+  await page.keyboard.up('Space');
+  await page.waitForTimeout(500);
+  const byHolding = beforeHold - (await inked());
+
+  expect(byTaps, 'twelve taps scrub').toBeGreaterThan(oneTap);
+  expect(byTaps, `twelve taps took ${byTaps} of the ink, twelve seconds held took ${byHolding}`).toBeLessThanOrEqual(byHolding * 1.1);
+});

@@ -1,49 +1,64 @@
 /**
- * Hot Box's effect on a post (docs/plans/2026-11-15-hot-box-plan.md, Task 4; design, section 2.2): smoke over the words, in the caster's color, for
- * three days, thinning as it goes. It is an obstacle read through by clearing it: a mouse or pen clears a patch where it points, a finger where it
- * touches, and a held control ("Wave the smoke") sweeps the post line by line at the pace of a hand. It is the same for every reader, the post's author
- * and the caster included, and it is the reader's own and on this screen only: nothing is saved, sent, counted or broadcast, so the effect reads neither
- * who wrote the post nor who played the card, and calls neither `save` nor `release`.
+ * Hot Box's effect on a post (docs/plans/2026-11-15-hot-box-plan.md, Task 4, reworked by docs/plans/2026-11-15-hot-box-fog-plan.md, Task 5; design
+ * docs/plans/2026-11-15-hot-box-fog-design.md): smoke over the words, in the caster's color, for three days, thinning as it goes. It is an obstacle read
+ * through by clearing it: a mouse or pen moves the fog aside where it points, a finger where it touches or drags, and a held control in the Lens ("Wave the
+ * smoke") sweeps the post line by line at the pace of a hand. It is the same for every reader, the post's author and the caster included, and it is the
+ * reader's own and on this screen only: nothing is saved, sent, counted or broadcast, so the effect reads neither who wrote the post nor who played the
+ * card, and calls neither `save` nor `release`.
  *
  * Which play. The engine goes on handing an ended play to an effect, so this decides for itself whether its play is still up, against the page's clock
- * (`useAt` redraws when the soonest end passes, as Whodunnit?'s does). The first play whose end is ahead is the one drawn, so a second Hot Box cast after the first
- * ended is the one that shows. With none, the words are drawn alone.
+ * (`useAt` redraws when the soonest end passes, as Whodunnit?'s does). The first play whose end is ahead is the one drawn, so a second Hot Box cast after
+ * the first ended is the one that shows. With none, the words are drawn alone.
  *
  * The container (the owner, 2026-11-15). The smoke fills the post's whole content area, border to border, as Feelin' Fab's foil and Whoops!'s ink do: the
- * post body (`.kb-act-main`) in the thread and the ORIGIN box's area (`.kb-origin-area`) in the box, found and measured with the engine's `bodyOf` and `bodyBox`
- * (engine/ui/cards/body.ts), and this effect's own element where there is none (Stick Around's view). The area's borders are the container, and no smaller un-bordered box in it is. Everything below that says "the box"
- * means that area: the smoke's tiles, the puffs, a clearing's radius, where a pointer clears (the density is the layer's). Only the words' own lines are the words': the held
- * sweep travels them (offset into the area), and under forced colors the mask is the words' (so its coordinates are theirs).
+ * post body (`.kb-act-main`) in the thread and the ORIGIN box's area (`.kb-origin-area`) in the box, found and measured with the engine's `bodyOf` and
+ * `bodyBox` (engine/ui/cards/body.ts), and this effect's own element where there is none (Stick Around's view). Everything below that says "the box" means
+ * that area: the fog's field, a clearing's radius, where a pointer clears. Only the words' own lines are the words': the held sweep travels them (offset
+ * into the area), and under forced colors the mask is the words' (so its coordinates are theirs).
  *
- * The model is `smoke.ts`'s (numbers, strength, clearings, the sweep) and this file draws it, in one of two ways that cost a reader the same:
- *  - the full effect: the smoke is drawn in the engine's tiles (engine/ui/cards/tiles.ts; docs/plans/2026-11-16-effect-tiles-design.md), canvases 512 px tall laid
- *    over the content area and held only near the viewport, so a frame costs what is on screen and not what the post's length is. Each tile is filled with the
- *    play's color at the fog's opacity, drifting puffs over it, and each open clearing cut out of it with a soft edge (`destination-out`); a puff or a clearing
- *    that crosses two tiles is drawn in both. Where a tile is not yet painted its place shows a stand-in, the fog's flat color (`dw-hotbox-far`), so the words
- *    are never bare while the browser has yet to say a tile is near. The layer's loop paints the held tiles every frame, and not at all under reduced motion, where it draws again
- *    only when something changes (a clearing opens or closes, the box resizes, the strength has moved a hundredth, a line of the sweep finishes);
- *  - under forced colors, where the fog cannot be drawn in system colors (the amendment at the top of the plan): the words themselves are masked, a flat layer
- *    at `maskAlpha` over the words, a hard-edged circle for each open clearing (same radius, same `roll`, same `touchHold`), a rectangle for each line the sweep
- *    has finished. No layer is made, so no tile and no stand-in is drawn and no frame is requested; the mask is moved on a 50 ms timer, or on the times things change under reduced motion.
- *    A ring (system colors) shows where each clearing is, a sign says what the Lens says, and the content area is outlined in `CanvasText`, because a smoked post
- *    would otherwise look blank. The outline and the ring are drawn by a frame laid over the content area (`dw-hotbox-frame`), never by the words' own box, which its
- *    mask would take away with the rest; a ring may be anywhere in the area. With forced colors off none of this exists, and the tiles, their fog and its soft edge are exactly as above.
+ * The model is `smoke.ts`'s (numbers, strength, clearings, the trail, the sweep): it alone says what a reader can read, where and for how long. This file
+ * draws it in one of four ways that cost a reader the same, since each reads that model and none has a radius or a timing of its own:
+ *  - the full effect: the fog of `fog.ts`, a shaded body the pointer drags, that flows around it and closes in from its rim. It is painted through the
+ *    engine's tiles (engine/ui/cards/tiles.ts): canvases 512 px tall over the content area, held only near the window, at a density of 1 (the fog is drawn a
+ *    cell to a pixel and scaled up smooth, so a dense canvas buys nothing). The field is stepped once a frame, on the first tile painted in it, and only
+ *    where it is disturbed. Nothing loops: a tile under moving fog (a clearing or trail that is moving, or fog still changing as one opens or closes) is marked stale each frame it is
+ *    painted, so it is painted again in the next; fog at rest, and a clearing the reader holds still once it has settled, is marked stale 20 times a second by one timer for the page, which is how fast its drift needs; a tile out of view is not
+ *    held, so nothing is painted for it. Where a tile is not yet painted its place shows a stand-in, the fog's flat color (`dw-hotbox-far`), so the words
+ *    are never bare;
+ *  - the ladder: the painter's own time is kept for the last 30 frames it ran in, for every smoked post on the page together, against `FOG_BUDGET_MS`.
+ *    Over it, one post that is painting steps down a rung (one nobody is pointing at first): bigger cells, then fewer rounds of the pressure solve, then the fog drawn
+ *    from the model with no field at all. A rung is given back only when the post leaves the view, so the fog never flickers between rungs. Every rung
+ *    reads the same model, so no reader's device makes the post easier or harder to read. The rung is on the host as `data-dw-fog-level`, for tests;
+ *  - reduced motion: the same shaded fog, still, drawn from the model directly (a clearing and each point of its trail is open or shut, with the fog's
+ *    wispy edge), and drawn again only when something changes;
+ *  - forced colors, where the fog cannot be drawn in system colors: the words themselves are masked, a flat layer at `maskAlpha` over the words, a
+ *    hard-edged disc for each of the model's `hardDiscs` (a clearing more open than not, a trail point in the first half of its wake), a rectangle for each
+ *    line the sweep has finished. No layer is made, so no tile and no stand-in is drawn and no frame is requested; the mask is moved on a 50 ms timer, or on
+ *    the times things change under reduced motion. A ring (system colors) shows where each disc is, a sign says what the Lens says, and the content area is
+ *    outlined in `CanvasText`, because a smoked post would otherwise look blank. The outline and the rings are drawn by a frame laid over the content area
+ *    (`dw-hotbox-frame`), never by the words' own box, which its mask would take away with the rest.
  *
- * Screen readers and the keyboard. While the play is up the words are `inert` (as Whoops! makes an inked body), so a link in a smoked post is followed after
- * a finished sweep: the control is the way through for every reader, a mouse's included, and it is never inert, never covered and drawn wherever the post is.
- * Each line the sweep finishes is put in a hidden live region, one at a time. A held sweep that reaches the end makes the post waved: for `SMOKE.waved` no fog
- * is drawn and the words are not inert, and then the smoke rolls back over `roll`. Letting go early lets it back over `roll`, and the words stay inert.
+ * The control is the Lens's alone (the owner, 2026-11-16): the post holds no button. A card's control on the post could be covered and inert under another
+ * card's obstacle; its Lens control is always reachable (issue #721).
  *
- * The control carries `data-kb-over-ink`, as Below the Fold's bar does: it is drawn over another card's ink and stays usable there, and Whoops! starts no
- * scrub from a press on it. Nothing here is stopped or prevented: the pointer is read passively on the host, and a press reaches every listener above it.
+ * Screen readers and the keyboard. While the play is up the words are `inert` (as Whoops! makes an inked body), so a link in a smoked post is followed
+ * after a finished sweep. A line in the body, hidden from sight and never inert, stands where the words are and says the way: the post's Hot Box mark opens
+ * the cards on the post, and Wave the smoke is there. Each line the sweep finishes is put in a hidden live region, one at a time. A held sweep that reaches
+ * the end makes the post waved: for `SMOKE.waved` no fog is drawn and the words are not inert, and then the smoke rolls back over `roll`. Focus is never
+ * thrown: when the window ends, only focus that was inside the words (which the browser would drop) goes to the post's Hot Box mark. While the words are
+ * inert nothing inside them is lifted above the fog (hot-box.css): a fold's bar under smoke is under it like the words, and neither looks nor is pressable.
  *
- * In a play's moment (`still`) the fog and puffs (or the flat mask layer alone, under forced colors) are drawn once as they stood, at full strength: no
- * handler, no control, nothing inert, no loop and no timer, and nothing met. The page's clock is `api.now()` throughout, never the page's own `Date`.
+ * Nothing here is stopped or prevented: the pointer is read passively on the content area, and a press reaches every listener above it. A finger's
+ * vertical swipe scrolls the page as ever (`touch-action: pan-y` on the host); its drag across a line moves its clearing and leaves a wake.
+ *
+ * In a play's moment (`still`) the fog is drawn once as it stood, at full strength, from the model with nothing cleared: no handler, no control, nothing
+ * inert, no timer, and nothing met. The page's clock is `api.now()` throughout, never the page's own `Date`; the painter's own cost is a duration on the
+ * page's timer (`performance.now`), compared with no time the data holds.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import { bodyBox, bodyOf, liftedOver, type BodyBox } from '../../../../engine/ui/cards/body.ts';
-import { endsWords } from '../../../../engine/ui/cards/marks.ts';
+import { endsWords, markOf } from '../../../../engine/ui/cards/marks.ts';
 import { TIMER_MOST, useAt } from '../../../../engine/ui/cards/plays.ts';
 import { makeTileLayer, type TileDraw, type TileLayer } from '../../../../engine/ui/cards/tiles.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -52,12 +67,15 @@ import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { readLines } from '../../cards/whoops/lines.ts';
 import { SWEEP_PX_S } from '../../cards/whoops/scrub.ts';
 import { rgbOf } from '../../cards/whoops/splat.ts';
-import { SMOKE, covered, fogAlpha, holeRadius, maskAlpha, openness, puffAt, puffs, strength, sweepAt, type Clearing, type SweepLine } from './smoke.ts';
+import { FOG, cellOrigin, coverageOf, makeField, pageCloud, paintFog, rowsOf, stepField, type FogClearing, type FogField } from './fog.ts';
+import { SMOKE, extendTrail, fogAlpha, hardDiscs, holeRadius, maskAlpha, openness, strength, sweepAt, type Clearing, type SweepLine, type TrailPoint } from './smoke.ts';
 import './hot-box.css';
 
-/** The control's label and its hidden description, which the Lens is given as well. */
+/** The control's label and its hidden description, which the Lens is given. */
 export const WAVE_LABEL = 'Wave the smoke';
 export const WAVE_DESCRIBE = `Hold Space or Enter on this button to wave the smoke off line by line, at the pace of a hand. Let go and it rolls back in. Hold to the end and the post stays clear for ${SMOKE.waved / 1000} seconds.`;
+/** The line that stands where the words are for a screen reader while they are under smoke: the glass's voice, plain and true. */
+export const SMOKED_WAY = `This post is under smoke. To read it, open Hot Box in the cards on this post and hold ${WAVE_LABEL}.`;
 
 const STATE_SMOKE = 'Smoke over the words';
 const STATE_WAVING = 'Waving it away';
@@ -67,6 +85,12 @@ const STATE_WAVED = 'Waved clear for you';
 const SHIFT_PX = 0.5;
 /** How often the forced-colors mask is moved while something in it is changing, ms. */
 const TICK_MS = 50;
+/** How often fog at rest is drawn again, ms: 20 times a second, which its fastest sheet (7 px a second) needs and no more. */
+const REST_MS = 50;
+/** A frame's worth: the gap between one tile's rest repaint and the next in the same post. */
+const REST_STEP_MS = 16;
+/** A pointer that has not moved for this long drags nothing, and its clearing is fog at rest to the painter, ms. */
+const IDLE_MS = 60;
 /** The color a smoke that names none the card can read is drawn in: `lightgray` (Whoops!'s table has no such name, so it is written out). */
 const LIGHT_GRAY: readonly [number, number, number] = [211, 211, 211];
 
@@ -100,38 +124,143 @@ export function useForcedColors(): boolean {
   return useSyncExternalStore(subscribeForced, forcedNow, () => false);
 }
 
-/* -------------------------------------------------------------------------------- puff sprites ---- */
+/* -------------------------------------------------------------------------------- the ladder ---- */
 
 /**
- * A puff is a soft disc fading to nothing at its rim. Every puff of a color is the same disc at another size and strength, so each color's disc is drawn once
- * into a small canvas of its own and shared by every smoked post on the page, and a frame draws a puff with `drawImage` (scaled to its radius) at the puff's
- * alpha, rather than building a radial gradient for each of up to 160 puffs a frame. A browser that gives no 2D context to an offscreen canvas has none, and a
- * puff is drawn from a gradient instead.
+ * The script time a frame all the fog in view may take together, ms (measured at a phone's speed by e2e/hot-box.spec.ts). Raised from the design's 4 ms on the
+ * owner's word, 2026-11-16, after the measured figures (a phone's viewport at a 4x CPU throttle: 7.6 to 9.4 ms at rung 0) and the owner's own check on a Pixel 8;
+ * 8 ms is the tiled layer's own budget figure.
  */
-const SPRITE_PX = 128;
-const LIGHT = '255, 255, 255';
-const DARK = '0, 0, 0';
-const sprites = new Map<string, HTMLCanvasElement | null>();
-/** Forgets every sprite, null ones included (for tests: the cache is shared by the page, and a test must start from none). */
-export function forgetSprites(): void { sprites.clear(); }
-function spriteOf(base: string): HTMLCanvasElement | null {
-  if (sprites.has(base)) return sprites.get(base) ?? null;
-  if (typeof document === 'undefined') return null;
-  const sprite = document.createElement('canvas');
-  sprite.width = SPRITE_PX;
-  sprite.height = SPRITE_PX;
-  const ctx = sprite.getContext?.('2d');
-  /* A browser with no context for it is remembered as having none, so a frame does not make two canvases to find that out again. */
-  if (!ctx) { sprites.set(base, null); return null; }
-  const half = SPRITE_PX / 2;
-  const soft = ctx.createRadialGradient(half, half, 0, half, half, half);
-  soft.addColorStop(0, `rgba(${base}, 1)`);
-  soft.addColorStop(1, `rgba(${base}, 0)`);
-  ctx.fillStyle = soft;
-  ctx.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
-  sprites.set(base, sprite);
-  return sprite;
+export const FOG_BUDGET_MS = 8;
+/** How many of the painter's last frames the mean is taken over, at most. */
+const LADDER_FRAMES = 30;
+/** The rungs, by level: the cell's side (px), the rounds of the pressure solve, and whether the fog is drawn from the model with no field. */
+const RUNGS: readonly { readonly cell: number; readonly rounds: number; readonly direct: boolean }[] = [
+  { cell: FOG.cell, rounds: FOG.rounds, direct: false },
+  { cell: 7, rounds: FOG.rounds, direct: false },
+  { cell: 10, rounds: FOG.rounds, direct: false },
+  { cell: 10, rounds: 4, direct: false },
+  { cell: 10, rounds: 0, direct: true },
+];
+export const FOG_LEVEL_MOST = RUNGS.length - 1;
+/**
+ * What a frame costs at each rung, as a share of rung 0's: how far down a mean over the budget has to go to fit it. Measured by e2e/hot-box.spec.ts's cost
+ * cases in Chromium at a 4x CPU throttle (a phone's speed), each rung forced alone, a pointer or a finger sweeping 3 s over the short post and over LongPost
+ * at a desktop's width and a phone's: the mean of the four ratios to rung 0 (2026-11-16, with `coverageOf` in the painter: 0.59 0.48 0.67 0.64 at rung 1,
+ * 0.41 0.28 0.61 0.47 at rung 2, 0.41 0.29 0.56 0.42 at rung 3, 0.23 0.17 0.31 0.27 at rung 4). Rung 3's rounds buy nothing a pressure solve of 8 did not already cost less than the cell, so it
+ * is no cheaper than rung 2 and the ladder never lands on it from a mean that rung 2 did not fit.
+ */
+export const FOG_SHARE: readonly number[] = [1, 0.59, 0.44, 0.42, 0.25];
+/** How many painter frames the mean has before it is judged: a slow device paints few frames a second, and waits on no more than this. */
+const LADDER_FIRST = 8;
+
+/** A smoked post on the ladder: its rung, whether a pointer is on it, the last frame it painted in (the ladder's count), and the step down. */
+interface Rung { level(): number; pointed(): boolean; paintedIn(): number; lower(to: number): void }
+/* One budget for the page: every smoked post's painter adds its time to the frame it ran in, and the mean of the last frames decides. */
+const ladder = { rungs: new Set<Rung>(), stamp: null as number | null, seen: new Set<string>(), spent: 0, painted: false, kept: [] as number[], frames: 0, skipping: false };
+/* Each smoked post's own name in the ladder's frames: the same play can be shown twice on a page (in its thread and in an ORIGIN box), so the play's id is not one. */
+let painters = 0;
+
+/** The frame before this one is over: its cost joins the mean, and a mean over the budget sends one post a rung down, a post nobody points at first. */
+function closeFrame(): void {
+  /* The frame that straddled a step began at the old rung: it is not counted, so the new rung is judged on frames drawn at it. */
+  if (ladder.skipping) { ladder.skipping = false; ladder.spent = 0; ladder.painted = false; ladder.frames += 1; return; }
+  if (!ladder.painted) return;
+  ladder.kept.push(ladder.spent);
+  if (ladder.kept.length > LADDER_FRAMES) ladder.kept.shift();
+  ladder.spent = 0;
+  ladder.painted = false;
+  ladder.frames += 1;
+  if (ladder.kept.length < LADDER_FIRST) return;
+  let sum = 0;
+  for (const ms of ladder.kept) sum += ms;
+  const mean = sum / ladder.kept.length;
+  if (mean <= FOG_BUDGET_MS) return;
+  /* Only a post that painted in the frames the mean is over can take its cost off it: one that holds no tile near the window is never stepped down. */
+  const open = [...ladder.rungs].filter((r) => r.level() < FOG_LEVEL_MOST && ladder.frames - r.paintedIn() <= LADDER_FRAMES);
+  const next = open.find((r) => !r.pointed()) ?? open[0];
+  if (!next) return;
+  /* It goes to the first rung whose expected cost fits (the mean as the rungs' shares scale it), at least one down, and to the last where none does. */
+  const from = next.level();
+  let to = from + 1;
+  while (to < FOG_LEVEL_MOST && (mean * FOG_SHARE[to]!) / FOG_SHARE[from]! > FOG_BUDGET_MS) to += 1;
+  next.lower(to);
+  /* The mean starts again, so the rung just taken is judged on its own frames. */
+  ladder.kept = [];
+  ladder.skipping = true;
 }
+
+/** A painter's time for one tile, in the frame `stamp` (a tile is painted once a frame, so a tile seen twice is a new frame even where the stamp is the same). */
+function spend(key: string, stamp: number | null, ms: number): void {
+  if (stamp === null) return;
+  if (stamp !== ladder.stamp || ladder.seen.has(key)) { closeFrame(); ladder.stamp = stamp; ladder.seen.clear(); }
+  ladder.seen.add(key);
+  if (ladder.skipping) return;
+  ladder.spent += ms;
+  ladder.painted = true;
+}
+
+let forcedLevel: number | null = null;
+/** For a story and a test: every smoked post is drawn at this rung (null gives each its own back). */
+export function forceFogLevel(level: number | null): void {
+  forcedLevel = level === null ? null : Math.max(0, Math.min(FOG_LEVEL_MOST, Math.floor(level)));
+}
+/** For tests: the ladder as a fresh page has it. */
+export function resetFogLadder(): void {
+  ladder.rungs.clear(); ladder.stamp = null; ladder.seen.clear(); ladder.spent = 0; ladder.painted = false; ladder.kept = []; ladder.frames = 0; ladder.skipping = false;
+  forcedLevel = null;
+}
+
+/* -------------------------------------------------------------------------------- fog at rest ---- */
+
+/* One timer for every smoked post on the page: made with the first, dropped with the last. Each tick, a post marks its held tiles stale (one that holds none does nothing). */
+const resting = new Set<() => void>();
+let restTimer: ReturnType<typeof setTimeout> | undefined;
+function restTick(): void {
+  restTimer = undefined;
+  for (const tick of [...resting]) tick();
+  if (resting.size > 0) restTimer = setTimeout(restTick, REST_MS);
+}
+function joinRest(tick: () => void): () => void {
+  resting.add(tick);
+  restTimer ??= setTimeout(restTick, REST_MS);
+  return () => {
+    resting.delete(tick);
+    if (resting.size === 0 && restTimer !== undefined) { clearTimeout(restTimer); restTimer = undefined; }
+  };
+}
+
+/* -------------------------------------------------------------------------------- the scratch ---- */
+
+/**
+ * The fog is worked out as bytes, a cell to a pixel, and reaches a tile through one small canvas the whole page shares: the bytes are put on it and it is
+ * drawn onto the tile, scaled up smooth. It is as wide as the widest field and as tall as a tile's rows (a few hundred px by about a hundred), never the
+ * size of a post. A browser that gives it no 2D context has none, and the tile is filled flat instead.
+ */
+interface Scratch { readonly canvas: HTMLCanvasElement; readonly ctx: CanvasRenderingContext2D; readonly images: Map<string, ImageData> }
+let scratch: Scratch | null | undefined;
+function scratchFor(w: number, h: number): { readonly canvas: HTMLCanvasElement; readonly ctx: CanvasRenderingContext2D; readonly img: ImageData } | null {
+  if (scratch === undefined) {
+    const canvas = typeof document === 'undefined' ? null : document.createElement('canvas');
+    const ctx = canvas?.getContext?.('2d') ?? null;
+    scratch = canvas && ctx ? { canvas, ctx, images: new Map() } : null;
+  }
+  if (!scratch || w <= 0 || h <= 0) return null;
+  /* Grown, never shrunk: assigning a size clears a canvas, and the bytes put on it each time cover what is drawn from it. */
+  if (scratch.canvas.width < w) scratch.canvas.width = w;
+  if (scratch.canvas.height < h) scratch.canvas.height = h;
+  const key = `${w}x${h}`;
+  let img = scratch.images.get(key);
+  if (!img) {
+    /* A post's tiles are of two heights at most; a few sizes are kept so two posts in view do not make their bytes again every frame. */
+    if (scratch.images.size >= 8) scratch.images.clear();
+    img = scratch.ctx.createImageData(w, h);
+    scratch.images.set(key, img);
+  }
+  return { canvas: scratch.canvas, ctx: scratch.ctx, img };
+}
+/** For tests: the scratch canvas is the page's, and a test must start with none. */
+export function forgetScratch(): void { scratch = undefined; }
 
 /* -------------------------------------------------------------------------------- the model's state ---- */
 
@@ -152,19 +281,26 @@ interface Sweep {
   readonly per: number;
   readonly releasedAt: number | null;
 }
-/** What this screen's reader has done to the smoke, in memory only: the mouse's clearing, the last touch's, the clearings left behind, the sweep, and when the post was waved. */
+/**
+ * What this screen's reader has done to the smoke, in memory only: the mouse's clearing, the last touch's, the clearings left behind, the trail, the sweep,
+ * and when the post was waved. `moves` is where the pointer last was (three of them, for its speed) and `mover` whose clearing it is moving.
+ */
 interface Model {
   mouse: Clearing | null;
   touch: Clearing | null;
   rest: Clearing[];
+  trail: TrailPoint[];
+  moves: { readonly x: number; readonly y: number; readonly t: number }[];
+  mover: 'mouse' | 'touch' | null;
   sweep: Sweep | null;
   /** How many lines of the sweep have been read out. */
   said: number;
   wavedAt: number | null;
 }
-const emptyModel = (): Model => ({ mouse: null, touch: null, rest: [], sweep: null, said: 0, wavedAt: null });
+const emptyModel = (): Model => ({ mouse: null, touch: null, rest: [], trail: [], moves: [], mover: null, sweep: null, said: 0, wavedAt: null });
 
-interface Cuts { readonly clearings: readonly Clearing[]; readonly rects: readonly { readonly left: number; readonly width: number; readonly top: number; readonly bottom: number; readonly o: number }[] }
+/** What is open: the clearings (the sweep's travelling one among them, and named as `lead`) and a band for each line the sweep has finished. */
+interface Cuts { readonly clearings: readonly Clearing[]; readonly lead: Clearing | null; readonly rects: readonly { readonly top: number; readonly bottom: number; readonly o: number }[] }
 
 const isWaved = (wavedAt: number | null, now: number): boolean => wavedAt !== null && now - wavedAt < SMOKE.waved;
 
@@ -182,28 +318,56 @@ const dead = (c: Clearing, now: number): boolean => c.leftAt !== null && now >= 
 function prune(m: Model, now: number): void {
   m.rest = m.rest.filter((c) => !dead(c, now));
   if (m.touch && dead(m.touch, now)) m.touch = null;
+  if (m.trail.length > 0 && now - m.trail[0]!.leftAt >= SMOKE.wake) m.trail = m.trail.filter((p) => now - p.leftAt < SMOKE.wake);
   if (m.sweep && m.sweep.releasedAt !== null && now >= m.sweep.releasedAt + SMOKE.roll) m.sweep = null;
 }
 
-/** What is open at `now`: each clearing and, from the sweep, a rectangle for each finished line and (with motion) the clearing travelling along the line. */
-function cutsAt(m: Model, now: number, reduced: boolean): Cuts {
-  const clearings = [m.mouse, m.touch, ...m.rest].filter((c): c is Clearing => c !== null && openness(c, now, reduced) > 0);
-  const rects: { left: number; width: number; top: number; bottom: number; o: number }[] = [];
-  const sw = m.sweep;
-  if (sw) {
-    const s = sweepAt(sw.lines, (sw.releasedAt ?? now) - sw.startedAt, sw.width, SWEEP_PX_S);
-    const lead: Clearing = { x: sw.x0 + s.x, y: s.y, openedAt: sw.startedAt, leftAt: sw.releasedAt, hold: 0 };
-    const o = openness(lead, now, reduced);
-    if (o > 0) {
-      for (let i = 0; i <= s.finished; i++) rects.push({ left: sw.x0, width: sw.width, top: sw.lines[i]!.top, bottom: sw.lines[i]!.bottom, o });
-      if (!reduced && !s.done) clearings.push(lead);
-    }
-  }
-  return { clearings, rects };
+/** Where the sweep's clearing is at `now`, with motion and while it travels; null otherwise. */
+function leadOf(sw: Sweep | null, now: number, reduced: boolean): Clearing | null {
+  if (!sw || reduced) return null;
+  const s = sweepAt(sw.lines, (sw.releasedAt ?? now) - sw.startedAt, sw.width, SWEEP_PX_S);
+  return s.done ? null : { x: sw.x0 + s.x, y: s.y, openedAt: sw.startedAt, leftAt: sw.releasedAt, hold: 0 };
 }
 
-/** When the model next needs to be looked at (an epoch ms), or null: a line of the sweep finishing, a post's wave ending, a clearing closing, the strength moving a hundredth. */
-function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonly animate: boolean; readonly still: boolean; readonly playedAt: number; readonly ends: number }): number | null {
+/** The held sweep leaves a trail as a pointer does: where its clearing is now is added to it. */
+function feedSweep(m: Model, now: number, reduced: boolean, radius: number): void {
+  const sw = m.sweep;
+  if (!sw || sw.releasedAt !== null) return;
+  const lead = leadOf(sw, now, reduced);
+  if (lead) m.trail = extendTrail(m.trail, lead.x, lead.y, now, radius);
+}
+
+/** What is open at `now`: each clearing and, from the sweep, a band for each finished line and (with motion) the clearing travelling along the line. */
+function cutsAt(m: Model, now: number, reduced: boolean): Cuts {
+  const clearings = [m.mouse, m.touch, ...m.rest].filter((c): c is Clearing => c !== null && openness(c, now, reduced) > 0);
+  const rects: { top: number; bottom: number; o: number }[] = [];
+  const sw = m.sweep;
+  let lead: Clearing | null = null;
+  if (sw) {
+    const s = sweepAt(sw.lines, (sw.releasedAt ?? now) - sw.startedAt, sw.width, SWEEP_PX_S);
+    const o = openness({ x: 0, y: 0, openedAt: sw.startedAt, leftAt: sw.releasedAt, hold: 0 }, now, reduced);
+    if (o > 0) {
+      for (let i = 0; i <= s.finished; i++) rects.push({ top: sw.lines[i]!.top, bottom: sw.lines[i]!.bottom, o });
+      lead = leadOf(sw, now, reduced);
+      if (lead) clearings.push(lead);
+    }
+  }
+  return { clearings, lead, rects };
+}
+
+/** How fast the pointer is moving, px a second, over its last moves; nothing once it has been still for `IDLE_MS`. */
+function velocityOf(m: Model, now: number): { x: number; y: number } {
+  const a = m.moves[0], b = m.moves[m.moves.length - 1];
+  if (!a || !b || a === b || now - b.t > IDLE_MS || b.t <= a.t) return { x: 0, y: 0 };
+  const s = (b.t - a.t) / 1000;
+  return { x: (b.x - a.x) / s, y: (b.y - a.y) / s };
+}
+
+/**
+ * When the model next needs to be looked at (an epoch ms), or null: a line of the sweep finishing, a post's wave ending, a clearing closing, a trail point
+ * shutting (where no frame draws the trail: `frames` is false), the strength moving a hundredth. `animate` is the forced-colors mask in view, which is moved by this timer and nothing else.
+ */
+function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonly animate: boolean; readonly still: boolean; readonly frames: boolean; readonly playedAt: number; readonly ends: number }): number | null {
   const at: number[] = [];
   const ticks = o.animate && !o.reduced;
   const sw = m.sweep;
@@ -221,6 +385,16 @@ function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonl
     /* A clearing is open through `closing` itself and gone after it, so under reduced motion the screen is drawn again one ms past it. */
     if (now <= closing) at.push(closing + 1);
     else if (now < end) at.push(ticks ? now + TICK_MS : end);
+    /* The forced-colors disc is there through the moment the clearing is half closed, and gone after it. */
+    const half = closing + SMOKE.roll * (1 - SMOKE.trailHard);
+    if (o.animate && now <= half) at.push(half + 1);
+  }
+  /* Where frames repaint the trail (`frames`: the full effect), it needs no wake of its own: each point's end is drawn by the frame it passes in. */
+  if (!o.frames) for (const p of m.trail) {
+    /* A trail point is a hard disc, and open under reduced motion, until `trailHard` of its wake; then it is gone from both. */
+    const shut = p.leftAt + SMOKE.wake * SMOKE.trailHard;
+    if (now < shut) at.push(shut);
+    else if (now < p.leftAt + SMOKE.wake) at.push(p.leftAt + SMOKE.wake);
   }
   if (m.wavedAt !== null) {
     const clear = m.wavedAt + SMOKE.waved;
@@ -258,31 +432,30 @@ function seedOf(id: string): number {
 }
 
 /**
- * The boxes the effect reads, in CSS px. The content area (`w`, `h`, placed at `top` and `left` from the effect's element) is the container: the smoke's tiles, the
- * puffs, a clearing's radius and the density are its, and a clearing's coordinates are in it. The words stand in it at (`wx`, `wy`) and are `ww` by `wh`: the
- * sweep's lines, and the forced-colors mask's coordinates, are theirs.
+ * The boxes the effect reads, in CSS px. The content area (`w`, `h`, placed at `top` and `left` from the effect's element) is the container: the fog's field
+ * and a clearing's radius are its, and a clearing's coordinates are in it. The words stand in it at (`wx`, `wy`) and are `ww` by `wh`: the sweep's lines,
+ * and the forced-colors mask's coordinates, are theirs.
  */
 interface Frame { readonly w: number; readonly h: number; readonly top: number; readonly left: number; readonly wx: number; readonly wy: number; readonly ww: number; readonly wh: number }
 const NO_FRAME: Frame = { w: 0, h: 0, top: 0, left: 0, wx: 0, wy: 0, ww: 0, wh: 0 };
 
 /**
- * The words' mask, forced colors only: the flat layer, a hard circle for each clearing, a rectangle for each finished line; none while the post is clear.
- * The cuts are in the content area's coordinates and the mask is the words' own, so each is moved by where the words stand in the area (`ox`, `oy`);
- * the radius is the area's (`w` is its width), as in the tiles.
+ * The words' mask, forced colors only: the flat layer, a hard disc for each of the model's `hardDiscs`, a rectangle for each finished line; none while the
+ * post is clear. The discs and bands are in the content area's coordinates and the mask is the words' own, so each is moved by where the words stand in the
+ * area (`ox`, `oy`); the radius is the area's.
  */
-function maskFor(cuts: Cuts, s: number, g: number, now: number, reduced: boolean, w: number, ox: number, oy: number): CSSProperties | undefined {
+function maskFor(discs: readonly { readonly x: number; readonly y: number }[], rects: Cuts['rects'], s: number, g: number, r: number, ox: number, oy: number): CSSProperties | undefined {
   if (g >= 1) return undefined;
   const flat = maskAlpha(s) + (1 - maskAlpha(s)) * g;
-  const r = holeRadius(w);
   const images = [`linear-gradient(rgba(0, 0, 0, ${a4(flat)}), rgba(0, 0, 0, ${a4(flat)}))`];
   const sizes = ['100% 100%'];
   const positions = ['0 0'];
-  for (const c of cuts.clearings) {
-    images.push(`radial-gradient(circle ${r}px at ${px(c.x - ox)}px ${px(c.y - oy)}px, rgba(0, 0, 0, ${a4(openness(c, now, reduced))}) ${r}px, rgba(0, 0, 0, 0) ${r}px)`);
+  for (const c of discs) {
+    images.push(`radial-gradient(circle ${r}px at ${px(c.x - ox)}px ${px(c.y - oy)}px, rgba(0, 0, 0, 1) ${r}px, rgba(0, 0, 0, 0) ${r}px)`);
     sizes.push('100% 100%');
     positions.push('0 0');
   }
-  for (const rect of cuts.rects) {
+  for (const rect of rects) {
     images.push(`linear-gradient(rgba(0, 0, 0, ${a4(rect.o)}), rgba(0, 0, 0, ${a4(rect.o)}))`);
     sizes.push(`100% ${px(rect.bottom - rect.top)}px`);
     positions.push(`0 ${px(rect.top - oy)}px`);
@@ -313,17 +486,24 @@ export function HotBoxEffect(props: EffectProps) {
   return <Smoke key={play.id} {...props} play={play} />;
 }
 
+/**
+ * What the painter keeps between frames: the field, the rung, when it last stepped, which tiles it has painted in the frame it is in, and the rows of the
+ * box something is still happening in this frame (`all` for every row, null for none), which each tile painted in the frame marks itself stale by, and the
+ * ladder's count of frames as of the last one it painted in.
+ */
+interface Painter { field: FogField | null; level: number; steppedAt: number; stamp: number | null; seen: Set<number>; live: { readonly top: number; readonly bottom: number } | 'all' | null; paintedIn: number }
+
 function Smoke({ place, play, still, show, met, children }: EffectProps & { readonly play: CardPlay }) {
   const { api } = useKayfa();
   const reduced = useMotionReduced();
   const forced = useForcedColors();
-  const descId = useId();
   const hostRef = useRef<HTMLDivElement>(null);
   const wordsRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<TileLayer | null>(null);
-  const waveRef = useRef<HTMLButtonElement>(null);
   const model = useRef<Model>(emptyModel());
   const startedAt = useRef(api.now());
+  const own = useMemo(() => ++painters, []);
+  const painter = useRef<Painter>({ field: null, level: 0, steppedAt: api.now(), stamp: null, seen: new Set(), live: null, paintedIn: Number.NEGATIVE_INFINITY });
   /* What render shows is as of the last `refresh`: the page's clock then, and a count so a change always draws again. */
   const [at, setAt] = useState(() => api.now());
   const [tick, bump] = useReducer((n: number) => n + 1, 0);
@@ -331,7 +511,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
   const [frame, setFrame] = useState<Frame>(NO_FRAME);
   /* The content area's element as the last measure found it (the post body, the ORIGIN box's area, or the host where there is none): the observers and listeners are bound to it, and move when it is replaced. */
   const [areaEl, setAreaEl] = useState<HTMLElement | null>(null);
-  /* Whether the post's content area is on screen, as the observer last said: `met` waits for the first sight, and the forced-colors mask's timer runs only while it is in view. */
+  /* Whether the post's content area is on screen, as the observer last said: `met` waits for the first sight, the forced-colors mask's timer runs only while it is in view, and a post that leaves the view is given its rungs back. */
   const [inView, setInView] = useState(false);
 
   const playedAt = Date.parse(play.playedAt);
@@ -339,7 +519,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
   const rgb = useMemo(() => readColor(play.config['color']), [play.config]);
   const seed = useMemo(() => seedOf(play.id), [play.id]);
 
-  /* The layer's every-frame way runs with motion, off the forced-colors path (which has no layer), and not while the post is waved (nothing is drawn then; the wake at the end of the wave renders again). It holds tiles only near the window, so whether the post is in view is not its question. */
+  /* The fog moves with motion, off the forced-colors path (which has no layer), and not while the post is waved (nothing is drawn then; the render at the end of the wave draws again). The layer holds tiles only near the window, so whether the post is in view is not this flag's question. */
   const waved = !still && isWaved(model.current.wavedAt, at);
   const loop = !still && !reduced && !forced && !waved;
   const latest = useRef({ frame, reduced, forced, still, loop, rgb, seed, playedAt, ends, inView });
@@ -347,8 +527,8 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
 
   /*
    * Time. One timer, set for the soonest thing the model needs looked at after the last time it was (`seen`): a line of the sweep finishing, the wave's end,
-   * a clearing closing (every `TICK_MS` while the forced-colors mask is moving), the strength moving a hundredth. It sets the next as it fires, so it never
-   * waits on a render, and a late timer catches up on what it missed. Every `refresh` sets it again.
+   * a clearing closing or a trail point shutting (every `TICK_MS` while the forced-colors mask is moving), the strength moving a hundredth. It sets the next
+   * as it fires, so it never waits on a render, and a late timer catches up on what it missed. Every `refresh` sets it again.
    */
   const seen = useRef(api.now());
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -357,15 +537,24 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
     clearTimeout(timer.current);
     timer.current = undefined;
     const L = latest.current;
-    const wake = nextWake(model.current, seen.current, { reduced: L.reduced, animate: L.forced && L.inView, still: L.still, playedAt: L.playedAt, ends: L.ends });
+    const wake = nextWake(model.current, seen.current, { reduced: L.reduced, animate: L.forced && L.inView, still: L.still, frames: L.loop, playedAt: L.playedAt, ends: L.ends });
     if (wake === null) return;
     timer.current = setTimeout(() => stepRef.current(), Math.min(TIMER_MOST, Math.max(1, Math.ceil(wake - api.now()))));
   }, [api]);
-  const refresh = useCallback(() => { seen.current = api.now(); setAt(seen.current); bump(); schedule(); }, [api, schedule]);
-  /* The reader changed something: draw it. The loop draws by itself, so only the other ways need the screen rendered again. */
-  const changed = useCallback(() => {
+  /* The screen is rendered again as of now; with motion the tiles are painted in the next frame too, since no loop paints them. */
+  const refresh = useCallback(() => {
+    seen.current = api.now();
+    setAt(seen.current);
+    bump();
+    schedule();
+    if (latest.current.loop) layerRef.current?.stale();
+  }, [api, schedule]);
+  /* The reader changed something at `y` of the box (anywhere, when not given): draw it. With motion the tiles it reaches are painted in the next frame; the other ways need the screen rendered again. */
+  const changed = useCallback((y?: number) => {
     prune(model.current, api.now());
-    if (!latest.current.loop) refresh();
+    if (!latest.current.loop) { refresh(); return; }
+    const reach = holeRadius(latest.current.frame.w) * FOG.reach;
+    layerRef.current?.stale(y === undefined ? undefined : { top: y - reach, bottom: y + reach });
   }, [api, refresh]);
 
   /* ---- the box ---- */
@@ -397,7 +586,7 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
     measure();
     const words = wordsRef.current, host = hostRef.current;
     if (!words || !host || typeof ResizeObserver === 'undefined') return;
-    /* The host and the area too: the words can move in them with no change of their own size (the control's font loads or wraps), and the area can change with none of the words'. */
+    /* The host and the area too: the words can move in them with no change of their own size, and the area can change with none of the words'. */
     const watch = new ResizeObserver(measure);
     watch.observe(words);
     watch.observe(host);
@@ -406,80 +595,184 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
   }, [measure, areaEl, forced]);
 
   /* ---- the tiles ---- */
-  /* The puffs for a box of this size: one list for every tile, made when the box changes. The painter can run before this effect has measured anything, so it asks the layer's own box. */
-  const puffCache = useRef<{ readonly key: string; readonly list: ReturnType<typeof puffs> } | null>(null);
-  /* A tile's canvas has been cleared, transformed to the box's px and clipped to the tile's rows by the layer (engine/ui/cards/tiles.ts), so this draws the smoke over the whole box and only the tile's rows are kept. */
+  /**
+   * A frame has turned: the model is caught up, the field is stepped once (never once a tile), and the tiles moving fog is under are marked stale, so the next
+   * frame paints them again. Moving fog is where a clearing or trail is moving, or the field's last step changed something (`busy`); a clearing the reader holds
+   * still has settled, and is as still as fog at rest. A tile nothing is moving under is left to the page's 20-a-second timer.
+   */
+  const turn = useCallback((t: number, field: FogField, radius: number, direct: boolean, rounds: number) => {
+    const m = model.current, L = latest.current, p = painter.current, layer = layerRef.current;
+    feedSweep(m, t, L.reduced, radius);
+    prune(m, t);
+    const dt = t - p.steppedAt;
+    p.steppedAt = t;
+    const cuts = cutsAt(m, t, false);
+    if (!direct) {
+      const v = velocityOf(m, t), mover = m.mover === 'mouse' ? m.mouse : m.mover === 'touch' ? m.touch : null;
+      const clearings: FogClearing[] = cuts.clearings.map((c) => ({
+        x: c.x, y: c.y,
+        ...(c === mover ? { vx: v.x, vy: v.y } : c === cuts.lead && c.leftAt === null ? { vx: SWEEP_PX_S, vy: 0 } : {}),
+        burst: c === m.touch && t - c.openedAt < FOG.burst.ms,
+      }));
+      /* Only what the layer holds is stepped: the rows of its tiles, which are the ones near the window. */
+      let top = Number.POSITIVE_INFINITY, bottom = Number.NEGATIVE_INFINITY;
+      for (const tile of layer?.held() ?? []) { top = Math.min(top, tile.top); bottom = Math.max(bottom, tile.top + tile.h); }
+      /* A field at rest is not stepped: with no box disturbed and nothing open to disturb one, the step would do nothing. */
+      if (field.box || clearings.length > 0 || m.trail.length > 0) stepField(field, dt, {
+        clearings, trail: m.trail, radius, rounds, ...(bottom > top ? { view: { top, bottom } } : {}),
+        target: coverageOf(cuts.clearings, radius, t, false, m.trail),
+      });
+    }
+    /* What is still happening, as rows of the box. */
+    let top = Number.POSITIVE_INFINITY, bottom = Number.NEGATIVE_INFINITY;
+    const span = (a: number, b: number) => { if (a < top) top = a; if (b > bottom) bottom = b; };
+    const reach = radius * FOG.reach, moved = m.moves.length > 0 && t - m.moves[m.moves.length - 1]!.t <= IDLE_MS;
+    for (const point of m.trail) span(point.y - radius, point.y + radius);
+    for (const c of cuts.clearings) {
+      /* A clearing left behind is closing or (a tap) bursting; one a pointer holds is happening while the pointer moves; the sweep's travels. */
+      const live = c.leftAt !== null ? t > c.leftAt + c.hold || t - c.openedAt < FOG.burst.ms : c === cuts.lead || moved;
+      if (live) span(c.y - reach, c.y + reach);
+    }
+    for (const rect of cuts.rects) if (rect.o < 1) span(rect.top, rect.bottom);
+    if (!direct && field.box && field.busy) span(cellOrigin(field, 0, field.box.y0).y, cellOrigin(field, 0, field.box.y1).y);
+    const g = waveFactor(m.wavedAt, t, L.reduced);
+    p.live = g > 0 && g < 1 ? 'all' : bottom > top ? { top, bottom } : null;
+    if (p.live === 'all') layer?.stale();
+    else if (p.live) layer?.stale(p.live);
+  }, []);
+
+  /* A tile's canvas has been cleared, transformed to the box's px and clipped to the tile's rows by the layer (engine/ui/cards/tiles.ts), so this draws the fog's rows for the tile and one more at each end, and only the tile's rows are kept. */
   const paintTile = useCallback((draw: TileDraw) => {
-    const { ctx, box } = draw, L = latest.current;
+    const { ctx, box } = draw, L = latest.current, p = painter.current;
     const { w, h } = box;
     if (w <= 0 || h <= 0) return;
-    const rows0 = draw.top, rows1 = draw.top + draw.h;
-    const light = spriteOf(LIGHT), dark = spriteOf(DARK);
+    const began = performance.now();
     const t = api.now();
     const m = model.current;
     /* A moment draws the smoke as it stood at full strength. */
     const s = L.still ? 1 : strength(t, L.playedAt, L.ends);
     const g = L.still ? 0 : waveFactor(m.wavedAt, t, L.reduced);
     if (g >= 1) return;
+    const rung = RUNGS[forcedLevel ?? p.level]!;
+    /* Drawn from the model with no field: a moment, reduced motion (still too), and the ladder's last rung (which drifts and fades as the full effect does). */
+    const direct = L.still || L.reduced || rung.direct;
+    if (!p.field || p.field.width !== w || p.field.height !== h || p.field.cell !== rung.cell) p.field = makeField(w, h, rung.cell);
+    const field = p.field, radius = holeRadius(w);
+    /* The first tile painted in a frame turns it. A paint outside a frame (a commit that must not show bare words) draws the fog as it stands. */
+    if (!L.still && draw.frame !== null && (draw.frame !== p.stamp || p.seen.has(draw.index))) {
+      p.stamp = draw.frame;
+      p.seen.clear();
+      turn(t, field, radius, direct, rung.rounds);
+    }
+    p.seen.add(draw.index);
+    const alpha = fogAlpha(s) * (1 - g);
     const [r, gr, b] = L.rgb;
-    ctx.fillStyle = `rgba(${r}, ${gr}, ${b}, ${a4(fogAlpha(s) * (1 - g))})`;
-    ctx.fillRect(0, 0, w, h);
-    /* The puffs: soft discs a little lighter and a little darker than the fog, drifting; still under reduced motion and in a moment. Each is drawn in every tile its disc crosses. */
-    const key = `${L.seed}|${w}|${h}`;
-    if (puffCache.current?.key !== key) puffCache.current = { key, list: puffs(L.seed, w, h) };
-    const drift = L.reduced || L.still ? 0 : t - startedAt.current;
-    for (const puff of puffCache.current.list) {
-      const p = puffAt(puff, drift, w, h);
-      if (p.y + p.r < rows0 || p.y - p.r > rows1) continue;
-      const a = 0.22 * Math.abs(p.shade) * (1 - g);
-      const sprite = p.shade >= 0 ? light : dark;
-      if (sprite) {
-        ctx.globalAlpha = a4(a);
-        ctx.drawImage(sprite, p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
-        continue;
+    const cuts: Cuts = L.still ? { clearings: [], lead: null, rects: [] } : cutsAt(m, t, L.reduced);
+    const trail = L.still ? [] : m.trail;
+    const rows = rowsOf(field, draw.top, draw.top + draw.h), n = rows.y1 - rows.y0;
+    const sc = scratchFor(field.gw, n);
+    if (!sc) {
+      /* No scratch canvas: the fog's flat color, with the model's hard discs and the finished lines cut out of it, so the post can still be read through. */
+      ctx.fillStyle = `rgba(${r}, ${gr}, ${b}, ${a4(alpha)})`;
+      ctx.fillRect(0, draw.top, w, draw.h);
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+      for (const d of hardDiscs(cuts.clearings, trail, t)) { ctx.beginPath(); ctx.arc(d.x, d.y, radius, 0, Math.PI * 2); ctx.fill(); }
+      for (const rect of cuts.rects) { ctx.fillStyle = `rgba(0, 0, 0, ${a4(rect.o)})`; ctx.fillRect(0, rect.top, w, rect.bottom - rect.top); }
+      ctx.globalCompositeOperation = 'source-over';
+    } else {
+      let reach: { left: number; top: number; right: number; bottom: number } | null = null;
+      if (direct) for (const c of [...cuts.clearings, ...trail]) {
+        reach = reach
+          ? { left: Math.min(reach.left, c.x - radius), top: Math.min(reach.top, c.y - radius), right: Math.max(reach.right, c.x + radius), bottom: Math.max(reach.bottom, c.y + radius) }
+          : { left: c.x - radius, top: c.y - radius, right: c.x + radius, bottom: c.y + radius };
       }
-      const base = p.shade >= 0 ? LIGHT : DARK;
-      const soft = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
-      soft.addColorStop(0, `rgba(${base}, ${a4(a)})`);
-      soft.addColorStop(1, `rgba(${base}, 0)`);
-      ctx.fillStyle = soft;
-      ctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
+      paintFog(field, pageCloud(), sc.img.data, rows, {
+        color: L.rgb, alpha, t: L.reduced || L.still ? 0 : t - startedAt.current, phase: { x: L.seed % 4096, y: (L.seed >>> 12) % 4096 }, bands: cuts.rects,
+        ...(direct ? { direct: { target: coverageOf(cuts.clearings, radius, t, L.reduced, trail), reach } } : {}),
+      });
+      sc.ctx.putImageData(sc.img, 0, 0);
+      const o = cellOrigin(field, 0, rows.y0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(sc.canvas, 0, 0, field.gw, n, o.x, o.y, field.gw * field.cell, n * field.cell);
     }
-    ctx.globalAlpha = 1;
-    /* The clearings are cut out of all of it: a radial fade whose stops are `covered`'s, so the tiles and the model agree. */
-    const radius = holeRadius(w);
-    const cuts = cutsAt(m, t, L.reduced);
-    ctx.globalCompositeOperation = 'destination-out';
-    for (const c of cuts.clearings) {
-      if (c.y + radius < rows0 || c.y - radius > rows1) continue;
-      const cut = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, radius);
-      for (const stop of [0, 1 - SMOKE.edge, 1]) cut.addColorStop(stop, `rgba(0, 0, 0, ${a4(1 - covered(c.x + stop * radius, c.y, [c], radius, t, L.reduced))})`);
-      ctx.fillStyle = cut;
-      ctx.fillRect(c.x - radius, c.y - radius, radius * 2, radius * 2);
-    }
-    for (const rect of cuts.rects) {
-      if (rect.bottom < rows0 || rect.top > rows1) continue;
-      ctx.fillStyle = `rgba(0, 0, 0, ${a4(rect.o)})`;
-      ctx.fillRect(rect.left, rect.top, rect.width, rect.bottom - rect.top);
-    }
-    ctx.globalCompositeOperation = 'source-over';
-  }, [api]);
+    /* A tile painted later in the frame than the one that turned it was marked stale before its paint, and painting clears that mark: it marks itself again, so it is painted in the next frame too. */
+    const live = p.live, bottom = draw.top + draw.h;
+    if (draw.frame !== null && live !== null && (live === 'all' || (live.top < bottom && live.bottom > draw.top))) layerRef.current?.stale({ top: draw.top, bottom });
+    spend(`${own}:${draw.index}`, draw.frame, performance.now() - began);
+    if (draw.frame !== null) p.paintedIn = ladder.frames;
+  }, [api, turn, own]);
 
-  /* The layer is made in the commit that mounts the effect, and paints its first tiles in it (from the box and the window), so the words are never bare while an observer is awaited. Not on the forced-colors path, which draws no canvas. */
+  /* The layer is made in the commit that mounts the effect, and paints its first tiles in it (from the box and the window), so the words are never bare while an observer is awaited. Not on the forced-colors path, which draws no canvas. The fog asks for a density of 1. */
   useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host || forced) return;
-    const layer = makeTileLayer(host, { place, className: 'dw-hotbox-smoke', standIn: 'dw-hotbox-far', paint: paintTile, onBox: take });
+    const layer = makeTileLayer(host, { place, density: 1, className: 'dw-hotbox-smoke', standIn: 'dw-hotbox-far', paint: paintTile, onBox: take });
     layerRef.current = layer;
-    return () => { layer.stop(); layerRef.current = null; };
+    return () => { layer.stop(); layerRef.current = null; painter.current.field = null; };
   }, [forced, place, paintTile, take]);
-  /* The every-frame way follows `loop`, and a commit that turns it on paints once itself, so no frame shows the words bare while the frame it asked for waits. */
+  /* A commit that turns the fog's motion on paints once itself, so no frame shows the words bare while the frame it asked for waits; from then the page's timer marks the fog at rest stale. */
   useLayoutEffect(() => {
-    layerRef.current?.loop(loop);
     if (loop) layerRef.current?.paintNow();
   }, [loop, forced, place, paintTile, take]);
-  /* Without a loop the tiles are drawn after every render: a render is how a change reaches them. */
+  /* Only a post in view joins the page's rest timer: one out of view holds no tiles that need to be drawn again, and a page of smoked posts would otherwise wake every 50 ms for them all. */
+  useLayoutEffect(() => {
+    if (!loop || !inView) return;
+    /* The rest repaint is spread over frames, a tile a frame: the tiled layer's own budget is measured a frame at a time, and marking every held tile stale at once paints three or four whole tiles in one frame, which is the frame that is measured. Each tile is still drawn again about 20 times a second; the drift does not need its tiles in step (at 7 px a second, 16 ms is a tenth of a pixel at a seam). A tile already waiting is not queued twice, so a post with more tiles than fit in a tick runs into the next tick's turn and the queue never outgrows the held set. Tiles something live is happening under are repainted every frame by `turn`, and a mark on them changes nothing. */
+    const waiting: { index: number; top: number; bottom: number }[] = [];
+    const queued = new Set<number>();
+    const markedAt = new Map<number, number>();
+    let chain: ReturnType<typeof setTimeout> | undefined;
+    const step = (): void => {
+      chain = undefined;
+      const next = waiting.shift();
+      if (!next) return;
+      queued.delete(next.index);
+      markedAt.set(next.index, Date.now());
+      layerRef.current?.stale(next);
+      if (waiting.length > 0) chain = setTimeout(step, REST_STEP_MS);
+    };
+    const leave = joinRest(() => {
+      const layer = layerRef.current;
+      if (!layer) return;
+      for (const t of layer.held()) {
+        if (queued.has(t.index)) continue;
+        queued.add(t.index);
+        waiting.push({ index: t.index, top: t.top, bottom: t.top + t.h });
+      }
+      /* The tile drawn longest ago goes first, so a post with more tiles than fit in a tick shares the frames fairly. */
+      waiting.sort((a, b) => (markedAt.get(a.index) ?? -Infinity) - (markedAt.get(b.index) ?? -Infinity));
+      /* A run begins a frame after its tick, so it never marks a tile for the frame the last run's final mark was made for. */
+      if (chain === undefined && waiting.length > 0) chain = setTimeout(step, REST_STEP_MS);
+    });
+    return () => { leave(); if (chain !== undefined) clearTimeout(chain); chain = undefined; waiting.length = 0; queued.clear(); markedAt.clear(); };
+  }, [loop, inView, forced, place, paintTile, take]);
+  /* Without motion the tiles are drawn after every render: a render is how a change reaches them. */
   useLayoutEffect(() => { if (!loop) layerRef.current?.paintNow(); });
+
+  /* ---- the ladder ---- */
+  const setLevel = useCallback((level: number) => {
+    painter.current.level = level;
+    hostRef.current?.setAttribute('data-dw-fog-level', String(forcedLevel ?? level));
+  }, []);
+  useEffect(() => {
+    if (!loop) return;
+    const rung: Rung = {
+      level: () => painter.current.level,
+      pointed: () => model.current.mouse !== null || model.current.touch !== null,
+      paintedIn: () => painter.current.paintedIn,
+      lower: (to) => setLevel(Math.min(FOG_LEVEL_MOST, Math.max(painter.current.level + 1, to))),
+    };
+    ladder.rungs.add(rung);
+    return () => { ladder.rungs.delete(rung); };
+  }, [loop, setLevel]);
+  /* A post that has left the view has its rungs back for the next time it is seen. */
+  const wasInView = useRef(false);
+  useEffect(() => {
+    if (wasInView.current && !inView) setLevel(0);
+    wasInView.current = inView;
+  }, [inView, setLevel]);
 
   /* ---- in view, and met ---- */
   useEffect(() => {
@@ -502,37 +795,63 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
     /* The pointer is read on the content area, which the smoke fills (the host where there is none), and placed in its padding box. */
     const area = areaEl;
     const at = (e: PointerEvent) => { const r = area.getBoundingClientRect(); return { x: e.clientX - r.left - area.clientLeft, y: e.clientY - r.top - area.clientTop }; };
-    /* The control is the way through, not the words, and so is whatever the engine lifts over the ink inside this area (a fold's bar, the reactions row, the ORIGIN box's History): a press
-       on one clears nothing. The area found again here, since a lifted thing that holds it (the ORIGIN box, lifted whole over the opening post's smoke) is no part of it: a press on that
-       box's byline is this smoke's own, while the same press is not the opening post's, whose area holds the box. */
-    const onControl = (e: Event) => (e.target instanceof Element && e.target.closest('.dw-hotbox-wave') !== null) || liftedOver(e.target, hostRef.current ? bodyOf(hostRef.current) : null);
-    const follow = (e: PointerEvent) => {
-      const m = model.current, { x, y } = at(e);
-      m.mouse = { x, y, openedAt: m.mouse?.openedAt ?? api.now(), leftAt: null, hold: 0 };
+    /* Whatever the engine lifts over the ink inside this area (the reactions row, the ORIGIN box's History) is a way through of its own and not the words: a press on one clears nothing. The area is
+       found again here, since a lifted thing that holds it (the ORIGIN box, lifted whole over the opening post's smoke) is no part of it. A thing lifted inside the words is not lifted while they are
+       inert (a fold's bar under smoke, hot-box.css): it is under the smoke like the words, and a press on it clears as a press on them does. */
+    const lifted = (e: Event) => {
+      const words = wordsRef.current;
+      if (words?.hasAttribute('inert') && e.target instanceof Node && words.contains(e.target)) return false;
+      return liftedOver(e.target, hostRef.current ? bodyOf(hostRef.current) : null);
     };
-    /* The mouse's clearing closes where it is and rolls out, as when the pointer leaves the host. */
+    /* Where the pointer is now: its clearing moves there, its speed is kept from its last three moves, and the trail takes the point. */
+    const track = (who: 'mouse' | 'touch', x: number, y: number, t: number) => {
+      const m = model.current;
+      if (m.mover !== who) m.moves = [];
+      m.mover = who;
+      m.moves = [...m.moves.slice(-2), { x, y, t }];
+      m.trail = extendTrail(m.trail, x, y, t, holeRadius(latest.current.frame.w));
+    };
+    const follow = (e: PointerEvent) => {
+      const m = model.current, { x, y } = at(e), t = api.now();
+      m.mouse = { x, y, openedAt: m.mouse?.openedAt ?? t, leftAt: null, hold: 0 };
+      track('mouse', x, y, t);
+      return y;
+    };
+    /* The mouse's clearing closes where it is and rolls out, as when the pointer leaves the area. */
     const closeMouse = () => {
       const m = model.current;
       if (!m.mouse) return;
+      const y = m.mouse.y;
       m.rest.push({ ...m.mouse, leftAt: api.now() });
       m.mouse = null;
-      changed();
+      if (m.mover === 'mouse') { m.mover = null; m.moves = []; }
+      changed(y);
     };
     const onMove = (e: PointerEvent) => {
-      if (e.pointerType === 'touch') return;
-      /* The control is a child of the host, so the host's pointerleave never fires on the way to it: pointing at it ends the clearing, or the first line is read for free. */
-      if (onControl(e)) { closeMouse(); return; }
-      follow(e);
-      changed();
+      if (e.pointerType === 'touch') {
+        /* A finger moves only while it is down: its clearing goes with it and holds `touchHold` from where it was last, and its drag leaves a wake. A swipe the browser takes for a scroll sends no move. */
+        const m = model.current;
+        if (!m.touch || lifted(e)) return;
+        const { x, y } = at(e), t = api.now();
+        m.touch = { x, y, openedAt: m.touch.openedAt, leftAt: t, hold: SMOKE.touchHold };
+        track('touch', x, y, t);
+        changed(y);
+        return;
+      }
+      /* Pointing at a lifted thing ends the clearing, or the words beside it are read for free. */
+      if (lifted(e)) { closeMouse(); return; }
+      changed(follow(e));
     };
     const onDown = (e: PointerEvent) => {
-      if (onControl(e)) { if (e.pointerType !== 'touch') closeMouse(); return; }
+      if (lifted(e)) { if (e.pointerType !== 'touch') closeMouse(); return; }
       if (e.pointerType === 'touch') {
         /* A finger cannot stay in place and scroll too: its clearing is opened where it lands and holds `touchHold`, replacing the last. */
-        const { x, y } = at(e), t = api.now();
-        model.current.touch = { x, y, openedAt: t, leftAt: t, hold: SMOKE.touchHold };
-      } else follow(e);
-      changed();
+        const { x, y } = at(e), t = api.now(), m = model.current;
+        m.touch = { x, y, openedAt: t, leftAt: t, hold: SMOKE.touchHold };
+        m.mover = 'touch';
+        m.moves = [{ x, y, t }];
+        changed(y);
+      } else changed(follow(e));
     };
     const onLeave = (e: PointerEvent) => {
       if (e.pointerType !== 'touch') closeMouse();
@@ -607,8 +926,10 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
 
   /* ---- time: what the timer does when it fires ---- */
   const step = useCallback(() => {
-    const t = api.now();
+    const t = api.now(), L = latest.current;
     settle(t);
+    /* Where no frame turns (the forced-colors mask), the sweep's trail is fed here. */
+    if (L.forced) feedSweep(model.current, t, L.reduced, holeRadius(L.frame.w));
     prune(model.current, t);
     refresh();
   }, [api, refresh, settle]);
@@ -618,13 +939,13 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
     return () => clearTimeout(timer.current);
   }, [schedule, reduced, forced, inView, still, playedAt, ends]);
 
-  /* The words go inert as the waved window ends: focus inside them would be dropped, so it moves to the control, which is never inert. */
+  /* The words go inert as the waved window ends. Focus is not thrown: only focus that was inside the words, which the browser would drop, goes to the post's Hot Box mark, the nearest thing that names the state and opens the way back. */
   const wasWaved = useRef(false);
   useLayoutEffect(() => {
-    const words = wordsRef.current;
-    if (wasWaved.current && !waved && words && document.activeElement && words.contains(document.activeElement)) waveRef.current?.focus();
+    const words = wordsRef.current, host = hostRef.current;
+    if (wasWaved.current && !waved && words && host && document.activeElement && words.contains(document.activeElement)) markOf(host, play.card)?.focus();
     wasWaved.current = waved;
-  }, [waved]);
+  }, [waved, play.card]);
 
   /* ---- what the reader is shown, and what the Lens is told ---- */
   const m = model.current;
@@ -645,35 +966,23 @@ function Smoke({ place, play, still, show, met, children }: EffectProps & { read
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 
-  const cuts = forced ? cutsAt(m, at, reduced) : null;
-  const mask = cuts ? maskFor(cuts, s, g, at, reduced, frame.w, frame.wx, frame.wy) : undefined;
+  void tick;
   const radius = holeRadius(frame.w);
-  const key = (e: KeyboardEvent) => e.key === ' ' || e.key === 'Enter';
+  const cuts = forced ? cutsAt(m, at, reduced) : null;
+  const discs = cuts && !still ? hardDiscs(cuts.clearings, m.trail, at) : [];
+  const mask = cuts ? maskFor(discs, cuts.rects, s, g, radius, frame.wx, frame.wy) : undefined;
 
   /* The fog's color and alpha, for the stand-in of a band whose tile is not yet painted (hot-box.css): the same alpha the painter uses. */
   const standIn = forced ? undefined : { '--dw-hotbox-rgb': rgb.join(' '), '--dw-hotbox-fog': a4(fogAlpha(s) * (1 - g)) } as CSSProperties;
 
   return (
-    <div ref={hostRef} className="dw-hotbox" data-kb-hotbox style={standIn}>
-      {!still && (
-        <>
-          <button
-            ref={waveRef} type="button" className="dw-hotbox-wave" data-kb-over-ink="" aria-describedby={descId}
-            onPointerDown={start} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop} onBlur={stop}
-            /* As the engine's Kit hold does (engine/ui/cards/Kit.tsx): a long press on a touch screen opens the context menu and would cancel the hold, so it is swallowed. This is the one preventDefault here, and only on the control. */
-            onContextMenu={(e) => e.preventDefault()}
-            onKeyDown={(e) => { if (key(e) && !e.repeat) start(); }} onKeyUp={(e) => { if (key(e)) stop(); }}
-          >
-            {WAVE_LABEL}
-          </button>
-          <span id={descId} className="kb-visually-hidden">{WAVE_DESCRIBE}</span>
-        </>
-      )}
+    <div ref={hostRef} className="dw-hotbox" data-kb-hotbox data-dw-fog-level={forcedLevel ?? 0} style={standIn}>
       {forced && <p className="dw-hotbox-sign"><strong>{state}.</strong> {endsText}</p>}
+      {!still && !waved && <p className="kb-visually-hidden dw-hotbox-way">{SMOKED_WAY}</p>}
       <div ref={wordsRef} className="dw-hotbox-words" inert={!still && !waved} style={mask}>{children}</div>
       {forced && (
         <div className="dw-hotbox-frame" data-kb-effect-ink aria-hidden="true" style={{ top: frame.top, left: frame.left, width: frame.w, height: frame.h }}>
-          {!still && cuts!.clearings.map((c, i) => (
+          {discs.map((c, i) => (
             <div key={i} className="dw-hotbox-ring" aria-hidden="true" style={{ left: px(c.x - radius), top: px(c.y - radius), width: radius * 2, height: radius * 2 }} />
           ))}
         </div>

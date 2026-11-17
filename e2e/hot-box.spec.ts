@@ -5,12 +5,14 @@ import { SMOKE, fogAlpha, holeRadius } from '../instances/divided-world/ui/hot-b
 import { settled } from './settled.ts';
 
 /**
- * Hot Box as a browser draws it (docs/plans/2026-11-15-hot-box-plan.md, Task 7, as amended for forced colors; design, section 2.2): the smoke
- * is a canvas over the words, so the words under it are covered and inert; a mouse clears a soft patch where it points and the patch closes
- * again after it leaves (or moves onto the control); a touch opens one that holds, and a swipe still scrolls; Tab reaches "Wave the smoke",
- * and holding Enter to the end clears the post for 20 seconds; the Lens shows the card's state, its way out and the same hold; under reduced
- * motion nothing is drawn after the first paint and the hold still takes its time; and under forced colors, where a canvas's fog cannot be
- * drawn in system colors, the words themselves are masked, a hard circle clears them, a ring marks it and a sign says what the Lens says.
+ * Hot Box as a browser draws it (docs/plans/2026-11-15-hot-box-plan.md, Task 7, as amended for forced colors, and docs/plans/2026-11-15-hot-box-fog-plan.md,
+ * Task 7; design docs/plans/2026-11-15-hot-box-fog-design.md): the smoke is a shaded fog painted into the engine's tile canvases over the words, so the words
+ * under it are covered and inert; a mouse moves the fog aside where it points, leaving a wake that closes from its rim; a touch opens a clearing that holds, a drag
+ * leaves a wake and a vertical swipe still scrolls; the post holds no button: Tab reaches the card's mark, the Lens opens from it and holds "Wave the smoke", which
+ * a held Enter takes to the end (the post is clear for 20 seconds) and a click holds for one second; the Lens shows the card's state and its way out; under reduced
+ * motion nothing is drawn after the first paint and the hold still takes its time; and under forced colors, where a canvas's fog cannot be drawn in system colors,
+ * the words themselves are masked, a hard circle clears them (and the trail behind it for a moment), a ring marks it and a sign says what the Lens says. What the
+ * fog costs is read at a phone's speed (a 4x CPU throttle) from the tile loop's own probe, and a post at rest costs nothing a second beyond its 20 repaints.
  *
  * The post is #43 of the boards fixture (instances/divided-world/ui/hot-box/HotBox.board.stories.tsx): the one post of the Main board's page
  * with no Whoops! ink over its words. The story route renders no play function, so every test moves the pointer or holds the control itself.
@@ -30,18 +32,26 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 const SWEEP_PX_S = Number(/export const SWEEP_PX_S = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/cards/whoops/scrub.ts', import.meta.url), 'utf8'))?.[1]);
 if (!Number.isFinite(SWEEP_PX_S)) throw new Error('SWEEP_PX_S is not in instances/divided-world/cards/whoops/scrub.ts');
 
-/** The smoke's color in the stories, #ff69b4. */
-const FOG: readonly [number, number, number] = [255, 105, 180];
+/* The ladder's budget, read from the effect's own source (importing the effect would pull in React and its stylesheet), and refused if it is not found. */
+const FOG_BUDGET_MS = Number(/export const FOG_BUDGET_MS = (\d+(?:\.\d+)?)/.exec(readFileSync(new URL('../instances/divided-world/ui/hot-box/Effect.tsx', import.meta.url), 'utf8'))?.[1]);
+if (!Number.isFinite(FOG_BUDGET_MS)) throw new Error('FOG_BUDGET_MS is not in instances/divided-world/ui/hot-box/Effect.tsx');
+
+/** The smoke's color in the stories is #ff69b4: red 255, green 105, blue 180. */
 /**
- * How far a channel of the fog's color at a point may be from the smoke's color: a puff is a disc of white or black at most 22% opaque (the effect draws
- * it at 0.22 times its shade), which moves a channel by at most 22% of 255, 56, and a little more where it is composited over a fog that is not opaque.
+ * Whether a pixel of the fog is in the smoke's color. The fog is shaded: lit toward white by at most half, and shaded toward a deeper, cooler shade of the color
+ * (fog.ts `FOG.light`, `FOG.shade`), so a channel can be a long way from the color's own and no tolerance on a channel says "this is hot pink". What does hold in
+ * every shade is the color's hue: green is its lowest channel, by a margin, as it is in #ff69b4 (and is not in white, black or gray).
  */
-const FOG_TOLERANCE = 60;
+const inFogHue = (px: { r: number; g: number; b: number }) => px.g <= Math.min(px.r, px.b) - 25;
 /** How far the mask's flat layer may leave one color from another in a line's box: the words at `maskAlpha` 0.06 are 6% of 255, about 15, and glyph antialiasing adds a step. */
 const ONE_COLOR = 24;
 
-const wave = (page: Page) => page.getByRole('button', { name: 'Wave the smoke' });
 const POST = '#post-43';
+/** The Lens's hold, the only control the card has (the post holds none). */
+const wave = (page: Page) => page.getByRole('button', { name: 'Wave the smoke' });
+/** The post's Hot Box mark, which opens the Lens. */
+const MARK = `${POST} .kb-mark[data-kb-card="hot-box"]:not(.kb-ghost-mark)`;
+const LENS = (page: Page) => page.getByRole('dialog', { name: 'Cards on this post' });
 const words = (page: Page) => page.locator(`${POST} .dw-hotbox-words`);
 const link = (page: Page) => words(page).locator('a');
 
@@ -52,12 +62,13 @@ const link = (page: Page) => words(page).locator('a');
  */
 const COUNT_DRAWS = () => {
   const clear = CanvasRenderingContext2D.prototype.clearRect;
-  const w = window as unknown as { __hbDraws: number; __hbFrames: number; __hbStacks: string[] };
+  const w = window as unknown as { __hbDraws: number; __hbFrames: number; __hbStacks: string[]; __hbPer: Map<HTMLCanvasElement, number> };
+  w.__hbPer = new Map();
   w.__hbDraws = 0;
   w.__hbFrames = 0;
   w.__hbStacks = [];
   CanvasRenderingContext2D.prototype.clearRect = function (this: CanvasRenderingContext2D, ...a: [number, number, number, number]) {
-    if (this.canvas.classList.contains('dw-hotbox-smoke')) w.__hbDraws += 1;
+    if (this.canvas.classList.contains('dw-hotbox-smoke')) { w.__hbDraws += 1; w.__hbPer.set(this.canvas, (w.__hbPer.get(this.canvas) ?? 0) + 1); }
     return clear.apply(this, a);
   };
   const raf = window.requestAnimationFrame.bind(window);
@@ -66,6 +77,9 @@ const COUNT_DRAWS = () => {
 const draws = (page: Page) => page.evaluate(() => (window as unknown as { __hbDraws: number }).__hbDraws);
 /** Who asked for the frames after the first `from` of them (the stack of each request), for a message that says whose they were. */
 const frameCallers = (page: Page, from: number) => page.evaluate((n) => (window as unknown as { __hbStacks: string[] }).__hbStacks.slice(n), from);
+/** The most times any one tile canvas of the post was drawn since `forgetDraws`, and how many were drawn in all. */
+const perTile = (page: Page) => page.evaluate(() => { const per = [...(window as unknown as { __hbPer: Map<HTMLCanvasElement, number> }).__hbPer.values()]; return { most: Math.max(0, ...per), all: per.reduce((a, b) => a + b, 0), tiles: per.length }; });
+const forgetDraws = (page: Page) => page.evaluate(() => { (window as unknown as { __hbPer: Map<HTMLCanvasElement, number> }).__hbPer.clear(); });
 const frames = (page: Page) => page.evaluate(() => (window as unknown as { __hbFrames: number }).__hbFrames);
 
 /**
@@ -77,8 +91,8 @@ async function open(page: Page, name: string, o: { readonly frozen?: boolean; re
   if (o.frozen) await page.clock.install({ time: Date.now() });
   if (o.counted) await page.addInitScript(COUNT_DRAWS);
   await page.goto(STORY(name));
-  /* A cold story on a busy machine takes a few seconds to load its thread and seed its play. */
-  await expect(wave(page)).toBeVisible({ timeout: 20_000 });
+  /* A cold story on a busy machine takes a few seconds to load its thread and seed its play. The post holds no control: its smoke's host is what is waited for. */
+  await expect(page.locator(`${POST} .dw-hotbox`)).toBeVisible({ timeout: 20_000 });
   await page.evaluate(() => document.fonts.ready);
   await settled(page, { loops: true });
   await page.locator(`${POST} .dw-hotbox`).evaluate((el) => el.scrollIntoView({ block: 'center' }));
@@ -90,6 +104,14 @@ async function open(page: Page, name: string, o: { readonly frozen?: boolean; re
 /** Moves a frozen page's clock, and gives React's scheduler (not faked) the turn it needs to draw what the move changed. */
 async function run(page: Page, ms: number) {
   await page.clock.runFor(ms);
+}
+
+/** Opens the Lens from the post's mark and leaves the mouse off the post (a mouse on the mark would be clearing fog there). */
+async function openLens(page: Page) {
+  await page.locator(MARK).click();
+  await expect(LENS(page)).toBeVisible();
+  await expect(wave(page)).toBeVisible();
+  await page.mouse.move(5, 5);
 }
 
 interface Box { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
@@ -136,6 +158,47 @@ async function fogAt(page: Page, x: number, y: number, half = 2) {
   }, [x, y, half] as const);
 }
 const alphaAt = async (page: Page, x: number, y: number, half = 2) => (await fogAt(page, x, y, half))?.a ?? Number.NaN;
+
+/**
+ * How far the clear space (the fog under half its resting strength) runs through a viewport point along a row (`x`) or a column (`y`) of the tiles' canvases: the
+ * contiguous run of pixels, either side, until fog or the end of the canvases. Read in the page, a pixel at a time, every `stride` px.
+ */
+const clearRun = (page: Page, x: number, y: number, axis: 'x' | 'y', stride = 2) => page.evaluate(([px, py, ax, st, rest]) => {
+  const canvases = [...document.querySelectorAll<HTMLCanvasElement>('#post-43 canvas.dw-hotbox-smoke')].filter((c) => c.width > 0);
+  const alphaAtPoint = (qx: number, qy: number): number | null => {
+    const canvas = canvases.find((c) => { const r = c.getBoundingClientRect(); return qx >= r.left && qx < r.right && qy >= r.top && qy < r.bottom; });
+    if (!canvas) return null;
+    const r = canvas.getBoundingClientRect();
+    const k = canvas.width / r.width;
+    return canvas.getContext('2d')!.getImageData(Math.min(canvas.width - 1, Math.round((qx - r.left) * k)), Math.min(canvas.height - 1, Math.round((qy - r.top) * k)), 1, 1).data[3]!;
+  };
+  const reach = (dir: 1 | -1) => {
+    let d = 0;
+    for (;;) {
+      const a = alphaAtPoint(ax === 'x' ? px! + dir * (d + st!) : px!, ax === 'y' ? py! + dir * (d + st!) : py!);
+      if (a === null || a > rest! / 2) return d;
+      d += st!;
+      if (d > 1500) return d;
+    }
+  };
+  const here = alphaAtPoint(px!, py!);
+  if (here === null || here > rest! / 2) return 0;
+  return reach(1) + reach(-1);
+}, [x, y, axis, stride, fogAlpha(1) * 255] as const);
+
+/** Moves the mouse along a row in `steps` equal moves, each followed by `every` ms of the page's clock. Returns the last point. */
+async function sweepRow(page: Page, from: number, to: number, y: number, steps: number, every: number) {
+  await page.mouse.move(from, y);
+  await run(page, every);
+  for (let i = 1; i <= steps; i++) {
+    await page.mouse.move(from + ((to - from) * i) / steps, y);
+    await run(page, every);
+  }
+  return { x: to, y };
+}
+
+/** The ladder's rung of the post's host, 0 to 4. */
+const levelOf = (page: Page) => page.locator(`${POST} .dw-hotbox`).evaluate((el) => Number(el.getAttribute('data-dw-fog-level')));
 
 /** The widest of the first three lines, and a point on it a fixed way in, where a mouse is put. */
 async function aim(page: Page) {
@@ -219,9 +282,10 @@ async function colorRange(page: Page, clip: Box) {
 
 /**
  * Holds Enter on the control until the post is waved and returns how long the hold took on the page's clock, in whole steps of `step` ms (the clock moves a step at a
- * time, so the figure is the first step at or after the end). The key is left down for the caller to release.
+ * time, so the figure is the first step at or after the end). The Lens is opened from the mark if it is not open. The key is left down for the caller to release.
  */
 async function heldToEnd(page: Page, step = 250): Promise<number> {
+  if (!(await wave(page).isVisible())) await openLens(page);
   await wave(page).focus();
   const began = await page.evaluate(() => Date.now());
   await page.keyboard.down('Enter');
@@ -266,7 +330,7 @@ test('the words under the smoke are covered in the caster\'s color, and inert', 
   const px = (await fogAt(page, line.x + line.w / 2, line.y + line.h / 2, 3))!;
   expect(px, 'the post has a smoke canvas with something in it').not.toBeNull();
   expect(px.a).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
-  FOG.forEach((c, i) => expect(Math.abs([px.r, px.g, px.b][i]! - c)).toBeLessThanOrEqual(FOG_TOLERANCE));
+  expect(inFogHue(px), `the fog over the words is in the smoke's hue (${JSON.stringify(px)})`).toBe(true);
   expect(await words(page).evaluate((el) => (el as HTMLElement).inert)).toBe(true);
   /* Inert for a pointer too: what the point over a word hits is not the words. */
   expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('.dw-hotbox-words') ?? null, [line.x + 40, line.y + line.h / 2] as const)).toBeNull();
@@ -283,7 +347,7 @@ test('the smoke fills the post\'s content area border to border, beyond the word
     const px = await fogAt(page, p.x, p.y, 2);
     expect(px, `${name}: a pixel of the canvas`).not.toBeNull();
     expect(px!.a, `${name} is covered at the fog's strength`).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
-    FOG.forEach((c, i) => expect(Math.abs([px!.r, px!.g, px!.b][i]! - c), `${name} is in the smoke's color`).toBeLessThanOrEqual(FOG_TOLERANCE));
+    expect(inFogHue(px!), `${name} is in the smoke's hue (${JSON.stringify(px)})`).toBe(true);
   }
 });
 
@@ -306,17 +370,10 @@ test('a mouse in the area\'s padding, outside the words, opens a clearing there'
   await expect.poll(() => alphaAt(page, left.x, left.y), 'and in the left padding too').toBeLessThanOrEqual(2);
 });
 
-test('"Wave the smoke" is above the fog and a press on it sweeps the words clear; what else of the post is hit and what is under the fog', async ({ page }) => {
+test('the post holds no control of its own, and nothing else of it is hit or under the fog', async ({ page }) => {
   await open(page, 'fresh-light', { frozen: true });
-  expect(await hitsAtCenter(page, `${POST} .dw-hotbox-wave`), 'the control is what a hit at its center lands on').toBe(true);
-  const [first] = await lines(page);
-  const perLine = ((await words(page).evaluate((el) => el.getBoundingClientRect().width)) / SWEEP_PX_S) * 1000;
-  const button = (await wave(page).boundingBox())!;
-  await page.mouse.move(button.x + button.width / 2, button.y + button.height / 2);
-  await page.mouse.down();
-  await run(page, perLine + 300);
-  await expect.poll(() => alphaAt(page, first!.x + first!.w / 2, first!.y + first!.h / 2), 'a press on the control clears the first line').toBeLessThanOrEqual(2);
-  await page.mouse.up();
+  await expect(page.locator(`${POST} .dw-hotbox-wave`), 'no wave button stands on the post').toHaveCount(0);
+  await expect(wave(page), 'and no "Wave the smoke" is there before the Lens is open').toHaveCount(0);
   /* Every control the post offers, outside its words: a hit at its center lands on it (the fog does not take clicks), and with the canvas made hittable for a moment, which of them are under it. */
   const report = await page.evaluate(() => {
     const post = document.querySelector('#post-43')!;
@@ -335,7 +392,7 @@ test('"Wave the smoke" is above the fog and a press on it sweeps the words clear
   test.info().annotations.push({ type: 'post controls', description: `all: ${report.all.join(', ')}; blocked: ${report.blocked.join(', ') || 'none'}; under the fog: ${report.under.join(', ') || 'none'}` });
   console.log(`hot-box post #43 controls: ${JSON.stringify(report)}`);
   expect(report.blocked, 'no control of the post is blocked by the smoke').toEqual([]);
-  expect(report.under.filter((n) => n.includes('dw-hotbox-wave') || n.includes('kb-reactions')), 'the wave control and the reactions row are above the fog').toEqual([]);
+  expect(report.under.filter((n) => n.includes('kb-reactions') || n.includes('kb-mark')), 'the reactions row and the mark are above the fog').toEqual([]);
 });
 
 test('a mouse over a line clears it there, softly, and it closes again after the pointer leaves', async ({ page }) => {
@@ -355,42 +412,18 @@ test('a mouse over a line clears it there, softly, and it closes again after the
   expect(await alphaAt(page, x + r * 2.2, y)).toBeGreaterThanOrEqual(fog - 10);
   await page.mouse.move(5, 5);
   await run(page, SMOKE.roll / 2);
-  await expect.poll(() => alphaAt(page, x, y), 'half way through its closing').toBeGreaterThan(20);
-  expect(await alphaAt(page, x, y)).toBeLessThan(fog - 20);
-  await run(page, SMOKE.roll / 2 + 150);
-  await expect.poll(() => alphaAt(page, x, y)).toBeGreaterThanOrEqual(fog - 10);
-});
-
-test('moving the mouse from the words onto the control closes the clearing', async ({ page }) => {
-  await open(page, 'fresh-light', { frozen: true });
-  const { x, y } = await aim(page);
-  await page.mouse.move(x, y);
-  await run(page, 100);
-  await expect.poll(() => alphaAt(page, x, y)).toBeLessThanOrEqual(2);
-  const button = (await wave(page).boundingBox())!;
-  await page.mouse.move(button.x + button.width / 2, button.y + button.height / 2);
-  await run(page, SMOKE.roll + 300);
-  await expect.poll(() => alphaAt(page, x, y), 'a mouse on the control leaves nothing open behind it').toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
-});
-
-test('the control\'s pointer leave stops a hold', async ({ page }) => {
-  await open(page, 'fresh-light', { frozen: true });
-  /* The first line: the one the held sweep has finished after a line's time and a little over (the widest of the first few might be the second). */
-  const [line] = await lines(page);
-  const mid = { x: line!.x + 100, y: line!.y + line!.h / 2 };
-  const perLine = ((await words(page).evaluate((el) => el.getBoundingClientRect().width)) / SWEEP_PX_S) * 1000;
-  const button = (await wave(page).boundingBox())!;
-  await page.mouse.move(button.x + button.width / 2, button.y + button.height / 2);
-  await page.mouse.down();
-  await run(page, perLine + 300);
-  await expect.poll(() => alphaAt(page, mid.x, mid.y), 'a line the held sweep finished is clear').toBeLessThanOrEqual(2);
-  await page.mouse.move(5, 5);
-  await run(page, SMOKE.roll + 300);
-  await expect.poll(() => alphaAt(page, mid.x, mid.y), 'the smoke is back after the pointer left the control').toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
-  await run(page, perLine * 3);
-  expect(await alphaAt(page, mid.x, mid.y), 'and the hold does not start again').toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
-  expect(await words(page).evaluate((el) => (el as HTMLElement).inert)).toBe(true);
-  await page.mouse.up();
+  /* The fog closes in from its rim (design, section 3.2): half way through, the rim is more fogged than the center, by a clear margin (a uniform fade would have both the same), and neither is past the model's fog. */
+  const rim = x + r * 0.8;
+  const mid = { center: await alphaAt(page, x, y, 1), rim: await alphaAt(page, rim, y, 1) };
+  test.info().annotations.push({ type: 'closing', description: `half way: center ${mid.center.toFixed(0)}, rim ${mid.rim.toFixed(0)}, of ${fog.toFixed(0)}` });
+  console.log(`hot-box closing: half way, center ${mid.center.toFixed(0)}, rim ${mid.rim.toFixed(0)}, fog ${fog.toFixed(0)}`);
+  expect(mid.rim, 'half way through its closing the rim is partly fogged again').toBeGreaterThan(20);
+  expect(mid.rim, 'and not past the fog').toBeLessThan(fog - 20);
+  expect(mid.rim - mid.center, 'the rim is more fogged than the center: it closes in from the rim').toBeGreaterThan(30);
+  /* The wake lasts SMOKE.roll (2.5 s) and the field's last cells settle to rest a little after it; 500 ms is what that takes on this machine, and the poll below waits no longer than the test's own timeout. */
+  await run(page, SMOKE.roll / 2 + 500);
+  await expect.poll(() => alphaAt(page, x, y), 'and the whole of it has closed, the center last').toBeGreaterThanOrEqual(fog - 10);
+  await expect.poll(() => alphaAt(page, rim, y), 'the rim too').toBeGreaterThanOrEqual(fog - 10);
 });
 
 test('thinning is visibly thinner than fresh', async ({ page, context }) => {
@@ -420,17 +453,19 @@ test('the Lens opens from the card\'s mark and shows the state, the way out and 
 
 /* --------------------------------------------------------------------- the keyboard and the hold ---- */
 
-test('Tab reaches the control, a held Enter clears the post, its link can then be focused, and the smoke is back 20 seconds later', async ({ page }) => {
+test('Tab reaches the mark, Enter opens the Lens, Tab reaches "Wave the smoke", a held Enter clears the post, its link can be focused, and the smoke is back 20 seconds later with focus on the mark', async ({ page }) => {
   /* A long post's hold steps the clock 250 ms a round trip, and a round trip on CI's slower Linux takes several times what it takes here. */
   test.setTimeout(420_000);
   await open(page, 'long-post', { frozen: true });
   expect((await lines(page)).length, 'twelve paragraphs run to many lines').toBeGreaterThan(20);
+  const on = (selector: string) => page.locator(selector).evaluate((el) => el === document.activeElement);
   await page.keyboard.press('Tab');
-  for (let i = 0; i < 100; i++) {
-    if (await wave(page).evaluate((el) => el === document.activeElement)) break;
-    await page.keyboard.press('Tab');
-  }
-  await expect(wave(page)).toBeFocused();
+  for (let i = 0; i < 200 && !(await on(MARK)); i++) await page.keyboard.press('Tab');
+  await expect(page.locator(MARK), 'Tab reaches the Hot Box mark').toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(LENS(page)).toBeVisible();
+  for (let i = 0; i < 20 && !(await wave(page).evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab');
+  await expect(wave(page), 'Tab reaches "Wave the smoke" in the Lens').toBeFocused();
   /* The words are inert: a link in them cannot be reached before a sweep. */
   await link(page).focus();
   await expect(link(page)).not.toBeFocused();
@@ -439,19 +474,238 @@ test('Tab reaches the control, a held Enter clears the post, its link can then b
   console.log(`hot-box long-post: ${(await lines(page)).length} lines, held to the end in ${(spent / 1000).toFixed(1)} s`);
   expect(spent, 'a long post takes a long hold').toBeGreaterThan(10_000);
   await page.keyboard.up('Enter');
-  /* Clear: the first line and the last have nothing over them. */
-  const all = await lines(page);
-  for (const l of [all[0]!, all[all.length - 1]!]) await expect.poll(() => alphaAt(page, l.x + l.w / 2, l.y + l.h / 2), 'the waved post has no smoke over its words').toBeLessThanOrEqual(2);
+  /* Clear: the first line and the last have nothing over them. A tile is held only near the window, so each is brought into view to be read. */
+  const view = async (index: number) => {
+    const l = (await lines(page))[index < 0 ? (await lines(page)).length + index : index]!;
+    await page.evaluate((to) => { window.scrollBy(0, to - 560); }, l.y + l.h / 2);
+    await run(page, 100);
+    const at = (await lines(page))[index < 0 ? (await lines(page)).length + index : index]!;
+    /* The layer learns that a tile has come near from its IntersectionObserver, which reports in real time, and takes the report up in a frame, which is on
+     * the page's frozen clock. A reader's browser gives both at once; here the clock is moved a frame at each look until the report has been taken up and
+     * a tile covers the line. A layer that never makes the tile fails here, with a frame of model time per look (a few hundred ms in all, well inside the wave). */
+    await expect.poll(async () => { const held = (await fogAt(page, at.x + at.w / 2, at.y + at.h / 2)) !== null; if (!held) await run(page, 16); return held; }, `a tile of the layer is held over line ${index} once it is in view`).toBe(true);
+    return at;
+  };
+  for (const index of [0, -1]) {
+    const l = await view(index);
+    await expect.poll(() => alphaAt(page, l.x + l.w / 2, l.y + l.h / 2), `the waved post has no smoke over line ${index}`).toBeLessThanOrEqual(2);
+  }
   await expect(words(page)).not.toHaveJSProperty('inert', true);
-  await page.keyboard.press('Tab');
-  await expect(link(page)).toBeFocused();
+  await link(page).focus();
+  await expect(link(page), 'the link can be focused once the post is waved').toBeFocused();
   /* Twenty seconds on the page's own clock (a jump: the effect's timer is late and catches up): the smoke is back and the words inert again. */
   await page.clock.fastForward(SMOKE.waved + 200);
   await run(page, SMOKE.roll + 300);
   await expect(words(page)).toHaveJSProperty('inert', true);
-  await expect.poll(() => alphaAt(page, all[0]!.x + all[0]!.w / 2, all[0]!.y + all[0]!.h / 2)).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
-  /* Focus was in the words when they went inert: it goes back to the control (No player is ever stuck). */
-  await expect(wave(page)).toBeFocused();
+  /* Under the fog again: the last line, still in view, whose tile was held cleared through the wave, and then the first, whose tile is made after it (fogged, not bare). */
+  for (const index of [-1, 0]) {
+    const l = await view(index);
+    await expect.poll(() => alphaAt(page, l.x + l.w / 2, l.y + l.h / 2), `the smoke is back over line ${index}`).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
+  }
+  /* Focus was in the words when they went inert: it goes to the post's mark (No player is ever stuck), and nowhere else is it moved. */
+  await expect(page.locator(MARK)).toBeFocused();
+});
+
+/* ---------------------------------------------------------------------------------------- the fog ---- */
+
+test('the fog is shaded: many colors in the smoked area, and not the flat color alone', async ({ page }) => {
+  await open(page, 'fresh-light');
+  /* Only pixels at the fog's resting strength count: a transparent pixel is no color of the fog, and a fog of one flat color with transparent corners must not pass for shaded. */
+  const found = await page.evaluate((minAlpha) => {
+    const colors = new Map<number, number>();
+    let total = 0;
+    for (const canvas of document.querySelectorAll<HTMLCanvasElement>('#post-43 canvas.dw-hotbox-smoke')) {
+      if (canvas.width === 0 || canvas.height === 0) continue;
+      const d = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3]! < minAlpha) continue;
+        const key = (d[i]! << 16) | (d[i + 1]! << 8) | d[i + 2]!;
+        colors.set(key, (colors.get(key) ?? 0) + 1);
+        total += 1;
+      }
+    }
+    let most = 0;
+    for (const n of colors.values()) most = Math.max(most, n);
+    return { distinct: colors.size, total, share: total ? most / total : 1 };
+  }, (fogAlpha(1) - 0.06) * 255);
+  test.info().annotations.push({ type: 'shading', description: `${found.distinct} distinct colors over ${found.total} px; the commonest is ${(found.share * 100).toFixed(1)}% of them` });
+  expect(found.total, 'the post has smoke painted').toBeGreaterThan(1000);
+  expect(found.distinct, 'at least 40 distinct colors').toBeGreaterThanOrEqual(40);
+  expect(found.share, 'no one color (the flat fog color) is most of it').toBeLessThan(0.5);
+});
+
+test('the fog moves with the pointer: the clear space is a streak along the path, longer than it is across', async ({ page }) => {
+  await open(page, 'fresh-light', { frozen: true });
+  const { line, y } = await aim(page);
+  const r = await radiusOf(page);
+  const from = line.x + 30;
+  /* A steady pace: 20 px every 20 ms, 1,000 px a second. */
+  const end = await sweepRow(page, from, from + 360, y, 18, 20);
+  await run(page, 60);
+  const along = await clearRun(page, end.x, end.y, 'x');
+  const across = await clearRun(page, end.x, end.y, 'y');
+  test.info().annotations.push({ type: 'streak', description: `radius ${r.toFixed(0)} px: ${along} px clear along the path, ${across} px across` });
+  console.log(`hot-box streak: radius ${r.toFixed(0)}, along ${along}, across ${across}`);
+  expect(across, 'the pointer has cleared something').toBeGreaterThan(r);
+  expect(along, 'the clear space is longer along the path than across it').toBeGreaterThan(across * 1.25);
+  /* The post is short, so a column through the pointer ends at the post's edges and "across" is less than a circle's width: a round mask would pass the line above. A streak is also longer than a circle is wide. */
+  expect(along, 'and longer than a round clearing of the model radius is wide').toBeGreaterThan(2 * r * 1.5);
+});
+
+test('the wake closes: a point the pointer left is clearer than rest at 300 ms and at rest by 2.5 s', async ({ page }) => {
+  await open(page, 'fresh-light', { frozen: true });
+  const { line, y } = await aim(page);
+  const r = await radiusOf(page);
+  const rest = await alphaAt(page, line.x + 30, y + 40);
+  expect(rest, 'the fog at rest before the move').toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
+  /* The point left behind: where the pointer started, then more than two radii away from where it stops. */
+  const from = line.x + 30;
+  const behind = { x: from + r * 0.3, y };
+  const end = await sweepRow(page, from, from + r * 3, y, 15, 15);
+  expect(end.x - behind.x, 'the point is well behind the pointer').toBeGreaterThan(r * 2);
+  await run(page, 300);
+  const at300 = await alphaAt(page, behind.x, behind.y);
+  expect(at300, 'the wake behind the pointer is clearer than rest at 300 ms').toBeLessThan(rest - 40);
+  await run(page, 2200);
+  await expect.poll(() => alphaAt(page, behind.x, behind.y), 'and it has closed to rest by 2.5 s').toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
+});
+
+test('one click on the Lens\'s hold holds for a second and does not finish a post', async ({ page }) => {
+  await open(page, 'fresh-light', { frozen: true });
+  await openLens(page);
+  await wave(page).dispatchEvent('click');
+  await run(page, 1500);
+  await expect(words(page), 'one click does not take a post\'s sweep to its end').toHaveJSProperty('inert', true);
+});
+
+test('twelve clicks on the Lens\'s hold, 900 ms apart, finish the short post\'s sweep', async ({ page }) => {
+  test.setTimeout(120_000);
+  await open(page, 'fresh-light', { frozen: true });
+  await openLens(page);
+  /* Each click comes before the last one's second is out, so the hold goes on from one to the next. */
+  for (let i = 0; i < 12; i++) {
+    await wave(page).dispatchEvent('click');
+    await run(page, 900);
+  }
+  await expect(words(page), 'the held sweep reached the end of the post').not.toHaveJSProperty('inert', true);
+});
+
+test('the fog fills the area at rest, and its repaints are at most 20 a second', async ({ page }) => {
+  await open(page, 'fresh-light', { counted: true });
+  await forgetDraws(page);
+  const began = await page.evaluate(() => performance.now());
+  await page.waitForTimeout(3000);
+  const seconds = ((await page.evaluate(() => performance.now())) - began) / 1000;
+  const { most, tiles } = await perTile(page);
+  test.info().annotations.push({ type: 'rest', description: `${tiles} tile(s); the most repainted one was drawn ${most} times in ${seconds.toFixed(2)} s` });
+  expect(tiles, 'the post has a tile that is repainted at all').toBeGreaterThan(0);
+  expect(most, 'a tile at rest is repainted at most 21 times a second').toBeLessThanOrEqual(Math.ceil(21 * seconds));
+});
+
+test('a post scrolled out of view holds no tile and repaints nothing', async ({ page }) => {
+  await open(page, 'long-post', { counted: true });
+  /* First the post is in view and does hold a tile that is repainted, so that "none after" is a change and not an effect that never made a layer. */
+  await expect.poll(() => page.locator(`${POST} canvas.dw-hotbox-smoke`).count(), 'a tile canvas is held for the post while it is in view').toBeGreaterThanOrEqual(1);
+  await forgetDraws(page);
+  await page.waitForTimeout(500);
+  expect((await perTile(page)).all, 'and it is being repainted while in view').toBeGreaterThan(0);
+  /* The page is made taller (a spacer before the post, which the post does not know of), so that the window can be 3,000 px from the post whatever the board's length. */
+  const far = await page.evaluate(() => {
+    const post = document.querySelector('#post-43')!;
+    const spacer = document.createElement('div');
+    spacer.style.height = '5000px';
+    post.parentElement!.insertBefore(spacer, post);
+    window.scrollTo(0, 0);
+    const now = document.querySelector('#post-43 .kb-act-main')!.getBoundingClientRect();
+    return Math.max(now.top - window.innerHeight, -now.bottom);
+  });
+  expect(far, 'the post is 3,000 px or more out of view').toBeGreaterThanOrEqual(3000);
+  await expect.poll(() => page.locator(`${POST} canvas.dw-hotbox-smoke`).count(), 'no tile canvas is held for it').toBe(0);
+  await page.waitForTimeout(200);
+  await forgetDraws(page);
+  await page.waitForTimeout(1500);
+  expect((await perTile(page)).all, 'and nothing of it is repainted').toBe(0);
+});
+
+test.describe('what the fog costs', () => {
+  /* The painter's own time, which the tile loop keeps for its last 600 frames (engine/ui/cards/tileLoop.ts, `probe.work`): the way e2e/effect-tiles.spec.ts reads it. */
+  const BUDGET_STORY = 'boards-25-effect-budget--hot-box';
+
+  async function sweepFor(page: Page, ms: number, story: string) {
+    await page.goto(story.startsWith('boards-25') ? `/?fixture=boards&story=${story}` : STORY(story));
+    await expect(page.locator(`${POST} .dw-hotbox`)).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { __kbTiles?: unknown }).__kbTiles))).toBe(true);
+    await page.evaluate(() => document.fonts.ready);
+    await page.locator(`${POST} .dw-hotbox`).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await page.evaluate(() => window.scrollBy(0, -200));
+    await page.waitForTimeout(500);
+    const line = (await lines(page))[1]!;
+    const y = line.y + line.h / 2, x0 = line.x + 40, span = Math.min(line.w - 80, 500);
+    expect(line.y, 'the line swept is on screen').toBeLessThan(1000);
+    const f0 = await page.evaluate(() => {
+      const kb = (window as unknown as { __kbTiles: { frames(): number }; __hbRung: number }).__kbTiles;
+      /* The frame the ladder last stepped in, so the frames painted at the rung it settled on can be told from the ones before. */
+      const w = window as unknown as { __hbRung: number };
+      w.__hbRung = kb.frames();
+      new MutationObserver(() => { w.__hbRung = kb.frames(); }).observe(document.querySelector('#post-43 .dw-hotbox')!, { attributes: true, attributeFilter: ['data-dw-fog-level'] });
+      return kb.frames();
+    });
+    const began = Date.now();
+    for (let i = 0; Date.now() - began < ms; i++) {
+      const phase = (i % 40) / 40;
+      await page.mouse.move(x0 + span * (phase < 0.5 ? phase * 2 : 2 - phase * 2), y);
+    }
+    return page.evaluate((from) => {
+      const kb = (window as unknown as { __kbTiles: { frames(): number; work(n: number): number[] } }).__kbTiles;
+      const work = kb.work(kb.frames() - from);
+      const mean = (a: number[]) => (a.length ? a.reduce((x, v) => x + v, 0) / a.length : 0);
+      const atRung = kb.work(kb.frames() - (window as unknown as { __hbRung: number }).__hbRung);
+      return { frames: work.length, mean: mean(work), last: mean(work.slice(-30)), atRung: mean(atRung), atRungFrames: atRung.length, max: Math.max(0, ...work), level: Number(document.querySelector('#post-43 .dw-hotbox')?.getAttribute('data-dw-fog-level')) };
+    }, f0);
+  }
+
+  for (const [label, story] of [['LongPost', 'long-post'], ['the longest post the instance allows', BUDGET_STORY]] as const) {
+    for (const rate of [1, 4]) {
+      test(`${label} at ${rate}x CPU: the fog's painter is within ${FOG_BUDGET_MS} ms a frame, or the ladder has stepped down to where it is`, async ({ page }) => {
+        test.setTimeout(90_000);
+        if (rate > 1) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate });
+        const got = await sweepFor(page, rate === 4 ? 6000 : 3000, story);
+        const text = `${label}, ${rate}x CPU, pointer sweeping ${rate === 4 ? 6 : 3} s: ${got.frames} frames, mean ${got.mean.toFixed(2)} ms, mean at the rung it settled on ${got.atRung.toFixed(2)} ms over ${got.atRungFrames} frames, worst ${got.max.toFixed(1)} ms, ladder rung ${got.level}`;
+        test.info().annotations.push({ type: 'cost', description: text });
+        console.log(`hot-box cost: ${text}`);
+        expect(got.frames, 'the painter ran').toBeGreaterThan(10);
+        /* Only the throttled run is held to the budget (a phone's speed); the unthrottled one is the figure to compare it with. */
+        if (rate === 4) {
+          expect(got.atRungFrames, 'the ladder has settled: frames were painted at its last rung').toBeGreaterThanOrEqual(8);
+          expect(got.atRung, `the ladder settled on rung ${got.level} and the frames painted at it are within the budget`).toBeLessThanOrEqual(FOG_BUDGET_MS);
+        }
+      });
+    }
+  }
+
+  /* Not held to the budget: where the ladder comes to at a phone's speed given time (it judges the mean of its first 8 frames, which a throttled page paints in well under a second), for the figures. */
+  test('LongPost at 4x CPU for 12 s: where the ladder settles', async ({ page }) => {
+    test.setTimeout(90_000);
+    await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    const got = await sweepFor(page, 12_000, 'long-post');
+    const text = `LongPost, 4x CPU, pointer sweeping 12 s: ${got.frames} frames, mean ${got.mean.toFixed(2)} ms, last 30 frames mean ${got.last.toFixed(2)} ms, worst ${got.max.toFixed(1)} ms, ladder rung ${got.level}`;
+    test.info().annotations.push({ type: 'cost', description: text });
+    console.log(`hot-box cost: ${text}`);
+    expect(got.frames).toBeGreaterThan(30);
+  });
+
+  test('a short post at 1x and 4x CPU: the figures', async ({ page }) => {
+    test.setTimeout(90_000);
+    for (const rate of [1, 4]) {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate });
+      const got = await sweepFor(page, 3000, 'fresh-light');
+      const text = `short post, ${rate}x CPU, pointer sweeping 3 s: ${got.frames} frames, mean ${got.mean.toFixed(2)} ms, last 30 frames mean ${got.last.toFixed(2)} ms, worst ${got.max.toFixed(1)} ms, ladder rung ${got.level}`;
+      test.info().annotations.push({ type: 'cost', description: text });
+      console.log(`hot-box cost: ${text}`);
+      expect(got.frames).toBeGreaterThan(10);
+    }
+  });
 });
 
 /* ------------------------------------------------------------------------------------ reduced motion ---- */
@@ -529,8 +783,13 @@ test.describe('under forced colors', () => {
       /* With the mouse over it: inside the circle the words show (more than one color), outside, right up to the ring, they do not (a hard edge). */
       await page.mouse.move(x, y);
       await run(page, 100);
-      const ring = page.locator(`${POST} .dw-hotbox-ring`);
-      await expect(ring).toHaveCount(1);
+      /* A clearing and the trail point the pointer's first move left in it are each a disc, and each draws a ring: the one centered on the pointer is measured. */
+      const rings = page.locator(`${POST} .dw-hotbox-ring`);
+      await expect(rings).not.toHaveCount(0);
+      /* Some ring is the pointer's: centered on it, within 2 px (the count is whatever it is). */
+      const ringIndex = await rings.evaluateAll((els, [px, py]) => els.findIndex((el) => { const b = el.getBoundingClientRect(); return Math.abs(b.left + b.width / 2 - px!) <= 2 && Math.abs(b.top + b.height / 2 - py!) <= 2; }), [x, y] as const);
+      expect(ringIndex, 'some ring is centered on the pointer').toBeGreaterThanOrEqual(0);
+      const ring = rings.nth(ringIndex);
       const rb = (await ring.boundingBox())!;
       expect(Math.abs(rb.width - 2 * r)).toBeLessThanOrEqual(2);
       expect(await ring.evaluate((el) => { const c = getComputedStyle(el); return { style: c.borderTopStyle, width: c.borderTopWidth, color: c.borderTopColor, events: c.pointerEvents }; })).toEqual({ style: 'solid', width: '2px', color: text, events: 'none' });
@@ -539,7 +798,7 @@ test.describe('under forced colors', () => {
       /* It closes again after the pointer leaves. */
       await page.mouse.move(5, 5);
       await run(page, SMOKE.roll + 300);
-      await expect(ring).toHaveCount(0);
+      await expect(rings).toHaveCount(0);
       await expect.poll(() => colorRange(page, inLine(x - r * 0.6, x + r * 0.6))).toBeLessThanOrEqual(ONE_COLOR);
 
       /*
@@ -559,20 +818,21 @@ test.describe('under forced colors', () => {
       expect(await page.evaluate(([x, y]) => { const hit = document.elementFromPoint(x!, y!); return hit?.closest('.kb-act-main') ? 'area' : `${hit?.tagName}.${hit?.className}`; }, [below.x, below.y] as const), 'the point is in the area').toBe('area');
       await page.mouse.move(below.x, below.y);
       await run(page, 100);
-      await expect(ring).toHaveCount(1);
-      const pb = (await ring.boundingBox())!;
-      expect(Math.abs(pb.width - 2 * r)).toBeLessThanOrEqual(2);
-      expect(Math.abs(pb.x + pb.width / 2 - below.x), 'the ring is centered on the pointer').toBeLessThanOrEqual(2);
-      expect(Math.abs(pb.y + pb.height / 2 - below.y), 'the ring is centered on the pointer, in the padding').toBeLessThanOrEqual(2);
+      await expect(rings).not.toHaveCount(0);
+      /* The pointer's first move leaves a trail point that draws a ring too, so the count is whatever it is: some ring is the pointer's (centered on it, within 2 px, and a clearing's width). */
+      const pb = (await rings.evaluateAll((els) => els.map((el) => { const b = el.getBoundingClientRect(); return { x: b.left, y: b.top, width: b.width, height: b.height }; })))
+        .find((b) => Math.abs(b.x + b.width / 2 - below.x) <= 2 && Math.abs(b.y + b.height / 2 - below.y) <= 2);
+      expect(pb, 'some ring is centered on the pointer, in the padding').toBeDefined();
+      expect(Math.abs(pb!.width - 2 * r)).toBeLessThanOrEqual(2);
       /* Its left and right edges lie in the padding below the words (the ring's vertical middle is that row), where there is no text: both are dark against the page. */
-      expect(pb.y + pb.height / 2, 'the ring\'s middle row is below the words').toBeGreaterThan(wb2.y + wb2.h + 2);
-      for (const ex of [pb.x, pb.x + pb.width - 2]) expect(await colorRange(page, { x: ex - 2, y: pb.y + pb.height / 2 - 2, w: 6, h: 4 }), 'the ring is drawn in the padding').toBeGreaterThanOrEqual(100);
+      expect(pb!.y + pb!.height / 2, 'the ring\'s middle row is below the words').toBeGreaterThan(wb2.y + wb2.h + 2);
+      for (const ex of [pb!.x, pb!.x + pb!.width - 2]) expect(await colorRange(page, { x: ex - 2, y: pb!.y + pb!.height / 2 - 2, w: 6, h: 4 }), 'the ring is drawn in the padding').toBeGreaterThanOrEqual(100);
       /* The words are masked still: the last line, clear of the ring, is one color. */
       const all = await lines(page), last = all[all.length - 1]!;
       expect(await colorRange(page, { x: last.x + 8, y: last.y + 3, w: Math.max(20, Math.min(160, last.w - 16)), h: last.h - 6 }), 'the words stay masked with the pointer in the padding').toBeLessThanOrEqual(ONE_COLOR);
       await page.mouse.move(5, 5);
       await run(page, SMOKE.roll + 300);
-      await expect(ring).toHaveCount(0);
+      await expect(rings).toHaveCount(0);
     });
   }
 
@@ -592,11 +852,30 @@ test.describe('under forced colors', () => {
       await other.keyboard.up('Enter');
       /* Each side is counted in steps of 250 ms, and the forced path moves its mask on a 50 ms timer: a second is about the one step each can be off by, twice. The clock is the page's, so a slow machine does not widen this. */
       expect(Math.abs(plain - forced)).toBeLessThanOrEqual(1000);
-      await other.keyboard.press('Tab');
-      await expect(link(other)).toBeFocused();
+      await link(other).focus();
+      await expect(link(other), 'the link in the words can be focused once the post is waved').toBeFocused();
     } finally {
       await otherContext.close();
     }
+  });
+
+  test('the trail: a word behind the pointer is unmasked at 500 ms and masked at 1 s', async ({ page }) => {
+    await open(page, 'fresh-light', { frozen: true });
+    await page.emulateMedia({ forcedColors: 'active' });
+    await expect(page.locator(`${POST} .dw-hotbox-sign`)).toBeVisible();
+    const { line, y } = await aim(page);
+    const r = await radiusOf(page);
+    const inLine = (from: number, to: number): Box => ({ x: from, y: line.y + 3, w: to - from, h: line.h - 6 });
+    /* A quick move from `from` to a point more than two radii on: the word at the start is behind the pointer, and was passed 80 ms ago at most. */
+    const from = line.x + r + 10;
+    expect(line.w, 'the line is long enough for the move').toBeGreaterThan(r * 4 + 20);
+    const behind = inLine(from - r * 0.3, from + r * 0.3);
+    expect(await colorRange(page, behind), 'before the move the word is masked').toBeLessThanOrEqual(ONE_COLOR);
+    await sweepRow(page, from, from + r * 2.6, y, 8, 10);
+    await run(page, 500);
+    expect(await colorRange(page, behind), 'at 500 ms a word behind the pointer is unmasked').toBeGreaterThanOrEqual(100);
+    await run(page, 500);
+    await expect.poll(() => colorRange(page, behind), 'and at 1 s it is masked again').toBeLessThanOrEqual(ONE_COLOR);
   });
 
   test('with forced colors off there is no mask, no ring and no sign, and the canvas keeps its soft clearing', async ({ page }) => {
@@ -641,13 +920,14 @@ for (const name of ['fresh-light', 'fresh-dark', 'reduced']) {
   });
 }
 
+test('axe finds nothing on the smoked post with the Lens open', async ({ page }) => {
+  await open(page, 'fresh-light');
+  await openLens(page);
+  expect(await violations(page)).toEqual([]);
+});
+
 test.describe('at a phone\'s width', () => {
   test.use({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true });
-
-  test('the control is at least 44px tall', async ({ page }) => {
-    await open(page, 'fresh-light');
-    expect((await wave(page).boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  });
 
   test('the smoke fills the content area border to border at a phone\'s width, beyond the words', async ({ page }) => {
     await open(page, 'fresh-light');
@@ -686,7 +966,35 @@ test.describe('at a phone\'s width', () => {
     await expect.poll(() => alphaAt(page, x, y)).toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
   });
 
-  test('a swipe over the smoked post still scrolls the page', async ({ page }) => {
+  test('a horizontal drag across a line leaves a wake behind the finger, and it closes again', async ({ page }) => {
+    await open(page, 'fresh-light', { frozen: true });
+    const [first] = await lines(page);
+    const r = await radiusOf(page);
+    const y = first!.y + first!.h / 2, x0 = first!.x + 4, x1 = first!.x + first!.w - 4;
+    /* A point on the path, more than a clearing's radius (and its soft edge) from both the touch-down point and where the finger ends: neither the touch's own held clearing at
+       the start nor the one it carries to the end reaches it, so only the wake the finger left can have opened it. */
+    const clear = r * 1.3;
+    const mid = (x0 + x1) / 2;
+    expect(mid - x0, 'the drag is long enough for a point beyond the start clearing').toBeGreaterThan(clear);
+    expect(x1 - mid, 'and beyond the end clearing').toBeGreaterThan(clear);
+    const rest = await alphaAt(page, mid, y);
+    expect(rest, 'fog at rest on the path').toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y }] });
+    for (let i = 1; i <= 12; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + ((x1 - x0) * i) / 12, y }] });
+      await run(page, 15);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await run(page, 300);
+    await expect.poll(() => alphaAt(page, mid, y), 'the wake the finger left on its path is clearer than rest shortly after it passed').toBeLessThan(rest - 40);
+    /* The wake lasts SMOKE.wake (1.5 s) and the end's clearing SMOKE.touchHold (4 s) but it is not near the middle: three seconds on, the middle is whole fog again. */
+    await run(page, 3000);
+    await expect.poll(() => alphaAt(page, mid, y), 'and a few seconds later it is whole fog again').toBeGreaterThanOrEqual((fogAlpha(1) - 0.06) * 255);
+    await cdp.detach();
+  });
+
+  test('a vertical swipe that starts on the smoked words scrolls the page and leaves no long wake', async ({ page }) => {
     await open(page, 'long-post');
     const host = page.locator(`${POST} .dw-hotbox-words`);
     /* The post's words a third of the way down the screen, so a swipe up starts on them. */
@@ -700,7 +1008,25 @@ test.describe('at a phone\'s width', () => {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: startX, y: startY }] });
     for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: startX, y: startY - i * 20 }] });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await expect.poll(() => page.evaluate(() => window.scrollY), 'the swipe moved the page').toBeGreaterThan(before + 100);
+    await expect.poll(() => page.evaluate(() => window.scrollY), 'the swipe that started on the smoked words moved the page (`touch-action: pan-y` on the host)').toBeGreaterThan(before + 100);
+    /* The browser took the swipe for a scroll, so the finger sent no moves: what is open is the clearing where it landed and no streak along 200 px of path. The cleared area (fog under
+       half its rest strength, in css px) is about one clearing's, never the clearing's and a streak of two radii by 200 px. */
+    const r = await radiusOf(page);
+    const cleared = await page.locator(`${POST} canvas.dw-hotbox-smoke`).evaluateAll((els, rest) => {
+      let area = 0;
+      for (const el of els as HTMLCanvasElement[]) {
+        if (el.width === 0) continue;
+        const k = el.width / el.getBoundingClientRect().width;
+        const d = el.getContext('2d')!.getImageData(0, 0, el.width, el.height).data;
+        let n = 0;
+        for (let i = 3; i < d.length; i += 4) if (d[i]! < rest / 2) n += 1;
+        area += n / (k * k);
+      }
+      return area;
+    }, fogAlpha(1) * 255);
+    test.info().annotations.push({ type: 'swipe', description: `${cleared.toFixed(0)} css px squared cleared; one clearing is ${(Math.PI * r * r).toFixed(0)}` });
+    console.log(`hot-box swipe: cleared ${cleared.toFixed(0)}, one clearing ${(Math.PI * r * r).toFixed(0)}`);
+    expect(cleared, 'a swipe leaves one clearing and no long wake').toBeLessThan(1.6 * Math.PI * r * r);
     await cdp.detach();
   });
 });
