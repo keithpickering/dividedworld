@@ -113,13 +113,16 @@ const boo = slot('boo');
 const cheer = slot('cheer');
 
 let ctx: FakeContext;
+/** The mixer's clock in milliseconds, which a test moves. */
+let clock = 0;
 let makeContext: ReturnType<typeof mock.fn<() => FakeContext>>;
 let fetchBytes: ReturnType<typeof mock.fn<(src: string) => Promise<ArrayBuffer>>>;
 function make() {
   ctx = new FakeContext();
   makeContext = mock.fn(() => ctx);
   fetchBytes = mock.fn(async (_src: string) => new ArrayBuffer(8));
-  return createMixer({ makeContext, fetchBytes } as never);
+  clock = 0;
+  return createMixer({ makeContext, fetchBytes, now: () => clock } as never);
 }
 describe('mixer', () => {
   it('1. before unlock, play and loop return null and make no context', async () => {
@@ -620,5 +623,145 @@ describe('mixer', () => {
     assert.equal(v.at(20), 0);
     assert.equal(v.value, 0, 'and so is the level read now');
     assert.ok(near(v.at(20 + EDGE), 1));
+  });
+
+  const flush = () => new Promise<void>((r) => setImmediate(r));
+
+  it('31. warm before unlock fetches each src once and decodes nothing; unlock decodes each once, and a play then loads nothing more', async () => {
+    const m = make();
+    m.setBus('game', { on: true, volume: 100 });
+    m.warm([boo, cheer]);
+    await flush();
+    assert.equal(fetchBytes.mock.callCount(), 2);
+    assert.equal(ctx.decoded, 0);
+    await m.unlock();
+    await flush();
+    assert.equal(ctx.decoded, 2);
+    assert.deepEqual(await m.play(boo), { lengthMs: 1500 });
+    assert.deepEqual(await m.play(cheer), { lengthMs: 1500 });
+    assert.equal(fetchBytes.mock.callCount(), 2);
+    assert.equal(ctx.decoded, 2);
+  });
+
+  it('32. warm after unlock fetches and decodes at once', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    m.warm([boo]);
+    await flush();
+    assert.equal(fetchBytes.mock.callCount(), 1);
+    assert.equal(ctx.decoded, 1);
+    assert.equal(ctx.sources.length, 0, 'warm sounds nothing');
+  });
+
+  it('33. warm on an off bus fetches nothing; setBus on fetches it; off and on again fetches nothing more', async () => {
+    const m = make();
+    m.warm([boo]);
+    await flush();
+    assert.equal(fetchBytes.mock.callCount(), 0);
+    m.setBus('game', { on: true, volume: 100 });
+    await flush();
+    assert.equal(fetchBytes.mock.callCount(), 1);
+    m.setBus('game', { on: false, volume: 100 });
+    m.setBus('game', { on: true, volume: 100 });
+    await flush();
+    assert.equal(fetchBytes.mock.callCount(), 1);
+  });
+
+  it('34. two warms of one src, or a warm and a play together, fetch once and decode once', async () => {
+    const m = make();
+    m.setBus('game', { on: true, volume: 100 });
+    m.warm([boo]);
+    m.warm([boo]);
+    await m.unlock();
+    m.warm([boo]);
+    const played = m.play(boo);
+    m.warm([boo]);
+    assert.deepEqual(await played, { lengthMs: 1500 });
+    await flush();
+    assert.equal(fetchBytes.mock.callCount(), 1);
+    assert.equal(ctx.decoded, 1);
+  });
+
+  it('35. a failed fetch through warm is forgotten: the next play fetches again and sounds', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    fetchBytes.mock.mockImplementationOnce(async () => { throw new Error('404'); });
+    m.warm([boo]);
+    await flush();
+    assert.equal(fetchBytes.mock.callCount(), 1);
+    assert.deepEqual(await m.play(boo), { lengthMs: 1500 });
+    assert.equal(fetchBytes.mock.callCount(), 2);
+  });
+
+  it('36. a failed decode deletes both entries for the src: the next play fetches again and decodes again', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    ctx.failDecode = true;
+    m.warm([boo]);
+    await flush();
+    assert.equal(fetchBytes.mock.callCount(), 1);
+    assert.equal(ctx.decoded, 1);
+    ctx.failDecode = false;
+    assert.deepEqual(await m.play(boo), { lengthMs: 1500 });
+    assert.equal(fetchBytes.mock.callCount(), 2);
+    assert.equal(ctx.decoded, 2);
+  });
+
+  it('37. warm makes no context', async () => {
+    const m = make();
+    m.setBus('game', { on: true, volume: 100 });
+    m.warm([boo]);
+    await flush();
+    assert.equal(makeContext.mock.callCount(), 0);
+  });
+
+  describe('lateMs', () => {
+    /** A mixer whose decode waits on a gate, with a voice already sounding in group g. */
+    const gated = async () => {
+      const m = make();
+      await m.unlock();
+      m.setBus('game', { on: true, volume: 100 });
+      await m.play(boo, { group: 'g', fadeMs: 100 });
+      let open: () => void = () => {};
+      const gate = new Promise<void>((r) => { open = r; });
+      ctx.decodeAudioData = (async () => { await gate; return { duration: 1.5 }; }) as never;
+      return { m, open };
+    };
+
+    it('38. a play that resolves after lateMs is null, starts no source, and leaves its group voice sounding', async () => {
+      const { m, open } = await gated();
+      const voice = ctx.gains[1]!;
+      const rampsBefore = voice.gain.ramps.length;
+      const logBefore = voice.gain.log.length;
+      const pending = m.play(cheer, { group: 'g', fadeMs: 100, lateMs: 100 });
+      clock = 150;
+      open();
+      assert.equal(await pending, null);
+      assert.equal(ctx.sources.length, 1, 'no second source');
+      assert.equal(ctx.sources[0]!.stoppedAt, undefined, 'the group voice was not stopped');
+      assert.equal(voice.gain.ramps.length, rampsBefore, 'no fade-out ramp');
+      assert.equal(voice.gain.log.length, logBefore, 'nothing was scheduled on its gain');
+    });
+
+    it('39. a play that resolves within lateMs sounds', async () => {
+      const { m, open } = await gated();
+      const pending = m.play(cheer, { group: 'g', fadeMs: 100, lateMs: 100 });
+      clock = 50;
+      open();
+      assert.deepEqual(await pending, { lengthMs: 1500 });
+      assert.equal(ctx.sources.length, 2);
+    });
+
+    it('40. a play with no lateMs sounds however late it resolves', async () => {
+      const { m, open } = await gated();
+      const pending = m.play(cheer, { group: 'g', fadeMs: 100 });
+      clock = 1_000_000;
+      open();
+      assert.deepEqual(await pending, { lengthMs: 1500 });
+      assert.equal(ctx.sources.length, 2);
+    });
   });
 });

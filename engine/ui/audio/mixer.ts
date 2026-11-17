@@ -5,8 +5,10 @@
  *
  * `play` and `loop` return promises, not values: a sound is fetched and decoded before it sounds, and both are async, so the
  * plan's `{ lengthMs } | null` is a promise of it. Nothing is queued: a call before `unlock()`, or on a bus that is off,
- * resolves null at once and fetches nothing. A file is fetched and decoded once a page; a failure resolves null for that
- * play and is tried again on the next, and the mixer never throws into its caller.
+ * resolves null at once and fetches nothing. A file is fetched and decoded once a page, by a play or by `warm`; a failure resolves
+ * null for that play and is tried again on the next, and the mixer never throws into its caller. `warm` fetches at once and decodes
+ * at the first unlock (once unlocked, at once), and a bus that is off fetches nothing until it is turned on. A play may ask for a
+ * `lateMs`: if its sound cannot start within that long of the call, it is dropped and resolves null rather than sounding late.
  *
  * `fadeMs` on `play` is the cross-fade between sounds of one group, so it does nothing without a `group`: a sound in no group
  * overlaps whatever else sounds. No voice ever steps, though: a voice starts at 0 and ramps to its level, and ramps back to 0 when
@@ -30,7 +32,7 @@ export interface AudioContextLike {
   decodeAudioData(bytes: ArrayBuffer, ok?: (b: { readonly duration: number }) => void, fail?: (e: unknown) => void): Promise<{ readonly duration: number }> | void;
   createGain(): GainNodeLike; createBufferSource(): SourceLike;
 }
-export interface MixerDeps { makeContext(): AudioContextLike; fetchBytes(src: string): Promise<ArrayBuffer> }
+export interface MixerDeps { makeContext(): AudioContextLike; fetchBytes(src: string): Promise<ArrayBuffer>; now?: () => number }
 /** Why a loop ended: its own `stop`, its bus turned off, or another sound of its group replacing it. */
 export type LoopStop = 'stopped' | 'bus' | 'replaced';
 export interface LoopHandle { setGain(g: number): void; stop(fadeMs: number): void }
@@ -38,7 +40,8 @@ export interface Mixer {
   setBus(bus: SoundBus, s: { on: boolean; volume: number }): void;
   /** Resolves whether the mixer is now unlocked: false when the browser refused, so the next gesture may try again. */
   unlock(): Promise<boolean>; suspend(): Promise<void>; resume(): Promise<void>;
-  play(slot: SoundSlot, o?: { group?: string; fadeMs?: number; tailMs?: number }): Promise<{ lengthMs: number } | null>;
+  warm(slots: readonly SoundSlot[]): void;
+  play(slot: SoundSlot, o?: { group?: string; fadeMs?: number; tailMs?: number; lateMs?: number }): Promise<{ lengthMs: number } | null>;
   /**
    * A loop starts at gain 0, silent until its owner's `setGain` raises it. `cancelled` is asked once the sound is decoded: true resolves null
    * with no source made and no group voice replaced, for an owner that gave up while the file loaded.
@@ -56,7 +59,13 @@ export function createMixer(deps: MixerDeps): Mixer {
   const loops: Record<SoundBus, Set<(why: LoopStop) => void>> = { game: new Set(), interface: new Set() };
   /** A group's current voice, and the way to end it over `fadeMs` (a play fades out, a loop stops). A play's fade-out ends by its file's end, but never takes less than `EDGE_MS`, so a play replaced in its last few milliseconds outlasts its file by up to that. */
   const groups = new Map<string, { source: SourceLike; end(fadeMs: number): void }>();
+  /** A file's fetch, by src; it needs no context. `decodeAudioData` detaches the bytes it is given, so an entry goes once its decode starts. */
+  const bytes = new Map<string, Promise<ArrayBuffer | null>>();
+  /** A file's decode, by src; filled only once a context exists. */
   const buffers = new Map<string, Promise<{ readonly duration: number } | null>>();
+  /** Every slot `warm` was asked for, by src, so a bus turned on or an unlock can warm them again. */
+  const warmed = new Map<string, SoundSlot>();
+  const now = deps.now ?? (() => performance.now());
 
   /** A bus's level: 0 when it is off or its volume is not a finite number (a NaN handed to a param throws), else the volume over 100, clamped to 0..1. */
   const level = (b: SoundBus): number => (buses[b].on && Number.isFinite(buses[b].volume) ? Math.min(Math.max(buses[b].volume, 0), 100) / 100 : 0);
@@ -79,16 +88,42 @@ export function createMixer(deps: MixerDeps): Mixer {
       if (r && typeof r.then === 'function') r.then(resolve, reject);
     });
   }
+  /** The file's bytes: the fetch under way or done, else a new one. A failure forgets both caches for the src, so the next call fetches again. */
+  function fetched(src: string): Promise<ArrayBuffer | null> {
+    let pending = bytes.get(src);
+    if (!pending) {
+      pending = deps.fetchBytes(src).catch(() => {
+        bytes.delete(src);
+        buffers.delete(src);
+        return null;
+      });
+      bytes.set(src, pending);
+    }
+    return pending;
+  }
   function decoded(c: AudioContextLike, src: string): Promise<{ readonly duration: number } | null> {
     let pending = buffers.get(src);
     if (!pending) {
-      pending = deps.fetchBytes(src).then((bytes) => decode(c, bytes)).catch(() => {
+      pending = fetched(src).then((b) => {
+        if (!b) return null;
+        bytes.delete(src);
+        return decode(c, b);
+      }).catch(() => {
+        bytes.delete(src);
         buffers.delete(src);
         return null;
       });
       buffers.set(src, pending);
     }
     return pending;
+  }
+  /** Fetch a warmed slot's bytes if nothing holds its src, and decode it if there is a context. Never throws, makes no context. */
+  function warmSlot(slot: SoundSlot): void {
+    try {
+      if (!buses[slot.bus].on) return;
+      if (ctx) void decoded(ctx, slot.src);
+      else if (!bytes.has(slot.src) && !buffers.has(slot.src)) void fetched(slot.src);
+    } catch { /* a warm never throws */ }
   }
   /**
    * Fade a voice out over `fadeMs` and stop its source then; the source's end disconnects both, once, whichever of the natural end or this
@@ -148,6 +183,12 @@ export function createMixer(deps: MixerDeps): Mixer {
   }
 
   return {
+    warm(slots) {
+      for (const slot of slots) {
+        try { warmed.set(slot.src, slot); } catch { continue; }
+        warmSlot(slot);
+      }
+    },
     setBus(bus, s) {
       buses[bus].on = s.on;
       buses[bus].volume = s.volume;
@@ -158,13 +199,15 @@ export function createMixer(deps: MixerDeps): Mixer {
         node.gain.setValueAtTime(node.gain.value, now);
         node.gain.setTargetAtTime(level(bus), now, 0.015);
       } else if (node) node.gain.value = level(bus);
-      if (!s.on) for (const end of [...loops[bus]]) end('bus');
+      if (s.on) { for (const slot of warmed.values()) if (slot.bus === bus) warmSlot(slot); }
+      else for (const end of [...loops[bus]]) end('bus');
     },
     async unlock() {
       try {
         made ??= deps.makeContext();
         await made.resume();
         ctx = made;
+        for (const slot of warmed.values()) warmSlot(slot);
         return true;
       } catch { /* a browser that refuses leaves the mixer locked; the next gesture tries again */ return false; }
     },
@@ -172,8 +215,10 @@ export function createMixer(deps: MixerDeps): Mixer {
     async resume() { try { await made?.resume(); } catch { /* nothing to resume */ } },
     async play(slot, o = {}) {
       try {
+        const asked = now();
         const r = await ready(slot);
         if (!r) return null;
+        if (typeof o.lateMs === 'number' && Number.isFinite(o.lateMs) && now() - asked > o.lateMs) return null;
         const { c, buffer } = r;
         const fadeMs = o.fadeMs ?? 0;
         const prior = o.group === undefined ? undefined : groups.get(o.group);
