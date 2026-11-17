@@ -61,10 +61,11 @@ const SEEDS = {
   'short-three': [172],
   three: [101],
   phone: [113],
+  'with-fab': [101],
 } as const;
 /** The short-three layout's second pinned seed: the spread case. */
 const SPREAD_SEED = 158;
-type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three';
+type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three' | 'with-fab';
 
 /** The post that wears the card: its content area (the world) and its parts. */
 const area = (page: Page) => page.locator('.kb-act-main:has(.dw-chair)').first();
@@ -914,7 +915,36 @@ for (const [kind, seed] of [['tight', SEEDS['short-three'][0]], ['spread', SPREA
   });
 }
 
-for (const name of ['one-light', 'one-dark', 'reduced'] as const) {
+/**
+ * The shading draws no block (issue #768, plan Task 4, case 1), on the post Steel Chair and Feelin' Fab share: the four corners of each dent's box, 4 px
+ * squares where the dent is flat and its images' alpha is 0, are the same pixels with the shading shown and hidden, within 2 levels of 255. Feelin' Fab's foil
+ * is under the shading and is not still, so reduced motion is asked for (the foil is then drawn as it is and not moved on). Poison: the shade image made
+ * opaque again (alpha 255, the gray kept) in dent.ts, whose corners are then the shade's gray block.
+ */
+test('with-fab: no block: the four corners of each dent\'s box are the same with the shading shown and hidden', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await open(page, 'with-fab');
+  await atRest(page, 1, 2000);
+  await expect(page.locator('.kb-act-main:has(.dw-chair) canvas.dw-fab-foil'), 'Feelin\' Fab\'s foil is on the post').toHaveCount(1);
+  const s = await shading(page);
+  expect(s.dents.length, 'a dent').toBeGreaterThan(0);
+  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-layer')) el.style.visibility = 'hidden'; });
+  const SQ = 4;
+  for (const [i, d] of s.dents.entries()) {
+    const corners = [[d.left, d.top], [d.left + d.width - SQ, d.top], [d.left, d.top + d.height - SQ], [d.left + d.width - SQ, d.top + d.height - SQ]] as const;
+    for (const [k, [x, y]] of corners.entries()) {
+      const clip = { x: Math.ceil(x), y: Math.ceil(y), width: SQ, height: SQ };
+      const shown = (await pixelsOf(page, clip)).px;
+      await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = 'hidden'; });
+      const hidden = (await pixelsOf(page, clip)).px;
+      await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = ''; });
+      const worst = Math.max(...shown.map((v, j) => Math.abs(v - hidden[j]!)));
+      expect(worst, `dent ${i}, corner ${k} (${JSON.stringify(clip)}): the shading changes a pixel there by ${worst} levels of 255`).toBeLessThanOrEqual(2);
+    }
+  }
+});
+
+for (const name of ['one-light', 'one-dark', 'reduced', 'with-fab'] as const) {
   test(`axe finds nothing on ${name}`, async ({ page }) => {
     await open(page, name);
     await atRest(page, 1);

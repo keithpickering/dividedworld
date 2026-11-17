@@ -9,6 +9,7 @@
  * - `Fab`: one line with Feelin' Fab on it, live. `FabBright`: the same with a quote in it, Brighter effects on, and Feelin' Fab on the spin's opening
  *   post too.
  * - `GlitterSpun`: a Glitter Bomb on a character, spun from a post of theirs ("as it was spun"), its glitter still.
+ * - `ChairLanded`: a post that reads `!` with Steel Chair on it, spun from the play, so the box shows the play's moment (issue #768). `ChairLandedPhone`: the same at the phone's width.
  * - `HotBox`: three lines with Hot Box on it, live. `Chair`: three lines with Steel Chair on it, live. `ChairShort`: one short line with Steel Chair.
  * - `GlitterOver`: Glitter Bomb on the character who spun the thread (who also has a post on its first page, as the server requires), the box a plain post by another character, live, over the glittered opening post.
  * - `Under`: a plain post in the box (with a 4D Chess play, which draws nothing, so that it has a mark), and Whoops! and Hot Box on the spin's opening post around it: the box stands above them and takes none of their presses.
@@ -46,7 +47,7 @@ declare global {
   }
 }
 
-type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'chair' | 'chair-short' | 'under' | 'over';
+type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'chair' | 'chair-short' | 'chair-landed' | 'under' | 'over';
 
 const DAY = 86_400_000;
 /** The spun thread's title, which the page finds it by. */
@@ -67,6 +68,8 @@ const THREE = [
 const THREE_EDITED = THREE.replace('and I will say so again', 'and I stand by that');
 const ONE = 'Luigi wins, and that is the whole post.';
 const SHORT = 'Luigi wins.';
+/** The post of #768: a single `!`, so the ORIGIN box holds one short line and the dent must fit the room the box gives it. */
+const BANG = '!';
 const QUOTED = '[quote=Kooper Trooper]The best driver in the series is Luigi.[/quote]The best driver in the series is, in fact, Luigi.';
 const PLAIN = 'A plain post, with nothing on it of its own, and a box that stands over its opening post\'s effects.';
 
@@ -84,6 +87,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   const now = fake.clock.now();
   const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'chair' ? THREE
     : shown === 'chair-short' ? SHORT
+      : shown === 'chair-landed' ? BANG
       : shown === 'bright' ? QUOTED
         : shown === 'under' || shown === 'over' ? PLAIN
           : ONE;
@@ -93,7 +97,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
      A search over 60000 seeds for one that clears the threshold over a whole byline band and the corner at every size of that spread found none (a splat is centered, and the byline is a thin strip at the top-left), so the spec reads along the byline's own row for a run of solid ink and does not rely on one point. A splat is only where its seed put it. */
   const whoops = () => ({ layer: 1, live: true, config: { color: CYAN, seed: 2591 }, message: 'cyan, obviously' });
   fake.signInAs(player);
-  quiet = shown === 'under' || shown === 'bright';
+  quiet = shown === 'under' || shown === 'bright' || shown === 'chair-landed';
   /*
    * The opening post's own plays, seeded on the spin's own Act once the spin has answered: a spun thread's opening Act is a post for every card (cards on a spun
    * thread, docs/plans/2026-11-16-cards-on-a-spun-thread-design.md), so `FabBright`'s Feelin' Fab and `Under`'s Whoops! and Hot Box on the opening post are plays the
@@ -138,6 +142,12 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   if (shown === 'hotbox') fake.seed.card(caster, post, cardOf(instance.cards, 'hot-box').key, { layer: 1, live: true, config: { color: PINK }, message: 'Smoke out', at: now, ends: new Date(now + 3 * DAY).toISOString() });
   /* A card with no effect on the words, so that the box's plain post still has a mark, and the mark's Go to post, to press. */
   if (shown === 'under') fake.seed.card(caster, post, cardOf(instance.cards, '4d-chess').key, { layer: 1, live: true, config: {}, message: 'Check.' });
+  if (shown === 'chair-landed') {
+    /* The thread is spun from the play, so the box shows the chair's moment, "as it landed" (the case of issue #768). */
+    const play = fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
+    spun(play);
+    return;
+  }
   if (shown === 'chair' || shown === 'chair-short') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
   spun(post);
 };
@@ -225,6 +235,10 @@ export const HotBox: Story = of('hotbox');
 export const Chair: Story = of('chair');
 /** Steel Chair on one short line, live. */
 export const ChairShort: Story = of('chair-short');
+/** Steel Chair on a post that reads `!`, the thread spun from the play: the box shows the play's moment, with the cards met so no tip covers it (issue #768). */
+export const ChairLanded: Story = of('chair-landed');
+/** The same at the phone's width. */
+export const ChairLandedPhone: Story = { ...of('chair-landed'), globals: phone };
 /** A plain post in the box, under Whoops! and Hot Box on the opening post around it, plays seeded on the spin's own Act: the box stands over the effects on its opening post, and takes none of its presses. */
 export const Under: Story = of('under');
 /**

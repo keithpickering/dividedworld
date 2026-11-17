@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fogAlpha } from '../instances/divided-world/ui/hot-box/smoke.ts';
 import { ROOM_HEIGHT } from '../instances/divided-world/ui/steel-chair/chair.ts';
 import { inflateSync } from 'node:zlib';
+import { pageViolations } from './axe.ts';
 import { settled } from './settled.ts';
 import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.ts';
 
@@ -21,6 +22,9 @@ import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.t
  *
  * Cases 12 to 14 are Task 7 of the plan, the box's foil held to the cost a post's is (the bound is e2e/shine-share.ts's, which e2e/shine.spec.ts holds a busy thread to): at rest, out of view, and
  * with the opening post's foil and the box's together. They read the loop through the story's `window.__kbOriginShine`.
+ *
+ * Cases 15 to 19 are Task 4 of docs/plans/2026-11-16-steel-chair-origin-plan.md (issue #768): Steel Chair's shading and chairs in the ORIGIN box on a post that reads `!` (`ChairLanded`, and at the phone's width `ChairLandedPhone`). Its case 5 (the cap still holds)
+ * is e2e/steel-chair.spec.ts's `theLineCanBeRead`, unchanged; its case 1 on `WithFab`, and the axe case on it, are in that spec. Case 7's loop reads `ChairLanded` too (the plan's case 4).
  *
  * Case 10 of the plan (a box with nothing under its band draws no area) is not here: no story's box is the band alone (the plan's own condition), so
  * engine/ui/spin/Spin.test.tsx's case 4 holds it.
@@ -339,7 +343,7 @@ async function openChair(page: Page, name: string, seed: number) {
   }), { timeout: REST_MS, message: 'one chair drawn and asleep' }).toBe(true);
 }
 
-for (const name of ['chair', 'chair-short'] as const) {
+for (const name of ['chair', 'chair-short', 'chair-landed'] as const) {
   for (const seed of CHAIR_SEEDS) {
     test(`7. Steel Chair's floor and walls are the box's, and its room is the area's (${name}, seed ${seed})`, async ({ page }) => {
       /* Poison: the room put back as `[data-kb-content-area]:has(.dw-chair)::after` (it is then drawn on the opening post's body, which holds the chair by descent, and not on the box's area). */
@@ -756,3 +760,115 @@ test('14. with the opening post\'s foil and the box\'s both on the page, two hos
   }
   expect(over, 'each host\'s redrawn area, over what that host is allowed, is within the bound').toEqual([]);
 });
+
+
+/* ------------------------------------------------------------------------------------------ 15 to 19. Steel Chair on a `!` ---- */
+
+/** Opens a Steel Chair story whose chair is drawn and asleep, at a size, with the first of CHAIR_SEEDS (a moment's run has its own seed, the plays'). */
+async function openChairAt(page: Page, name: string, size: { width: number; height: number }) {
+  await page.setViewportSize(size);
+  await openChair(page, name, CHAIR_SEEDS[0]!);
+}
+
+/** A clip of the page as RGBA pixels (the screenshot is decoded in the page, which has a canvas). */
+async function pixelsOf(page: Page, clip: { x: number; y: number; width: number; height: number }): Promise<number[]> {
+  const png = (await page.screenshot({ clip, animations: 'allow' })).toString('base64');
+  return page.evaluate(async (data) => {
+    const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${data}`)).blob());
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(bitmap, 0, 0);
+    return [...ctx.getImageData(0, 0, canvas.width, canvas.height).data];
+  }, png);
+}
+
+/** Each dent's box in the box's area, in the viewport. */
+const dentBoxes = (page: Page): Promise<{ left: number; top: number; right: number; bottom: number; width: number; height: number }[]> => area(page).evaluate((a) =>
+  [...a.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent')].map((d) => { const r = d.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; }));
+
+for (const [name, size] of [['chair-landed', { width: 1440, height: 1120 }], ['chair-landed-phone', { width: 390, height: 844 }]] as const) {
+  test(`15. the shading draws no block: the four corners of each dent's box are the same with the shading shown and hidden (${name})`, async ({ page }) => {
+    /* Poison: the shade image made opaque again (alpha 255, the gray kept) in dent.ts: its corners, where the dent is flat, are then the shade's gray block. */
+    await openChairAt(page, name, size);
+    const dents = await dentBoxes(page);
+    expect(dents.length, 'the story has a dent').toBeGreaterThan(0);
+    await area(page).evaluate((a) => { for (const el of a.querySelectorAll<HTMLElement>('.dw-chair-layer')) el.style.visibility = 'hidden'; });
+    const SQ = 4;
+    for (const [i, d] of dents.entries()) {
+      const corners = [[d.left, d.top], [d.right - SQ, d.top], [d.left, d.bottom - SQ], [d.right - SQ, d.bottom - SQ]] as const;
+      for (const [k, [x, y]] of corners.entries()) {
+        const clip = { x: Math.ceil(x), y: Math.ceil(y), width: SQ, height: SQ };
+        const shown = await pixelsOf(page, clip);
+        await area(page).evaluate((a) => { for (const el of a.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = 'hidden'; });
+        const hidden = await pixelsOf(page, clip);
+        await area(page).evaluate((a) => { for (const el of a.querySelectorAll<HTMLElement>('.dw-chair-dents, .dw-chair-glows')) el.style.visibility = ''; });
+        const worst = Math.max(...shown.map((v, j) => Math.abs(v - hidden[j]!)));
+        expect(worst, `dent ${i}, corner ${k} (${JSON.stringify(clip)}): the shading changes a pixel there by ${worst} levels of 255`).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+}
+
+/** The seeds a live short post is thrown with in case 16. Seed 10 is one of the sixteen tried whose dent lands low enough that a zone taller than the area (the poison) puts it out of the area: a seed is a fixture, and the others are two of case 7's. */
+const ZONE_SEEDS = [10, 101, 113];
+for (const [name, size, seed] of [['chair-landed', { width: 1440, height: 1120 }, CHAIR_SEEDS[0]!], ['chair-landed-phone', { width: 390, height: 844 }, CHAIR_SEEDS[0]!], ...ZONE_SEEDS.map((n) => ['chair-short', { width: 1440, height: 1120 }, n] as const)] as const) {
+  test(`16. every dent is inside the area, and none lies over the band's words (${name}, seed ${seed})`, async ({ page }) => {
+    /* Poison: `zoneHeight` returning the area's height plus 40 (dent.ts): the dents are aimed in a zone taller than the area. */
+    await page.setViewportSize(size);
+    await openChair(page, name, seed);
+    const a = await padBox(area(page));
+    const bandBottom = (await borderBox(band(page))).bottom;
+    const dents = await dentBoxes(page);
+    expect(dents.length, 'the story has a dent').toBeGreaterThan(0);
+    for (const [i, d] of dents.entries()) {
+      const where = `dent ${i} ${JSON.stringify(d)} in the area ${JSON.stringify(a)}`;
+      expect(d.left, where).toBeGreaterThanOrEqual(a.left - 1);
+      expect(d.right, where).toBeLessThanOrEqual(a.right + 1);
+      expect(d.top, where).toBeGreaterThanOrEqual(a.top - 1);
+      expect(d.bottom, where).toBeLessThanOrEqual(a.bottom + 1);
+      expect(d.top, `${where}: at or below the band's bottom (${bandBottom})`).toBeGreaterThanOrEqual(bandBottom - 1);
+    }
+  });
+}
+
+for (const [name, size] of [['chair-landed', { width: 1440, height: 1120 }], ['chair-landed-phone', { width: 390, height: 844 }]] as const) {
+  test(`17. the box grew: its content is at least 237 px tall and the dent's larger axis is over 100 px (${name})`, async ({ page }) => {
+    /* Poison: the `[data-dw-chair-room]` rule's `min-height` deleted (steel-chair.css): the area is as tall as a `!` and its byline. */
+    await openChairAt(page, name, size);
+    const content = await area(page).evaluate((a) => { const c = getComputedStyle(a); return a.clientHeight - parseFloat(c.paddingTop) - parseFloat(c.paddingBottom); });
+    expect(content, `the area's content height (237 is the full dent, 160, and the room, ${ROOM_HEIGHT})`).toBeGreaterThanOrEqual(160 + ROOM_HEIGHT - 0.5);
+    const larger = Math.max(...(await dentBoxes(page)).map((d) => Math.max(d.width, d.height)));
+    expect(larger, "the dent's larger axis").toBeGreaterThan(100);
+  });
+}
+
+test('18. after the box changes from 1440 to 390 wide, the layers fill the area again and the chair is on the floor', async ({ page }) => {
+  /* Poison: the still run's size observer not bound (Effect.tsx): a moment's layers keep the places they were drawn at, 1440 wide. */
+  await openChairAt(page, 'chair-landed', { width: 1440, height: 1120 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const [layer, what] of [['.dw-chair-dents', "the dents' layer"], ['.dw-chair-glows', "the lights' layer"], ['.dw-chair-layer', "the chairs' layer"]] as const) {
+    await fills(box(page).locator(layer), area(page), what);
+  }
+  await expect.poll(async () => {
+    const m = await page.evaluate(() => {
+      const b = document.querySelector<HTMLElement>('.kb-origin-area')!;
+      const r = b.getBoundingClientRect(), bottom = r.top + b.clientTop + b.clientHeight;
+      const rects = [...b.querySelectorAll('.dw-chair-piece')].map((p) => p.getBoundingClientRect());
+      return { bottom, top: Math.min(...rects.map((x) => x.top)), low: Math.max(...rects.map((x) => x.bottom)), left: Math.min(...rects.map((x) => x.left)), right: Math.max(...rects.map((x) => x.right)), areaLeft: r.left + b.clientLeft, areaRight: r.left + b.clientLeft + b.clientWidth };
+    });
+    const off: string[] = [];
+    if (m.bottom - m.top > ROOM_HEIGHT + 1) off.push(`the chair's top is ${(m.bottom - m.top).toFixed(1)} above the area's bottom, over the room's ${ROOM_HEIGHT}`);
+    if (m.low > m.bottom + 0.5) off.push(`the chair's bottom ${m.low.toFixed(1)} is below the area's ${m.bottom.toFixed(1)}`);
+    if (m.left < m.areaLeft - 0.5 || m.right > m.areaRight + 0.5) off.push(`the chair ${m.left.toFixed(1)} to ${m.right.toFixed(1)} is outside the area ${m.areaLeft.toFixed(1)} to ${m.areaRight.toFixed(1)}`);
+    return off.length === 0 ? 'on the floor' : off.join('; ');
+  }, { message: "the chair is on the area's floor, inside its walls, after the box changed", timeout: 10_000 }).toBe('on the floor');
+});
+
+for (const name of ['chair-landed', 'chair-landed-phone'] as const) {
+  test(`19. axe finds nothing on ${name}`, async ({ page }) => {
+    await openChairAt(page, name, name === 'chair-landed' ? { width: 1440, height: 1120 } : { width: 390, height: 844 });
+    expect(await pageViolations(page)).toEqual([]);
+  });
+}
