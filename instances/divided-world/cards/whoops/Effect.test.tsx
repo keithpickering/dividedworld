@@ -135,7 +135,9 @@ interface Options {
   readonly nameOf?: EffectProps['nameOf'];
   /** The instance's share washed that counts as clean; null is an instance whose settings carry none. */
   readonly clean?: number | null;
-  /** Drawn in a play's moment (`EffectProps.still`). */
+  /** Drawn in a play's moment (`EffectProps.moment`): the live effect for a reader who is nobody. */
+  readonly moment?: { readonly at: number } | null;
+  /** A stale `EffectProps.still` flag, which the effect no longer reads. */
   readonly still?: boolean;
   /** `thread` (the default) renders inside the post body's cell, `.kb-act-main`, which is then the ink's box; `origin` is the ORIGIN box, where the frame is. */
   readonly place?: 'thread' | 'origin';
@@ -155,7 +157,7 @@ function mount(o: Options = {}) {
   const show: EffectProps['show'] = (view) => { shown.push(view); say(view); };
   const props: EffectProps = {
     post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), written: new Map(), reader: { author: o.author ?? false, caster: false },
-    place: o.place ?? 'thread', reach: 'post', still: o.still ?? false, save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), ink: createClaims().at('post:whoops', 0), holdScreen: () => {}, marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>{textOf(layoutLines)}</p>,
+    place: o.place ?? 'thread', reach: 'post', still: o.still ?? false, moment: o.moment ?? null, save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), ink: createClaims().at('post:whoops', 0), holdScreen: () => {}, marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>{textOf(layoutLines)}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};
@@ -2039,10 +2041,11 @@ describe('what the effect says to a screen reader', () => {
 });
 
 /*
- * Drawn in a play's moment (`EffectProps.still`; docs/plans/2026-11-03-effect-history-plan.md, Task 7): each layer as its saved state
- * says, nothing the reader does changing it, nothing saved, met or faded, and its words given to the moment's frame.
+ * Drawn in a play's moment (`EffectProps.moment`; docs/plans/2026-11-16-playable-moments-design.md, sections 2, 3 and 6): the live effect
+ * for a reader who is nobody, started from each layer's saved state. A scrub washes more on this screen, nothing is ever saved, and a
+ * moment is a fresh start each time it is mounted.
  */
-describe('in a moment, still', () => {
+describe('in a moment', () => {
   /** A saved state washing a layer about `share` of the way, as the author's strokes would. */
   function savedWash(layer: number, share: number): { state: { strokes: ReturnType<typeof packStroke>[] }; washed: number } {
     const ink = inkOf(layer);
@@ -2056,52 +2059,93 @@ describe('in a moment, still', () => {
     return { state: { strokes: strokes.map(packStroke) }, washed: ink.washed };
   }
   const at = '2026-10-29T22:00:00.000Z';
+  const MOMENT = { at: 1_000 };
   const lastView = (shown: readonly (CardView | null)[]) => shown.filter((v): v is CardView => v !== null).at(-1)!;
+  const clock = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
 
-  test('a saved 40% wash draws as it was saved, with no control', () => {
+  test('a layer saved 40% washed starts 40% washed, and a scrub over it washes more, on this screen', () => {
     const wash = savedWash(0, 0.4);
-    const { root, shown } = mount({ still: true, states: { 'play-1': { state: wash.state, savedAt: at } } });
-    expect(washed(root)[0]).toBeCloseTo(wash.washed, 2);
-    expect(lastView(shown).controls).toEqual([]);
+    const { root, frame } = mount({ moment: MOMENT, states: { 'play-1': { state: wash.state, savedAt: at } } });
+    const start = washed(root)[0]!;
+    expect(start).toBeCloseTo(wash.washed, 2);
+    scrubTo(frame, root, 0, inkOf(0, savedOf(wash.state).strokes), Math.min(0.95, start + 0.2));
+    expect(washed(root)[0]!).toBeGreaterThan(start + 0.05);
   });
 
-  test('a pointer drag changes nothing, and nothing is saved or met', () => {
-    vi.useFakeTimers();
-    const met = vi.fn();
-    const wash = savedWash(0, 0.4);
-    const { root, frame, save } = mount({ still: true, author: true, met, states: { 'play-1': { state: wash.state, savedAt: at } } });
-    const before = washed(root);
+  test('save is never called, whatever is scrubbed, and no stroke is queued', () => {
+    clock();
+    const { root, frame, save } = mount({ moment: MOMENT, states: { 'play-1': { state: savedWash(0, 0.4).state, savedAt: at } } });
     scrubTo(frame, root, 0, inkOf(0), 0.9);
     act(() => { vi.advanceTimersByTime(SAVE_AFTER_MS * 4); });
-    expect(washed(root)).toEqual(before);
+    expect(washed(root)[0]!).toBeGreaterThan(0.4);
     expect(save).not.toHaveBeenCalled();
-    expect(met).not.toHaveBeenCalled();
   });
 
-  test('a layer saved clean is not drawn, and nothing fades, even when the clean state arrives after it is drawn', () => {
-    const { root } = mount({ still: true, layers: 2, states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: at } } });
-    expect(states(root)).toEqual(['clean', 'live']);
-    expect(root).not.toHaveAttribute('data-kb-fading');
-    const later = mount({ still: true, layers: 2 });
-    expect(states(later.root)).toEqual(['live', 'live']);
-    later.hear({ 'play-2': { state: { strokes: [], clean: true }, savedAt: at } });
-    expect(states(later.root)).toEqual(['live', 'clean']);
-    expect(later.root).not.toHaveAttribute('data-kb-fading');
-  });
+  test('the words are inert while a line is covered, the controls hold Hold to scrub, and holding it sweeps and reads each uncovered line, as live', () => {
+    clock();
+    layoutLines = TEXT_LINES;
+    const { root, shown } = mount({ moment: MOMENT });
+    expect(root.querySelector('[data-kb-whoops-layout]')).toHaveAttribute('inert');
+    expect(lastView(shown).controls.map((c) => c.label)).toEqual(['Hold to scrub']);
+    const region = root.querySelector<HTMLElement>('[data-kb-uncovered]')!;
+    expect(region).toBeEmptyDOMElement();
+    const button = screen.getByRole('button', { name: 'Hold to scrub' });
+    act(() => { fireEvent.keyDown(button, { key: ' ' }); });
+    for (let k = 0; k < 60 && region.textContent === ''; k++) act(() => { vi.advanceTimersByTime(500); });
+    act(() => { fireEvent.keyUp(button, { key: ' ' }); });
+    expect(washed(root)[0]!).toBeGreaterThan(0);
+    expect(region.textContent).toMatch(/L\d\d alpha beta gamma/u);
+  }, 30_000);
 
-  test('its words: one layer as its caster\'s ink and share washed, three top first, a clean one "washed clean"', () => {
+  test('a reader forced to author in a moment still has no tool choice and never saves', () => {
+    clock();
     const wash = savedWash(0, 0.4);
-    const one = mount({ still: true, states: { 'play-1': { state: wash.state, savedAt: at } } });
-    expect(lastView(one.shown).state).toBe('As it landed');
-    expect(lastView(one.shown).notes).toEqual({ 'play-1': `Mrs. Hooligan's magenta, ${percentWashed(wash.washed, false)}% washed` });
-    expect(viewProblems(lastView(one.shown), { holds: false, covers: false })).toEqual([]);
-    one.unmount();
-    const three = mount({ still: true, layers: 3, states: { 'play-2': { state: { strokes: [], clean: true }, savedAt: at } } });
-    expect(lastView(three.shown).state).toBe('As it landed');
-    expect(lastView(three.shown).notes).toEqual({ 'play-3': "Spritey's yellow, 0% washed", 'play-2': "Gloomba's cyan, washed clean", 'play-1': "Mrs. Hooligan's magenta, 0% washed" });
-    expect(viewProblems(lastView(three.shown), { holds: false, covers: false })).toEqual([]);
+    const { root, frame, shown, save } = mount({ moment: MOMENT, author: true, states: { 'play-1': { state: wash.state, savedAt: at } } });
+    const view = lastView(shown);
+    expect(view.controls.map((c) => c.label)).toEqual(['Hold to scrub']);
+    expect(view.yours).toBeFalsy();
+    scrubTo(frame, root, 0, inkOf(0), 0.9);
+    act(() => { vi.advanceTimersByTime(SAVE_AFTER_MS * 4); });
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  test('remounted (Reset), it is 40% washed again', () => {
+    const wash = savedWash(0, 0.4);
+    const states = { 'play-1': { state: wash.state, savedAt: at } };
+    const first = mount({ moment: MOMENT, states });
+    scrubTo(first.frame, first.root, 0, inkOf(0), 0.9);
+    expect(washed(first.root)[0]!).toBeGreaterThan(0.5);
+    first.unmount();
+    const again = mount({ moment: MOMENT, states });
+    expect(washed(again.root)[0]).toBeCloseTo(wash.washed, 2);
+  });
+
+  describe('a stale `still` flag with no moment is ignored: the effect is the live one a reader sees', () => {
+    test('a scrub over a 40% washed layer washes more', () => {
+      const wash = savedWash(0, 0.4);
+      const { root, frame } = mount({ still: true, states: { 'play-1': { state: wash.state, savedAt: at } } });
+      const start = washed(root)[0]!;
+      scrubTo(frame, root, 0, inkOf(0, savedOf(wash.state).strokes), Math.min(0.95, start + 0.2));
+      expect(washed(root)[0]!).toBeGreaterThan(start + 0.05);
+    });
+
+    test('the words are inert while a line is covered, and the controls hold Hold to scrub', () => {
+      layoutLines = TEXT_LINES;
+      const { root, shown } = mount({ still: true });
+      expect(root.querySelector('[data-kb-whoops-layout]')).toHaveAttribute('inert');
+      expect(lastView(shown).controls.map((c) => c.label)).toEqual(['Hold to scrub']);
+    });
+
+    test('a layer washed clean fades', () => {
+      clock();
+      const { root, hear } = mount({ still: true, layers: 2 });
+      hear({ 'play-2': { state: { strokes: [], clean: true }, savedAt: at } });
+      expect(states(root)).toEqual(['live', 'clean']);
+      expect(root).toHaveAttribute('data-kb-fading');
+    });
   });
 });
+
 
 describe('the canvas, with the frame offset in the cell', () => {
   const realRect = Element.prototype.getBoundingClientRect;
