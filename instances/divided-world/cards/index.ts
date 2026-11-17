@@ -46,6 +46,7 @@ import { superHappyHeart, price as superHappyHeartPrice } from './super-happy-he
 import { sweetHeat, price as sweetHeatPrice } from './sweet-heat.ts';
 import { takeTheFall, price as takeTheFallPrice } from './take-the-fall.ts';
 import { tattleTale, price as tattleTalePrice } from './tattle-tale.ts';
+import { thickSkin, price as thickSkinPrice } from './thick-skin.ts';
 import { thisCard, price as thisCardPrice } from './this.ts';
 import { toll, price as tollPrice } from './toll.ts';
 import { ultraHappyHeart, price as ultraHappyHeartPrice } from './ultra-happy-heart.ts';
@@ -90,6 +91,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [sweetHeat as CardRules, sweetHeatPrice],
   [takeTheFall as CardRules, takeTheFallPrice],
   [tattleTale as CardRules, tattleTalePrice],
+  [thickSkin as CardRules, thickSkinPrice],
   [thisCard as CardRules, thisCardPrice],
   [toll as CardRules, tollPrice],
   [ultraHappyHeart as CardRules, ultraHappyHeartPrice],

@@ -1375,3 +1375,53 @@ describe('Sweet Heat, the fifth flat earn card, says its size in votes from its 
     for (const c of instance.classes) expect(words, c.name).not.toMatch(new RegExp(`\\b${c.name}\\b`, 'iu'));
   });
 });
+
+describe('Thick Skin in plain words (the Thick Skin plan, Task 3)', () => {
+  const skin = instanceUi.cards.find((c) => c.key === 'thick-skin');
+  /** The plate's tagline, wrapped greedily at spaces. */
+  const wrap = (text: string) => {
+    const lines: string[] = [];
+    for (const word of text.split(' ')) {
+      const last = lines[lines.length - 1];
+      if (last !== undefined && last.length + 1 + word.length <= 20) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    return lines;
+  };
+
+  test('it wears the Sweet cyan and ink, and says what it does in a tagline, a summary and a status', () => {
+    expect(skin, 'thick-skin is listed').toBeDefined();
+    expect(skin!.art.color).toBe('#2ee6ff');
+    expect(skin!.art.ink).toBe('#03141a');
+    expect(skin!.art.tagline).toBe('Lose half as much from reactions.');
+    expect(skin!.summary).toBe('Used on your own character. For 3 days, what it loses from reactions is halved.');
+    expect(skin!.status).toBe('Loses half as much from reactions');
+  });
+
+  test('its words are the ones the rules give', () => {
+    expect(skin!.describe(instance.settings)).toBe('A Sweet card, uncommon, used on your own character, the one playing it. For 3 days, whenever a reaction to something that character did costs it Aura, half of that loss is given back, and then it stops by itself. It changes nothing the character earns, and nothing it loses for any other reason. A card that pays more for the same reaction still pays. It costs nothing more to use.');
+    expect(skin!.logPlay!({}, {})).toBe('What that character loses from reactions is halved until it ends.');
+  });
+
+  test('its tagline fits the plate: at most two lines of at most 20 characters', () => {
+    const lines = wrap(skin!.art.tagline!);
+    expect(lines.length, lines.join(' | ')).toBeLessThanOrEqual(2);
+    for (const line of lines) expect(line.length, line).toBeLessThanOrEqual(20);
+  });
+
+  test('it has no effect and no form, and its words hold no percent and no class name', () => {
+    expect(skin!.Effect).toBeUndefined();
+    expect(skin!.ConfigForm).toBeUndefined();
+    const words = [skin!.art.tagline, skin!.summary, skin!.status as string, skin!.describe(instance.settings), skin!.logPlay!({}, {})].join('\n');
+    expect(words).not.toMatch(/%/u);
+    expect(instance.classes.length).toBeGreaterThan(0);
+    for (const c of instance.classes) expect(words, c.name).not.toMatch(new RegExp(`\\b${c.name}\\b`, 'iu'));
+  });
+
+  test('the rules over every card hold with it in', () => {
+    expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
+    const keys = cardsUi.map((c) => c.key);
+    expect(keys).toContain('thick-skin');
+    expect(keys).toEqual([...keys].sort());
+  });
+});
