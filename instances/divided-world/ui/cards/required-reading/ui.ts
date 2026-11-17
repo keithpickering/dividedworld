@@ -5,7 +5,7 @@ import type { Settings } from '../../../../../engine/rules/types.ts';
 import requiredReadingCanvas from './art.webp?url';
 import requiredReadingMark from './mark.svg?url';
 import requiredReadingArt from './art.json';
-import { earnWords, LARGEST, spanWords } from '../words.ts';
+import { earnWords, FIRST_REACTORS, LARGEST, spanWords } from '../words.ts';
 
 export const ui: CardUi = {
   key: 'required-reading',
@@ -13,6 +13,6 @@ export const ui: CardUi = {
   summary: `Used on your post. For ${spanWords(requiredReading.lasts!)}, each calm positive reaction to it pays ${earnWords(requiredReading)}.`,
   status: 'Paid more for calm positive reactions',
   describe: (settings: Settings) =>
-    `A Sweet card, ${requiredReading.rarity}, used on one of your own posts. For ${spanWords(requiredReading.lasts!)}, each calm positive reaction to that post pays its author ${earnWords(requiredReading)}, whatever their class makes of it, and then it stops by itself. Only reactions after it is played count, and a post carries one at a time. ${LARGEST} It costs nothing more to use.`,
+    `A Sweet card, ${requiredReading.rarity}, used on one of your own posts. For ${spanWords(requiredReading.lasts!)}, each calm positive reaction to that post pays its author ${earnWords(requiredReading)}, whatever their class makes of it, and then it stops by itself. ${FIRST_REACTORS} A post carries one at a time. ${LARGEST} It costs nothing more to use.`,
   logPlay: () => `Each calm positive reaction to that post pays ${earnWords(requiredReading)} until it ends.`,
 };

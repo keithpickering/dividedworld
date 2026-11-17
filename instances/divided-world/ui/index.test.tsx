@@ -239,7 +239,7 @@ describe('Required Reading\'s face and sheet', () => {
     expect(entry!.summary).toBe('Used on your post. For a week, each calm positive reaction to it pays a vote more.');
     expect(entry!.status).toBe('Paid more for calm positive reactions');
     expect(entry!.describe(instance.settings)).toBe(
-      'A Sweet card, common, used on one of your own posts. For a week, each calm positive reaction to that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. Only reactions after it is played count, and a post carries one at a time. Where two cards pay on the same reaction, only the larger pays. It costs nothing more to use.',
+      'A Sweet card, common, used on one of your own posts. For a week, each calm positive reaction to that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. It counts reactions from players who first react to a post while it is up. A post carries one at a time. Where two cards pay on the same reaction, only the larger pays. It costs nothing more to use.',
     );
     expect(entry!.logPlay!({}, {})).toBe('Each calm positive reaction to that post pays a vote more until it ends.');
     expect('Effect' in entry!, 'no Effect').toBe(false);
