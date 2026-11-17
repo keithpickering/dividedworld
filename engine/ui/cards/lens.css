@@ -38,7 +38,9 @@
 
 /*
  * The tabs are one row that scrolls sideways, as the phone's menu bar does: no scrollbar, a fade at the edge where more wait
- * (`data-kb-fade`, Lens.tsx), and the open tab scrolled into view. The strip leaves a few px at its ends for a skewed tab's slant.
+ * (`data-kb-fade`, Lens.tsx), and the open tab scrolled into view. A scroller clips whatever leaves its box, so the row keeps room at
+ * every edge for a skewed tab's slant (about 4px at 44px tall) and its focus ring, and gives that room back in its margins: the tabs
+ * stand where they did, and the first tab's left edge is never cut.
  */
 .kb-lens-tabstrip {
   position: relative;
@@ -50,7 +52,8 @@
   display: flex;
   gap: 8px;
   min-width: 0;
-  padding: 0 6px;
+  margin: -6px -6px;
+  padding: 6px 12px;
   overflow-x: auto;
   scrollbar-width: none;
 }
