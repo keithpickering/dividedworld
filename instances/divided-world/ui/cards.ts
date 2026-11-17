@@ -20,6 +20,7 @@ import { ui as classClownUi } from './cards/class-clown/ui.ts';
 import { ui as feelinFabUi } from './cards/feelin-fab/ui.ts';
 import { ui as feelinGlamUi } from './cards/feelin-glam/ui.ts';
 import { ui as forceFieldUi } from './cards/force-field/ui.ts';
+import { ui as frontRowUi } from './cards/front-row/ui.ts';
 import { ui as glitterBombUi } from './cards/glitter-bomb/ui.ts';
 import { ui as goodVibesUi } from './cards/good-vibes/ui.ts';
 import { ui as graffitiUi } from './cards/graffiti/ui.ts';
@@ -63,6 +64,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   feelinFabUi,
   feelinGlamUi,
   forceFieldUi,
+  frontRowUi,
   glitterBombUi,
   goodVibesUi,
   graffitiUi,

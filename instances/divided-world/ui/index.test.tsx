@@ -1244,6 +1244,40 @@ describe('the four flat earn cards say their sizes in votes, from their rules', 
       expect(ui(key).describe!(instance.settings), key).toBe(`${lead}, used on your own character, the one playing it. For 3 days, ${earnSentence}, ${tail(key)}`);
     }
   });
+  test('Front Row', () => {
+    const card = ui('front-row');
+    expect(card.art.color).toBe('#d24a2c');
+    expect(card.art.ink).toBe('#0d0301');
+    expect(card.art.tagline).toBe('Earn more from your cards\' reactions.');
+    expect(card.summary).toBe('Used on your own character. For 3 days, each reaction to a card it plays pays half a vote more.');
+    expect(card.status).toBe("Earns more from its cards' reactions");
+    expect(card.describe!(instance.settings)).toBe('A Pepperoni card, uncommon, used on your own character, the one playing it. For 3 days, each reaction to a card that character plays, whatever the reaction, pays half a vote more, and then it stops by itself. A card it plays is a Move it casts, a Gimmick it uses, or a Reversal of its own when it springs. Reactions to its posts are not counted. It counts reactions from players who first react to the card while it is up. It costs nothing more to use.');
+    expect(card.logPlay!({}, {})).toBe('Each reaction to a card that character plays pays half a vote more until it ends.');
+    expect(card.Effect).toBeUndefined();
+    expect(card.ConfigForm).toBeUndefined();
+    expect(card.hint).toBeUndefined();
+  });
+  test('Front Row\'s tagline fits the plate: at most two lines of at most 20 characters', () => {
+    /* A greedy wrap at spaces; issue #772's check replaces this when it lands. */
+    const wrap = (text: string, width: number) => {
+      const lines: string[] = [];
+      for (const word of text.split(' ')) {
+        const last = lines.length - 1;
+        if (last >= 0 && lines[last]!.length + 1 + word.length <= width) lines[last] += ` ${word}`;
+        else lines.push(word);
+      }
+      return lines;
+    };
+    const lines = wrap(ui('front-row').art.tagline, 20);
+    expect(lines.length).toBeLessThanOrEqual(2);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(20);
+  });
+  test('Front Row\'s words hold no "%" and no class\'s name', () => {
+    const card = ui('front-row');
+    const words = [card.summary, card.status, card.art.tagline, card.describe!(instance.settings), card.logPlay!({}, {})].join(' ');
+    expect(words).not.toMatch(/%/u);
+    for (const c of instance.classes) expect(words, c.name).not.toContain(c.name);
+  });
   test('Hype-Up', () => {
     expect(ui('hype-up').describe!(instance.settings)).toBe(`A Sweet card, common, cast on any post, yours or another's. For 3 days, each positive reaction (excited or calm) to that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. Only reactions after it lands count, and a post carries one at a time. It takes nothing from you. Where two cards pay on the same reaction, only the larger pays. A Mod Bot earns nothing, so its posts gain nothing from one. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.`);
   });
