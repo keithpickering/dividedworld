@@ -1,7 +1,7 @@
 /** `shareWords`: a share of a vote, in words, for a card's payout (Mooch's 0.1, Toll's 0.5, 4D Chess's 1). */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { shareWords } from './copy-words.ts';
+import { fractionWords, shareWords } from './copy-words.ts';
 
 describe('a share of a vote, in words', () => {
   test('says the shares a card pays plainly: a vote, half a vote, a tenth of a vote', () => {
@@ -17,4 +17,9 @@ describe('a share of a vote, in words', () => {
     assert.equal(shareWords(2), '2 votes');
     assert.equal(shareWords(1.5), '1.5 votes');
   });
+});
+
+describe('a share as a bare fraction of something', () => {
+  const table: ReadonlyArray<readonly [number, string]> = [[1, 'all'], [0.75, 'three quarters'], [0.5, 'half'], [0.25, 'a quarter'], [0.2, 'a fifth'], [0.1, 'a tenth'], [0.15, '15%']];
+  for (const [share, words] of table) test(`${share} is "${words}"`, () => assert.equal(fractionWords(share), words));
 });

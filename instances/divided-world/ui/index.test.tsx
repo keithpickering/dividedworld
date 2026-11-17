@@ -23,7 +23,6 @@ import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearUi } from './cosmetics.ts';
 import { mooch } from '../cards/mooch.ts';
-import { heatMagnet } from '../cards/heat-magnet.ts';
 import { toll } from '../cards/toll.ts';
 import { lineCutter } from '../cards/line-cutter.ts';
 import { feelinGlam } from '../cards/feelin-glam.ts';
@@ -694,9 +693,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(REASON_KEYS).toContain('card.cushion');
     expect(instanceUi.reasonWords('card.cushion', { card: 'gone', share: 0.5 })).toBe('A card: half of each loss from a reaction, given back');
     expect(instanceUi.reasonWords('card.cushion', { share: 0.5 })).toBe('A card: half of each loss from a reaction, given back');
-    const held = heatMagnet.gimmick;
-    (heatMagnet as { gimmick?: unknown }).gimmick = { kind: 'cushion', share: 0.75 };
-    try { expect(instanceUi.reasonWords('card.cushion', { card: 'heat-magnet', share: 0.75 })).toBe('Heat Magnet: three quarters of each loss from a reaction, given back'); } finally { (heatMagnet as { gimmick?: unknown }).gimmick = held; }
+    expect(instanceUi.reasonWords('card.cushion', { card: 'heat-magnet', share: 0.75 })).toBe('Heat Magnet: three quarters of each loss from a reaction, given back');
+    expect(instanceUi.reasonWords('card.cushion', { card: 'heat-magnet', share: 1 })).toBe('Heat Magnet: all of each loss from a reaction, given back');
+    expect(instanceUi.reasonWords('card.cushion', { card: 'heat-magnet' })).toBe('Heat Magnet: part of each loss from a reaction, given back');
   });
   test('the Main board\'s layout becomes the Phone board\'s at 1152px: 1440 times the smallest phone size (16) over the smallest Main board size (20)', () => {
     expect(boardSwitch(instanceUi.glass)).toBe(1152);

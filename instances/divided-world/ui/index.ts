@@ -7,8 +7,7 @@
  */
 import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
 import { spanWords } from '../../../engine/ui/characters/format.ts';
-import { shareWords } from '../../../engine/ui/copy-words.ts';
-import { fractionWords } from './cards/words.ts';
+import { fractionWords, shareWords } from '../../../engine/ui/copy-words.ts';
 import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
 import { quadrantLabels } from './quadrant-labels.ts';

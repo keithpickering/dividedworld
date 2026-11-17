@@ -32,11 +32,10 @@ export const earnWords = (c: { readonly gimmick?: GimmickEffect }) => {
   return `${shareWords(c.gimmick.flat)} more`;
 };
 
+
 /** What two earn cards on one reaction do, said by every card that earns: only the larger pays. */
 export const LARGEST = 'Where two cards pay on the same reaction, only the larger pays.';
 
-/** A share as a bare fraction, cut from the same words as `shareWords` and never restated: "half", "three quarters", and "all" at exactly 1 (a cushion's share). */
-export const fractionWords = (share: number) => (share === 1 ? 'all' : shareWords(share).replace(/ (of )?a vote$/u, ''));
 /** What a Price Gimmick adds to a cast, read from the card's own rules: "0.25". */
 export const priceAdd = (c: { readonly gimmick?: GimmickEffect }) => {
   if (c.gimmick?.kind !== 'price') throw new Error('card has no price gimmick');

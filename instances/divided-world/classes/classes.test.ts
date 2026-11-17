@@ -769,3 +769,19 @@ test('every earning paid per vote carries the votes it multiplied, and the Lurke
   assert.ok(over.length > 0);
   for (const e of over) assert.equal('votes' in e, false);
 });
+test('an earning carries its reaction\'s votes signed, so a vote that moved away reads as a loss of that many and never as a gain', () => {
+  const received = [got('excitedPositive', -2, 'post', 'n1'), got('excitedNegative', -1.5, 'post', 'n2'), got('calmPositive', -0.5, 'post', 'n3'), got('boredNegative', -3, 'post', 'n4'), got('calmPositive', -0.25, 'post', 'n5', 10 - 5 * DAY)];
+  const votesOf = new Map(received.map((r) => [r.act, r.votes]));
+  const perVoteReasons = new Map<string, string[]>([
+    ['face', ['face.cheered', 'face.boredTheRoom']], ['heel', ['heel.drewHeat', 'heel.shrugged']], ['jabroni', ['jabroni.drewTheGroan', 'jabroni.takenSincerely']],
+    ['technician', ['technician.respected', 'technician.evergreen', 'technician.draggedIn']], ['tweener', ['tweener.shrugged']], ['lurker', ['lurker.cardDrew']],
+  ]);
+  for (const c of classes) {
+    const lines = c.earn(input({ received: c.key === 'lurker' ? received.map((r) => ({ ...r, actKind: 'card' as const })) : received }), settings);
+    for (const reason of perVoteReasons.get(c.key)!) {
+      const paid = lines.filter((e) => e.reason === reason);
+      assert.ok(paid.length > 0, reason);
+      for (const e of paid) assert.equal(e.votes, votesOf.get(e.act!), `${reason} on ${e.act} carries the reaction's signed votes`);
+    }
+  }
+});

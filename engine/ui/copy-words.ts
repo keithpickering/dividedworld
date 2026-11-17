@@ -14,7 +14,16 @@ const FRACTIONS: ReadonlyArray<readonly [number, string]> = [[0.75, 'three quart
 export function shareWords(share: number): string {
   if (share === 1) return 'a vote';
   if (share > 1) return `${Number(share.toFixed(2))} votes`;
+  const bare = fractionWords(share);
+  return bare === 'half' ? 'half a vote' : `${bare} of a vote`;
+}
+
+/**
+ * A share as a bare fraction of something, from the same table as `shareWords` so the two cannot drift: 1 is "all", 0.5 "half", 0.75 "three quarters", 0.25 "a quarter", and a share with no word of
+ * its own a percent ("15%"). It is for a share above 0 and at most 1; a share outside that range is not a fraction of anything.
+ */
+export function fractionWords(share: number): string {
+  if (share === 1) return 'all';
   const named = FRACTIONS.find(([n]) => Math.abs(n - share) < 1e-9);
-  if (named) return named[1] === 'half' ? 'half a vote' : `${named[1]} of a vote`;
-  return `${Number((share * 100).toFixed(2))}% of a vote`;
+  return named ? named[1] : `${Number((share * 100).toFixed(2))}%`;
 }
