@@ -36,7 +36,7 @@ import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type Play
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
 import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, PLAYS_PER_POST, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, type Plays } from './plays.ts';
 import { createClaims, NO_INK } from './claims.ts';
-import { drawnInMoment, surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
+import { surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { PostPlays } from './plays.ts';
 import type { CardPlay, CardUi, CardView, Drive, EffectPlace, EffectProps, Written } from './types.ts';
@@ -425,7 +425,7 @@ export function useUntil(plays: readonly CardPlay[]): number {
  * not by where the post is drawn: a post is drawn once on a page, in its thread or in the ORIGIN box of a thread spun
  * from it, never both, so the two places never share a key at once.
  */
-function BoundEffect({ Effect, store, marks, cardKey: card, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays; /** The card whose effect this is: not always its first play's card, where plays are lent to it (`handedOn`). */ readonly cardKey: string }) {
+function BoundEffect({ Effect, store, marks, cardKey: card, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'moment'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays; /** The card whose effect this is: not always its first play's card, where plays are lent to it (`handedOn`). */ readonly cardKey: string }) {
   const post = props.post.id;
   /* A view is a post's: an effect above the post, drawn on many posts at once, says none (its mark is its target's). */
   const own = props.reach === 'post';
@@ -436,14 +436,14 @@ function BoundEffect({ Effect, store, marks, cardKey: card, ...props }: Omit<Eff
   /* The card's sounds warm while its effect's code loads, so they are ready when the effect asks (`CardUi.sounds`). */
   useWarmSounds(useKayfa().ui.cards.find((c) => c.key === card)?.sounds);
   /* An effect may load on first use: until it lands the post shows its words (`children`), so a post never pops in without them. */
-  return <Suspense fallback={props.children}><Effect {...props} still={false} show={show} met={met} holdScreen={holdScreen} marks={marks} /></Suspense>;
+  return <Suspense fallback={props.children}><Effect {...props} still={false} moment={null} show={show} met={met} holdScreen={holdScreen} marks={marks} /></Suspense>;
 }
 
 /* ------------------------------------------------------------------------------ a play's moment ---- */
 
 /** What a moment draws and what it names (docs/plans/2026-11-03-effect-history-design.md, section 3). */
 export interface MomentParts {
-  /** The plays on the post then whose cards are drawn in a moment (`drawnInMoment`) and have an effect, in play order. */
+  /** The plays on the post then whose cards play in a moment (`playsInMoment`), in play order. */
   readonly drawn: readonly CardPlay[];
   /** What each drawn play had saved then, by play; a play that had saved none is absent and is drawn as it landed. */
   readonly states: Readonly<Record<Id, EffectState>>;
@@ -463,17 +463,29 @@ export interface MomentParts {
 }
 
 /**
+ * Whether a card's effect plays in a play's moment (docs/plans/2026-11-16-playable-moments-design.md, section 5): it has an effect, is no
+ * takeover, and its rules have neither a surface nor a drive. The last two conditions go with issue #774, which gives a moment the read of
+ * the past that a surface's cells and a drive's gifts need.
+ */
+export function playsInMoment(rules: CardRules | undefined, ui: CardUi | undefined): boolean {
+  return ui?.Effect !== undefined && ui.takeover !== true && rules?.surface === undefined && rules?.drive === undefined;
+}
+
+/** The moment's own time as an epoch: a play's is its own date, a spin's is the spin's, and every play is judged live or over at it. */
+export function momentTime(moment: PlayMoment): number {
+  const stated = Date.parse(moment.at);
+  return Number.isNaN(stated) ? Date.parse(moment.layers[0]!.act.createdAt) : stated;
+}
+
+/**
  * Splits a moment into what is drawn and what is named. Liveness is judged at the play's own time, never now: a Use that had ended
  * by then is left out, a play an admin had ended by then is named "ended by an admin" (its card_end is among the layers, before the moment), a caught play is named "caught by" its trap's card (the spring that caught it made that card public), and a
  * card back is named as a back, always, even once it sprang: which card it is is never read. A play above the post is named with
  * what it was on, and never drawn, since its moment isn't one post's; the moment's own play, where it is on a character, is the one
- * exception (`above`), judged at the moment's time as every other is: live then, and its card's effect drawn. A card that cannot change after it lands, or that draws no
- * effect, is named.
+ * exception (`above`), judged at the moment's time as every other is: live then, and its card's effect drawn. A card whose effect does not play in a moment (`playsInMoment`) is named.
  */
 export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui: readonly CardUi[], nameOf: (character: Id | null) => string): MomentParts {
-  /* The moment's own time: a play's is its own date, a spin's is the spin's, and every play is judged live or over at it. */
-  const stated = Date.parse(moment.at);
-  const at = Number.isNaN(stated) ? Date.parse(moment.layers[0]!.act.createdAt) : stated;
+  const at = momentTime(moment);
   const cardName = (key: string) => rules.find((c) => c.key === key)?.name ?? key;
   const springs = moment.layers.map((l) => l.act).filter((a) => a.kind === 'spring');
   /* A play an admin had ended by then: its card_end rides among the layers, and counts only when it came before the moment. */
@@ -519,7 +531,7 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
     }
     if (play.ends !== undefined && Date.parse(play.ends) <= at) continue;
     const card = rules.find((c) => c.key === play.card);
-    if (card && drawnInMoment(card) && ui.find((c) => c.key === play.card)?.Effect) {
+    if (playsInMoment(card, ui.find((c) => c.key === play.card))) {
       drawn.push(play);
       if (state) states[play.id] = state;
     } else if (act.id !== self) {
@@ -539,16 +551,17 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
   };
 }
 
-const NOTHING_SAVED = 'a moment is drawn as it was, and nothing in it is saved';
-const stillSave: EffectProps['save'] = async () => ({ ok: false, error: NOTHING_SAVED });
-const stillRelease: EffectProps['release'] = async () => ({ ok: false, error: NOTHING_SAVED });
-const stillGive: EffectProps['give'] = async () => ({ ok: false, error: NOTHING_SAVED });
-const stillMore: EffectProps['moreGifts'] = async () => {};
+const NOTHING_SAVED = 'nothing in a moment is saved';
+const momentSave: EffectProps['save'] = async () => ({ ok: false, error: NOTHING_SAVED });
+const momentRelease: EffectProps['release'] = async () => ({ ok: false, error: NOTHING_SAVED });
+const momentGive: EffectProps['give'] = async () => ({ ok: false, error: NOTHING_SAVED });
+const momentMore: EffectProps['moreGifts'] = async () => {};
 /**
  * A surface in a moment: nothing is drawn or washed, and the moment holds no read of the layer (it is not in the play's moment), so it has
- * no cells and no acts (null, never read), and `near` does nothing.
+ * no cells and no acts (null, never read), and `near` does nothing. A card with a surface is named in a moment today (`playsInMoment`);
+ * this is the face a surface is given on a History version, until issue #774 reads the past for it.
  */
-const stillSurface = (most: number): NonNullable<EffectProps['surface']> => ({
+const momentSurface = (most: number): NonNullable<EffectProps['surface']> => ({
   covered: 0, most, acts: null, near: nothing,
   draw: async () => ({ ok: false, error: NOTHING_SAVED }), wash: async () => ({ ok: false, error: NOTHING_SAVED }),
 });
@@ -557,17 +570,17 @@ const NONE_RELEASED: ReadonlySet<Id> = new Set();
 
 /**
  * A play's moment, drawn: `children` (the moment's version of the post, as the caller draws a post's words) wrapped in the effects of
- * the moment's drawn layers (`momentParts`), each given `still`, the state it had saved then, no marks, a `save` and a `release` that
- * refuse without asking, and a `met` that does nothing; its `show` hands the view's words to `onWords`, by card. The layers wrap in
- * the order PostEffects wraps a post's own (`nestOrder`), from a
- * Plays store of its own, so nothing here reads or changes the live post's. The reader is nobody in particular: a moment is the same
- * for every reader.
+ * the moment's drawn layers (`momentParts`), each run as it runs live at the moment's time (`EffectProps.moment`), from the state it had
+ * saved then, with no marks, a `save` and a `release` that refuse without asking, and a `met` that does nothing; its `show` hands the
+ * whole view to `onView`, by card. The layers wrap in the order PostEffects wraps a post's own (`nestOrder`), from a Plays store of its
+ * own, so nothing here reads or changes the live post's, and share one ink registry as a post's do. The reader is nobody in particular:
+ * a moment is the same for every reader.
  */
-export function MomentEffects({ moment, place, nameOf, onWords, children }: {
+export function MomentEffects({ moment, place, nameOf, onView, children }: {
   readonly moment: PlayMoment; readonly place: EffectPlace;
   readonly nameOf: (character: Id | null) => string;
-  /** The frame's words for each drawn card, by card key, or null when its effect is gone. */
-  readonly onWords: (card: string, words: string | null) => void;
+  /** The view each drawn card's effect shows, by card key, or null when its effect is gone. */
+  readonly onView: (card: string, view: CardView | null) => void;
   readonly children: ReactNode;
 }) {
   const { instance, ui } = useKayfa();
@@ -580,6 +593,9 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
     return own;
   }, [moment, parts]);
   const here = store.get(moment.version.id);
+  /* The moment's ink registry, one for all its effects (claims.ts), ranked as PostEffects ranks them. */
+  const claims = useMemo(createClaims, []);
+  const at = useMemo(() => momentTime(moment), [moment]);
   /*
    * The tails of the plays then that write, at the version the play landed on (the post's own rows for it alone, so a tail that was made
    * later, for an edit after it, is not here). The moment names its version by the Act, whose `editedAt` is the edit's time, so the version
@@ -588,8 +604,8 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
   const writing = useMemo(() => writingKeys(instance.cards), [instance.cards]);
   const writingPlays = here.plays.filter((p) => writes(p, writing));
   const tailRows = useTails(moment.version, writingPlays.map((p) => p.id));
-  const at = useMomentVersion(moment.version, writingPlays.length > 0);
-  const written = useMemo(() => resolveWritten(tailRows, [], at, 'version'), [tailRows, at]);
+  const drawnAt = useMomentVersion(moment.version, writingPlays.length > 0);
+  const written = useMemo(() => resolveWritten(tailRows, [], drawnAt, 'version'), [tailRows, drawnAt]);
   /* The moment's own play on a character is ordered as PostEffects orders a post's author's (`nestOrder`): given before the post's own cards, so inside them, and inside every takeover. */
   const wraps = [
     ...(parts.above ? [{ key: parts.above.card, reach: 'character' as const, mine: [parts.above] }] : []),
@@ -597,15 +613,15 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
   ];
   const order = nestOrder(wraps, ui.cards, writing);
   let wrapped = children;
-  for (const { key, reach, mine } of [...order.writing, ...order.rest, ...order.takeovers]) {
+  for (const [rank, { key, reach, mine }] of [...order.writing, ...order.rest, ...order.takeovers].entries()) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
-      <StillEffect key={`${reach}:${key}`} Effect={Effect} card={key} onWords={onWords}
+      <MomentEffect key={`${reach}:${key}`} Effect={Effect} card={key} at={at} onView={onView}
         post={moment.version} plays={mine} states={reach === 'post' ? here.states : NO_STATES} released={NONE_RELEASED}
-        written={reach === 'post' ? writtenOf(written, mine, writing) : NOTHING_WRITTEN} {...(at !== null && reach === 'post' ? { version: at } : {})}
-        reader={{ author: false, caster: false }} place={place} reach={reach} nameOf={nameOf}>
+        written={reach === 'post' ? writtenOf(written, mine, writing) : NOTHING_WRITTEN} {...(drawnAt !== null && reach === 'post' ? { version: drawnAt } : {})}
+        reader={{ author: false, caster: false }} place={place} reach={reach} nameOf={nameOf} ink={claims.at(`${reach}:${key}`, rank)}>
         {wrapped}
-      </StillEffect>
+      </MomentEffect>
     );
   }
   return <>{wrapped}</>;
@@ -645,7 +661,7 @@ export function VersionEffects({ post, version, plays, written, nameOf = () => '
   for (const { key } of [...order.writing, ...order.rest, ...order.takeovers]) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
-      <StillEffect key={key} Effect={Effect} card={key} onWords={nothing}
+      <StillEffect key={key} Effect={Effect} card={key}
         post={post} plays={has.filter((p) => p.card === key)} states={NO_STATES} released={NONE_RELEASED} written={written} version={version}
         reader={{ author: false, caster: false }} place="thread" reach="post" nameOf={nameOf}>
         {wrapped}
@@ -657,23 +673,34 @@ export function VersionEffects({ post, version, plays, written, nameOf = () => '
 const NO_STATES: Readonly<Record<Id, EffectState>> = Object.freeze({});
 
 /**
- * One card's still effect in a moment, its `show` bound to its card, and its words cleared when it is gone. Its words are its view's
- * notes, a play's each, top first (the last played first), where it gives any: a still view's heading is "as it landed", which the
- * frame says already (the owner, 2026-11-07), and the notes say how each layer stood. A view with no notes gives its heading.
+ * One card's effect in a moment, run as it runs live at the moment's time (`EffectProps.moment`), its `show` bound to its card and
+ * handing the whole view to `onView`, which hears null when the effect is gone. Nothing it does is saved or sent: `save`, `release`, `give`
+ * and a surface refuse without asking, `met` and `holdScreen` do nothing, and it has no marks and no wallet.
  */
-function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'save' | 'release' | 'marks' | 'drives' | 'give' | 'moreGifts' | 'wallet' | 'surface' | 'ink'> & {
-  readonly Effect: ComponentType<EffectProps>; readonly card: string; readonly onWords: (card: string, words: string | null) => void;
+function MomentEffect({ Effect, card, at, onView, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'moment' | 'save' | 'release' | 'marks' | 'drives' | 'give' | 'moreGifts' | 'wallet' | 'surface'> & {
+  readonly Effect: ComponentType<EffectProps>; readonly card: string; readonly at: number; readonly onView: (card: string, view: CardView | null) => void;
 }) {
-  const plays = props.plays;
+  const { instance, ui } = useKayfa();
+  const rules = instance.cards.find((c) => c.key === card);
+  const surface = useMemo(() => (rules?.surface ? momentSurface(surfaceMost(card, rules.surface.limitKey, instance.settings)) : undefined), [rules, card, instance.settings]);
+  const moment = useMemo(() => ({ at }), [at]);
+  const show = useCallback((view: CardView | null) => onView(card, view), [onView, card]);
+  useEffect(() => () => onView(card, null), [onView, card]);
+  useWarmSounds(ui.cards.find((c) => c.key === card)?.sounds);
+  return <Suspense fallback={props.children}><Effect {...props} still={false} moment={moment} show={show} met={nothing} holdScreen={nothing} marks={null} save={momentSave} release={momentRelease} give={momentGive} moreGifts={momentMore} wallet={null} {...(surface ? { surface } : {})} /></Suspense>;
+}
+
+/**
+ * One card's effect on a History version, still: it draws a writing card's tail whole from that version's own rows and takes no input
+ * (`EffectProps.still`). Nothing it does is saved or sent, and it says nothing to any frame.
+ */
+function StillEffect({ Effect, card, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'moment' | 'save' | 'release' | 'marks' | 'drives' | 'give' | 'moreGifts' | 'wallet' | 'surface' | 'ink'> & {
+  readonly Effect: ComponentType<EffectProps>; readonly card: string;
+}) {
   const { instance } = useKayfa();
   const rules = instance.cards.find((c) => c.key === card);
-  const surface = useMemo(() => (rules?.surface ? stillSurface(surfaceMost(card, rules.surface.limitKey, instance.settings)) : undefined), [rules, card, instance.settings]);
-  const show = useCallback((view: CardView | null) => {
-    const notes = view ? [...plays].reverse().map((p) => view.notes[p.id]).filter((n): n is string => n !== undefined && n !== '') : [];
-    onWords(card, view === null ? null : notes.length > 0 ? notes.join('; ') : view.state);
-  }, [onWords, card, plays]);
-  useEffect(() => () => onWords(card, null), [onWords, card]);
-  return <Suspense fallback={props.children}><Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} give={stillGive} moreGifts={stillMore} wallet={null} ink={NO_INK} {...(surface ? { surface } : {})} /></Suspense>;
+  const surface = useMemo(() => (rules?.surface ? momentSurface(surfaceMost(card, rules.surface.limitKey, instance.settings)) : undefined), [rules, card, instance.settings]);
+  return <Suspense fallback={props.children}><Effect {...props} still moment={null} show={nothing} met={nothing} holdScreen={nothing} marks={null} save={momentSave} release={momentRelease} give={momentGive} moreGifts={momentMore} wallet={null} ink={NO_INK} {...(surface ? { surface } : {})} /></Suspense>;
 }
 
 export { useNarrow, useSheet } from '../media.ts';

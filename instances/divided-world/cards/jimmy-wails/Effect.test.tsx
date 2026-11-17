@@ -33,7 +33,7 @@ function mount(o: Options = {}) {
     return (
       <JimmyWailsEffect
         post={post} plays={drives.flatMap((d) => d.plays)} states={{}} released={new Set()} written={new Map()} reader={{ author: o.author ?? false, caster: false }} place={o.place ?? 'thread'}
-        reach="post" still={o.still ?? false} save={async () => ({ ok: false, error: 'no' })} release={async () => ({ ok: false, error: 'no' })} show={() => {}} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null}
+        reach="post" still={o.still ?? false} moment={null} save={async () => ({ ok: false, error: 'no' })} release={async () => ({ ok: false, error: 'no' })} show={() => {}} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null}
         nameOf={(id) => (id === null ? 'Somebody' : names[id] ?? id)} drives={drives} give={gives} moreGifts={async () => {}} wallet={'wallet' in o ? o.wallet! : { balance: 500, cap: 1000 }}
       >
         <p>Hello, this is the post.</p>

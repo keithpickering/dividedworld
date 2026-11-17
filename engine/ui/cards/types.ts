@@ -219,16 +219,16 @@ export interface EffectProps {
    */
   readonly holdScreen: (held: boolean) => void;
   /**
-   * Drawn in a play's moment (docs/plans/2026-11-03-effect-history-design.md, sections 3 and 5), not live. A card whose rules say its
-   * effect can change after it lands (`drawnInMoment`) honors it, and a test of each such card asserts it:
-   * - it draws `states` as given, as they stood then, and nothing the reader did since; it takes no input (no pointer, key or scroll
-   *   handler is bound), starts no animation that changes what it shows (a fade, a snap-back, a strip's fall), lifts nothing, and
-   *   makes nothing inert. A decoration that loops over the same state (a rainbow that cycles at the stack the moment caught) still
-   *   moves, and holds under reduced motion as it does live: a moment holds the state, not the motion;
-   * - its `show` gives the words the moment's frame shows for it (the view's `state`, "Gloomba's yellow, 40% washed"): the moment's
-   *   words, which a reader can read as well as see;
-   * - `save` and `release` refuse without asking, `met` does nothing, `holdScreen` does nothing, and `marks` is null.
-   * False on every live post.
+   * Null on a live post. In a play's moment, the moment's time as an epoch (`at`): the clock the effect judges everything by, which does not
+   * advance. The effect starts from `states`, `post` and `plays` as given and runs as it runs live. `reader` is nobody. `save`, `release`,
+   * `give` and a surface's `draw` and `wash` refuse without asking, `met` and `holdScreen` do nothing, `marks` is null, and `fold`, `kept`,
+   * `drives` and `wallet` are absent or null. Nothing the reader does is saved or sent. The same object for the same `at`, so an effect may
+   * list it in its dependencies (docs/plans/2026-11-16-playable-moments-design.md, sections 2 and 3).
+   */
+  readonly moment: { readonly at: number } | null;
+  /**
+   * True only on a History version row (`VersionEffects`), where a writing card draws its tail whole, from the drawn version's own rows alone
+   * and whatever `states` hold, and takes no input. False in a moment and on every live post.
    */
   readonly still: boolean;
   /**

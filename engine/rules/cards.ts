@@ -789,17 +789,6 @@ export const listed = (reaches: readonly Reach[]): string => {
 };
 
 /**
- * Whether a card is drawn in a play's moment (docs/plans/2026-11-03-effect-history-design.md, section 3): when its effect can change
- * after it lands, because it saves state (`validateState`), stacks (`stack` above 1), or ends by time (`lasts`). Such a card is drawn
- * still, as it stood then; any other is named in words. Read from the card's rules, so a card sets nothing. A discipline card needs no line of
- * its own: a relief, an unban and a fall have none of the three and are named in words, and a watch, which ends by time, is drawn as
- * any card with a time up is.
- */
-export function drawnInMoment(rules: Pick<CardRules, 'validateState' | 'stack' | 'lasts'>): boolean {
-  return rules.validateState !== undefined || (rules.stack ?? 1) > 1 || rules.lasts !== undefined;
-}
-
-/**
  * What every card holds to unless it says otherwise: it lands on a reach it lists (a post unless it says; a post is any Act
  * for which `isPost` holds, so a spun thread's opening Act counts and an edit or a card Act does not), and its target
  * carries at most its stack of it (one unless the card says more) that are still up, each its own play, counting only the

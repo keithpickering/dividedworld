@@ -870,15 +870,15 @@ export type { World };
 
 /*
  * As it landed (docs/plans/2026-11-03-effect-history-plan.md, Task 5): a play's moment drawn in the post's body, in a glass frame,
- * one on the page at a time and gone with its Lens. Card 1 stacks, so a moment draws it still from what it had saved then; Card 2 is
+ * one on the page at a time and gone with its Lens. Card 1 stacks, so a moment runs it as live at the moment, from what it had saved then; Card 2 is
  * a takeover that lifts the post, which a moment never replaces.
  */
 describe('As it landed', () => {
   const strokes = vi.fn();
-  function Washy({ plays, states, still, show, children }: EffectProps) {
+  function Washy({ plays, states, still, moment, show, children }: EffectProps) {
     const washed = plays.map((p) => (states[p.id]?.state as { washed?: number } | undefined)?.washed ?? 0);
     useEffect(() => { show({ progress: null, state: `washed ${washed.join(', ')}`, yours: false, controls: [], notes: {} }); }, [show, washed.join()]);
-    return <div data-kb-washy={still ? 'still' : 'live'} data-kb-washed={washed.join()} onPointerDown={still ? undefined : strokes}>{children}</div>;
+    return <div data-kb-washy={moment ? 'moment' : 'live'} data-kb-still={String(still)} data-kb-washed={washed.join()} onPointerDown={moment ? undefined : strokes}>{children}</div>;
   }
   const Lift = ({ children }: EffectProps) => <div data-kb-lift>{children}</div>;
   const lifted = cards.map((c) => (c.key === 'k1' ? { ...c, Effect: Washy } : c.key === 'k2' ? { ...c, Effect: Lift, takeover: true } : c));
@@ -919,7 +919,8 @@ describe('As it landed', () => {
     expect(within(box).getByText('post 2')).toBeInTheDocument();
     expect(within(post).queryByText('post 2, edited')).toBeNull();
     await waitFor(() => expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4,0'));
-    expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'still');
+    expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'moment');
+    expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-still', 'false');
     expect(post.querySelector('[data-kb-washy="live"]')).toBeNull();
     /* The tag, and the frame's words: the still card's own, and what is named. */
     expect(within(box).getByText(/^As it landed/u)).toBeInTheDocument();

@@ -714,7 +714,7 @@ describe('the ORIGIN box\'s content area', () => {
 
 /*
  * A thread spun from a card play on a post draws that play's moment in its ORIGIN box (docs/plans/2026-11-03-effect-history-plan.md,
- * Task 6): the post as it read when the play landed, each play under it as it stood, drawn still, under the mark the box shows. The
+ * Task 6): the post as it read when the play landed, each play under it as it stood, run at the moment, under the mark the box shows. The
  * test instance's Whoops! here stacks three (so a moment draws it), and its Stick Around lifts the post (so a moment names it).
  */
 describe('the ORIGIN box of a play-spun thread', () => {
@@ -722,10 +722,10 @@ describe('the ORIGIN box of a play-spun thread', () => {
     ...testInstance,
     cards: [{ ...testInstance.cards[0]!, stack: 3 }, { ...testInstance.cards[0]!, key: 'stick-around', name: 'Stick Around' }],
   };
-  function Washy({ plays, states, still, show, children }: EffectProps) {
+  function Washy({ plays, states, still, moment, show, children }: EffectProps) {
     const washed = plays.map((p) => (states[p.id]?.state as { washed?: number } | undefined)?.washed ?? 0).join();
     useEffect(() => { show({ progress: null, state: `washed ${washed}`, yours: false, controls: [], notes: {} }); }, [show, washed]);
-    return <div data-kb-washy={still ? 'still' : 'live'} data-kb-washed={washed}>{children}</div>;
+    return <div data-kb-washy={moment ? 'moment' : 'live'} data-kb-still={String(still)} data-kb-washed={washed}>{children}</div>;
   }
   const Lift = ({ children }: EffectProps) => <div data-kb-lift>{children}</div>;
   const momentCards: CardUi[] = [
@@ -752,7 +752,8 @@ describe('the ORIGIN box of a play-spun thread', () => {
     const box = await origin();
     const frame = await within(box).findByRole('group', { name: /^As it landed/u });
     await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
-    expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'still');
+    expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'moment');
+    expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-still', 'false');
     expect(within(frame).getByText('post 2')).toBeInTheDocument();
     /* The play is the box's mark and its head's; the head says "as it landed", so the frame draws no ring or tag of its own. */
     expect(within(frame).queryByText(/Also on the post then/u)).toBeNull();
@@ -1115,7 +1116,7 @@ describe('a thread spun from a card on a character', () => {
     lasts: { unit: 'day', count: 7 }, canApply: (t, e, _config, now) => landsOn({ key: 'glint', reaches: ['character'] }, t, e, now),
   };
   const glitterInstance: Instance = { ...testInstance, cards: [glint] };
-  const Glitter = ({ children, still }: EffectProps) => <div data-kb-glint={still ? 'still' : 'live'}>{children}</div>;
+  const Glitter = ({ children, moment }: EffectProps) => <div data-kb-glint={moment ? 'moment' : 'live'}>{children}</div>;
   const glitterCards: CardUi[] = [{ key: 'glint', art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Glitter.', Effect: Glitter }];
 
   /* Zed's first post (in "Kart tier list") is where Spritey's Glint was cast from; the post a reader presses it on is Zed's second in "Why are my posts shiny". */
@@ -1171,7 +1172,7 @@ describe('a thread spun from a card on a character', () => {
     const box = await origin();
     const frame = await within(box).findByRole('group', { name: /^As it was spun/u });
     expect(await within(frame).findByText('pressed words')).toBeInTheDocument();
-    await waitFor(() => expect(frame.querySelector('[data-kb-glint]')).toHaveAttribute('data-kb-glint', 'still'));
+    await waitFor(() => expect(frame.querySelector('[data-kb-glint]')).toHaveAttribute('data-kb-glint', 'moment'));
     expect(headText(box)).toMatch(/^ORIGIN · Spun from Glint on Zed, at #2 in Why are my posts shiny · as it was spunCast from #1 in Kart tier list/u);
     expect(within(box).getAllByRole('link', { name: 'Zed' }).map((a) => a.getAttribute('href'))).toEqual([`/c/${w.zed}`, `/c/${w.zed}`]);
     expect(within(box).getByRole('link', { name: '#2 in Why are my posts shiny' })).toHaveAttribute('href', href(w.shiny.thread, 2));
@@ -1219,7 +1220,7 @@ describe('a thread spun from a card on a character', () => {
     const box = await origin();
     const frame = await within(box).findByRole('group', { name: /^As it landed/u });
     expect(await within(frame).findByText('cast-from words')).toBeInTheDocument();
-    await waitFor(() => expect(frame.querySelector('[data-kb-glint]')).toHaveAttribute('data-kb-glint', 'still'));
+    await waitFor(() => expect(frame.querySelector('[data-kb-glint]')).toHaveAttribute('data-kb-glint', 'moment'));
     expect(headText(box)).toMatch(/^ORIGIN · Spun from Glint on Zed, cast from #1 in Kart tier list · as it landed$/u);
     expect(within(box).queryByText(/Cast from/u)).toBeNull();
     expect(within(box).queryByText(/as it was spun/u)).toBeNull();

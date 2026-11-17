@@ -24,7 +24,7 @@ import { when } from '../thread/lines.tsx';
 import { bodyBox, bodyOf, placeLayer, sameBox, type BodyBox } from './body.ts';
 import { MomentEffects, inkOf, momentParts, useOnInk } from './Effects.tsx';
 import { useLensStore, type LensStore } from './Lens.tsx';
-import type { CardPlay, EffectPlace } from './types.ts';
+import type { CardPlay, CardView, EffectPlace } from './types.ts';
 import './moment.css';
 
 /** A moment as it is being read: loading, failed (with a way to ask again), or read. */
@@ -211,12 +211,13 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   const read = useMomentRead(key, () => (source ? api.spinMoment(source.spin) : api.playMoment(play.id)));
   const label = source ? 'As it was spun' : 'As it landed';
   const frame = useRef<HTMLDivElement>(null);
-  const [said, setSaid] = useState<Readonly<Record<string, string>>>({});
-  const onWords = useCallback((card: string, words: string | null) => {
-    setSaid((s) => {
-      if ((s[card] ?? null) === words) return s;
+  /* The view each drawn effect shows, by card; the frame's words are read from it below (Task 3 of the playable-moments plan replaces them). */
+  const [seen, setSeen] = useState<Readonly<Record<string, CardView>>>({});
+  const onView = useCallback((card: string, view: CardView | null) => {
+    setSeen((s) => {
+      if ((s[card] ?? null) === view) return s;
       const next = { ...s };
-      if (words === null) delete next[card]; else next[card] = words;
+      if (view === null) delete next[card]; else next[card] = view;
       return next;
     });
   }, []);
@@ -231,10 +232,16 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   const moment = read.moment;
   const parts = momentParts(moment, instance.cards, ui.cards, nameOf);
   const name = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
-  const words = Object.keys(said).sort().map((k) => `${name(k)}: ${said[k]}`);
+  /* A card's words are its view's notes, a play's each, top first, where it gives any; a view with no notes gives its heading. */
+  const said = (k: string, view: CardView): string => {
+    const plays = [...parts.drawn.filter((p) => p.card === k), ...(parts.above && parts.above.card === k ? [parts.above] : [])];
+    const notes = [...plays].reverse().map((p) => view.notes[p.id]).filter((n): n is string => n !== undefined && n !== '');
+    return notes.length > 0 ? notes.join('; ') : view.state;
+  };
+  const words = Object.keys(seen).sort().map((k) => `${name(k)}: ${said(k, seen[k]!)}`);
   return (
     <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
-      <MomentEffects moment={moment} place={place} nameOf={nameOf} onWords={onWords}>{bodyOf(moment.version)}</MomentEffects>
+      <MomentEffects moment={moment} place={place} nameOf={nameOf} onView={onView}>{bodyOf(moment.version)}</MomentEffects>
     </MomentFrame>
   );
 }

@@ -1,11 +1,13 @@
 /**
  * A play's moment, drawn (docs/plans/2026-11-03-effect-history-plan.md, Task 4): the moment's version of the post, wrapped in the
- * effects of its layers whose cards can change after they land (drawnInMoment), each drawn still from what it had saved then, in
+ * effects of its layers whose cards play in a moment (playsInMoment), each run from what it had saved then, in
  * the order PostEffects wraps them; every other play on the post then, and every play above it, named in words. The cards are the
  * engine's own test cards, never an instance's.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
+import { fakeSound } from '../audio/test-sound.ts';
+import { resetSound, setSoundPreference } from '../audio/sound.ts';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
@@ -16,7 +18,7 @@ import { CalloutProvider } from './Callout.tsx';
 import { MomentView } from './Moment.tsx';
 import { when } from '../thread/lines.tsx';
 import type { CardPlay } from './types.ts';
-import { MomentEffects, momentParts } from './Effects.tsx';
+import { MomentEffects, momentParts, playsInMoment } from './Effects.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 
 const base = { alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
@@ -56,12 +58,12 @@ const version: Act = { id: 'p1', character: 'c-author', kind: 'post', thread: 't
 /* A play's moment is at its own time (the first layer's); a spin's is the spin's, which `time` says. */
 const moment = (layers: PlayMoment['layers'], above: PlayMoment['above'] = [], time: string = layers[0]!.act.createdAt): PlayMoment => ({ version, layers, above, recorded: true, at: time });
 
-function draw(m: PlayMoment, onWords = vi.fn()) {
+function draw(m: PlayMoment, onView = vi.fn()) {
   const api = buildWorld({}, instance);
   const kayfa = { api, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
   const spies = { api, meets: vi.spyOn(api, 'meetCard'), save: vi.spyOn(api, 'saveEffect'), release: vi.spyOn(api, 'releaseEffect'), faces: vi.spyOn(api, 'myFaceDown') };
-  const view = render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><MomentEffects moment={m} place="thread" nameOf={(c) => (c === 'c-spritey' ? 'Spritey' : 'someone')} onWords={onWords}><span data-kb-words>then</span></MomentEffects></CalloutProvider></KayfaProvider>);
-  return { ...view, spies, onWords };
+  const view = render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><MomentEffects moment={m} place="thread" nameOf={(c) => (c === 'c-spritey' ? 'Spritey' : 'someone')} onView={onView}><span data-kb-words>then</span></MomentEffects></CalloutProvider></KayfaProvider>);
+  return { ...view, spies, onView };
 }
 const chain = () => {
   const out: string[] = [];
@@ -72,46 +74,53 @@ const named = (m: PlayMoment) => momentParts(m, instance.cards, cards, (c) => (c
 
 afterEach(() => { seen.length = 0; vi.restoreAllMocks(); });
 
-describe('a surface in a moment', () => {
-  test('is still: its limit as the card\'s, no cells and no acts, and a draw and a wash that refuse without asking', async () => {
-    let got: EffectProps['surface'];
-    cards[7] = ui('slabby', { Effect: ({ surface, children }: EffectProps) => { got = surface; return <div data-kb-wrap="slabby">{children}</div>; } });
-    try {
-      const { spies } = draw(moment([{ act: card('k1', 'slabby', 5), state: null }]));
-      await vi.waitFor(() => expect(got).toBeDefined());
-      expect(got).toMatchObject({ covered: 0, most: 4000, acts: null });
-      got!.near();
-      const refused = [await got!.draw('k1', 'c-x', {}), await got!.wash('k1', {})];
-      expect(refused.every((a) => a.ok === false)).toBe(true);
-      expect(refused[0]).toMatchObject({ error: 'a moment is drawn as it was, and nothing in it is saved' });
-      expect(spies.api.draw).toBeDefined();
-    } finally {
-      cards[7] = ui('slabby');
-    }
+describe('a card with a surface or a drive in a moment', () => {
+  test('a surface card is named and never drawn, and so is a card with a drive (issue #774 gives them the read of the past)', () => {
+    const drivey = rule('drivey', 'Drivey', { drive: { lasts: { unit: 'day', count: 1 }, gifts: [], overhead: '' } });
+    const uis = [...cards, ui('drivey')];
+    const m = moment([{ act: card('k2', 'drivey', 5), state: null }, { act: card('k1', 'slabby', 1), state: null }]);
+    const parts = momentParts(m, [...instance.cards, drivey], uis, () => '');
+    expect(parts.drawn).toEqual([]);
+    expect(parts.named).toEqual(['Slabby']);
+    expect(playsInMoment(slabby, cards[7])).toBe(false);
+    expect(playsInMoment(drivey, ui('drivey'))).toBe(false);
+    draw(m);
+    expect(seen).toEqual([]);
+    expect(named(m)).toEqual(['Slabby']);
   });
 });
 
 describe('a moment draws still', () => {
-  test('each drawn card is given still, its state as saved then, and a save, a release and a met that do nothing', async () => {
+  test('each drawn card is given still false, moment.at, its state as saved then, a reader who is nobody, and a save, a release and a give that refuse', async () => {
     const calls: unknown[] = [];
     const strokes = vi.fn();
-    /* A card that saves, releases, meets and takes strokes whenever it is drawn, and binds its strokes only when it is live. */
-    let marked: unknown = 'unset';
-    const Busy = ({ children, still, save, release, met, marks }: EffectProps) => {
-      marked = marks;
-      useEffect(() => { met(); void save('k1', { washed: 1 }).then((a) => calls.push(a)); void release('k1').then((a) => calls.push(a)); }, [met, save, release]);
-      return <div data-kb-wrap="busy" data-kb-still={String(still)} onPointerDown={still ? undefined : strokes}>{children}</div>;
+    let got: EffectProps | null = null;
+    /* A card that saves, releases, gives and meets whenever it is drawn. */
+    const Busy = (props: EffectProps) => {
+      const { children, still, save, release, give, met } = props;
+      got = props;
+      useEffect(() => { met(); void save('k1', { washed: 1 }).then((a) => calls.push(a)); void release('k1').then((a) => calls.push(a)); void give('d1', 5).then((a) => calls.push(a)); }, [met, save, release, give]);
+      return <div data-kb-wrap="busy" data-kb-still={String(still)} onPointerDown={strokes}>{children}</div>;
     };
     cards[0] = ui('smear', { Effect: Busy, hint: 'Smear smears.' });
     try {
-      const { spies } = draw(moment([{ act: card('k1', 'smear', 5), state: null }]));
-      await vi.waitFor(() => expect(calls).toHaveLength(2));
-      expect(document.querySelector('[data-kb-wrap="busy"]')!.getAttribute('data-kb-still')).toBe('true');
-      fireEvent.pointerDown(document.querySelector('[data-kb-wrap="busy"]')!);
-      expect(strokes).not.toHaveBeenCalled();
+      const saved = { state: { washed: 0.4 }, savedAt: at(3) };
+      const m = moment([{ act: card('k1', 'smear', 5), state: saved }]);
+      const { spies } = draw(m);
+      await vi.waitFor(() => expect(calls).toHaveLength(3));
+      expect(got!.still).toBe(false);
+      expect(got!.moment).toEqual({ at: Date.parse(m.at) });
+      expect(got!.states).toEqual({ k1: saved });
+      expect(got!.reader).toEqual({ author: false, caster: false });
+      expect(got!.marks).toBeNull();
+      expect(got!.wallet).toBeNull();
+      expect(got!.kept).toBeUndefined();
+      expect(got!.fold).toBeUndefined();
+      expect(got!.drives).toBeUndefined();
+      expect(document.querySelector('[data-kb-wrap="busy"]')!.getAttribute('data-kb-still')).toBe('false');
       expect(spies.meets).not.toHaveBeenCalled();
-      expect(marked).toBeNull();
       expect(calls.every((a) => (a as { ok: boolean }).ok === false)).toBe(true);
+      expect(calls[0]).toMatchObject({ error: 'nothing in a moment is saved' });
       expect(spies.save).not.toHaveBeenCalled();
       expect(spies.release).not.toHaveBeenCalled();
       expect(localStorage.length).toBe(0);
@@ -120,27 +129,83 @@ describe('a moment draws still', () => {
     }
   });
 
-  test('a layer is drawn from what it had saved then, and its words go to the frame by card', async () => {
-    const saved = { state: { washed: 0.4 }, savedAt: at(3) };
-    const { onWords } = draw(moment([{ act: card('k2', 'smear', 5, { layer: 2 }), state: null }, { act: card('k1', 'smear', 1), state: saved }]));
-    expect(seen.at(-1)).toMatchObject({ card: 'smear', still: true, states: { k1: saved } });
-    await vi.waitFor(() => expect(onWords).toHaveBeenCalledWith('smear', 'smear as it stood (2)'));
+  test('a card whose rules save nothing, stack one and never end is drawn', () => {
+    const m = moment([{ act: card('k1', 'tagger', 1), state: null }]);
+    expect(momentParts(m, instance.cards, cards, () => '').drawn.map((p) => p.id)).toEqual(['k1']);
+    draw(m);
+    expect(chain()).toEqual(['tagger']);
+    expect(named(m)).toEqual([]);
   });
 
-  test('a card whose still view notes each play has those notes as its words, top first, and not its heading', async () => {
-    /* A heading of "As it landed" says only what the frame says already; the notes say how each layer stood. */
-    const Noted = ({ children, show, plays }: EffectProps) => {
-      useEffect(() => { show({ progress: null, state: 'As it landed', yours: false, controls: [], notes: Object.fromEntries(plays.map((p) => [p.id, `${p.id} at 40%`])) }); }, [show, plays]);
-      return <div data-kb-wrap="noted">{children}</div>;
+  test('a takeover is named and never drawn, whatever its rules say', () => {
+    const m = moment([{ act: card('k2', 'smear', 5), state: null }, { act: card('k1', 'lifty', 1), state: null }]);
+    draw(m);
+    expect(chain()).toEqual(['smear']);
+    expect(seen.map((s) => s.card)).not.toContain('lifty');
+    expect(named(m)).toEqual(['Lifty']);
+    expect(playsInMoment(lifty, cards[6])).toBe(false);
+  });
+
+  test('playsInMoment: an effect, no takeover, no surface, no drive', () => {
+    expect(playsInMoment(tagger, cards[3])).toBe(true);
+    expect(playsInMoment(tagger, undefined)).toBe(false);
+    expect(playsInMoment(tagger, { ...cards[3]!, Effect: undefined })).toBe(false);
+    expect(playsInMoment(undefined, cards[3])).toBe(true);
+  });
+
+  test('two drawn ink cards share one registry: the upper one is on top where it has claimed', async () => {
+    const inks: Record<string, EffectProps['ink']> = {};
+    const Claimer = (key: string) => function Effect({ children, ink }: EffectProps) {
+      inks[key] = ink;
+      useEffect(() => ink.claim(() => true), [ink]);
+      return <div data-kb-wrap={key}>{children}</div>;
     };
-    cards[0] = ui('smear', { Effect: Noted });
+    cards[0] = ui('smear', { Effect: Claimer('smear') });
+    cards[1] = ui('ripple', { Effect: Claimer('ripple') });
     try {
-      const { onWords } = draw(moment([{ act: card('k2', 'smear', 5, { layer: 2 }), state: null }, { act: card('k1', 'smear', 1), state: null }]));
-      await vi.waitFor(() => expect(onWords).toHaveBeenCalledWith('smear', 'k2 at 40%; k1 at 40%'));
-      expect(onWords).not.toHaveBeenCalledWith('smear', 'As it landed');
+      draw(moment([{ act: card('k1', 'smear', 1), state: null }, { act: card('k2', 'ripple', 4), state: null }]));
+      await vi.waitFor(() => expect(inks['ripple']).toBeDefined());
+      expect(inks['ripple']!.topAt(1, 1)).toBe(true);
+      expect(inks['smear']!.topAt(1, 1)).toBe(false);
+    } finally {
+      cards[0] = ui('smear');
+      cards[1] = ui('ripple');
+    }
+  });
+
+  test('a drawn effect\'s show reaches onView with the whole view, controls included, and null when it unmounts', async () => {
+    const whole = { progress: null, state: 'seen', yours: false, controls: [{ label: 'Wash' }], notes: { k1: 'x' } } as unknown as Parameters<EffectProps['show']>[0];
+    cards[0] = ui('smear', { Effect: ({ children, show }: EffectProps) => { useEffect(() => { show(whole); }, [show]); return <div data-kb-wrap="smear">{children}</div>; } });
+    try {
+      const { onView, unmount } = draw(moment([{ act: card('k1', 'smear', 1), state: null }]));
+      await vi.waitFor(() => expect(onView).toHaveBeenCalledWith('smear', whole));
+      unmount();
+      expect(onView).toHaveBeenLastCalledWith('smear', null);
     } finally {
       cards[0] = ui('smear');
     }
+  });
+
+  test('MomentEffect warms the card\'s sounds', () => {
+    const { fetched } = fakeSound();
+    setSoundPreference({ gameSound: 'on', gameVolume: 100, interfaceSound: 'off', interfaceVolume: 100 });
+    cards[0] = ui('smear', { sounds: ['x.one'] });
+    try {
+      const api = buildWorld({}, instance);
+      const kayfa = { api, instance, ui: { cards, glass: {}, sounds: { slots: [{ key: 'x.one', src: '/x.one.mp3', bus: 'game', caption: 'one' }, { key: 'x.two', src: '/x.two.mp3', bus: 'game', caption: 'two' }] } }, settings: {} } as unknown as Kayfa;
+      render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><MomentEffects moment={moment([{ act: card('k1', 'smear', 1), state: null }])} place="thread" nameOf={() => ''} onView={() => {}}><span>then</span></MomentEffects></CalloutProvider></KayfaProvider>);
+      expect(fetched.mock.calls.map((c) => c[0])).toEqual(['/x.one.mp3']);
+    } finally {
+      cards[0] = ui('smear');
+      resetSound();
+    }
+  });
+
+  test('a layer is drawn from what it had saved then, and its view goes to the frame by card', async () => {
+    const saved = { state: { washed: 0.4 }, savedAt: at(3) };
+    const { onView } = draw(moment([{ act: card('k2', 'smear', 5, { layer: 2 }), state: null }, { act: card('k1', 'smear', 1), state: saved }]));
+    expect(seen.at(-1)).toMatchObject({ card: 'smear', still: false, states: { k1: saved } });
+    await vi.waitFor(() => expect(onView).toHaveBeenCalledWith('smear', expect.objectContaining({ state: 'smear as it stood (2)' })));
   });
 
   test('layers wrap in PostEffects\' order: the post\'s cards as first played, the first innermost, and a takeover outermost', () => {
@@ -154,9 +219,9 @@ describe('a moment draws still', () => {
   });
 });
 
-test('a takeover drawn in a moment wraps outermost, though it was played first', () => {
+test('a takeover in a moment is named, so the drawn cards wrap as they were first played', () => {
   draw(moment([{ act: card('k2', 'smear', 5), state: null }, { act: card('k1', 'lifty', 1), state: null }, { act: card('k3', 'ripple', 7), state: null }]));
-  expect(chain()).toEqual(['smear', 'ripple', 'lifty']);
+  expect(chain()).toEqual(['smear', 'ripple']);
 });
 
 describe('a moment nests as a post does', () => {
@@ -180,17 +245,17 @@ describe('a moment nests as a post does', () => {
 });
 
 describe('a moment names what it does not draw', () => {
-  test('a card that cannot change after it lands is named and never mounted, a takeover included', () => {
+  test('a takeover is named and never mounted, and a card with an effect is drawn', () => {
     const m = moment([{ act: card('k2', 'smear', 5), state: null }, { act: card('k1', 'holdy', 1), state: null }, { act: card('k0', 'tagger', 0), state: null }]);
     draw(m);
-    expect(chain()).toEqual(['smear']);
+    expect(chain()).toEqual(['tagger', 'smear']);
     expect(seen.map((s) => s.card)).not.toContain('holdy');
-    expect(named(m)).toEqual(['Tagger', 'Holdy']);
+    expect(named(m)).toEqual(['Holdy']);
   });
 
   test('the play whose moment it is is never named as also on the post: its mark, its Lens row and the ORIGIN head name it', () => {
     const m = moment([{ act: card('k2', 'holdy', 5), state: null }, { act: card('k1', 'tagger', 1), state: null }]);
-    expect(named(m)).toEqual(['Tagger']);
+    expect(named(m)).toEqual([]);
     expect(momentParts(m, instance.cards, cards, () => '').own).toBeNull();
   });
 
@@ -281,7 +346,7 @@ describe('a character play is the moment\'s own play when it is the first layer'
       draw(m);
       expect(document.querySelectorAll('[data-kb-wrap="sparkly"]')).toHaveLength(1);
       const el = document.querySelector('[data-kb-wrap="sparkly"]')!;
-      expect(el.getAttribute('data-kb-still')).toBe('true');
+      expect(el.getAttribute('data-kb-still')).toBe('false');
       expect(el.getAttribute('data-kb-reach')).toBe('character');
       expect(plays.at(-1)).toEqual(['k1']);
       expect(screen.queryByText(/Sparkly/)).toBeNull();
@@ -290,9 +355,9 @@ describe('a character play is the moment\'s own play when it is the first layer'
     }
   });
 
-  test('it wraps as PostEffects wraps an author\'s play: inside the post\'s own layers and inside every takeover', () => {
-    draw(moment([{ act: onAuthor('k1', 5, 60), state: null }, { act: card('k2', 'smear', 1), state: null }, { act: card('k3', 'lifty', 2), state: null }]));
-    expect(chain()).toEqual(['sparkly', 'smear', 'lifty']);
+  test('it wraps as PostEffects wraps an author\'s play: inside the post\'s own layers', () => {
+    draw(moment([{ act: onAuthor('k1', 5, 60), state: null }, { act: card('k2', 'smear', 1), state: null }, { act: card('k3', 'ripple', 2), state: null }]));
+    expect(chain()).toEqual(['sparkly', 'smear', 'ripple']);
   });
 
   test('another character play in `above` is named and not drawn', () => {

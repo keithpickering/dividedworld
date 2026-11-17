@@ -321,9 +321,9 @@ describe('a moment draws the tail of the version it landed on', () => {
     w.fake.seed.text(play, e2!, { text: 'now tail' }, { quiet: true });
     const moment = (await w.fake.playMoment(play))!;
     expect(moment.version.currentPayload.body).toBe('second version');
-    renderIn(w.fake, <MomentEffects moment={moment} place="thread" nameOf={() => ''} onWords={() => {}}><span>second version</span></MomentEffects>, { cards: [tailing], instance });
+    renderIn(w.fake, <MomentEffects moment={moment} place="thread" nameOf={() => ''} onView={() => {}}><span>second version</span></MomentEffects>, { cards: [tailing], instance });
     const tail = await screen.findByText('then tail');
-    expect(tail).toHaveAttribute('data-still', 'true');
+    expect(tail).toHaveAttribute('data-still', 'false');
     expect(screen.queryByText('now tail')).toBeNull();
   });
 });
