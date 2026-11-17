@@ -180,6 +180,61 @@
   display: block;
 }
 
+/*
+ * The fade at the body's top, the foot's mirror: the body's first child, stuck to its scroll edge under the bar and the body's full width
+ * (its 12px gutters given back), taking no room (its height given back below it). It eases in once the body is scrolled off its top (the
+ * panel's `data-kb-above`) and out again at an offset of 0, as the tab strip's edge fades do; under reduced motion it is there or not, at once.
+ */
+.kb-lens-fade-top {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 40px;
+  margin: 0 -12px -40px;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(to top, transparent, var(--kb-glass-ground));
+  transition: opacity 0.15s ease-out;
+}
+
+.kb-lens[data-kb-above='true'] .kb-lens-fade-top {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-lens-fade-top { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-lens-fade-top {
+  transition: none;
+}
+
+/*
+ * The fade starts from the ground, and the bar is the frame's smoke at rest (glass/shell.css): scrolled, a band of ground showed under the
+ * smoke. The Lens's body scrolls and not its box, so the bar is never stuck and never took the ground a stuck bar takes; it takes it while
+ * the body is scrolled off its top, easing with the fade. The fade is its foot here, so the stuck bar's own foot and rule are not drawn.
+ * Where the browser cannot say a bar is stuck, the bar keeps its ground always (shell.css), and this is not needed.
+ */
+@supports (container-type: scroll-state) {
+  .kb-lens > .kb-glass-dialog-bar::before {
+    inset: 0;
+    border-bottom: 0;
+    transition: opacity 0.15s ease-out;
+  }
+
+  .kb-lens[data-kb-above='true'] > .kb-glass-dialog-bar::before {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-lens > .kb-glass-dialog-bar::before { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-lens > .kb-glass-dialog-bar::before {
+  transition: none;
+}
+
 .kb-lens-section {
   margin-top: 0.5rem;
 }
@@ -504,6 +559,7 @@
   }
 
   .kb-lens-fade,
+  .kb-lens-fade-top,
   .kb-lens-tabstrip::before,
   .kb-lens-tabstrip::after { display: none; }
 }

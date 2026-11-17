@@ -21,7 +21,7 @@ import { createPlays } from './plays.ts';
 import { endsWords } from './marks.ts';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine } from '../reactions/mine.ts';
-import { fadeOf, Lens, LensProvider, moreBelow, useLensFor, useLensStore } from './Lens.tsx';
+import { fadeOf, Lens, LensProvider, moreBelow, scrolledPast, useLensFor, useLensStore } from './Lens.tsx';
 import lensCss from './lens.css?raw';
 import type { CardUi, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
@@ -1867,6 +1867,57 @@ describe('the foot', () => {
     expect(ruleOf('.kb-lens-fade')).toMatch(/display:\s*none/u);
     expect(ruleOf('.kb-lens-fade')).toMatch(/pointer-events:\s*none/u);
     expect(ruleOf(".kb-lens[data-kb-more='true'] > .kb-lens-fade")).toMatch(/display:\s*block/u);
+  });
+});
+
+describe('the head', () => {
+  test('it fades only once the body is scrolled off its top, and not at an offset of 0', async () => {
+    expect(scrolledPast({ scrollTop: 0 })).toBe(false);
+    /* A fractional offset (zoom) that rounds to the top is the top. */
+    expect(scrolledPast({ scrollTop: 0.4 })).toBe(false);
+    expect(scrolledPast({ scrollTop: 1 })).toBe(true);
+    expect(scrolledPast({ scrollTop: 400 })).toBe(true);
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    const body = within(lens()).getByRole('tabpanel');
+    Object.defineProperty(body, 'clientHeight', { configurable: true, value: 500 });
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 900 });
+    body.scrollTop = 0;
+    fireEvent.scroll(body);
+    expect(lens()).toHaveAttribute('data-kb-above', 'false');
+    body.scrollTop = 120;
+    fireEvent.scroll(body);
+    expect(lens()).toHaveAttribute('data-kb-above', 'true');
+    body.scrollTop = 0;
+    fireEvent.scroll(body);
+    expect(lens()).toHaveAttribute('data-kb-above', 'false');
+    /* It stands in the body, at its top edge, out of what a reader hears. */
+    const head = body.querySelector('.kb-lens-fade-top');
+    expect(head).not.toBeNull();
+    expect(head).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  test('it eases in and out by the panel\'s own state, at once under reduced motion, takes no pointer, and stays at the body\'s top', () => {
+    const rule = ruleOf('.kb-lens-fade-top');
+    expect(rule).toMatch(/position:\s*sticky/u);
+    expect(rule).toMatch(/top:\s*0/u);
+    expect(rule).toMatch(/opacity:\s*0/u);
+    expect(rule).toMatch(/pointer-events:\s*none/u);
+    expect(rule).toMatch(/transition:\s*opacity/u);
+    expect(ruleOf(".kb-lens[data-kb-above='true'] .kb-lens-fade-top")).toMatch(/opacity:\s*1/u);
+    expect(ruleOf(":root[data-kb-motion='reduce'] .kb-lens-fade-top")).toMatch(/transition:\s*none/u);
+  });
+
+  test('the bar takes the ground the fade starts from while the body is scrolled, so no band of it shows under the bar\'s smoke', () => {
+    const at = ruleOf("  .kb-lens[data-kb-above='true'] > .kb-glass-dialog-bar::before".trim());
+    expect(at).toMatch(/opacity:\s*1/u);
+    /* The fade is its foot here: the stuck bar's own foot and rule are not drawn over it. */
+    const base = ruleOf('.kb-lens > .kb-glass-dialog-bar::before');
+    expect(base).toMatch(/inset:\s*0/u);
+    expect(base).toMatch(/border-bottom:\s*0/u);
   });
 });
 
