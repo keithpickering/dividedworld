@@ -5,14 +5,14 @@ import type { Settings } from '../../../../../engine/rules/types.ts';
 import classClownCanvas from './art.webp?url';
 import classClownMark from './mark.svg?url';
 import classClownArt from './art.json';
-import { earnWords, spanWords } from '../words.ts';
+import { earnWords, LARGEST, spanWords } from '../words.ts';
 
 export const ui: CardUi = {
   key: 'class-clown',
   art: { color: '#d24a2c', ink: '#0d0301', canvas: classClownCanvas, mark: classClownMark, credit: classClownArt.credit, tagline: 'Earn more from laughs and eye rolls.' },
-  summary: `Used on your own character. For ${spanWords(classClown.lasts!)}, what it earns from 😂 and 🙄 is ${earnWords(classClown)}. A loss is never made worse.`,
+  summary: `Used on your own character. For ${spanWords(classClown.lasts!)}, each 😂 and each 🙄 on its posts pays ${earnWords(classClown)}.`,
   status: 'Earns more from laughs',
   describe: (settings: Settings) =>
-    `A Pepperoni card, ${classClown.rarity}, used on your own character, the one playing it. For ${spanWords(classClown.lasts!)}, whatever that character earns from a 😂 or a 🙄 on its posts is ${earnWords(classClown)}, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
-  logPlay: () => `What that character earns from 😂 and 🙄 is ${earnWords(classClown)} until it ends.`,
+    `A Pepperoni card, ${classClown.rarity}, used on your own character, the one playing it. For ${spanWords(classClown.lasts!)}, each 😂 and each 🙄 on its posts pays ${earnWords(classClown)}, whatever its class makes of that reaction, and then it stops by itself. It counts reactions from players who first react to a post while it is up. ${LARGEST} It costs nothing more to use.`,
+  logPlay: () => `Each 😂 and each 🙄 on that character's posts pays ${earnWords(classClown)} until it ends.`,
 };

@@ -16,6 +16,8 @@ import { autocorrect } from './autocorrect.ts';
 import { boundedPhrase } from './phrase-bound.ts';
 import { laughTrack, type Cue } from './laugh-track.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
+import { settle } from '../../../engine/rules/settle.ts';
+import type { InputAct, InputReaction, SettlementInput } from '../../../engine/rules/types.ts';
 import { defaults as settings } from '../settings.ts';
 import { reactions } from '../reactions.ts';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
@@ -156,10 +158,10 @@ test('the instance sells Card Collector, Force Field and the new Gimmicks, each 
 
 test('Publicity Tour, Heat Magnet, Class Clown and Good Vibes are Gimmicks with the effects the design names', () => {
   const days3 = { unit: 'day', count: 3 };
-  assert.deepEqual([by('publicity-tour').reaches, by('publicity-tour').lasts, by('publicity-tour').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.2, group: 'publicity' }]);
-  assert.deepEqual([by('hype-up').reaches, by('hype-up').lasts, by('hype-up').gimmick], [['post'], days3, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 1, group: 'publicity' }]);
-  assert.deepEqual([by('heat-magnet').reaches, by('heat-magnet').lasts, by('heat-magnet').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], by: 0.75 }]);
-  assert.deepEqual([by('class-clown').reaches, by('class-clown').lasts, by('class-clown').gimmick], [['character'], days3, { kind: 'earn', reactions: ['laughing', 'eye-roll'], by: 1 }]);
+  assert.deepEqual([by('publicity-tour').reaches, by('publicity-tour').lasts, by('publicity-tour').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], flat: 0.5 }]);
+  assert.deepEqual([by('hype-up').reaches, by('hype-up').lasts, by('hype-up').gimmick], [['post'], days3, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], flat: 1 }]);
+  assert.deepEqual([by('heat-magnet').reaches, by('heat-magnet').lasts, by('heat-magnet').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], flat: 0.75 }]);
+  assert.deepEqual([by('class-clown').reaches, by('class-clown').lasts, by('class-clown').gimmick], [['character'], days3, { kind: 'earn', reactions: ['laughing', 'eye-roll'], flat: 1 }]);
   assert.deepEqual([by('good-vibes').reaches, by('good-vibes').lasts, by('good-vibes').gimmick], [['thread'], { unit: 'day', count: 3 }, { kind: 'price', flavors: ['salty'], add: 25 }]);
   for (const key of ['laughing', 'eye-roll']) assert.ok(instance.reactions.some((r) => r.key === key), key);
 });
@@ -480,14 +482,16 @@ test('Sugar Coat, Hype-Up and Last Word are in the instance, sold as the plan sa
   assert.deepEqual(instanceProblems(instance), []);
 });
 
-test("Hype-Up holds Publicity Tour's quadrants, group and span, doubled", () => {
-  const hype = by('hype-up').gimmick as { quadrants: unknown; group: unknown; by: number };
-  const tour = publicityTour.gimmick as { quadrants: unknown; group: unknown; by: number };
+test("Hype-Up holds Publicity Tour's quadrants and span, at a whole vote, with no group", () => {
+  const hype = by('hype-up').gimmick as { quadrants: unknown; flat: number; group?: unknown };
+  const tour = publicityTour.gimmick as { quadrants: unknown; flat: number; group?: unknown };
   assert.deepEqual(hype.quadrants, tour.quadrants);
-  assert.equal(hype.group, tour.group);
-  assert.equal(hype.by, 1);
+  assert.equal('group' in hype || 'group' in tour, false);
+  assert.equal(tour.flat, 0.5);
+  assert.equal(hype.flat, 1);
   assert.equal(by('hype-up').lasts, publicityTour.lasts);
 });
+
 
 test('Sugar Coat turns away Salty and Pepperoni cards, and passes a Sweet one', () => {
   const ward = [{ card: 'sugar-coat', act: 'k1', gimmick: by('sugar-coat').gimmick, ends: new Date(Date.now() + 86_400_000).toISOString() }];
@@ -725,3 +729,43 @@ test('Force Field and Sugar Coat are post wards, and what each does to each of t
 });
 
 
+
+/* ---- the flat earn cards, settled with the real instance ---- */
+const HR = 3_600_000;
+const W_FROM = 100 * HR;
+const W_TO = 124 * HR;
+function flatBoard(cls: string, plays: InputAct[], reactions: InputReaction[]): SettlementInput {
+  return {
+    window: { id: 'w1', from: W_FROM, to: W_TO },
+    characters: [
+      { id: 'tom-1', player: 'tom', classes: [{ class: cls, from: 0 }] },
+      { id: 'bob-1', player: 'bob', classes: [{ class: 'face', from: 0 }] },
+    ],
+    acts: [{ id: 'tp1', character: 'tom-1', kind: 'post', at: W_FROM + HR, thread: 't1' }, ...plays],
+    reactions,
+  };
+}
+const useOnTom = (id: string, card: string): InputAct => ({ id, character: 'tom-1', kind: 'card', at: W_FROM + 2 * HR, thread: 't1', card, reach: 'character', on: 'tom-1', ends: W_FROM + 20 * HR });
+const heatFromBob: InputReaction = { act: 'tp1', player: 'bob', character: 'bob-1', kind: 'tomato', at: W_FROM + 5 * HR };
+const amountFor = (r: ReturnType<typeof settle>, reason: string) => r.entries.filter((e) => e.character === 'tom-1' && e.reason === reason).reduce((t, e) => t + e.amount, 0);
+
+test("Heat Magnet pays three quarters of a vote on a heat vote, under any class, and a Technician's loss stays whole", () => {
+  const tech = settle(flatBoard('technician', [useOnTom('g1', 'heat-magnet')], [heatFromBob]), instance);
+  assert.equal(amountFor(tech, 'technician.draggedIn'), -10);
+  assert.equal(amountFor(tech, 'card.boost'), 8, '7.5, rounded');
+  assert.deepEqual(tech.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'heat-magnet', flat: 0.75 });
+  const heel = settle(flatBoard('heel', [useOnTom('g1', 'heat-magnet')], [heatFromBob]), instance);
+  assert.equal(amountFor(heel, 'heel.drewHeat'), 10);
+  assert.equal(amountFor(heel, 'card.boost'), 8);
+  assert.deepEqual(heel.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'heat-magnet', flat: 0.75 });
+});
+
+test("Hype-Up and Publicity Tour both up on one calm vote make one boost, Hype-Up's", () => {
+  const hype: InputAct = { id: 'g2', character: 'bob-1', kind: 'card', at: W_FROM + 2 * HR, thread: 't1', card: 'hype-up', target: 'tp1', ends: W_FROM + 20 * HR };
+  const calm: InputReaction = { act: 'tp1', player: 'bob', character: 'bob-1', kind: 'thumbs-up', at: W_FROM + 5 * HR };
+  const r = settle(flatBoard('face', [useOnTom('g1', 'publicity-tour'), hype], [calm]), instance);
+  const boosts = r.entries.filter((e) => e.reason === 'card.boost');
+  assert.equal(boosts.length, 1);
+  assert.equal(boosts[0]!.amount, 10);
+  assert.deepEqual(boosts[0]!.params, { card: 'hype-up', flat: 1 });
+});

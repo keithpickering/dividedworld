@@ -1,7 +1,7 @@
 /**
- * Heat Magnet (Salty, uncommon, Gimmick on a character): for 3 days, every negative reaction (excited or bored) the character's
- * posts earn counts three quarters more, then it ends by itself (the card types design). It only raises what is earned; it never
- * deepens a loss. Its price and size are section 4 of docs/plans/2026-11-15-base-set-card-numbers-design.md; it stayed uncommon, since a
+ * Heat Magnet (Salty, uncommon, Gimmick on a character): for 3 days, every negative reaction (excited or bored) to the character's
+ * posts pays a flat three quarters of a vote more, whatever class the character holds, then it ends by itself (the card types design,
+ * and docs/plans/2026-11-16-settlement-design.md). It pays on top of the class and never deepens a loss. Its price and size are section 4 of docs/plans/2026-11-15-base-set-card-numbers-design.md; it stayed uncommon, since a
  * card that reaches a character is uncommon or rarer here (`reachRarity`, ../settings.ts).
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
@@ -14,7 +14,7 @@ export const heatMagnet: CardRules<Record<string, never>> = {
   rarity: 'uncommon',
   play: 'use',
   reaches: ['character'],
-  gimmick: { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], by: 0.75 },
+  gimmick: { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], flat: 0.75 },
   lasts: { unit: 'day', count: 3 },
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(heatMagnet, target, effects, now),

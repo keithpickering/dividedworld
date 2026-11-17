@@ -177,7 +177,7 @@ test('a calm vote withdrawn from an old post takes the bonus back; from a young 
 });
 test('Evergreen names the Act, the quadrant and the reaction\'s time, for the log and the estimate', () => {
   const e = technician.earn(input({ received: [calmAged(4 * DAY)] }), settings).find((x) => x.reason === 'technician.evergreen');
-  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10, kind: 'reaction' });
+  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10, kind: 'reaction', votes: 1 });
 });
 test('an override of the Technician\'s numbers changes the age and the amount', () => {
   const sooner = withOverrides(settings, { economy: { 'technician.evergreenDays': 1 } });
@@ -745,4 +745,27 @@ test('every earning a class builds from a single reaction names that reaction\'s
   assert.deepEqual(kinds(technician, one('calmPositive')), ['laughing', 'laughing'], 'Respected and Evergreen');
   assert.deepEqual(kinds(tweener, one('calmPositive')), ['laughing']);
   assert.deepEqual(kinds(lurker, input({ received: [got('excitedPositive', 1, 'card', 'k1', 0, 'laughing')] })), ['laughing']);
+});
+
+/* ---- the votes an earning paid per vote multiplied (a cushion reads them) ---- */
+test('every earning paid per vote carries the votes it multiplied, and the Lurker posting cost, which no reaction causes, carries none', () => {
+  const received = [got('excitedPositive', 2), got('excitedNegative', 1.5), got('calmPositive', 0.5), got('boredNegative', 3), calmAged(5 * DAY, 0.25)];
+  const perVoteReasons = new Map<string, string[]>([
+    ['face', ['face.cheered', 'face.boredTheRoom']], ['heel', ['heel.drewHeat', 'heel.shrugged']], ['jabroni', ['jabroni.drewTheGroan', 'jabroni.takenSincerely']],
+    ['technician', ['technician.respected', 'technician.evergreen', 'technician.draggedIn']], ['tweener', ['tweener.shrugged']], ['lurker', ['lurker.cardDrew']],
+  ]);
+  for (const c of classes) {
+    const lines = c.earn(input({ received: c.key === 'lurker' ? received.map((r) => ({ ...r, actKind: 'card' as const })) : received }), settings);
+    for (const reason of perVoteReasons.get(c.key)!) {
+      const paid = lines.filter((e) => e.reason === reason);
+      assert.ok(paid.length > 0, reason);
+      for (const e of paid) assert.equal(typeof e.votes, 'number', `${reason} carries votes`);
+    }
+  }
+  const aged = technician.earn(input({ received: [calmAged(5 * DAY, 0.25)] }), settings).find((e) => e.reason === 'technician.evergreen')!;
+  assert.equal(aged.votes, 0.25);
+  const posts = Array.from({ length: 5 }, (_, i) => ({ act: `p${i}`, at: i }));
+  const over = lurker.earn(input({ posts }), settings).filter((e) => e.reason === 'lurker.postedTooMuch');
+  assert.ok(over.length > 0);
+  for (const e of over) assert.equal('votes' in e, false);
 });

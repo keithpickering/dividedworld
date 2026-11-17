@@ -1,6 +1,7 @@
 /**
- * Publicity Tour (Sweet, uncommon, Gimmick on a character): for 3 days, every positive reaction (excited or calm) the character's
- * posts earn counts 0.2 more, then it ends by itself (the card types design). It never deepens a loss. Hype-Up (publicity.ts) gives one post the same push, doubled, in one group, so the two do not add and the larger applies.
+ * Publicity Tour (Sweet, uncommon, Gimmick on a character): for 3 days, every positive reaction (excited or calm) to the character's
+ * posts pays a flat half a vote more, whatever class the character holds, then it ends by itself (the card types design). It never deepens a loss.
+ * Hype-Up (publicity.ts) gives one post the same push at a whole vote; where the two are up on one vote, only the larger pays.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import { PUBLICITY, PUBLICITY_LASTS } from './publicity.ts';
