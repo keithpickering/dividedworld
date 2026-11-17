@@ -770,8 +770,8 @@ describe('mixer', () => {
       assert.equal(ctx.sources.length, 2);
     });
 
-    it('41. a lateMs that is NaN or Infinity is ignored: the play sounds however late', async () => {
-      for (const lateMs of [Number.NaN, Number.POSITIVE_INFINITY]) {
+    it('41. a lateMs that is not finite (NaN, Infinity, -Infinity) is ignored: the play sounds however late', async () => {
+      for (const lateMs of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
         const { m, open } = await gated();
         const pending = m.play(cheer, { group: 'g', fadeMs: 100, lateMs });
         clock = 1_000_000;
@@ -788,6 +788,17 @@ describe('mixer', () => {
       await m.play(boo);
       assert.deepEqual(await m.play(boo, { lateMs: 0 }), { lengthMs: 1500 });
       assert.equal(ctx.sources.length, 2);
+    });
+
+    it('46. lateMs 0 or less drops a play that had to wait at all', async () => {
+      for (const lateMs of [0, -1]) {
+        const { m, open } = await gated();
+        const pending = m.play(cheer, { group: 'g', fadeMs: 100, lateMs });
+        clock += 1;
+        open();
+        assert.equal(await pending, null, String(lateMs));
+        assert.equal(ctx.sources.length, 1, 'no second source');
+      }
     });
   });
 
