@@ -1229,7 +1229,7 @@ describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
   });
 });
 
-describe('the four flat earn cards say their sizes in votes, from their rules', () => {
+describe('the flat earn cards say their sizes in votes, from their rules', () => {
   const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
   const tail = (key: string) => `whatever its class makes of that reaction, and then it stops by itself. It counts reactions from players who first react to a post while it is up.${key === 'class-clown' ? " A 😂 counts where it is the first excited, positive reaction its player leaves on that post, and a 🙄 where it is the first bored, negative one. If another excited, positive reaction came first, a later 😂 pays nothing, and the same goes for a 🙄 after another bored, negative one." : ''} Where two cards pay on the same reaction, only the larger pays. It costs nothing more to use.`;
   test('Heat Magnet, Publicity Tour and Class Clown', () => {
@@ -1268,15 +1268,16 @@ describe('the four flat earn cards say their sizes in votes, from their rules', 
       }
       return lines;
     };
-    const lines = wrap(ui('front-row').art.tagline, 20);
+    const lines = wrap(ui('front-row').art.tagline!, 20);
     expect(lines.length).toBeLessThanOrEqual(2);
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(20);
   });
   test('Front Row\'s words hold no "%" and no class\'s name', () => {
     const card = ui('front-row');
-    const words = [card.summary, card.status, card.art.tagline, card.describe!(instance.settings), card.logPlay!({}, {})].join(' ');
+    const words = [card.summary, card.status, card.art.tagline, card.describe!(instance.settings), card.logPlay!({}, {})].join(' ').toLowerCase();
     expect(words).not.toMatch(/%/u);
-    for (const c of instance.classes) expect(words, c.name).not.toContain(c.name);
+    expect(instance.classes.length).toBeGreaterThan(0);
+    for (const c of instance.classes) expect(words, c.name).not.toContain(c.name.toLowerCase());
   });
   test('Hype-Up', () => {
     expect(ui('hype-up').describe!(instance.settings)).toBe(`A Sweet card, common, cast on any post, yours or another's. For 3 days, each positive reaction (excited or calm) to that post pays its author a vote more, whatever their class makes of it, and then it stops by itself. Only reactions after it lands count, and a post carries one at a time. It takes nothing from you. Where two cards pay on the same reaction, only the larger pays. A Mod Bot earns nothing, so its posts gain nothing from one. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.`);

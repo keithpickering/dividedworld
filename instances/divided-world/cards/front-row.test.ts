@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decidePlay, decideUse, type CardRules, type CardTarget } from '../../../engine/rules/cards.ts';
+import { decidePlay, decideUse, type CardEffect, type CardRules, type CardTarget } from '../../../engine/rules/cards.ts';
 import { instanceProblems } from '../../../engine/rules/instance.ts';
 import { instance } from '../index.ts';
 import { defaults as settings } from '../settings.ts';
@@ -30,7 +30,7 @@ test('Front Row is used on a character through decideUse for 0, is refused by de
   const use = decideUse(frontRow, settings, character, [], {}, '');
   assert.deepEqual([use.ok, use.ok ? use.value.price : null], [true, 0]);
   assert.equal(decidePlay(frontRow, settings, character, [], {}, '').ok, false, 'a Gimmick is not cast');
-  const live = [{ card: 'front-row', act: 'k1', reach: 'character', ends: new Date(Date.now() + 86_400_000).toISOString() }];
+  const live: CardEffect[] = [{ card: 'front-row', act: 'k1', reach: 'character', ends: new Date(Date.now() + 86_400_000).toISOString() }];
   assert.equal(decideUse(frontRow, settings, character, live, {}, '').ok, false, 'a second live play is refused');
 });
 
