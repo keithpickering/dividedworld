@@ -99,7 +99,7 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
     const name = instanceCards.find((c) => c.key === n['card'])?.name ?? 'A card';
     /* An entry settled with a flat size says it; one with a `by`, or none (a row settled before the flat earn), keeps the words it had. */
     const flat = n['flat'];
-    return typeof flat === 'number' ? `${name}: ${shareWords(flat)} more for each reaction it named, from players who first reacted while it was up` : `${name} added: what the card's boost on a reaction earned`;
+    return typeof flat === 'number' ? `${name}: up to ${shareWords(flat)} more for each reaction it named, from players who first reacted while it was up` : `${name} added: what the card's boost on a reaction earned`;
   },
   /* A card's cushion (settlement's `card.cushion`, params `{ card, share }`): the share is the entry's own, said as a fraction; a card this instance does not have is "A card". */
   'card.cushion': (n) => {
