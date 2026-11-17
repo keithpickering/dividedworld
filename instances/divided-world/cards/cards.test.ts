@@ -63,6 +63,7 @@ test('the instance sells its cards at their prices', () => {
     ['stick-around', 'sweet', 100],
     ['sugar-coat', 'sweet', 300],
     ['super-happy-heart', 'sweet', 300],
+    ['sweet-heat', 'pepperoni', 150],
     ['take-the-fall', 'sweet', 150],
     ['tattle-tale', 'salty', 300],
     ['this', 'pepperoni', 20],
@@ -402,7 +403,7 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
   // The Gimmicks, Part 6, Jimmy Wails, Part 4, Laugh Track, card notes Part 2 and card notes Part 3 joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts (You Were Saying?, Below the Fold, Overreaction, Hype-Up and THIS are commons, and the hit pull takes none).
   // Card notes Part 5 added Happy Heart and Take the Fall (uncommon), Super Happy Heart and Tattle-Tale (rare) and Ultra Happy Heart (legendary), again with nothing listed in packs.ts.
-  // Hype-Up (card notes, Hype-Up on a post) is now a common, so the hit pull leaves it out: eighteen uncommons share the 74 (Front Row, an uncommon, joined them). Sugar Coat, Graffiti, Line Cutter, Feelin' Glam, Whodunnit?, Super Happy Heart and Tattle-Tale are the rares that share the 24 with Main Event: eight, at 0.03 each.
+  // Hype-Up (card notes, Hype-Up on a post) is now a common, so the hit pull leaves it out: nineteen uncommons share the 74 (Front Row and Sweet Heat, uncommons, joined them). Sugar Coat, Graffiti, Line Cutter, Feelin' Glam, Whodunnit?, Super Happy Heart and Tattle-Tale are the rares that share the 24 with Main Event: eight, at 0.03 each.
   // Off Day and Ultra Happy Heart are the legendaries that share the 2: two, at 0.01 each, so Ultra Happy Heart can be pulled.
   const rares = cards.filter((c) => c.rarity === 'rare');
   assert.deepEqual(rares.map((c) => c.key).sort(), ['feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'whodunnit']);
@@ -413,7 +414,7 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   assert.ok(chance.get('ultra-happy-heart')! > 0, 'Ultra Happy Heart can be pulled');
   assert.ok(Math.abs([...chance.values()].reduce((a, b) => a + b, 0) - 1) < 1e-9, 'the hit pull\'s odds sum to 1');
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 18);
+  assert.equal(uncommons.length, 19);
   assert.equal(chance.has('hype-up'), false, 'Hype-Up is a common, so the hit pull leaves it out');
   for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / uncommons.length) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
   assert.equal(chance.size, uncommons.length + rares.length + legendaries.length);
