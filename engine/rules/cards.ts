@@ -9,7 +9,7 @@
  * function re-checks what it can.
  */
 import type { ActKind, Alignment, EconomyRead, Hundredths, Quadrant, Settings, Span } from './types.ts';
-import { QUADRANTS } from './types.ts';
+import { QUADRANTS, isPost } from './types.ts';
 import { parse, safeColor } from '../bbcode/parse.ts';
 import { visibleWalk, type Stretch } from '../bbcode/visible.ts';
 import { phraseIn } from '../bbcode/phrase.ts';
@@ -30,6 +30,7 @@ export type CardTarget =
   | {
     readonly reach: 'post';
     readonly act: string;
+    /** The Act's kind; a card lands on it only where `isPost(kind)` holds (a post, or a spun thread's opening Act). */
     readonly kind: ActKind;
     /** The length of the post's current text, in characters. */
     readonly length: number;
@@ -646,7 +647,7 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (rules.discipline !== undefined) return refuse(`${rules.name} acts the moment it lands, so it is cast face up and never set face down`);
   // So is one that needs a message, draws, runs a drive or is drawn on (a surface card): faceUpOnly says which, and one sentence covers them.
   if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
-  if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
+  if (target.reach !== 'post' || !isPost(target.kind)) return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
   const stop = quoteStop(effects, now);
   if (stop) return refuse(`this post's ${cards.find((c) => c.key === stop.card)?.name ?? stop.card} stops quotes until ${stop.ends ? refusalTime(stop.ends) : 'it ends'}, so no card is set face down here until then`);
@@ -799,14 +800,15 @@ export function drawnInMoment(rules: Pick<CardRules, 'validateState' | 'stack' |
 }
 
 /**
- * What every card holds to unless it says otherwise: it lands on a reach it lists (a post unless it says), and its target
+ * What every card holds to unless it says otherwise: it lands on a reach it lists (a post unless it says; a post is any Act
+ * for which `isPost` holds, so a spun thread's opening Act counts and an edit or a card Act does not), and its target
  * carries at most its stack of it (one unless the card says more) that are still up, each its own play, counting only the
  * effects on that same target, never those above it. A board carries one board card at a time, of any card, until it ends.
  */
 export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches' | 'discipline'> & { readonly surface?: unknown }, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
   const reaches = reachesOf(rules);
   if (!reaches.includes(target.reach)) return refuse(`this card lands on ${listed(reaches)}`);
-  if (target.reach === 'post' && target.kind !== 'post') return refuse('a card lands on a post');
+  if (target.reach === 'post' && !isPost(target.kind)) return refuse('a card lands on a post');
   // A play that is over when it lands leaves no effect to count: only the reach is checked.
   if (instant(rules)) return ok(undefined);
   // An ended effect holds no place (play_card counts the same way).

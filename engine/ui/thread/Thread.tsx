@@ -39,6 +39,7 @@ import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurf
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
+import { isPost } from '../../rules/types.ts';
 import type { Act, EffectState, Id, PageOrigin, ThreadListener, ThreadPage, ThreadSummary, Visit } from '../data/api.ts';
 import { pageList, useIsAdmin } from '../mini.tsx';
 import { useBoot } from '../boot.tsx';
@@ -304,7 +305,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       for (const c of page.cut) if (!stale(null, c.seq)) feedDispatch.current({ type: 'cut', seq: c.seq });
     }
     const under = page.under.map((u) => u.act);
-    const posts = [...page.acts, ...under].filter((a) => a.kind === 'post').map((a) => a.id);
+    const posts = [...page.acts, ...under].filter((a) => isPost(a.kind)).map((a) => a.id);
     /* The origin's Act and its plays are Acts of the page's document too: their reactions and spins are the page's, which the box reads from the same stores. */
     const ids = [...new Set([...page.acts.map((a) => a.id), ...under.map((a) => a.id), ...played.map((a) => a.id), ...(page.origin?.act ? [page.origin.act.id] : []), ...(page.origin?.plays ?? []).filter((a) => a.kind !== 'card_end').map((a) => a.id)])];
     for (const [id, t] of Object.entries(page.tallies)) tallies.merge(id, t);

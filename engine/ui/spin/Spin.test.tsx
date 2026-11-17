@@ -1312,3 +1312,73 @@ describe('a thread spun from a card on a character', () => {
     expect(readsMade(spies)).toEqual([]);
   });
 });
+
+/*
+ * A play on a spun thread's opening post (docs/plans/2026-11-16-cards-on-a-spun-thread-design.md, section 4): the opening post has a strip of
+ * marks of its own, in its header, and the ORIGIN band keeps the marks of the post it quotes. The two are in different frames and never share one.
+ */
+describe('the opening post\'s strip and the ORIGIN band\'s marks are separate', () => {
+  /** The spun thread's opening Act: the page's first. */
+  const firstOf = async (w: ReturnType<typeof threadWorld>, thread: string) => (await w.fake.threadPage(thread, { page: 1 }, 20, []))!.acts[0]!.id;
+  const strip = () => document.getElementById('post-1')!.querySelector('.kb-act-meta .kb-marks') as HTMLElement | null;
+
+  test('a play on the opening post is in its strip and never in the band; a play on the quoted post is the reverse', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    const first = await firstOf(w, spun);
+    w.fake.seed.card(w.spritey, first, 'whoops', { message: 'on the opening post' });
+    openSpun(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(box).toHaveTextContent('post 2'));
+    await waitFor(() => expect(strip()?.querySelectorAll('.kb-mark[data-kb-card="whoops"]')).toHaveLength(1));
+    expect(box.contains(strip())).toBe(false);
+    expect(marks(box)).toEqual([]);
+    expect(within(strip()!).getByRole('button', { name: /^Whoops!, 1 play\b/u })).toBeInTheDocument();
+    cleanup();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'on the quoted post' });
+    openSpun(w, spun);
+    const again = await origin();
+    await waitFor(() => expect(marks(again)).toEqual(['whoops:1']));
+    /* The opening post's own strip still holds its one mark, and the quoted post's is not in it. */
+    await waitFor(() => expect(strip()?.querySelectorAll('.kb-mark[data-kb-card="whoops"]')).toHaveLength(1));
+    expect(strip()!.querySelector('.kb-mark[data-kb-card="whoops"]')!.getAttribute('data-kb-plays')).toBe('1');
+    expect(again.contains(strip())).toBe(false);
+  });
+
+  test('the quoted post\'s play alone leaves the opening post with no strip of marks', async () => {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'on the quoted post' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    openSpun(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(marks(box)).toEqual(['whoops:1']));
+    expect(strip()?.querySelectorAll('.kb-mark[data-kb-card]') ?? []).toHaveLength(0);
+  });
+
+  test('Edit and History are still absent on the opening post: a spin is not edited', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    const first = await firstOf(w, spun);
+    w.fake.seed.card(w.spritey, first, 'whoops', { message: 'on the opening post' });
+    openSpun(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(strip()).not.toBeNull());
+    const opening = document.getElementById('post-1')!;
+    const outside = (name: string) => within(opening).queryAllByRole('button', { name }).filter((b) => !box.contains(b));
+    expect(outside('Edit')).toHaveLength(0);
+    expect(outside('History')).toHaveLength(0);
+  });
+
+  test('a visit on the opening post shows its tab in the strip, which it had none to show it in before', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    const first = await firstOf(w, spun);
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const visit = w.fake.seed.visit(clerk, first, { at: Date.now(), endsInMs: 60_000 });
+    w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.' });
+    openSpun(w, spun);
+    const opening = await screen.findByRole('article', { name: /^Post 1 /u });
+    const mark = await within(opening).findByRole('button', { name: /Opens the visit\.$/u });
+    expect(mark.closest('.kb-act-meta')).not.toBeNull();
+  });
+});

@@ -14,10 +14,11 @@
  * - `Under`: a plain post in the box (with a 4D Chess play, which draws nothing, so that it has a mark), and Whoops! and Hot Box on the spin's opening post around it: the box stands above them and takes none of their presses.
  *
  * The spin is made through the fake's own `spin`, by the signed-in player's character, and the thread is read once it has answered. The plays on the
- * spin's opening post are seeded once the page is up, as they would arrive while it is open: the fake's thread page carries the plays of posts, not of a spin's own Act.
+ * spin's opening post are seeded as plays (`fake.seed.card`) on the spin's own Act, as a server holds them (a spun thread's opening post is a post for every
+ * card), and the page carries them with the thread.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Frame } from '../../../engine/ui/frame/Frame.tsx';
 import { useKayfa } from '../../../engine/ui/context.tsx';
 import type { ThreadSummary } from '../../../engine/ui/data/api.ts';
@@ -52,11 +53,8 @@ const DAY = 86_400_000;
 const SPUN = 'Spun out of the box';
 /** The world's spin, done: a story's world is made before it renders, and the thread's page is read once, so it is read after this. */
 let seeded: Promise<void> = Promise.resolve();
-/**
- * The plays on the spun thread's opening post, which the case seeds once the page is up. The fake's thread page carries the plays of posts and
- * not of a spin's own Act, so they arrive as a play does while a page is open: `live` sends the Act to the page that listens.
- */
-let onOpening: ((act: string) => void) | null = null;
+/** Every card met, for the cases with marks on the opening post: an unmet card's one-line tip hangs off its mark and would stand over the box's own mark. */
+let quiet = false;
 const CYAN = '#19e3ff';
 const PINK = '#ff69b4';
 
@@ -95,12 +93,11 @@ const worldOf = (shown: Case): World => (fake, instance) => {
      A search over 60000 seeds for one that clears the threshold over a whole byline band and the corner at every size of that spread found none (a splat is centered, and the byline is a thin strip at the top-left), so the spec reads along the byline's own row for a run of solid ink and does not rely on one point. A splat is only where its seed put it. */
   const whoops = () => ({ layer: 1, live: true, config: { color: CYAN, seed: 2591 }, message: 'cyan, obviously' });
   fake.signInAs(player);
+  quiet = shown === 'under' || shown === 'bright';
   /*
-   * The opening post's own plays, seeded when the page is up and given the spin's first Act. These are fixtures of the engine's rule and not a state today's
-   * server produces (issue #739): a spun thread's opening Act is a `spin` Act, the server returns post-reach plays only for `post` Acts and refuses a card of post
-   * reach on anything else. So `FabBright`'s Feelin' Fab and `Under`'s Whoops! and Hot Box on the opening post show what the engine does for whatever effect is
-   * on it. They are seeded as live deliveries because the fake, like the server, returns none for a `spin` Act. What the server really does produce is
-   * `GlitterOver`: a play on the character, which the server delivers with any post of theirs on the page.
+   * The opening post's own plays, seeded on the spin's own Act once the spin has answered: a spun thread's opening Act is a post for every card (cards on a spun
+   * thread, docs/plans/2026-11-16-cards-on-a-spun-thread-design.md), so `FabBright`'s Feelin' Fab and `Under`'s Whoops! and Hot Box on the opening post are plays the
+   * page carries with the thread. `GlitterOver` is a play on the character, which the server delivers with any post of theirs on the page.
    */
   const opening = (act: string): void => {
     if (shown === 'bright') fake.seed.card(caster, act, cardOf(instance.cards, 'feelin-fab').key, { layer: 1, live: true, config: {}, message: 'Fab' });
@@ -112,10 +109,10 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   const spun = (from: string, at?: string) => {
     seeded = fake.spin(from, mine, SPUN, 'Carrying on over here.', undefined, at).then((answer) => {
       if (!answer.ok) throw new Error(`the spin was refused: ${answer.error}`);
+      opening(answer.value.act.id);
       /* Glitter Bomb is a play on a character, and the server delivers a character's plays only with a post of that character on the page: so the spinner has a post on the first page too. */
       if (shown === 'over') fake.seed.post(answer.value.thread.id, mine, 'And a post of my own, so that the glitter on me is delivered with this page.');
     });
-    onOpening = opening;
   };
   if (shown === 'glitter') {
     /* A card on a character, cast from a post of one thread and pressed on a post of that character's in another, as the spin-at-post stories do. */
@@ -147,12 +144,13 @@ const worldOf = (shown: Case): World => (fake, instance) => {
 
 /** The thread with the spun title, once the world's spin has made it. */
 function useSpun(): ThreadSummary | null {
-  const { api } = useKayfa();
+  const { api, instance } = useKayfa();
   const [found, setFound] = useState<ThreadSummary | null>(null);
   useEffect(() => {
     let live = true;
     void (async () => {
       await seeded;
+      if (quiet) for (const c of instance.cards) await api.meetCard(c.key);
       for (let attempt = 0; attempt < 40 && live; attempt++) {
         for (const board of await api.boards()) {
           const hit = (await api.threads(board.id, { offset: 0, limit: 50 })).threads.find((t) => t.title === SPUN);
@@ -162,7 +160,7 @@ function useSpun(): ThreadSummary | null {
       }
     })();
     return () => { live = false; };
-  }, [api]);
+  }, [api, instance]);
   return found;
 }
 
@@ -170,19 +168,6 @@ interface Args { readonly shown: Case; readonly mode?: 'light' | 'dark'; readonl
 
 function Spun({ mode = 'light', bright = false }: Args) {
   const spun = useSpun();
-  const sown = useRef(false);
-  useEffect(() => {
-    if (!spun?.firstAct || sown.current) return;
-    sown.current = true;
-    const first = spun.firstAct;
-    /* Once the box is drawn, and the page has had a moment to listen. */
-    let tries = 0;
-    const tick = () => {
-      if (document.querySelector('.kb-origin')) setTimeout(() => onOpening?.(first), 300);
-      else if (++tries < 200) setTimeout(tick, 50);
-    };
-    tick();
-  }, [spun]);
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-kb-mode', mode);
@@ -230,12 +215,7 @@ export const Whoops: Story = of('whoops');
 export const WhoopsLanded: Story = of('landed');
 /** Feelin' Fab on one line, live. */
 export const Fab: Story = of('fab');
-/**
- * Feelin' Fab under Brighter effects, a quote in the box, and Feelin' Fab on the spin's opening post too. A fixture of the engine's rule, not a state the server
- * produces (issue #739): the opening Act of a spun thread is a `spin` Act, and the server returns plays of post reach only for `post` Acts, refusing a post-reach
- * card on anything else. The play is seeded as a live delivery because the fake, like the server, returns none for a `spin` Act; the story holds what the engine
- * does for whatever effect is on the opening post.
- */
+/** Feelin' Fab under Brighter effects, a quote in the box, and Feelin' Fab on the spin's opening post too: a play seeded on the spin's own Act. */
 export const FabBright: Story = of('bright', { bright: true });
 /** Glitter Bomb on a character, spun from a post of theirs: the box shows it as it was spun. */
 export const GlitterSpun: Story = of('glitter');
@@ -245,12 +225,7 @@ export const HotBox: Story = of('hotbox');
 export const Chair: Story = of('chair');
 /** Steel Chair on one short line, live. */
 export const ChairShort: Story = of('chair-short');
-/**
- * A plain post in the box, under Whoops! and Hot Box on the opening post around it. A fixture of the engine's rule, not a state the server produces (issue #739):
- * the opening Act of a spun thread is a `spin` Act, the server returns plays of post reach only for `post` Acts and refuses a post-reach card (Whoops!, Hot Box) on
- * anything else, so these two plays are seeded as live deliveries, the fake returning none for a `spin` Act as the server does. The story holds the engine's rule:
- * the box stands over whatever effect is on its opening post, and takes none of its presses.
- */
+/** A plain post in the box, under Whoops! and Hot Box on the opening post around it, plays seeded on the spin's own Act: the box stands over the effects on its opening post, and takes none of its presses. */
 export const Under: Story = of('under');
 /**
  * Glitter Bomb on the character who spun the thread, who also has a post on the thread's first page (the server delivers a character's plays only when that
