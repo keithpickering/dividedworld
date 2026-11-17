@@ -8,7 +8,8 @@
  * resolves null at once and fetches nothing. A file is fetched and decoded once a page, by a play or by `warm`; a failure resolves
  * null for that play and is tried again on the next, and the mixer never throws into its caller. `warm` fetches at once and decodes
  * at the first unlock (once unlocked, at once), and a bus that is off fetches nothing until it is turned on. A play may ask for a
- * `lateMs`: if its sound cannot start within that long of the call, it is dropped and resolves null rather than sounding late.
+ * `lateMs`: if its sound cannot start within that long of the call, it is dropped and resolves null rather than sounding late. A
+ * `lateMs` of 0 or less drops a play that had to wait at all (a file already decoded, with the clock unmoved, still sounds), and one that is not a finite number is ignored.
  *
  * `fadeMs` on `play` is the cross-fade between sounds of one group, so it does nothing without a `group`: a sound in no group
  * overlaps whatever else sounds. No voice ever steps, though: a voice starts at 0 and ramps to its level, and ramps back to 0 when
@@ -63,9 +64,10 @@ export function createMixer(deps: MixerDeps): Mixer {
   const bytes = new Map<string, Promise<ArrayBuffer | null>>();
   /** A file's decode, by src; filled only once a context exists. */
   const buffers = new Map<string, Promise<{ readonly duration: number } | null>>();
-  /** Every slot `warm` was asked for, by src, so a bus turned on or an unlock can warm them again. */
+  /** Every slot `warm` was asked for, by bus and src together (two slots may share a src on different buses, and keyed by src alone one would hide the other from its bus turning on), so a bus turned on or an unlock can warm them again. */
   const warmed = new Map<string, SoundSlot>();
-  const now = deps.now ?? (() => performance.now());
+  /** The mixer's clock in milliseconds (the context's own clock, in seconds, is always `c.currentTime`). */
+  const clockMs = deps.now ?? (() => performance.now());
 
   /** A bus's level: 0 when it is off or its volume is not a finite number (a NaN handed to a param throws), else the volume over 100, clamped to 0..1. */
   const level = (b: SoundBus): number => (buses[b].on && Number.isFinite(buses[b].volume) ? Math.min(Math.max(buses[b].volume, 0), 100) / 100 : 0);
@@ -82,9 +84,9 @@ export function createMixer(deps: MixerDeps): Mixer {
     return node;
   }
   /** Decode with either form of the API: a promise, or the callbacks an old WebKit context takes instead. */
-  function decode(c: AudioContextLike, bytes: ArrayBuffer): Promise<{ readonly duration: number }> {
+  function decode(c: AudioContextLike, data: ArrayBuffer): Promise<{ readonly duration: number }> {
     return new Promise((resolve, reject) => {
-      const r = c.decodeAudioData(bytes, resolve, reject);
+      const r = c.decodeAudioData(data, resolve, reject);
       if (r && typeof r.then === 'function') r.then(resolve, reject);
     });
   }
@@ -185,7 +187,7 @@ export function createMixer(deps: MixerDeps): Mixer {
   return {
     warm(slots) {
       for (const slot of slots) {
-        try { warmed.set(slot.src, slot); } catch { continue; }
+        try { warmed.set(`${slot.bus}\n${slot.src}`, slot); } catch { continue; }
         warmSlot(slot);
       }
     },
@@ -215,10 +217,10 @@ export function createMixer(deps: MixerDeps): Mixer {
     async resume() { try { await made?.resume(); } catch { /* nothing to resume */ } },
     async play(slot, o = {}) {
       try {
-        const asked = now();
+        const asked = clockMs();
         const r = await ready(slot);
         if (!r) return null;
-        if (typeof o.lateMs === 'number' && Number.isFinite(o.lateMs) && now() - asked > o.lateMs) return null;
+        if (typeof o.lateMs === 'number' && Number.isFinite(o.lateMs) && clockMs() - asked > o.lateMs) return null;
         const { c, buffer } = r;
         const fadeMs = o.fadeMs ?? 0;
         const prior = o.group === undefined ? undefined : groups.get(o.group);

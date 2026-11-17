@@ -74,7 +74,9 @@ class FakeSource {
   stops = 0;
   disconnects = 0;
   onended: (() => void) | null = null;
-  connect() {}
+  /** The node this source was connected to: its voice's gain. */
+  to: unknown;
+  connect(to?: unknown) { this.to = to; }
   disconnect() { this.disconnects += 1; }
   start() { this.started = true; }
   stop(when?: number) { this.stops += 1; this.stoppedAt = when ?? 0; }
@@ -101,7 +103,11 @@ class FakeContext {
     return g;
   }
   createBufferSource() { const s = new FakeSource(); this.sources.push(s); return s; }
-  async decodeAudioData(_b: ArrayBuffer) {
+  /** Like the real one, it detaches the bytes it is given: handed the same ArrayBuffer twice, it rejects. */
+  consumed = new WeakSet<ArrayBuffer>();
+  async decodeAudioData(b: ArrayBuffer) {
+    if (this.consumed.has(b)) throw new Error('DataCloneError: the ArrayBuffer is detached');
+    this.consumed.add(b);
     this.decoded += 1;
     if (this.failDecode) throw new Error('bad audio');
     return { duration: 1.5 };
@@ -733,7 +739,7 @@ describe('mixer', () => {
 
     it('38. a play that resolves after lateMs is null, starts no source, and leaves its group voice sounding', async () => {
       const { m, open } = await gated();
-      const voice = ctx.gains[1]!;
+      const voice = ctx.sources[0]!.to as FakeGain;
       const rampsBefore = voice.gain.ramps.length;
       const logBefore = voice.gain.log.length;
       const pending = m.play(cheer, { group: 'g', fadeMs: 100, lateMs: 100 });
@@ -762,6 +768,77 @@ describe('mixer', () => {
       open();
       assert.deepEqual(await pending, { lengthMs: 1500 });
       assert.equal(ctx.sources.length, 2);
+    });
+
+    it('41. a lateMs that is NaN or Infinity is ignored: the play sounds however late', async () => {
+      for (const lateMs of [Number.NaN, Number.POSITIVE_INFINITY]) {
+        const { m, open } = await gated();
+        const pending = m.play(cheer, { group: 'g', fadeMs: 100, lateMs });
+        clock = 1_000_000;
+        open();
+        assert.deepEqual(await pending, { lengthMs: 1500 }, String(lateMs));
+        assert.equal(ctx.sources.length, 2);
+      }
+    });
+
+    it('42. lateMs 0 with the file already decoded and the clock unmoved sounds', async () => {
+      const m = make();
+      await m.unlock();
+      m.setBus('game', { on: true, volume: 100 });
+      await m.play(boo);
+      assert.deepEqual(await m.play(boo, { lateMs: 0 }), { lengthMs: 1500 });
+      assert.equal(ctx.sources.length, 2);
+    });
+  });
+
+  describe('warm, keys and bytes', () => {
+    /** A fetch that waits on a gate, then hands a fresh ArrayBuffer. */
+    const gatedFetch = () => {
+      let open: () => void = () => {};
+      const gate = new Promise<void>((r) => { open = r; });
+      fetchBytes.mock.mockImplementation(async () => { await gate; return new ArrayBuffer(8); });
+      return open;
+    };
+
+    it('43. two slots sharing a src on different buses are both remembered: turning the first bus on fetches the file', async () => {
+      const m = make();
+      m.setBus('game', { on: false, volume: 100 });
+      m.setBus('interface', { on: false, volume: 100 });
+      m.warm([slot('x', { bus: 'game' })]);
+      m.warm([slot('x', { bus: 'interface' })]);
+      m.setBus('game', { on: true, volume: 100 });
+      await flush();
+      assert.equal(fetchBytes.mock.callCount(), 1, 'x is fetched when the game bus is turned on');
+    });
+
+    it('44. a fetch still in flight when unlock runs: the warmed src is decoded exactly once after the fetch lands', async () => {
+      const m = make();
+      m.setBus('game', { on: true, volume: 100 });
+      const open = gatedFetch();
+      m.warm([boo]);
+      await m.unlock();
+      open();
+      await flush();
+      assert.equal(fetchBytes.mock.callCount(), 1);
+      assert.equal(ctx.decoded, 1);
+      assert.deepEqual(await m.play(boo), { lengthMs: 1500 });
+      assert.equal(ctx.decoded, 1);
+    });
+
+    it('45. a bus turned off and on while a warm\'s fetch is in flight fetches once in all', async () => {
+      const m = make();
+      m.setBus('game', { on: true, volume: 100 });
+      const open = gatedFetch();
+      m.warm([boo]);
+      m.setBus('game', { on: false, volume: 100 });
+      m.setBus('game', { on: true, volume: 100 });
+      open();
+      await flush();
+      assert.equal(fetchBytes.mock.callCount(), 1);
+      await m.unlock();
+      await flush();
+      assert.equal(fetchBytes.mock.callCount(), 1);
+      assert.equal(ctx.decoded, 1);
     });
   });
 });
