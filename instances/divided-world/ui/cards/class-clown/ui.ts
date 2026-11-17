@@ -5,7 +5,7 @@ import type { Settings } from '../../../../../engine/rules/types.ts';
 import classClownCanvas from './art.webp?url';
 import classClownMark from './mark.svg?url';
 import classClownArt from './art.json';
-import { earnWords, LARGEST, spanWords } from '../words.ts';
+import { earnWords, FIRST_REACTORS, LARGEST, spanWords } from '../words.ts';
 
 export const ui: CardUi = {
   key: 'class-clown',
@@ -13,6 +13,6 @@ export const ui: CardUi = {
   summary: `Used on your own character. For ${spanWords(classClown.lasts!)}, each 😂 and each 🙄 on its posts pays ${earnWords(classClown)}.`,
   status: 'Earns more from laughs',
   describe: (settings: Settings) =>
-    `A Pepperoni card, ${classClown.rarity}, used on your own character, the one playing it. For ${spanWords(classClown.lasts!)}, each 😂 and each 🙄 on its posts pays ${earnWords(classClown)}, whatever its class makes of that reaction, and then it stops by itself. It counts reactions from players who first react to a post while it is up. A 😂 counts where it is the first excited, positive reaction its player leaves on that post, and a 🙄 where it is the first bored, negative one. If another excited, positive reaction came first, a later 😂 pays nothing, and the same goes for a 🙄 after another bored, negative one. ${LARGEST} It costs nothing more to use.`,
+    `A Pepperoni card, ${classClown.rarity}, used on your own character, the one playing it. For ${spanWords(classClown.lasts!)}, each 😂 and each 🙄 on its posts pays ${earnWords(classClown)}, whatever its class makes of that reaction, and then it stops by itself. ${FIRST_REACTORS} A 😂 counts where it is the first excited, positive reaction its player leaves on that post, and a 🙄 where it is the first bored, negative one. If another excited, positive reaction came first, a later 😂 pays nothing, and the same goes for a 🙄 after another bored, negative one. ${LARGEST} It costs nothing more to use.`,
   logPlay: () => `Each 😂 and each 🙄 on that character's posts pays ${earnWords(classClown)} until it ends.`,
 };
