@@ -15,7 +15,7 @@
  * `background-blend-mode` is not its concern: it blends an element's own backgrounds with each other, never with what is behind it.
  *
  * What it cannot see: a blend set through a custom property (`mix-blend-mode: var(--x)` is a fault, as no value but `normal` passes, but `--x: multiply`
- * set somewhere else is not read), through a computed property name (`style[prop] = ...`), through `cssText` or an HTML string built in pieces, through a
+ * set somewhere else is not read), through a computed property name that is not a string literal (`style[prop] = ...`, `{ [prop]: ... }`), through `cssText` or an HTML string built in pieces, through a
  * stylesheet outside engine/ui and instances, or by a `.module` import of one; none exists today, and a new way to set a blend must be taught to this check
  * in the same change. tools/test-effect-blend.mjs drives it red on each planted blend.
  *
@@ -38,7 +38,14 @@ const isText = (n) => n !== undefined && (ts.isStringLiteral(n) || ts.isNoSubsti
 const isNormal = (value) => value.replace(/!\s*important/i, '').trim().toLowerCase() === 'normal';
 
 /** A text with its `/* *\/` comments blanked, newlines kept, so a line number in it is still the line in the file. */
-const blankComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+const blankComments = (text) =>
+  text.replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\/\*[\s\S]*?\*\//g, (c) => (c.startsWith('/*') ? c.replace(/[^\n]/g, ' ') : c));
+
+/** An expression with its `as`, `satisfies`, non-null and parentheses taken off. */
+const unwrap = (n) => {
+  while (n && (ts.isAsExpression(n) || ts.isSatisfiesExpression(n) || ts.isNonNullExpression(n) || ts.isParenthesizedExpression(n))) n = n.expression;
+  return n;
+};
 
 /** Each `mix-blend-mode` declaration in a CSS text that is not `normal`, with its line (counted from `firstLine`) and its value. */
 function cssBlends(css, firstLine = 1) {
@@ -59,11 +66,12 @@ function scriptBlends(text, file) {
   const out = [];
   const lineOf = (node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
   const valueOf = (v) => (v === undefined ? 'a value that is not a literal' : isText(v) ? `'${v.text}'` : 'a value that is not a literal');
-  const flag = (node, v) => {
+  const flag = (node, value) => {
+    const v = unwrap(value);
     if (!(isText(v) && isNormal(v.text))) out.push({ line: lineOf(node), what: `mixBlendMode: ${valueOf(v)}` });
   };
   const visit = (node) => {
-    if (ts.isPropertyAssignment(node) && (ts.isIdentifier(node.name) || isText(node.name)) && node.name.text === 'mixBlendMode') flag(node, node.initializer);
+    if (ts.isPropertyAssignment(node) && (ts.isIdentifier(node.name) || isText(node.name) || (ts.isComputedPropertyName(node.name) && isText(unwrap(node.name.expression)))) && (ts.isComputedPropertyName(node.name) ? unwrap(node.name.expression).text : node.name.text) === 'mixBlendMode') flag(node, node.initializer);
     else if (ts.isShorthandPropertyAssignment(node) && node.name.text === 'mixBlendMode') flag(node, undefined);
     else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(node.left) && node.left.name.text === 'mixBlendMode') flag(node, node.right);
     else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'setProperty' && isText(node.arguments[0]) && node.arguments[0].text.toLowerCase() === 'mix-blend-mode') flag(node, node.arguments[1]);

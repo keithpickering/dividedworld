@@ -48,11 +48,21 @@ check('a .ts file is read', faults("export const s = { mixBlendMode: 'multiply' 
 check('a quoted key fires', faults("export const s = { 'mixBlendMode': 'multiply' };", 'engine/ui/x/x.ts').length === 1);
 check('el.style.mixBlendMode = ... fires', faults("el.style.mixBlendMode = 'multiply';", 'engine/ui/x/x.ts').length === 1);
 check('a value that is not a literal fires (it cannot be shown to be normal)', faults('const s = { mixBlendMode: mode };', 'engine/ui/x/x.ts').length === 1);
+check("setProperty('mix-blend-mode', 'multiply') fires", faults("el.style.setProperty('mix-blend-mode', 'multiply');", 'engine/ui/x/x.ts').length === 1);
+check("a wrapped value ('screen' as const, in parentheses) fires", faults("const s = { mixBlendMode: ('screen' as const) };", 'engine/ui/x/x.ts').length === 1);
+check("a computed literal key fires", faults("const s = { ['mixBlendMode']: 'screen' };", 'engine/ui/x/x.ts').length === 1);
+check('a comment mark inside a CSS string does not hide a blend', faults('.a{content:"/*"; mix-blend-mode: multiply} .b{content:"*/"}').length === 1);
+check('a single-quoted string with an escaped quote and a comment mark does not hide a blend', faults(".a{content:'\\'/*'; mix-blend-mode: multiply} .b{content:'*/'}").length === 1);
 check('a CSS string in a script fires', faults('const css = `.a { mix-blend-mode: multiply; }`;', 'engine/ui/x/x.ts').length === 1);
 check('each fires in engine/ui and in another instance too', ['engine/ui/x/x.css', 'instances/y/ui/z/z.css', 'instances/y/cards/z/z.css'].every((f) => faults('.a { mix-blend-mode: multiply }', f).length === 1));
 
 /* ---- what only looks like one ---- */
 check('mix-blend-mode: normal is clean', faults('.a { mix-blend-mode: normal; }').length === 0);
+check("setProperty('mix-blend-mode', 'normal') is clean", faults("el.style.setProperty('mix-blend-mode', 'normal');", 'engine/ui/x/x.ts').length === 0);
+check("'normal' as const is clean", faults("const s = { mixBlendMode: 'normal' as const };", 'engine/ui/x/x.ts').length === 0);
+check("'normal' satisfies string is clean", faults("const s = { mixBlendMode: 'normal' satisfies string };", 'engine/ui/x/x.ts').length === 0);
+check("a computed literal key with 'normal' is clean", faults("const s = { ['mixBlendMode']: 'normal' };", 'engine/ui/x/x.ts').length === 0);
+check('a real comment holding a quote character still blanks, and a later blend keeps its line', (() => { const r = faults('/* don\'t "mix-blend-mode: multiply */\n.a { mix-blend-mode: screen }'); return r.length === 1 && r[0]?.line === 2; })());
 check('NORMAL !important is clean', faults('.a { mix-blend-mode: NORMAL !important }').length === 0);
 check("mixBlendMode: 'normal' is clean", faults("const s = { mixBlendMode: 'normal' };", 'engine/ui/x/x.ts').length === 0);
 check('the words in a CSS comment are clean', faults('/* mix-blend-mode: multiply */\n.a { color: red; }').length === 0);
