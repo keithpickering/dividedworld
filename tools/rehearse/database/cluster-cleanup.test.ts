@@ -46,7 +46,8 @@ test("a start that fails leaves no directory and no process, and the error carri
 test("setClock never leaves an empty clock file", async () => {
   const c = await startCluster({ at: T });
   try {
-    for (let i = 0; i < 200; i++) {
+    // From the second after the start: the time the cluster started at is the file's already, and setClock refuses it (cluster.ts).
+    for (let i = 1; i <= 200; i++) {
       c.setClock(T + i * 1000);
       assert.match(readFileSync(`${c.dir}/clock`, "utf8"), /^@\d{4}-/);
     }

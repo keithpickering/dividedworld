@@ -49,6 +49,43 @@ test("the cluster runs no autovacuum: its worker, started under the fake clock, 
   }
 });
 
+test("setClock refuses the time the clock already says: libfaketime restarts its clock only on new text, so that write would leave it running on", async () => {
+  const c = await startCluster({ at: T });
+  try {
+    // The file the cluster started with says T: writing T again would not restart the clock.
+    assert.throws(() => c.setClock(T), /already says 2027-03-01 09:00:00/u);
+    c.setClock(T + 1000);
+    assert.throws(() => c.setClock(T + 1000), /already says 2027-03-01 09:00:01/u);
+    // The file holds whole seconds, so a time in the same second is the same text.
+    assert.throws(() => c.setClock(T + 1500), /already says 2027-03-01 09:00:01/u);
+    // A new second is new text, and restarts the clock there.
+    c.setClock(T + 2000);
+    const got = epoch(c);
+    assert.ok(got >= T + 2000 && got < T + 4000, `now() was ${new Date(got).toISOString()}`);
+  } finally {
+    await c.stop({ keep: false });
+  }
+});
+
+test("holdClock stops the clock at its time however long the work under it takes, and setClock from that same time runs it again from there", async () => {
+  const c = await startCluster({ at: T });
+  try {
+    c.holdClock(T + 1000);
+    const held = epoch(c);
+    await new Promise((r) => setTimeout(r, 2500));
+    assert.equal(epoch(c), held, "the held clock moved");
+    assert.equal(held, T + 1000);
+    // Holding again at the same time is the same hold: nothing is running on to restart.
+    c.holdClock(T + 1000);
+    // The running clock's text differs from the held one's, so libfaketime starts it at that second.
+    c.setClock(T + 1000);
+    const got = epoch(c);
+    assert.ok(got >= T + 1000 && got < T + 3000, `now() was ${new Date(got).toISOString()}`);
+  } finally {
+    await c.stop({ keep: false });
+  }
+});
+
 test("setClock moves a held connection's now() and a column default", async () => {
   const c = await startCluster({ at: T });
   try {

@@ -57,7 +57,8 @@ const manifest: BoardManifest = {
     { id: 'kicker', role: 'text', name: 'MY CHARACTERS › TURN', buildName: 'My characters › Turn', within: 'dialog' },
     { id: 'title', role: 'heading', name: 'Turn Pipewrench', within: 'dialog' },
     /* The board's Close is an icon; the build's word is drawn off its square, so its box only. */
-    { id: 'close', role: 'button', name: 'Close', within: 'dialog', type: false },
+    /* Close stands on the middle line of the kicker and the title (the owner, 2026-11-17: the bar's parts share one middle line, glass/shell.css), where the board tops it with the kicker. */
+    { id: 'close', role: 'button', name: 'Close', within: 'dialog', type: false, buildShift: { y: 20.5 } },
 
     /* The character. */
     { id: 'who', role: 'complementary', name: '', within: 'dialog', type: false, box: 'position' },

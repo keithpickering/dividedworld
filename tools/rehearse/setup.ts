@@ -111,7 +111,12 @@ export async function setUp(cluster: Cluster, admin: Connection, instance: Insta
 
 async function build(cluster: Cluster, admin: Connection, instance: Instance, content: RehearsalContent, scenario: Scenario, tl: Timeline, opened: (c: Connection) => void): Promise<Setup> {
   const notes: string[] = [];
-  const hold = () => cluster.setClock(tl.clusterStart + 1000);
+  /*
+   * Setup takes no simulated time: the clock is stopped at the first minute's second while it runs, and the first minute (schedule.ts,
+   * runMinute) runs it from there. Setting it running at that second here did not hold it: libfaketime restarts its clock only on new
+   * text, so every second setup took was counted into the first minute's now().
+   */
+  const hold = () => cluster.holdClock(tl.clusterStart + 1000);
   hold();
 
   await admin.sql(`create database ${DATABASE}`);

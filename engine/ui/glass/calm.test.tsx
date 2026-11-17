@@ -372,9 +372,31 @@ describe('what stands under a line is never the frame\'s neon', () => {
   const read = (rel: string) => fs.readFileSync(path.join(here, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   test('a dialog\'s ground follows its own scroll, one border in, so a scrolled line is over the ground and not the border\'s color', () => {
     const d = declsOf(sheet('shell.css'), '.kb-glass-dialog');
-    expect(d['background-attachment']).toBe('local');
-    expect(d['background-clip']).toBe('padding-box');
-    expect(d['background-image']).toBe('linear-gradient(var(--kb-glass-ground), var(--kb-glass-ground))');
+    /* The last layer is the ground; the one over it is the bottom left cut's border, held to the box (the next test). */
+    expect(d['background-attachment']?.split(',').at(-1)?.trim()).toBe('local');
+    expect(d['background-clip']?.split(',').at(-1)?.trim()).toBe('padding-box');
+    expect(d['background-image']).toMatch(/,\s*linear-gradient\(var\(--kb-glass-ground\), var\(--kb-glass-ground\)\)$/u);
+  });
+  test('the bottom left cut keeps its border: a stroke over the ground, at the box\'s corner and not the content\'s, so it does not scroll away', () => {
+    const d = declsOf(sheet('shell.css'), '.kb-glass-dialog');
+    expect(d['background-image']).toMatch(/^linear-gradient\(to top right, transparent 50%, var\(--kb-glass-neon\) 50%/u);
+    expect(d['background-attachment']?.split(',')[0]?.trim()).toBe('scroll');
+    expect(d['background-position']?.split(',')[0]?.trim()).toBe('bottom left');
+    expect(d['background-size']?.split(',')[0]?.trim()).toBe('var(--kb-cut) var(--kb-cut)');
+  });
+  test('a dialog that scrolls itself keeps its bottom left corner clear while scrolled short: its foot is a band at the scroll edge, cut along the corner, over the border', () => {
+    const css = sheet('shell.css');
+    /* The foot is the band's, not the box's: the box keeps one border, so what scrolls never stands on the bottom border. */
+    expect(declsOf(css, '.kb-glass-dialog[data-kb-place]')['padding-bottom']).toBe('var(--kb-border)');
+    const band = declsOf(css, '.kb-glass-dialog[data-kb-place] > .kb-glass-dialog-body::after');
+    expect(band.position).toBe('sticky');
+    expect(band.bottom).toBe('var(--kb-border)');
+    expect(band.height).toBe('calc(var(--kb-dialog-foot) - var(--kb-border))');
+    expect(band['pointer-events']).toBe('none');
+    expect(band['clip-path']).toBe('polygon(0 0, 100% 0, 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in)))');
+    expect(band.background).toMatch(/^linear-gradient\(to bottom, transparent, var\(--kb-glass-ground\)/u);
+    /* Shown only while more lies below, where the browser can say so; an unscrolled dialog's foot is its smoke, as before. */
+    expect(css).toMatch(/@container scroll-state\(scrollable: bottom\)\s*\{\s*\.kb-glass-dialog\[data-kb-place\] > \.kb-glass-dialog-body::after\s*\{\s*opacity: 1;/u);
   });
   test('the Vending Machine\'s wallet words stand clear of the panel\'s border on the phone', () => {
     expect(declsOf(read('../vending/vending.css'), ":where(:root[data-kb-layout='phone']) .kb-vending-wallet-in")['padding-inline']).toBe('16px');

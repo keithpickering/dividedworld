@@ -281,6 +281,9 @@ export function fadeOf(el: { readonly scrollLeft: number; readonly clientWidth: 
 /** Whether a scrolling part has more below what it shows: the fade at the Lens's foot is there only while it has. A scroll position can be fractional (zoom), so it is rounded up: at the end it never reads as one px short. */
 export const moreBelow = (el: { readonly scrollTop: number; readonly clientHeight: number; readonly scrollHeight: number }): boolean => Math.ceil(el.scrollTop) + el.clientHeight < el.scrollHeight;
 
+/** Whether a scrolling part is scrolled off its top: the fade at the Lens body's top shows only then. A fractional offset (zoom) that rounds to 0 is the top. */
+export const scrolledPast = (el: { readonly scrollTop: number }): boolean => Math.round(el.scrollTop) > 0;
+
 /** A tab's name: the card's, or for the card backs, "Card back", and the card it was once one has sprung. */
 export function kindName(instance: { readonly cards: readonly { readonly key: string; readonly name: string }[] }, kind: string, plays: readonly CardPlay[]): string {
   if (!isBack(kind)) return instance.cards.find((c) => c.key === kind)?.name ?? kind;
@@ -775,13 +778,14 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     resized?.observe(el);
     return () => { el.removeEventListener('scroll', read); resized?.disconnect(); };
   }, [card, kinds.length]);
-  /* The body scrolls inside the panel; its foot fades while more lies below it (the box's `data-kb-more`). */
+  /* The body scrolls inside the panel; its foot fades while more lies below it (the box's `data-kb-more`), and its top once it is scrolled off it (`data-kb-above`). */
   const body = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState(false);
+  const [above, setAbove] = useState(false);
   useEffect(() => {
     const el = body.current;
     if (!el) return undefined;
-    const read = () => setMore(moreBelow(el));
+    const read = () => { setMore(moreBelow(el)); setAbove(scrolledPast(el)); };
     read();
     el.addEventListener('scroll', read, { passive: true });
     const resized = typeof ResizeObserver === 'function' ? new ResizeObserver(read) : null;
@@ -857,7 +861,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       returnFocusTo={() => anchor.current} onClose={dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
       style={ink ? ({ '--kb-lens-ink': ink } as CSSProperties) : undefined}
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}
-      data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined, 'kb-more': more ? 'true' : 'false' }}
+      data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined, 'kb-more': more ? 'true' : 'false', 'kb-above': above ? 'true' : 'false' }}
     >
       <DialogBar close={<CloseCross onClick={dismiss} />}>
         <div className="kb-lens-tabstrip" data-kb-fade={fade}>
@@ -878,6 +882,8 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       {/* Before the body: the body is the dialog's last child, which the frame's own checks lay their probes in. */}
       <div className="kb-lens-fade" aria-hidden="true" />
       <div ref={body} className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
+        {/* The fade at the body's top: it sticks to the scroll edge under the bar, and shows once the body is scrolled off its top. */}
+        <div className="kb-lens-fade-top" aria-hidden="true" />
         {(waiting ?? visitP).data === null && (waiting ?? visitP).failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
         {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} />}
         {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} />}

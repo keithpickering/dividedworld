@@ -68,7 +68,8 @@ const manifest: BoardManifest = {
       { id: 'dialog', role: 'dialog', name: 'Whoops!', box: 'position' },
       { id: 'kicker', role: 'text', name: 'Play a card', within: 'dialog', box: 'position' },
       { id: 'title', role: 'heading', name: 'Whoops!', within: 'dialog' },
-      { id: 'close', role: 'button', name: 'Close', within: 'dialog', type: false },
+      /* Close stands on the middle line of the kicker and the title (the owner, 2026-11-17: the bar's parts share one middle line, glass/shell.css), where the board tops it with the kicker. */
+      { id: 'close', role: 'button', name: 'Close', within: 'dialog', type: false, buildShift: { y: 12.5 } },
       { id: 'target', role: 'link', name: 'Spritey\'s post #41', buildName: 'Gloomba\'s post #46', within: 'dialog', box: 'position', type: false },
 
       { id: 'ink', role: 'group', name: 'Ink color', within: 'dialog', box: 'none', type: false },

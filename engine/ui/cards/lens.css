@@ -31,14 +31,22 @@
   --kb-lens-ink-text: var(--kb-glass-salty-text);
 }
 
-/* The body scrolls inside the panel (the float is a fixed size, Float.tsx), so the float's own scrolling is off. */
+/*
+ * The body scrolls inside the panel (the float is a fixed size, Float.tsx), so the float's own scrolling is off. The body runs to the
+ * frame's bottom and holds the frame's foot as its own padding (`.kb-lens-body`), so its words fade out at the frame's edge, not at
+ * a line the foot's height above it with an empty band under it.
+ */
 .kb-float > .kb-glass-dialog.kb-lens {
   overflow: hidden;
+  /* One border in, so what scrolls never stands on the frame's bottom border. */
+  padding-bottom: var(--kb-border);
 }
 
 /*
  * The tabs are one row that scrolls sideways, as the phone's menu bar does: no scrollbar, a fade at the edge where more wait
- * (`data-kb-fade`, Lens.tsx), and the open tab scrolled into view. The strip leaves a few px at its ends for a skewed tab's slant.
+ * (`data-kb-fade`, Lens.tsx), and the open tab scrolled into view. A scroller clips whatever leaves its box, so the row keeps room at
+ * every edge for a skewed tab's slant (about 4px at 44px tall) and its focus ring, and gives that room back in its margins: the tabs
+ * stand where they did, and the first tab's left edge is never cut.
  */
 .kb-lens-tabstrip {
   position: relative;
@@ -50,7 +58,8 @@
   display: flex;
   gap: 8px;
   min-width: 0;
-  padding: 0 6px;
+  margin: -6px -6px;
+  padding: 6px 12px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -125,17 +134,35 @@
   color: var(--kb-glass-text-hi);
 }
 
+/*
+ * The body scrolls, and a scroller clips sideways too: a skewed tile at its edge (Hold to scrub) lost its slant and its focus ring.
+ * So, as the tab row does, it keeps room at its sides for both and gives it back in its margins; its words stand where they did. Its top
+ * stays at the bar's foot (a margin over it put a focused control under the stuck bar), and a control scrolled into view keeps room for
+ * its ring at either end. Its foot is the frame's (glass/shell.css `--kb-dialog-foot`), so its last line clears the bottom left cut,
+ * and it is cut along that cut, one border in, so what scrolls past the corner never stands on the border.
+ */
 .kb-lens-body {
   position: relative;
   z-index: 1;
   flex: 1 1 auto;
   min-height: 0;
-  padding-bottom: 12px;
+  margin: 0 -12px;
+  padding: 0 12px var(--kb-dialog-foot);
+  /*
+   * The frame's inner cut in the body's own box: its left edge stands pad-x less 12px in from the frame's and its foot one border up,
+   * so the line x + y = cut-in + 2 borders from the frame's corner is x + y = cut-in + a border - pad-x + 12px from the body's.
+   */
+  --kb-lens-body-cut: calc(var(--kb-cut-in) + var(--kb-border) - var(--kb-dialog-pad-x) + 12px);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, var(--kb-lens-body-cut) 100%, 0 calc(100% - var(--kb-lens-body-cut)));
+  scroll-padding-block: 8px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 
-/* The fade at the panel's foot, only while more lies below (the panel's `data-kb-more`, set as the body scrolls); it takes no pointer. */
+/*
+ * The fade at the panel's foot, where the body's scroll edge is, only while more lies below (the panel's `data-kb-more`, set as the
+ * body scrolls); it takes no pointer. It is cut as the frame's panel is, one border in, so it never dims the bottom left cut's border.
+ */
 .kb-lens-fade {
   display: none;
   position: absolute;
@@ -143,6 +170,7 @@
   left: var(--kb-border);
   right: var(--kb-border);
   bottom: var(--kb-border);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in)));
   height: 56px;
   pointer-events: none;
   background: linear-gradient(to bottom, transparent, var(--kb-glass-ground));
@@ -150,6 +178,61 @@
 
 .kb-lens[data-kb-more='true'] > .kb-lens-fade {
   display: block;
+}
+
+/*
+ * The fade at the body's top, the foot's mirror: the body's first child, stuck to its scroll edge under the bar and the body's full width
+ * (its 12px gutters given back), taking no room (its height given back below it). It eases in once the body is scrolled off its top (the
+ * panel's `data-kb-above`) and out again at an offset of 0, as the tab strip's edge fades do; under reduced motion it is there or not, at once.
+ */
+.kb-lens-fade-top {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 40px;
+  margin: 0 -12px -40px;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(to top, transparent, var(--kb-glass-ground));
+  transition: opacity 0.15s ease-out;
+}
+
+.kb-lens[data-kb-above='true'] .kb-lens-fade-top {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-lens-fade-top { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-lens-fade-top {
+  transition: none;
+}
+
+/*
+ * The fade starts from the ground, and the bar is the frame's smoke at rest (glass/shell.css): scrolled, a band of ground showed under the
+ * smoke. The Lens's body scrolls and not its box, so the bar is never stuck and never took the ground a stuck bar takes; it takes it while
+ * the body is scrolled off its top, easing with the fade. The fade is its foot here, so the stuck bar's own foot and rule are not drawn.
+ * Where the browser cannot say a bar is stuck, the bar keeps its ground always (shell.css), and this is not needed.
+ */
+@supports (container-type: scroll-state) {
+  .kb-lens > .kb-glass-dialog-bar::before {
+    inset: 0;
+    border-bottom: 0;
+    transition: opacity 0.15s ease-out;
+  }
+
+  .kb-lens[data-kb-above='true'] > .kb-glass-dialog-bar::before {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-lens > .kb-glass-dialog-bar::before { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-lens > .kb-glass-dialog-bar::before {
+  transition: none;
 }
 
 .kb-lens-section {
@@ -476,6 +559,7 @@
   }
 
   .kb-lens-fade,
+  .kb-lens-fade-top,
   .kb-lens-tabstrip::before,
   .kb-lens-tabstrip::after { display: none; }
 }

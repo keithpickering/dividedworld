@@ -6,13 +6,13 @@
  * only (`origin`): the board's two panels stand at x = 24 and 524 where the dock is at the window's right edge. The first build side is Stick Around's story, and the board's
  * first panel; the second is the author's Whoops! story, and the board's second. How the two boards divide the Lens is board 28's header.
  *
- * The departures are board 28's (its header): the panel 8px shorter, the headline a paragraph in the glass's type with the story's own percent, the Close 52px, type
+ * The departures are board 28's (its header): the panel 8px shorter, the bar and what is under it `CHAMFER_CLEAR` lower, the headline a paragraph in the glass's type with the story's own percent, the Close 52px, type
  * not compared. The board's three tools wrap to two rows in its 460px panel (Write in ink alone on the second), where the plan sets them as one row, so
  * Write in ink is found but its place is not compared; and the author's panel's play (the board's plate has a note line and a wrapped name) is held by its buttons from the message's
  * bottom edge. Stick Around's story has Whoops! first and Stick Around second in billing, as the board's tabs have them.
  */
 import type { BoardManifest } from '../../board-match.ts';
-import { dialog, part } from './28-lens.ts';
+import { CHAMFER_CLEAR, dialog, part } from './28-lens.ts';
 
 const under = (of: string) => ({ origin: of, originEdge: 'bottom' }) as const;
 
@@ -22,11 +22,11 @@ const manifest: BoardManifest = {
   build: { story: 'boards-01-lens--lens-stick-around-who' },
   landmarks: [
     dialog({ nth: 0, buildNth: 0 }),
-    part('tab-whoops', 'tab', 'WHOOPS!', { box: 'position' }),
-    part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position' }),
-    part('close', 'button', 'Close', { box: 'position' }),
-    part('headline', 'text', 'Holding you on this post', { box: 'position', buildShift: { y: -18.5 } }),
-    part('ends', 'text', "Ends when you check the caster's sentence, scroll past either end of the post, or press Break free.", { box: 'position', buildShift: { y: -30 } }),
+    part('tab-whoops', 'tab', 'WHOOPS!', { box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
+    part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
+    part('close', 'button', 'Close', { box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
+    part('headline', 'text', 'Holding you on this post', { box: 'position', buildShift: { y: -18.5 + CHAMFER_CLEAR } }),
+    part('ends', 'text', "Ends when you check the caster's sentence, scroll past either end of the post, or press Break free.", { box: 'position', buildShift: { y: -30 + CHAMFER_CLEAR } }),
     part('fold', 'button', '1 play · Professor Hootenanny McGillicuddy III', { ...under('ends'), box: 'position', buildShift: { y: -14 } }),
     part('message', 'text', '“required reading”', { ...under('fold'), box: 'none' }),
     part('react', 'button', '+ REACT', { buildName: 'React', ...under('message'), box: 'position' }),
@@ -38,10 +38,10 @@ const manifest: BoardManifest = {
       build: { story: 'boards-01-lens--lens-author-whoops-who' },
       landmarks: [
         dialog({ nth: 1, buildNth: 0 }),
-        part('tab-whoops', 'tab', 'WHOOPS!', { box: 'full' }),
-        part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position' }),
-        part('headline', 'text', '41% washed for you', { buildName: '32% washed for you', box: 'position', buildShift: { y: -18.5 } }),
-        part('ends', 'text', 'Ends on your screen when you scrub every layer off. As its author, you can wash it for everyone.', { box: 'position', buildShift: { y: -30 } }),
+        part('tab-whoops', 'tab', 'WHOOPS!', { box: 'full', buildShift: { y: CHAMFER_CLEAR } }),
+        part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
+        part('headline', 'text', '41% washed for you', { buildName: '32% washed for you', box: 'position', buildShift: { y: -18.5 + CHAMFER_CLEAR } }),
+        part('ends', 'text', 'Ends on your screen when you scrub every layer off. As its author, you can wash it for everyone.', { box: 'position', buildShift: { y: -30 + CHAMFER_CLEAR } }),
         part('tools', 'text', 'YOUR TOOLS, AS THE AUTHOR', { buildName: 'Your tools, as the author', ...under('ends'), box: 'position' }),
         part('hold', 'button', 'HOLD TO SCRUB', { buildName: 'Hold to scrub', ...under('tools'), box: 'position' }),
         part('wash', 'button', 'WASH', { buildName: 'Wash', ...under('tools'), box: 'position' }),

@@ -16,7 +16,8 @@ const manifest: BoardManifest = {
   build: { story: 'boards-00-random-event--gear-found' },
   landmarks: [
     { id: 'dialog', role: 'dialog', name: 'SOMETHING HAPPENED!', buildName: 'Something happened!', type: false, buildShift: { y: 250, height: 51 } },
-    { id: 'title', role: 'heading', name: 'SOMETHING HAPPENED!', buildName: 'Something happened!', type: false, box: 'position', origin: 'dialog', buildShift: { x: -163, y: 13 } },
+    /* The title stands on Close's middle line (the owner, 2026-11-17: the bar's parts share one middle line, glass/shell.css), 10.4px lower than it did. */
+    { id: 'title', role: 'heading', name: 'SOMETHING HAPPENED!', buildName: 'Something happened!', type: false, box: 'position', origin: 'dialog', buildShift: { x: -163, y: 13 + 10.4 } },
     { id: 'wear', role: 'button', name: 'WEAR IT', buildName: 'Wear it', buildRole: 'link', type: false, box: 'position', origin: 'dialog', buildShift: { x: -162, y: 46 } },
     { id: 'ok', role: 'button', name: 'ESC OK', buildName: 'OK', type: false, box: 'position', origin: 'dialog', buildShift: { x: -177, y: 46 } },
   ],

@@ -101,6 +101,13 @@ export default manifest;
  */
 const PHONE = '2026-11-05-backfill/27-characters-phone';
 
+/**
+ * The Debut sheet's kicker stands 16.5px lower than it did, clear of the frame's top right cut (the owner, 2026-11-17: Close and the corners' words keep about 14px off
+ * the chamfer, glass/shell.css `--kb-dialog-chamfer-clear`; the phone's bar top is 48px where it was 32), and on Close's middle line. The sheet's parts are held from
+ * the kicker, so each stands that much higher from it than the first run measured.
+ */
+const KICKER_LOWER = 16.5;
+
 /** The menu bar of the screen that is the board page's `nth` (the sheet has none), and Back in it, as the phone's bar draws them. */
 const bar = (nth: number): Landmark[] => [
   { id: 'menu', role: 'navigation', name: 'Menu', nth, buildNth: 0, type: false, box: 'none' },
@@ -131,11 +138,11 @@ export const phone: BoardManifest = {
       press: [{ role: 'button', name: 'Change how Waiting Wanda debuts…' }],
       landmarks: [
         { id: 'kicker', role: 'text', name: 'MY CHARACTERS › DEBUT', buildName: 'My characters › Debut', nth: 0, type: false, box: 'none' },
-        held('kicker', 'title', 'heading', 'HOW WAITING WANDA DEBUTS', { y: 44 }, { buildName: 'How Waiting Wanda debuts' }),
-        held('kicker', 'close', 'button', 'Close', { x: -14 }),
-        held('kicker', 'silent', 'text', 'SILENT', { y: 29.6 }, { buildName: 'Silent.' }),
-        held('kicker', 'announced', 'text', 'ANNOUNCED', { y: -13.5 }, { buildName: 'Announced.' }),
-        held('kicker', 'with-class', 'text', 'ANNOUNCED, WITH ITS CLASS', { y: -33.7 }, { buildName: 'Announced, with its class.' }),
+        held('kicker', 'title', 'heading', 'HOW WAITING WANDA DEBUTS', { y: 44 - KICKER_LOWER }, { buildName: 'How Waiting Wanda debuts' }),
+        held('kicker', 'close', 'button', 'Close', { x: -14, y: -KICKER_LOWER }),
+        held('kicker', 'silent', 'text', 'SILENT', { y: 29.6 - KICKER_LOWER }, { buildName: 'Silent.' }),
+        held('kicker', 'announced', 'text', 'ANNOUNCED', { y: -13.5 - KICKER_LOWER }, { buildName: 'Announced.' }),
+        held('kicker', 'with-class', 'text', 'ANNOUNCED, WITH ITS CLASS', { y: -33.7 - KICKER_LOWER }, { buildName: 'Announced, with its class.' }),
         held('kicker', 'cancel', 'button', 'CANCEL', {}, { buildName: 'Cancel', box: 'none' }),
         held('kicker', 'save', 'button', 'SAVE', {}, { buildName: 'Save how Waiting Wanda debuts', box: 'none' }),
       ],

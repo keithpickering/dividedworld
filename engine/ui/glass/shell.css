@@ -362,8 +362,9 @@
   padding: 16px;
   background: color-mix(in srgb, var(--kb-glass-ground) 72%, transparent);
   overflow-y: auto;
-  /* The sticky title row covers the scrollport's top (the `.kb-glass-dialog-bar` rule, below): a focused control is scrolled to clear it (WCAG 2.4.11). */
-  scroll-padding-top: var(--kb-dialog-bar-stuck, var(--kb-dialog-bar-stuck-min));
+  --kb-dialog-bar-foot: 12px;
+  /* The sticky title row and its foot cover the scrollport's top (the `.kb-glass-dialog-bar` rule, below): a focused control is scrolled to clear both (WCAG 2.4.11). */
+  scroll-padding-top: calc(var(--kb-dialog-bar-stuck, var(--kb-dialog-bar-stuck-min)) + var(--kb-dialog-bar-foot));
 }
 
 /*
@@ -376,7 +377,9 @@
  *   --kb-dialog-pad-top     the bar's distance from the frame's top
  *   --kb-dialog-pad-bottom  the body's distance from the frame's foot
  *   --kb-dialog-close-inset Close's distance from the title row's right edge (the Reveal modal's 24px; none on the phone)
- * The bar's top is never less than the cut leaves it: Close's corner stands clear of the chamfer.
+ * Neither corner's words nor Close ever touch a cut: the bar's top and the body's foot are never less than the cut leaves them plus
+ * `--kb-dialog-chamfer-clear`. On a 45 degree cut a corner at x from the side and y from the edge is clear when x + y is at least the
+ * cut, so the clearance is added to that sum: 20px keeps a corner 14px off the diagonal, measured square to it.
  */
 .kb-glass-dialog {
   /* Where the stuck bar's foot lies at least: its 12px offset and Close's 52px (the bar writes the real height, Frame.tsx). */
@@ -385,34 +388,46 @@
   --kb-dialog-pad-top: 36px;
   --kb-dialog-pad-bottom: 36px;
   --kb-dialog-close-inset: 24px;
-  --kb-dialog-bar-top: max(var(--kb-dialog-pad-top), calc(var(--kb-cut) - var(--kb-dialog-pad-x) + var(--kb-border)));
+  --kb-dialog-chamfer-clear: 20px;
+  --kb-dialog-bar-foot: 12px;
+  /* Close's top right corner stands its pad-x and close-inset from the side and the bar's top from the edge. */
+  --kb-dialog-bar-top: max(var(--kb-dialog-pad-top), calc(var(--kb-cut) + var(--kb-dialog-chamfer-clear) - var(--kb-dialog-pad-x) - var(--kb-dialog-close-inset)));
   width: min(100%, 720px);
   box-sizing: border-box;
-  /* The foot is never less than the cut leaves it: a control in the bottom left corner stands clear of the chamfer. */
-  padding: 0 var(--kb-dialog-pad-x) max(var(--kb-dialog-pad-bottom), calc(var(--kb-cut) - var(--kb-dialog-pad-x) + var(--kb-border)));
+  /* The foot: a line or a control in the bottom left corner stands its pad-x from the side, and this from the edge. A dialog that draws at its body's foot (the Lens's fade) stands on it. */
+  --kb-dialog-foot: max(var(--kb-dialog-pad-bottom), calc(var(--kb-cut) + var(--kb-dialog-chamfer-clear) - var(--kb-dialog-pad-x)));
+  padding: 0 var(--kb-dialog-pad-x) var(--kb-dialog-foot);
   /*
    * A dialog taller than its room scrolls itself, and its panel (::after) and smoke are as tall as the room, not the content: scrolled,
    * the frame's own neon (the background color, the border's) showed below them as a bright band under the words. The ground follows
    * the scroll (`local`), one border in, so under any line there is the ground and never the neon.
+   *
+   * That ground is a rectangle, and it covered the bottom left cut's border (the top right one is drawn again over the bar, `::before`
+   * below). So the bottom left diagonal is a layer over it, a stroke of the border's width along the cut, held to the box (`scroll`) and
+   * not the content, so it stays at the corner the clip cuts while the words scroll: the band the panel's own cut leaves open is the
+   * neon again.
    */
-  background-image: linear-gradient(var(--kb-glass-ground), var(--kb-glass-ground));
+  background-image:
+    linear-gradient(to top right, transparent 50%, var(--kb-glass-neon) 50%, var(--kb-glass-neon) calc(50% + var(--kb-border)), transparent calc(50% + var(--kb-border))),
+    linear-gradient(var(--kb-glass-ground), var(--kb-glass-ground));
   background-repeat: no-repeat;
-  background-attachment: local;
-  background-origin: padding-box;
-  background-clip: padding-box;
-  background-position: center;
-  background-size: calc(100% - var(--kb-border) * 2) calc(100% - var(--kb-border) * 2);
+  background-attachment: scroll, local;
+  background-origin: border-box, padding-box;
+  background-clip: border-box, padding-box;
+  background-position: bottom left, center;
+  background-size: var(--kb-cut) var(--kb-cut), calc(100% - var(--kb-border) * 2) calc(100% - var(--kb-border) * 2);
 }
 
 .kb-glass-dialog::after {
   background: var(--kb-glass-ground);
 }
 
-/* The smoke over the cut's own panel, one border in; the bar and the body over both. */
+/* The smoke over the cut's own panel, one border in and cut as the panel is, so it never dims the border on either diagonal; the bar and the body over both. */
 .kb-glass-dialog > .kb-smoke {
   z-index: 0;
   inset: var(--kb-border);
   opacity: 0.35;
+  clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in)));
 }
 
 /*
@@ -428,7 +443,8 @@
   top: calc(12px - var(--kb-dialog-bar-top));
   z-index: 2;
   display: flex;
-  align-items: flex-start;
+  /* The title, what stands beside it (the picker's count) and Close share one middle line. */
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin: var(--kb-border) calc(var(--kb-border) - var(--kb-dialog-pad-x)) 0;
@@ -437,9 +453,75 @@
 }
 
 /*
+ * A dialog that scrolls itself (a sheet, a popover, a float) keeps its bar where it stands at rest, at the frame's top: the frame's corner
+ * does not scroll there, so Close keeps its clearance from the cut, and the top right diagonal is drawn on the bar (`::after`), which is
+ * where the corner is, rather than on the box, which scrolls away under it.
+ */
+.kb-glass-dialog[data-kb-place] > .kb-glass-dialog-bar,
+.kb-float-box > .kb-glass-dialog-bar {
+  top: var(--kb-border);
+}
+
+.kb-glass-dialog[data-kb-place]::before,
+.kb-float-box::before {
+  display: none;
+}
+
+/*
+ * Its foot, likewise: a dialog that scrolls itself and is scrolled short (a popover capped to the room above its post) would show its last
+ * lines in the bottom left cut, on the cut's border. So its foot is not the box's padding but a band at the end of its body, stuck to the
+ * scroll edge one border up: while more lies below, the band stands over the lines at the edge, fading them to the ground, cut along the
+ * corner as the panel is so it never covers the border; scrolled to the end, it is the foot's room under the last line. It shows only while
+ * more lies below, where the browser can say so; elsewhere it is always there, which is the safe side.
+ */
+.kb-glass-dialog[data-kb-place] {
+  container-type: scroll-state;
+  padding-bottom: var(--kb-border);
+}
+
+.kb-glass-dialog[data-kb-place] > .kb-glass-dialog-body::after {
+  content: '';
+  display: block;
+  position: sticky;
+  bottom: var(--kb-border);
+  z-index: 1;
+  height: calc(var(--kb-dialog-foot) - var(--kb-border));
+  margin: 0 calc(var(--kb-border) - var(--kb-dialog-pad-x));
+  pointer-events: none;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in)));
+  background: linear-gradient(to bottom, transparent, var(--kb-glass-ground) 60%);
+}
+
+@supports (container-type: scroll-state) {
+  .kb-glass-dialog[data-kb-place] > .kb-glass-dialog-body::after {
+    opacity: 0;
+  }
+
+  @container scroll-state(scrollable: bottom) {
+    .kb-glass-dialog[data-kb-place] > .kb-glass-dialog-body::after {
+      opacity: 1;
+    }
+  }
+}
+
+.kb-glass-dialog[data-kb-place] > .kb-glass-dialog-bar::after,
+.kb-float-box > .kb-glass-dialog-bar::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: calc(var(--kb-border) * -1);
+  right: calc(var(--kb-border) * -1);
+  width: var(--kb-cut);
+  height: var(--kb-cut);
+  pointer-events: none;
+  background: linear-gradient(to bottom left, transparent 50%, var(--kb-glass-neon) 50%, var(--kb-glass-neon) calc(50% + var(--kb-border)), transparent calc(50% + var(--kb-border)));
+}
+
+/*
  * Where the browser can say the bar is stuck (a scroll-state query), the ground is laid under it only then: at rest the bar is the
- * dialog's own smoke, as the Reveal modal draws it, and it takes the ground only once the body is scrolling under it. Elsewhere the
- * bar keeps its ground always, a plain band, which is the safe side.
+ * dialog's own smoke, as the Reveal modal draws it, and it takes the ground only once the body is scrolling under it. Stuck, the ground
+ * runs `--kb-dialog-bar-foot` past the bar's last line and ends on a rule, so what scrolls under it never meets the title's baseline.
+ * Elsewhere the bar keeps its ground always, a plain band, which is the safe side.
  */
 @supports (container-type: scroll-state) {
   .kb-glass-dialog-bar {
@@ -450,10 +532,12 @@
   .kb-glass-dialog-bar::before {
     content: '';
     position: absolute;
-    inset: 0;
+    inset: 0 0 calc(var(--kb-dialog-bar-foot) * -1);
     z-index: -1;
+    border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-neon-text) 35%, transparent);
     background: var(--kb-glass-ground);
     opacity: 0;
+    pointer-events: none;
   }
 
   @container scroll-state(stuck: top) {
@@ -476,6 +560,11 @@
   height: var(--kb-cut);
   pointer-events: none;
   background: linear-gradient(to bottom left, transparent 50%, var(--kb-glass-neon) 50%, var(--kb-glass-neon) calc(50% + var(--kb-border)), transparent calc(50% + var(--kb-border)));
+}
+
+/* With no Close (Stick Around's view), what the title sets beside it ends the bar's right side, at no inset: the cut is cleared for it. */
+.kb-glass-dialog:not(:has(> .kb-glass-dialog-bar > .kb-glass-dialog-close)) {
+  --kb-dialog-close-inset: 0px;
 }
 
 .kb-glass-dialog-titles {
@@ -551,7 +640,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles { display: contents; }
-:where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles > .kb-glass-dialog-kicker { grid-column: 1; grid-row: 1; }
+:where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles > .kb-glass-dialog-kicker { grid-column: 1; grid-row: 1; align-self: center; }
 :where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles > .kb-glass-dialog-head { grid-column: 1 / -1; grid-row: 2; }
 :where(:root[data-kb-layout='phone']) .kb-glass-dialog > .kb-glass-dialog-bar > .kb-glass-dialog-close { grid-column: 2; grid-row: 1; }
 :where(:root[data-kb-layout='phone']) .kb-glass-dialog-kicker { font-size: var(--kb-glass-size-phone-small); letter-spacing: 2px; }
@@ -566,8 +655,8 @@
 .kb-glass-dialog[data-kb-place='below'],
 .kb-glass-dialog[data-kb-place='above'],
 .kb-float > .kb-float-box {
-  /* The dialogs that scroll in their own box (a sheet, a popover, a float) clear the stuck title row as the overlay does. */
-  scroll-padding-top: var(--kb-dialog-bar-stuck, var(--kb-dialog-bar-stuck-min));
+  /* The dialogs that scroll in their own box (a sheet, a popover, a float) clear the stuck title row and its foot as the overlay does. */
+  scroll-padding-top: calc(var(--kb-dialog-bar-stuck, var(--kb-dialog-bar-stuck-min)) + var(--kb-dialog-bar-foot));
 }
 
 .kb-glass-dialog[data-kb-place='sheet'] {

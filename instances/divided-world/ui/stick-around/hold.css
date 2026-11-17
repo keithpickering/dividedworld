@@ -309,16 +309,26 @@ html[data-kb-float] .kb-glass-overlay:has(> .kb-hold-view) {
     padding: 8px;
   }
 
+  /*
+   * The bar is a column here and has no Close, so only its first row (the title) reaches toward the top right cut: the bar keeps its
+   * 14px top, and the title stands clear of the cut by its right margin instead (the frame's clearance, glass/shell.css
+   * `--kb-dialog-chamfer-clear`, taken from the side), so the view's post and Break free stay where they were, above the Lens.
+   */
   .kb-glass-dialog.kb-hold-view {
     --kb-dialog-pad-x: 14px;
     --kb-dialog-pad-top: 14px;
     --kb-dialog-pad-bottom: 16px;
+    --kb-dialog-bar-top: var(--kb-dialog-pad-top);
   }
 
   .kb-hold-view .kb-glass-dialog-bar {
     flex-direction: column;
     align-items: flex-start;
     gap: 10px;
+  }
+
+  .kb-hold-view .kb-glass-dialog-bar > .kb-glass-dialog-head {
+    margin-right: max(0px, calc(var(--kb-cut) + var(--kb-dialog-chamfer-clear) - var(--kb-dialog-pad-x) - var(--kb-dialog-bar-top)));
   }
 
   .kb-hold-tag {
