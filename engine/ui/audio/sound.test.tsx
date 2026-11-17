@@ -415,4 +415,35 @@ describe('the page warms the sounds a screen names', () => {
       expect(captions.current()).toBeNull();
     } finally { vi.useRealTimers(); }
   });
+
+  test('the same play with no lateMs sounds', async () => {
+    let t = 0;
+    resetSound({ makeContext, fetchBytes, now: () => (t += 1000) });
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture();
+    let played: { lengthMs: number } | null = null;
+    await act(async () => { played = await result.current.play('boo'); });
+    expect(played).not.toBeNull();
+  });
+
+  test('a late play on the interface bus says no caption', async () => {
+    let t = 0;
+    resetSound({ makeContext, fetchBytes, now: () => (t += 1000) });
+    on('interface');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture();
+    let played: { lengthMs: number } | null = { lengthMs: 0 };
+    await act(async () => { played = await result.current.play('click', { lateMs: 10 }); });
+    expect(played).toBeNull();
+    expect(captions.current()).toBeNull();
+  });
+
+  test('no keys, or an empty list, warms nothing', () => {
+    on('game');
+    renderHook(() => useWarmSounds(undefined), { wrapper: warmWrap });
+    renderHook(() => useWarmSounds([]), { wrapper: warmWrap });
+    expect(warmed.calls).toEqual([]);
+    expect(fetchBytes).not.toHaveBeenCalled();
+  });
 });
