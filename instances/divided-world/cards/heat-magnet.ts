@@ -1,5 +1,5 @@
 /**
- * Heat Magnet (Salty, uncommon, Gimmick on a character): for 3 days, every negative reaction (excited or bored) to the character's
+ * Heat Magnet (Salty, uncommon, Gimmick on a character): for 3 days, every negative vote (excited or bored) on the character's
  * posts pays a flat three quarters of a vote more, whatever class the character holds, then it ends by itself (the card types design,
  * and docs/plans/2026-11-16-settlement-design.md). It pays on top of the class and never deepens a loss. Its price and size are section 4 of docs/plans/2026-11-15-base-set-card-numbers-design.md; it stayed uncommon, since a
  * card that reaches a character is uncommon or rarer here (`reachRarity`, ../settings.ts).

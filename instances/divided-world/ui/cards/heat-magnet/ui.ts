@@ -9,10 +9,10 @@ import { earnWords, FIRST_REACTORS, LARGEST, spanWords } from '../words.ts';
 
 export const ui: CardUi = {
   key: 'heat-magnet',
-  art: { color: '#ff3d7f', ink: '#14030a', canvas: heatMagnetCanvas, mark: heatMagnetMark, credit: heatMagnetArt.credit, tagline: 'Earn more from negative reactions.' },
-  summary: `Used on your own character. For ${spanWords(heatMagnet.lasts!)}, each negative reaction to its posts pays ${earnWords(heatMagnet)}.`,
-  status: 'Earns more from negative reactions',
+  art: { color: '#ff3d7f', ink: '#14030a', canvas: heatMagnetCanvas, mark: heatMagnetMark, credit: heatMagnetArt.credit, tagline: 'Earn more from negative votes.' },
+  summary: `Used on your own character. For ${spanWords(heatMagnet.lasts!)}, each negative vote on its posts pays ${earnWords(heatMagnet)}.`,
+  status: 'Earns more from negative votes',
   describe: (settings: Settings) =>
-    `A Salty card, ${heatMagnet.rarity}, used on your own character, the one playing it. For ${spanWords(heatMagnet.lasts!)}, each negative reaction (excited or bored) to its posts pays ${earnWords(heatMagnet)}, whatever its class makes of that reaction, and then it stops by itself. ${FIRST_REACTORS} ${LARGEST} It costs nothing more to use.`,
-  logPlay: () => `Each negative reaction to that character's posts pays ${earnWords(heatMagnet)} until it ends.`,
+    `A Salty card, ${heatMagnet.rarity}, used on your own character, the one playing it. For ${spanWords(heatMagnet.lasts!)}, each negative vote (excited or bored) on its posts pays ${earnWords(heatMagnet)}, whatever its class makes of that vote, and then it stops by itself. ${FIRST_REACTORS} ${LARGEST} It costs nothing more to use.`,
+  logPlay: () => `Each negative vote on that character's posts pays up to ${earnWords(heatMagnet)} until it ends.`,
 };

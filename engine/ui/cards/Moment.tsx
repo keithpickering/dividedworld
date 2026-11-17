@@ -92,13 +92,13 @@ export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As 
   const content = back === undefined;
   const status = read === 'read' ? null : read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.';
   const said = content && status !== null;
-  /* The list is said only of a moment that is read and shown: it ends with the line that nothing done here is saved. */
+  /* The list is said only of a moment that is read and shown: it ends with the line that nothing done to this post is saved (the Game sounds toggle in the Lens is the reader's own preference, and is). */
   const list = read === 'read' ? (
     <div className={content ? 'kb-moment-list kb-small kb-muted' : 'kb-moment-list'}>
       {own !== null && <p>{own}.</p>}
       {named.length > 0 && <p>Also on the post then: {named.join(', ')}</p>}
       {unrecorded && <p>What else was on the post then wasn't recorded.</p>}
-      <p>Nothing you do here is saved.</p>
+      <p>Nothing you do to this post is saved.</p>
     </div>
   ) : null;
   return (

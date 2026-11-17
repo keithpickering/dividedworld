@@ -1,5 +1,5 @@
 /**
- * Hype-Up (Sweet, common, Cast on a post, anyone's): for 3 days, every positive reaction (excited or calm) to the post pays its author a flat vote more,
+ * Hype-Up (Sweet, common, Cast on a post, anyone's): for 3 days, every positive vote (excited or calm) on the post pays its author a flat vote more,
  * whatever class the author holds, then it ends by itself. It is Publicity Tour's push cast on one post: the quadrants and span are the same list
  * (publicity.ts), at a whole vote, and where the two are up on one vote only the larger pays. It pays the caster nothing for it (docs/plans/2026-11-11-card-notes-design.md, Part 4 plan, and
  * docs/plans/2026-11-13-hype-up-on-a-post-design.md).

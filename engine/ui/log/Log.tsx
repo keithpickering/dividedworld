@@ -79,11 +79,11 @@ function Breakdown({ settlement, data, words, tab, id, open, onClose }: { readon
       <td colSpan={5}>
         <div className="kb-log-breakdown-body">
           {lines.map((l) => (
-            <section key={`${l.character}:${l.reason}:${l.params?.['card'] ?? ''}`} className="kb-log-reason" aria-label={`${tab === null ? `${nameOf(l.character)}, ` : ''}${reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy)))}`}>
+            <section key={`${l.character}:${l.reason}:${l.params?.['card'] ?? ''}`} className="kb-log-reason" aria-label={`${tab === null ? `${nameOf(l.character)}, ` : ''}${reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy), l.amount))}`}>
               <h2 className="kb-log-reason-head">
                 <span>
                   {tab === null && <span className="kb-log-reason-who">{nameOf(l.character)} · </span>}
-                  <span data-kb-reason="">{words.ui.reasonWords(l.reason, paramsOf(l, words.economy))}</span>
+                  <span data-kb-reason="">{words.ui.reasonWords(l.reason, paramsOf(l, words.economy), l.amount)}</span>
                 </span>
                 <span className="kb-log-num" data-kb-column="aura" data-kb-amount="" data-kb-sign={Math.sign(l.amount)}>{signed(l.amount)}</span>
                 <span className="kb-log-wallet" data-kb-column="wallet" aria-hidden="true" />

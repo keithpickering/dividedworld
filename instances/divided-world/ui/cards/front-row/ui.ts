@@ -9,10 +9,10 @@ import { earnWords, spanWords } from '../words.ts';
 
 export const ui: CardUi = {
   key: 'front-row',
-  art: { color: '#d24a2c', ink: '#0d0301', canvas: frontRowCanvas, mark: frontRowMark, credit: frontRowArt.credit, tagline: 'Earn more from your cards\' reactions.' },
-  summary: `Used on your own character. For ${spanWords(frontRow.lasts!)}, each reaction to a card it plays pays ${earnWords(frontRow)}.`,
-  status: "Earns more from its cards' reactions",
+  art: { color: '#d24a2c', ink: '#0d0301', canvas: frontRowCanvas, mark: frontRowMark, credit: frontRowArt.credit, tagline: 'Earn more from your cards\' votes.' },
+  summary: `Used on your own character. For ${spanWords(frontRow.lasts!)}, each vote on a card it plays pays ${earnWords(frontRow)}.`,
+  status: "Earns more from its cards' votes",
   describe: (settings: Settings) =>
-    `A Pepperoni card, ${frontRow.rarity}, used on your own character, the one playing it. For ${spanWords(frontRow.lasts!)}, each reaction to a card that character plays, whatever the reaction, pays ${earnWords(frontRow)}, and then it stops by itself. A card it plays is a Move it casts, a Gimmick it uses, or a Reversal of its own when it springs. Reactions to its posts are not counted. It counts reactions from players who first react to the card while it is up. It costs nothing more to use.`,
-  logPlay: () => `Each reaction to a card that character plays pays ${earnWords(frontRow)} until it ends.`,
+    `A Pepperoni card, ${frontRow.rarity}, used on your own character, the one playing it. For ${spanWords(frontRow.lasts!)}, each vote on a card that character plays, whatever the reaction, pays ${earnWords(frontRow)}, and then it stops by itself. A card it plays is a Move it casts, a Gimmick it uses, or a card of its own when it springs. Votes on its posts are not counted. It counts votes from players who first react to the card while it is up. It costs nothing more to use.`,
+  logPlay: () => `Each vote on a card that character plays pays up to ${earnWords(frontRow)} until it ends.`,
 };

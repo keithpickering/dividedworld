@@ -416,8 +416,11 @@ export interface InstanceUi {
    * line's own, which the settlement wrote into its ledger row (`ledger.params`, 0073), so a line
    * settled before a retune says the numbers it was settled under; and, for a row with none and for
    * the live estimate, the economy as the server holds it now (`economyNow`).
+   *
+   * `amount` is a settled line's own, in hundredths, given so that a reason whose line can take pay back (a card's boost, when a vote it paid
+   * for is withdrawn or moved) can say so in words of its own; the live estimate gives none.
    */
-  readonly reasonWords: (reason: string, params: Readonly<Record<string, number | string>>) => string;
+  readonly reasonWords: (reason: string, params: Readonly<Record<string, number | string>>, amount?: number) => string;
   readonly copy: UiCopy;
   /** Each pip style's images, by key; `default` is always there. */
   readonly pips: Readonly<Record<string, PipImages>>;

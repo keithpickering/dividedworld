@@ -32,11 +32,11 @@ export const earnWords = (c: { readonly gimmick?: GimmickEffect }) => {
   return `${shareWords(c.gimmick.flat)} more`;
 };
 
-/** Whose reactions a timed earn card counts, said by every card that earns for a span. */
-export const FIRST_REACTORS = 'It counts reactions from players who first react to a post while it is up.';
+/** Whose votes a timed earn card counts, said by every card that earns for a span: the settlement pays per vote, and a player's first reaction to the post decides whether theirs counts. */
+export const FIRST_REACTORS = 'It counts votes from players who first react to a post while it is up.';
 
-/** What two earn cards on one reaction do, said by every card that earns: only the larger pays. */
-export const LARGEST = 'Where two cards pay on the same reaction, only the larger pays.';
+/** What two earn cards on one vote do, said by every card that earns: only the larger pays. */
+export const LARGEST = 'Where two cards pay on the same vote, only the larger pays.';
 
 /** What a Price Gimmick adds to a cast, read from the card's own rules: "0.25". */
 export const priceAdd = (c: { readonly gimmick?: GimmickEffect }) => {

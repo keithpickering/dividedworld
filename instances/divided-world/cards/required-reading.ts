@@ -1,7 +1,7 @@
 /**
- * Required Reading (Sweet, common, Gimmick on the player's own post): for a week, each calm positive reaction to the post pays its author a
- * vote more, to any class, then it ends by itself (docs/plans/2026-11-16-settlement-design.md, section 4). Only reactions after it is played
- * count. The settlement's is the pay and the largest-applies rule (a Hype-Up on the same post pays the same vote once, not twice); the
+ * Required Reading (Sweet, common, Gimmick on the player's own post): for a week, each calm positive vote on the post pays its author a
+ * vote more, to any class, then it ends by itself (docs/plans/2026-11-16-settlement-design.md, section 4). It counts votes from players
+ * who first react to the post while it is up. The settlement's is the pay and the largest-applies rule (a Hype-Up on the same post pays the same vote once, not twice); the
  * engine's is the week, the one-live-per-post stack and that the post is the player's own.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
