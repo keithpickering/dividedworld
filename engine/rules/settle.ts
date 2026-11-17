@@ -44,18 +44,26 @@
  *   or a spin), whose voter first reacted to that Act no earlier than the play. Of the flat earns that apply to one line the largest pays (a tie:
  *   the earliest play, then the smaller play id), as `tidy(flat * vote * votes)` with `{ card, flat }` in the entry's params. It follows the halving,
  *   where a skim and a ride do not, so a negative line (a vote that moved away) takes its pay back, and only where the voter first reacted while
- *   the play was up, so a play never costs its holder. An earn may be a cast card's on a character or a post.
+ *   the play was up. A take-back is priced by the largest flat earn that applies when the line is taken back, not by the play that paid it. For
+ *   earns that name quadrants every play that applies at a take-back also applied when the voter first reacted, so the character's flat boosts as
+ *   a whole never sum below zero; one play's own lines can, when a larger play paid and ended and a smaller one still up takes the share back. An
+ *   earn that names reaction kinds can take back what no play paid: a line carries one reaction kind, a paying line the kind of the voter's latest
+ *   reaction in that quadrant in the window, a take-back line the kind of their latest reaction there before it, so a play that names a kind can
+ *   take back a share that left under that kind though the share was paid under another or not at all, and the character can end below zero.
+ *   An earn may be a cast card's on a character or a post.
  * - A cushion play (a use card whose gimmick is `cushion`, or a cast card's), on a character or a post and not ended, with an `ends`, gives back
  *   `share` of a loss from a reaction: each earning of the character's own class that has a time, an Act of that character, a negative amount and
  *   positive `votes` (Earning.votes, the signed votes of the one reaction it pays for, which a class sets where it pays per vote), inside the play's
  *   [at, ends) on the character or on the Act, gets `tidy(-share * amount)` as `card.cushion` with `{ card, share }` in the entry's params, from the
  *   largest `share` that applies (a tie: the earliest play, then the smaller play id). It reads the class's own earnings only, never a boost, a card's
  *   payout or another cushion. So a gain taken back (a negative amount on negative votes) is no loss, a loss taken back (a positive amount) is none
- *   either, and an earning with no `votes` (a cost no reaction caused) is never cushioned. A cushioned loss that is later taken back is given back whole, since the
- *   engine is not handed who voted and cannot tie an earning to its voter's first reaction as a flat earn's vote is. So a voter who spreads one vote
- *   across the quadrants a class loses in, one reaction at a time, draws more cushion than the losses that stand: for a class that loses in n
- *   quadrants the excess is at most share * (1/2 + 1/3 + ... + 1/n) of a vote per voter and Act (a quarter of a vote for a half cushion and two loss
- *   quadrants, 0.42 for three, 0.54 for four), and it needs a reaction in each, since a reaction cannot be removed (the settlement design, section 3.2). It sits beside a flat earn and neither reads the other.
+ *   either, and an earning with no `votes` (a cost no reaction caused) is never cushioned. Each increase of a loss quadrant's share is a loss line
+ *   and is cushioned; each decrease is a take-back and is never cushioned again, since the engine is not handed who voted and cannot tie an earning
+ *   to its voter's first reaction as a flat earn's vote is. So any later reaction by the voter that shrinks a cushioned share, in another loss
+ *   quadrant or in a quadrant that is no loss, leaves cushion behind that no standing loss matches. The smallest case, measured, is a quarter of a vote
+ *   for a half cushion, when a cushioned loss's vote later spreads to one more quadrant, of either kind. The excess grows with each further
+ *   reaction the voter leaves on the Act, and is bounded only by the kinds of reaction there are, since a reaction cannot be removed (the
+ *   settlement design, section 3.2). It sits beside a flat earn and neither reads the other.
  * - A skim play (a cast card with a `skim`, a target post, a `quadrant` and an `ends`) pays its caster's character the skim's share of a vote, as
  *   `card.skim`, for each vote on the target in that quadrant after the play and before `ends` whose voter first reacted to the post after the
  *   play, never the caster's own player's, on a post that is not the caster's own player's. A vote moving out of the quadrant inside the
@@ -645,26 +653,27 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
 
   /* Flat earns: one pass over the window's votes, each read against the flat plays on its Act's character and on the Act, indexed once above, so
      the work grows with the votes and the plays on each. A vote line is `votes` of a vote (halved, and negative where a vote moved away). The
-     largest `flat` among the plays that apply pays; a play pays only for a voter who first reacted to the Act no earlier than the play, so a
-     line taken back was paid at the same or a larger size by the same play. */
+     largest `flat` among the plays that apply pays, a take-back as much as a pay, so a negative line is priced by the play that applies now, not
+     by the play that paid. A play pays only for a voter who first reacted to the Act no earlier than the play. For plays that name quadrants every
+     play applying at a take-back applied at the pay, so the character's flat boosts never sum below zero, though a smaller play still up can take
+     back more than it paid after a larger one has ended. A play that names reaction kinds can take back a share it never paid, since a line
+     carries one kind, and the character can end below zero. */
   if (flatsOn.size) {
     for (const v of windowVotes) {
       const t = actOf(v.act);
       const first = onAct.get(v.act)!.first.get(v.player)!;
       let best: Flat | undefined;
-      const consider = (list: readonly Flat[] | undefined) => {
+      for (const list of [flatsOn.get(t.character), flatsOn.get(v.act)]) {
         for (const g of list ?? []) {
           if (!(v.at >= g.from && v.at < g.ends) || first < g.from) continue;
           if (!(g.quadrants.includes(v.quadrant) || g.reactions.includes(v.kind))) continue;
           if (!(g.acts ? g.acts.includes(t.kind!) : isPost(t.kind!))) continue;
           if (!best || g.flat > best.flat || (g.flat === best.flat && (g.from < best.from || (g.from === best.from && g.play < best.play)))) best = g;
         }
-      };
-      consider(flatsOn.get(t.character));
-      consider(flatsOn.get(v.act));
+      }
       if (!best) continue;
-      const amount = tidy((best as Flat).flat * settings.vote * v.votes);
-      if (amount) contributions.push({ player: playerOf(t.character), character: t.character, reason: 'card.boost', amount, params: { card: (best as Flat).card, flat: (best as Flat).flat }, act: v.act, quadrant: v.quadrant, at: v.at });
+      const amount = tidy(best.flat * settings.vote * v.votes);
+      if (amount) contributions.push({ player: playerOf(t.character), character: t.character, reason: 'card.boost', amount, params: { card: best.card, flat: best.flat }, act: v.act, quadrant: v.quadrant, at: v.at });
     }
   }
 

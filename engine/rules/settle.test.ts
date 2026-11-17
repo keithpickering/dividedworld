@@ -1792,14 +1792,15 @@ test('a vote that moves away after the play ended takes back nothing, and one th
   const moved = settle(flatBoard([up], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 1 * H + 10), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: early.paid }), cardsWorld);
   assert.equal(boostTo(early, 'tom-1') + boostTo(moved, 'tom-1'), 0, 'a vote there before the play was never paid and takes nothing back');
 });
-test('over many seeded sequences of windows, a flat earn never costs its holder: its entries sum to zero or more, in the whole and after every window', () => {
+test('over many seeded sequences of windows, flat earns that name quadrants never cost the character: all its boost entries sum to zero or more, in the whole and after every window', () => {
   // A tiny LCG, so every run draws the same few hundred sequences.
   const lcg = (seed: number) => { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 2 ** 32; }; };
   const WINDOWS = 5;
   const voters = ['bob', 'cat', 'dee', 'eve', 'fay'];
   const kinds = ['tea', 'tomato', 'fire', 'heart', 'zzz'];
-  // Each entry is rounded to whole hundredths on its own, a half at most per entry; a take-back and its pay land in different windows' entries.
-  const tolerance = 0.5 * WINDOWS;
+  // Rounding is made to vanish, so the bound is exact: a vote of 720 times every share (a half, a third, a quarter, a fifth of a vote), halving weight (a half, a quarter)
+  // and flat (a quarter, a half, a whole) in these draws is a whole number, and no entry is ever rounded. A loss of any size, even one hundredth, fails.
+  const exact: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 720 } };
   let withTakeBack = 0;
   for (let seed = 1; seed <= 400; seed++) {
     const rand = lcg(seed);
@@ -1827,25 +1828,54 @@ test('over many seeded sequences of windows, a flat earn never costs its holder:
     }
     const windows = [...Array(WINDOWS)].map((_, k) => ({ id: `w${k}`, from: FROM + k * 24 * H, to: FROM + (k + 1) * 24 * H }));
     const paidSoFar = new Map<string, SettlementInput['paid'] extends readonly (infer P)[] | undefined ? P : never>();
-    const total = new Map<string, number>();
     let all = 0;
     let sawNegative = false;
     for (const [k, window] of windows.entries()) {
-      const r = settle(flatBoard(plays, reactions, [], { window, paid: [...paidSoFar.values()] }), cardsWorld);
+      const r = settle(flatBoard(plays, reactions, [], { window, paid: [...paidSoFar.values()] }), exact);
       for (const p of r.paid) paidSoFar.set(`${p.player}|${p.act}`, p);
       for (const e of boostsOf(r)) {
         assert.equal(e.character, 'tom-1');
-        const card = (e.params as { card: string }).card;
-        total.set(card, (total.get(card) ?? 0) + e.amount);
         all += e.amount;
         if (e.amount < 0) sawNegative = true;
       }
-      assert.ok(all >= -tolerance, `seed ${seed}: after window ${k} the play has cost its holder ${all}`);
+      assert.ok(all >= 0, `seed ${seed}: after window ${k} the plays have cost the character ${all}`);
     }
-    for (const [card, sum] of total) assert.ok(sum >= -tolerance, `seed ${seed}: ${card} summed to ${sum}`);
+    assert.ok(all >= 0, `seed ${seed}: the plays cost the character ${all}`);
+    // One play's own lines can sum below zero (the next test), so only the character's boosts as a whole are held to the bound.
     if (sawNegative) withTakeBack++;
   }
   assert.ok(withTakeBack >= 20, `the draws must include take-backs (${withTakeBack}), or the property is not tested`);
+});
+test('a take-back falls on the largest play still up, so one play\'s lines can sum below zero while the character\'s never do', () => {
+  // A vote of 400, so that no amount rounds. The larger play (heatChillFlat, a half) ends at +10h; the smaller (heatFlat, a quarter) stays up. Bob first reacts while both are up.
+  const bigVote: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 400 } };
+  const larger = onTom('big', 'heatChillFlat', FROM + 2 * H, FROM + 10 * H);
+  const smaller = onTom('small', 'heatFlat', FROM + 2 * H, FROM + 100 * H);
+  const first = settle(flatBoard([larger, smaller], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H)]), bigVote);
+  const second = settle(flatBoard([larger, smaller], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: first.paid }), bigVote);
+  const by = (card: string) => [first, second].flatMap((r) => boostsOf(r).filter((e) => (e.params as { card: string }).card === card)).reduce((t, e) => t + e.amount, 0);
+  assert.deepEqual([boostTo(first, 'tom-1'), boostTo(second, 'tom-1')], [200, -50], 'paid under the larger play, taken back under the smaller one that is still up');
+  assert.equal(by('heatChillFlat'), 200);
+  assert.equal(by('heatFlat'), -50);
+  assert.ok(by('heatFlat') < 0 && by('heatChillFlat') > 0, 'one play\'s lines sum below zero');
+  assert.equal(by('heatChillFlat') + by('heatFlat'), 150);
+  assert.ok(boostTo(first, 'tom-1') + boostTo(second, 'tom-1') > 0, 'the character\'s boosts as a whole are above zero');
+});
+// KNOWN SHORTFALL. A vote line carries one reaction kind: a paying line the kind of the voter's latest reaction in that quadrant in the window, a
+// take-back line the kind of their latest reaction in that quadrant before the window. So a play that names a reaction kind can take back a share
+// it never paid. Whether that is right is an open question for the owner (keithpickering/dividedworld#778); this test pins today's behavior so that a
+// change of rule shows up here.
+test('a flat earn that names a reaction kind can take back what it never paid', () => {
+  const bigVote: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 1200 } };
+  const play = onTom('g1', 'fireFlat', FROM + 2 * H, FROM + 100 * H);
+  const W3 = { id: 'wed', from: TO + 24 * H, to: TO + 48 * H };
+  const heart = react('tp1', 'bob', 'bob-1', 'heart', FROM + 5 * H);
+  const fire = react('tp1', 'bob', 'bob-1', 'fire', TO + 3 * H);
+  const away = react('tp1', 'bob', 'bob-1', 'tomato', TO + 24 * H + 3 * H);
+  const one = settle(flatBoard([play], [heart]), bigVote);
+  const two = settle(flatBoard([play], [heart, fire], [], { window: W2, paid: one.paid }), bigVote);
+  const three = settle(flatBoard([play], [heart, fire, away], [], { window: W3, paid: two.paid }), bigVote);
+  assert.deepEqual([one, two, three].map((r) => boostTo(r, 'tom-1')), [0, 0, -200], 'a heart is not the fire it names, the fire moves no share, and the third of a vote that then leaves is taken back as the fire: a half of 1200 times a third');
 });
 test('two flat earns on one vote, one on the character and one on the post, are one entry by the larger\'s card; a tie goes to the earlier play, then the smaller id', () => {
   const vote = [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)];
@@ -2076,4 +2106,13 @@ test('a voter who moves one vote across two loss quadrants draws a quarter of a 
   const given = sum([first, second], 'card.cushion');
   assert.equal(stands, -100, 'one vote stands as a loss of 100');
   assert.equal(given - -0.5 * stands, 25, 'the cushion gave 75 against the 50 that half of 100 is: a quarter of a vote over');
+});
+test('a voter who moves one vote from a loss quadrant to one that is no loss leaves the same quarter of a vote of cushion behind', () => {
+  const big: Instance = { ...cushionWorld, settings: { ...cushionWorld.settings, vote: 100 } };
+  const play = onTom('g1', 'softCushion', FROM + 2 * H, FROM + 100 * H);
+  const first = settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]), big);
+  const second = settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'tea', TO + 3 * H)], [], { window: W2, paid: first.paid }), big);
+  const sum = (rs: ReturnType<typeof settle>[], reason: string) => rs.flatMap((r) => r.details.filter((d) => d.character === 'tom-1' && d.reason === reason)).reduce((t, d) => t + d.amount, 0);
+  assert.equal(sum([first, second], 'voted.sting'), -50, 'half a vote of loss stands');
+  assert.equal(sum([first, second], 'card.cushion'), 50, 'the cushion given stays at 50, a quarter of a vote over half of what stands');
 });
