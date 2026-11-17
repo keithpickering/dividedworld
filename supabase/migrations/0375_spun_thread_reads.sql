@@ -831,7 +831,7 @@ create or replace view my_posts_written_on as
 alter table post_veils add column post_kind text;
 alter table post_veils disable trigger post_veils_no_update;
 update post_veils v set post_kind = (select a.kind from acts a where a.id = v.post);
-alter table post_veils enable trigger post_veils_no_update;
+alter table post_veils enable always trigger post_veils_no_update;
 alter table post_veils alter column post_kind set not null;
 create function post_veils_kind() returns trigger
 language plpgsql set search_path = public, pg_temp as $$

@@ -355,3 +355,18 @@ begin
   if not has_function_privilege('authenticated', 'post_kind(text)', 'execute') then raise exception '8 thread_page runs as the signed-in player, so authenticated may execute post_kind'; end if;
   if has_function_privilege('anon', 'post_kind(text)', 'execute') then raise exception '8 a visitor may execute post_kind'; end if;
 end $$;
+
+-- ---- 9. post_veils stays insert-only on a restore too ----
+-- 0375 turns post_veils_no_update off for its one fill of post_kind and on again. 0357 declared both guards `enable always`, so that they fire under
+-- session_replication_role = replica, which is how an import writes; a plain `enable` would leave a veil open to an update or a delete there.
+do $$
+declare bad text := '';
+  r record;
+begin
+  for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.post_veils'::regclass and t.tgname in ('post_veils_no_update', 'post_veils_no_truncate') and t.tgenabled <> 'A'
+  loop bad := bad || format(' trigger %s does not fire always;', r.tgname); end loop;
+  if (select count(*) from pg_trigger t where t.tgrelid = 'public.post_veils'::regclass and t.tgname in ('post_veils_no_update', 'post_veils_no_truncate')) is distinct from 2 then
+    bad := bad || ' an append-only trigger is missing;';
+  end if;
+  if bad <> '' then raise exception '9 post_veils is insert-only on a restore too:%', bad; end if;
+end $$;
