@@ -51,10 +51,11 @@
  *   [at, ends) on the character or on the Act, gets `tidy(-share * amount)` as `card.cushion` with `{ card, share }` in the entry's params, from the
  *   largest `share` that applies (a tie: the earliest play, then the smaller play id). It reads the class's own earnings only, never a boost, a card's
  *   payout or another cushion. So a gain taken back (a negative amount on negative votes) is no loss, a loss taken back (a positive amount) is none
- *   either, and an earning with no `votes` (a cost no reaction caused) is never cushioned. A loss later taken back is given back whole though half was
- *   cushioned, since the engine is not handed who voted and cannot tie an earning to its voter's first reaction as a flat earn's vote is; that happens
- *   only when a voter adds a reaction in another quadrant, so it is bounded under half a vote per voter and Act for a half cushion (the settlement
- *   design, section 3.2). It sits beside a flat earn and neither reads the other.
+ *   either, and an earning with no `votes` (a cost no reaction caused) is never cushioned. A cushioned loss that is later taken back is given back whole, since the
+ *   engine is not handed who voted and cannot tie an earning to its voter's first reaction as a flat earn's vote is. So a voter who spreads one vote
+ *   across the quadrants a class loses in, one reaction at a time, draws more cushion than the losses that stand: for a class that loses in n
+ *   quadrants the excess is at most share * (1/2 + 1/3 + ... + 1/n) of a vote per voter and Act (a quarter of a vote for a half cushion and two loss
+ *   quadrants, 0.42 for three, 0.54 for four), and it needs a reaction in each, since a reaction cannot be removed (the settlement design, section 3.2). It sits beside a flat earn and neither reads the other.
  * - A skim play (a cast card with a `skim`, a target post, a `quadrant` and an `ends`) pays its caster's character the skim's share of a vote, as
  *   `card.skim`, for each vote on the target in that quadrant after the play and before `ends` whose voter first reacted to the post after the
  *   play, never the caster's own player's, on a post that is not the caster's own player's. A vote moving out of the quadrant inside the

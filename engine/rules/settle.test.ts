@@ -2029,3 +2029,51 @@ test('the estimate shows the cushion\'s line at the reaction\'s time', () => {
   assert.deepEqual(estimate.entries.filter((e) => e.reason === 'card.cushion').map((e) => [e.params, e.amount]), [[{ card: 'softCushion' }, 5]]);
   assert.deepEqual(estimate.lines.filter((l) => l.reason === 'card.cushion').map((l) => [l.act, l.quadrant, l.at, l.amount]), [['tp1', 'boredNegative', FROM + 5 * H, 5]]);
 });
+
+/* Review round for Task 3. "stray" pays a loss of 10, with `votes`, for each reaction its character receives, but names the Act "up1", which is not
+   its character's own: a cushion keys on the Act an earning names, so only the owner check keeps it from reaching another character's loss. */
+const stray: ClassRules = {
+  key: 'stray',
+  name: 'Stray',
+  earn: (input) => input.received.map((r): Earning => ({ reason: 'stray.loss', amount: -10, votes: 1, act: 'up1', quadrant: r.quadrant, at: r.at })),
+};
+const strayWorld: Instance = { ...cushionWorld, classes: [...cushionWorld.classes, stray] };
+test('a cushion on an Act reaches a loss that names the Act only when the Act is the earning character\'s own', () => {
+  const input = cushionBoard([onPostBy('g1', 'bob-1', 'softCushion', 'up1', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H)], [], {
+    characters: [
+      { id: 'tom-1', player: 'tom', classes: [{ class: 'stray', from: 0 }] },
+      { id: 'uma-1', player: 'uma', classes: [{ class: 'quiet', from: 0 }] },
+      ...['bob', 'cat'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+  });
+  const r = settle(input, strayWorld);
+  assert.equal(amountOf(r, 'tom-1', 'stray.loss'), -10, 'the loss is there');
+  assert.equal(cushionsOf(r).length, 0, 'a cushion on uma\'s post never softens a loss of tom\'s');
+});
+test('a tie between a play on the Act and a play on the character goes to the Act\'s play when it is earlier, or at the same time has the smaller id', () => {
+  const loss = [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H)];
+  const cards = (e: ReturnType<typeof settle>) => cushionsOf(e).map((x) => (x.params as { card: string }).card);
+  const earlier = settle(cushionBoard([onPostBy('z', 'bob-1', 'softCushion', 'tp1', FROM + 2 * H), castOn('a', 'bob-1', 'softCushionB', FROM + 3 * H, 'tom-1')], loss), cushionWorld);
+  assert.deepEqual(cards(earlier), ['softCushion'], 'the Act\'s play is earlier, though its id is larger and the character\'s play is met first');
+  const smaller = settle(cushionBoard([onPostBy('a', 'bob-1', 'softCushion', 'tp1', FROM + 2 * H), castOn('b', 'bob-1', 'softCushionB', FROM + 2 * H, 'tom-1')], loss), cushionWorld);
+  assert.deepEqual(cards(smaller), ['softCushion'], 'at the same time the Act\'s play has the smaller id');
+});
+test('the same cushion play pays with an `ends` and not without one', () => {
+  const loss = [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)];
+  assert.equal(cushionTo(settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H, FROM + 10 * H)], loss), cushionWorld), 'tom-1'), 5, 'with an `ends` it pays');
+  /* The `ends !== undefined` guard where the plays are indexed is not what turns the `no ends` test red when it is removed: with no `ends`, the
+     window test `e.at < undefined` is false anyway. The pair shows the play is the same and only the `ends` differs. */
+  assert.equal(cushionTo(settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H, null)], loss), cushionWorld), 'tom-1'), 0, 'without one it pays nothing');
+});
+test('a voter who moves one vote across two loss quadrants draws a quarter of a vote more than a half cushion\'s share of the loss that stands', () => {
+  /* A vote is worth 100 here so that no half of a half rounds: the entries are whole numbers. */
+  const big: Instance = { ...cushionWorld, settings: { ...cushionWorld.settings, vote: 100 } };
+  const play = onTom('g1', 'softCushion', FROM + 2 * H, FROM + 100 * H);
+  const first = settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]), big);
+  const second = settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: first.paid }), big);
+  const sum = (rs: ReturnType<typeof settle>[], reason: string) => rs.flatMap((r) => r.details.filter((d) => d.character === 'tom-1' && d.reason === reason)).reduce((t, d) => t + d.amount, 0);
+  const stands = sum([first, second], 'voted.sting');
+  const given = sum([first, second], 'card.cushion');
+  assert.equal(stands, -100, 'one vote stands as a loss of 100');
+  assert.equal(given - -0.5 * stands, 25, 'the cushion gave 75 against the 50 that half of 100 is: a quarter of a vote over');
+});
