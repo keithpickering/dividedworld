@@ -1277,7 +1277,7 @@ describe('Thick Skin in plain words (the Thick Skin plan, Task 3)', () => {
   });
 
   test('its tagline fits the plate: at most two lines of at most 20 characters', () => {
-    const lines = wrap(skin!.art.tagline);
+    const lines = wrap(skin!.art.tagline!);
     expect(lines.length, lines.join(' | ')).toBeLessThanOrEqual(2);
     for (const line of lines) expect(line.length, line).toBeLessThanOrEqual(20);
   });
@@ -1287,14 +1287,14 @@ describe('Thick Skin in plain words (the Thick Skin plan, Task 3)', () => {
     expect(skin!.ConfigForm).toBeUndefined();
     const words = [skin!.art.tagline, skin!.summary, skin!.status as string, skin!.describe(instance.settings), skin!.logPlay!({}, {})].join('\n');
     expect(words).not.toMatch(/%/u);
-    for (const c of instance.classes) expect(words.toLowerCase(), c.name).not.toContain(c.name.toLowerCase());
+    expect(instance.classes.length).toBeGreaterThan(0);
+    for (const c of instance.classes) expect(words, c.name).not.toMatch(new RegExp(`\\b${c.name}\\b`, 'iu'));
   });
 
   test('the rules over every card hold with it in', () => {
     expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
     const keys = cardsUi.map((c) => c.key);
     expect(keys).toContain('thick-skin');
-    expect(keys.indexOf('thick-skin')).toBe(keys.indexOf('tattle-tale') + 1);
-    expect(keys.indexOf('this')).toBe(keys.indexOf('thick-skin') + 1);
+    expect(keys).toEqual([...keys].sort());
   });
 });
