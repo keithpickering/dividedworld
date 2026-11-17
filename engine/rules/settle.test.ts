@@ -1798,7 +1798,7 @@ test('over many seeded sequences of windows, flat earns that name quadrants neve
   const WINDOWS = 5;
   const voters = ['bob', 'cat', 'dee', 'eve', 'fay'];
   const kinds = ['tea', 'tomato', 'fire', 'heart', 'zzz'];
-  // Rounding is made to vanish, so the bound is exact: a vote of 720 times every share (a half, a third, a quarter, a fifth of a vote), halving weight (a half, a quarter)
+  // Rounding is made to vanish, so the bound is exact: a vote of 720 times every share (a half, a third, two thirds, a sixth of a vote), halving weight (a whole, a half)
   // and flat (a quarter, a half, a whole) in these draws is a whole number, and no entry is ever rounded. A loss of any size, even one hundredth, fails.
   const exact: Instance = { ...cardsWorld, settings: { ...cardsWorld.settings, vote: 720 } };
   let withTakeBack = 0;

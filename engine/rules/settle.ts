@@ -45,13 +45,13 @@
  *   the earliest play, then the smaller play id), as `tidy(flat * vote * votes)` with `{ card, flat }` in the entry's params. It follows the halving,
  *   where a skim and a ride do not, so a negative line (a vote that moved away) takes its pay back, and only where the voter first reacted while
  *   the play was up. A take-back is priced by the largest flat earn that applies when the line is taken back, not by the play that paid it. For
- *   earns that name quadrants every play that applies at a take-back also applied when the voter first reacted, so the character's flat boosts as
+ *   earns that name quadrants every play that applies at a take-back also applied when the share was paid, so the character's flat boosts as
  *   a whole never sum below zero; one play's own lines can, when a larger play paid and ended and a smaller one still up takes the share back. An
  *   earn that names reaction kinds can take back what no play paid: a line carries one reaction kind, a paying line the kind of the voter's latest
- *   reaction in that quadrant in the window, a take-back line the kind of their latest reaction there before it, so a play that names a kind can
+ *   reaction in that quadrant in the window, a take-back line the kind of their latest reaction there before the window, so a play that names a kind can
  *   take back a share that left under that kind though the share was paid under another or not at all, and the character can end below zero.
  *   An earn may be a cast card's on a character or a post.
- * - A cushion play (a use card whose gimmick is `cushion`, or a cast card's), on a character or a post and not ended, with an `ends`, gives back
+ * - A cushion play (a use card whose gimmick is `cushion`), on a character or a post and not ended, with an `ends`, gives back
  *   `share` of a loss from a reaction: each earning of the character's own class that has a time, an Act of that character, a negative amount and
  *   positive `votes` (Earning.votes, the signed votes of the one reaction it pays for, which a class sets where it pays per vote), inside the play's
  *   [at, ends) on the character or on the Act, gets `tidy(-share * amount)` as `card.cushion` with `{ card, share }` in the entry's params, from the
@@ -62,8 +62,9 @@
  *   to its voter's first reaction as a flat earn's vote is. So any later reaction by the voter that shrinks a cushioned share, in another loss
  *   quadrant or in a quadrant that is no loss, leaves cushion behind that no standing loss matches. The smallest case, measured, is a quarter of a vote
  *   for a half cushion, when a cushioned loss's vote later spreads to one more quadrant, of either kind. The excess grows with each further
- *   reaction the voter leaves on the Act, and is bounded only by the kinds of reaction there are, since a reaction cannot be removed (the
- *   settlement design, section 3.2). It sits beside a flat earn and neither reads the other.
+ *   reaction the voter leaves on the Act, and is bounded by how many one player may leave there (`settings.reactionCap`), since a reaction
+ *   cannot be removed: at a cap of 3 a half cushion leaves at most five twelfths of a vote behind for one voter on one Act (the settlement
+ *   design, section 3.2). It sits beside a flat earn and neither reads the other.
  * - A skim play (a cast card with a `skim`, a target post, a `quadrant` and an `ends`) pays its caster's character the skim's share of a vote, as
  *   `card.skim`, for each vote on the target in that quadrant after the play and before `ends` whose voter first reacted to the post after the
  *   play, never the caster's own player's, on a post that is not the caster's own player's. A vote moving out of the quadrant inside the
