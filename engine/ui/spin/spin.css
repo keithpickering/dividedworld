@@ -53,6 +53,9 @@
  * print on the box's own ground, under the content area and outside it, so no effect that fills the area passes under it. It takes no room while it is empty.
  */
 .kb-origin-foot {
+  /* Lifted by its own rule, not by an ancestor's: an effect that leaves the content area paints over the box, and never over what the moment says. */
+  position: relative;
+  z-index: 2;
   padding: 0 var(--kb-origin-inset) 0.4em;
 }
 

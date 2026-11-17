@@ -48,6 +48,19 @@ export function shownPlays(plays: readonly CardPlay[], now: number): readonly Ca
 }
 
 /**
+ * These plays as the ones named in `then` stood in a moment (an ORIGIN box draws them as they were, so an end or a failure since is no part of what it shows): those plays without `reversed`
+ * or `untaken`. The same array where nothing changes.
+ */
+export function asThen(plays: readonly CardPlay[], then: ReadonlySet<Id> | undefined): readonly CardPlay[] {
+  if (then === undefined || !plays.some((p) => (p.reversed || p.untaken) && then.has(p.id))) return plays;
+  return plays.map((p) => {
+    if (!then.has(p.id) || !(p.reversed || p.untaken)) return p;
+    const { reversed: _reversed, untaken: _untaken, ...kept } = p;
+    return kept;
+  });
+}
+
+/**
  * A card play, from its card Act or its set Act (a card back); null for any other Act, or a card Act with no card in it. A spring
  * is no play of its own: `Plays.add` reveals the back it names.
  */

@@ -218,10 +218,11 @@ test('3b. with a Whoops! moment in the box, the ink is solid in the area\'s bott
   await expect(list).toBeVisible();
   const a = await padBox(area(page));
   const l = await borderBox(list);
-  expect(l.top >= a.bottom - 0.5 || l.bottom <= a.top + 0.5 || l.left >= a.right - 0.5 || l.right <= a.left + 0.5, `the list's box (${JSON.stringify(l)}) does not intersect the area's (${JSON.stringify(a)})`).toBe(true);
+  expect(l.top >= a.bottom - 0.5 || l.bottom <= a.top + 0.5 || l.left >= a.right - 0.5 || l.right <= a.left + 0.5, `the list stands outside the content area: its box (${JSON.stringify(l)}) does not intersect the area's (${JSON.stringify(a)})`).toBe(true);
+  /* The corner is as solid as the wash saved in the story's moment (its ink there is untouched), so this asks only that the moment's ink is drawn there. */
   const atCorner = await inkAlpha(page, '.kb-origin canvas.kb-whoops-ink', a.left + 2, a.bottom - 2);
-  expect(atCorner, 'the ink at a point 2px inside the area\'s bottom-left corner').not.toBeNull();
-  expect(atCorner!, 'the ink is solid in the corner').toBeGreaterThan(40);
+  expect(atCorner, "the moment's ink canvas can be sampled at a point 2px inside the area's bottom-left corner").not.toBeNull();
+  expect(atCorner!, "the moment's ink is solid (drawn, not washed) at that corner of the area").toBeGreaterThan(40);
 });
 
 /*

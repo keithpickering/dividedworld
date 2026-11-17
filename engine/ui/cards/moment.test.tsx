@@ -7,7 +7,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect, useState } from 'react';
-import { LensProvider } from './Lens.tsx';
+import { LensProvider, useLensStore } from './Lens.tsx';
 import { fakeSound } from '../audio/test-sound.ts';
 import { resetSound, setSoundPreference } from '../audio/sound.ts';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -346,6 +346,34 @@ describe('Reset over a post', () => {
     await userEvent.click(screen.getByRole('button', { name: 'toggle' }));
     await screen.findByRole('button', { name: 'Reset' });
     expect(screen.getByRole('status').textContent).toBe('');
+    await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('As it landed again.'));
+  });
+
+  test("a view whose key changes to a moment with more runs behind it does not say 'As it landed again.' until a Reset is pressed on it", async () => {
+    const api = buildWorld({}, instance);
+    vi.spyOn(api, 'playMoment').mockResolvedValue(moment([{ act: card('k1', 'smear', 1), state: saved }]));
+    cards[0] = ui('smear', { Effect: Counted });
+    const kayfa = { api, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
+    const other: CardPlay = { ...play, id: 'k9' };
+    function Host() {
+      const lens = useLensStore();
+      const [shown, setShown] = useState(play);
+      return (
+        <article>
+          <button type="button" onClick={() => lens.reset('k9')}>reset the other</button>
+          <button type="button" onClick={() => setShown(other)}>show the other</button>
+          <MomentView play={shown} place="thread" onView={() => {}} nameOf={() => ''} bodyOf={() => <span>then</span>} back={() => {}} now={<span>now</span>} />
+        </article>
+      );
+    }
+    render(<KayfaProvider value={kayfa}><LensProvider><CalloutProvider met={[]}><Host /></CalloutProvider></LensProvider></KayfaProvider>);
+    await screen.findByRole('button', { name: 'Reset' });
+    await userEvent.click(screen.getByRole('button', { name: 'reset the other' }));
+    await userEvent.click(screen.getByRole('button', { name: 'show the other' }));
+    await screen.findByRole('button', { name: 'Reset' });
+    await waitFor(() => expect(mounted.length).toBeGreaterThan(1));
+    expect(screen.getByRole('status').textContent, "the other moment's earlier Reset is not said as this view's").toBe('');
     await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('As it landed again.'));
   });

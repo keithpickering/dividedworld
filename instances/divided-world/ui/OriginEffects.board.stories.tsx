@@ -8,7 +8,7 @@
  *   Whoops! play, so the box shows the play's moment, "as it landed", which is playable: a scrub washes its ink and Reset brings it back. `WhoopsPhone`: as `Whoops`, at the phone's width.
  * - `Fab`: one line with Feelin' Fab on it, live. `FabBright`: the same with a quote in it, Brighter effects on, and Feelin' Fab on the spin's opening
  *   post too.
- * - `GlitterSpun`: a Glitter Bomb on a character, spun from a post of theirs ("as it was spun"), its glitter live: a moment is playable (docs/plans/2026-11-16-playable-moments-design.md).
+ * - `GlitterSpun`: a Glitter Bomb on a character, spun from a post of theirs ("as it was spun"), its glitter live: a moment is playable (docs/plans/2026-11-16-playable-moments-design.md). `GlitterOverWhoops` (and its `Phone` twin): the same, the post carrying an older, part-washed Whoops!, so the box has a second strip of marks for it.
  * - `HotBoxLanded`, `ChairOverWhoops`: a thread spun from a Hot Box play, so the box shows its moment (a smoke to clear by hand), and from a Steel Chair play on a post with an older, part-washed Whoops!, so the box draws both cards and has two marks. Each has a `Phone` twin.
  * - `ChairLanded`: a post that reads `!` with Steel Chair on it, spun from the play, so the box shows the play's moment (issue #768). `ChairLandedPhone`: the same at the phone's width.
  * - `HotBox`: three lines with Hot Box on it, live. `Chair`: three lines with Steel Chair on it, live. `ChairShort`: one short line with Steel Chair.
@@ -50,7 +50,7 @@ declare global {
   }
 }
 
-type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'chair-landed' | 'chair-whoops' | 'under' | 'over';
+type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'chair-landed' | 'chair-whoops' | 'glitter-whoops' | 'under' | 'over';
 
 const DAY = 86_400_000;
 const MINUTE = 60_000;
@@ -106,7 +106,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
      A search over 60000 seeds for one that clears the threshold over a whole byline band and the corner at every size of that spread found none (a splat is centered, and the byline is a thin strip at the top-left), so the spec reads along the byline's own row for a run of solid ink and does not rely on one point. A splat is only where its seed put it. */
   const whoops = () => ({ layer: 1, live: true, config: { color: CYAN, seed: 2591 }, message: 'cyan, obviously' });
   fake.signInAs(player);
-  quiet = shown === 'under' || shown === 'bright' || shown === 'chair-landed' || shown === 'chair-whoops' || shown === 'hotbox-landed';
+  quiet = shown === 'under' || shown === 'bright' || shown === 'chair-landed' || shown === 'chair-whoops' || shown === 'hotbox-landed' || shown === 'glitter-whoops';
   /*
    * The opening post's own plays, seeded on the spin's own Act once the spin has answered: a spun thread's opening Act is a post for every card (cards on a spun
    * thread, docs/plans/2026-11-16-cards-on-a-spun-thread-design.md), so `FabBright`'s Feelin' Fab and `Under`'s Whoops! and Hot Box on the opening post are plays the
@@ -127,13 +127,23 @@ const worldOf = (shown: Case): World => (fake, instance) => {
       if (shown === 'over') fake.seed.post(answer.value.thread.id, mine, 'And a post of my own, so that the glitter on me is delivered with this page.');
     });
   };
-  if (shown === 'glitter') {
+  if (shown === 'glitter' || shown === 'glitter-whoops') {
     /* A card on a character, cast from a post of one thread and pressed on a post of that character's in another, as the spin-at-post stories do. */
     const cast = fake.seed.thread(board, author, 'Where the bomb was cast', 'The post the bomb was cast from.');
     const shiny = fake.seed.thread(board, mine, 'Why are my posts shiny', 'A post of mine.');
     const pressed = fake.seed.post(shiny.thread, author, THREE);
     const play = fake.seed.reach(caster, 'character', author, cardOf(instance.cards, 'glitter-bomb').key, { post: cast.act, ends: now + 5 * DAY, message: 'Sparkle.' });
-    spun(play, pressed);
+    if (shown === 'glitter') { spun(play, pressed); return; }
+    /* The pressed post carries an older, part-washed Whoops! (saved as its author, who is signed in only for it): the spin's moment draws it around the glitter, so the box has a second strip of marks beside the character's, for the post's own card. */
+    const older = fake.seed.card(caster, pressed, cardOf(instance.cards, 'whoops').key, whoops());
+    spun((async () => {
+      fake.clock.advance(MINUTE);
+      fake.signInAs(kooper);
+      const saved = await fake.saveEffect(older, author, { strokes: PARTLY });
+      fake.signInAs(player);
+      if (!saved.ok) throw new Error(`the wash was refused: ${saved.error}`);
+      return play;
+    })(), pressed);
     return;
   }
   if (shown === 'over') {
@@ -259,6 +269,10 @@ export const Fab: Story = of('fab');
 export const FabBright: Story = of('bright', { bright: true });
 /** Glitter Bomb on a character, spun from a post of theirs: the box shows it as it was spun. */
 export const GlitterSpun: Story = of('glitter');
+/** Glitter Bomb on a character, spun from a post of theirs that carries an older, part-washed Whoops!: the box shows the post as it was spun with both drawn, the character's mark and a second one for the post's Whoops!. */
+export const GlitterOverWhoops: Story = of('glitter-whoops');
+/** The same at the phone's width. */
+export const GlitterOverWhoopsPhone: Story = { ...of('glitter-whoops'), globals: phone };
 /** Hot Box on a three-line post, live. */
 export const HotBox: Story = of('hotbox');
 /** Steel Chair on a three-line post, live. */

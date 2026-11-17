@@ -208,7 +208,7 @@ export interface EffectProps {
   /**
    * Say what this card's state is on this post, for its mark and the Lens, or clear it with null. Bound to this post and
    * this card by the engine; an effect says it as often as its state changes, and equal views cost nothing. The engine clears
-   * it when the effect is gone.
+   * it when the effect is gone. Call it from a passive effect (`useEffect`): a moment's effect and the live effect it replaces say their views on one key, and the order that holds (the live one clears, then the moment's says its own) is that of passive effects' cleanup and mount.
    */
   readonly show: (view: CardView | null) => void;
   /** The reader has met this card's effect (the first-time callout). */

@@ -708,8 +708,10 @@ function MomentEffect({ Effect, card, at, onView, ...props }: Omit<EffectProps, 
   /* The caller's `onView` may be a new function every render; `show` is stable for the card, so an effect may list it in its dependencies. */
   const latest = useRef(onView);
   latest.current = onView;
-  const show = useCallback((view: CardView | null) => latest.current(card, view), [card]);
-  useEffect(() => () => latest.current(card, null), [card]);
+  /* A view is a post's, as on a live post (`BoundEffect`): a play above the post (the spun play, around the post of a character's spin) says none, so it cannot take the place of a post card of the same card key. */
+  const own = props.reach === 'post';
+  const show = useCallback((view: CardView | null) => { if (own) latest.current(card, view); }, [card, own]);
+  useEffect(() => () => { if (own) latest.current(card, null); }, [card, own]);
   useWarmSounds(ui.cards.find((c) => c.key === card)?.sounds);
   return <Suspense fallback={props.children}><Effect {...props} still={false} moment={moment} show={show} met={nothing} holdScreen={nothing} marks={null} save={momentSave} release={momentRelease} give={momentGive} moreGifts={momentMore} wallet={null} {...(surface ? { surface } : {})} /></Suspense>;
 }

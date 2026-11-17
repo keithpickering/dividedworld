@@ -204,29 +204,39 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     <button type="button" className="kb-origin-reset" onClick={(e) => { e.currentTarget.focus(); lens.reset(momentKey); }}>Reset</button>
   ) : null;
   /*
-   * What the moment's effects say reaches the box's strip, under the key the strip is drawn from (a card on a character is kept under the character), so a mark's Lens reads
-   * the moment's views as a post's reads its live effects'.
+   * What the moment's effects say reaches the strip of the post they are drawn on, under the moment's post: a mark's Lens reads the moment's views as a post's reads its live effects'. Only
+   * an effect on the post's own reach says a view (`MomentEffect`), so a card played on a character, drawn around the post as the spun play, says none to the character's strip or to any other.
    */
-  const stripKey = cardPlay ? (onCharacter ? homeOf(cardPlay) : cardPlay.post) : originId;
-  const onView = useCallback((card: string, view: CardView | null) => plays.setView(stripKey, card, view), [plays, stripKey]);
+  const postKey = kept === undefined || kept === null ? null : kept.version.id;
+  const onView = useCallback((card: string, view: CardView | null) => { if (postKey !== null) plays.setView(postKey, card, view); }, [plays, postKey]);
   /*
-   * A mark for each other card the moment draws (the Acts of its drawn plays join the box's store, kept by id so a box drawn again adds none twice): the Lens lists each of those plays as it
-   * stood then (`then`). A moment not read, or null, adds nothing; a card on a character is shown on the post of another thread, whose plays belong to no strip here.
+   * A mark for each card the moment draws on the post (the Acts of its drawn plays join the box's store, kept by id so a box drawn again adds none twice): the Lens lists each of those plays as it
+   * stood then (`then`). A moment not read, or null, adds nothing. The spun play's own row is the box's one strip's (keyed by its post); a card on a character is drawn around the post of another thread,
+   * so its strip is the character's, and the post's drawn plays are a second strip of their own beside it, keyed by the moment's post, every row of it a `then` row.
    */
   const shown = useMemo(() => {
-    if (cardPlay === null || onCharacter || kept === undefined || kept === null) return null;
+    if (cardPlay === null || kept === undefined || kept === null) return null;
     const drawn = new Set(momentParts(kept, instance.cards, ui.cards, () => '').drawn.map((p) => p.id));
     const acts = kept.layers.map((l) => l.act).filter((a) => drawn.has(a.id));
-    return { acts, then: new Set(acts.map((a) => a.id).filter((id) => id !== cardPlay.id)) as ReadonlySet<Id> };
-  }, [cardPlay, onCharacter, kept, instance.cards, ui.cards]);
+    return { acts, post: kept.version.id, then: new Set(acts.map((a) => a.id).filter((id) => id !== cardPlay.id)) as ReadonlySet<Id> };
+  }, [cardPlay, kept, instance.cards, ui.cards]);
   useEffect(() => { if (shown) plays.add(shown.acts); }, [plays, shown]);
   const link = <OriginLink place={summary.origin} perPage={perPage} {...(onCharacter ? { faces: characterOf } : {})} />;
+
+  /* A card on a character: the post's own drawn cards have a strip beside the character's, every row of it a `then` row (state, controls, Go to post). */
+  const to = cardPlay ? (pressed?.href ?? castFrom?.href ?? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null)) : backHref;
+  const postMarks = onCharacter && shown && shown.acts.length > 0 ? (
+    <PostMarks
+      post={shown.post} compare={false} moments={false} then={shown.then} plays={plays} to={to} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
+      onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
+    />
+  ) : null;
 
   /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
   const marks = act && (act.kind === 'card' ? cardPlay !== null : holdsEffects(act.kind)) ? (
     <PostMarks
-      post={cardPlay ? (onCharacter ? homeOf(cardPlay) : cardPlay.post) : originId} {...(onCharacter ? { where: 'character' } : {})} compare={cardPlay === null} moments={cardPlay === null} {...(shown ? { then: shown.then } : {})} plays={plays}
-      to={cardPlay ? (pressed?.href ?? castFrom?.href ?? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null)) : backHref}
+      post={cardPlay ? (onCharacter ? homeOf(cardPlay) : cardPlay.post) : originId} {...(onCharacter ? { where: 'character' } : {})} compare={cardPlay === null} moments={cardPlay === null} {...(shown && !onCharacter ? { then: shown.then } : {})} plays={plays}
+      to={to}
       nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
       onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
     />
@@ -296,7 +306,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
             {spinAt !== null && castFrom && <span className="kb-origin-head-line">Cast from <Link to={castFrom.href}>{castFrom.words}</Link></span>}
           </span>
           {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}
-          {marks}
+          {marks}{postMarks}
         </p>
         {(content !== null || note) && (
           <div className="kb-origin-area" data-kb-content-area>

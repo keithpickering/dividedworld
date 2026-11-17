@@ -35,7 +35,7 @@ import type { LensForm } from './Forms.tsx';
 import { VisitMark } from './Visit.tsx';
 import { VISIT_KIND } from './visit.ts';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
-import { inPlayOrder, isBack, keepingKeys, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
+import { asThen, inPlayOrder, isBack, keepingKeys, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 import '../glass/meta-tile.css';
 /* The back's cloud is postcard.css's, which marks.css draws over, so it loads first. */
@@ -87,9 +87,11 @@ interface MarkProps {
   readonly where: string;
   /** When the post was written, where it is a character's postbit: the mark's view reads only the plays that fall on that post (as the strip's `postAt`). */
   readonly postAt?: string;
+  /** Plays shown as they stood in a moment (`PostMarks.then`): an end since is no part of what the mark says. */
+  readonly then?: ReadonlySet<Id>;
 }
 
-const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf, where, postAt }: MarkProps) {
+const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf, where, postAt, then }: MarkProps) {
   const { instance, ui } = useKayfa();
   const back = isBack(kind);
   /* A card back that sprang shows the card it was, in its place: no mark moves (the card mechanic's design, section 4). */
@@ -97,7 +99,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const shownKind = revealed ?? kind;
   const rules = instance.cards.find((c) => c.key === shownKind);
   const cardUi = ui.cards.find((c) => c.key === shownKind);
-  const view = useResolvedView(store, post, kind, nameOf, postAt);
+  const view = useResolvedView(store, post, kind, nameOf, postAt, then);
   const more = useOutdrawing(tallies, plays, postTotal, compare);
   const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
@@ -199,12 +201,14 @@ export interface MarkStripProps {
   readonly compare?: boolean;
   /** A character's name, for a card back's (who set it). */
   readonly nameOf?: (character: Id | null) => string;
+  /** Plays shown as they stood in a moment and not as the post has them (`PostMarks.then`): their ends since are not shown. */
+  readonly then?: ReadonlySet<Id>;
   /** The post's visit, if it has one: its mark is first in the strip, ahead of the card kinds (Visit.tsx), and takes a place of the room the cards have. */
   readonly visit?: { readonly visit: Visit; readonly mod: string; readonly pronouns: PronounSet };
 }
 
 /** One mark per kind of card played on the post, "+N" for the kinds past the strip's room, and the ghost mark while an armed card can land here. */
-export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, reachAt, where = reachAt?.reach ?? 'post', postAt, compare = true, nameOf, visit }: MarkStripProps) {
+export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, reachAt, where = reachAt?.reach ?? 'post', postAt, compare = true, nameOf, then, visit }: MarkStripProps) {
   const here = usePlays(plays, post);
   const narrow = useNarrow();
   /* A strip a takeover hosts (Stick Around's view) offers no ghost mark: its play form would open under the view. */
@@ -231,7 +235,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
   const { api, instance } = useKayfa();
   /* A play beyond a post goes at its end, by itself: no reread (its way out). */
   const now = useUntil(here.billed);
-  const billed = useMemo(() => markedPlays(shownPlays(here.billed, api.now()), now, keepingKeys(instance.cards), postAt), [here.billed, now, api, instance.cards, postAt]);
+  const billed = useMemo(() => markedPlays(shownPlays(asThen(here.billed, then), api.now()), now, keepingKeys(instance.cards), postAt), [here.billed, now, api, instance.cards, postAt, then]);
   const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);
@@ -246,7 +250,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
     <span className="kb-marks" ref={strip}>
       {visit && <VisitMark visit={visit.visit} mod={visit.mod} pronouns={visit.pronouns} expanded={open === VISIT_KIND} onOpen={press} />}
       {shown.map((kind) => (
-        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} where={where} postAt={postAt} />
+        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} where={where} postAt={postAt} then={then} />
       ))}
       {hidden.length > 0 && <More hidden={hidden.length} first={hidden[0]!} expanded={open !== null && hidden.includes(open)} onOpen={press} />}
       {ghost && !hosted && <GhostMark act={ghost} />}
@@ -304,7 +308,7 @@ export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghos
   const form = ask !== null && open?.card === ask.form.kind ? ask.form : undefined;
   return (
     <span className="kb-marks-anchor" ref={anchor}>
-      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} postAt={postAt} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod), pronouns: modPronouns } : undefined} />
+      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} postAt={postAt} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} then={then} visit={current ? { visit: current, mod: nameOf(current.mod), pronouns: modPronouns } : undefined} />
       <Layers>
       {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} author={author} faceOf={faceOf} modPronouns={modPronouns} strip={strip} onSpin={onSpin} where={where} postAt={postAt} moments={moments} then={then} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} reportTo={reportTo} />}
       </Layers>

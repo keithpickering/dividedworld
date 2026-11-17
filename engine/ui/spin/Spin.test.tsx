@@ -1,6 +1,6 @@
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect } from 'react';
+import { StrictMode, useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { CARD_NOT_ON_POST } from './SpinForm.tsx';
 import { Swapper, openThread, threadWorld } from '../composer/support.tsx';
@@ -15,6 +15,7 @@ import type { CardUi, EffectProps } from '../cards/types.ts';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { bodyOf, liftedOver } from '../cards/body.ts';
+import spinCss from './spin.css?raw';
 
 beforeEach(() => {
   localStorage.clear();
@@ -798,6 +799,12 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect([...box.children].map((c) => c.className)).toEqual(['kb-origin-head', 'kb-origin-area', 'kb-origin-foot']);
   });
 
+  test("the box's foot is lifted by its own rule, so an effect that leaves the content area cannot paint over what the moment says", () => {
+    const rule = /\.kb-origin-foot\s*\{([^}]*)\}/u.exec(spinCss)![1]!;
+    expect(rule).toMatch(/position:\s*relative/u);
+    expect(rule).toMatch(/z-index:\s*2/u);
+  });
+
   test('a box spun from a post has no Reset, and neither has a box with no moment to show', async () => {
     const { w } = await spunFromHold();
     const fromPost = await spinFrom(w, w.ids[1]!, 'About the post');
@@ -844,6 +851,8 @@ describe('the ORIGIN box of a play-spun thread', () => {
 
   test("a moment that draws two cards shows two marks; the spun play's row keeps React and Spin thread, the other's has neither and Go to post, with its effect's controls in the Act section", async () => {
     const { w, spun } = await spunFromTwo();
+    /* An admin sees End this card on a live play's row, and on none of the moment's other rows. */
+    w.fake.seed.admin(w.me);
     openTwo(w, spun);
     const box = await origin();
     await waitFor(() => expect(marks(box).sort()).toEqual(['smear:1', 'whoops:1']));
@@ -852,19 +861,25 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect(await within(lens).findByText('smear view')).toBeInTheDocument();
     await userEvent.click(within(lens).getByRole('button', { name: 'smear press' }));
     expect(presses.smear).toHaveBeenCalledTimes(1);
-    await userEvent.click(within(lens).getByRole('button', { name: /^1 play · Spritey/u }));
+    const smearFold = within(lens).getByRole('button', { name: /^1 play · Spritey/u });
+    expect(smearFold).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(smearFold);
+    expect(smearFold).toHaveAttribute('aria-expanded', 'true');
     expect(within(lens).queryByRole('button', { name: 'React' })).toBeNull();
     expect(within(lens).queryByRole('button', { name: 'Spin thread' })).toBeNull();
     expect(within(lens).queryByRole('button', { name: 'As it landed' })).toBeNull();
-    expect(within(lens).getByRole('link', { name: 'Go to post' })).toBeInTheDocument();
+    expect(within(lens).queryByRole('button', { name: 'End this card' })).toBeNull();
+    expect(within(lens).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', threadHref(w.thread, pageOf(2, 20), 2));
     await userEvent.click(within(box).getByRole('button', { name: /^Smear, 1 play/u }));
     await userEvent.click(within(box).getByRole('button', { name: /^Whoops!?, 1 play/u }));
     lens = screen.getByRole('dialog', { name: 'Cards on this post' });
     expect(await within(lens).findByText('whoops view')).toBeInTheDocument();
     const fold = within(lens).getByRole('button', { name: /^1 play · Spritey/u });
-    if (fold.getAttribute('aria-expanded') !== 'true') await userEvent.click(fold);
+    /* The spun play's row is open on its own (the box's own play), the other's is folded until pressed. */
+    expect(fold).toHaveAttribute('aria-expanded', 'true');
     expect(within(lens).getByRole('button', { name: 'React' })).toBeEnabled();
     expect(within(lens).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
+    expect(within(lens).getByRole('button', { name: 'End this card' })).toBeInTheDocument();
   });
 
   test('a moment that draws only the spun play shows one mark, as before', async () => {
@@ -878,15 +893,13 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect(marks(box)).toEqual(['whoops:1']);
   });
 
-  test("leaving the thread and coming back does not add the moment's plays twice", async () => {
+  test("the adding effect running twice in one mount (StrictMode) adds the moment's plays once", async () => {
     const { w, spun } = await spunFromTwo();
-    const first = openTwo(w, spun);
-    await waitFor(() => expect(marks(document.body).sort()).toEqual(['smear:1', 'whoops:1']));
-    first.unmount();
-    openTwo(w, spun);
+    renderIn(w.fake, <StrictMode><LoadedThread thread={spun} /></StrictMode>, { path: `/t/${spun}`, instance: twoInstance, cards: twoCards });
     const box = await origin();
     await waitFor(() => expect(marks(box).sort()).toEqual(['smear:1', 'whoops:1']));
     await settle();
+    /* A play added twice would be two plays on its mark. */
     expect(marks(box).sort()).toEqual(['smear:1', 'whoops:1']);
   });
 
@@ -1246,8 +1259,8 @@ describe('a thread spun from a card on a character', () => {
   const glitterCards: CardUi[] = [{ key: 'glint', art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Glitter.', Effect: Glitter }];
 
   /* Zed's first post (in "Kart tier list") is where Spritey's Glint was cast from; the post a reader presses it on is Zed's second in "Why are my posts shiny". */
-  function world() {
-    const fake = createFake({ instance: glitterInstance, now: () => Date.now() });
+  function world(instance: Instance = glitterInstance) {
+    const fake = createFake({ instance, now: () => Date.now() });
     const me = fake.seed.account('me');
     const other = fake.seed.account('other');
     const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
@@ -1443,6 +1456,64 @@ describe('a thread spun from a card on a character', () => {
     expect(await within(frame).findByText('pressed words')).toBeInTheDocument();
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
     expect(readsMade(spies)).toEqual([]);
+  });
+
+  /* The post the pressed spin shows carries an older card too (a Whoops!): the box draws it, so it has a mark of its own, keyed by the post, beside the character's. */
+  describe('with older cards on the post', () => {
+    const inked: Instance = { ...testInstance, cards: [glint, { ...testInstance.cards[0]!, stack: 3 }] };
+    const said = { glint: vi.fn(), whoops: vi.fn() };
+    const Voiced = (key: 'glint' | 'whoops') => function Effect({ show, children }: EffectProps) {
+      useEffect(() => { show({ progress: null, state: `${key} view`, yours: false, controls: [{ kind: 'press', label: `${key} press`, run: said[key] }], notes: {} }); }, [show]);
+      return <div data-kb-voiced={key}>{children}</div>;
+    };
+    const art = { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' };
+    const inkedCards: CardUi[] = [
+      { key: 'glint', art, describe: () => 'Glitter.', Effect: Voiced('glint') },
+      { key: 'whoops', art, describe: () => 'x', Effect: Voiced('whoops') },
+    ];
+    const openInked = (w: World, thread: string) => renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: inked, cards: inkedCards });
+
+    test("a mark for the post's own card stands beside the character's; its row is a then row with the effect's controls and Go to post, and the spun play's effect says nothing to either strip", async () => {
+      const w = world(inked);
+      w.fake.seed.card(w.spritey, w.pressed, 'whoops', { message: 'ink' });
+      w.fake.clock.advance(60_000);
+      const thread = await spun(w, w.pressed);
+      openInked(w, thread);
+      const box = await origin();
+      await waitFor(() => expect(marks(box).sort()).toEqual(['glint:1', 'whoops:1']));
+      expect(box.querySelectorAll('.kb-marks-anchor')).toHaveLength(2);
+      await userEvent.click(within(box).getByRole('button', { name: /^Whoops!?, 1 play/u }));
+      let lens = screen.getByRole('dialog', { name: 'Cards on this post' });
+      expect(await within(lens).findByText('whoops view')).toBeInTheDocument();
+      expect(within(lens).queryByText('glint view')).toBeNull();
+      await userEvent.click(within(lens).getByRole('button', { name: 'whoops press' }));
+      expect(said.whoops).toHaveBeenCalledTimes(1);
+      const fold = within(lens).getByRole('button', { name: /^1 play · Spritey/u });
+      expect(fold).toHaveAttribute('aria-expanded', 'false');
+      await userEvent.click(fold);
+      expect(within(lens).queryByRole('button', { name: 'React' })).toBeNull();
+      expect(within(lens).queryByRole('button', { name: 'Spin thread' })).toBeNull();
+      expect(within(lens).queryByRole('button', { name: 'As it landed' })).toBeNull();
+      expect(within(lens).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', href(w.shiny.thread, 2));
+      await userEvent.click(within(box).getByRole('button', { name: /^Whoops!?, 1 play/u }));
+      await userEvent.click(within(box).getByRole('button', { name: /^Glint, 1 play/u }));
+      lens = screen.getByRole('dialog', { name: 'Cards on this character' });
+      await settle();
+      expect(within(lens).queryByText('glint view')).toBeNull();
+      expect(within(lens).queryByText('whoops view')).toBeNull();
+      expect(said.glint).not.toHaveBeenCalled();
+    });
+
+    test('a character-spun box whose post carries no card has no second strip', async () => {
+      const w = world(inked);
+      const thread = await spun(w, w.pressed);
+      openInked(w, thread);
+      const box = await origin();
+      await within(box).findByRole('group', { name: /^As it was spun/u });
+      await settle();
+      expect(marks(box)).toEqual(['glint:1']);
+      expect(box.querySelectorAll('.kb-marks-anchor')).toHaveLength(1);
+    });
   });
 });
 

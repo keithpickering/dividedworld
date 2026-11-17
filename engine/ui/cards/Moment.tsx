@@ -231,8 +231,10 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source, onV
   /* Reset: each run of the moment's effects is keyed by the run, so a press remounts every one from the moment's states; the read moment is kept. */
   const lens = useLensStore();
   const run = useSyncExternalStore(lens.subscribe, () => lens.run(key), () => 0);
-  /* The store's run outlives the view (Back to now, then As it landed again reopens it), so the status is said only of a Reset pressed while this view is mounted. */
-  const runAtMount = useRef(run);
+  /* The store's run outlives the view (Back to now, then As it landed again reopens it), so the status is said only of a Reset pressed while this view is mounted on this key. */
+  /* Kept with the key it was taken for: a view given another moment (a new key) takes the run that moment has then as its own start. */
+  const runAtMount = useRef({ key, run });
+  if (runAtMount.current.key !== key) runAtMount.current = { key, run };
   if (read.status !== 'read' || read.moment === null) {
     return (
       <MomentFrame frame={frame} play={play} at={source ? undefined : play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} unrecorded={false}>
@@ -244,7 +246,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source, onV
   const moment = read.moment;
   const parts = momentParts(moment, instance.cards, ui.cards, nameOf);
   return (
-    <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} reset={() => lens.reset(key)} run={run - runAtMount.current} own={parts.own} named={parts.named} unrecorded={!moment.recorded} listInto={listInto}>
+    <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} reset={() => lens.reset(key)} run={run - runAtMount.current.run} own={parts.own} named={parts.named} unrecorded={!moment.recorded} listInto={listInto}>
       <MomentEffects key={run} moment={moment} place={place} nameOf={nameOf} onView={onView}>{bodyOf(moment.version)}</MomentEffects>
     </MomentFrame>
   );
