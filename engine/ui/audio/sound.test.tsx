@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { captions } from './captions.ts';
-import { CAPTION_MS, HELD_FROM, resetSound, setSoundPreference, useSound } from './sound.ts';
+import { CAPTION_MS, HELD_FROM, resetSound, setSoundPreference, useSound, useWarmSounds } from './sound.ts';
 import type { AudioContextLike, GainNodeLike, SourceLike } from './mixer.ts';
 import type { SoundSlot } from './types.ts';
 
@@ -339,5 +339,56 @@ describe('the page sound', () => {
       expect(await result.current.play('nope')).toBeNull();
       expect(captions.current()).toBeNull();
     } finally { vi.unstubAllEnvs(); }
+  });
+});
+
+describe('the page warms the sounds a screen names', () => {
+  const warmSlots = [slot('a', 'game'), slot('b', 'game'), slot('c', 'game')];
+  const warmWrap = withWarmSlots(warmSlots);
+  function withWarmSlots(slots: SoundSlot[]) {
+    return ({ children }: { readonly children: ReactNode }) => (
+      <KayfaProvider value={{ ui: { sounds: { slots } } } as unknown as Kayfa}>{children}</KayfaProvider>
+    );
+  }
+
+  test('useWarmSounds fetches the named sounds and no others, and makes no context before a gesture', () => {
+    on('game');
+    renderHook(() => useWarmSounds(['a', 'b']), { wrapper: warmWrap });
+    expect(fetchBytes.mock.calls.map((c) => (c as unknown[])[0]).sort()).toEqual(['/a.mp3', '/b.mp3']);
+    expect(makeContext).not.toHaveBeenCalled();
+  });
+
+  test('an unknown key is skipped and does not throw in development', () => {
+    expect(import.meta.env.DEV).toBe(true);
+    on('game');
+    expect(() => renderHook(() => useWarmSounds(['a', 'nope']), { wrapper: warmWrap })).not.toThrow();
+    expect(fetchBytes.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['/a.mp3']);
+  });
+
+  test('rendering again with an equal but new array fetches nothing more', () => {
+    on('game');
+    const { rerender } = renderHook(({ keys }: { keys: string[] }) => useWarmSounds(keys), { wrapper: warmWrap, initialProps: { keys: ['a', 'b'] } });
+    expect(fetchBytes).toHaveBeenCalledTimes(2);
+    rerender({ keys: ['a', 'b'] });
+    expect(fetchBytes).toHaveBeenCalledTimes(2);
+  });
+
+  test('a play the mixer answers late says the game caption for CAPTION_MS', async () => {
+    vi.useFakeTimers();
+    try {
+      let t = 0;
+      resetSound({ makeContext, fetchBytes, now: () => (t += 1000) });
+      on('game');
+      const { result } = renderHook(() => useSound(), { wrapper: wrap });
+      await gesture();
+      let played: { lengthMs: number } | null = { lengthMs: 0 };
+      await act(async () => { played = await result.current.play('boo', { lateMs: 10 }); });
+      expect(played).toBeNull();
+      expect(captions.current()).toMatchObject({ text: 'boo caption', held: false });
+      act(() => { vi.advanceTimersByTime(CAPTION_MS - 1); });
+      expect(captions.current()?.text).toBe('boo caption');
+      act(() => { vi.advanceTimersByTime(2); });
+      expect(captions.current()).toBeNull();
+    } finally { vi.useRealTimers(); }
   });
 });

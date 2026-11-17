@@ -99,6 +99,7 @@ const realDeps: MixerDeps = {
     if (!r.ok) throw new Error(`the sound ${src} answered ${r.status}`);
     return r.arrayBuffer();
   },
+  now: () => performance.now(),
 };
 
 let page = createSound(realDeps);
@@ -115,8 +116,11 @@ export function setSoundPreference(p: SoundPreference): void {
 }
 
 export interface SoundPlay {
-  /** Plays the slot through the mixer and says its caption. Resolves with what the mixer answered (null when nothing sounded). */
-  play(key: string, opts?: { group?: string; fadeMs?: number; tailMs?: number }): Promise<{ lengthMs: number } | null>;
+  /**
+   * Plays the slot through the mixer and says its caption. Resolves with what the mixer answered (null when nothing sounded). A play
+   * the mixer drops for being later than `lateMs` answers null like any skipped play, so it is captioned through the game-bus branch below.
+   */
+  play(key: string, opts?: { group?: string; fadeMs?: number; tailMs?: number; lateMs?: number }): Promise<{ lengthMs: number } | null>;
   /**
    * Starts a loop and returns its handle at once; the handle works before the sound has loaded (a gain set meanwhile applies when it does, the
    * latest winning; a `stop` meanwhile means it never sounds). The loop starts silent, and `setGain` holds the slot's caption under `id` while
@@ -136,6 +140,24 @@ function missing(key: string): void {
 const INERT: LoopHandle = { setGain() { /* nothing sounds */ }, stop() { /* nothing sounds */ } };
 
 const wordsOf = (slot: SoundSlot) => ({ text: slot.caption, ...(slot.ink ? { ink: slot.ink } : {}) });
+
+/**
+ * Warm the sounds a screen or a card is about to use, so they are fetched (and decoded once the page unlocks) before anything plays
+ * them (docs/plans/2026-11-17-sound-preload-design.md). A key the instance does not supply is skipped silently, since the instance's
+ * own checks hold that there is none; this never throws, even in development. The effect depends on the keys joined, so a new array
+ * of the same keys does not warm again.
+ */
+export function useWarmSounds(keys: readonly string[] | undefined): void {
+  const sounds = useKayfa().ui.sounds;
+  const joined = (keys ?? []).join('\n');
+  useEffect(() => {
+    if (!joined) return;
+    const wanted = new Set(joined.split('\n'));
+    const slots = (sounds?.slots ?? []).filter((s) => wanted.has(s.key));
+    page.arm();
+    page.mixer.warm(slots);
+  }, [joined, sounds]);
+}
 
 export function useSound(): SoundPlay {
   const sounds = useKayfa().ui.sounds;

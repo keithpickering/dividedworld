@@ -18,6 +18,6 @@ export function fakeSound(): { readonly fetched: ReturnType<typeof vi.fn>; reado
     createGain: () => ({ gain: param(), connect: vi.fn(), disconnect: vi.fn() }),
     createBufferSource: () => { const s = { buffer: null, loop: false, onended: null, connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(), stop: vi.fn() }; sources.push(s); return s; },
   });
-  resetSound({ makeContext, fetchBytes: fetched });
+  resetSound({ makeContext, fetchBytes: fetched, now: () => 0 });
   return { fetched, sources };
 }
