@@ -532,12 +532,13 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       latest.current.met();
     };
 
-    /* While a run stands: the post wholly leaving the view clears the run, and the box's size is watched. */
-    const startWatching = (): void => {
-      stopLeave = watchInView(el, (showing) => { if (!showing) clearRun(true); });
+    /* The box's size is watched while a run stands, and also while the box measures nothing when the run arms (hidden, collapsed, a box not
+       laid out yet): the run starts when the box gets a size. Kept from the one run to the next only by `clearRun`'s disconnect; a second
+       call while an observer is bound binds nothing. */
+    const watchSize = (): void => {
       if (size || typeof ResizeObserver !== 'function') return;
       size = new ResizeObserver(() => {
-        if (!world) return;
+        if (!world) { if (measure()) startRun(); return; }
         const was = box;
         if (!measure()) return;
         resize(world, box.w - 2 * INSET, box.h - INSET, box.h - INSET);
@@ -555,11 +556,16 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       size.observe(el);
       if (body) size.observe(body);
     };
+    /* While a run stands: the post wholly leaving the view clears the run, and the box's size is watched. */
+    const startWatching = (): void => {
+      stopLeave = watchInView(el, (showing) => { if (!showing) clearRun(true); });
+      watchSize();
+    };
 
     const startRun = (): void => {
       if (running) return;
       measure();
-      if (box.w <= 0 || box.h <= 0) return;
+      if (box.w <= 0 || box.h <= 0) { watchSize(); return; }
       running = true;
       loud = !reduced;
       const seed = freshSeed();
@@ -617,6 +623,8 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
     const stopArm = watchInView(el, (showing) => {
       clearTimeout(armTimer);
       armTimer = undefined;
+      /* A post that left the view before its box got a size waits for nothing: the arming observer starts it again. */
+      if (!showing && !running) { size?.disconnect(); size = null; }
       if (!showing || running) return;
       if (reduced) startRun(); else armTimer = setTimeout(startRun, ARM_MS);
     }, { rootMargin: ARM_ZONE });

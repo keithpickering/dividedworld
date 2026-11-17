@@ -1336,6 +1336,19 @@ describe('a moment', () => {
     expect(dentAt()).not.toEqual(first);
   });
 
+  test('a box that measures nothing when the run arms starts the run when it gets a size, while the post stays in view', () => {
+    size = { h: 0 };
+    mount({ plays: [play(1)], moment: AT });
+    see(true); aim(true);
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(groups(), 'nothing is thrown at zero').toHaveLength(0);
+    size = { h: 200 };
+    act(() => { for (const r of sized) r.cb(); });
+    settled();
+    expect(groups(), 'the run starts when the box has a size').toHaveLength(1);
+    expect(dents()).toHaveLength(1);
+  });
+
   test('met is never called, and nothing is saved or released', () => {
     mount({ plays: [play(1), play(2)], moment: AT });
     run();
@@ -1530,7 +1543,11 @@ describe('nobody is special', () => {
 
   test('props that differ only in reader render the same', () => {
     const html = (reader: EffectProps['reader']) => {
+      pin(PINNED_SEED);
       const w = mount({ plays: [play(1), play(2)], moment: AT, reader });
+      run();
+      expect(groups(), 'both chairs are thrown').toHaveLength(2);
+      expect(dents(), 'and both dents drawn').toHaveLength(2);
       const out = (document.querySelector('.dw-chair') as HTMLElement).outerHTML.replace(/id="[^"]*"/gu, 'id=""').replace(/url\(&quot;#[^)]*\)/gu, 'url()');
       w.unmount();
       return out;

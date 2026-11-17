@@ -341,7 +341,7 @@ test('three staggered throws into the narrowest rooms, among them the slowest an
       assert.ok(riseOf(b, h) <= REST_RISE, `${w} by ${h}, seed ${seed}: body ${b.id} sleeps ${riseOf(b, h)} px above the floor (REST_RISE ${REST_RISE})`);
     }
   }
-  /* The reduced and moment pictures settle for SETTLE_S and ignore whether it was enough: a world that needed more would be drawn with a chair in mid-air. */
+  /* The reduced picture settles for SETTLE_S and ignore whether it was enough: a world that needed more would be drawn with a chair in mid-air. */
   assert.ok(slowest <= SETTLE_S / 2, `the slowest world took ${slowest.toFixed(2)} s to sleep, past half of SETTLE_S ${SETTLE_S}`);
   console.log(`# the slow rooms: the most nudges one body needed was ${most}, the slowest world slept at ${slowest.toFixed(2)} s`);
 });
