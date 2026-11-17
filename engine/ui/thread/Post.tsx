@@ -19,7 +19,7 @@ import { effectsOf } from '../cards/land.ts';
 import { livePlays, usePlays } from '../cards/plays.ts';
 import type { CardPlay } from '../cards/types.ts';
 import { quoteStop } from '../../rules/cards.ts';
-import type { Instance } from '../../rules/types.ts';
+import { isPost, type Instance } from '../../rules/types.ts';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act, Id, MyHiddenVersion, Visit } from '../data/api.ts';
 import { useNarrow } from '../media.ts';
@@ -284,7 +284,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   /* "Report to admins" at the foot of the post's Lens: for a post (a spin's first Act is no version the server takes) whose current version is not hidden, whoever wrote it. Its current version is the post itself until it is edited, and read when the dialog opens after. */
   const reportTo = act.kind === 'post' && act.hidden !== true ? { post: act.id, version: act.editedAt === null ? act.id : null, kicker: `Post #${seq} by ${spoken}, current version` } : undefined;
   /* The strip is drawn on the date row, and again by a card that lifts the post out of its thread (Stick Around): the same node, each with its own Lens owner. */
-  const marks = act.kind === 'post'
+  const marks = isPost(act.kind)
     ? <PostMarks
         post={act.id} ghost={act} plays={plays} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
         visit={visit} modPronouns={visit ? pronounsOf(visit.mod) : undefined} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
@@ -295,8 +295,8 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   /* Drawn only where a play or an armed card concerns the character; memoized, so the memo on Postbit still skips a postbit whose character, post and page are unchanged. */
   /* The stand-in a veil shows takes no character card: no ghost of an armed one on its postbit. */
   const standIn = person?.character.office === 'anonymous';
-  const shown = useReachShown(plays, act.kind === 'post' && !standIn ? act.character : null, 'character');
-  const characterMarks = useMemo(() => (shown && act.kind === 'post' && act.character !== null
+  const shown = useReachShown(plays, isPost(act.kind) && !standIn ? act.character : null, 'character');
+  const characterMarks = useMemo(() => (shown && isPost(act.kind) && act.character !== null
     ? <PostMarks
         post={act.character} postAt={act.createdAt} plays={plays} compare={false} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
         reachAt={{ reach: 'character', target: act.character, name, ...(person ? { pronouns: person.character.pronouns } : {}), fromPost: act, thread, board: summary.board, title: summary.title, to: href, plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}

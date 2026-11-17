@@ -26,6 +26,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
+import { isPost } from '../../rules/types.ts';
 import { casterMessage, castOnPost, decideSet, MESSAGE_MOST, playOf, withheld, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
@@ -118,14 +119,14 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const accountNow = useRef(account);
   accountNow.current = account;
   /* The post as it stands: its edits change its length and so its price, and the click's copy is only where it starts. */
-  const [live, setLive] = useState(() => seen.reduce<Act | null>((held, a) => (a.id === target.post?.id && a.kind === 'post' ? (held ? newer(held, a) : a) : held), target.post));
+  const [live, setLive] = useState(() => seen.reduce<Act | null>((held, a) => (a.id === target.post?.id && isPost(a.kind) ? (held ? newer(held, a) : a) : held), target.post));
   const post = live !== null && target.post !== null && live.id === target.post.id ? live : target.post;
   const postId = target.post?.id ?? null;
   const postThread = target.post?.thread ?? null;
   useEffect(() => {
     if (postId === null || postThread === null) return;
     let open = true;
-    const take = (a: Act) => { if (open && a.id === postId && a.kind === 'post') setLive((held) => (held ? newer(held, a) : a)); };
+    const take = (a: Act) => { if (open && a.id === postId && isPost(a.kind)) setLive((held) => (held ? newer(held, a) : a)); };
     /* The form opens at once from the answer read before it (it may be up to 30 s old); the post is read again here in the background, so an edit in the gap reaches the price. */
     try { void api.actsById([postId]).then((again) => { for (const a of again) take(a); }, () => { /* the live edits still arrive */ }); } catch { /* ditto */ }
     const stop = api.subscribeThread(postThread, { onAct: take });

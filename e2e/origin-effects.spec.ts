@@ -17,8 +17,7 @@ import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.t
  * Time. Hot Box reads the page's clock and the model's times are seconds long, so its cases install Playwright's clock, pause it once the page has settled and
  * move it with `runFor`, as e2e/hot-box.spec.ts does.
  *
- * Case 11 is not in the plan: the stories `Under` and `FabBright` hold a state today's server does not produce (a post-reach play on a spin's opening Act, issue #739), so `GlitterOver` holds what it does
- * (a play on the character who spun the thread, delivered with their post on the page), and case 11 reads the box over that glitter.
+ * Case 11 is not in the plan: `GlitterOver` holds a play on the character who spun the thread (delivered with their post on the page), and case 11 reads the box over that glitter. The stories `Under` and `FabBright` seed their plays on the spin's own Act, as a server holds them.
  *
  * Cases 12 to 14 are Task 7 of the plan, the box's foil held to the cost a post's is (the bound is e2e/shine-share.ts's, which e2e/shine.spec.ts holds a busy thread to): at rest, out of view, and
  * with the opening post's foil and the box's together. They read the loop through the story's `window.__kbOriginShine`.
