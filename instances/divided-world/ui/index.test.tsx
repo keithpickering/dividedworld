@@ -1206,7 +1206,7 @@ describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
 
   test('its words read the stack and the span from its rules', () => {
     expect(spanWords(STEEL_CHAIR_LASTS)).toBe('3 days');
-    expect(chair.describe(instance.settings)).toBe('A Salty card, common. A folding chair is thrown at a post and dents it: the words bend into the dent, and the chair drops to the floor under them. It covers none of the words and holds nobody. It plays again each time the post scrolls into view, somewhere else each time; with Game sounds on, it clangs the first time. Up to 3 can stack on one post, each with its own dent, and each is gone 3 days after it lands. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
+    expect(chair.describe(instance.settings)).toBe('A Salty card, common. A folding chair is thrown at a post and dents it: the words bend into the dent, and the chair drops to the floor under them. It covers none of the words and holds nobody. It plays again each time the post scrolls into view, somewhere else each time, and with Game sounds on it clangs each time, unless motion is reduced. Up to 3 can stack on one post, each with its own dent, and each is gone 3 days after it lands. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
   });
 
   test('it has an effect and no form', () => {

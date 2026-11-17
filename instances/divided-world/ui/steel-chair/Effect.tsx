@@ -51,8 +51,10 @@
  * content area's measured size; the reduced and moment pictures (`placeAll`) step the same STAGGER_STEPS between their throws, so they are
  * the pile the animated run ends in for the same seed.
  *
- * Sound. The first run after the effect mounts plays `steel-chair.hit` on each hit and one of the four settle sounds on each chair's first
- * floor contact, in the group `steel-chair`; a replay (by scroll or by Throw again) and the reduced and still draws are silent.
+ * Sound. Every animated run plays `steel-chair.hit` on each hit and one of the four settle sounds on each chair's first floor contact, in
+ * the group `steel-chair`, whether it started from a scroll, from Throw again or from a new play landing; a reduced or still draw does not
+ * sound. Two limits keep a thread from being a wall of clangs: the one group (a new clang takes over the one still sounding) and the 300 ms
+ * a post must be in view before a run starts. A sound that would start later than `LATE_MS` after its hit or settle is skipped.
  */
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
@@ -116,6 +118,11 @@ const MOST_STEPS = 4;
 const MOST_FRAME_S = MOST_STEPS * STEP;
 /** How many settle sounds there are (`steel-chair.settle-1` to `-4`): a chair's first floor contact plays one of them. */
 const SETTLE_SOUNDS = 4;
+/**
+ * How late a hit's or a settle's sound may start and still be heard as that hit's, in milliseconds; later, it is skipped and its caption
+ * shows (docs/plans/2026-11-17-sound-preload-design.md, 2.3).
+ */
+export const LATE_MS = 120;
 const GROUP = 'steel-chair';
 
 /** A fresh seed from the reader's own screen: nothing about who they are, only what makes one run differ from the next. */
@@ -144,9 +151,9 @@ interface Dent { readonly play: string; readonly x: number; readonly y: number; 
 /** Where the words wrapper stands in the content area, and how big it is: what the filter's coordinates are converted by. */
 interface Geo { readonly left: number; readonly top: number; readonly width: number; readonly height: number }
 /**
- * What the effect remembers while it stays mounted: whether the next run is the first since it mounted, and whether `met` has been said.
+ * What the effect remembers while it stays mounted: whether `met` has been said.
  */
-interface Memory { first: boolean; met: boolean }
+interface Memory { met: boolean }
 /** What the run offers the views: another run, and the plays' list having changed. */
 interface Control { replay(): void; sync(): void }
 /** What a chair's group remembers between frames, so a style is written only when it changed. */
@@ -225,8 +232,8 @@ export function SteelChairEffect(props: EffectProps) {
     [plays, still, now],
   );
   /* What holds for the life of the effect on the page, not of one stretch of live plays (the chairs component below unmounts when the last
-     play ends and mounts again when a new one lands): whether the next run is the first, which alone has sound, and whether the card has been met. */
-  const memory = useRef<Memory>({ first: true, met: false });
+     play ends and mounts again when a new one lands): whether the card has been met. */
+  const memory = useRef<Memory>({ met: false });
   return live.length > 0 ? <Chairs {...props} live={live} memory={memory.current} /> : <Bare show={show}>{children}</Bare>;
 }
 
@@ -433,9 +440,9 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
         setDents((d) => (d.some((x) => x.play === play) ? d : [...d, { play, x: e.at.x + INSET, y: e.at.y - HIT_LIFT, full: false }]));
         growing.set(play, null);
         shake();
-        if (loud) void latest.current.sound.play('steel-chair.hit', { group: GROUP });
+        if (loud) void latest.current.sound.play('steel-chair.hit', { group: GROUP, lateMs: LATE_MS });
       } else if (e.kind === 'floor' && loud) {
-        void latest.current.sound.play(`steel-chair.settle-${1 + Math.floor(soundRand() * SETTLE_SOUNDS)}`, { group: GROUP });
+        void latest.current.sound.play(`steel-chair.settle-${1 + Math.floor(soundRand() * SETTLE_SOUNDS)}`, { group: GROUP, lateMs: LATE_MS });
       }
     };
 
@@ -544,8 +551,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
       measure();
       if (box.w <= 0 || box.h <= 0) return;
       running = true;
-      loud = memory.first && !still && !reduced;
-      memory.first = false;
+      loud = !still && !reduced;
       const seed = still ? seedOfIds(latest.current.live.map((p) => p.id)) : freshSeed();
       rand = rng(seed);
       soundRand = rng(seedOfIds([String(seed), 'settle']));
@@ -577,7 +583,7 @@ function Chairs({ live, still, show, met, children, memory }: EffectProps & { li
     };
 
     control.current = {
-      replay: () => { clearRun(true); memory.first = false; startRun(); },
+      replay: () => { clearRun(true); startRun(); },
       /* Plays that came or went while the run stands: the gone lose their chair and dent, the new are thrown alone into the world. */
       sync: () => {
         if (!running || !world) return;

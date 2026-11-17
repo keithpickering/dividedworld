@@ -20,7 +20,7 @@ import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { bodies, cornersOf, DEPTH, HALF } from './body.ts';
 import { depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from './chair.ts';
 import { DENT_SCALE } from './dent.ts';
-import { SteelChairEffect } from './Effect.tsx';
+import { LATE_MS, SteelChairEffect } from './Effect.tsx';
 
 const hub = vi.hoisted(() => ({
   trusted: true,
@@ -1047,33 +1047,42 @@ describe("the throws are staggered in the world's own time", () => {
 });
 
 describe('sound', () => {
-  const heard = () => hub.sound.play.mock.calls as unknown as [string, { group?: string }][];
+  const heard = () => hub.sound.play.mock.calls as unknown as [string, { group?: string; lateMs?: number }][];
+  const counts = () => {
+    const keys = heard().map((c) => c[0]);
+    return {
+      hits: keys.filter((k) => k === 'steel-chair.hit').length,
+      settles: keys.filter((k) => /^steel-chair\.settle-[1-4]$/u.test(k)).length,
+      all: keys.length,
+      carried: heard().every((c) => c[1].group === 'steel-chair' && c[1].lateMs === LATE_MS),
+    };
+  };
 
-  test('on the first run a hit and one settle sound play once per chair, in the group; a replay by scroll or by Throw again is silent', () => {
+  test('every run plays a hit and one settle sound per chair, in the group and with lateMs LATE_MS: the first, a replay by scroll and one by Throw again', () => {
     /* A chair that lands on another never touches the floor, so it has no floor sound; the seed is pinned to a throw in which all three reach it (seed 6, for one, lands a chair on another). */
     pin(2);
     mount({ plays: [play(1), play(2), play(3)] });
     run();
-    const keys = heard().map((c) => c[0]);
-    expect(keys.filter((k) => k === 'steel-chair.hit')).toHaveLength(3);
-    const settles = keys.filter((k) => k.startsWith('steel-chair.settle-'));
-    expect(settles).toHaveLength(3);
-    for (const k of settles) expect(k).toMatch(/^steel-chair\.settle-[1-4]$/u);
-    expect(heard().every((c) => c[1].group === 'steel-chair')).toBe(true);
+    const first = counts();
+    expect(first.hits).toBe(3);
+    expect(first.settles).toBe(3);
+    expect(first.all).toBe(6);
+    expect(first.carried, 'each play carries the group and lateMs').toBe(true);
     hub.sound.play.mockClear();
     see(false); aim(false); see(true); arm(); settled();
     expect(groups()).toHaveLength(3);
-    expect(hub.sound.play).not.toHaveBeenCalled();
+    expect(counts(), 'a replay by scroll sounds as the first run did').toEqual(first);
+    hub.sound.play.mockClear();
     const again = lastView().controls.find((c) => c.kind === 'press')! as { run: () => void };
     act(() => { again.run(); });
     settled();
     expect(groups()).toHaveLength(3);
-    expect(hub.sound.play).not.toHaveBeenCalled();
+    expect(counts(), 'Throw again sounds as the first run did').toEqual(first);
   });
 });
 
 describe('sound and met across the effect coming and going inside one mount', () => {
-  test('after the last play ends and a new one lands, the new run is silent and the card is not met again', () => {
+  test('after the last play ends and a new one lands, the new run sounds and the card is not met again', () => {
     mount({ plays: [play(1)] });
     run();
     expect(hub.sound.play).toHaveBeenCalled();
@@ -1085,7 +1094,7 @@ describe('sound and met across the effect coming and going inside one mount', ()
     act(() => { hub.setPlays([play(2)]); });
     see(true); arm(); settled();
     expect(groups()).toHaveLength(1);
-    expect(hub.sound.play).not.toHaveBeenCalled();
+    expect(hub.sound.play).toHaveBeenCalled();
     expect(made.met).toHaveBeenCalledTimes(1);
   });
 });
