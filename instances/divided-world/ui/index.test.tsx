@@ -1277,7 +1277,7 @@ describe('Sweet Heat, the fifth flat earn card, says its size in votes from its 
 
   test('its tagline fits the plate: at most two lines of at most 20 characters', () => {
     expect(wrap('Earn more from excited reactions.', 20)).toEqual(['Earn more from', 'excited reactions.']);
-    const lines = wrap(sweet.art.tagline, 20);
+    const lines = wrap(sweet.art.tagline!, 20);
     expect(lines.length, lines.join(' / ')).toBeLessThanOrEqual(2);
     for (const line of lines) expect(line.length, line).toBeLessThanOrEqual(20);
   });
