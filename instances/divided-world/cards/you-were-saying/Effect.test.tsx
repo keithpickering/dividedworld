@@ -11,7 +11,7 @@ import { act, cleanup, fireEvent } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Act, EffectState } from '../../../../engine/ui/data/api.ts';
-import type { CardPlay, CardView, EffectProps, Written } from '../../../../engine/ui/cards/types.ts';
+import type { CardPlay, EffectProps, Written } from '../../../../engine/ui/cards/types.ts';
 import { ratio } from '../../../../engine/ui/contrast.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { YouWereSayingEffect } from './Effect.tsx';
@@ -49,7 +49,6 @@ interface Options {
 interface Live { written: Record<string, Written>; states: Record<string, EffectState>; version: string | null }
 function mount(o: Options = {}) {
   const save = vi.fn(o.save ?? (ok as unknown as EffectProps['save']));
-  const views: (CardView | null)[] = [];
   const plays = o.plays ?? [playOf(1)];
   let set: (next: Partial<Live>) => void = () => {};
   function Host() {
@@ -59,14 +58,14 @@ function mount(o: Options = {}) {
       <YouWereSayingEffect
         post={post} plays={plays} states={live.states} released={new Set()} written={new Map(Object.entries(live.written))} {...(live.version === null ? {} : { version: live.version })}
         reader={{ author: o.author ?? false, caster: false }} place="thread" reach="post" still={o.still ?? false} moment={o.moment ? { at: Date.parse('2026-11-07T10:30:00Z') } : null} save={save}
-        release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={(v) => { views.push(v); }} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
+        release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={() => {}} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
       >
         <p data-words>The old voice</p>
       </YouWereSayingEffect>
     );
   }
   const world = renderInWorld(<Host />, { settings: { cardSettings: { 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40 } } });
-  return { ...world, save, views, change: (next: Partial<Live>) => act(() => set(next)), redraw: (w: Record<string, Written>) => act(() => set({ written: w })) };
+  return { ...world, save, change: (next: Partial<Live>) => act(() => set(next)), redraw: (w: Record<string, Written>) => act(() => set({ written: w })) };
 }
 const block = () => document.querySelector<HTMLElement>('[data-kb-tail]');
 const blocks = () => [...document.querySelectorAll<HTMLElement>('[data-kb-tail]')];
@@ -560,7 +559,7 @@ describe('still (History version rows)', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  test('where the snapshot says the version was cleared it draws nothing and says it was erased', () => {
+  test('where the snapshot says the version was cleared it draws nothing', () => {
     mount({ still: true, states: { y1: { state: { cleared: 'v1' }, savedAt: 'x' } } });
     expect(block()).toBeNull();
   });
@@ -626,6 +625,14 @@ describe('in a moment', () => {
     expect(block()).toBeNull();
     expect(cursor()).toBeNull();
     expect(status()).toBe('');
+  });
+
+  test('a finished tail beside a waiting play draws the finished text, says nothing, and is one block', async () => {
+    mount({ moment: true, plays: [playOf(1), playOf(2)], written: { y1: text(SIXTY), y2: { waiting: true } } });
+    await seenAndTyped();
+    expect(shownText()).toBe(SIXTY);
+    expect(status()).toBe('');
+    expect(blocks()).toHaveLength(1);
   });
 
   test('a play whose state says cleared for this version draws no tail', () => {
