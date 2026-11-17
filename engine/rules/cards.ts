@@ -95,21 +95,24 @@ export interface CardEffect {
 
 /**
  * What a use card does while it is up: one of a fixed list the engine holds, each card picking one and setting its numbers.
- * A ward turns away casts on its own target (by rarity, printed flavor or card key); an earn raises what reactions earn the
- * character or post it is on (never deepens a loss); a price adds a flat amount to a cast of the named flavors on its target or anything under it;
- * earn effects on one character or post that share a `group` do not add: for each earning the largest `by` among them applies (an earn with no group boosts on its own);
+ * A ward turns away casts on its own target (by rarity, printed flavor or card key); an earn is a percentage of what reactions earn the
+ * character or post it is on (`by`, never deepening a loss) or a flat share of a vote for each vote (`flat`), on posts unless it names `acts`;
+ * of the flat earns on one vote the largest applies; a cushion gives back a share of each loss a reaction causes;
+ * a price adds a flat amount to a cast of the named flavors on its target or anything under it;
  * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up;
  * a no-quote stops a post that quotes the post it is on, before that post is written.
  * A cast card that reaches one character or one post alone may carry an earn too, ending at its `lasts`.
  */
 export type GimmickEffect =
   | { readonly kind: 'ward'; readonly upTo?: Rarity; readonly flavors?: readonly Alignment[]; readonly cards?: readonly string[] }
-  | { readonly kind: 'earn'; readonly quadrants?: readonly Quadrant[]; readonly reactions?: readonly string[]; readonly by: number; readonly group?: string }
+  | { readonly kind: 'earn'; readonly quadrants?: readonly Quadrant[]; readonly reactions?: readonly string[]; readonly by: number }
+  | { readonly kind: 'earn'; readonly quadrants?: readonly Quadrant[]; readonly reactions?: readonly string[]; readonly flat: number; readonly acts?: readonly ActKind[] }
   | { readonly kind: 'price'; readonly flavors: readonly Alignment[]; readonly add: Hundredths }
   | { readonly kind: 'ride'; readonly share: number }
-  | { readonly kind: 'noQuote' };
+  | { readonly kind: 'noQuote' }
+  | { readonly kind: 'cushion'; readonly share: number };
 export type WardEffect = Extract<GimmickEffect, { kind: 'ward' }>;
-export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote']);
+export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote', 'cushion']);
 
 /** What a cast does to the staff's discipline of its target, one of a fixed list; each card picks one and sets its numbers. */
 export type DisciplineEffect =

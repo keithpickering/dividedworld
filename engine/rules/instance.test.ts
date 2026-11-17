@@ -773,7 +773,8 @@ test('a cast card on a character or a post alone may carry an earn, and nothing 
   const hours = { unit: 'hour', count: 36 };
   const cast = (over: Record<string, unknown>) => instanceProblems(withCards({ rarity: 'uncommon', lasts: hours, ...over })).join('\n');
   assert.equal(cast({ reaches: ['character'], gimmick: earn }), '', 'a cast earn on a character passes');
-  assert.equal(cast({ reaches: ['character'], gimmick: { ...earn, group: 'warm' } }), '');
+  assert.equal(cast({ reaches: ['character'], gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 0.1 } }), '', 'a cast flat earn passes');
+  assert.match(cast({ reaches: ['character'], gimmick: { kind: 'cushion', share: 0.5 } }), /card "splat" has a gimmick, and only a use card has one, or a cast card on a character alone or a post alone an earn/, 'a cast cushion is refused');
   const gimmickWords = /card "splat" has a gimmick, and only a use card has one, or a cast card on a character alone or a post alone an earn/;
   const days3 = { unit: 'day', count: 3 };
   assert.equal(cast({ gimmick: earn, lasts: days3 }), '', 'a cast earn on a post, reaches left out');
@@ -782,8 +783,6 @@ test('a cast card on a character or a post alone may carry an earn, and nothing 
   assert.match(cast({ reaches: ['character'], gimmick: { kind: 'ward', flavors: ['salty'] } }), gimmickWords, 'a cast ward');
   assert.match(cast({ gimmick: { kind: 'ward', flavors: ['salty'] }, lasts: days3 }), gimmickWords, 'a cast ward on a post');
   assert.match(cast({ rarity: 'rare', reaches: ['character', 'post'], gimmick: earn, lasts: days3 }), gimmickWords, 'a cast earn on a character and a post');
-  assert.match(cast({ reaches: ['character'], gimmick: { ...earn, group: '' } }), /card "splat" has an earn with the group ""; a group is a word/);
-  assert.match(cast({ reaches: ['character'], gimmick: { ...earn, group: 3 } }), /card "splat" has an earn with the group 3; a group is a word/);
 });
 
 test('a card that stops quotes reaches a post alone', () => {
@@ -803,13 +802,23 @@ test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   assert.match(use({ kind: 'ward' }), /card "splat" has a ward that names no rarity, flavor or card/);
   assert.match(use({ kind: 'ward', upTo: 'mythic' }), /card "splat" has a ward up to "mythic"/);
   assert.match(use({ kind: 'ward', flavors: ['bitter'] }), /card "splat" has a ward of the flavors \["bitter"\]/);
-  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price, ride or noQuote/);
+  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price, ride, noQuote or cushion/);
   assert.equal(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5 }), '');
   assert.equal(use({ kind: 'earn', reactions: ['fire'], by: 1 }), '');
   assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0 }), /card "splat" has an earn of 0; by is above 0 and at most 1/);
   assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 1.5 }), /card "splat" has an earn of 1.5; by is above 0 and at most 1/);
   assert.match(use({ kind: 'earn', by: 0.5 }), /card "splat" has an earn that names no quadrant and no reaction/);
-  assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'] }), /an earn with no by/);
+  assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'] }), /card "splat" has an earn with no size; an earn has by or flat, and not both/);
+  assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5, flat: 0.5 }), /card "splat" has an earn with no size; an earn has by or flat, and not both/);
+  assert.equal(use({ kind: 'earn', quadrants: ['excitedPositive'], flat: 0.25 }), '');
+  assert.equal(use({ kind: 'earn', reactions: ['fire'], flat: 1, acts: ['post', 'card'] }), '');
+  for (const bad of [0, 1.5, -1, '0.5', null]) assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], flat: bad }), new RegExp(`card "splat" has an earn of flat ${JSON.stringify(bad)}; flat is above 0 and at most 1`), JSON.stringify(bad));
+  assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5, acts: ['post'] }), /card "splat" has an earn with acts and by; only a flat earn names acts/);
+  for (const bad of [[], 'post', null, ['post', 'sneeze'], [3]]) assert.ok(use({ kind: 'earn', quadrants: ['excitedPositive'], flat: 0.5, acts: bad }).includes(`card "splat" has an earn naming the acts ${JSON.stringify(bad)}; an act is a kind of Act`), JSON.stringify(bad));
+  for (const bad of ['warm', '', 3]) assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5, group: bad }), /card "splat" has an earn with a group; no earn has one, and of the flat earns on one vote the largest applies/);
+  assert.equal(use({ kind: 'cushion', share: 0.5 }), '');
+  assert.equal(use({ kind: 'cushion', share: 1 }), '');
+  for (const bad of [0, 1.5, -1, '0.5', undefined]) assert.match(use({ kind: 'cushion', share: bad }), new RegExp(`card "splat" has a cushion of ${bad === undefined ? 'undefined' : JSON.stringify(bad)}; share is above 0 and at most 1`), String(bad));
   for (const bad of [[], 'excitedPositive', null]) assert.match(use({ kind: 'earn', quadrants: bad, by: 0.5 }), /card "splat" has an earn naming no quadrant/, JSON.stringify(bad));
   for (const bad of [[], 'fire', null]) assert.match(use({ kind: 'earn', reactions: bad, by: 0.5 }), /card "splat" has an earn naming no reaction/, JSON.stringify(bad));
   for (const bad of [[], [1], ['splat', 2]]) assert.match(use({ kind: 'ward', cards: bad }), /card "splat" has a ward of the cards .*; cards are named by key/, JSON.stringify(bad));

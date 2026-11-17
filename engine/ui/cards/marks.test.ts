@@ -68,6 +68,10 @@ describe('a card back, a ward and a caught play, in words', () => {
     assert.equal(gimmickWords({ kind: 'ward', upTo: 'uncommon' }, end, now).report, undefined, 'a short, complete heading needs no detail');
     assert.deepEqual(gimmickWords({ kind: 'price', flavors: ['salty'], add: 25 }, end, now), { state: 'Salty cards cost 0.25 more here', ends: `Ends ${dayAndTime(end)}` });
     assert.deepEqual(gimmickWords({ kind: 'earn', by: 0.1 }, end, now), { state: 'Earns 10% more from some reactions', ends: `Ends ${dayAndTime(end)}` });
+    /* A flat earn says what each reaction pays more, from the effect's own size, and a cushion the share of a loss it gives back; each heading is within the Lens's word rule. */
+    assert.deepEqual(gimmickWords({ kind: 'earn', flat: 0.75 }, end, now), { state: 'Pays more for some reactions', ends: `Ends ${dayAndTime(end)}`, report: 'Each reaction it names pays three quarters of a vote more.' });
+    assert.equal(gimmickWords({ kind: 'earn', flat: 1 }, end, now).report, 'Each reaction it names pays a vote more.');
+    assert.deepEqual(gimmickWords({ kind: 'cushion', share: 0.5 }, end, now), { state: 'Softens losses from reactions', ends: `Ends ${dayAndTime(end)}`, report: 'Gives back 50% of each loss a reaction causes.' });
     /* A ride says its author is paid, with the share the card's rules hold (retuned, the new share is said), in a heading within the Lens's word rule. */
     assert.deepEqual(gimmickWords({ kind: 'ride', share: 0.5 }, end, now), { state: 'Pays its author for votes here', ends: `Ends ${dayAndTime(end)}`, report: 'Each vote on a card another player casts here pays its author half a vote.' });
     assert.equal(gimmickWords({ kind: 'ride', share: 0.25 }, end, now).report, 'Each vote on a card another player casts here pays its author a quarter of a vote.');
@@ -75,7 +79,7 @@ describe('a card back, a ward and a caught play, in words', () => {
     assert.deepEqual(gimmickWords({ kind: 'noQuote' }, end, now), { state: 'Cannot be quoted', ends: `Ends ${dayAndTime(end)}` });
     assert.deepEqual(gimmickWords({ kind: 'noQuote' }, '2026-10-31T10:00:00.000Z', now), { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime('2026-10-31T10:00:00.000Z')}` });
     assert.deepEqual(gimmickWords({ kind: 'ward', upTo: 'uncommon' }, end, now), { state: 'Turns away cards up to uncommon', ends: `Ends ${dayAndTime(end)}` });
-    for (const effect of [{ kind: 'noQuote' }, { kind: 'ward', upTo: 'uncommon' }, { kind: 'price', flavors: ['salty'], add: 25 }, { kind: 'earn', by: 0.1 }, { kind: 'ride', share: 0.5 }] as const) {
+    for (const effect of [{ kind: 'noQuote' }, { kind: 'ward', upTo: 'uncommon' }, { kind: 'price', flavors: ['salty'], add: 25 }, { kind: 'earn', by: 0.1 }, { kind: 'earn', flat: 0.5 }, { kind: 'cushion', share: 0.5 }, { kind: 'ride', share: 0.5 }] as const) {
       assert.deepEqual(wordsProblems('state', gimmickWords(effect, undefined, now).state), [], effect.kind);
       assert.deepEqual(gimmickWords(effect, '2026-10-31T10:00:00.000Z', now), { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime('2026-10-31T10:00:00.000Z')}` }, effect.kind);
     }

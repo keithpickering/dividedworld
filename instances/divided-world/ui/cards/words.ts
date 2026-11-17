@@ -26,11 +26,15 @@ export function weighted(rules: { readonly discipline?: { readonly kind: string;
   return weight === 2 ? 'double' : `${weight} times over`;
 }
 
-/** What an Earn Gimmick adds to a reaction's count, as the end of a sentence, read from the card's own rules: "20% higher", or "doubled" at exactly 1. */
+/** What a flat Earn Gimmick pays on top of a vote, as the end of a sentence, read from the card's own rules: "half a vote more", "three quarters of a vote more", "a vote more". A card with no flat earn is a mistake in these words, so it throws. */
 export const earnWords = (c: { readonly gimmick?: GimmickEffect }) => {
-  if (c.gimmick?.kind !== 'earn') throw new Error('card has no earn gimmick');
-  return c.gimmick.by === 1 ? 'doubled' : `${Math.round(c.gimmick.by * 100)}% higher`;
+  if (c.gimmick?.kind !== 'earn' || !('flat' in c.gimmick)) throw new Error('card has no flat earn gimmick');
+  return `${shareWords(c.gimmick.flat)} more`;
 };
+
+/** What two earn cards on one reaction do, said by every card that earns: only the larger pays. */
+export const LARGEST = 'Where two cards pay on the same reaction, only the larger pays.';
+
 /** What a Price Gimmick adds to a cast, read from the card's own rules: "0.25". */
 export const priceAdd = (c: { readonly gimmick?: GimmickEffect }) => {
   if (c.gimmick?.kind !== 'price') throw new Error('card has no price gimmick');

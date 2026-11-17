@@ -1703,7 +1703,10 @@ export interface EffectSaved {
   readonly savedAt: string;
 }
 
-/** The numbers a settled line's reason states, and for a card's boost (`card.boost`) the key of the card, as a string. */
+/**
+ * The numbers a settled line's reason states, and for a card's payout the key of the card, as a string. A boost (`card.boost`) carries the size it was paid at
+ * (`flat`, or `by`) and a cushion (`card.cushion`) its `share`, so a retuned card never restates a settled line; a row settled before sizes were kept has none.
+ */
 export type LedgerParams = Readonly<Record<string, number | string>>;
 
 /**

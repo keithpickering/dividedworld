@@ -411,6 +411,7 @@ export interface CosmeticsSettings {
  * card; a spring is a trap sprung, naming it (supabase/migrations/0054_card_plays.sql).
  */
 export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'unmask' | 'announce' | 'set' | 'spring';
+export const ACT_KINDS: readonly ActKind[] = ['post', 'spin', 'card', 'edit', 'unmask', 'announce', 'set', 'spring'];
 
 /**
  * A post for every card: a `post` Act, or a `spin` Act, which is always seq 1 of the thread it opened and is the post a
@@ -694,6 +695,8 @@ export interface Earning {
   readonly quadrant?: Quadrant;
   /** The kind of the one reaction it pays for, where it pays for one: an earn gimmick that names reactions boosts by it. */
   readonly kind?: string;
+  /** The signed votes of the one reaction it pays for, where it pays per vote: with a negative amount on positive votes it is a loss from a reaction, which a cushion softens; an earning without it is never cushioned. */
+  readonly votes?: number;
   /**
    * The reactions it pays for, where they are not on `act`: on this Act, after this time (a card's
    * lift is the votes on its target after it). The live estimate hangs its lines on them, and

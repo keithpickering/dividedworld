@@ -276,7 +276,7 @@ test('a card reversed after its window settled keeps that window\'s Aura, and mo
   assert.equal(t.aura('Gone'), settled, 'the first window\'s Aura stays and the next moves none');
 });
 
-test('a window in which an Earn Gimmick boosts a card\'s Heel is applied, and the next window settles (#452)', async () => {
+test('a window in which an Earn Gimmick boosts a Heel\'s post is applied, and the next window settles (#452)', async () => {
   const db = psqlDb();
   const t = await reversedPlays(db);
   const gone = t.play('Gone');
@@ -285,9 +285,17 @@ test('a window in which an Earn Gimmick boosts a card\'s Heel is applied, and th
     select '${t.characters.Gone}', 'card', thread, id, jsonb_build_object('card', 'heat-magnet', 'message', '', 'config', '{}'::jsonb, 'reach', 'character', 'character', '${t.characters.Gone}', 'targetName', 'Gone', 'ends', '${t.at(60)}'::timestamptz), '${t.at(1.5)}'
     from acts where id = '${gone.post}' returning id`);
   assert.ok(magnet, 'the Gimmick is played');
+  // A flat earn pays on the character's posts, never on a card Act: the Heel posts after the play, and two fans first react to that post inside it.
+  const own = sql(`insert into acts (character, kind, thread, payload, created_at)
+    select '${t.characters.Gone}', 'post', thread, '{"body": "A take of my own."}', '${t.at(2)}' from acts where id = '${gone.post}' returning id`);
+  for (const [i, fan] of (['Fan1', 'Fan2'] as const).entries()) {
+    sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
+      ('${own}', '${t.characters[fan]}', '${t.who(fan.toLowerCase())}', 'tomato', 1, '${t.at(5 + i)}')`);
+  }
   const first = await runSettlement(db, instance, t.at(24));
   assert.equal(first.status, 'applied', JSON.stringify(first));
   assert.equal(sql(`select count(*) from ledger where character = '${t.characters.Gone}' and reason = 'card.boost' and params ->> 'card' = 'heat-magnet'`), '1', 'the boost is its own entry, naming its card');
+  assert.equal(sql(`select params ->> 'flat' from ledger where character = '${t.characters.Gone}' and reason = 'card.boost' and params ->> 'card' = 'heat-magnet'`), '0.75', 'and the flat it paid');
   assert.ok(Number(sql(`select count(*) from ledger_shares s join ledger l on l.id = s.ledger where l.reason = 'card.boost' and l.character = '${t.characters.Gone}'`)) > 0, 'and has its shares');
   sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
     ('${gone.card}', '${t.characters.Author}', '${t.who('author')}', 'tomato', 1, '${t.at(26)}')`);

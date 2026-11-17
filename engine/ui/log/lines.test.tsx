@@ -1285,6 +1285,10 @@ describe('the payout cards\' lines', () => {
     const lines = [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }, { character: 'p', reason: 'card.skim', amount: 1, params: { card: 'mooch' }, shares: [] }];
     expect(scoredAs(lines, testInstance)).toBe('heel');
     expect(scoredAs([lines[1]!], testInstance)).toBeNull();
+    /* A cushion's line is a card's too: it names no class, and changes none. */
+    const cushioned = [...lines, { character: 'p', reason: 'card.cushion', amount: 3, params: { card: 'pad', share: 0.5 }, shares: [] }];
+    expect(scoredAs(cushioned, testInstance)).toBe('heel');
+    expect(scoredAs([cushioned[2]!], testInstance)).toBeNull();
   });
 
   test('a 4D Chess that rode says what sprang it, that the cast landed as usual, and what each vote pays, from the card\'s own share', () => {

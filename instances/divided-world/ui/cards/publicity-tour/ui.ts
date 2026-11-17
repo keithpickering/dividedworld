@@ -5,14 +5,14 @@ import type { Settings } from '../../../../../engine/rules/types.ts';
 import publicityTourCanvas from './art.webp?url';
 import publicityTourMark from './mark.svg?url';
 import publicityTourArt from './art.json';
-import { earnWords, spanWords } from '../words.ts';
+import { earnWords, LARGEST, spanWords } from '../words.ts';
 
 export const ui: CardUi = {
   key: 'publicity-tour',
   art: { color: '#2ee6ff', ink: '#03141a', canvas: publicityTourCanvas, mark: publicityTourMark, credit: publicityTourArt.credit, tagline: 'Earn more from positive reactions.' },
-  summary: `Used on your own character. For ${spanWords(publicityTour.lasts!)}, what it earns from positive reactions is ${earnWords(publicityTour)}. A loss is never made worse.`,
+  summary: `Used on your own character. For ${spanWords(publicityTour.lasts!)}, each positive reaction to its posts pays ${earnWords(publicityTour)}.`,
   status: 'Earns more from positive reactions',
   describe: (settings: Settings) =>
-    `A Sweet card, ${publicityTour.rarity}, used on your own character, the one playing it. For ${spanWords(publicityTour.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnWords(publicityTour)}, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
-  logPlay: () => `What that character earns from positive reactions is ${earnWords(publicityTour)} until it ends.`,
+    `A Sweet card, ${publicityTour.rarity}, used on your own character, the one playing it. For ${spanWords(publicityTour.lasts!)}, each positive reaction (excited or calm) to its posts pays ${earnWords(publicityTour)}, whatever its class makes of that reaction, and then it stops by itself. It counts reactions from players who first react to a post while it is up. ${LARGEST} It costs nothing more to use.`,
+  logPlay: () => `Each positive reaction to that character's posts pays ${earnWords(publicityTour)} until it ends.`,
 };
