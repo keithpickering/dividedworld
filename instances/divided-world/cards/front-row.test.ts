@@ -23,6 +23,7 @@ test('Front Row is a Pepperoni uncommon use card that earns on reactions to a ch
   assert.deepEqual(frontRow.gimmick, { kind: 'earn', quadrants: ['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative'], flat: 0.5, acts: ['card', 'spring'] });
   assert.deepEqual(frontRow.lasts, { unit: 'day', count: 3 });
   assert.equal(price, 150);
+  assert.equal(instance.machine.find((m) => 'card' in m.item && m.item.card === 'front-row')?.price, 150, 'the machine sells it for the same');
 });
 
 test('Front Row is used on a character through decideUse for 0, is refused by decidePlay, and a second live one is refused', () => {
@@ -90,17 +91,21 @@ test('a vote on the spring Act of a Reversal the character set is paid half a vo
 test("a vote on the character's post, and a vote on a card from before Front Row was played, are paid no boost", () => {
   const onPost = settle(board('face', [useOnTom('g1', 'front-row')], [vote('tp1', 'fire', 5)]), instance);
   assert.equal(amountFor(onPost, 'card.boost'), 0, "its posts are not its cards");
+  assert.equal(amountFor(onPost, 'face.cheered'), 10, 'the class line for the same vote still settles');
   const early = settle(board('face', [castByTom('c1', 1.5), useOnTom('g1', 'front-row', 4)], [vote('c1', 'fire', 2)]), instance);
   assert.equal(amountFor(early, 'card.boost'), 0, 'a vote from before the play is not paid');
+  assert.equal(amountFor(early, 'face.cheered'), 10, 'the class line for the same vote still settles');
   // A voter who first reacted before the play and moves their vote after it is still a vote the card did not draw.
-  const moved = settle(board('face', [castByTom('c1', 1.5), useOnTom('g1', 'front-row', 4)], [vote('c1', 'fire', 2), vote('c1', 'tomato', 6)]), instance);
-  assert.equal(amountFor(moved, 'card.boost'), 0, 'a voter first seen before the play is not paid, even for a later change of vote');
+  const moved = settle(board('face', [castByTom('c1', 1.5), useOnTom('g1', 'front-row', 4)], [vote('c1', 'fire', 2), vote('c1', 'tomato', 6), vote('c1', 'fire', 6, 'amy')]), instance);
+  assert.equal(amountFor(moved, 'card.boost'), 5, "only amy's fresh vote after the play is paid, so the card is up and the mover's 0 is the first-reaction rule");
+  assert.deepEqual(boosts(moved).map((e) => e.params), [FRONT_ROW]);
+  assert.equal(amountFor(moved, 'face.cheered'), 15, "the class line settles for both: 5 for the moved vote and 10 for amy's");
 });
 
-test('Front Row and a post-paying earn both up pay one vote each: the card\'s vote by Front Row, the post\'s by the other, and neither twice', () => {
-  // Sweet Heat has not merged, so this test's own copy of Front Row's rules carries Sweet Heat's gimmick: half a vote on the two excited quadrants, on posts.
+test('Front Row and a post-paying earn both up pay half a vote each: the card\'s vote by Front Row, the post\'s by the other, and neither twice', () => {
+  // This test keeps a Sweet Heat of its own, on purpose, so it stands on Front Row's rules alone: Front Row's rules carrying a post-paying gimmick, half a vote on the two excited quadrants. It replaces any Sweet Heat the instance has.
   const sweetHeat: CardRules<Record<string, never>> = { ...frontRow, key: 'sweet-heat', name: 'Sweet Heat', gimmick: { kind: 'earn', quadrants: ['excitedPositive', 'excitedNegative'], flat: 0.5 } };
-  const both = { ...instance, cards: [...instance.cards, sweetHeat] };
+  const both = { ...instance, cards: [...instance.cards.filter((c) => c.key !== 'sweet-heat'), sweetHeat] };
   const r = settle(board('face', [useOnTom('g1', 'front-row'), useOnTom('g2', 'sweet-heat'), castByTom('c1', 3)], [vote('tp1', 'fire', 5), vote('c1', 'fire', 5, 'amy')]), both);
   const lines = r.details.filter((d) => d.character === 'tom-1' && d.reason === 'card.boost').map((d) => [d.act, d.params?.card, d.amount]).sort();
   assert.deepEqual(lines, [['c1', 'front-row', 5], ['tp1', 'sweet-heat', 5]]);
