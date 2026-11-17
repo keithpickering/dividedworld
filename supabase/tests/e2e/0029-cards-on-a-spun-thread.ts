@@ -209,7 +209,14 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
     commit;`);
 
   // ---- The settlement: the skim is paid on the opening post as on the plain post, and the opening post's reactions go to the spinner. ----
-  const settled = await runSettlement(db, instance, at(48));
+  // The settlement reads every character on the instance, and 0028 (the file before this one) left its fixture committed, its characters in the test
+  // fixtures' classes (alpha, beta: supabase/tests/setup/fixtures.sql:47), which the instance has not. The settle engine refuses a held class the instance lacks
+  // (engine/rules/settle.ts:208), so the instance this settles with is the real one plus those classes, each earning nothing: the leftover characters are in the
+  // input and score nothing, and nothing of theirs is edited or removed. Any file after this one that settles must do the same.
+  const held = sql(`select coalesce(string_agg(distinct class_key, ','), '') from class_history`).split(',').filter((k) => k !== '');
+  const known = new Set(instance.classes.map((c) => c.key));
+  const settling = { ...instance, classes: [...instance.classes, ...held.filter((k) => !known.has(k)).map((k) => ({ key: k, name: k, earn: () => [] }))] };
+  const settled = await runSettlement(db, settling, at(48));
   assert.equal(settled.status, 'applied', JSON.stringify(settled));
   const skimShares = rows(`select s.act, sum(s.amount)::int as amount from ledger_shares s join ledger l on l.id = s.ledger where l.reason = 'card.skim' and l.character = '${char('Cat')}' group by s.act`);
   const skimOn = (a: string) => skimShares.find((r) => r.act === a)?.amount;

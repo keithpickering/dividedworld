@@ -6,14 +6,15 @@
 -- (card_target_reach); the author's log lost the end of a play on the opening post and a written tail on it (my_cards_ended, my_posts_written_on); an author veil on it moved a post from its author's count where the
 -- author had written a spin (character_veiled_counts); and a writing play on a reply was not handed the opening post's words (claim_card_writes' `before`).
 --
--- The rule (section 3), as 0374 stated it: the opening post is a post for every card, and "is a post" is the one predicate post_kind. Each of these reads asks it. Nothing here writes a row.
+-- The rule (section 3), as 0374 stated it: the opening post is a post for every card, and "is a post" is the one predicate post_kind. Each of these reads asks it. Nothing here writes a row but one fill (step 6): the kind of each existing veil's post, in a column the veil's row gains.
 --
 --   1. post_kind          granted to authenticated, the role that runs it where thread_page (a security invoker) and the two views below call it.
 --   2. thread_page        page_posts takes post_kind. The `cut` list (replies cut from the page, `d.kind = 'post'`) stays.
 --   3. play_moment        a play on a post asks post_kind.
 --   4. card_target_reach  the character branch's pressed post asks post_kind.
 --   5. my_cards_ended, my_posts_written_on   the caller's own posts ask post_kind.
---   6. the counts         character_veiled_counts gains `spins` (and `posts` is 1 only for a post); carried through character_count_moves into character_counts_shown.
+--   6. the counts         character_veiled_counts gains `spins` (and `posts` is 1 only for a post); carried through character_count_moves into character_counts_shown. The veiled Act's kind is read from
+--                         post_veils.post_kind (a new column, set by a trigger when the veil is written, carried by post_veils_live), so a count read probes no Act for it.
 --   7. claim_card_writes  the `before` read asks post_kind.
 -- Each function and view is copied whole from its latest body, with only the named lines changed. Their owners, options and grants are stated again.
 --
@@ -821,15 +822,42 @@ create or replace view my_posts_written_on as
 -- where it is a spin: a column added last, as create or replace view takes it, carried by character_count_moves into character_counts_shown's `spins` (which had stored `b.spins` as it was, and 0 for the stand-in with no
 -- stored row). character_post_counts reads character_counts_shown by the same columns as before, so nothing downstream is re-created. The three views are re-created in dependency order, each with its grants as
 -- 0357 stated them. A profile list and its count are still one figure: what is moved is what acts_public shows under the stand-in.
+--
+-- Where the kind comes from. A join of the view to acts by the veiled post's id is the plain way, and it costs a probe of acts per live veil at every read of the view: a count read reads the view three times (the author's
+-- minus, the stand-in's plus, and the stand-in's row with no stored count), so a read of two counts probed acts about 27 times and touched 169 to 244 buffers where it touched 84 (0304-post-veils.sql bounds it at 130), and
+-- as a hash join the planner reads every Act. A veil's post never changes kind (an Act is never edited), so the veil's own row keeps it: post_veils.post_kind, set when the row is written by a trigger that reads the one Act
+-- (the two functions that write the row, land_rows in 0357 and in 0359, are as they were and name no column), and carried by post_veils_live. The count then reads no Act for it. The rows that exist are filled from their
+-- posts; the append-only trigger is off for that one fill, and on again before anything else runs.
+alter table post_veils add column post_kind text;
+alter table post_veils disable trigger post_veils_no_update;
+update post_veils v set post_kind = (select a.kind from acts a where a.id = v.post);
+alter table post_veils enable trigger post_veils_no_update;
+alter table post_veils alter column post_kind set not null;
+create function post_veils_kind() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  new.post_kind := coalesce(new.post_kind, (select a.kind from acts a where a.id = new.post));
+  return new;
+end $$;
+create trigger post_veils_kind before insert on post_veils for each row execute function post_veils_kind();
+revoke execute on function post_veils_kind() from public, anon, authenticated, service_role;
+
+create or replace view post_veils_live as
+  select v.play, v.post, v.veil, v.author, v.caster_account, v.ends_at, v.post_kind
+  from post_veils v
+  where v.ends_at > now()
+    and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = v.play)
+    and not exists (select 1 from card_write_refunds r where r.play = v.play);
+revoke all on post_veils_live from public, anon, authenticated, service_role;
+
 create or replace view character_veiled_counts as
-  select v.author, (case when a.kind = 'post' then 1 else 0 end) as posts,
+  select v.author, (case when v.post_kind = 'post' then 1 else 0 end) as posts,
          ((select count(*) from acts k where k.kind = 'card' and k.target_act_id = v.post and k.character = v.author)
           + (select count(*) from post_veil_cards c join acts k on k.id = c.card
              where c.post = v.post and c.author = v.author
                and not exists (select 1 from post_veils_live w where w.veil = 'author' and w.post = k.target_act_id and w.author = c.author)))::integer as cards,
-         (case when a.kind = 'spin' then 1 else 0 end) as spins
-  from (select distinct l.post, l.author from post_veils_live l where l.veil = 'author') v
-  join acts a on a.id = v.post;
+         (case when v.post_kind = 'spin' then 1 else 0 end) as spins
+  from (select distinct l.post, l.author, l.post_kind from post_veils_live l where l.veil = 'author') v;
 
 create or replace view character_count_moves as
   select s.character, sum(s.posts)::integer as posts, sum(s.cards)::integer as cards, sum(s.spins)::integer as spins
