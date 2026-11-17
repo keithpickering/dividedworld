@@ -41,12 +41,13 @@
  *   A flat earn pays `flat` of a vote for each vote, whatever class the character holds and whatever the class earns for it: for each vote line
  *   (a player's share in one quadrant on one Act, positive or negative, times the halving) in the play's window [at, ends), in a quadrant it names or
  *   where the kind of the voter's first reaction in that quadrant on that Act is one it names, on an Act of the play's character or on the play's
- *   post, of a kind it names in `acts` (with none, on a post: a post or a spin), whose voter first reacted to that Act no earlier than the play. Of the flat earns that apply to one line the largest pays (a tie:
- *   the earliest play, then the smaller play id), as `tidy(flat * vote * votes)` with `{ card, flat }` in the entry's params. It follows the halving,
+ *   post, of a kind it names in `acts` (with none, on a post: a post or a spin), whose voter first reacted to that Act no earlier than the play.
+ *   Of the flat earns that apply to one line the largest pays (a tie: the earliest play, then the smaller play id), as `tidy(flat * vote * votes)` with
+ *   `{ card, flat }` in the entry's params. It follows the halving,
  *   where a skim and a ride do not, so a negative line (a vote that moved away) takes its pay back, and only where the voter first reacted while
  *   the play was up. A take-back is priced by the largest flat earn that applies when the line is taken back, not by the play that paid it. A line applies
  *   to a play the same way when it is paid and when it is taken back: a quadrant is the line's, and the voter's first reaction in a quadrant on an Act
- *   is a fact a reaction that cannot be removed never changes. So every play that applies at a take-back also applied when the share was paid, and
+ *   is a fact that never changes, since a reaction cannot be removed. So every play that applies at a take-back also applied when the share was paid, and
  *   a flat earn, whether it names quadrants or reaction kinds, never costs the character: its flat boosts as a whole never sum below zero. One play's own
  *   lines can, when a larger play paid and ended and a smaller one still up takes the share back.
  *   An earn may be a cast card's on a character or a post.
@@ -292,7 +293,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   for (const r of shared) {
     const a = onAct.get(r.act) ?? { first: new Map(), firstKind: new Map(), owner: new Map(), lean: zero(), of: new Map() };
     if (!a.first.has(r.player)) { a.first.set(r.player, r.at); a.owner.set(r.player, r.owner); }
-    // The kind of each player's first reaction in each quadrant, which a reaction that cannot be removed never changes.
+    // The kind of each player's first reaction in each quadrant, which never changes, since a reaction cannot be removed.
     const inQuadrant = `${r.player}\u0000${r.quadrant}`;
     if (!a.firstKind.has(inQuadrant)) a.firstKind.set(inQuadrant, r.kind);
     a.lean[r.quadrant] += r.share;
