@@ -61,10 +61,14 @@ export function useMomentRead(key: Id, load: () => Promise<PlayMoment | null>): 
  * is the box's: no ring, no tag); `own` (what became of the play itself), `named` and `words` are what the frame says under the post;
  * `unrecorded` says what else was on the post then wasn't recorded.
  */
-export function MomentFrame({ play, at, read, back, label = 'As it landed', own = null, named, words, unrecorded, frame, children }: {
+export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As it landed', own = null, named, words, unrecorded, frame, children }: {
   /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
   readonly play: CardPlay; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
+  /** Reset's press (design section 4): over a post (`back` given) the tag reads "As it landed · Reset · Back to now". In an ORIGIN box the head draws its own Reset, and the frame only says the status. */
+  readonly reset?: (() => void) | undefined;
+  /** How many times the moment has been reset: above 0, the frame says "As it landed again." out loud, to a screen reader only. */
+  readonly run?: number;
   /** What the frame calls the moment: "As it landed" for a play's, "As it was spun" for a spin's. */
   readonly label?: string;
   /** The moment's time; none while it is not known (a spin's moment before it is read), and then the frame names none. */
@@ -87,6 +91,8 @@ export function MomentFrame({ play, at, read, back, label = 'As it landed', own 
   return (
     <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={at === undefined ? label : `${label}, ${when(at)}`} data-kb-alignment={rules?.alignment} data-kb-content={content ? '' : undefined} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
       {said && <p className="kb-moment-status kb-small kb-muted">{status}</p>}
+      {/* Said on each run above 0: the text alternates by a no-break space so a second Reset is a change a screen reader says again. */}
+      <p role="status" className="kb-visually-hidden">{run > 0 ? `As it landed again.${run % 2 === 0 ? ' ' : ''}` : ''}</p>
       <div className="kb-moment-body" data-kb-quotable="hidden">{children}</div>
       {!content && <div ref={ring.ring} className="kb-moment-ring" aria-hidden="true" />}
       {!content && (
@@ -94,6 +100,7 @@ export function MomentFrame({ play, at, read, back, label = 'As it landed', own 
           <span>{label}</span>
           {/* The time the play landed is the frame's label and the Lens's (the owner, 2026-11-06: "the date is in the Lens already"); the tag says only what is not. */}
           {status !== null && read !== 'loading' && <><span aria-hidden="true"> · </span><span>{status}</span></>}
+          {reset && back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-reset" onClick={(e) => { e.currentTarget.focus(); reset(); }}>Reset</button></>}
           {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
         </p>
       )}
@@ -211,6 +218,9 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   const read = useMomentRead(key, () => (source ? api.spinMoment(source.spin) : api.playMoment(play.id)));
   const label = source ? 'As it was spun' : 'As it landed';
   const frame = useRef<HTMLDivElement>(null);
+  /* Reset: each run of the moment's effects is keyed by the run, so a press remounts every one from the moment's states; the read moment is kept. */
+  const lens = useLensStore();
+  const run = useSyncExternalStore(lens.subscribe, () => lens.run(key), () => 0);
   /* The view each drawn effect shows, by card; the frame's words are read from it below (Task 3 of the playable-moments plan replaces them). */
   const [seen, setSeen] = useState<Readonly<Record<string, CardView>>>({});
   const onView = useCallback((card: string, view: CardView | null) => {
@@ -240,8 +250,8 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   };
   const words = Object.keys(seen).sort().map((k) => `${name(k)}: ${said(k, seen[k]!)}`);
   return (
-    <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
-      <MomentEffects moment={moment} place={place} nameOf={nameOf} onView={onView}>{bodyOf(moment.version)}</MomentEffects>
+    <MomentFrame frame={frame} play={play} at={moment.at} label={label} read="read" back={back} reset={() => lens.reset(key)} run={run} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
+      <MomentEffects key={run} moment={moment} place={place} nameOf={nameOf} onView={onView}>{bodyOf(moment.version)}</MomentEffects>
     </MomentFrame>
   );
 }

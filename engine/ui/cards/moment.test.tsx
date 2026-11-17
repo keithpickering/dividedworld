@@ -5,7 +5,9 @@
  * engine's own test cards, never an instance's.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
+import { LensProvider } from './Lens.tsx';
 import { fakeSound } from '../audio/test-sound.ts';
 import { resetSound, setSoundPreference } from '../audio/sound.ts';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -241,6 +243,69 @@ describe('a moment nests as a post does', () => {
     } finally {
       cards[1] = was;
     }
+  });
+});
+
+describe('Reset over a post', () => {
+  const play: CardPlay = { id: 'k1', card: 'smear', layer: 1, caster: 'c-caster', message: '', config: {}, playedAt: at(1), post: 'p1' };
+  const saved = { state: { washed: 0.4 }, savedAt: at(0) };
+  const mounted: { states: Readonly<Record<string, EffectState>>; n: number }[] = [];
+  const Counted = ({ children, states }: EffectProps) => {
+    useEffect(() => { mounted.push({ states, n: mounted.length + 1 }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return <div data-kb-wrap="smear">{children}</div>;
+  };
+  function over(api: ReturnType<typeof buildWorld>, back: () => void = () => {}) {
+    cards[0] = ui('smear', { Effect: Counted });
+    const kayfa = { api, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
+    return render(
+      <KayfaProvider value={kayfa}><LensProvider><CalloutProvider met={[]}>
+        <article><button type="button" className="kb-mark" data-kb-card="smear">mark</button>
+          <MomentView play={play} place="thread" nameOf={() => ''} bodyOf={() => <span>then</span>} back={back} now={<span>now</span>} /></article>
+      </CalloutProvider></LensProvider></KayfaProvider>,
+    );
+  }
+  afterEach(() => { mounted.length = 0; cards[0] = ui('smear'); });
+
+  test('Reset remounts the moment\'s effect from the same states, keeps the moment shown, keeps focus on Reset, and says the status', async () => {
+    const api = buildWorld({}, instance);
+    vi.spyOn(api, 'playMoment').mockResolvedValue(moment([{ act: card('k1', 'smear', 1), state: saved }]));
+    over(api);
+    const reset = await screen.findByRole('button', { name: 'Reset' });
+    expect(document.querySelector('.kb-moment-tag')!.textContent).toBe('As it landed · Reset · Back to now');
+    expect(mounted).toHaveLength(1);
+    expect(screen.queryByRole('status')?.textContent ?? '').toBe('');
+    await userEvent.click(reset);
+    await waitFor(() => expect(mounted).toHaveLength(2));
+    expect(mounted[1]!.states).toEqual(mounted[0]!.states);
+    expect(mounted[1]!.states).toEqual({ k1: saved });
+    expect(screen.getByText('then')).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reset' }));
+    expect(screen.getByRole('status')).toHaveTextContent('As it landed again.');
+    /* A second Reset is said again, and a first press is not the last. */
+    await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(mounted).toHaveLength(3));
+    expect(screen.getByRole('status')).toHaveTextContent('As it landed again.');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reset' }));
+  });
+
+  test('Back to now still returns focus to the play\'s mark', async () => {
+    const api = buildWorld({}, instance);
+    vi.spyOn(api, 'playMoment').mockResolvedValue(moment([{ act: card('k1', 'smear', 1), state: null }]));
+    const back = vi.fn();
+    over(api, back);
+    await userEvent.click(await screen.findByRole('button', { name: 'Back to now' }));
+    expect(back).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(document.activeElement).toBe(document.querySelector('.kb-mark')));
+  });
+
+  test('the moment is read once across two Resets', async () => {
+    const api = buildWorld({}, instance);
+    const read = vi.spyOn(api, 'playMoment').mockResolvedValue(moment([{ act: card('k1', 'smear', 1), state: null }]));
+    over(api);
+    await userEvent.click(await screen.findByRole('button', { name: 'Reset' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    await waitFor(() => expect(mounted).toHaveLength(3));
+    expect(read).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -20,7 +20,7 @@
  * nothing under it. Everything under the band stands in one content area (`div.kb-origin-area`, marked `data-kb-content-area`, drawn only where something stands there), which is what an
  * effect on the box fills and finds as its body; the History button, its panel and the "More than" note are lifted over it, and the box itself over the opening post's effect (spin.css). The moment the page carried is kept in the Lens's store under the key the frame reads it by (`seedMoment`), so the frame reads nothing.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { PostEffects } from '../cards/Effects.tsx';
@@ -191,6 +191,12 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   useMemo(() => {
     if (cardPlay && (onCharacter || !cardPlay.reach)) lens.seedMoment(onCharacter ? spinAt ?? cardPlay.id : cardPlay.id, from.moment);
   }, [lens, cardPlay, onCharacter, spinAt, from.moment]);
+  /* The key the box's moment is kept and run under, and whether the box draws one now (read, and not null): Reset is drawn only then. */
+  const momentKey = cardPlay && (onCharacter || !cardPlay.reach) ? (onCharacter ? spinAt ?? cardPlay.id : cardPlay.id) : null;
+  const kept = useSyncExternalStore(lens.subscribe, () => (momentKey === null ? undefined : lens.kept(momentKey)), () => undefined);
+  const reset = momentKey !== null && kept !== undefined && kept !== null ? (
+    <button type="button" className="kb-origin-reset" onClick={(e) => { e.currentTarget.focus(); lens.reset(momentKey); }}>Reset</button>
+  ) : null;
   const link = <OriginLink place={summary.origin} perPage={perPage} {...(onCharacter ? { faces: characterOf } : {})} />;
 
   /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
@@ -263,7 +269,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         <p className="kb-origin-head">
           {/* A play's moment is the box's content, framed by the box: the head says it is the post as the play found it, where a ring and a tag would say it again. */}
           <span className="kb-origin-head-text">
-            <b>ORIGIN</b> · Spun from {link}{cardPlay && !cardPlay.reach && <> · as it landed</>}{onCharacter && <> · {spinAt !== null ? 'as it was spun' : 'as it landed'}</>}
+            <b>ORIGIN</b> · Spun from {link}{cardPlay && !cardPlay.reach && <> · as it landed{reset && <> · </>}{reset}</>}{onCharacter && <> · {spinAt !== null ? 'as it was spun' : 'as it landed'}{reset && <> · </>}{reset}</>}
             {spinAt !== null && castFrom && <span className="kb-origin-head-line">Cast from <Link to={castFrom.href}>{castFrom.words}</Link></span>}
           </span>
           {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}

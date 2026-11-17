@@ -84,8 +84,25 @@
   text-decoration-thickness: 2px;
 }
 
-.kb-origin-head a:focus-visible {
+.kb-origin-head a:focus-visible,
+.kb-origin-reset:focus-visible {
   outline-color: var(--kb-head-focus);
+}
+
+/* Reset, in the head after "as it landed": the head's own ink, a link's weight, so it reads as the head's words and not as a tile. */
+.kb-origin-reset {
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--kb-head-fg);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.kb-origin-reset:hover {
+  text-decoration-thickness: 2px;
 }
 
 .kb-spin-form {

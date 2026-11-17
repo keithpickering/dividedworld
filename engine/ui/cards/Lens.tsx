@@ -102,6 +102,10 @@ export interface LensStore {
    * already kept, and it wakes no one: it is called before the readers of the key are drawn, so none has seen the key unkept.
    */
   seedMoment(key: Id, moment: PlayMoment | null): void;
+  /** How many times a moment has been reset (0 until it is): each run of the moment's effects is keyed by it, so a Reset starts them all again. The moment is keyed as `readMoment` keys it. */
+  run(key: Id): number;
+  /** Start the moment's effects again from the moment's states (Reset): adds one to its run and wakes. The read moment is kept. */
+  reset(key: Id): void;
 }
 
 function createLensStore(): LensStore {
@@ -109,6 +113,7 @@ function createLensStore(): LensStore {
   let shown: Id | null = null;
   const moments = new Map<Id, PlayMoment | null>();
   const reading = new Map<Id, Promise<void>>();
+  const runs = new Map<Id, number>();
   const listeners = new Set<() => void>();
   const wake = () => { for (const l of [...listeners]) l(); };
   const set = (next: LensOpen | null) => {
@@ -128,6 +133,8 @@ function createLensStore(): LensStore {
     showMoment(play) { if (play !== shown) { shown = play; wake(); } },
     kept: (play) => moments.get(play),
     seedMoment(key, moment) { if (!moments.has(key)) moments.set(key, moment); },
+    run: (key) => runs.get(key) ?? 0,
+    reset(key) { runs.set(key, (runs.get(key) ?? 0) + 1); wake(); },
     readMoment(play, load) {
       if (moments.has(play)) return Promise.resolve();
       const was = reading.get(play);
