@@ -96,75 +96,47 @@
 }
 
 /*
- * A dent's shading, in three layers (`.dw-chair-shading`, each filling the content area like the chairs' layer), so that overlapping dents never
+ * A dent's shading, in two layers (`.dw-chair-shading`, each filling the content area like the chairs' layer), so that overlapping dents never
  * bury the words. Each layer is its own stacking context (the engine's `[data-kb-effect-ink]` lift gives it a z-index), so a blend between its
  * dents is among those alone, and the layer as a whole blends with the post beneath it:
- *  - the shade layer is `multiply`, and each dent in it is an opaque gray disc fading to white at its rim, combined with the others by `darken`
- *    (the darker pixel of two, not their sum): where discs overlap the post is darkened as much as the darkest of them does alone, never more,
- *    and white (the rim, and outside every disc) leaves the post as it is;
- *  - the light layer is `screen`, each dent a gray disc fading to black, combined by `lighten` (the lighter of two), so that the light of
- *    overlapping dents is capped the same way and never washes a line out;
- *  - the creases are plain thin lines, drawn only on a dent that overlaps no other (Effect.tsx).
- * Each dent is an ellipse (its box is the displacement's `feImage` box, within 15% of round) with an uneven edge, and its light, shade and
- * creases turn by an angle from its play's id (dent.ts `dentShape`): the effect sets `--dark-x`, `--dark-y`, `--glow-x`, `--glow-y` and the
- * border radius. The shade's gray is 128 at its darkest, as the old black at 50% was, and the light's 71, as white at 28% was.
- * Where `mix-blend-mode` is not understood the blended look is not applied (`@supports`) and the discs are faint translucent shading instead,
- * never opaque; every current browser understands it. Under `forced-colors` all three are hidden, below.
+ *  - the shade layer is `multiply`, and each dent in it is an opaque gray image (dent.ts `dentShade`) that is white where the metal is flat and
+ *    no darker than 128 on the side turned from the light, combined with the others by `darken` (the darker pixel of two, not their sum):
+ *    where dents overlap the post is darkened as much as the darkest of them does alone, never more, and white leaves the post as it is;
+ *  - the light layer is `screen`, each dent an opaque gray image (dent.ts `dentLight`: a soft sheen and a small glint, no brighter than 140)
+ *    that is black where the metal is flat, combined by `lighten` (the lighter of two), so that the light of overlapping dents is capped the
+ *    same way and never washes a line out.
+ * Both images are drawn from one height map per play, lit from one fixed direction, so every dent is lit alike; the effect sets each dent's
+ * box and its image's address in `--dw-dent-img` and `--dw-glow-img` (an empty address sets none, and the dent shows nothing).
+ * Where `mix-blend-mode` is not understood (`@supports`) the two layers are not displayed at all: an opaque gray image with no blend would
+ * cover the words, so there is no translucent fallback (every current browser understands the blend, and the filter still bends the words).
+ * Under `forced-colors` both are hidden too, below.
  */
 .dw-chair-dent,
 .dw-chair-glow {
   position: absolute;
   pointer-events: none;
 }
-/* Without `mix-blend-mode` (an old browser) the discs below, which are opaque, would cover the words; so outside the `@supports` block each
-   is a faint translucent shading like the one before the blend: black fading from 50% alpha for the shade, white from 28% for the light. */
-.dw-chair-dent {
-  background: radial-gradient(circle at var(--dark-x, 32%) var(--dark-y, 32%), rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.22) 45%, rgba(0, 0, 0, 0) 72%);
-}
-.dw-chair-glow {
-  background: radial-gradient(circle at var(--glow-x, 70%) var(--glow-y, 70%), rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0) 45%);
+.dw-chair-dents,
+.dw-chair-glows {
+  display: none;
 }
 @supports (mix-blend-mode: multiply) {
   .dw-chair-dents {
+    display: block;
     mix-blend-mode: multiply;
   }
   .dw-chair-glows {
+    display: block;
     mix-blend-mode: screen;
   }
   .dw-chair-dent {
     mix-blend-mode: darken;
-    background: radial-gradient(circle at var(--dark-x, 32%) var(--dark-y, 32%), rgb(128, 128, 128) 0%, rgb(199, 199, 199) 45%, rgb(255, 255, 255) 72%);
+    background: var(--dw-dent-img, none) center / 100% 100% no-repeat;
   }
   .dw-chair-glow {
     mix-blend-mode: lighten;
-    background: radial-gradient(circle at var(--glow-x, 70%) var(--glow-y, 70%), rgb(71, 71, 71) 0%, rgb(0, 0, 0) 45%);
+    background: var(--dw-glow-img, none) center / 100% 100% no-repeat;
   }
-}
-/* A lone dent's two creases, as a folded sheet of metal takes: the wrapper is the dent's box, turned about its middle by the dent's own angle. */
-.dw-chair-creases {
-  position: absolute;
-  pointer-events: none;
-}
-.dw-chair-creases::before,
-.dw-chair-creases::after {
-  content: '';
-  position: absolute;
-  height: 1px;
-  background: rgba(0, 0, 0, 0.45);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
-  transform-origin: 0 50%;
-}
-.dw-chair-creases::before {
-  top: 38%;
-  left: 24%;
-  width: 34%;
-  transform: rotate(28deg);
-}
-.dw-chair-creases::after {
-  top: 55%;
-  left: 40%;
-  width: 28%;
-  transform: rotate(-16deg);
 }
 
 /* No shake under reduced motion (the effect also draws the dent and the resting chairs at once and starts no frame). */
