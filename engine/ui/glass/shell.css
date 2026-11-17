@@ -394,8 +394,9 @@
   --kb-dialog-bar-top: max(var(--kb-dialog-pad-top), calc(var(--kb-cut) + var(--kb-dialog-chamfer-clear) - var(--kb-dialog-pad-x) - var(--kb-dialog-close-inset)));
   width: min(100%, 720px);
   box-sizing: border-box;
-  /* The foot: a line or a control in the bottom left corner stands its pad-x from the side, and this from the edge. */
-  padding: 0 var(--kb-dialog-pad-x) max(var(--kb-dialog-pad-bottom), calc(var(--kb-cut) + var(--kb-dialog-chamfer-clear) - var(--kb-dialog-pad-x)));
+  /* The foot: a line or a control in the bottom left corner stands its pad-x from the side, and this from the edge. A dialog that draws at its body's foot (the Lens's fade) stands on it. */
+  --kb-dialog-foot: max(var(--kb-dialog-pad-bottom), calc(var(--kb-cut) + var(--kb-dialog-chamfer-clear) - var(--kb-dialog-pad-x)));
+  padding: 0 var(--kb-dialog-pad-x) var(--kb-dialog-foot);
   /*
    * A dialog taller than its room scrolls itself, and its panel (::after) and smoke are as tall as the room, not the content: scrolled,
    * the frame's own neon (the background color, the border's) showed below them as a bright band under the words. The ground follows
