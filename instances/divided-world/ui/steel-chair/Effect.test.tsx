@@ -1095,7 +1095,21 @@ describe('sound and met across the effect coming and going inside one mount', ()
     see(true); arm(); settled();
     expect(groups()).toHaveLength(1);
     expect(hub.sound.play).toHaveBeenCalled();
+    expect((hub.sound.play.mock.calls as unknown as [string, { group?: string; lateMs?: number }][]).every((c) => c[1].group === 'steel-chair' && c[1].lateMs === LATE_MS), 'the new run\'s plays carry the group and lateMs').toBe(true);
+    expect(hub.sound.play).toHaveBeenCalledWith('steel-chair.hit', { group: 'steel-chair', lateMs: LATE_MS });
     expect(made.met).toHaveBeenCalledTimes(1);
+  });
+
+  test('a run abandoned by the post scrolling out of view before its hit makes no further sound', () => {
+    mount({ plays: [play(1)] });
+    see(true); arm();
+    expect(groups()).toHaveLength(1);
+    expect(hub.sound.play, 'the chair is thrown and has not yet hit').not.toHaveBeenCalled();
+    see(false);
+    expect(groups()).toHaveLength(0);
+    act(() => { vi.advanceTimersByTime(3000); drain(); drain(); });
+    for (let i = 0; i < 200; i++) frame();
+    expect(hub.sound.play, 'nothing sounds for a run that was left').not.toHaveBeenCalled();
   });
 });
 
