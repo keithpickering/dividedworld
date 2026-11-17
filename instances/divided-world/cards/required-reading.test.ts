@@ -46,6 +46,7 @@ function board(cls: string, plays: InputAct[], reactions: InputReaction[]): Sett
     characters: [
       { id: 'tom-1', player: 'tom', classes: [{ class: cls, from: 0 }] },
       { id: 'bob-1', player: 'bob', classes: [{ class: 'face', from: 0 }] },
+      { id: 'ann-1', player: 'ann', classes: [{ class: 'face', from: 0 }] },
     ],
     acts: [
       { id: 'tp1', character: 'tom-1', kind: 'post', at: W_FROM + HR, thread: 't1' },
@@ -59,6 +60,8 @@ const readingOn = (id: string, at = W_FROM + 2 * HR): InputAct => ({ id, charact
 const hypeOn = (id: string, at = W_FROM + 3 * HR): InputAct => ({ id, character: 'bob-1', kind: 'card', at, thread: 't1', card: 'hype-up', target: 'tp1', ends: W_FROM + 20 * HR });
 const vote = (kind: string, at: number, act = 'tp1'): InputReaction => ({ act, player: 'bob', character: 'bob-1', kind, at });
 const calmAfter = vote('thumbs-up', W_FROM + 5 * HR);
+/** Before the play at two hours in. */
+const BEFORE_PLAY = W_FROM + 1.5 * HR;
 const amountFor = (r: ReturnType<typeof settle>, reason: string) => r.entries.filter((e) => e.character === 'tom-1' && e.reason === reason).reduce((t, e) => t + e.amount, 0);
 const boosts = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.reason === 'card.boost');
 
@@ -79,24 +82,29 @@ test("Required Reading pays the same vote more on a Heel's post, whose own line 
 });
 
 test('Required Reading pays nothing more for a hype vote', () => {
-  const r = settle(board('technician', [readingOn('g1')], [vote('fire', W_FROM + 5 * HR)]), instance);
-  assert.equal(amountFor(r, 'technician.respected'), 0, 'the hype vote is no calm vote');
-  assert.equal(boosts(r).length, 0);
+  const hype = vote('fire', W_FROM + 5 * HR);
+  const alone = settle(board('technician', [readingOn('g1')], [hype]), instance);
+  assert.equal(amountFor(alone, 'technician.respected'), 0, 'the hype vote is no calm vote');
+  assert.equal(boosts(alone).length, 0);
+  // Beside another player's calm vote, the card pays for that one alone.
+  const beside = settle(board('technician', [readingOn('g1')], [hype, { ...calmAfter, player: 'ann', character: 'ann-1' }]), instance);
+  assert.equal(boosts(beside).length, 1);
+  assert.equal(amountFor(beside, 'card.boost'), 10);
 });
 
 test('Required Reading pays nothing more for a calm vote before the play', () => {
-  const r = settle(board('technician', [readingOn('g1')], [vote('thumbs-up', W_FROM + 90 * 60_000)]), instance);
+  const r = settle(board('technician', [readingOn('g1')], [vote('thumbs-up', BEFORE_PLAY)]), instance);
   assert.equal(amountFor(r, 'technician.respected'), 10, 'the vote still pays its class');
   assert.equal(boosts(r).length, 0);
 });
 
 test('Required Reading pays nothing more for a calm vote from a player who first reacted before the play', () => {
-  const r = settle(board('technician', [readingOn('g1')], [vote('fire', W_FROM + 90 * 60_000), calmAfter]), instance);
-  assert.ok(amountFor(r, 'technician.respected') > 0, 'the later calm vote still pays its class, by its own share');
+  const r = settle(board('technician', [readingOn('g1')], [vote('fire', BEFORE_PLAY), calmAfter]), instance);
+  assert.equal(amountFor(r, 'technician.respected'), 5, 'the later calm vote still pays its class, by its own halved share');
   assert.equal(boosts(r).length, 0);
 });
 
-test("Required Reading pays nothing more for a calm vote on another post of the same character", () => {
+test('Required Reading pays nothing more for a calm vote on another post of the same character', () => {
   const r = settle(board('technician', [readingOn('g1')], [vote('thumbs-up', W_FROM + 5 * HR, 'tp2')]), instance);
   assert.equal(amountFor(r, 'technician.respected'), 10, 'the other post still pays its class');
   assert.equal(boosts(r).length, 0);
