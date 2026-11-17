@@ -12,6 +12,20 @@ import { CAPTION_MS, HELD_FROM, resetSound, setSoundPreference, useSound, useWar
 import type { AudioContextLike, GainNodeLike, SourceLike } from './mixer.ts';
 import type { SoundSlot } from './types.ts';
 
+/** Every `warm` the page's mixer is asked for, so a test can tell a hook that warmed again from a mixer that merely deduped it. */
+const warmed = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+vi.mock('./mixer.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./mixer.ts')>();
+  return {
+    ...real,
+    createMixer: (deps: Parameters<typeof real.createMixer>[0]) => {
+      const mixer = real.createMixer(deps);
+      const warm = mixer.warm.bind(mixer);
+      return { ...mixer, warm: (slots: Parameters<typeof warm>[0]) => { warmed.calls.push([...slots].map((s) => s.key)); warm(slots); } };
+    },
+  };
+});
+
 const param = () => ({ value: 1, cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), setTargetAtTime: vi.fn() });
 let gains: GainNodeLike[];
 let sources: SourceLike[];
@@ -48,7 +62,7 @@ const loopLoaded = async (play: ReturnType<typeof useSound>, key: string, opts: 
 const gesture = (type = 'pointerdown') => act(async () => { document.dispatchEvent(new Event(type, { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
 
 beforeEach(() => {
-  gains = []; sources = [];
+  gains = []; sources = []; warmed.calls.length = 0;
   makeContext.mockClear(); fetchBytes.mockClear();
   resetSound({ makeContext, fetchBytes });
   captions.reset();
@@ -365,12 +379,22 @@ describe('the page warms the sounds a screen names', () => {
     expect(fetchBytes.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['/a.mp3']);
   });
 
-  test('rendering again with an equal but new array fetches nothing more', () => {
+  test('rendering again with an equal but new array (and a new ui.sounds) does not warm again', () => {
     on('game');
     const { rerender } = renderHook(({ keys }: { keys: string[] }) => useWarmSounds(keys), { wrapper: warmWrap, initialProps: { keys: ['a', 'b'] } });
     expect(fetchBytes).toHaveBeenCalledTimes(2);
+    expect(warmed.calls).toHaveLength(1);
     rerender({ keys: ['a', 'b'] });
     expect(fetchBytes).toHaveBeenCalledTimes(2);
+    expect(warmed.calls).toHaveLength(1);
+  });
+
+  test('a changed key list warms the new keys', () => {
+    on('game');
+    const { rerender } = renderHook(({ keys }: { keys: string[] }) => useWarmSounds(keys), { wrapper: warmWrap, initialProps: { keys: ['a'] } });
+    rerender({ keys: ['a', 'c'] });
+    expect(warmed.calls).toEqual([['a'], ['a', 'c']]);
+    expect(fetchBytes.mock.calls.map((c) => (c as unknown[])[0]).sort()).toEqual(['/a.mp3', '/c.mp3']);
   });
 
   test('a play the mixer answers late says the game caption for CAPTION_MS', async () => {

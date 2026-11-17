@@ -18,7 +18,7 @@
  *
  * Engine code: it names no card and no instance.
  */
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useKayfa } from '../context.tsx';
 import { captions } from './captions.ts';
 import { createMixer, type AudioContextLike, type LoopHandle, type Mixer, type MixerDeps } from './mixer.ts';
@@ -150,13 +150,16 @@ const wordsOf = (slot: SoundSlot) => ({ text: slot.caption, ...(slot.ink ? { ink
 export function useWarmSounds(keys: readonly string[] | undefined): void {
   const sounds = useKayfa().ui.sounds;
   const joined = (keys ?? []).join('\n');
+  /* The latest sounds, read when the effect runs; a new `ui.sounds` object of its own does not warm again. */
+  const latest = useRef(sounds);
+  latest.current = sounds;
   useEffect(() => {
     if (!joined) return;
     const wanted = new Set(joined.split('\n'));
-    const slots = (sounds?.slots ?? []).filter((s) => wanted.has(s.key));
+    const slots = (latest.current?.slots ?? []).filter((s) => wanted.has(s.key));
     page.arm();
     page.mixer.warm(slots);
-  }, [joined, sounds]);
+  }, [joined]);
 }
 
 export function useSound(): SoundPlay {
