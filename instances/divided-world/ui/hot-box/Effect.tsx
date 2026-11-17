@@ -6,7 +6,7 @@
  * reader's own and on this screen only: nothing is saved, sent, counted or broadcast, so the effect reads neither who wrote the post nor who played the
  * card, and calls neither `save` nor `release`.
  *
- * Which play. The engine goes on handing an ended play to an effect, so this decides for itself whether its play is still up, against the page's clock
+ * Which play. The engine goes on handing an ended play to an effect, so this decides for itself whether its play is still up, against the page's clock, or `moment.at` in a moment
  * (`useAt` redraws when the soonest end passes, as Whodunnit?'s does). The first play whose end is ahead is the one drawn, so a second Hot Box cast after
  * the first ended is the one that shows. With none, the words are drawn alone.
  *
@@ -367,9 +367,9 @@ function velocityOf(m: Model, now: number): { x: number; y: number } {
 
 /**
  * When the model next needs to be looked at (an epoch ms), or null: a line of the sweep finishing, a post's wave ending, a clearing closing, a trail point
- * shutting (where no frame draws the trail: `frames` is false), the strength moving a hundredth. `animate` is the forced-colors mask in view, which is moved by this timer and nothing else.
+ * shutting (where no frame draws the trail: `frames` is false), the strength moving a hundredth (none where `fixed`: the strength is taken at a fixed moment, so no wake is needed as it thins). `animate` is the forced-colors mask in view, which is moved by this timer and nothing else.
  */
-function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonly animate: boolean; readonly still: boolean; readonly frames: boolean; readonly playedAt: number; readonly ends: number }): number | null {
+export function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonly animate: boolean; readonly fixed: boolean; readonly frames: boolean; readonly playedAt: number; readonly ends: number }): number | null {
   const at: number[] = [];
   const ticks = o.animate && !o.reduced;
   const sw = m.sweep;
@@ -403,7 +403,7 @@ function nextWake(m: Model, now: number, o: { readonly reduced: boolean; readonl
     if (now < clear) at.push(clear);
     else if (now < clear + SMOKE.roll) at.push(ticks ? now + TICK_MS : clear + SMOKE.roll);
   }
-  if (!o.still && Number.isFinite(o.ends) && o.ends > o.playedAt && now < o.ends) {
+  if (!o.fixed && Number.isFinite(o.ends) && o.ends > o.playedAt && now < o.ends) {
     const span = o.ends - o.playedAt;
     const s = strength(now, o.playedAt, o.ends);
     at.push(o.ends - (Math.floor(s * 100 - 1e-9) / 100) * span);
@@ -542,7 +542,7 @@ function Smoke({ place, play, moment, show, met, children }: EffectProps & { rea
     clearTimeout(timer.current);
     timer.current = undefined;
     const L = latest.current;
-    const wake = nextWake(model.current, seen.current, { reduced: L.reduced, animate: L.forced && L.inView, still: L.fixedAt !== null, frames: L.loop, playedAt: L.playedAt, ends: L.ends });
+    const wake = nextWake(model.current, seen.current, { reduced: L.reduced, animate: L.forced && L.inView, fixed: L.fixedAt !== null, frames: L.loop, playedAt: L.playedAt, ends: L.ends });
     if (wake === null) return;
     timer.current = setTimeout(() => stepRef.current(), Math.min(TIMER_MOST, Math.max(1, Math.ceil(wake - api.now()))));
   }, [api]);
@@ -785,7 +785,7 @@ function Smoke({ place, play, moment, show, met, children }: EffectProps & { rea
     /* The content area is what the smoke covers, so it is what is watched, with a margin above and below. */
     return watchInView(areaEl, setInView, { rootMargin: '200px 0px' });
   }, [areaEl]);
-  useEffect(() => { refresh(); }, [inView, refresh]);
+  useEffect(() => { refresh(); }, [inView, fixedAt, refresh]);
   /* Met waits for the first sight of the post: the layer holds tiles near the window and says nothing of them, so the observer on the area is asked for this alone. */
   const met1 = useRef(false);
   useEffect(() => {

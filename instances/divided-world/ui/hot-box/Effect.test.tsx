@@ -25,7 +25,7 @@ import { makeTileLayer, mostTiles } from '../../../../engine/ui/cards/tiles.ts';
 import { renderIn, testInstance } from '../../../../engine/ui/test-world.tsx';
 import { SMOKE, fogAlpha, holeRadius, maskAlpha, strength } from './smoke.ts';
 import { makeField, paintFog, stepField } from './fog.ts';
-import { HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, forgetScratch, resetFogLadder } from './Effect.tsx';
+import { HotBoxEffect, SMOKED_WAY, WAVE_DESCRIBE, FOG_SHARE, forceFogLevel, nextWake, forgetScratch, resetFogLadder } from './Effect.tsx';
 
 /* A post's lines, as shares of the box's height, as Whoops!'s `readLines` gives them; and what a painter's call costs, for the ladder. */
 const { LINES, read, cost } = vi.hoisted(() => {
@@ -2068,34 +2068,25 @@ describe('a moment', () => {
     expect(document.activeElement).toBe(link);
   });
 
-  test('a moment sets no thinning wake for the end of the play, where a live post does', () => {
-    /* The page's rest timer is 50 ms and its stagger's a frame (16 ms); anything else is the model's timer. */
-    const modelTimers = (over: Partial<EffectProps>) => {
-      const set = vi.spyOn(globalThis, 'setTimeout');
-      const s = setup(over);
-      pass(200, 50);
-      const n = set.mock.calls.filter((c) => c[1] !== 50 && c[1] !== 16).length;
-      s.unmount();
-      set.mockRestore();
-      return n;
-    };
-    expect(modelTimers({})).toBeGreaterThan(0);
-    expect(modelTimers({ moment })).toBe(0);
+  test('a moment sets no thinning wake: a finite end leaves the same pending timers as no end, and the wake itself is none where fixed and one where live', () => {
+    const timers = (over: Partial<EffectProps>) => { const s = setup(over); pass(100, 50); const n = vi.getTimerCount(); s.unmount(); return n; };
+    vi.setSystemTime(NOW + 4 * DAY);
+    expect(timers({ moment })).toBe(timers({ moment, plays: [play({ ends: undefined })] }));
+    const m = { mouse: null, touch: null, rest: [], trail: [], moves: [], mover: null, sweep: null, said: 0, wavedAt: null };
+    const o = { reduced: false, animate: false, frames: true, playedAt: NOW, ends: ENDS };
+    expect(nextWake(m, AT, { ...o, fixed: false })).not.toBeNull();
+    expect(nextWake(m, AT, { ...o, fixed: true })).toBeNull();
   });
 
   test('save, release and met are never called, even with the post in view', () => {
     stubObserver();
     const s = past();
     act(() => { watch!([{ target: area(s), isIntersecting: true, intersectionRatio: 1 }]); });
-    expect(s.met).not.toHaveBeenCalled();
-  });
-
-  test('save and release are never called', () => {
-    const s = past();
     move(s); touch(s);
     press(s);
     pass(SWEEP_MS + 100);
     release(s);
+    expect(s.met).not.toHaveBeenCalled();
     expect(s.save).not.toHaveBeenCalled();
     expect(s.release).not.toHaveBeenCalled();
   });
