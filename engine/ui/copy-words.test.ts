@@ -12,6 +12,7 @@ describe('a share of a vote, in words', () => {
   test('says a share it has no word for as a percent, and a larger one as votes, so a retuned card is still said true', () => {
     assert.equal(shareWords(0.25), 'a quarter of a vote');
     assert.equal(shareWords(0.2), 'a fifth of a vote');
+    assert.equal(shareWords(0.75), 'three quarters of a vote');
     assert.equal(shareWords(0.15), '15% of a vote');
     assert.equal(shareWords(2), '2 votes');
     assert.equal(shareWords(1.5), '1.5 votes');
