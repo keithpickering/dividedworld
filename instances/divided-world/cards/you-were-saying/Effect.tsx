@@ -32,14 +32,15 @@
  * whole text and never from what has typed so far. A polite status after it says the start of an erase and its end, and nothing between;
  * when a held key clears the tail, focus moves to that status so the reader is not dropped.
  *
- * In a play's moment or a version of the post (`still`: History, As it landed) the text is drawn whole from `written`, minus each play whose
- * snapshot says this version was cleared, with no typing, no input, no focus and a cursor that does not blink; its `show` words (the frame
- * puts the card's name before them) say how many characters it added, or that it was erased.
+ * In a version of the post (`still`: History's version rows) the text is drawn whole from `written`, minus each play whose snapshot says this
+ * version was cleared, with no typing, no input, no focus and a cursor that does not blink. In a play's moment (`moment` not null, `still`
+ * false) it is the live effect for a reader who is nobody: it types in on view, the erase works and is the screen's own (nothing is saved),
+ * and a tail still being written is not drawn.
  */
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
-import type { CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
+import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { FULL, lapse, look, press, release, typeIn, type Erase, type EraseSettings } from './erase.ts';
 import './tail.css';
@@ -66,7 +67,7 @@ type Holder = 'pointer' | 'key' | 'toggle';
 const clearedFor = (state: unknown, version: string | undefined): boolean =>
   version !== undefined && typeof state === 'object' && state !== null && (state as { cleared?: unknown }).cleared === version;
 
-export function YouWereSayingEffect({ plays, states, written, version, reader, still, save, show, children }: EffectProps) {
+export function YouWereSayingEffect({ plays, states, written, version, reader, still, moment, save, children }: EffectProps) {
   const { settings } = useKayfa();
   const reduced = useMotionReduced();
   const cfg: EraseSettings = {
@@ -84,10 +85,11 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
   const whole = texts.map((t) => t.chars.join('')).join('');
   /* The name's own: the words trimmed, and with no stop of theirs doubled by the sentence's ("mostly.. Hold to erase"). */
   const spoken = whole.trim().replace(/\.$/u, '');
-  const drawn = texts.length > 0 || (!still && waiting);
+  /* A tail still being written is not drawn in a moment: the moment's clock does not advance, so it would wait forever. */
+  const drawn = texts.length > 0 || (!still && moment === null && waiting);
 
-  const latest = useRef({ cfg, total, live, written, version, reader, save, still });
-  latest.current = { cfg, total, live, written, version, reader, save, still };
+  const latest = useRef({ cfg, total, live, written, version, reader, save, still, moment });
+  latest.current = { cfg, total, live, written, version, reader, save, still, moment };
 
   /* The clock, kept outside the render and read by it: a snapshot, and the holds on it. Until the post is seen it has typed nothing. */
   const clock = useRef<Erase | null>(null);
@@ -121,8 +123,9 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
   const clear = useCallback(() => {
     setCleared(true);
     if (box.current && box.current.contains(document.activeElement)) note.current?.focus();
-    const { reader: who, version: v, live: playsNow, written: textNow, save: send } = latest.current;
-    if (!who.author) { announce(ERASED_READER); return; }
+    const { reader: who, version: v, live: playsNow, written: textNow, save: send, moment: inMoment } = latest.current;
+    /* In a moment the clear is the screen's own, whoever the reader says they are: nothing is saved. */
+    if (!who.author || inMoment !== null) { announce(ERASED_READER); return; }
     const back = () => { clock.current = FULL; setCleared(false); announce(UNSAVED); redraw(); };
     if (v === undefined) { back(); return; }
     const saves = playsNow.filter((p) => { const w = textNow.get(p.id); return w && !('failed' in w); })
@@ -239,17 +242,8 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
   useEffect(() => () => { stop(); }, [stop]);
 
   /* A tail still being written is not hidden from a screen reader: it is said once, and the line goes when the words come. */
-  const writing = !still && texts.length === 0 && waiting && !gone;
+  const writing = !still && moment === null && texts.length === 0 && waiting && !gone;
   useEffect(() => { say((was) => (writing ? STILL_WRITING : was === STILL_WRITING ? '' : was)); }, [writing]);
-
-  /* In a moment or a version: what it added, for the frame's words. */
-  const hadText = plays.some((p) => { const w = written.get(p.id); return w !== undefined && 'text' in w && w.text !== ''; });
-  const added = !still ? null : texts.length > 0 ? `${total} ${total === 1 ? 'character' : 'characters'} added` : hadText ? 'erased' : null;
-  useEffect(() => {
-    if (!still) return;
-    const view: CardView | null = added === null ? null : { progress: null, state: added, yours: false, controls: [], notes: {} };
-    show(view);
-  }, [still, added, show]);
 
   /* The characters shown, taken from the first play's text on, so an erase takes the last play's first. */
   let left = still ? total : l.shown;

@@ -44,7 +44,7 @@ const tick = (ms: number) => act(async () => { vi.advanceTimersByTime(ms); });
 
 interface Options {
   readonly plays?: CardPlay[]; readonly written?: Record<string, Written>; readonly states?: Record<string, EffectState>;
-  readonly version?: string | null; readonly author?: boolean; readonly still?: boolean; readonly save?: EffectProps['save'];
+  readonly version?: string | null; readonly author?: boolean; readonly still?: boolean; readonly moment?: boolean; readonly save?: EffectProps['save'];
 }
 interface Live { written: Record<string, Written>; states: Record<string, EffectState>; version: string | null }
 function mount(o: Options = {}) {
@@ -58,7 +58,7 @@ function mount(o: Options = {}) {
     return (
       <YouWereSayingEffect
         post={post} plays={plays} states={live.states} released={new Set()} written={new Map(Object.entries(live.written))} {...(live.version === null ? {} : { version: live.version })}
-        reader={{ author: o.author ?? false, caster: false }} place="thread" reach="post" still={o.still ?? false} save={save}
+        reader={{ author: o.author ?? false, caster: false }} place="thread" reach="post" still={o.still ?? false} moment={o.moment ? { at: Date.parse('2026-11-07T10:30:00Z') } : null} save={save}
         release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={(v) => { views.push(v); }} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
       >
         <p data-words>The old voice</p>
@@ -541,9 +541,9 @@ describe('reduced motion', () => {
   });
 });
 
-describe('still (History, As it landed)', () => {
+describe('still (History version rows)', () => {
   test('draws the whole text with no cursor animation, takes no input and is not focusable', async () => {
-    const { save, views } = mount({ still: true, author: true });
+    const { save } = mount({ still: true, author: true });
     expect(shownText()).toBe(SIXTY);
     expect(block()!.hasAttribute('tabindex')).toBe(false);
     expect(block()!.getAttribute('role')).not.toBe('button');
@@ -558,23 +558,80 @@ describe('still (History, As it landed)', () => {
     expect(shownText()).toBe(SIXTY);
     expect(save).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
-    expect(views.at(-1)?.state).toBe('60 characters added');
-  });
-
-  test('says one character in the singular', () => {
-    const { views } = mount({ still: true, written: { y1: text('!') } });
-    expect(views.at(-1)?.state).toBe('1 character added');
   });
 
   test('where the snapshot says the version was cleared it draws nothing and says it was erased', () => {
-    const { views } = mount({ still: true, states: { y1: { state: { cleared: 'v1' }, savedAt: 'x' } } });
+    mount({ still: true, states: { y1: { state: { cleared: 'v1' }, savedAt: 'x' } } });
     expect(block()).toBeNull();
-    expect(views.at(-1)?.state).toBe('erased');
   });
 
   test('a state cleared for another version does not clear this one', () => {
     mount({ still: true, states: { y1: { state: { cleared: 'v0' }, savedAt: 'x' } } });
     expect(shownText()).toBe(SIXTY);
+  });
+});
+
+describe('in a moment', () => {
+  test('types in when the post enters view, and is not a still', async () => {
+    mount({ moment: true });
+    expect(block()!.getAttribute('role')).toBe('button');
+    await see(true);
+    expect(shownText()).toBe('');
+    await tick(250);
+    expect(shownText()).toBe(SIXTY.slice(0, 10));
+    await tick(2000);
+    expect(shownText()).toBe(SIXTY);
+  });
+
+  test('the erase works and is local: nothing is saved', async () => {
+    const { save } = mount({ moment: true });
+    await seenAndTyped();
+    pointer.down(block()!);
+    await tick(5000);
+    expect(shownText()).toBe(SIXTY.slice(0, 30));
+    await tick(6000);
+    expect(block()).toBeNull();
+    expect(status()).toBe('Erased on your screen. It comes back when the page reloads.');
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  test('Backspace and the toggle erase too', async () => {
+    mount({ moment: true });
+    await seenAndTyped();
+    block()!.focus();
+    key.down(block()!);
+    await tick(5000);
+    expect(shownText()).toBe(SIXTY.slice(0, 30));
+    key.up(block()!);
+    await tick(2100);
+    await tick(2000);
+    ENTER(block()!);
+    await tick(5000);
+    expect(shownText()).toBe(SIXTY.slice(0, 30));
+  });
+
+  test('with the reader forced to be the author, a clear still saves nothing', async () => {
+    const { save } = mount({ moment: true, author: true });
+    await seenAndTyped();
+    pointer.down(block()!);
+    await tick(11_000);
+    expect(block()).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(status()).toBe('Erased on your screen. It comes back when the page reloads.');
+  });
+
+  test('a waiting tail draws nothing', async () => {
+    mount({ moment: true, written: { y1: { waiting: true } } });
+    await see(true);
+    expect(block()).toBeNull();
+    expect(cursor()).toBeNull();
+    expect(status()).toBe('');
+  });
+
+  test('a play whose state says cleared for this version draws no tail', () => {
+    mount({ moment: true, states: { y1: { state: { cleared: 'v1' }, savedAt: 'x' } } });
+    expect(block()).toBeNull();
+    expect(cursor()).toBeNull();
   });
 });
 
