@@ -56,6 +56,7 @@ test('the instance sells its cards at their prices', () => {
     ['off-day', 'salty', 500],
     ['overreaction', 'pepperoni', 100],
     ['publicity-tour', 'sweet', 150],
+    ['required-reading', 'sweet', 100],
     ['rope-break', 'sweet', 100],
     ['steel-chair', 'salty', 100],
     ['stick-around', 'sweet', 100],

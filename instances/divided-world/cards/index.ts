@@ -36,6 +36,7 @@ import { mooch, price as moochPrice } from './mooch.ts';
 import { offDay, price as offDayPrice } from './off-day.ts';
 import { overreaction, price as overreactionPrice } from './overreaction.ts';
 import { publicityTour, price as publicityTourPrice } from './publicity-tour.ts';
+import { requiredReading, price as requiredReadingPrice } from './required-reading.ts';
 import { ropeBreak, price as ropeBreakPrice } from './rope-break.ts';
 import { steelChair, price as steelChairPrice } from './steel-chair.ts';
 import { stickAround, price as stickAroundPrice } from './stick-around.ts';
@@ -77,6 +78,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [offDay as CardRules, offDayPrice],
   [overreaction as CardRules, overreactionPrice],
   [publicityTour as CardRules, publicityTourPrice],
+  [requiredReading as CardRules, requiredReadingPrice],
   [ropeBreak as CardRules, ropeBreakPrice],
   [steelChair as CardRules, steelChairPrice],
   [stickAround as CardRules, stickAroundPrice],
