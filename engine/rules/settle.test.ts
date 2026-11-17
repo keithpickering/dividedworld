@@ -1792,6 +1792,61 @@ test('a vote that moves away after the play ended takes back nothing, and one th
   const moved = settle(flatBoard([up], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 1 * H + 10), react('tp1', 'bob', 'bob-1', 'tomato', TO + 3 * H)], [], { window: W2, paid: early.paid }), cardsWorld);
   assert.equal(boostTo(early, 'tom-1') + boostTo(moved, 'tom-1'), 0, 'a vote there before the play was never paid and takes nothing back');
 });
+test('over many seeded sequences of windows, a flat earn never costs its holder: its entries sum to zero or more, in the whole and after every window', () => {
+  // A tiny LCG, so every run draws the same few hundred sequences.
+  const lcg = (seed: number) => { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 2 ** 32; }; };
+  const WINDOWS = 5;
+  const voters = ['bob', 'cat', 'dee', 'eve', 'fay'];
+  const kinds = ['tea', 'tomato', 'fire', 'heart', 'zzz'];
+  // Each entry is rounded to whole hundredths on its own, a half at most per entry; a take-back and its pay land in different windows' entries.
+  const tolerance = 0.5 * WINDOWS;
+  let withTakeBack = 0;
+  for (let seed = 1; seed <= 400; seed++) {
+    const rand = lcg(seed);
+    const int = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1));
+    const pick = <T,>(xs: readonly T[]): T => xs[int(0, xs.length - 1)]!;
+    // One flat earn on the character, and (usually) a second of another size on a post or the character, overlapping in part.
+    const aAt = FROM + int(0, 70) * H;
+    const plays: InputAct[] = [onTom('gA', pick(['calmWhole', 'heatChillFlat']), aAt, aAt + int(3, 80) * H)];
+    if (rand() < 0.8) {
+      const bAt = FROM + int(0, 70) * H;
+      const bEnds = bAt + int(3, 80) * H;
+      plays.push(rand() < 0.5 ? onPostBy('gB', 'tom-1', pick(['calmHalf', 'heatFlat']), pick(['tp1', 'tp2']), bAt, bEnds) : onTom('gB', pick(['calmHalf', 'heatFlat']), bAt, bEnds));
+    }
+    // Several voters react to the character's posts across quadrants, the first reaction before, inside or after a play, and later ones in other quadrants.
+    const reactions: InputReaction[] = [];
+    for (const p of voters) {
+      for (const act of ['tp1', 'tp2']) {
+        if (rand() < 0.35) continue;
+        let at = FROM + int(0, WINDOWS * 24 - 30) * H + int(0, 59) * 60_000;
+        for (let n = int(1, 3); n > 0; n--) {
+          reactions.push(react(act, p, `${p}-1`, pick(kinds), at));
+          at += int(1, 40) * H + int(0, 59) * 60_000;
+        }
+      }
+    }
+    const windows = [...Array(WINDOWS)].map((_, k) => ({ id: `w${k}`, from: FROM + k * 24 * H, to: FROM + (k + 1) * 24 * H }));
+    const paidSoFar = new Map<string, SettlementInput['paid'] extends readonly (infer P)[] | undefined ? P : never>();
+    const total = new Map<string, number>();
+    let all = 0;
+    let sawNegative = false;
+    for (const [k, window] of windows.entries()) {
+      const r = settle(flatBoard(plays, reactions, [], { window, paid: [...paidSoFar.values()] }), cardsWorld);
+      for (const p of r.paid) paidSoFar.set(`${p.player}|${p.act}`, p);
+      for (const e of boostsOf(r)) {
+        assert.equal(e.character, 'tom-1');
+        const card = (e.params as { card: string }).card;
+        total.set(card, (total.get(card) ?? 0) + e.amount);
+        all += e.amount;
+        if (e.amount < 0) sawNegative = true;
+      }
+      assert.ok(all >= -tolerance, `seed ${seed}: after window ${k} the play has cost its holder ${all}`);
+    }
+    for (const [card, sum] of total) assert.ok(sum >= -tolerance, `seed ${seed}: ${card} summed to ${sum}`);
+    if (sawNegative) withTakeBack++;
+  }
+  assert.ok(withTakeBack >= 20, `the draws must include take-backs (${withTakeBack}), or the property is not tested`);
+});
 test('two flat earns on one vote, one on the character and one on the post, are one entry by the larger\'s card; a tie goes to the earlier play, then the smaller id', () => {
   const vote = [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)];
   const larger = settle(flatBoard([onTom('g1', 'calmHalf', FROM + 2 * H), onPostBy('g2', 'tom-1', 'calmWhole', 'tp1', FROM + 2 * H)], vote), cardsWorld);
