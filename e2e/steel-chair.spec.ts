@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { DEPTH, HALF } from '../instances/divided-world/ui/steel-chair/body.ts';
 import { GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from '../instances/divided-world/ui/steel-chair/chair.ts';
-import { DENT_SCALE } from '../instances/divided-world/ui/steel-chair/dent.ts';
+import { DENT_SCALE, dentHeight, dentShade, dentShape } from '../instances/divided-world/ui/steel-chair/dent.ts';
 import { pageViolations } from './axe.ts';
 
 /**
@@ -690,7 +690,7 @@ async function shading(page: Page) {
   return area(page).evaluate((box) => {
     const dentRects = [...box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent')].map((d) => {
       const r = d.getBoundingClientRect();
-      return { left: r.left, top: r.top, width: r.width, height: r.height };
+      return { play: d.dataset.play ?? '', left: r.left, top: r.top, width: r.width, height: r.height };
     });
     const walker = document.createTreeWalker(box.querySelector('.dw-chair-words')!, NodeFilter.SHOW_TEXT);
     const range = document.createRange();
@@ -799,25 +799,34 @@ async function theLineCanBeRead(page: Page, seed: number, kind: 'tight' | 'sprea
   const unionClip = { x: ux0, y: uy0, width: ux1 - ux0, height: uy1 - uy0 };
   const union = await pair(page, unionClip);
   const deepDents = deepest(union);
-  /* Each dent alone (the others hidden): where dents overlap, the shade must be the darker of the dents there, pixel for pixel (`darken`),
-     which one opaque shade image laid over another, or two added, would not give. The bound of 0.12 is the allowance for the screenshot's
-     rounding and is kept from the first build. */
-  const alone1: number[][] = [];
-  for (let k = 0; k < s.dents.length; k++) {
-    await area(page).evaluate((box, keep) => {
-      box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent').forEach((el, i) => { el.style.visibility = i === keep ? '' : 'hidden'; });
-    }, k);
-    alone1.push((await pixelsOf(page, unionClip)).px);
-  }
-  await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-dents .dw-chair-dent')) el.style.visibility = ''; });
+  /* Where dents overlap, the shade is the darker of the dents there (`darken`): each later dent's shade image is corrected against the earlier
+     ones (dent.ts `capped`), so a dent read alone (the others hidden) is no longer its own shade and the alones' minimum is not the reference.
+     The reference is made here instead, in Node: each dent's UNCAPPED shade gray, from its play's id (the dent's `data-play`) and its box, by
+     dent.ts' pure functions (alpha is 255 less the gray), sampled bilinearly at each screenshot pixel's center (1 outside the box), and the
+     least over the dents is the ratio the browser's union should show. The bound of 0.12 is the allowance for the screenshot's rounding and
+     is kept from the first build. The grids are made at density 1, which is what the page's screenshots are drawn at. */
+  const grays = s.dents.map((d) => {
+    const w = Math.round(d.width), h = Math.round(d.height);
+    const alpha = dentShade(dentHeight(dentShape(d.play), w, h), w, h);
+    const g = new Float64Array(w * h);
+    for (let k = 0; k < g.length; k++) g[k] = 255 - alpha[k * 4 + 3]!;
+    return { d, w, h, g };
+  });
+  const grayAt = (e: (typeof grays)[number], px: number, py: number): number => {
+    if (px < e.d.left || px > e.d.left + e.d.width || py < e.d.top || py > e.d.top + e.d.height) return 255;
+    const x = Math.min(e.w - 1, Math.max(0, ((px - e.d.left) / e.d.width) * e.w - 0.5)), y = Math.min(e.h - 1, Math.max(0, ((py - e.d.top) / e.d.height) * e.h - 0.5));
+    const x0 = Math.floor(x), y0 = Math.floor(y), x1 = Math.min(e.w - 1, x0 + 1), y1 = Math.min(e.h - 1, y0 + 1), fx = x - x0, fy = y - y0;
+    const top = e.g[y0 * e.w + x0]! * (1 - fx) + e.g[y0 * e.w + x1]! * fx, bottom = e.g[y1 * e.w + x0]! * (1 - fx) + e.g[y1 * e.w + x1]! * fx;
+    return top * (1 - fy) + bottom * fy;
+  };
   let worstGap = 0, overlapPixels = 0;
   const flat = plain(union.bare.px);
   for (let i = 0; i < union.bare.px.length; i += 4) {
     if (!flat[i / 4] || luma(union.bare.px, i) <= 100) continue;
-    const ratio = (px: number[]) => luma(px, i) / luma(union.bare.px, i);
-    const each = alone1.map(ratio);
+    const p = i / 4, px = unionClip.x + (p % unionClip.width) + 0.5, py = unionClip.y + Math.floor(p / unionClip.width) + 0.5;
+    const each = grays.map((e) => grayAt(e, px, py) / 255);
     if (each.filter((r) => r < 0.97).length >= 2) overlapPixels++;
-    worstGap = Math.max(worstGap, Math.abs(ratio(union.shaded.px) - Math.min(...each)));
+    worstGap = Math.max(worstGap, Math.abs(luma(union.shaded.px, i) / luma(union.bare.px, i) - Math.min(...each)));
   }
   await onlyShade(false);
 
