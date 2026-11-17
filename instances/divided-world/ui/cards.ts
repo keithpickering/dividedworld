@@ -20,6 +20,7 @@ import { ui as classClownUi } from './cards/class-clown/ui.ts';
 import { ui as feelinFabUi } from './cards/feelin-fab/ui.ts';
 import { ui as feelinGlamUi } from './cards/feelin-glam/ui.ts';
 import { ui as forceFieldUi } from './cards/force-field/ui.ts';
+import { ui as frontRowUi } from './cards/front-row/ui.ts';
 import { ui as glitterBombUi } from './cards/glitter-bomb/ui.ts';
 import { ui as goodVibesUi } from './cards/good-vibes/ui.ts';
 import { ui as graffitiUi } from './cards/graffiti/ui.ts';
@@ -37,6 +38,7 @@ import { ui as moochUi } from './cards/mooch/ui.ts';
 import { ui as offDayUi } from './cards/off-day/ui.ts';
 import { ui as overreactionUi } from './cards/overreaction/ui.ts';
 import { ui as publicityTourUi } from './cards/publicity-tour/ui.ts';
+import { ui as requiredReadingUi } from './cards/required-reading/ui.ts';
 import { ui as ropeBreakUi } from './cards/rope-break/ui.ts';
 import { ui as steelChairUi } from './cards/steel-chair/ui.ts';
 import { ui as stickAroundUi } from './cards/stick-around/ui.ts';
@@ -64,6 +66,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   feelinFabUi,
   feelinGlamUi,
   forceFieldUi,
+  frontRowUi,
   glitterBombUi,
   goodVibesUi,
   graffitiUi,
@@ -81,6 +84,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   offDayUi,
   overreactionUi,
   publicityTourUi,
+  requiredReadingUi,
   ropeBreakUi,
   steelChairUi,
   stickAroundUi,

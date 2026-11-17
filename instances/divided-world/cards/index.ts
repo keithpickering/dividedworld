@@ -19,6 +19,7 @@ import { classClown, price as classClownPrice } from './class-clown.ts';
 import { feelinFab, price as feelinFabPrice } from './feelin-fab.ts';
 import { feelinGlam, price as feelinGlamPrice } from './feelin-glam.ts';
 import { forceField, price as forceFieldPrice } from './force-field.ts';
+import { frontRow, price as frontRowPrice } from './front-row.ts';
 import { glitterBomb, price as glitterBombPrice } from './glitter-bomb.ts';
 import { goodVibes, price as goodVibesPrice } from './good-vibes.ts';
 import { graffiti, price as graffitiPrice } from './graffiti.ts';
@@ -36,6 +37,7 @@ import { mooch, price as moochPrice } from './mooch.ts';
 import { offDay, price as offDayPrice } from './off-day.ts';
 import { overreaction, price as overreactionPrice } from './overreaction.ts';
 import { publicityTour, price as publicityTourPrice } from './publicity-tour.ts';
+import { requiredReading, price as requiredReadingPrice } from './required-reading.ts';
 import { ropeBreak, price as ropeBreakPrice } from './rope-break.ts';
 import { steelChair, price as steelChairPrice } from './steel-chair.ts';
 import { stickAround, price as stickAroundPrice } from './stick-around.ts';
@@ -61,6 +63,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [feelinFab as CardRules, feelinFabPrice],
   [feelinGlam as CardRules, feelinGlamPrice],
   [forceField as CardRules, forceFieldPrice],
+  [frontRow as CardRules, frontRowPrice],
   [glitterBomb as CardRules, glitterBombPrice],
   [goodVibes as CardRules, goodVibesPrice],
   [graffiti as CardRules, graffitiPrice],
@@ -78,6 +81,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [offDay as CardRules, offDayPrice],
   [overreaction as CardRules, overreactionPrice],
   [publicityTour as CardRules, publicityTourPrice],
+  [requiredReading as CardRules, requiredReadingPrice],
   [ropeBreak as CardRules, ropeBreakPrice],
   [steelChair as CardRules, steelChairPrice],
   [stickAround as CardRules, stickAroundPrice],
