@@ -29,7 +29,7 @@ function setup(over: Partial<EffectProps> = {}, standIn: string | null = null) {
   const show = vi.fn<(view: CardView | null) => void>();
   const met = vi.fn();
   const props: EffectProps = {
-    post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false,
+    post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false, moment: null,
     show, met, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: (c) => (c === 'c1' ? 'Gloomba' : 'Spritey'), give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post.</p>, ...over,
   };
@@ -140,8 +140,10 @@ describe('Whodunnit? once it has worn off', () => {
 });
 
 describe('Whodunnit? in a play\'s moment', () => {
-  test.each([[OVER], [UP]])('drawn still with an end of %s, the play was up at the moment: no line, the name is not back, whatever the clock says; nothing is met and nothing is bound', (ends) => {
-    const { container, show, met } = setup({ still: true, plays: [play({ ends })] });
+  /* The moment's time is before the play's end; today's clock (NOW) is after it. The effect judges by the moment's time, which does not advance. */
+  const AT = Date.parse('2026-11-09T12:00:00Z');
+  test('with the end behind today\'s clock and the moment before it, the play is up: no wore-off line, the author is hidden, nothing is met', () => {
+    const { container, show, met } = setup({ moment: { at: AT }, plays: [play({ ends: OVER })] });
     expect(container.querySelector('.dw-whodunnit-wore')).toBeNull();
     expect(last(show).state).toBe('Author hidden from everyone');
     expect(met).not.toHaveBeenCalled();
@@ -149,8 +151,23 @@ describe('Whodunnit? in a play\'s moment', () => {
     for (const el of [...container.querySelectorAll<HTMLElement>('*')]) {
       fireEvent.pointerDown(el); fireEvent.keyDown(el, { key: ' ' }); fireEvent.click(el);
     }
+    act(() => { vi.advanceTimersByTime(3 * 24 * 60 * 60 * 1000); });
+    expect(container.querySelector('.dw-whodunnit-wore')).toBeNull();
     expect(met).not.toHaveBeenCalled();
-    expect(container.querySelector('[inert]')).toBeNull();
     expect(viewProblems(last(show), { holds: false, covers: false })).toEqual([]);
+  });
+
+  test('on a live post with the same clock the wore-off line shows: only a moment stops the clock', () => {
+    const { container, show } = setup({ moment: null, plays: [play({ ends: OVER })] });
+    expect(container.querySelector('.dw-whodunnit-wore')).not.toBeNull();
+    expect(last(show).state).toBe('The name is back');
+  });
+
+  test('a stale `still` flag on a live post changes nothing: the line shows and the card is met', () => {
+    const over = setup({ still: true, moment: null, plays: [play({ ends: OVER })] });
+    expect(over.container.querySelector('.dw-whodunnit-wore')).not.toBeNull();
+    cleanup();
+    const up = setup({ still: true, moment: null });
+    expect(up.met).toHaveBeenCalledTimes(1);
   });
 });
