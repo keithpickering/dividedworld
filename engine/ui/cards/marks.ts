@@ -99,7 +99,7 @@ export function gimmickWords(effect: GimmickEffect, ends: string | undefined, no
   if (effect.kind === 'price') return finish(`${list(effect.flavors.map(capital))} cards cost ${orbs(effect.add)} more here`);
   if (effect.kind === 'earn') {
     /* A flat earn pays a share of a vote for each reaction it names, to any class: the heading is the short status, and the report says the size. */
-    return 'flat' in effect ? finish('Pays more for some reactions', `Each reaction it names pays ${shareWords(effect.flat)} more.`) : finish(`Earns ${Math.round(effect.by * 100)}% more from some reactions`);
+    return 'flat' in effect ? finish('Pays more for some reactions', `Each vote from a player who first reacts while it is up pays ${shareWords(effect.flat)} more.`) : finish(`Earns ${Math.round(effect.by * 100)}% more from some reactions`);
   }
   if (effect.kind === 'cushion') return finish('Softens losses from reactions', `Gives back ${Number((effect.share * 100).toFixed(2))}% of each loss a reaction causes.`);
   /* A no-quote stops a quote of its post while it is up; the heading says so and the end is the Lens's own line. */

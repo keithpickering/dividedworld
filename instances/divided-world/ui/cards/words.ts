@@ -32,6 +32,9 @@ export const earnWords = (c: { readonly gimmick?: GimmickEffect }) => {
   return `${shareWords(c.gimmick.flat)} more`;
 };
 
+/** Whose reactions a timed earn card counts, said by every card that earns for a span. */
+export const FIRST_REACTORS = 'It counts reactions from players who first react to a post while it is up.';
+
 /** What two earn cards on one reaction do, said by every card that earns: only the larger pays. */
 export const LARGEST = 'Where two cards pay on the same reaction, only the larger pays.';
 
