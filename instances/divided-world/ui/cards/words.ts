@@ -32,7 +32,6 @@ export const earnWords = (c: { readonly gimmick?: GimmickEffect }) => {
   return `${shareWords(c.gimmick.flat)} more`;
 };
 
-
 /** What two earn cards on one reaction do, said by every card that earns: only the larger pays. */
 export const LARGEST = 'Where two cards pay on the same reaction, only the larger pays.';
 
