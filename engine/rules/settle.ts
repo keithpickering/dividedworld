@@ -45,6 +45,16 @@
  *   the earliest play, then the smaller play id), as `tidy(flat * vote * votes)` with `{ card, flat }` in the entry's params. It follows the halving,
  *   where a skim and a ride do not, so a negative line (a vote that moved away) takes its pay back, and only where the voter first reacted while
  *   the play was up, so a play never costs its holder. An earn may be a cast card's on a character or a post.
+ * - A cushion play (a use card whose gimmick is `cushion`, or a cast card's), on a character or a post and not ended, with an `ends`, gives back
+ *   `share` of a loss from a reaction: each earning of the character's own class that has a time, an Act of that character, a negative amount and
+ *   positive `votes` (Earning.votes, the signed votes of the one reaction it pays for, which a class sets where it pays per vote), inside the play's
+ *   [at, ends) on the character or on the Act, gets `tidy(-share * amount)` as `card.cushion` with `{ card, share }` in the entry's params, from the
+ *   largest `share` that applies (a tie: the earliest play, then the smaller play id). It reads the class's own earnings only, never a boost, a card's
+ *   payout or another cushion. So a gain taken back (a negative amount on negative votes) is no loss, a loss taken back (a positive amount) is none
+ *   either, and an earning with no `votes` (a cost no reaction caused) is never cushioned. A loss later taken back is given back whole though half was
+ *   cushioned, since the engine is not handed who voted and cannot tie an earning to its voter's first reaction as a flat earn's vote is; that happens
+ *   only when a voter adds a reaction in another quadrant, so it is bounded under half a vote per voter and Act for a half cushion (the settlement
+ *   design, section 3.2). It sits beside a flat earn and neither reads the other.
  * - A skim play (a cast card with a `skim`, a target post, a `quadrant` and an `ends`) pays its caster's character the skim's share of a vote, as
  *   `card.skim`, for each vote on the target in that quadrant after the play and before `ends` whose voter first reacted to the post after the
  *   play, never the caster's own player's, on a post that is not the caster's own player's. A vote moving out of the quadrant inside the
@@ -182,6 +192,8 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   const alignmentOf = new Map<string, Alignment>(instance.cards.map((c) => [c.key, c.alignment]));
   const earnOf = new Map<string, Extract<GimmickEffect, { kind: 'earn' }>>();
   for (const c of instance.cards) if (c.gimmick?.kind === 'earn') earnOf.set(c.key, c.gimmick);
+  const cushionOf = new Map<string, number>();
+  for (const c of instance.cards) if (c.gimmick?.kind === 'cushion') cushionOf.set(c.key, c.gimmick.share);
   const skimOf = new Map<string, number>();
   const rideGimmickOf = new Map<string, number>();
   const rideTrapOf = new Map<string, number>();
@@ -503,7 +515,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   }
 
   /* ---- each class's rules, stretch by stretch ---- */
-  type Contribution = Detail & { class?: string; params?: Readonly<Record<string, number | string>>; kind?: string };
+  type Contribution = Detail & { class?: string; params?: Readonly<Record<string, number | string>>; kind?: string; votes?: number };
   const contributions: Contribution[] = [];
   /* The earn gimmicks up in the input, indexed once by what they are on: a character (a character-reach play) or a post. An admin-ended
      play is not in the input. Each character's pass below reads only its own and its posts' lists, so the pass costs its earnings
@@ -512,10 +524,14 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   type Flat = { card: string; play: string; from: number; ends: number; flat: number; quadrants: readonly Quadrant[]; reactions: readonly string[]; acts?: readonly ActKind[] };
   const boostsOn = new Map<string, Boost[]>();
   const flatsOn = new Map<string, Flat[]>();
+  type Cushion = { card: string; play: string; from: number; ends: number; share: number };
+  const cushionsOn = new Map<string, Cushion[]>();
   const push = <T>(m: Map<string, T[]>, key: string, x: T) => { const list = m.get(key); if (list) list.push(x); else m.set(key, [x]); };
   for (const a of acts.values()) {
     const earn = a.kind === 'card' && a.card ? earnOf.get(a.card) : undefined;
+    const cushion = a.kind === 'card' && a.card ? cushionOf.get(a.card) : undefined;
     const on = a.reach === 'character' ? a.on : a.reach === undefined ? a.target : undefined;
+    if (cushion !== undefined && on !== undefined && a.ends !== undefined) push(cushionsOn, on, { card: a.card!, play: a.id, from: a.at, ends: a.ends, share: cushion });
     // A use card lasts and so does a cast card's earn, so a play of an earn card in effect always has `ends`; a caught play is never in effect and comes without one (0370), and a row without one pays nothing.
     if (!earn || on === undefined || a.ends === undefined) continue;
     const quadrants = earn.quadrants ?? [];
@@ -548,13 +564,13 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
-        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}) });
+        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}), ...(e.votes !== undefined ? { votes: e.votes } : {}) });
       }
     }
     /* Earn by a percentage: each positive earning of the character's own Act, with a time and a quadrant, inside a gimmick's window and in what it
        names, adds `by` times itself under the reason `card.boost`, each gimmick on its own. Boosts are added after, so none is boosted in turn. */
-    if (!boostsOn.size) continue;
-    for (const e of contributions.slice(firstOfCharacter)) {
+    const own = contributions.slice(firstOfCharacter);
+    for (const e of boostsOn.size ? own : []) {
       if (!(e.amount > 0) || e.at === undefined || !e.quadrant || e.act === undefined || acts.get(e.act)?.character !== c.id) continue;
       const applicable = [...(boostsOn.get(c.id) ?? []), ...(boostsOn.get(e.act) ?? [])].filter((g) => e.at! >= g.from && e.at! < g.ends && (g.quadrants.includes(e.quadrant!) || (e.kind !== undefined && g.reactions.includes(e.kind))));
       for (const g of applicable) {
@@ -562,6 +578,22 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         if (!boost) continue;
         contributions.push({ player: e.player, character: e.character, class: e.class, reason: 'card.boost', amount: boost, params: { card: g.card, by: g.by }, act: e.act, quadrant: e.quadrant, at: e.at });
       }
+    }
+    /* A cushion: a loss from a reaction (a time, a negative amount, positive votes) of the character's own Act, inside a cushion's window on the
+       character or on the Act, gives back the largest share that applies, as `card.cushion`. Read from `own`, the class's earnings before any boost
+       was pushed, so a boost or another card's payout is never cushioned, and the entry has no class. */
+    if (!cushionsOn.size) continue;
+    for (const e of own) {
+      if (!(e.amount < 0) || !(e.votes! > 0) || e.at === undefined || e.act === undefined || acts.get(e.act)?.character !== c.id) continue;
+      let best: Cushion | undefined;
+      for (const g of [...(cushionsOn.get(c.id) ?? []), ...(cushionsOn.get(e.act) ?? [])]) {
+        if (!(e.at >= g.from && e.at < g.ends)) continue;
+        if (!best || g.share > best.share || (g.share === best.share && (g.from < best.from || (g.from === best.from && g.play < best.play)))) best = g;
+      }
+      if (!best) continue;
+      const back = tidy(-best.share * e.amount);
+      if (!back) continue;
+      contributions.push({ player: e.player, character: e.character, reason: 'card.cushion', amount: back, params: { card: best.card, share: best.share }, act: e.act, ...(e.quadrant ? { quadrant: e.quadrant } : {}), at: e.at });
     }
   }
 

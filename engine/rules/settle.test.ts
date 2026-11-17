@@ -1852,3 +1852,125 @@ test('entryKey is the player and the line key, and the line key tells two cards,
   assert.notEqual(lineKey('c', 'card.ride', 'x'), lineKey('c', 'card.ride', 'y'));
   assert.notEqual(lineKey('c', 'card.ride', 'x'), lineKey('c', 'card.ride', null));
 });
+
+/* The cushion (docs/plans/2026-11-16-settlement-engine-plan.md, Task 3): a share of a loss from a reaction given back. The test classes: "voted" pays
+   a vote's worth for each reaction it receives, positive in the positive quadrants and negative in the others, and sets `votes` to the reaction's
+   signed votes; "costly" charges 10 for each reaction it receives and sets no `votes`, a cost no reaction caused. */
+const voted: ClassRules = {
+  key: 'voted',
+  name: 'Voted',
+  earn: (input, settings) => input.received.map((r): Earning => {
+    const gain = r.quadrant === 'excitedPositive' || r.quadrant === 'calmPositive';
+    return { reason: gain ? 'voted.nod' : 'voted.sting', amount: (gain ? 1 : -1) * settings.vote * r.votes, votes: r.votes, act: r.act, quadrant: r.quadrant, at: r.at };
+  }),
+};
+const costly: ClassRules = {
+  key: 'costly',
+  name: 'Costly',
+  earn: (input) => input.received.map((r): Earning => ({ reason: 'costly.fee', amount: -10, act: r.act, quadrant: r.quadrant, at: r.at })),
+};
+const cushionWorld: Instance = {
+  ...cardsWorld,
+  classes: [...cardsWorld.classes, voted, costly],
+  cards: [
+    ...cardsWorld.cards,
+    { ...splat, key: 'softCushionB', reaches: ['character'] as const, gimmick: { kind: 'cushion', share: 0.5 } },
+    { ...splat, key: 'wholeCushion', gimmick: { kind: 'cushion', share: 1 } },
+    { ...splat, key: 'quarterCushion', gimmick: { kind: 'cushion', share: 0.25 } },
+  ],
+};
+function cushionBoard(gimmicks: InputAct[], reactions: InputReaction[], extra: InputAct[] = [], over: Partial<SettlementInput> = {}): SettlementInput {
+  return flatBoard(gimmicks, reactions, extra, {
+    characters: [
+      { id: 'tom-1', player: 'tom', classes: [{ class: 'voted', from: 0 }] },
+      { id: 'tom-2', player: 'tom', classes: [{ class: 'quiet', from: 0 }] },
+      { id: 'uma-1', player: 'uma', classes: [{ class: 'costly', from: 0 }] },
+      ...['bob', 'cat', 'dee', 'eve', 'fay'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+    ...over,
+  });
+}
+const cushionsOf = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.reason === 'card.cushion');
+const cushionTo = (r: ReturnType<typeof settle>, character: string) => amountOf(r, character, 'card.cushion');
+
+test('a loss from a reaction is half given back under a 0.5 cushion; a gain is untouched; a loss outside its time is untouched', () => {
+  const one = (r: InputReaction, ends = FROM + 10 * H) => cushionTo(settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H, ends)], [r]), cushionWorld), 'tom-1');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)), 5, 'half of a loss of 10');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'tomato', FROM + 5 * H)), 5, 'a loss from any negative quadrant');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H)), 0, 'a gain');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'zzz', FROM + 2 * H - 1)), 0, 'before it');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'zzz', FROM + 10 * H)), 0, 'at its end');
+  assert.equal(one(react('tp1', 'bob', 'bob-1', 'zzz', FROM + 12 * H)), 0, 'after it');
+  const r = settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]), cushionWorld);
+  assert.equal(amountOf(r, 'tom-1', 'voted.sting'), -10, 'the class\'s own loss is whole');
+});
+test('a cushion with no `ends` gives nothing back', () => {
+  assert.equal(cushionTo(settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H, null)], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]), cushionWorld), 'tom-1'), 0);
+});
+test('an earning with a negative amount and no `votes`, a cost no reaction caused, is untouched', () => {
+  const r = settle(cushionBoard([onUma('g1', 'softCushion', FROM + 2 * H)], [react('up1', 'dee', 'dee-1', 'zzz', FROM + 5 * H)]), cushionWorld);
+  assert.equal(amountOf(r, 'uma-1', 'costly.fee'), -10);
+  assert.equal(cushionsOf(r).length, 0);
+});
+test('a gain taken back and a loss taken back are untouched', () => {
+  const play = onTom('g1', 'softCushion', FROM + 2 * H, FROM + 100 * H);
+  const taken = (firstKind: string, thenKind: string) => {
+    const first = settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', firstKind, FROM + 5 * H)]), cushionWorld);
+    return settle(cushionBoard([play], [react('tp1', 'bob', 'bob-1', firstKind, FROM + 5 * H), react('tp1', 'bob', 'bob-1', thenKind, TO + 3 * H)], [], { window: W2, paid: first.paid }), cushionWorld);
+  };
+  const gain = taken('tea', 'fire');
+  assert.ok(gain.details.some((d) => d.reason === 'voted.nod' && d.amount < 0), 'the calm vote was taken back (a negative amount on negative votes)');
+  assert.equal(cushionsOf(gain).length, 0, 'a gain taken back is no loss');
+  const loss = taken('zzz', 'tea');
+  assert.equal(amountOf(loss, 'tom-1', 'voted.sting'), 5, 'a loss taken back pays back');
+  assert.equal(cushionsOf(loss).length, 0, 'a loss taken back (positive amount) is untouched');
+});
+test('two cushions on one loss give back the larger alone; a tie goes to the earlier play, then the smaller id', () => {
+  const loss = [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H)];
+  const larger = settle(cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H), onPostBy('g2', 'tom-1', 'wholeCushion', 'tp1', FROM + 2 * H)], loss), cushionWorld);
+  assert.deepEqual(cushionsOf(larger).map((e) => [e.params, e.amount]), [[{ card: 'wholeCushion', share: 1 }, 10]], 'one entry, not two');
+  assert.equal(larger.details.filter((d) => d.reason === 'card.cushion').length, 1);
+  const earlier = settle(cushionBoard([castOn('b', 'bob-1', 'softCushionB', FROM + 2 * H, 'tom-1'), onTom('a', 'softCushion', FROM + 3 * H)], loss), cushionWorld);
+  assert.deepEqual(cushionsOf(earlier).map((e) => e.params), [{ card: 'softCushionB', share: 0.5 }], 'the earlier play');
+  const sameTime = settle(cushionBoard([castOn('b', 'bob-1', 'softCushionB', FROM + 2 * H, 'tom-1'), onTom('a', 'softCushion', FROM + 2 * H)], loss), cushionWorld);
+  assert.deepEqual(cushionsOf(sameTime).map((e) => e.params), [{ card: 'softCushion', share: 0.5 }], 'same time and size: the smaller id, a');
+});
+test('a cushion on a post softens that post\'s losses alone', () => {
+  const r = settle(cushionBoard([onPostBy('g1', 'bob-1', 'softCushion', 'tp1', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H), react('tp2', 'dee', 'dee-1', 'zzz', FROM + 5 * H)]), cushionWorld);
+  assert.deepEqual(cushionsOf(r).map((e) => [e.player, e.character, e.amount]), [['tom', 'tom-1', 5]], 'the post tp1 alone, to its author, never the caster');
+  assert.deepEqual(r.details.filter((d) => d.reason === 'card.cushion').map((d) => d.act), ['tp1']);
+});
+test('a cushion beside a flat earn on the same vote: both entries, each as it would be alone', () => {
+  const loss = [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H)];
+  const flat = onTom('g1', 'heatChillFlat', FROM + 2 * H);
+  const soft = onTom('g2', 'softCushion', FROM + 2 * H);
+  const both = settle(cushionBoard([flat, soft], loss), cushionWorld);
+  const flatAlone = settle(cushionBoard([flat], loss), cushionWorld);
+  const softAlone = settle(cushionBoard([soft], loss), cushionWorld);
+  assert.deepEqual(boostsOf(both).map((e) => [e.params, e.amount]), boostsOf(flatAlone).map((e) => [e.params, e.amount]));
+  assert.deepEqual(cushionsOf(both).map((e) => [e.params, e.amount]), cushionsOf(softAlone).map((e) => [e.params, e.amount]));
+  assert.deepEqual(boostsOf(both).map((e) => e.amount), [5], 'the flat earn pays half a vote for the groan');
+  assert.deepEqual(cushionsOf(both).map((e) => e.amount), [5], 'and the cushion gives half the loss back');
+});
+test('a cushion reads the class\'s own earnings alone: a `by` boost and a flat earn beside it are never cushioned', () => {
+  const r = settle(cushionBoard([onTom('g1', 'calmBoost', FROM + 2 * H), onTom('g2', 'heatChillFlat', FROM + 2 * H), onTom('g3', 'softCushion', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H)]), cushionWorld);
+  assert.deepEqual(cushionsOf(r).map((e) => e.amount), [5], 'one cushion line, for the class\'s own loss alone');
+});
+test('a cushion entry carries { card, share }, its details carry the card and add up to it, and it is in no class\'s total', () => {
+  const input = cushionBoard([onTom('g1', 'quarterCushion', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'zzz', FROM + 6 * H), react('tp2', 'dee', 'dee-1', 'tomato', FROM + 7 * H)]);
+  const r = settle(input, cushionWorld);
+  const [entry] = cushionsOf(r);
+  assert.deepEqual(entry!.params, { card: 'quarterCushion', share: 0.25 });
+  assert.equal(entry!.amount, 8, '2.5 for each of three losses, 7.5 rounded');
+  const details = r.details.filter((d) => d.reason === 'card.cushion');
+  assert.equal(details.length, 3);
+  assert.equal(details.reduce((s, d) => s + d.amount, 0), entry!.amount);
+  assert.ok(details.every((d) => d.params?.card === 'quarterCushion' && Object.keys(d.params).length === 1 && d.quadrant !== undefined && d.at !== undefined));
+  assert.equal(r.byClass.voted, amountOf(r, 'tom-1', 'voted.sting'), 'a cushion has no class');
+});
+test('the estimate shows the cushion\'s line at the reaction\'s time', () => {
+  const input = cushionBoard([onTom('g1', 'softCushion', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]);
+  const estimate = estimateForOwner(input, cushionWorld, 'tom');
+  assert.deepEqual(estimate.entries.filter((e) => e.reason === 'card.cushion').map((e) => [e.params, e.amount]), [[{ card: 'softCushion' }, 5]]);
+  assert.deepEqual(estimate.lines.filter((l) => l.reason === 'card.cushion').map((l) => [l.act, l.quadrant, l.at, l.amount]), [['tp1', 'boredNegative', FROM + 5 * H, 5]]);
+});
