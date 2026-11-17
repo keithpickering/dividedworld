@@ -3,9 +3,6 @@
  * receipt at the foot of the words for a phrase edited out. jsdom has no layout, so the drawing's tests need none (the search and the arithmetic are place.test.ts's);
  * the measuring is driven once with stand-in boxes, to show that it writes each height and place once and that a second pass over its own result writes nothing.
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { act, cleanup, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useState, type ReactNode } from 'react';

@@ -17,8 +17,9 @@
  * passes the spot fires nothing. The burst fires once per mount: leaving and coming back shows every flake landed. Out of view the flakes object is released and dropped (it is deterministic, so it is built
  * again from its seed when the post returns, at ~4,200 flakes a post this is the memory of a long scroll), and so is the cling
  * registration. The surface is `sticky` for cling (a mouse passing over picks glitter up, which lands loose on a post, the reader's own
- * and never saved or sent; the pointer is over it as the body it covers, since it takes none itself), and unmounting unregisters it and drops the loose glitter. A play's moment runs this same live effect (the engine gives it the moment's own
- * clock and no reader; this effect never reads either). A kept post (`kept`, docs/plans/2026-11-12-glitter-keeps-design.md,
+ * and never saved or sent; the pointer is over it as the body it covers, since it takes none itself), and unmounting unregisters it and drops the loose glitter.
+ * A play's moment runs this same live effect (the engine gives it the moment's own clock and no reader; this effect never reads
+ * either). A kept post (`kept`, docs/plans/2026-11-12-glitter-keeps-design.md,
  * section 4: written while the play was up, loaded after it wore off) starts as a post that has already fired: no burst point is
  * watched and the flakes are built landed, while the loop, the glints, cling and the shake run as for any live post. `kept` is read once, at
  * mount, and is no dependency of the effect: a post on screen when the week ends gets `kept` from the engine mid-life and must not be
@@ -57,7 +58,7 @@
  * band already held.
  *
  * Memory: the over canvas has a backing store only while a burst is in the air (sized when it runs, zeroed when it ends, never
- * sized without one); a post out of view zeroes all three. Reduced motion turned on mid-burst lands what is in the air at rest. The
+ * sized when it runs, zeroed when it ends); a post out of view zeroes all three. Reduced motion turned on mid-burst lands what is in the air at rest. The
  * 40% watcher stops once the burst has fired.
  */
 import { useEffect, useRef } from 'react';
@@ -108,7 +109,7 @@ export function GlitterBombEffect({ post, plays, kept, children }: EffectProps) 
   useEffect(() => {
     const el = host.current, face = surface.current, below = under.current, lit = flash.current, above = over.current, spot = mark.current;
     if (!el || !face || !below || !lit || !above || !spot) return;
-    /* This mount's glitter: its own burst point and resting places, kept until it unmounts . */
+    /* This mount's glitter: its own burst point and resting places, kept until it unmounts. */
     const drawn = `${seed}:${loadSeed()}`;
     let flakes: Flakes | null = null;
     let unclung: (() => void) | null = null;

@@ -598,6 +598,29 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(vi.mocked(bandFor).mock.calls.length).toBe(before + 1);
   });
 
+  test('an unmount mid-burst lets the flakes go, drops the over canvas and the cling registration, and the next mount fires its own burst', () => {
+    const r = render(<GlitterBombEffect {...props()} />);
+    fire(100);
+    const first = lastFlakes();
+    const canvasOver = over();
+    const face = box().querySelector<HTMLElement>('.dw-glitter-surface')!;
+    expect(first.flying).toBeGreaterThan(0);
+    expect(canvasOver.width).toBe(300);
+    r.unmount();
+    expect(release).toHaveBeenCalledWith(first);
+    expect(first.flying).toBe(0);
+    expect(spies.clingUnregister).toHaveBeenCalledWith(face);
+    expect(document.contains(canvasOver)).toBe(false);
+    expect(flakesModule.burstProbe.inFlight()).toBe(0);
+    render(<GlitterBombEffect {...props()} />);
+    fire(2000);
+    const second = lastFlakes();
+    expect(second).not.toBe(first);
+    expect(burst.mock.calls.filter(([f]) => f === second)).toHaveLength(1);
+    expect(second.flying).toBeGreaterThan(0);
+    expect(over().width).toBe(300);
+  });
+
   test('the box is measured by getBoundingClientRect, fractions included, and the backing store is round(box x density)', () => {
     size = { w: 300.4, h: 119.6 };
     vi.stubGlobal('devicePixelRatio', 1.5);

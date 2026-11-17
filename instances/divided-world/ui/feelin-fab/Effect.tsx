@@ -23,8 +23,8 @@
  * The page's one loop (engine/ui/shine/loop.ts) serves the post: it draws only while the post is in view, when the light moved, and
  * on the idle shimmer's cadence; reduced motion holds the light at rest, so it draws once. The accessible path is that stillness,
  * and it gives the same foil ("An accessible path costs what the obstacle costs"). A play's moment runs this same live foil (the
- * engine gives it the moment's own clock and no reader; this effect never reads either). Nothing here reads who owns a post, who played on it, or any class: the seed is
- * `post.id` and the plays' ids, which are public.
+ * engine gives it the moment's own clock and no reader; this effect never reads either).
+ * Nothing here reads who owns a post, who played on it, or any class: the seed is `post.id` and the plays' ids, which are public.
  *
  * Where the browser has a Worker, an OffscreenCanvas and a canvas that can hand over control (`offscreenFoils`), the foil is drawn in a
  * worker (engine/ui/shine/foilClient.ts, issue #272): the render and the full-canvas draw were most of the main thread's work during a
@@ -32,10 +32,9 @@
  * spec, the box, the density, the light and band read here on the main thread, the time) instead of painting; the worker makes the
  * same foil and calls the same `foil.draw`, so the look and the motion are the same. The loop still decides when the post draws, eases
  * its light and counts its draws. Everywhere else, where a worker cannot start (the hand-over is refused before anything is
- * transferred), the post draws on the main thread as
- * it always did. A transferred canvas can never be drawn on from the page again, nor handed over
- * a second time, so the `<canvas>` carries a `key` of level and seed: an effect that runs again (a level or a seed change)
- * gets a fresh element. A development build under React's StrictMode would run the effect twice on one element and the second
+ * transferred), the post draws on the main thread as it always did. A transferred canvas can never be drawn on from the page
+ * again, nor handed over a second time, so the `<canvas>` carries a `key` of level and seed: an effect that runs again (a level
+ * or a seed change) gets a fresh element. A development build under React's StrictMode would run the effect twice on one element and the second
  * hand-over is refused after the first transferred it (logged, the post bare); the app does not use StrictMode.
  *
  * Where. The foil fills the post, not only its words (2026-11-06: "the card effect should apply to the entire post in all cases"): in
