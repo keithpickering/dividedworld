@@ -16,6 +16,15 @@
  * sends after the release then starts a pulse, which is intended (a quick mouse click is a one-second hold). The pulse ends
  * on blur, on the pointer leaving and on unmount like any hold, and its timer goes with it, so stop is called once. The
  * hidden description is the card's own words and then HOLD_PULSE_HELP, which a hold with no words has alone.
+ *
+ * A tap of Space or Enter is a pulse too (the owner's decision, 2026-11-17: "a tap becomes a one-second pulse like a click, so
+ * the sentence is true for everyone and keyboard users get the same tap-to-keep-going path; holding the key down still holds").
+ * The keydown starts the hold and owns the control, as ever, and sets the one timer for HOLD_PULSE_MS. A key released before
+ * that timer fires is a tap: the hold goes on and ends when the timer does, a second after the keydown, never more; another
+ * tap before then moves the end to a second after its keydown and does not start again. A key still down when the timer
+ * fires is a real hold: the timer does nothing and the keyup stops it at once, with no pulse after it. (The pointer differs
+ * only in what follows a real hold: the browser's click after its pointerup starts a pulse; a key's release sends no click.)
+ * The key's duration is that timer, on the page's own timer, never a clock read.
  */
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { Link } from '../router.tsx';
@@ -47,18 +56,31 @@ function Hold({ control }: { readonly control: Extract<KitControl, { kind: 'hold
   /* A pointer or a key is down: it owns the control, and a click that arrives meanwhile is not its pulse. */
   const owned = useRef(false);
   const pulse = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /* A key is down and has not yet been down for HOLD_PULSE_MS: its release is a tap. */
+  const keyDown = useRef(false);
   const clearPulse = () => { clearTimeout(pulse.current); pulse.current = undefined; };
   const start = () => { holding.current = true; control.start(); };
   /* Stops through the latest control: a pulse's timer fires after renders, and the control it was set under may be a new object by then. */
-  const stop = () => { clearPulse(); owned.current = false; holding.current = false; live.current.stop(); };
+  const stop = () => { clearPulse(); keyDown.current = false; owned.current = false; holding.current = false; live.current.stop(); };
   /* A press that lands during a pulse takes the hold over: the pulse's timer goes, the hold already runs, and the release ends it. */
-  const grab = () => { owned.current = true; clearPulse(); if (!holding.current) start(); };
+  const grab = () => { owned.current = true; keyDown.current = false; clearPulse(); if (!holding.current) start(); };
   /* A click holds for one second: it starts the hold if none runs, and sets the one timer that ends it a second from now, so a click while it runs only moves the end. */
   const click = () => {
     if (owned.current) return;
     if (!holding.current) start();
     clearPulse();
     pulse.current = setTimeout(stop, HOLD_PULSE_MS);
+  };
+  /* A key goes down: it holds from now, and its timer says whether the release is a tap (the timer still pending) or a real hold (it has fired). */
+  const keyPress = () => {
+    grab();
+    keyDown.current = true;
+    pulse.current = setTimeout(() => { pulse.current = undefined; if (!keyDown.current) stop(); }, HOLD_PULSE_MS);
+  };
+  /* A tap leaves the hold running as a pulse and gives the control back; a real hold, or a release with no press under it, stops. */
+  const keyRelease = () => {
+    if (keyDown.current && pulse.current !== undefined) { keyDown.current = false; owned.current = false; return; }
+    stop();
   };
   /* Gone mid-hold (the post scrolled away, the card taken off): stopped once, as the hold would have been by a release; a pulse's timer goes with it. */
   useEffect(() => () => { clearTimeout(pulse.current); if (holding.current) live.current.stop(); }, []);
@@ -69,8 +91,8 @@ function Hold({ control }: { readonly control: Extract<KitControl, { kind: 'hold
         onPointerDown={(e: PointerEvent) => { swallow(e); grab(); }} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop} onBlur={stop}
         onClick={click}
         onContextMenu={swallow}
-        onKeyDown={(e: KeyboardEvent) => { if (!isActivation(e)) return; e.preventDefault(); if (!e.repeat) grab(); }}
-        onKeyUp={(e: KeyboardEvent) => { if (isActivation(e)) stop(); }}
+        onKeyDown={(e: KeyboardEvent) => { if (!isActivation(e)) return; e.preventDefault(); if (!e.repeat) keyPress(); }}
+        onKeyUp={(e: KeyboardEvent) => { if (isActivation(e)) keyRelease(); }}
       >
         {control.label}
       </Tile>
