@@ -2,7 +2,7 @@
  * What makes an instance whole: the checks the engine runs on what an instance hands it,
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
-import { ALIGNMENTS, QUADRANTS } from './types.ts';
+import { ACT_KINDS, ALIGNMENTS, QUADRANTS } from './types.ts';
 import { LOCAL_PREFIX } from './emoji.ts';
 import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
@@ -786,9 +786,16 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
     if (e.flavors !== undefined && (!list(e.flavors) || flavorsBad(e.flavors))) out.push(`${who} has a ward of the flavors ${JSON.stringify(e.flavors)}; a flavor is ${ALIGNMENTS.join(', ')}`);
     if (e.cards !== undefined && (!list(e.cards) || e.cards.some((k) => typeof k !== 'string'))) out.push(`${who} has a ward of the cards ${JSON.stringify(e.cards)}; cards are named by key`);
   } else if (e.kind === 'earn') {
-    if (typeof e.by !== 'number' || !(e.by > 0 && e.by <= 1)) out.push(e.by === undefined ? `${who} has an earn with no by; by is above 0 and at most 1` : `${who} has an earn of ${JSON.stringify(e.by)}; by is above 0 and at most 1`);
+    const word = (v: unknown): string => JSON.stringify(v) ?? 'undefined';
+    if ((e.by === undefined) === (e.flat === undefined)) out.push(`${who} has an earn with no size; an earn has by or flat, and not both`);
+    else if (e.by !== undefined && (typeof e.by !== 'number' || !(e.by > 0 && e.by <= 1))) out.push(`${who} has an earn of ${word(e.by)}; by is above 0 and at most 1`);
+    else if (e.flat !== undefined && (typeof e.flat !== 'number' || !(e.flat > 0 && e.flat <= 1))) out.push(`${who} has an earn of flat ${word(e.flat)}; flat is above 0 and at most 1`);
+    if (e.acts !== undefined) {
+      if (e.by !== undefined) out.push(`${who} has an earn with acts and by; only a flat earn names acts`);
+      else if (!list(e.acts) || e.acts.some((k) => !ACT_KINDS.includes(k as never))) out.push(`${who} has an earn naming the acts ${word(e.acts)}; an act is a kind of Act`);
+    }
+    if ('group' in e) out.push(`${who} has an earn with a group; no earn has one, and of the flat earns on one vote the largest applies`);
     if (e.quadrants === undefined && e.reactions === undefined) out.push(`${who} has an earn that names no quadrant and no reaction`);
-    if (e.group !== undefined && (typeof e.group !== 'string' || e.group === '')) out.push(`${who} has an earn with the group ${JSON.stringify(e.group)}; a group is a word`);
     if (e.quadrants !== undefined) {
       if (!list(e.quadrants)) out.push(`${who} has an earn naming no quadrant; a quadrant is ${QUADRANTS.join(', ')}`);
       else for (const q of e.quadrants) if (!QUADRANTS.includes(q as never)) out.push(`${who} has an earn naming the quadrant ${JSON.stringify(q)}; a quadrant is ${QUADRANTS.join(', ')}`);
@@ -803,6 +810,8 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
   } else if (e.kind === 'ride') {
     const why = shareProblem(e, who, 'a ride', 'a ride of');
     if (why) out.push(why);
+  } else if (e.kind === 'cushion') {
+    if (typeof e.share !== 'number' || !(e.share > 0 && e.share <= 1)) out.push(`${who} has a cushion of ${JSON.stringify(e.share) ?? 'undefined'}; share is above 0 and at most 1`);
   } else if (e.kind === 'noQuote') {
     // It has no numbers: a card that stops quotes stops them all, and what it reaches is playProblems'.
   } else {
