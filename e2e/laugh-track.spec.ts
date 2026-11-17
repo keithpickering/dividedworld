@@ -139,15 +139,22 @@ test('with Game sounds off a click fetches no sound file', async ({ page }) => {
   expect(seen).toEqual([]);
 });
 
-test('with Game sounds on and a gesture made, a click fetches its take', async ({ page }) => {
+test("with Game sounds on, the post's sounds are fetched as it is drawn, each once, and a place sounding fetches nothing more", async ({ page }) => {
+  /* `mp3s` records requests, not responses: a repeat fetch is a second request even where the browser's cache would answer it, so a file asked for twice shows twice. */
   const seen = mp3s(page);
   await openInApp(page, MAIN, 'on');
-  /* The page's sound is unlocked by a gesture; nothing is fetched until a place sounds. */
+  /* The card warms its twelve sounds when the post is drawn (docs/plans/2026-11-17-sound-preload-design.md, 2.2), before any gesture unlocks the page. */
+  const NAMES = ['laugh-1', 'laugh-2', 'laugh-3', 'cheer-1', 'cheer-2', 'cheer-3', 'boo-1', 'boo-2', 'boo-3', 'titter', 'ooh', 'grumble'];
+  await expect.poll(() => seen.length, { timeout: 5000 }).toBe(12);
+  expect(new Set(seen).size).toBe(12);
+  for (const name of NAMES) expect(seen.filter((u) => u.includes(`/${name}-`))).toHaveLength(1);
   await page.mouse.click(5, 5);
-  await page.waitForTimeout(300);
-  expect(seen).toEqual([]);
   await heardAtTheLine(page);
-  await expect.poll(() => seen.some((u) => /boo-[123]/u.test(u)), { timeout: 5000 }).toBe(true);
+  await expect(region(page)).toHaveText('The audience boos', { timeout: 4000 });
+  /* Give any stray fetch time to be made; the sound that played came from the warm. */
+  await page.waitForTimeout(800);
+  expect(seen).toHaveLength(12);
+  expect(new Set(seen).size).toBe(12);
 });
 
 /* The bar is mounted at the page's root (web/src/App.tsx), over the board's and the glass's own layers. It lets every press through, so for the test it is
