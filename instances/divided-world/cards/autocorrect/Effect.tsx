@@ -685,9 +685,10 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     });
   }, [states]);
 
+  /* A moment meets nothing: it sends nothing at all, the reader's own first-time callout included. */
   const meet = useRef(met);
-  meet.current = met;
-  const onMeet = useCallback(() => meet.current(), []);
+  meet.current = moment === null ? met : null;
+  const onMeet = useCallback(() => meet.current?.(), []);
   const model = useRef({ live, strips, text, author });
   model.current = { live, strips, text, author };
   /* Said again when the same words come up twice: a trailing space every other time makes it new text, as Whoops! does. */

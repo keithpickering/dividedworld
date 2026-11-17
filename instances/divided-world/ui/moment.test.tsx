@@ -13,6 +13,7 @@ import type { Act, PlayMoment } from '../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../engine/ui/test-world.tsx';
 import { instance } from '../index.ts';
 import { instanceUi } from './index.ts';
+import { BbCode } from '../../../engine/ui/bbcode/render.tsx';
 import { NO_INK } from '../../../engine/ui/cards/claims.ts';
 
 /* A page with no board's tokens in jsdom has no band for glitter to be drawn in; the band is a fixed one, as the effect's own test gives it. */
@@ -34,9 +35,47 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  delete (Range.prototype as unknown as { getClientRects?: unknown }).getClientRects;
   delete (HTMLElement.prototype as { clientWidth?: unknown }).clientWidth;
   delete (HTMLElement.prototype as { offsetHeight?: unknown }).offsetHeight;
 });
+
+/**
+ * A stand-in layout for Autocorrect, which lays its tape over measured words: every segment and room on one line, 10 px a letter and 8 a room (as the card's own Effect.test.tsx has it), so
+ * a strip has pieces, an anchor and hands, and a held key or press in the contract test reaches the peel. Undone in `afterEach`.
+ */
+function standInLayout(): void {
+  const rectOf = (el: Element) => {
+    const host = el.closest('.dw-ac');
+    let left = 0;
+    for (const e of host?.querySelectorAll('[data-kb-ac-seg], .dw-ac-room') ?? []) {
+      const width = (e.textContent ?? '').length * (e.classList.contains('dw-ac-room') ? 8 : 10);
+      if (e === el) return { left, right: left + width, top: 0, bottom: 20, width, height: 20, x: left, y: 0, toJSON: () => ({}) };
+      left += width;
+    }
+    return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) };
+  };
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  const ctx: Record<string | symbol, unknown> = {
+    font: '',
+    measureText(text: string) { return { width: text.length * 0.5 * Number(/(\d+(?:\.\d+)?)px/u.exec(String(ctx.font))?.[1] ?? 16) }; },
+    createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+    createLinearGradient: () => ({ addColorStop: () => {} }),
+  };
+  const canvas = new Proxy(ctx, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => { t[k] = v; return true; } });
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => canvas) as never);
+  vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) { return (this.hasAttribute('data-kb-ac-seg') ? [rectOf(this)] : []) as unknown as DOMRectList; });
+  (Range.prototype as unknown as { getClientRects: () => unknown[] }).getClientRects = function (this: Range) {
+    return [...document.querySelectorAll('[data-kb-ac-seg], .dw-ac-room')].filter((e) => this.intersectsNode(e)).map(rectOf);
+  };
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 60, width: 300, height: 60, toJSON: () => ({}) }));
+  const real = window.getComputedStyle.bind(window);
+  vi.spyOn(window, 'getComputedStyle').mockImplementation(((el: Element, pseudo?: string | null) => {
+    const st = real(el, pseudo);
+    return { fontSize: '16px', fontStyle: 'normal', fontWeight: '400', fontFamily: 'serif', getPropertyValue: (k: string) => st.getPropertyValue(k) };
+  }) as never);
+}
 
 /* Glitter Bomb lands beyond a post, so a moment draws it only as a spin's own play on a character; it keeps the contract too. */
 const drawn = instanceUi.cards.filter((c) => c.Effect && (c.key === 'glitter-bomb' || playsInMoment(instance.cards.find((r) => r.key === c.key), c)));
@@ -51,7 +90,8 @@ const BARE: readonly string[] = ['whodunnit', 'blind-study'];
 const WORDS = '<p>hi</p>';
 
 test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn in a moment, saves, releases, gives, meets and holds nothing, whatever is pressed, held, keyed, touched or chosen in its Lens', async (key, card) => {
-  const plays: CardPlay[] = [1, 2].map((n) => ({ id: `${key}-${n}`, card: key, layer: n, caster: 'c2', message: '', config: { color: '#ffd93d', seed: n }, playedAt: `2026-11-03T12:0${n}:00.000Z`, post: POST.id, ends: n === 1 ? '2026-11-06T12:00:00.000Z' : '2099-01-01T00:00:00.000Z' }));
+  /* `phrase` and `replacement` are Autocorrect's: the post's words are "hi", so it has a strip, an anchor and hands for a held press to reach (its words are drawn by `BbCode`, as the engine draws them, since it reads the text layer); no other card reads them. */
+  const plays: CardPlay[] = [1, 2].map((n) => ({ id: `${key}-${n}`, card: key, layer: n, caster: 'c2', message: '', config: { color: '#ffd93d', seed: n, phrase: 'hi', replacement: 'hello there' }, playedAt: `2026-11-03T12:0${n}:00.000Z`, post: POST.id, ends: n === 1 ? '2026-11-06T12:00:00.000Z' : '2099-01-01T00:00:00.000Z' }));
   const save = vi.fn(async (play: string) => ({ ok: true as const, value: { play, savedAt: '2026-11-03T13:00:00.000Z' } }));
   const release = vi.fn(async (play: string) => ({ ok: true as const, value: { play, releasedAt: '2026-11-03T13:00:00.000Z' } }));
   const give = vi.fn(async () => ({ ok: false as const, error: 'no' }));
@@ -62,9 +102,10 @@ test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn in a moment, saves, 
   /* The engine hands a moment's effect `{ author: false, caster: false }`; this holds the effect to the contract even when told otherwise. */
   const props: EffectProps = {
     post: POST, plays, states: {}, released: new Set(), written: new Map(), reader: { author: true, caster: true }, place: 'thread', reach: 'post', still: false, moment: { at: AT },
-    show: (v) => { view = v; }, met, holdScreen, ink: NO_INK, marks: null, save, release, nameOf: () => 'Spritey', give, moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
+    show: (v) => { view = v; }, met, holdScreen, ink: NO_INK, marks: null, save, release, nameOf: () => 'Spritey', give, moreGifts: async () => {}, wallet: null, children: key === 'autocorrect' ? <BbCode text="hi" /> : <p>hi</p>,
   };
-  const { container, unmount } = renderInWorld(<Effect {...props} />, { settings: { cardSettings: { 'whoops.clean': 95 } } });
+  if (key === 'autocorrect') standInLayout();
+  const { container, unmount } = renderInWorld(<Effect {...props} />, { settings: { cardSettings: { 'whoops.clean': 95 }, economy: { 'autocorrect.holdHours': 24 } } as never });
   const later = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
   /* A card's effect loads on first use (`lazy`): it is awaited, or what is pressed below is the words alone. */
   await act(async () => { await vi.dynamicImportSettled(); await vi.advanceTimersByTimeAsync(100); });
