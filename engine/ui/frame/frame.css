@@ -1427,12 +1427,11 @@ button.kb-hud-secret:focus-visible {
   position: relative;
   /* Above the says line's calm, whose feather lies over the cards. */
   z-index: 1;
-  /* One row, swiped sideways, with the card nearest the middle snapped there (Hand.tsx writes each card's pose). */
+  /* One row, swiped sideways, with the card nearest the middle brought there once a swipe comes to rest (Hand.tsx poses each card and settles the row). No CSS snap: WebKit on iOS decelerates a scroller with snap points at UIKit's fast rate, and a hard flick carried a few cards. */
   display: flex;
   flex-wrap: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
-  scroll-snap-type: x mandatory;
   /* A horizontal swipe is the row's; a vertical drag is the sheet's. */
   overscroll-behavior-x: contain;
   scrollbar-width: none;
@@ -1451,9 +1450,8 @@ button.kb-hud-secret:focus-visible {
   position: relative;
   flex: none;
   z-index: var(--kb-fan-z);
-  scroll-snap-align: center;
-  /* The pose Hand.tsx writes on each card, drawn with the individual properties so the deal's `transform` composes with it. */
-  translate: 0 var(--kb-swipe-y, 40px);
+  /* The pose Hand.tsx writes on each card where the browser has no view timeline (where it has one, an animation draws the same pose from the scroll), drawn with the individual properties so the deal's `transform` composes with it. */
+  translate: var(--kb-swipe-x, 0px) var(--kb-swipe-y, 40px);
   rotate: var(--kb-swipe-turn, 0deg);
   scale: var(--kb-swipe-scale, 1);
 }

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { swipePose } from '../engine/ui/cards/arc.ts';
 
 /**
  * The hand on the phone's moment (docs/plans/2026-11-13-phone-hand-design.md, sections 3 and 4), at 390 by 844: the hand is a modal dialog that holds Tab to its
@@ -241,4 +242,42 @@ test('every ×N the row draws is uncovered, whichever card stands in the middle'
     expect(seen.filter((s) => s.covered), `badges covered with card ${at} in the middle`).toEqual([]);
   }
   expect(counted.size, 'kinds whose count was drawn and checked').toBeGreaterThanOrEqual(3);
+});
+
+/*
+ * The pose is the browser's to draw from the scroll (a view timeline per card, engine/ui/cards/Hand.tsx `animatePoses`), so it is drawn on
+ * the frame the scroll is, however fast the row moves: held half a step between the two cards by a finger on the row, each card stands in
+ * `swipePose` at its distance, and no script has written it on the card. Lifting the finger brings the nearer card to the middle, exactly.
+ */
+test('the browser draws each card\'s pose from the scroll, and lifting the finger settles the row on a card', async ({ page }) => {
+  await open(page, 'full');
+  const ul = page.locator('ul.kb-hand-cards');
+  await ul.dispatchEvent('touchstart');
+  await ul.evaluate((el) => { el.scrollLeft = 33; });
+  /* The timeline's time is the scroll's at the next frame. */
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const drawn = await page.locator(CARDS).evaluateAll((items) => {
+    const ul = items[0]!.parentElement!;
+    const mid = ul.scrollLeft + ul.clientWidth / 2;
+    return items.map((li) => {
+      const el = li as HTMLElement;
+      const s = getComputedStyle(el);
+      return { d: (el.offsetLeft + el.offsetWidth / 2 - mid) / 66, translate: s.translate, rotate: s.rotate, scale: s.scale, inline: el.getAttribute('style') ?? '' };
+    });
+  });
+  expect(drawn.length).toBeGreaterThan(1);
+  for (const c of drawn) {
+    const want = swipePose(c.d);
+    const [x, y] = c.translate.split(' ').map((v) => parseFloat(v));
+    expect(x!, `x at ${c.d}`).toBeCloseTo(want.x, 0);
+    expect(y!, `y at ${c.d}`).toBeCloseTo(want.y, 0);
+    expect(parseFloat(c.rotate), `turn at ${c.d}`).toBeCloseTo(want.deg, 1);
+    expect(parseFloat(c.scale), `scale at ${c.d}`).toBeCloseTo(want.scale, 2);
+    expect(c.inline, 'a pose written by a script').not.toContain('--kb-swipe');
+  }
+  await page.waitForTimeout(400);
+  expect(await ul.evaluate((el) => el.scrollLeft), 'the row under the finger').toBe(33);
+  await ul.dispatchEvent('touchend');
+  await expect.poll(() => ul.evaluate((el) => el.scrollLeft), { message: 'the row once the finger lifts' }).toBe(0);
+  expect((await middle(page)).n).toBe(1);
 });

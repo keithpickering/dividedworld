@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useState } from 'react';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { Hand } from './Hand.tsx';
-import { handOrder } from './arc.ts';
+import { SWIPE_REACH, SWIPE_STEP, handOrder, swipeKeyframes, swipePose } from './arc.ts';
 import type { CardFace } from './faces.ts';
 
 const face = (key: string, name: string, alignment: 'sweet' | 'salty'): CardFace => ({
@@ -295,9 +295,13 @@ describe('the hand on the Phone board', () => {
       hand(many.map((f) => ({ card: f.key, held: 1 })), { faces: many });
       const ul = document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
       const y = (i: number) => ul.children[i]!.getAttribute('style')?.match(/--kb-swipe-y: ([^;]+)/)?.[1];
+      const x = (i: number) => ul.children[i]!.getAttribute('style')?.match(/--kb-swipe-x: ([^;]+)/)?.[1];
       expect(y(60)).toBe('40px');
+      expect(x(60)).toBe('40px');
       expect(ul.children[2]).toHaveAttribute('data-kb-middle');
       expect(y(2)).not.toBe('40px');
+      /* The row is 390 wide at scrollLeft 0, so its middle is at 195, and card 2's center at 2 x 66 + 52. */
+      expect(x(2)).toBe(`${swipePose((2 * 66 + 52 - 195) / 66).x}px`);
       ul.scrollLeft = 66 * 50;
       fireEvent.scroll(ul);
       await vi.waitFor(() => expect(ul.children[52]).toHaveAttribute('data-kb-middle'));
@@ -305,6 +309,156 @@ describe('the hand on the Phone board', () => {
       expect(ul.children[2]!.getAttribute('style')).toContain('--kb-swipe-turn: -18deg');
       expect(y(52)).not.toBe('40px');
     } finally { restore(); }
+  });
+
+  describe('where the browser has view timelines', () => {
+    /* A view timeline and an animation, as far as the Hand uses them: what each was made with, and whether it was canceled. */
+    const made: { subject: Element; axis: string; inset: string }[] = [];
+    const animations: { el: Element; frames: unknown; options: { timeline: unknown; fill: string }; cancel: ReturnType<typeof vi.fn> }[] = [];
+    beforeEach(() => {
+      made.length = 0;
+      animations.length = 0;
+      (globalThis as { ViewTimeline?: unknown }).ViewTimeline = class { constructor(o: { subject: Element; axis: string; inset: string }) { made.push(o); Object.assign(this, o); } };
+      (Element.prototype as { animate?: unknown }).animate = function (this: Element, frames: unknown, options: { timeline: unknown; fill: string }) {
+        const a = { el: this, frames, options, cancel: vi.fn() };
+        animations.push(a);
+        return a;
+      };
+    });
+    afterEach(() => {
+      delete (globalThis as { ViewTimeline?: unknown }).ViewTimeline;
+      delete (Element.prototype as { animate?: unknown }).animate;
+    });
+
+    test('each card\'s pose is an animation on a view timeline of the row, and nothing is written as the row scrolls', async () => {
+      const restore = stubLayout(104);
+      try {
+        hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }]);
+        const lis = [...document.querySelectorAll<HTMLElement>('li.kb-hand-card')];
+        /* Elements are compared by identity: a deep compare of two DOM nodes walks the document. */
+        expect(animations).toHaveLength(lis.length);
+        expect(animations.every((a, i) => a.el === lis[i])).toBe(true);
+        for (const a of animations) {
+          expect(a.frames).toEqual(swipeKeyframes());
+          expect(a.options.fill).toBe('both');
+          /* The timeline runs from the card SWIPE_REACH steps right of the row's middle to as far left of it, at any width of the row. */
+          const { subject, axis, inset } = a.options.timeline as { subject: Element; axis: string; inset: string };
+          expect(subject === a.el).toBe(true);
+          expect({ axis, inset }).toEqual({ axis: 'inline', inset: `calc(50% - ${SWIPE_REACH * SWIPE_STEP - 52}px)` });
+        }
+        expect(document.querySelector('[style*="--kb-swipe"]')).toBeNull();
+        const ul = document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
+        ul.scrollLeft = 66;
+        fireEvent.scroll(ul);
+        await vi.waitFor(() => expect(document.querySelector('li[data-kb-middle]')).toHaveAttribute('data-kb-card', 'whoops'));
+        expect(document.querySelector('[style*="--kb-swipe"]')).toBeNull();
+        expect(animations).toHaveLength(2);
+      } finally { restore(); }
+    });
+
+    test('the animations end when the sheet closes and when the hand goes', () => {
+      const restore = stubLayout(104);
+      try {
+        let set: (open: boolean) => void = () => {};
+        const Harness = () => {
+          const [open, setOpen] = useState(true);
+          set = setOpen;
+          return <Hand held={[{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }]} faces={[stick, whoops]} vendingHref="/vending" onClose={() => {}} open={open} />;
+        };
+        const { unmount } = renderIn(buildWorld(), <Harness />);
+        expect(animations).toHaveLength(2);
+        act(() => set(false));
+        expect(animations.every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
+        act(() => set(true));
+        expect(animations).toHaveLength(4);
+        unmount();
+        expect(animations.slice(2).every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
+      } finally { restore(); }
+    });
+
+    test('a browser that refuses the timeline gets the pose written frame by frame', () => {
+      (globalThis as { ViewTimeline?: unknown }).ViewTimeline = class { constructor() { throw new TypeError('inset'); } };
+      const restore = stubLayout(104);
+      try {
+        hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }]);
+        expect(animations).toHaveLength(0);
+        expect(document.querySelector('li[data-kb-card="whoops"]')!.getAttribute('style')).toContain('--kb-swipe-x: 40px');
+      } finally { restore(); }
+    });
+  });
+
+  /*
+   * The row has no CSS snap, which on iOS slows every swipe to a crawl (WebKit decelerates a scroller with snap points at
+   * UIKit's fast rate): the Hand brings the nearest card to the middle once a swipe has come to rest. The stub's row is one card
+   * wide, so card i stands in the middle at a scrollLeft of 66 i.
+   */
+  describe('the row comes to rest on a card', () => {
+    const ul = () => document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
+    const three = [{ card: 'a', held: 1 }, { card: 'b', held: 1 }, { card: 'c', held: 1 }];
+    const faces = [move('a', 'Move A'), move('b', 'Move B'), move('c', 'Move C')];
+    const scrollAt = (left: number) => { ul().scrollLeft = left; fireEvent.scroll(ul()); };
+    let restore = () => {};
+    beforeEach(() => { restore = stubLayout(104); });
+    afterEach(() => restore());
+
+    test('a scroll that stops between cards eases the nearest one to the middle', async () => {
+      hand(three, { faces });
+      scrollTo.mockClear();
+      scrollAt(110);
+      await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ left: 132, behavior: 'smooth' }));
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+    });
+
+    test('the end of a scroll, where the browser says so, settles at once', () => {
+      hand(three, { faces });
+      scrollTo.mockClear();
+      ul().scrollLeft = 50;
+      fireEvent(ul(), new Event('scrollend'));
+      expect(scrollTo).toHaveBeenCalledWith({ left: 66, behavior: 'smooth' });
+    });
+
+    test('nothing settles while a finger is on the row; lifting it settles', async () => {
+      hand(three, { faces });
+      scrollTo.mockClear();
+      fireEvent.touchStart(ul());
+      scrollAt(90);
+      fireEvent(ul(), new Event('scrollend'));
+      await new Promise((r) => setTimeout(r, 300));
+      expect(scrollTo).not.toHaveBeenCalled();
+      fireEvent.touchEnd(ul());
+      await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ left: 66, behavior: 'smooth' }));
+    });
+
+    test('a row already at rest on a card is left where it is', async () => {
+      hand(three, { faces });
+      scrollTo.mockClear();
+      scrollAt(66);
+      fireEvent(ul(), new Event('scrollend'));
+      await new Promise((r) => setTimeout(r, 300));
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
+
+    test('under Off it is there at once', () => {
+      hand(three, { faces, instant: true });
+      scrollTo.mockClear();
+      ul().scrollLeft = 100;
+      fireEvent(ul(), new Event('scrollend'));
+      expect(scrollTo).toHaveBeenCalledWith({ left: 132, behavior: 'instant' });
+    });
+
+    test('a card on its way to the middle (a tap brought it) is not turned back for a nearer one; a touch frees the row again', () => {
+      hand(three, { faces });
+      scrollTo.mockClear();
+      fireEvent.click(button('c'), { detail: 1 });
+      expect(scrollTo).toHaveBeenLastCalledWith({ left: 132, behavior: 'smooth' });
+      ul().scrollLeft = 20;
+      fireEvent(ul(), new Event('scrollend'));
+      expect(scrollTo).toHaveBeenLastCalledWith({ left: 132, behavior: 'smooth' });
+      fireEvent.touchStart(ul());
+      fireEvent.touchEnd(ul());
+      fireEvent(ul(), new Event('scrollend'));
+      expect(scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'smooth' });
+    });
   });
 
   test('an arrow key moves focus with preventScroll, since the row centers the card itself', () => {
