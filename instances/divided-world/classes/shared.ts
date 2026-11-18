@@ -2,7 +2,7 @@
  * What the classes share: paying or charging a whole vote's worth per vote on one
  * quadrant of the reactions a character's own posts and cards received.
  */
-import type { ClassInput, Earning, Quadrant, Settings } from '../../../engine/rules/types.ts';
+import type { Alignment, ClassInput, Earning, Quadrant, Settings } from '../../../engine/rules/types.ts';
 
 /** `sign` times one vote's worth for each vote in `quadrant` the character's Acts received. */
 export function perVote(input: ClassInput, settings: Settings, quadrant: Quadrant, sign: 1 | -1, reason: string): Earning[] {
@@ -13,3 +13,6 @@ export function perVote(input: ClassInput, settings: Settings, quadrant: Quadran
 
 /** A card outdraws the post it landed on when it drew more votes than the post in the window. */
 export const outdraws = (c: { votes: number; targetVotes: number }) => c.votes > c.targetVotes;
+
+/** The room valued what the card outdrew: it was not booed, and it was no Salty play. A tie or no reaction is not booed. */
+export const hadThunder = (c: { targetLean: number; targetReadsAs?: Alignment }) => !(c.targetLean < 0) && c.targetReadsAs !== 'salty';
