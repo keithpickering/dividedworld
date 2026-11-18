@@ -99,6 +99,10 @@ export default manifest;
  *  - The build's New character and Edit profile each carry the pronoun picker (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md), which the board
  *    predates: on New character it stands between the class note and When it debuts, so When it debuts and Drop now stand 472.8px lower from the note;
  *    on Edit profile it stands above the save, which stands 472.5px lower again.
+ *  - The Face's hurt says when stolen thunder is not charged (docs/plans/2026-11-18-face-thunder-design.md, section 3), a longer sentence than the board's, which wraps
+ *    onto more lines in the phone's narrow card, and a line count that also moves with how a browser breaks it. The class note and what is held from it stand lower
+ *    by those lines, so the note is held from the bottom of the Face's hurt (`origin`, `originEdge: 'bottom'`) and not from the CLASS label, and `face-hurt` holds the
+ *    build's sentence in `buildName`.
  *  - My characters' count stands on its own line under the title: the board's "3 OF 6" is the build's "(3 of 6)", its box a line of its own that is not broken.
  */
 const PHONE = '2026-11-05-backfill/27-characters-phone';
@@ -129,7 +133,8 @@ export const phone: BoardManifest = {
   landmarks: [
     { id: 'class-label', role: 'text', name: 'CLASS', type: false, box: 'none' },
     held('class-label', 'count', 'text', '1 OF 5', { x: -20 }, { buildName: '1–1 of 6' }),
-    held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { y: -81 }),
+    { id: 'face-hurt', role: 'text', name: 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', buildName: 'Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.', type: false, box: 'none' },
+    held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { y: 0 }, { origin: 'face-hurt', originEdge: 'bottom' }),
     held('class-label', 'when', 'text', 'WHEN IT DEBUTS', { y: 486.8 }, { origin: 'note', originEdge: 'bottom' }),
     held('class-label', 'drop-now', 'text', 'DROP NOW', { y: 477.8 }, { buildName: 'Drop now.', origin: 'note', originEdge: 'bottom' }),
   ],
