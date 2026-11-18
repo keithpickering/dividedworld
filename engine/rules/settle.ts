@@ -57,8 +57,8 @@
  *   [at, ends) on the character or on the Act, gets `tidy(-share * amount)` as `card.cushion` with `{ card, share }` in the entry's params, from the
  *   largest `share` that applies (a tie: the earliest play, then the smaller play id). It reads the class's own earnings only, never a boost, a card's
  *   payout or another cushion. So a gain taken back (a negative amount on negative votes) is no loss, a loss taken back (a positive amount) is none
- *   either, and an earning with no `votes` (a cost no reaction caused) is never cushioned, except as a window's loss (second way, below). Each increase of a loss quadrant's share is a loss line
- *   and is cushioned; each decrease is a take-back and is never cushioned again, since the engine is not handed who voted and cannot tie an earning
+ *   either, and an earning with no `votes` (a cost no reaction caused) is never cushioned, except as a window's loss (second way, below). Each
+ *   increase of a loss quadrant's share is a loss line and is cushioned; each decrease is a take-back and is never cushioned again, since the engine is not handed who voted and cannot tie an earning
  *   to its voter's first reaction as a flat earn's vote is. So any later reaction by the voter that shrinks a cushioned share, in another loss
  *   quadrant or in a quadrant that is no loss, leaves cushion behind that no standing loss matches. The smallest case, measured, is a quarter of a vote
  *   for a half cushion, when a cushioned loss's vote later spreads to one more quadrant, of either kind. The excess grows with each further
@@ -67,7 +67,8 @@
  *   design, section 3.2). It sits beside a flat earn and neither reads the other.
  *   The second way: an earning a class marks `ofWindow` (Earning.ofWindow) is a loss the window's reactions caused together. Where its amount is
  *   negative and its Act is the character's own, a cushion on the character or on the Act that is up at the window's end (`from <= window.to <
- *   ends`) gives back its share, as it does for a reaction's loss at the reaction's time. Its line has the Act and no time or quadrant.
+ *   ends`) gives back its share, as it does for a reaction's loss at the reaction's time. Its line has the Act, and a time or a
+ *   quadrant only where the earning has one.
  * - A skim play (a cast card with a `skim`, a target post, a `quadrant` and an `ends`) pays its caster's character the skim's share of a vote, as
  *   `card.skim`, for each vote on the target in that quadrant after the play and before `ends` whose voter first reacted to the post after the
  *   play, never the caster's own player's, on a post that is not the caster's own player's. A vote moving out of the quadrant inside the
