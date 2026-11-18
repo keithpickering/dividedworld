@@ -24,6 +24,8 @@
  *    character are compared by their words' type and place, and their size not at all.
  *  - The glass sets its labels, hints and counts at the type scale (the glass polish, design section 7), so the board's 19px count and hint are
  *    the build's label size, and the lines under a section's label stand a few px apart from the board's: `buildShift`, from what the first run measured.
+ *  - The Face's hurt says when stolen thunder is not charged (docs/plans/2026-11-18-face-thunder-design.md, section 3), which the board,
+ *    drawn before that rule, does not: `buildName` holds the build's sentence.
  */
 import type { BoardManifest, Landmark } from '../../board-match.ts';
 
@@ -55,7 +57,7 @@ const manifest: BoardManifest = {
     at('jabroni', 'text', 'Jabroni', { within: 'classes', box: 'none', type: false }),
     at('technician', 'text', 'Technician', { within: 'classes', box: 'none', type: false }),
     at('lurker', 'text', 'Lurker', { within: 'classes', box: 'none', type: false }),
-    at('face-hurt', 'text', 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', { within: 'classes', box: 'none', type: false }),
+    at('face-hurt', 'text', 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', { buildName: 'Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.', within: 'classes', box: 'none', type: false }),
     at('note', 'text', 'Only you will know its class, unless you choose to reveal it.', { type: false, origin: 'classes', originEdge: 'bottom', buildShift: { y: 0 } }),
 
     at('when', 'group', 'When it debuts', { type: false, box: 'none' }),
