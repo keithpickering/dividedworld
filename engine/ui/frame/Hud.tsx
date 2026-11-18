@@ -62,6 +62,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncEx
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { playIn, playOut, type Stop } from '../glass/play.ts';
+import { SecretLock } from '../glass/SecretLock.tsx';
 import { fanDeal, overlay as overlayPreset, stagger, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
@@ -108,16 +109,6 @@ const unposeSheet = (el: HTMLElement) => { for (const p of SHEET_INLINE) el.styl
 
 /** The count as the HUD says it: nothing at none, the number to 9, "9+" at the bound. */
 export const unreadText = (n: number | null): string | null => (n === null || n <= 0 ? null : n >= ALERTS_UNREAD_BOUND ? `${ALERTS_UNREAD_BOUND - 1}+` : String(n));
-
-/** The lock before the HUD's secret line: shut while the class is private, its shackle lifted off the right post once it is public. */
-function SecretLock({ open = false }: { readonly open?: boolean }) {
-  return (
-    <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12">
-      <rect x="1" y="5" width="9" height="6.5" rx="1" />
-      <path d={open ? 'M3 5 V3.4 a2.5 2.5 0 0 1 5 0' : 'M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5'} />
-    </svg>
-  );
-}
 
 export function Hud() {
   const { api, instance, settings, ui } = useKayfa();
