@@ -110,7 +110,17 @@ export type NavigationGuard = (proceed: () => void) => boolean;
 
 export interface PrefetchOptions { readonly now?: boolean }
 
-export interface NavigateOptions { readonly replace?: boolean; readonly state?: unknown; readonly afterAccountChange?: boolean; readonly source?: string }
+export interface NavigateOptions {
+  readonly replace?: boolean;
+  readonly state?: unknown;
+  readonly afterAccountChange?: boolean;
+  readonly source?: string;
+  /**
+   * The move follows an action that changed the page it goes to (a character made, then My characters): what was read ahead for that
+   * address was read before the action, so it is given up, answered or still out, and the page is read afresh.
+   */
+  readonly fresh?: boolean;
+}
 
 const RouterContext = createContext<Router | null>(null);
 
@@ -455,6 +465,11 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const key = found ? keyOf(found.route, found.params, query, url.pathname) : null;
     const same = !!found && sh.ready && !sh.failure && sameRoute(sh.route, found.route) && sh.key === key;
     if (found?.route.load && !same) {
+      if (options?.fresh) {
+        const ahead = prefetchKey(url.pathname + url.search);
+        const early = prefetched.current.get(ahead);
+        if (early) { clearTimeout(early.timer); early.controller.abort(); prefetched.current.delete(ahead); }
+      }
       startLoad({ full, replace: options?.replace, state: options?.state, popped: false, kb: null, afterAccountChange: options?.afterAccountChange, source: options?.source }, found);
       return;
     }
