@@ -1455,7 +1455,7 @@ describe('Thick Skin in plain words (the Thick Skin plan, Task 3)', () => {
   });
 
   test('its words are the ones the rules give', () => {
-    expect(skin!.describe(instance.settings)).toBe('A Sweet card, uncommon, used on your own character, the one playing it. For 3 days, whenever a reaction to something that character did costs it Aura, half of that loss is given back, and then it stops by itself. It changes nothing the character earns, and nothing it loses for any other reason. A card that pays more for the same reaction still pays. It costs nothing more to use.');
+    expect(skin!.describe(instance.settings)).toBe('A Sweet card, uncommon, used on your own character, the one playing it. For 3 days, whenever a reaction to something that character did costs it Aura, half of that loss is given back, and then it stops by itself. A loss counted from a whole settlement window\'s reactions, and not from one reaction, is halved where this card is still up when that window ends. It changes nothing the character earns, and nothing it loses for any other reason. A card that pays more for the same reaction still pays. It costs nothing more to use.');
     expect(skin!.logPlay!({}, {})).toBe('What that character loses from reactions is halved until it ends.');
   });
 
