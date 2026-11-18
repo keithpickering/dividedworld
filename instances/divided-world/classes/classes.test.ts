@@ -56,6 +56,13 @@ test('Face\'s weakness: its card outdrawing the post it landed on', () => {
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'sweet', votes: 2, targetVotes: 2 })] })), 0, 'a tie is not outdrawing');
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'sweet', votes: 3, targetVotes: 1, onOthers: false })] })), 0, 'not on its own player\'s post');
 });
+test("Face's outdrawn loss is marked a window's loss: an Act, and no one reaction's time or votes", () => {
+  const [e] = face.earn(input({ cardsPlayed: [card({ alignment: 'sweet', votes: 3, targetVotes: 2 })] }), settings).filter((x) => x.reason === 'face.stoleThunder');
+  assert.equal(e?.ofWindow, true);
+  assert.equal(e?.act, 'k1');
+  assert.equal(e?.at, undefined);
+  assert.equal(e?.votes, undefined);
+});
 test('Face is unmoved by the quadrants it does not read', () => {
   assert.equal(total(face, input({ received: [got('excitedNegative'), got('calmPositive')] })), 0);
 });
