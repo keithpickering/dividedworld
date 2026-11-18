@@ -16,6 +16,7 @@ export const events: { readonly lines: readonly EventLine[] } = deepFreeze<{ rea
     { key: 'forgot', outcome: 'line', text: 'But I totally forgot what it was. You deserve better, and I won\'t let this happen next time.' },
     { key: 'goomba', outcome: 'line', text: 'A passerby implores you to look at their Goomba sprites...you keep moving.' },
     { key: 'split', outcome: 'line', text: 'You pass by an unkempt gentleman in ragged old clothing. He is parading a dirty scrap of cardboard, on which he has scrawled "THE SPLIT IS NEAR!"' },
+    { key: 'upgrade', outcome: 'line', text: 'Your account has received a complimentary upgrade to the Gold Tier. We hope you enjoy the associated benefits.' },
     { key: 'park-bench', outcome: 'gear', text: 'You find a {item} under a park bench. The real question is what this park bench is doing on a message board.' },
     { key: 'lost-and-found', outcome: 'gear', text: 'Someone left a {item} in the lost and found. You decide you can make better use of it.' },
     { key: 'vending-slot', outcome: 'gear', text: 'A {item} falls out of a vending machine, and you didn\'t even have to pay.' },
