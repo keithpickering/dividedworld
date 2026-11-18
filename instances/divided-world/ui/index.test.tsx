@@ -8,7 +8,7 @@ import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
 import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
-import { faceUpOnly, playOf, reachesOf } from '../../../engine/rules/cards.ts';
+import { economyOf, faceUpOnly, playOf, reachesOf } from '../../../engine/rules/cards.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
@@ -18,6 +18,7 @@ import { nameLines } from '../../../engine/ui/cards/nameLines.ts';
 import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
+import type { ClassInput } from '../../../engine/rules/types.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
 import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
@@ -719,6 +720,61 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch',
       'technician.respected', 'technician.evergreen', 'technician.draggedIn'];
     for (const r of reasons) expect(instanceUi.reasonWords(r, instance.settings.economy), r).not.toMatch(/^Settled under/);
+  });
+  test('every loss a class charges is one the cushion can read, or is named here', () => {
+    const s = instance.settings;
+    const eco = (k: string) => economyOf(s, k);
+    const DAY = 86_400_000;
+    const days = eco('technician.evergreenDays');
+    const none = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
+    const hype = { ...none, excitedPositive: 1 };
+    const heat = { ...none, excitedNegative: 1 };
+    /* A vote of +1 and one of -1 in each quadrant, on a post aged past Evergreen and on a card. */
+    const received = QUADRANTS.flatMap((quadrant) => [1, -1].flatMap((votes) => [
+      { act: 'p1', actKind: 'post' as const, quadrant, at: 10 * DAY, actAt: 0, kind: 'reaction', votes },
+      { act: 'k1', actKind: 'card' as const, quadrant, at: 10 * DAY, actAt: 9 * DAY, kind: 'reaction', votes },
+    ]));
+    /* Sweet, Salty and Pepperoni cards that outdraw a post of another player's, each with what it drew after it. */
+    const played = (alignment: 'sweet' | 'salty' | 'pepperoni', act: string) => ({
+      act, card: 'whoops', alignment, readsAs: alignment, at: 5, target: 'p9', onOthers: true, votes: 3, targetVotes: 1,
+      targetAfter: { ...none, excitedPositive: 2 }, drawnAfter: { at: 6, now: [hype, heat] },
+    });
+    const i: ClassInput = {
+      character: 'c', from: 0, to: 20 * DAY, received, given: [],
+      posts: Array.from({ length: eco('lurker.postsAllowed') + 1 }, (_, n) => ({ act: `q${n}`, at: n })),
+      held: [{ act: 'p9', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'excitedPositive' }],
+      cardsPlayed: [played('sweet', 'k1'), played('salty', 'k2'), played('pepperoni', 'k3')],
+      cardsLanded: [{ act: 'k4', card: 'whoops', alignment: 'salty', readsAs: 'salty', at: 5, on: 'p1' }],
+      threadsSpun: [{ act: 'p9', thread: 't1', at: 5, fromOthers: true, repliersBefore: 0, repliersNow: eco('lurker.spunThreadRepliers') }],
+      standings: [
+        { act: 'p1', actKind: 'post', at: 5, before: [hype], now: [hype, heat] },
+        { act: 'p2', actKind: 'post', at: 5, before: [hype, heat], now: [hype] },
+      ],
+    };
+    /* Losses no reaction's vote can be read from, with why: the cushion softens a loss from a reaction and a window's loss, and nothing else. */
+    const named: Record<string, string> = {
+      'lurker.postedTooMuch': 'no reaction causes it; the sheet says nothing lost for any other reason is given back',
+      'tweener.splitTheRoom': 'a gain taken back as the room stops being split',
+    };
+    const seen = new Set<string>();
+    const seenNegative = new Set<string>();
+    const unread: string[] = [];
+    for (const rules of instance.classes) {
+      for (const e of rules.earn(i, s)) {
+        seen.add(e.reason);
+        if (e.amount >= 0) continue;
+        seenNegative.add(e.reason);
+        const fromAReaction = (e.votes ?? 0) > 0 && e.at !== undefined;
+        const ofAWindow = e.ofWindow === true && e.act !== undefined;
+        const gainTakenBack = (e.votes ?? 0) < 0;
+        if (!fromAReaction && !ofAWindow && !gainTakenBack && !(e.reason in named)) unread.push(e.reason);
+      }
+    }
+    expect([...new Set(unread)].sort(), 'a loss the cushion cannot read, and no reason named here').toEqual([]);
+    expect(Object.keys(named).filter((r) => !seenNegative.has(r)).sort(), 'a reason named here that no class charges any more').toEqual([]);
+    const classKeys = instance.classes.map((c) => c.key);
+    const own = REASON_KEYS.filter((r) => classKeys.some((k) => r.startsWith(`${k}.`)));
+    expect([...seen].sort(), 'the reasons the input reached, against the reasons the classes can give').toEqual([...own].sort());
   });
   test('a card\'s boost names the card it came from, by the key the settlement wrote, and says nothing of a card it cannot find', () => {
     expect(REASON_KEYS).toContain('card.boost');
