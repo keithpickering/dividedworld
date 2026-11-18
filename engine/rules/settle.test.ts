@@ -2050,9 +2050,16 @@ const costly: ClassRules = {
   name: 'Costly',
   earn: (input) => input.received.map((r): Earning => ({ reason: 'costly.fee', amount: -10, act: r.act, quadrant: r.quadrant, at: r.at })),
 };
+/* "tallied" charges 20 for each post it has in the window, with no reaction to name: a loss the window's reactions caused together, marked `ofWindow`
+   (docs/plans/2026-11-17-thick-skin-outdrawn-plan.md, Task 1). */
+const tallied: ClassRules = {
+  key: 'tallied',
+  name: 'Tallied',
+  earn: (input) => input.posts.map((p): Earning => ({ reason: 'tallied.outdrawn', amount: -20, act: p.act, ofWindow: true })),
+};
 const cushionWorld: Instance = {
   ...cardsWorld,
-  classes: [...cardsWorld.classes, voted, costly],
+  classes: [...cardsWorld.classes, voted, costly, tallied],
   cards: [
     ...cardsWorld.cards,
     { ...splat, key: 'softCushionB', reaches: ['character'] as const, gimmick: { kind: 'cushion', share: 0.5 } },
@@ -2066,6 +2073,7 @@ function cushionBoard(gimmicks: InputAct[], reactions: InputReaction[], extra: I
       { id: 'tom-1', player: 'tom', classes: [{ class: 'voted', from: 0 }] },
       { id: 'tom-2', player: 'tom', classes: [{ class: 'quiet', from: 0 }] },
       { id: 'uma-1', player: 'uma', classes: [{ class: 'costly', from: 0 }] },
+      { id: 'ted-1', player: 'ted', classes: [{ class: 'tallied', from: 0 }] },
       ...['bob', 'cat', 'dee', 'eve', 'fay'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
     ],
     ...over,
@@ -2211,4 +2219,88 @@ test('a voter who moves one vote from a loss quadrant to one that is no loss lea
   const sum = (rs: ReturnType<typeof settle>[], reason: string) => rs.flatMap((r) => r.details.filter((d) => d.character === 'tom-1' && d.reason === reason)).reduce((t, d) => t + d.amount, 0);
   assert.equal(sum([first, second], 'voted.sting'), -50, 'half a vote of loss stands');
   assert.equal(sum([first, second], 'card.cushion'), 50, 'the cushion given stays at 50, a quarter of a vote over half of what stands');
+});
+
+/* A window's loss and the cushion's second way (docs/plans/2026-11-17-thick-skin-outdrawn-plan.md, Task 1): an earning a class marks `ofWindow` is a loss
+   the window's reactions caused together, charged as the window settles, so a cushion up at the window's end (`from <= window.to < ends`) gives its share
+   back. Ted's one post, ep1, is charged 20 by "tallied". */
+const tedPost = [post('ep1', 'ted-1', FROM + 1 * H)];
+const tedBoard = (gimmicks: InputAct[], reactions: InputReaction[] = [], over: Partial<SettlementInput> = {}) => cushionBoard(gimmicks, reactions, tedPost, over);
+const onTed = (id: string, card: string, at: number, ends: number | null = TO + 5 * H): InputAct => ({ ...onTom(id, card, at, ends), character: 'ted-1', on: 'ted-1' });
+const tallyWith = (change: (e: Earning) => Earning): Instance => ({ ...cushionWorld, classes: cushionWorld.classes.map((k) => (k.key === 'tallied' ? { ...k, earn: (i, s) => k.earn(i, s).map(change) } : k)) });
+const backToTed = (r: ReturnType<typeof settle>) => cushionTo(r, 'ted-1');
+
+test('a cushion up at the window\'s end gives back its share of a window\'s loss, in a line with the Act and no time or quadrant', () => {
+  const r = settle(tedBoard([onTed('g1', 'softCushion', FROM + 2 * H)]), cushionWorld);
+  assert.equal(amountOf(r, 'ted-1', 'tallied.outdrawn'), -20, 'the class\'s own loss is whole');
+  assert.deepEqual(cushionsOf(r).map((e) => [e.character, e.params, e.amount]), [['ted-1', { card: 'softCushion', share: 0.5 }, 10]]);
+  const lines = r.details.filter((d) => d.reason === 'card.cushion');
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0]!.act, 'ep1');
+  assert.equal(lines[0]!.amount, 10);
+  assert.ok(!('at' in lines[0]!) && !('quadrant' in lines[0]!), 'no time and no quadrant: no reaction is named');
+});
+test('a cushion that ends before the window\'s end, or exactly at it, gives back nothing of a window\'s loss; one played in its last hour does', () => {
+  const back = (play: InputAct) => backToTed(settle(tedBoard([play]), cushionWorld));
+  assert.equal(back(onTed('g1', 'softCushion', FROM + 2 * H, FROM + 10 * H)), 0, 'ended before the window\'s end');
+  assert.equal(back(onTed('g1', 'softCushion', FROM + 2 * H, TO)), 0, 'ends exactly at the window\'s end');
+  assert.equal(back(onTed('g1', 'softCushion', FROM + 2 * H, TO + 1)), 10, 'up one moment past it');
+  assert.equal(back(onTed('g1', 'softCushion', TO - H, TO + 2 * H)), 10, 'played in the last hour, after everything else');
+});
+test('a cushion on the Act, and not on the character, softens a window\'s loss on that Act', () => {
+  const r = settle(tedBoard([onPostBy('g1', 'bob-1', 'softCushion', 'ep1', FROM + 2 * H, TO + 5 * H)]), cushionWorld);
+  assert.deepEqual(cushionsOf(r).map((e) => [e.character, e.amount]), [['ted-1', 10]]);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'card.cushion').map((d) => d.act), ['ep1']);
+});
+test('two cushions up at the window\'s end on a window\'s loss give back the larger alone, in one entry', () => {
+  const r = settle(tedBoard([onTed('g1', 'softCushion', FROM + 2 * H), onPostBy('g2', 'bob-1', 'wholeCushion', 'ep1', FROM + 3 * H, TO + 5 * H)]), cushionWorld);
+  assert.deepEqual(cushionsOf(r).map((e) => [e.params, e.amount]), [[{ card: 'wholeCushion', share: 1 }, 20]]);
+  assert.equal(r.details.filter((d) => d.reason === 'card.cushion').length, 1);
+});
+test('a window\'s loss is softened only where it is a loss, marked, and on the character\'s own Act', () => {
+  const play = onTed('g1', 'softCushion', FROM + 2 * H);
+  const gain = settle(tedBoard([play]), tallyWith((e) => ({ ...e, amount: 20 })));
+  assert.equal(amountOf(gain, 'ted-1', 'tallied.outdrawn'), 20);
+  assert.equal(cushionsOf(gain).length, 0, 'a positive amount is read by nothing');
+  const unmarked = settle(tedBoard([play, onUma('g2', 'softCushion', FROM + 2 * H, TO + 5 * H)], [react('up1', 'dee', 'dee-1', 'zzz', FROM + 5 * H)]), tallyWith(({ ofWindow: _, ...e }) => e));
+  assert.equal(amountOf(unmarked, 'ted-1', 'tallied.outdrawn'), -20, 'the loss is there');
+  assert.equal(cushionsOf(unmarked).length, 0, 'without the mark it is no window\'s loss, and `costly`\'s cost with no votes gets none either');
+  assert.equal(amountOf(unmarked, 'uma-1', 'costly.fee'), -10);
+  const elsewhere = settle(tedBoard([play, onTom('g3', 'softCushion', FROM + 2 * H, TO + 5 * H)]), tallyWith((e) => ({ ...e, act: 'tp1' })));
+  assert.equal(amountOf(elsewhere, 'ted-1', 'tallied.outdrawn'), -20);
+  assert.equal(cushionsOf(elsewhere).length, 0, 'naming another character\'s Act, even one under a cushion');
+});
+test('a loss from a reaction is still softened by its own time, marked or not, while a window\'s loss is read at the window\'s end', () => {
+  const plays = [onTom('g1', 'softCushion', FROM + 2 * H, FROM + 10 * H), onTed('g2', 'softCushion', FROM + 2 * H, FROM + 10 * H)];
+  const r = settle(tedBoard(plays, [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]), cushionWorld);
+  assert.equal(cushionTo(r, 'tom-1'), 5, 'the reaction\'s way is unchanged: half of 10, inside the cushion');
+  assert.equal(backToTed(r), 0, 'and the cushion that ended before the window\'s end gives back none of the window\'s loss');
+  const marked: Instance = { ...cushionWorld, classes: cushionWorld.classes.map((k) => (k.key === 'voted' ? { ...k, earn: (i, s) => k.earn(i, s).map((e) => ({ ...e, ofWindow: true as const })) } : k)) };
+  const markedVotes = settle(tedBoard([onTom('g1', 'softCushion', FROM + 2 * H, FROM + 10 * H)], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)]), marked);
+  assert.equal(cushionTo(markedVotes, 'tom-1'), 5, 'an earning with votes and an `at` is read by its `at` though it is marked');
+});
+test('the same input with its rows reversed settles to the same entries and details', () => {
+  const input = tedBoard([onTed('g1', 'softCushion', FROM + 2 * H), onTom('g2', 'softCushion', FROM + 2 * H, TO + 5 * H)], [react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H), react('tp2', 'cat', 'cat-1', 'tomato', FROM + 6 * H)]);
+  const flipped: SettlementInput = { ...input, acts: [...input.acts].reverse(), reactions: [...input.reactions].reverse(), characters: [...input.characters].reverse() };
+  const a = settle(input, cushionWorld);
+  const b = settle(flipped, cushionWorld);
+  assert.ok(cushionsOf(a).length >= 2);
+  assert.deepEqual(b.entries, a.entries);
+  assert.deepEqual(b.details, a.details);
+});
+test('the next window, with the cushion still up and the post now before the window, has no cushion line for it', () => {
+  const r = settle(tedBoard([onTed('g1', 'softCushion', FROM + 2 * H, TO + 30 * H)], [], { window: W2 }), cushionWorld);
+  assert.equal(amountOf(r, 'ted-1', 'tallied.outdrawn'), 0);
+  assert.equal(cushionsOf(r).length, 0);
+});
+test('with the vote unshared and unhalved and the window ending mid-day, the cushion line is there with the loss line, and with the post removed neither is', () => {
+  const options = { sharedVote: false, halving: false };
+  const window = { id: 'half', from: FROM, to: FROM + 12 * H };
+  const play = onTed('g1', 'softCushion', FROM + 2 * H, FROM + 20 * H);
+  const r = settle(tedBoard([play], [], { window }), cushionWorld, options);
+  assert.equal(amountOf(r, 'ted-1', 'tallied.outdrawn'), -20);
+  assert.equal(backToTed(r), 10);
+  const none = settle(cushionBoard([play], [], [], { window }), cushionWorld, options);
+  assert.equal(amountOf(none, 'ted-1', 'tallied.outdrawn'), 0);
+  assert.equal(cushionsOf(none).length, 0);
 });

@@ -57,7 +57,7 @@
  *   [at, ends) on the character or on the Act, gets `tidy(-share * amount)` as `card.cushion` with `{ card, share }` in the entry's params, from the
  *   largest `share` that applies (a tie: the earliest play, then the smaller play id). It reads the class's own earnings only, never a boost, a card's
  *   payout or another cushion. So a gain taken back (a negative amount on negative votes) is no loss, a loss taken back (a positive amount) is none
- *   either, and an earning with no `votes` (a cost no reaction caused) is never cushioned. Each increase of a loss quadrant's share is a loss line
+ *   either, and an earning with no `votes` (a cost no reaction caused) is never cushioned, except as a window's loss (second way, below). Each increase of a loss quadrant's share is a loss line
  *   and is cushioned; each decrease is a take-back and is never cushioned again, since the engine is not handed who voted and cannot tie an earning
  *   to its voter's first reaction as a flat earn's vote is. So any later reaction by the voter that shrinks a cushioned share, in another loss
  *   quadrant or in a quadrant that is no loss, leaves cushion behind that no standing loss matches. The smallest case, measured, is a quarter of a vote
@@ -65,6 +65,9 @@
  *   reaction the voter leaves on the Act, and is bounded by how many one player may leave there (`settings.reactionCap`), since a reaction
  *   cannot be removed: at a cap of 3 a half cushion leaves at most five twelfths of a vote behind for one voter on one Act (the settlement
  *   design, section 3.2). It sits beside a flat earn and neither reads the other.
+ *   The second way: an earning a class marks `ofWindow` (Earning.ofWindow) is a loss the window's reactions caused together. Where its amount is
+ *   negative and its Act is the character's own, a cushion on the character or on the Act that is up at the window's end (`from <= window.to <
+ *   ends`) gives back its share, as it does for a reaction's loss at the reaction's time. Its line has the Act and no time or quadrant.
  * - A skim play (a cast card with a `skim`, a target post, a `quadrant` and an `ends`) pays its caster's character the skim's share of a vote, as
  *   `card.skim`, for each vote on the target in that quadrant after the play and before `ends` whose voter first reacted to the post after the
  *   play, never the caster's own player's, on a post that is not the caster's own player's. A vote moving out of the quadrant inside the
@@ -528,7 +531,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   }
 
   /* ---- each class's rules, stretch by stretch ---- */
-  type Contribution = Detail & { class?: string; params?: Readonly<Record<string, number | string>>; kind?: string; votes?: number };
+  type Contribution = Detail & { class?: string; params?: Readonly<Record<string, number | string>>; kind?: string; votes?: number; ofWindow?: true };
   const contributions: Contribution[] = [];
   /* The earn gimmicks up in the input, indexed once by what they are on: a character (a character-reach play) or a post. An admin-ended
      play is not in the input. Each character's pass below reads only its own and its posts' lists, so the pass costs its earnings
@@ -577,7 +580,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
-        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}), ...(e.votes !== undefined ? { votes: e.votes } : {}) });
+        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}), ...(e.votes !== undefined ? { votes: e.votes } : {}), ...(e.ofWindow ? { ofWindow: true as const } : {}) });
       }
     }
     /* Earn by a percentage: each positive earning of the character's own Act, with a time and a quadrant, inside a gimmick's window and in what it
@@ -592,21 +595,25 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         contributions.push({ player: e.player, character: e.character, class: e.class, reason: 'card.boost', amount: boost, params: { card: g.card, by: g.by }, act: e.act, quadrant: e.quadrant, at: e.at });
       }
     }
-    /* A cushion: a loss from a reaction (a time, a negative amount, positive votes) of the character's own Act, inside a cushion's window on the
-       character or on the Act, gives back the largest share that applies, as `card.cushion`. Read from `own`, the class's earnings before any boost
-       was pushed, so a boost or another card's payout is never cushioned, and the entry has no class. */
+    /* A cushion: a loss of the character's own Act, inside a cushion's window on the character or on the Act, gives back the largest share that
+       applies, as `card.cushion`. Two kinds of loss: a loss from a reaction (a time, a negative amount, positive votes), taken at the reaction's
+       time, and a window's loss (`ofWindow`, a negative amount), taken as the window settles, at its end. Read from `own`, the class's earnings
+       before any boost was pushed, so a boost or another card's payout is never cushioned, and the entry has no class. */
     if (!cushionsOn.size) continue;
     for (const e of own) {
-      if (!(e.amount < 0) || !(e.votes! > 0) || e.at === undefined || e.act === undefined || acts.get(e.act)?.character !== c.id) continue;
+      if (!(e.amount < 0) || e.act === undefined || acts.get(e.act)?.character !== c.id) continue;
+      /* The moment the loss was taken: a reaction's own time, or for a window's loss the window's end, when it is charged. */
+      const when = e.votes! > 0 && e.at !== undefined ? e.at : e.ofWindow ? window.to : undefined;
+      if (when === undefined) continue;
       let best: Cushion | undefined;
       for (const g of [...(cushionsOn.get(c.id) ?? []), ...(cushionsOn.get(e.act) ?? [])]) {
-        if (!(e.at >= g.from && e.at < g.ends)) continue;
+        if (!(when >= g.from && when < g.ends)) continue;
         if (!best || g.share > best.share || (g.share === best.share && (g.from < best.from || (g.from === best.from && g.play < best.play)))) best = g;
       }
       if (!best) continue;
       const back = tidy(-best.share * e.amount);
       if (!back) continue;
-      contributions.push({ player: e.player, character: e.character, reason: 'card.cushion', amount: back, params: { card: best.card, share: best.share }, act: e.act, ...(e.quadrant ? { quadrant: e.quadrant } : {}), at: e.at });
+      contributions.push({ player: e.player, character: e.character, reason: 'card.cushion', amount: back, params: { card: best.card, share: best.share }, act: e.act, ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.at !== undefined ? { at: e.at } : {}) });
     }
   }
 
