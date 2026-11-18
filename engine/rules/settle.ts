@@ -517,8 +517,10 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     const lean = signed.get(target.id);
     const targetLean = tidy((lean?.total ?? 0) - (lean?.by.get(player) ?? 0));
     const targetAct = acts.get(target.id);
+    const staffCard = unscored.get(target.id)?.card;
+    const staffFlavor = staffCard === undefined ? undefined : alignmentOf.get(staffCard);
     const targetReadsAs = unscored.has(target.id)
-      ? (() => { const flavor = unscored.get(target.id)!.card === undefined ? undefined : alignmentOf.get(unscored.get(target.id)!.card!); return flavor === 'pepperoni' ? undefined : flavor; })()
+      ? (staffFlavor === 'pepperoni' ? undefined : staffFlavor)
       : targetAct && isPlay(targetAct) && targetAct.card && alignmentOf.has(targetAct.card) ? readsAs(targetAct) : undefined;
     list.push({ act: a.id, card: a.card!, alignment, readsAs: readsAs(a), at: a.at, target: target.id, onOthers, votes: tidy(votesOn.get(a.id) ?? 0), targetVotes: tidy(votesOn.get(target.id) ?? 0), targetAfter: after, drawnAfter, targetLean, ...(targetReadsAs ? { targetReadsAs } : {}) });
     played.set(a.character, list);
