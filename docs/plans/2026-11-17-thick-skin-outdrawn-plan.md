@@ -25,9 +25,21 @@ earning player's own log and estimate, beside a loss line already there.
 
 **Scale.** One more comparison for each negative earning of a character with a cushion on it.
 
-**Beside the Face thunder plan** (`docs/plans/2026-11-18-face-thunder-plan.md`, not yet built): it changes the filter
-on the same line of `face.ts` and this plan changes the earning that line returns. Whichever lands second keeps both.
-The tests below charge the loss on a post with no reactions, which is charged under both rules.
+**Beside the two plans waiting to be built** (the design, section 9). This build is meant to go first; read `main`
+before starting, and where either has landed, do what its line says.
+
+- **The Face thunder plan** (`docs/plans/2026-11-18-face-thunder-plan.md`) changes the filter on the same line of
+  `face.ts`; this plan changes the earning that line returns, and both are kept. The tests below charge the loss on a
+  post with no reactions, which is charged under both rules. *If it has landed:* Task 3's played cards carry
+  `targetLean` and `targetReadsAs` with a lean above zero, and Task 2 gains one test, a Face under Thick Skin whose
+  card outdraws a post two players booed: no `face.stoleThunder` and no `card.cushion`. *If it lands after:* its build
+  adds that test and fills those fields, which the compiler asks for.
+- **The Tweener catalyst plan** (`docs/plans/2026-11-18-tweener-catalyst-plan.md`) cuts `tweener.outvoted` by
+  `cushioned` and says no cushion reads that earning. Nothing here changes either. *If it has landed:* Task 3's input
+  carries a debate that pays `tweener.litTheFuse` and one whose refund is taken back, and its list names
+  `tweener.outvoted` ("a refund taken back"); that plan's test that `tweener.shrugged`, `card.cushion` and
+  `tweener.outvoted` on a spark sum to no more than zero must hold unchanged. *If it lands after:* Task 3's test is
+  red in its build until it does the same.
 
 ## Task 1. The engine: a window's loss, and the cushion's second way
 
@@ -187,6 +199,9 @@ Model: inline
   and the settlement where it is up at the window's real end (the design, section 4.2, open). Check the estimate's
   words claim no more than an estimate, and that its lines still add up to its entries.
 - **The engine learns no reason.** `settle.ts` must read `ofWindow` and never a reason's name or a class's key.
+- **The two plans beside it.** With the Face thunder rule, a waived loss must leave no `card.cushion`; with the
+  Tweener's refund, a spark's shrugs, cushion and refund must still never sum above zero. Check whichever of the two
+  is on `main` at review.
 - **A mark that lies.** `ofWindow` on a cost no reaction caused would be cushioned. Check Task 3's test would catch a
   class setting it on such a cost, or say that it cannot and who reads a new mark.
 - **The sheet's promise, again.** Read each class's `earn` against Task 3's input and confirm the input reaches every

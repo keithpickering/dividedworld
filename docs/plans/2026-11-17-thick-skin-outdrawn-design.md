@@ -110,14 +110,13 @@ Read from each class's `earn` in `instances/divided-world/classes/`:
 | any per-vote gain, below zero (`lurker.cardDrew`, `face.cheered` and the like) | a vote that moved away | negative `votes`: no loss, never cushioned |
 
 So `face.stoleThunder` is the only one. `heel.stoleThunder` and `jabroni.soldTheL` are gains. The two designs waiting
-to be built, `docs/plans/2026-11-18-face-thunder-design.md` and `docs/plans/2026-11-18-tweener-catalyst-design.md`,
-add no loss: the first narrows when `face.stoleThunder` is charged and leaves its earning as it is, the second adds a
-perk.
+to be built add no loss a reaction causes (section 9).
 
 **The check the review proposed holds up**, in this form: every negative earning a class returns either carries what
 the cushion needs (positive `votes` and an `at`, or `ofWindow`), is a per-vote gain taken back (negative `votes`), or
 has its reason in a short list the test holds with the reason each is there (`lurker.postedTooMuch`: no reaction
-causes it; `tweener.splitTheRoom`: a gain taken back). It is driven over one input per class that exercises every
+causes it; `tweener.splitTheRoom`: a gain taken back; and `tweener.outvoted`, a refund taken back, once the Tweener
+plan is built). It is driven over one input per class that exercises every
 rule, and it also asserts that every class reason the instance has words for was seen, so a rule added later cannot go
 unread. Its poisons are in the plan.
 
@@ -161,3 +160,37 @@ build's review. Nothing else changes.
 - **States:** none added. Thick Skin's own state ends by itself, as built.
 - **Scale:** one more comparison per own negative earning of a character with a cushion on it; nothing new is indexed
   or read from the database.
+
+## 9. Beside the two designs waiting to be built
+
+Both merged to main with PR #810 and neither is built.
+
+**The Face's stolen thunder** (`docs/plans/2026-11-18-face-thunder-design.md`) narrows when `face.stoleThunder` is
+charged: not where the room booed the outdrawn Act, and not where that Act is a cast that reads as Salty. It leaves
+the earning itself as it is. The two sit together with nothing more to decide:
+
+- **A loss that is still charged is still cushioned,** by the rule of section 3, at the window's end.
+- **A waived loss has nothing to cushion.** The class returns no earning, the cushion is derived from the class's
+  earnings (section 4.1), and so nothing is given back for a charge that was never made.
+- That plan's migration changes what `settlement_input` and `estimate_input` send for a play's target. This design
+  reads none of it and changes no SQL.
+
+**Lit the fuse** (`docs/plans/2026-11-18-tweener-catalyst-design.md`, section 5) cuts the Tweener's refund,
+`tweener.outvoted`, by the share of the largest cushion that has covered the spark, so that a cushion and the refund
+never sum past the loss. This design does not touch that clause:
+
+- The Tweener has no window's loss, so nothing of its is marked `ofWindow`, and what a cushion gives a Tweener is what
+  it gives today. The bound "a cushion gives back at most its share of a loss" holds for a window's loss too.
+- That plan says `tweener.outvoted` "carries no `votes`, so no cushion reads it". That stays true: an earning with
+  neither `votes` nor `ofWindow` is read by no cushion, and a refund taken back (below zero) is no loss.
+- `cushioned` is read from the cushion plays in the input, which this design does not change.
+
+**Which build goes first.** The three are separate builds: this one is the cushion's loop and one field, the Face's is
+what a play is scored against, with a migration, and the Tweener's is debates, with another. This design's tasks do
+not belong inside the Face's build, which closes a different question and would hide #805's fix in it.
+
+Recommended: **this build first.** It is the smallest, adds no migration, and its check (section 5) then holds the
+other two to it without anyone remembering: each of them adds a required field to what a class is handed
+(`PlayedCard.targetLean`, `ClassInput.debates`), so the check's input stops compiling until it is filled, and the
+Tweener's two new reasons fail the check until its input reaches them and `tweener.outvoted` is named in its list. In
+the other order nothing breaks: this build then fills those fields itself, and the plan says how.
