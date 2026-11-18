@@ -9,7 +9,8 @@
 --                        alone pays nothing and no amount moves for any class but through the lean. A window settled again by a retry under 0377 therefore pays what it paid.
 --   2. estimate_input    copied whole from 0376_cushion_kind.sql. A CTE `spring_by` names the casts the caller's own window springs caught, added to `voted` so their reactions to now are read, as the post a spring lies
 --                        on already is. They go through `all_reactions`, `keyed` and `totals_withheld` like every other reaction, so the lean the estimate reads leaves out only the caller's own reactions to the caller's own
---                        Acts (0073) and nothing new is keyed by owner.
+--                        Acts (0073) and nothing new is keyed by owner. A staff cast a spring caught is still left out of the estimate, whose `unscored` holds only
+--                        a staff post a card landed on: there the estimate reads a lean of 0 and no flavor where the settlement reads the cast (#815, a question for the owner).
 -- Scale: one probe by Act (reactions_window) for each play of the window, never a scan of reactions; a post with thousands of reactions is read once however many cards landed on it, since `scored` is a set.
 -- Ways out: no state is added. Masks: nothing here is computed from a private fact. The new reactions are the Acts' own public reactions, read where `reacted` reads them, and the estimate's are keyed under the per-request
 -- salt as the others are; a staff Act's `card` is public, as any card's play is.
