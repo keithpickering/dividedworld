@@ -470,6 +470,8 @@ export interface UnscoredTarget {
   readonly at: number;
   readonly thread: string;
   readonly staff: true;
+  /** The card, where the Act is a card's play (a staff cast): a spring that caught it is handed the card's alignment (`PlayedCard.targetReadsAs`). */
+  readonly card?: string;
 }
 
 /**
@@ -634,6 +636,14 @@ export interface PlayedCard {
    * ordered by the votes' own numbers, never by player. There is no `before`: every player it drew arrived in the window.
    */
   readonly drawnAfter: { readonly at: number; readonly now: readonly Standing[] } | null;
+  /**
+   * How the room took what the play is scored against: positive vote shares minus negative ones on it, over every
+   * reaction up to the window's end, unhalved, the caster's own player's left out (its author's own player's are never
+   * counted). Above zero it was well received, below zero booed; zero is a tie or no reaction.
+   */
+  readonly targetLean: number;
+  /** Where what the play is scored against is itself a card's play, the alignment that play reads as this window (`readsAs`). */
+  readonly targetReadsAs?: Alignment;
 }
 
 /** A card another player played on one of the character's posts. */

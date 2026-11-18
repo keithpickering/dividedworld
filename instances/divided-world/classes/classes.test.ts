@@ -27,7 +27,7 @@ const input = (over: Partial<ClassInput>): ClassInput => ({
 });
 const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1', actAt = 0, kind = 'reaction'): ReceivedReaction => ({ act, actKind, quadrant, at: 10, actAt, kind, votes });
 const card = (over: Partial<PlayedCard>): PlayedCard => ({
-  act: 'k1', card: 'whoops', alignment: 'salty', at: 5, target: 'p9', onOthers: true, votes: 0, targetVotes: 0, targetAfter: none, drawnAfter: null, ...over,
+  act: 'k1', card: 'whoops', alignment: 'salty', at: 5, target: 'p9', onOthers: true, votes: 0, targetVotes: 0, targetAfter: none, drawnAfter: null, targetLean: 0, ...over,
   readsAs: over.readsAs ?? over.alignment ?? 'salty',
 });
 const total = (rules: ClassRules, i: ClassInput, reason?: string) =>
