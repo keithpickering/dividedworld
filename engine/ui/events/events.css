@@ -98,6 +98,11 @@
   font-size: inherit;
 }
 
+/*
+ * The phone's dialog keeps its words 12px from its border, and a skewed button reaches past its own box at the foot (a tenth of its height) with its focus ring 6px
+ * past that, so the first button, which holds the focus as the dialog opens, would draw its ring on the border. The row stands in by the ring's reach.
+ */
 :where(:root[data-kb-layout='phone']) .kb-event-foot {
   margin-top: 24px;
+  padding-left: 10px;
 }
