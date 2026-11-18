@@ -35,7 +35,7 @@ default, not a choice the owner was asked.
 **Decided:** people who came back. At least three other players posted in the debate, and at least two of them posted
 in it twice or more, all within three days of the spark. Returning to answer is the public sign of an argument, and it
 roughly doubles what friends must type to fake one. The third voice keeps the result from singling out one pair of
-characters (section 6).
+characters (section 7).
 
 Weighed: size alone (X posts from N players), which five one-word replies would meet; mutual quoting (two players who
 each quoted the other), the strictest reading, which misses the many real arguments carried on without the quote
@@ -78,11 +78,38 @@ Defaults the owner accepted:
 - **The live estimate counts characters** where the settlement counts players, as a spun thread's repliers are
   counted, and knows only the caller's own characters as the author's.
 
-## 5. Balance
+## 5. The thread outvotes the nods
 
-- **Against the Tweener's own weakness.** An innocuous post tends to draw calm reactions, and each calm or bored vote
-  costs a Tweener half a vote (`tweener.shrugged`). Four polite nods on the spark cost what the catalyst pays. So the
-  perk is not free money on a bland post: it pays the post that reads as nothing and turns out to be something.
+The owner: "polite nods on a post that can be verified as a spark may be a red herring; the reactions attempt to
+measure the crowd response but the thread itself measures what the response actually was."
+
+**Decided:** one for one. Once a spark has paid, each other player in its debate cancels one calm or bored vote's loss
+on the spark (`tweener.shrugged`, half a vote's worth each). The refund is the smaller of what the spark has lost to
+shrugs and that allowance, and it is its own line in the log, `tweener.outvoted`, beside the charge it answers, which
+stays as written.
+
+- **Typical case, whole.** Four nods and a four-player argument cost nothing.
+- **A fake recovers little.** Three colluding friends give back at most 0.15, and erasing twenty nods takes twenty
+  real debaters, which is no longer a fake.
+- **It moves with both sides.** While the debate is followed (`debateDays` from the spark), a new debater raises the
+  allowance and a new nod raises the loss, and each window pays the difference from the one before. A calm vote that
+  moves away lowers the loss, and takes its refund back with it. The refund never goes below zero in all.
+- **A nod after the debate is no longer followed** is charged as any other.
+- **Thick Skin makes no net gain** (the owner: "a Thick Skin shouldn't create a net gain"). Where a cushion play has
+  been up on the spark or on its character at any time since the spark was posted, the refund is cut by that
+  cushion's share, the largest where there are several. A cushion gives back at most its share of a loss and the
+  refund at most the rest, so the two never sum past the loss. It is cut even for a nod the cushion did not cover:
+  the settlement keeps no exact record, by Act, of what a cushion gave back in an earlier window, so the bound is the
+  one it can hold exactly.
+
+Weighed: leaving the shrug and the catalyst separate (a genuine spark with a few nods nets nothing); forgiving every
+shrug on a paid spark, which makes the refund grow with the loss, so that five filler replies from two friends would
+erase any bad post's loss and the weakness would stop applying to anyone with friends.
+
+## 6. Balance
+
+- **Against the Tweener's own weakness.** A bland post that sparks nothing is shrugged off as before; the shrug is
+  forgiven only where the thread proved the room cared, and only as far as the thread outweighs the nods.
 - **Against faking it.** Posts cost nothing, unlike cards, and are not held to one vote, unlike reactions. What holds
   this is the flat single payment, the two who must come back, the halving, and that the debaters are counted by
   player, so one friend's two masks are one voice.
@@ -91,7 +118,7 @@ Defaults the owner accepted:
 - **Everyone else.** Unchanged. The pull on play is toward bait and toward not answering a direct question, which is
   the archetype.
 
-## 6. The masks
+## 7. The masks
 
 - **What is read:** posts, quotes, spins and their times, which anyone can watch, and who owns the characters that
   wrote them, to count players. That count is The System's scoring, shown only as a settled sum, as a spun thread's
@@ -101,19 +128,23 @@ Defaults the owner accepted:
   suspected second mask joined its debate is likewise a hint, among several other reasons it may be unpaid. Both are
   the reading the rule accepts of a settled sum. The threshold of three, never a pair, is chosen so that no result
   names two characters.
+- **The refund's size** follows the count of debating players wherever the allowance is the smaller side, so a
+  debater who joins and moves nothing reads as a second mask of someone already in it. That too is a settled sum, of
+  the kind a shared vote already shows when two masks cheer one post and pay as one.
 - **Live:** the estimate reads only the caller's own sparks, counts each other character as a voice of its own, and
   knows only the caller's own characters as the author's. A bystander's estimate reads nothing of this.
 - **No response, event or timing is added.**
 
-## 7. The layers
+## 8. The layers
 
 - **Engine:** how long a post's debate is followed (`debateDays`, a setting), the quote edges in the settlement's
   input, and for each of a character's posts whose debate moved in the window, the debate's posts as times and
-  numbered voices that name no one. The engine names no class and no threshold.
-- **Instance:** the Tweener's rule and its four numbers, the reason `tweener.litTheFuse`, and the log's and the
-  Strategy Guide's words.
+  numbered voices that name no one, with the votes standing on the post and the largest cushion that has covered it.
+  The engine names no class and no threshold.
+- **Instance:** the Tweener's rule and its numbers, the reasons `tweener.litTheFuse` and `tweener.outvoted`, and the
+  log's and the Strategy Guide's words.
 
-## 8. States and ways out
+## 9. States and ways out
 
 None is added. A voided spark is a payment that never happens; it holds no post, character or player in anything.
 
