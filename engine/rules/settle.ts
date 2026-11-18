@@ -58,13 +58,13 @@
  *   largest `share` that applies (a tie: the earliest play, then the smaller play id). It reads the class's own earnings only, never a boost, a card's
  *   payout or another cushion. So a gain taken back (a negative amount on negative votes) is no loss, a loss taken back (a positive amount) is none
  *   either, and an earning with no `votes` (a cost no reaction caused) is never cushioned, except as a window's loss (second way, below). Each
- *   increase of a loss quadrant's share is a loss line and is cushioned; each decrease is a take-back and is never cushioned again, since the engine is not handed who voted and cannot tie an earning
- *   to its voter's first reaction as a flat earn's vote is. So any later reaction by the voter that shrinks a cushioned share, in another loss
- *   quadrant or in a quadrant that is no loss, leaves cushion behind that no standing loss matches. The smallest case, measured, is a quarter of a vote
- *   for a half cushion, when a cushioned loss's vote later spreads to one more quadrant, of either kind. The excess grows with each further
- *   reaction the voter leaves on the Act, and is bounded by how many one player may leave there (`settings.reactionCap`), since a reaction
- *   cannot be removed: at a cap of 3 a half cushion leaves at most five twelfths of a vote behind for one voter on one Act (the settlement
- *   design, section 3.2). It sits beside a flat earn and neither reads the other.
+ *   increase of a loss quadrant's share is a loss line and is cushioned; each decrease is a take-back and is never cushioned again, since the
+ *   engine is not handed who voted and cannot tie an earning to its voter's first reaction as a flat earn's vote is. So any later reaction by the
+ *   voter that shrinks a cushioned share, in another loss quadrant or in a quadrant that is no loss, leaves cushion behind that no standing loss
+ *   matches. The smallest case, measured, is a quarter of a vote for a half cushion, when a cushioned loss's vote later spreads to one more
+ *   quadrant, of either kind. The excess grows with each further reaction the voter leaves on the Act, and is bounded by how many one player may
+ *   leave there (`settings.reactionCap`), since a reaction cannot be removed: at a cap of 3 a half cushion leaves at most five twelfths of a vote
+ *   behind for one voter on one Act (the settlement design, section 3.2). It sits beside a flat earn and neither reads the other.
  *   The second way: an earning a class marks `ofWindow` (Earning.ofWindow) is a loss the window's reactions caused together. Where its amount is
  *   negative and its Act is the character's own, a cushion on the character or on the Act that is up at the window's end (`from <= window.to <
  *   ends`) gives back its share, as it does for a reaction's loss at the reaction's time. Its line has the Act, and a time or a
