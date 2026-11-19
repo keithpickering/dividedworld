@@ -1182,7 +1182,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
         (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
       rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
-      rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs,pack,repriced'), 'at', (q) => q, ['card', 'kind', 'act', 'price', 'pack']),
+      rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs,pack,repriced,pack_kind,pack_source'), 'at', (q) => q, ['card', 'kind', 'act', 'price', 'pack']),
       /* The packs the player bought (0139): kind, price, the Boss's markup and the cards in pull order; the pulled rows above name each by `pack`. */
       rows(() => client.from('my_packs').select('id,pack,price,repriced,contents,bought_at,opened_at,source'), 'bought_at', (q) => q, ['id']),
       rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),

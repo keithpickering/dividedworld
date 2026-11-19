@@ -60,7 +60,8 @@ drop policy own on packs;
 
 -- The caller's own packs, for the log and the hand. Read as its owner, not as the caller (as my_card_ledger is), so that it can leave out what the caller may not read: a sealed pack's cards and
 -- its opening. A pack bought before this migration has `opened_at` and no opening, and reads as opened.
-create or replace view my_packs as
+-- security_barrier keeps a caller's predicate from running on another account's pack before the `account = auth.uid()` filter does (an erroring one would show that the pack exists).
+create or replace view my_packs with (security_barrier = true) as
   select p.id, p.slot, p.pack, p.price, p.odds,
          case when p.opened_at is not null or o.pack is not null then p.contents end as contents,
          p.bought_at, coalesce(p.opened_at, o.at) as opened_at, p.repriced, p.source
@@ -87,9 +88,11 @@ grant execute on function welcome_pack_kind() to service_role;
 create function open_pack(pack uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
+  caller uuid := signed_in_account();
   mine packs;
 begin
-  select p.* into mine from packs p where p.id = open_pack.pack and p.account = auth.uid() for update;
+  -- A caller with no account is refused before any pack is looked at, in the same words whatever the pack's id, so it says nothing about a pack.
+  select p.* into mine from packs p where p.id = open_pack.pack and p.account = caller for update;
   if not found then raise exception 'there is no such pack' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   if mine.opened_at is not null or exists (select 1 from pack_openings o where o.pack = mine.id) then
     raise exception 'this pack is already open' using hint = 'kayfabb.refusal', errcode = 'P0001';
@@ -147,10 +150,7 @@ begin
   from jsonb_array_elements(coalesce(payload -> 'boards', '[]')) e where coalesce((e ->> 'system')::boolean, false);
   if flags > 1 then raise exception 'a seed flags one board as The System''s, not %', flags using errcode = '22023'; end if;
   -- The economy is merged, number by number: a card kind is never removed, so the numbers its rules read stay in the row with it.
-  perform seed_setting(e.key, e.value) from jsonb_each(payload -> 'settings') e where jsonb_typeof(e.value) is distinct from 'null';
-  -- A setting the code gives as null (`startingPack`: no gift) is no row, not a row holding a JSON null: an export reads a jsonb null back as a SQL null, which the column refuses, so a null would
-  -- not round-trip. A row an admin tuned stands (0355), as every tuned row does.
-  delete from settings s using jsonb_each(payload -> 'settings') e where s.key = e.key and jsonb_typeof(e.value) = 'null' and s.tuned_at is null;
+  perform seed_setting(e.key, e.value) from jsonb_each(payload -> 'settings') e;
   insert into class_kinds (key, name) select e ->> 'key', e ->> 'name' from jsonb_array_elements(payload -> 'classes') e
   on conflict (key) do update set name = excluded.name;
   -- Reaction kinds are the one vocabulary a seed removes. Classes and cards never are: a card must outlive its slot and its pulls
@@ -683,7 +683,9 @@ begin
              c.at,
              c.springs,
              c.pack,
-             c.repriced
+             c.repriced,
+             c.pack_kind,
+             c.pack_source
             FROM my_card_ledger c
            WHERE (c.at <= COALESCE(log_page.in_before, 'infinity'::timestamp with time zone))
            ORDER BY c.at DESC, c.card, c.kind, c.act, c.price, c.pack
@@ -1224,3 +1226,22 @@ language sql stable security definer set search_path = public, pg_temp as $$
                else c.key <> all (p.leaves) and exists (select 1 from jsonb_array_elements(p.pulls) e where (e -> 'weights') ? c.rarity) end
   )
 $$;
+
+-- my_card_ledger (0148's), with the kind and the source of the pack a pulled row came from, so that the log can say "you opened your Starter Pack" for a welcome pack granted on one page and opened on another.
+-- The existing columns first, as they were; null for a row that is not a pulled one. The view reads `packs` as its owner (it is not a security-invoker view), which a player can no longer read, and shows
+-- the caller's own rows alone, as it did.
+create or replace view my_card_ledger as
+  select l.card, l.kind, l.act, l.price, l.at,
+         case when l.kind = 'played' and a.kind = 'set' then k.trap is not null or k.play = 'cast' end as springs,
+         l.pack, l.repriced, pk.pack as pack_kind, pk.source as pack_source
+  from card_ledger l
+  left join card_kinds k on k.key = l.card
+  left join acts a on a.id = l.act
+  left join packs pk on pk.id = l.pack
+  where l.account = auth.uid()
+  union all
+  select f.card, 'returned'::text, null::uuid, 0, f.ends_at, null::boolean, null::uuid, false, null::text, null::text
+  from face_down f
+  where f.account = auth.uid() and f.ends_at <= now()
+    and (select s.id from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text limit 1) is null
+    and (select tb.id from acts tb where tb.kind = 'take_back' and (tb.payload ->> 'set') = f.play::text limit 1) is null;

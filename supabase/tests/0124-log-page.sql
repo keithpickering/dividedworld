@@ -129,7 +129,7 @@ begin
        select settlement, kind, change, overflow, floored, balance_after, ref, at from my_wallet_events order by at desc, settlement, kind, ref, change, overflow, floored, balance_after limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'wallet') is distinct from 200 then raise exception 'wallet: % rows', jsonb_array_length(doc -> 'sources' -> 'wallet'); end if;
   if doc -> 'sources' -> 'cards' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select card, kind, act, price, at, springs, pack, repriced from my_card_ledger order by at desc, card, kind, act, price, pack limit 200) r))
+       select card, kind, act, price, at, springs, pack, repriced, pack_kind, pack_source from my_card_ledger order by at desc, card, kind, act, price, pack limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'cards') is distinct from 6 then raise exception 'cards: %', doc -> 'sources' -> 'cards'; end if;
   if doc -> 'sources' -> 'playsOnMine' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select play, post, at, reach, target_name, target_character from my_posts_played_on order by at desc, play limit 200) r))

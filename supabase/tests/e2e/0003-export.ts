@@ -313,10 +313,15 @@ test('an instance exported and imported into a fresh database is the same instan
       perform buy_pack(ann, (select id from machine_slots where pack = 'exppack'), 250);
       -- A welcome pack still sealed (Ann's) and one opened (Bob's) (0377): a fixed kind's cards stored with each pack, the opening as its own row, and the six-card order the opening wrote to the ledger.
       insert into pack_kinds (key, pulls, leaves, contents) values ('expwelcome', null, '{}', array['exppull', 'exppull']);
-      insert into packs (id, account, pack, price, contents, source) values (gen_random_uuid(), ann, 'expwelcome', 0, array['exppull', 'exppull'], 'welcome'), ('00000000-0000-4000-8000-0000000377b0', bob, 'expwelcome', 0, array['exppull', 'exppull'], 'welcome');
+      -- (An earlier seed in this database may have backfilled each of these two accounts' welcome pack already, as the instance's startingPack says; the unique index keeps one, and the rows below are only what it lacks.)
+      insert into packs (account, pack, price, contents, source) values (ann, 'expwelcome', 0, array['exppull', 'exppull'], 'welcome'), (bob, 'expwelcome', 0, array['exppull', 'exppull'], 'welcome')
+      on conflict (account) where source = 'welcome' do nothing;
+      perform set_config('exp.bobpack', (select id::text from packs where account = bob and source = 'welcome'), true);
       perform tests.become(bob);
-      perform open_pack('00000000-0000-4000-8000-0000000377b0');
+      perform open_pack(current_setting('exp.bobpack')::uuid);
       perform tests.unbecome();
+      -- A setting whose value is a JSON null (0377: startingPack, no gift): a jsonb null in a NOT NULL column, which an import must put back rather than read as a SQL null.
+      insert into settings (key, value) values ('startingPack', 'null'::jsonb) on conflict (key) do update set value = excluded.value;
       -- One more card, played as the sweetie above is, for an admin to end after the caught one (0092); its id is fixed in the test.
       insert into acts (id, character, kind, thread, target_act_id, payload) values ('${endedPlay}', a, 'card', t, p, '{"card": "sweetie", "config": {}}');
       -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an

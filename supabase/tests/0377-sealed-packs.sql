@@ -7,6 +7,12 @@
 -- own transaction touches it: a committed row this transaction later updates would be a lock the committing session waits on. What a race leaves (accounts, welcome packs) is
 -- append-only and committed; the scratch database is dropped at the end of the run.
 
+create function pg_temp.boom(p integer) returns boolean language plpgsql immutable cost 0.00001 as $$
+begin
+  if p = 300 then raise exception 'boom on %', p; end if;
+  return true;
+end $$;
+
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
   execute stmt;
@@ -250,6 +256,13 @@ begin
   bought := buy_pack(dan, s_pull, 300);
   perform tests.unbecome();
   select * into row_ from packs where id = (bought ->> 'pack')::uuid;
+  -- Another account's rows are filtered before a caller's predicate runs on them: a predicate that errors on Dan's 3.00 pack errors for nobody else (my_packs is owner-run, so this is its barrier).
+  perform tests.become(tests.account('ws-fred'));
+  -- (a very cheap predicate, which the planner runs before any other qualifier it can)
+  set local enable_indexscan = off; set local enable_bitmapscan = off;
+  if pg_temp.refusal('select count(*) from my_packs where pg_temp.boom(price)') is not null then raise exception 'a predicate ran on another account''s pack: %', pg_temp.refusal('select count(*) from my_packs where pg_temp.boom(price)'); end if;
+  reset enable_indexscan; reset enable_bitmapscan;
+  perform tests.unbecome();
   if cardinality(row_.contents) is distinct from 1 or row_.odds is distinct from '[{"weights": {"common": 1}}]'::jsonb or row_.opened_at is null or row_.source is distinct from 'bought' then raise exception 'a bought pull pack: %', to_jsonb(row_); end if;
 end $$;
 
@@ -293,8 +306,15 @@ begin
   if (select count(*) from packs) is distinct from before_n then raise exception 'a changed startingPack gave a second welcome pack'; end if;
   perform seed_instance(jsonb_build_object('settings', jsonb_build_object('startingPack', null), 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'packs', '[]'::jsonb));
   if (select count(*) from packs) is distinct from before_n then raise exception 'a null startingPack wrote a pack'; end if;
-  -- A null the code gives is no row (a jsonb null in a row would not survive an export and an import: the column refuses what a populate reads as SQL null).
-  if exists (select 1 from settings where key = 'startingPack') then raise exception 'a seed wrote a JSON null as a setting'; end if;
+  -- A null the code gives is a row holding a JSON null (an export carries it: supabase/tests/e2e/0003-export.ts).
+  if (select value from settings where key = 'startingPack') is distinct from 'null'::jsonb then raise exception 'a seed did not write a null startingPack: %', (select value from settings where key = 'startingPack'); end if;
+  -- A row an admin tuned stands on a seed, null or not.
+  perform set_config('kayfabb.seeding', 'off', true);
+  update settings set value = '"ws-starter"' where key = 'startingPack';
+  perform set_config('kayfabb.seeding', 'on', true);
+  if (select tuned_at from settings where key = 'startingPack') is null then raise exception 'a write outside a seed did not mark the row tuned'; end if;
+  perform seed_instance(jsonb_build_object('settings', jsonb_build_object('startingPack', null), 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'packs', '[]'::jsonb));
+  if (select value from settings where key = 'startingPack') is distinct from '"ws-starter"'::jsonb then raise exception 'a seed overwrote a tuned startingPack: %', (select value from settings where key = 'startingPack'); end if;
   -- A late character of an account with no pack gets its pack from the seed after, not before the setting is on.
   perform tests.character(fay, 'Ws Fay');
   perform seed_instance(payload);
@@ -313,4 +333,40 @@ begin
   update machine_slots set availability = 'onSale' where pack = 'ws-lonepack';
   if card_in_open_pack('ws-lone') is distinct from true then raise exception 'a card in a fixed pack on sale reads as not offered'; end if;
   if card_in_open_pack('ws-nothing-here') is distinct from false then raise exception 'a card in no pack reads as offered'; end if;
+end $$;
+
+-- ---- 7. A pulled row says which pack it came from (my_card_ledger: pack_kind and pack_source) ----
+do $$
+declare
+  iva uuid := tests.account('ws-iva');
+  jon uuid := tests.account('ws-jon');
+  welcome uuid;
+  rows_ jsonb;
+begin
+  insert into wallets (account, balance) values (iva, 300), (jon, 300);
+  insert into card_ledger (account, card, kind, price) values (iva, 'sweetie', 'bought', 100);
+  insert into packs (account, pack, price, contents, source) values (iva, 'ws-starter', 0, array['sweetie', 'splat'], 'welcome') returning id into welcome;
+  insert into packs (account, pack, price, contents, source) values (jon, 'ws-starter', 0, array['blot'], 'welcome');
+  perform tests.become(iva);
+  perform open_pack(welcome);
+  perform tests.unbecome();
+  perform tests.become_service();
+  perform buy_pack(iva, (select id from machine_slots where pack = 'ws-lonepack'), 100);
+  perform buy_pack(jon, (select id from machine_slots where pack = 'ws-lonepack'), 100);
+  perform tests.become(iva);
+  select jsonb_agg(jsonb_build_array(card, kind, pack_kind, pack_source) order by at) into rows_ from my_card_ledger m;
+  if (select count(*) from my_card_ledger where kind = 'pulled' and pack_kind = 'ws-starter' and pack_source = 'welcome') is distinct from 2
+     or (select count(*) from my_card_ledger where kind = 'pulled' and pack_kind = 'ws-lonepack' and pack_source = 'bought') is distinct from 1
+     or (select count(*) from my_card_ledger where kind <> 'pulled' and (pack_kind is not null or pack_source is not null)) is distinct from 0
+     or (select count(*) from my_card_ledger) is distinct from 4 then
+    raise exception 'my_card_ledger''s pulled rows: %', rows_;
+  end if;
+  -- The log's cards source carries both, for each row.
+  if (select count(*) from jsonb_array_elements(log_page(null) -> 'sources' -> 'cards') c where c ->> 'pack_kind' = 'ws-starter' and c ->> 'pack_source' = 'welcome') is distinct from 2
+     or (select count(*) from jsonb_array_elements(log_page(null) -> 'sources' -> 'cards') c where c ->> 'pack_kind' = 'ws-lonepack' and c ->> 'pack_source' = 'bought') is distinct from 1 then
+    raise exception 'log_page''s cards: %', log_page(null) -> 'sources' -> 'cards';
+  end if;
+  -- Another account's pulled rows are not here.
+  if exists (select 1 from my_card_ledger where card = 'blot') then raise exception 'another account''s pulled row shows'; end if;
+  perform tests.unbecome();
 end $$;
