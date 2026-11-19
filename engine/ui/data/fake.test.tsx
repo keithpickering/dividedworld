@@ -1716,6 +1716,21 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     expect(await ended(false)).toBe(1);
   });
 
+  test('a card a fixed pack on sale holds is in an open pack, so its Pull stays when another pack goes off sale', async () => {
+    const pull = { kind: 'pullSlot' as const, act: 'no-such-act', ends: '2026-11-09T12:00:00Z', demand: null, progress: null, was: 100, percent: null, hours: null };
+    const own: Instance = {
+      ...shop, cards: [splat],
+      packs: [{ key: 'booster', pulls: [{ weights: { common: 1 } }] }, { key: 'starter', contents: ['splat'] }],
+      machine: [{ item: { card: 'splat' }, availability: 'onSale' as const, price: 100 }, { item: { pack: 'booster' }, availability: 'onSale' as const, price: 300 }, { item: { pack: 'starter' }, availability: 'onSale' as const, price: 300 }],
+    };
+    const fake = createFake({ instance: own });
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    fake.seed.slot({ card: 'splat' }, { move: pull });
+    const booster = (await fake.adminMachine()).find((m) => 'pack' in m.item && m.item.pack === 'booster')!;
+    const answer = await fake.setSlot(booster.id, 'soldOut', booster.price);
+    expect(answer.ok ? answer.value.ended : -1).toBe(0);
+  });
+
   test('a purchase is refused in the server\'s words: a sold out slot, a stale price, the wrong kind of slot, and a wallet that falls short', async () => {
     const { fake } = shopWorld(500);
     const card = await slotOf(fake, 'splat');

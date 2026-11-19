@@ -37,6 +37,7 @@ const settings: Settings = {
   presencePollSeconds: 30,
   systemEnabled: false,
   oldVoice: true,
+  startingPack: null,
   cardWriteSettleSeconds: 30,
   oldVoiceWindow: 1024,
   oldVoiceTokenizer: 'gpt2',
@@ -1482,4 +1483,40 @@ test('a discipline is one of four kinds on a cast card, held apart from the effe
     ['a drive', { drive: {} }], ['a surface', { surface: {} }],
   ];
   for (const [what, over] of held) assert.match(bad({ discipline: { kind: 'fall' }, ...over }), /card "splat" has a fall and (writes|replies|keeps|a skim|scoresAs|a gimmick|draws|needsMessage|a drive|a surface); a card with a discipline has no other effect/, what);
+});
+
+// Fixed packs and the starting pack (docs/plans/2026-11-18-starter-pack-plan.md, Task 1).
+test('a fixed pack and a starting pack that agree have no problems', () => {
+  const fixed = { key: 'starter', contents: ['a', 'a', 'c'] };
+  const world = stocked({ packs: [fixed], machine: [], settings: { ...good.settings, startingPack: 'starter' } });
+  assert.deepEqual(instanceProblems(world), []);
+});
+
+test('a pack is a pull pack or a fixed pack, never both and never neither', () => {
+  const refusedOnce = (packs: unknown[]) => instanceProblems(stocked({ packs: packs as never, machine: [] })).filter((p) => p.includes('pack "p"'));
+  assert.deepEqual(refusedOnce([{ key: 'p', pulls: [{ weights: { common: 1 } }], contents: ['a'] }]), ['pack "p" has both pulls and contents; a pack is one or the other']);
+  assert.deepEqual(refusedOnce([{ key: 'p' }]), ['pack "p" has neither pulls nor contents']);
+});
+
+test('a fixed pack has cards, each one the instance has and sells', () => {
+  assert.match(said(stocked({ packs: [{ key: 'f', contents: [] }], machine: [] })), /pack "f" has no cards in its contents/);
+  assert.match(said(stocked({ packs: [{ key: 'f', contents: ['a', 'ghost'] }], machine: [] })), /pack "f" holds "ghost", and the instance has no such card/);
+  const writer = testCard({ key: 'w', writes: { kind: 'x' } });
+  const world = (oldVoice: boolean) => stocked({ cards: [writer, ...packCards], packs: [{ key: 'f', contents: ['a', 'w'] }], machine: [], settings: { ...good.settings, oldVoice } });
+  assert.match(said(world(false)), /pack "f" holds "w", which this instance withholds/);
+  assert.doesNotMatch(said(world(true)), /pack "f"/);
+});
+
+test('a fixed pack leaves nothing out', () => {
+  assert.match(said(stocked({ packs: [{ key: 'f', contents: ['a'], leaves: ['b'] } as never], machine: [] })), /pack "f" is fixed and has a leaves list; a fixed pack leaves nothing out/);
+});
+
+test('a starting pack is a fixed pack the instance has, or null', () => {
+  const withStart = (startingPack: unknown, packs: Instance['packs']) => stocked({ packs, machine: [], settings: { ...good.settings, startingPack } as never });
+  const fixed = { key: 'f', contents: ['a'] };
+  const pull = { key: 'p', pulls: [{ weights: { common: 1 } }] };
+  assert.match(said(withStart('ghost', [fixed])), /setting "startingPack" is "ghost".*no pack of this instance's/);
+  assert.match(said(withStart('p', [pull, fixed])), /setting "startingPack" is "p".*pull pack.*fixed/);
+  assert.deepEqual(instanceProblems(withStart(null, [fixed, pull])), []);
+  assert.match(settingsProblems({ ...settings, startingPack: 7 } as never).join('\n'), /startingPack/);
 });

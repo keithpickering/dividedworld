@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { AdminSlot } from '../data/api.ts';
+import { isFixed } from '../../rules/packs.ts';
 import { orbs } from '../cards/faces.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { CalmRegion } from '../glass/Calm.tsx';
@@ -118,7 +119,8 @@ export function MachineScreen() {
       return { name: instance.cards.find((c) => c.key === key)?.name ?? key, kind: s.rarity ?? 'card' };
     }
     const key = s.item.pack;
-    const cards = instance.packs.find((p) => p.key === key)?.pulls.length;
+    const found = instance.packs.find((p) => p.key === key);
+    const cards = found === undefined ? undefined : isFixed(found) ? found.contents.length : found.pulls.length;
     return { name: ui.packs[key]?.name ?? key, kind: cards === undefined ? 'pack' : `pack · ${cards} cards` };
   };
 

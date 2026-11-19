@@ -21,7 +21,7 @@
  */
 import { isPost, type Instance, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
-import { rollPack } from '../../rules/packs.ts';
+import { isFixed, rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
 import { atOrBelow, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
@@ -1852,7 +1852,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!('pack' in r.item) || r.availability !== 'onSale') return false;
       const key = r.item.pack;
       const pack = instance.packs.find((p) => p.key === key);
-      return pack !== undefined && !(pack.leaves ?? []).includes(card) && pack.pulls.some((pull) => rarity in pull.weights);
+      if (pack === undefined) return false;
+      if (isFixed(pack)) return pack.contents.includes(card);
+      return !(pack.leaves ?? []).includes(card) && pack.pulls.some((pull) => rarity in pull.weights);
     });
   }
   /** After a pack leaves sale: ends, as reversed by the admin, every Pull whose card is then in no pack on sale. Returns how many. */

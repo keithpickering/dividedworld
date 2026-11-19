@@ -43,7 +43,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { animate, motion } from 'motion/react';
-import type { PackRules } from '../../rules/packs.ts';
+import { isFixed, type PullPack } from '../../rules/packs.ts';
 import { motionReduced } from '../appearance.ts';
 import { Postcard, PostcardBack, cardLabel } from '../cards/Postcard.tsx';
 import { facesOf, orbs, plainRefusal, withCardEconomy, type CardFace } from '../cards/faces.ts';
@@ -98,7 +98,7 @@ interface Item {
   /** The admin's price, where a Boss move has changed it: it is shown struck through beside the new one. */
   readonly was: number | null;
   readonly face: CardFace | null;
-  readonly pack: PackRules | null;
+  readonly pack: PullPack | null;
   readonly look: PackLook | null;
   readonly sold: boolean;
   readonly color: string;
@@ -228,7 +228,7 @@ function SlotArt({ it }: { readonly it: Item }) {
 }
 
 /** "In this pack": five small backs, all the same, and what opening does. */
-function InPack({ pack, count, line, back }: { readonly pack: PackRules; readonly count: number; readonly line: string; readonly back: InstanceUi['cardBack'] }) {
+function InPack({ pack, count, line, back }: { readonly pack: PullPack; readonly count: number; readonly line: string; readonly back: InstanceUi['cardBack'] }) {
   return (
     <section className="kb-vending-inpack" aria-label="In this pack">
       <p className="kb-vending-inpack-head" aria-hidden="true" data-kb-art />
@@ -379,7 +379,8 @@ export function Vending() {
     }
     const key = slot.item.pack;
     const pack = instance.packs.find((p) => p.key === key);
-    if (!pack) return [];
+    // Fixed packs in the machine land with the about panel (docs/plans/2026-11-18-starter-pack-plan.md, Task 5).
+    if (!pack || isFixed(pack)) return [];
     const look = ui.packs?.[key] ?? null;
     return [{ slot, name: look?.name ?? key, price: slot.price, was, face: null, pack, look, sold, color: look?.art.color ?? 'var(--kb-glass-ready)', ink: look?.art.ink ?? 'var(--kb-glass-ink-ready)' }];
   }).map((it, i): Item => ({ ...it, code: codeOf(i) })), [slots, cardFaces, instance.packs, ui.packs]);
@@ -522,7 +523,7 @@ export function Vending() {
   const packOf = (it: Item | null) => (it?.pack ? { odds: oddsGroups(it.pack, instance.cards, instance.settings), line: packLine(it.pack, instance.cards, instance.settings) } : null);
   const picks = packOf(picked);
   /* The cards a pack can give that the machine is not selling now: "Main Event isn't sold on its own." */
-  const unsold = (p: PackRules) => unsoldOnTheirOwn(packCards(p, instance.cards, instance.settings).filter((k) => !slots?.some((s) => 'card' in s.item && s.item.card === k)).map((k) => cardFaces.find((f) => f.key === k)?.name ?? k));
+  const unsold = (p: PullPack) => unsoldOnTheirOwn(packCards(p, instance.cards, instance.settings).filter((k) => !slots?.some((s) => 'card' in s.item && s.item.card === k)).map((k) => cardFaces.find((f) => f.key === k)?.name ?? k));
   /* Every Boss move in force, in plain words, in the machine's order. */
   const moves = items.flatMap((it) => {
     const move = it.slot.move;

@@ -8,6 +8,7 @@
  */
 import type { Instance, Weakness } from '../../../engine/rules/types.ts';
 import { DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
+import { isFixed, type PullPack } from '../../../engine/rules/packs.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
@@ -100,7 +101,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
     })),
     // The packs the instance sells, replaced each seed (0139), and the machine's slots in grid order: seed_instance adds a slot whose item the
     // database does not hold yet and never changes one that is there, since a slot's place, availability and price are an admin's.
-    packs: instance.packs.map((p) => ({ key: p.key, pulls: p.pulls.map((pull) => ({ weights: { ...pull.weights } })), leaves: [...(p.leaves ?? [])] })),
+    packs: instance.packs.filter((p): p is PullPack => !isFixed(p)).map((p) => ({ key: p.key, pulls: p.pulls.map((pull) => ({ weights: { ...pull.weights } })), leaves: [...(p.leaves ?? [])] })),
     machine: instance.machine.map((m) => ({ ...('card' in m.item ? { card: m.item.card } : { pack: m.item.pack }), availability: m.availability, price: m.price })),
     // The gear the instance offers (0205): keys and rarities only, which seed_instance adds and keeps current; names, lines and art stay in the instance.
     gear: instance.gear.map((g) => ({ key: g.key, rarity: g.rarity })),

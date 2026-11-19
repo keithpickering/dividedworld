@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { instanceSeed } from './seed.ts';
 import { DEFAULT_ANONYMOUS } from '../../../engine/rules/instance.ts';
+import { isFixed, type PullPack } from '../../../engine/rules/packs.ts';
 import { chooseInstance, conduct, instance } from './instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
@@ -49,7 +50,7 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(disciplined.find((c) => c.key === 'disciplined')!.discipline, { kind: 'watch', weight: 2 }, 'the seed carries the discipline');
   assert.deepEqual(disciplined.filter((c) => c.discipline !== undefined).map((c) => c.key), [...instance.cards.filter((c) => c.discipline !== undefined).map((c) => c.key), 'disciplined'], 'a card without one travels with none');
   // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
-  assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
+  assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.filter((p): p is PullPack => !isFixed(p)).map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
   assert.deepEqual(seed.packs[0]!.pulls[4], { weights: { uncommon: 74, rare: 24, legendary: 2 } }, 'the hit pull reaches the SQL as written');
   assert.deepEqual(seed.machine.map((m) => ('card' in m ? m.card : m.pack)), instance.machine.map((m) => ('card' in m.item ? m.item.card : m.item.pack)));
   assert.deepEqual(seed.machine.find((m) => 'pack' in m), { pack: 'booster', availability: 'onSale', price: 300 });

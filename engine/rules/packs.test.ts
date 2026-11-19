@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { packOdds, rollPack, type PackRules } from './packs.ts';
+import { isFixed, packHit, packOdds, rollPack, type FixedPack, type PackRules, type PullPack } from './packs.ts';
 import type { CardRules, Rarity } from './cards.ts';
 
 const card = (key: string, rarity: Rarity) => ({ key, rarity }) as unknown as CardRules;
 const cards = [card('a', 'common'), card('b', 'common'), card('c', 'uncommon'), card('d', 'uncommon'), card('e', 'uncommon'), card('f', 'rare')];
 const on = { oldVoice: true };
-const pack: PackRules = { key: 'p', pulls: [{ weights: { common: 85, uncommon: 15 } }, { weights: { uncommon: 75, rare: 25 } }] };
+const pack: PullPack = { key: 'p', pulls: [{ weights: { common: 85, uncommon: 15 } }, { weights: { uncommon: 75, rare: 25 } }] };
 
 test('packOdds gives each pull its rarities and the eligible cards with their chances', () => {
   const odds = packOdds(pack, cards, on);
@@ -59,4 +59,19 @@ test('a card that writes is not among the leaves where the instance runs no old 
   assert.deepEqual(packOdds(pack, all, { oldVoice: false })[1]![1]!.cards, [{ card: 'f', chance: 0.25 }], 'the rare it shared is the only one left');
   assert.deepEqual(rollPack({ key: 'x', pulls: [{ weights: { rare: 1 } }] }, [writer], { oldVoice: true }, () => 0), ['w'], 'where it runs, a rare-only pack can roll it');
   assert.throws(() => rollPack({ key: 'x', pulls: [{ weights: { rare: 1 } }] }, [writer], { oldVoice: false }, () => 0), /no card to give/u, 'and where it does not, it is never rolled');
+});
+
+test('rollPack on a fixed pack returns its contents as they are and draws nothing', () => {
+  const fixed: PackRules = { key: 'f', contents: ['c', 'a', 'a', 'f'] };
+  let draws = 0;
+  assert.deepEqual(rollPack(fixed, cards, on, () => { draws += 1; return 0; }), ['c', 'a', 'a', 'f']);
+  assert.equal(draws, 0, 'a fixed pack never calls random');
+  assert.equal(isFixed(fixed), true);
+  assert.equal(isFixed(pack), false);
+});
+
+test('packHit says a pull pack has a hit card and a fixed pack has none', () => {
+  const fixed: FixedPack = { key: 'f', contents: ['a'] };
+  assert.equal(packHit(pack), true);
+  assert.equal(packHit(fixed), false);
 });
