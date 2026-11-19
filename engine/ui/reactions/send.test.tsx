@@ -290,4 +290,56 @@ describe('useReactionSend', () => {
     expect(react).toHaveBeenCalledTimes(1);
     expect(a.mine.get(w.theirs)).toHaveLength(1);
   });
+
+  test('two rows of one Act send one at a time: the second row\'s due send waits for the first\'s answer', async () => {
+    const w = world();
+    const real = w.fake.react.bind(w.fake);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    let first = true;
+    w.fake.react = async (...args: Parameters<typeof real>) => { if (first) { first = false; await gate; } return real(...args); };
+    const react = vi.spyOn(w.fake, 'react');
+    const a = mount(w);
+    const answersB: string[] = [];
+    const second: { current: ReturnType<typeof useReactionSend> | null } = { current: null };
+    const Other = () => { second.current = useReactionSend({ act: w.theirs, as: w.as, tallies: createTallies(), mine: a.mine, onAnswer: (x) => { answersB.push(x.kind); } }); return null; };
+    renderIn(w.fake, <Other />);
+    act(() => { a.out.current!.press('fire'); });
+    await grace(1000);
+    act(() => { second.current!.press('tea'); });
+    await grace(REACTION_GRACE_MS);
+    expect(react).toHaveBeenCalledTimes(1);
+    await grace(1000);
+    expect(react).toHaveBeenCalledTimes(1);
+    await act(async () => { release(); await vi.advanceTimersByTimeAsync(0); });
+    expect(react.mock.calls.map((c) => c[2])).toEqual(['fire', 'tea']);
+    expect(a.answers.map((x) => x.kind)).toEqual(['fire']);
+    expect(answersB).toEqual(['tea']);
+  });
+
+  test('a refusal of the first queued kind still sends the second, and each answer reaches onAnswer', async () => {
+    const w = world();
+    const real = w.fake.react.bind(w.fake);
+    w.fake.react = async (...args: Parameters<typeof real>) => (args[2] === 'fire' ? { ok: false as const, error: 'no fire' } : real(...args));
+    const v = mount(w);
+    act(() => { v.out.current!.press('fire'); v.out.current!.press('tea'); });
+    await grace();
+    expect(v.answers).toEqual([{ kind: 'fire', character: w.hooligan, answer: { refusal: 'no fire' } }, { kind: 'tea', character: w.hooligan, answer: 'sent' }]);
+    expect(v.mine.pending(w.theirs)).toEqual([]);
+    expect(v.mine.get(w.theirs).map((r) => r.kind)).toEqual(['tea']);
+  });
+
+  test('an onAnswer that throws strands nothing: the rest of the lane is sent and the kind can be pressed again', async () => {
+    const w = world();
+    const react = vi.spyOn(w.fake, 'react');
+    const mine = createMine();
+    const boom: { current: ReturnType<typeof useReactionSend> | null } = { current: null };
+    const Probe = () => { boom.current = useReactionSend({ act: w.theirs, as: w.as, tallies: createTallies(), mine, onAnswer: () => { throw new Error('ui broke'); } }); return null; };
+    renderIn(w.fake, <Probe />);
+    act(() => { boom.current!.press('fire'); boom.current!.press('tea'); });
+    await grace();
+    expect(react).toHaveBeenCalledTimes(2);
+    expect(mine.get(w.theirs)).toHaveLength(2);
+    expect(boom.current!.busy).toBe(false);
+  });
 });

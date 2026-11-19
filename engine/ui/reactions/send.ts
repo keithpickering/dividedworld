@@ -17,7 +17,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Id, MyCharacter } from '../data/api.ts';
+import type { Id, KayfaApi, MyCharacter } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import type { Tallies } from '../thread/tallies.ts';
 import { REACTION_GRACE_MS, type Mine, type Pending } from './mine.ts';
@@ -37,6 +37,71 @@ interface Args {
   readonly onAnswer: (a: Answered) => void;
 }
 
+/** A kind on a lane: everything its send needs, held by the entry itself, so it is sent as and where it was pressed. */
+interface Item {
+  readonly pending: Pending;
+  readonly keepalive: boolean;
+  readonly api: KayfaApi;
+  readonly player: { reactionLanded(): void };
+  readonly tallies: Tallies;
+  readonly mine: Mine;
+  /** Delivers the answer to the hook that pressed it. */
+  readonly answer: (a: Answered) => void;
+  /** Called once the kind's send is over, whatever came of it. */
+  readonly settled: () => void;
+}
+
+/* The Act's one lock: a lane per (mine, act), shared by every row that shows the Act, so two rows never send at once. */
+interface Lane { readonly queue: Item[]; draining: boolean }
+const lanes = new WeakMap<Mine, Map<Id, Lane>>();
+function laneOf(mine: Mine, act: Id): Lane {
+  const byAct = lanes.get(mine) ?? new Map<Id, Lane>();
+  lanes.set(mine, byAct);
+  const lane = byAct.get(act) ?? { queue: [], draining: false };
+  byAct.set(act, lane);
+  return lane;
+}
+
+const REFUSED = 'The reaction could not be sent. Try again.';
+
+async function send({ pending, keepalive, api, player, tallies, mine }: Item): Promise<'sent' | { refusal: string }> {
+  const act = pending.act;
+  try {
+    const r = keepalive ? await api.react(act, pending.character, pending.kind, { keepalive: true }) : await api.react(act, pending.character, pending.kind);
+    if (r.ok) {
+      mine.add({ act, kind: pending.kind, character: pending.character });
+      /* A blind post answers no tally to anyone: the screen holds none of its totals. */
+      if (r.value.tally !== null) tallies.merge(act, r.value.tally);
+      player.reactionLanded();
+      return 'sent';
+    }
+    mine.release(act, pending.kind);
+    /* A refusal may mean what this screen holds is stale (another tab left that kind): read the player's own again. */
+    try { mine.merge(act, await api.myReactions([act])); } catch { /* the server's words are the answer, whatever the re-read did */ }
+    return { refusal: r.error };
+  } catch {
+    try { mine.release(act, pending.kind); } catch { /* nothing more to do for a kind that cannot be released */ }
+    return { refusal: REFUSED };
+  }
+}
+
+/* One send at a time; whatever one entry does, the rest of the lane is still sent. */
+async function drain(lane: Lane): Promise<void> {
+  if (lane.draining) return;
+  lane.draining = true;
+  try {
+    for (let it = lane.queue.shift(); it; it = lane.queue.shift()) {
+      let answer: 'sent' | { refusal: string };
+      try { answer = await send(it); } catch { answer = { refusal: REFUSED }; }
+      taken.get(it.mine)?.delete(takenKey(it.pending.act, it.pending.kind));
+      try { it.answer({ kind: it.pending.kind, character: it.pending.character, answer }); } catch { /* a screen's callback failing leaves the lane alone */ }
+      try { it.settled(); } catch { /* likewise */ }
+    }
+  } finally {
+    lane.draining = false;
+  }
+}
+
 export function useReactionSend({ act, as, tallies, mine, onAnswer }: Args): { press(kind: string): 'held' | 'busy'; undo(kind: string): boolean; busy: boolean } {
   const { api } = useKayfa();
   const player = usePlayer();
@@ -46,68 +111,36 @@ export function useReactionSend({ act, as, tallies, mine, onAnswer }: Args): { p
   /* What a late timer or a send that outlives the row reads: the latest of each, never a stale render's. */
   const live = useRef({ api, player, tallies, mine, act, as, onAnswer });
   live.current = { api, player, tallies, mine, act, as, onAnswer };
-  const own = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; pending: Pending }>());
-  const queue = useRef<{ pending: Pending; keepalive: boolean }[]>([]);
-  const draining = useRef(false);
+  const own = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; pending: Pending; mine: Mine }>());
+  /* `busy` is per hook: true while this hook's own kinds are on the lane, queued or in flight. */
+  const queued = useRef(0);
   const hiding = useRef(false);
 
-  const sendOne = async ({ pending, keepalive }: { pending: Pending; keepalive: boolean }): Promise<void> => {
-    const { api, player, tallies, mine, act } = live.current;
-    let answer: 'sent' | { refusal: string };
-    try {
-      const r = keepalive ? await api.react(act, pending.character, pending.kind, { keepalive: true }) : await api.react(act, pending.character, pending.kind);
-      if (r.ok) {
-        mine.add({ act, kind: pending.kind, character: pending.character });
-        /* A blind post answers no tally to anyone: the screen holds none of its totals. */
-        if (r.value.tally !== null) tallies.merge(act, r.value.tally);
-        player.reactionLanded();
-        answer = 'sent';
-      } else {
-        mine.release(act, pending.kind);
-        /* A refusal may mean what this screen holds is stale (another tab left that kind): read the player's own again. */
-        try { mine.merge(act, await api.myReactions([act])); } catch { /* the server's words are the answer, whatever the re-read did */ }
-        answer = { refusal: r.error };
-      }
-    } catch {
-      mine.release(act, pending.kind);
-      answer = { refusal: 'The reaction could not be sent. Try again.' };
-    }
-    taken.get(mine)?.delete(takenKey(act, pending.kind));
-    if (alive.current) live.current.onAnswer({ kind: pending.kind, character: pending.character, answer });
-  };
-
-  /* One send at a time on the Act's one lock; a kind that comes due while another is in flight waits its turn. */
-  const drain = async (): Promise<void> => {
-    if (draining.current) return;
-    draining.current = true;
-    if (alive.current) setBusy(true);
-    try {
-      for (let item = queue.current.shift(); item; item = queue.current.shift()) await sendOne(item);
-    } finally {
-      draining.current = false;
-      if (alive.current) setBusy(false);
-    }
-  };
-
-  /* A kind leaves this hook's map exactly once, by its timer, an undo or a flush, so it is never sent twice. */
-  const take = (kind: string, keepalive: boolean): void => {
+  /* A kind leaves this hook's map exactly once, by its timer, an undo or a flush, so it is never sent twice. True when it joined the lane. */
+  const take = (kind: string, keepalive: boolean): boolean => {
     const entry = own.current.get(kind);
-    if (!entry) return;
+    if (!entry) return false;
     clearTimeout(entry.timer);
     own.current.delete(kind);
     /* Another row's undo may have released it from `mine` since: what `mine` no longer holds is never sent. */
-    const { mine, act } = live.current;
-    if (!mine.pending(act).includes(entry.pending)) return;
-    taken.set(mine, (taken.get(mine) ?? new Set()).add(takenKey(act, kind)));
-    queue.current.push({ pending: entry.pending, keepalive });
+    const { mine, pending } = entry;
+    if (!mine.pending(pending.act).includes(pending)) return false;
+    taken.set(mine, (taken.get(mine) ?? new Set()).add(takenKey(pending.act, kind)));
+    const { api, player, tallies } = live.current;
+    queued.current += 1;
+    if (alive.current) setBusy(true);
+    laneOf(mine, pending.act).queue.push({
+      pending, keepalive, api, player, tallies, mine,
+      answer: (a) => { if (alive.current) live.current.onAnswer(a); },
+      settled: () => { queued.current -= 1; if (queued.current === 0 && alive.current) setBusy(false); },
+    });
+    return true;
   };
 
   /* A kind released from `mine` by another row leaves this hook's map with its timer. */
   const prune = (): void => {
-    const { mine, act } = live.current;
-    const held = mine.pending(act);
     for (const [kind, entry] of [...own.current]) {
-      if (held.includes(entry.pending)) continue;
+      if (entry.mine.pending(entry.pending.act).includes(entry.pending)) continue;
       clearTimeout(entry.timer);
       own.current.delete(kind);
     }
@@ -118,9 +151,10 @@ export function useReactionSend({ act, as, tallies, mine, onAnswer }: Args): { p
   useEffect(() => mine.subscribe(act, () => pruneRef.current()), [mine, act]);
 
   const flush = (keepalive: boolean): void => {
-    for (const kind of [...own.current.keys()]) take(kind, keepalive);
+    const lanesUsed = new Set<Lane>();
+    for (const [kind, entry] of [...own.current]) if (take(kind, keepalive)) lanesUsed.add(laneOf(entry.mine, entry.pending.act));
     sync();
-    void drain();
+    for (const lane of lanesUsed) void drain(lane);
   };
   const flushRef = useRef(flush);
   flushRef.current = flush;
@@ -132,14 +166,18 @@ export function useReactionSend({ act, as, tallies, mine, onAnswer }: Args): { p
     if (want && !hiding.current) { window.addEventListener('pagehide', onHide); hiding.current = true; }
     else if (!want && hiding.current) { window.removeEventListener('pagehide', onHide); hiding.current = false; }
   }
-  useEffect(() => () => { flush(false); }, []);
+  useEffect(() => () => { flushRef.current(false); }, []);
 
   const press = (kind: string): 'held' | 'busy' => {
     const { as, mine, act } = live.current;
     if (!as) return 'busy';
     const pending: Pending = { act, kind, character: as.id, due: Date.now() + REACTION_GRACE_MS };
     if (!mine.hold(pending)) return 'busy';
-    own.current.set(kind, { timer: setTimeout(() => { take(kind, false); sync(); void drain(); }, REACTION_GRACE_MS), pending });
+    const timer = setTimeout(() => {
+      if (take(kind, false)) void drain(laneOf(mine, act));
+      sync();
+    }, REACTION_GRACE_MS);
+    own.current.set(kind, { timer, pending, mine });
     sync();
     return 'held';
   };
