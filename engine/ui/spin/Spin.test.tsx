@@ -935,6 +935,31 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect(within(box).queryByRole('group', { name: /^As it landed/u })).toBeNull();
   });
 
+  test('in a post-spun box, As it landed in a play\'s Lens row draws that play\'s moment in the box, and Back to now the live post again', async () => {
+    const { w, wash } = await spunFromHold();
+    /* The wash is taken further after the hold landed: the live post is at 100%, the hold's moment at 40%. */
+    await w.fake.saveEffect(wash, w.pipe, { washed: 1 });
+    const spun = await spinFrom(w, w.ids[1]!, 'About the post');
+    openWith(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '1'));
+    await userEvent.click(await within(box).findByRole('button', { name: /^Stick Around, 1 play/u }));
+    const lens = screen.getByRole('dialog', { name: 'Cards on this post' });
+    await userEvent.click(within(lens).getByRole('button', { name: /^1 play · Spritey/u }));
+    await userEvent.click(within(lens).getByRole('button', { name: 'As it landed' }));
+    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
+    await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
+    expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'moment');
+    /* The moment is drawn in the box's content area, and only one Whoops! is drawn there: the live one is replaced, not covered. */
+    expect(frame.closest('[data-kb-content-area]')).toBe(box.querySelector('.kb-origin-area'));
+    expect(box.querySelectorAll('[data-kb-washy]')).toHaveLength(1);
+    /* Its tag stands at the top of the moment, in its flow: the box's area is no post's body, and the date bar of the post the box stands in is not its bar. */
+    expect(frame.querySelector('.kb-moment-tag')).not.toHaveAttribute('data-kb-hung');
+    await userEvent.click(within(frame).getByRole('button', { name: 'Back to now' }));
+    await waitFor(() => expect(within(box).queryByRole('group', { name: /^As it landed/u })).toBeNull());
+    expect(box.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '1');
+  });
+
   test('the box\'s mark opens a Lens that makes nothing inert and offers no As it landed, since the box shows it (#105)', async () => {
     const { w, spun } = await spunFromHold();
     openWith(w, spun);
