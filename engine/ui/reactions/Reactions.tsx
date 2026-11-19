@@ -2,19 +2,23 @@
  * The reactions under a post, drawn as meta tiles (engine/ui/glass/meta-tile.css; the meta acts design, sections 1, 5 and 6): one
  * tile for each kind with a count (the player's own ringed, on their screen only) and a React tile that opens the picker, unless
  * the post is by one of the player's own characters, where the tiles are plain and there is no React. A tile that is a button
- * reacts with its kind as the HUD character, by the picker's own send (send.ts: one `useReactionSend` call for the row, whose lock
- * the picker shares); a refusal opens the picker with the server's words in its alert. The row's buttons are one tab stop,
+ * holds a reaction with its kind as the HUD character (send.ts: one `useReactionSend` call for the row, whose queue the picker shares).
+ * A press does not send: it is pending on this screen for REACTION_GRACE_MS (reaction-grace design, sections 2 to 5), drawn as a chip
+ * whose count is one more, with a ring that drains; a press on the pending tile is an undo, which sends nothing, ever. The send is
+ * the grace's end. A refusal then is shown in a note under the row, and opens nothing. The row's buttons are one tab stop,
  * moved along by the arrow keys. Only the player's own screen knows which characters are theirs, and nothing here says who reacted.
+ * A pending kind counts as the player's own toward the cap and the one-of-a-kind rule.
  *
  * On a staged page (staged.ts: the front door's sample thread) the reader needs no character: React is on every post, a press is
- * answered on their screen alone (the kind is theirs in `mine`, its count grows by one), nothing is sent or estimated, and the
- * words name no mask.
+ * pending with the same grace and the same undo, and at its end answered on their screen alone (the kind is theirs in `mine`, its
+ * count grows by one), nothing is sent or estimated, and the words name no mask.
  *
- * A reaction this screen just left lands with the stamp (reactions.css): the tile gives under the press, the emoji leaps and slams
- * back, a ring in its quadrant's class color stamps down onto the tile and settles into the player's own ring, shards burst from it
- * and the count rolls up. It plays on the reactor's screen alone, for their own press, and never for a reaction that arrives from
- * anyone else, so it says nothing about who reacted. A reaction chosen in the picker lands on the row once the picker has gone.
- * Under Off (the player's Motion setting, or the device's reduced motion) nothing moves: the ring and the count are simply there.
+ * A reaction this screen just left lands with the stamp (reactions.css), when the server answers and not at the press: the tile gives
+ * under the press, the emoji leaps and slams back, a ring in its quadrant's class color stamps down onto the tile and settles into the
+ * player's own ring, shards burst from it and the count rolls up. It plays on the reactor's screen alone, for their own press, and
+ * never for a reaction that arrives from anyone else, so it says nothing about who reacted.
+ * Under Off (the player's Motion setting, or the device's reduced motion) nothing moves: the ring and the count are simply there, and
+ * a pending tile shows the seconds left as text, for the same 5 seconds.
  */
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { blindPlaysOf, createPlays, localKindsOf, useAt, usePlays, type LocalKind, type Plays } from '../cards/plays.ts';
@@ -24,9 +28,9 @@ import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { useTally, type Tallies } from '../thread/tallies.ts';
-import { useMine, type Mine } from './mine.ts';
+import { REACTION_GRACE_MS, useMine, usePending, type Mine, type Pending } from './mine.ts';
 import { Picker } from './Picker.tsx';
-import { useReactionSend, type SendAnswer } from './send.ts';
+import { useReactionSend, type Answered, type SendAnswer } from './send.ts';
 import '../cards/kit.css';
 import '../glass/meta-tile.css';
 import './reactions.css';
@@ -66,22 +70,17 @@ interface Props {
   readonly pickerAt?: 'row' | 'button';
 }
 
-/**
- * A staged page's send: the kind is the reader's, its count grows by one, on this screen alone. It holds the cap and the one-of-a-kind
- * rule itself, as the server does in play, since two presses in one tick are both decided on what the last render knew.
- */
+/** Who a staged page's reader is to `mine`: no character, and nothing is sent as one. */
 const STAGED_READER = 'staged:reader';
-const stagedSend = (act: Id, tallies: Tallies, mine: Mine, cap: number) => async (kind: string): Promise<SendAnswer> => {
-  if (mine.get(act).length >= cap || !mine.add({ act, kind, character: STAGED_READER })) return 'busy';
-  tallies.merge(act, { [kind]: (tallies.get(act)[kind] ?? 0) + 1 });
-  return 'sent';
-};
+
+/** The seconds left on a pending kind, whole and rounded up, never under one: what its name and the reduced-motion text say. */
+const secondsLeft = (p: Pending): number => Math.max(1, Math.ceil((p.due - Date.now()) / 1000));
 
 /** The tab stop of the React tile; a kind's is its key. */
 const REACT_STOP = ' react'; /* a space: no reaction key has one */
 
 /** One chip of the row: the kind's key, its words, its emoji, its quadrant, its count (none where the totals are hidden from the reader), and whether a press can still count. */
-interface Chip { readonly key: string; readonly name: string; readonly emoji: string; readonly quadrant: Quadrant | null; readonly count: number | null; readonly open: boolean }
+interface Chip { readonly key: string; readonly name: string; readonly emoji: string; readonly quadrant: Quadrant | null; readonly count: number | null; readonly open: boolean; readonly pending: Pending | null }
 
 /** The shards a stamp throws, one every 360/SHARDS degrees (reactions.css lays each by its index). */
 const SHARDS = 8;
@@ -99,8 +98,10 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   const player = usePlayer();
   const tally = useTally(tallies, act);
   const own = useMine(mine, act);
+  const waiting = usePending(mine, act);
   const [open, setOpen] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
+  /* The server's words for a reaction refused at its send: under the row until the next press on it. */
+  const [rowRefusal, setRowRefusal] = useState<string | null>(null);
   const [said, setSaid] = useState('');
   /* The row's one tab stop: the last tile focused, else React where there is one, else the first tile. */
   const [stop, setStop] = useState<string | null>(null);
@@ -123,30 +124,29 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   const label = (k: LocalKind | undefined) => (k === undefined ? null : ui.quadrantLabels[k.quadrant]);
   const kindOf = (key: string) => kinds0.find((k) => k.key === key);
   const ownKinds = [...new Set(own.map((o) => o.kind))];
+  const pendingOf = (key: string) => waiting.find((p) => p.kind === key) ?? null;
   /* What is drawn: for a reader the totals are hidden from, only their own kinds and no count; else every kind the tally holds, the instance's first and then the kinds a card added. */
   const chipOf = (key: string, count: number | null): Chip | null => {
     const known = instance.reactions.find((r) => r.key === key);
-    if (known) return { key, name: readable(key), emoji: known.emoji, quadrant: known.quadrant, count, open: true };
+    const pending = pendingOf(key);
+    if (known) return { key, name: readable(key), emoji: known.emoji, quadrant: known.quadrant, count, open: true, pending };
     const emoji = emojiOfKey(key);
     if (emoji === null) return null;
     const kind = kindOf(key);
-    return { key, name: localName(emoji, label(kind)), emoji, quadrant: kind?.quadrant ?? null, count, open: kind?.ended !== true };
+    return { key, name: localName(emoji, label(kind)), emoji, quadrant: kind?.quadrant ?? null, count, open: kind?.ended !== true, pending };
   };
-  const counted = Object.keys(tally).filter((k) => (tally[k] ?? 0) > 0);
-  const shownKeys = hidden ? ownKinds : [...instance.reactions.map((r) => r.key).filter((k) => counted.includes(k)), ...counted.filter((k) => !instance.reactions.some((r) => r.key === k)).sort()];
-  const shown = shownKeys.flatMap((k) => { const c = chipOf(k, hidden ? null : tally[k] ?? 0); return c ? [c] : []; });
+  /* A pending kind is drawn as its tally's count and one more (its own press), and a kind with no chip yet gets one. */
+  const counted = [...new Set([...Object.keys(tally).filter((k) => (tally[k] ?? 0) > 0), ...waiting.map((p) => p.kind)])];
+  const shownKeys = hidden ? [...new Set([...ownKinds, ...waiting.map((p) => p.kind)])] : [...instance.reactions.map((r) => r.key).filter((k) => counted.includes(k)), ...counted.filter((k) => !instance.reactions.some((r) => r.key === k)).sort()];
+  const shown = shownKeys.flatMap((k) => { const c = chipOf(k, hidden ? null : (tally[k] ?? 0) + (pendingOf(k) === null ? 0 : 1)); return c ? [c] : []; });
   const line = blindUntil === null ? null : sees
     ? `Only you${isAuthor && caster ? '' : ` and the ${isAuthor ? 'caster' : 'author'}`} can see these until ${dayAndTime(blindUntil)}.`
     : `Reaction totals are hidden on this post until ${dayAndTime(blindUntil)}.`;
   const as = staged ? null : player.hudCharacter;
   const canReact = !theirs && (staged || as !== null);
-  /* One send for the row and its picker: one lock for the Act (send.ts). A staged page's is answered here, and sends nothing. */
-  const sent = useReactionSend({ act, as, tallies, mine });
-  const { send: sendNow, busy } = staged ? { send: stagedSend(act, tallies, mine, settings.reactionCap), busy: false } : sent;
-  /* The stamp: the kind this screen just left (and whether the picker was open as it was chosen), and the kind a press is waiting on. */
+  /* One send for the row and its picker: one queue for the Act (send.ts). A staged page's is its own, below, and sends nothing. */
   const reduced = useMotionReduced();
   const [landed, setLanded] = useState<Landed | null>(null);
-  const [sending, setSending] = useState<string | null>(null);
   const stamped = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(stamped.current), []);
   const openNow = useRef(open);
@@ -157,42 +157,89 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   /* What an answer that comes back late is checked against: the HUD character and whether a press is possible now. */
   const live = useRef({ asId, canReact });
   live.current = { asId, canReact };
-  /* Every send the row and its picker make: a reaction that counts, for the character it was made as, lands with the stamp. */
-  const send = async (kind: string): Promise<SendAnswer> => {
-    const madeAs = asId;
-    const after = openNow.current;
-    const answer = await sendNow(kind);
-    if (answer === 'sent' && live.current.asId === madeAs && live.current.canReact) {
-      clearTimeout(stamped.current);
-      setLanded({ key: kind, after });
-      stamped.current = setTimeout(() => setLanded(null), STAMP_MS);
-    }
-    return answer;
+  /* The stamp: a reaction that counts, for the character it was pressed as, lands with the stamp when it is sent, and the status says so. */
+  const landedNow = (kind: string, character: Id): void => {
+    if (live.current.asId !== (staged ? undefined : character) || !live.current.canReact) return;
+    clearTimeout(stamped.current);
+    setLanded({ key: kind, after: openNow.current });
+    stamped.current = setTimeout(() => setLanded(null), STAMP_MS);
+    const who = staged ? undefined : player.characters.find((c) => c.id === character)?.name;
+    setSaid(`Reacted with ${readable(kind)}${who ? ` as ${who}` : ''}`);
   };
+  /* The send at the grace's end (the hook's `onAnswer`): the stamp for a reaction that counted, the server's words under the row for one refused (it opens nothing). */
+  const answered = ({ kind, character, answer }: Answered): void => {
+    if (answer === 'sent') { landedNow(kind, character); return; }
+    setSaid('');
+    setRowRefusal(answer.refusal);
+  };
+  const sent = useReactionSend({ act, as, tallies, mine, onAnswer: answered });
+  /* A staged page's pending kinds: the same grace, its own timers, and at their end what a staged send does, on this screen alone. */
+  const cap = settings.reactionCap;
+  const stagedTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const stagedPress = (kind: string): 'held' | 'busy' => {
+    const pending: Pending = { act, kind, character: STAGED_READER, due: Date.now() + REACTION_GRACE_MS };
+    if (!mine.hold(pending)) return 'busy';
+    stagedTimers.current.set(kind, setTimeout(() => {
+      stagedTimers.current.delete(kind);
+      /* Released by an undo from elsewhere meanwhile: nothing to land. */
+      if (!mine.pending(act).includes(pending)) return;
+      /* The cap and the one-of-a-kind rule are held here as the server holds them in play. */
+      if (mine.get(act).length >= cap || !mine.add({ act, kind, character: STAGED_READER })) { mine.release(act, kind); return; }
+      tallies.merge(act, { [kind]: (tallies.get(act)[kind] ?? 0) + 1 });
+      landedNow(kind, STAGED_READER);
+    }, REACTION_GRACE_MS));
+    return 'held';
+  };
+  const stagedUndo = (kind: string): boolean => {
+    clearTimeout(stagedTimers.current.get(kind));
+    stagedTimers.current.delete(kind);
+    return mine.release(act, kind) !== null;
+  };
+  /* Leaving the page ends a staged kind's grace with nothing: it is never counted, and no tile is left pending. */
+  useEffect(() => () => {
+    for (const [kind, timer] of stagedTimers.current) { clearTimeout(timer); mine.release(act, kind); }
+    stagedTimers.current.clear();
+  }, [mine, act]);
+  const busy = staged ? false : sent.busy;
+  /* The seconds on a pending tile's name (and the reduced-motion text) are read at render: the row renders once a second while anything is pending. */
+  const [, tick] = useState(0);
+  const holding = waiting.length > 0;
+  useEffect(() => {
+    if (!holding) return;
+    const every = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(every);
+  }, [holding]);
   if (shown.length === 0 && !canReact && line === null) return null;
 
-  const kinds = new Set(own.map((o) => o.kind));
-  const cap = settings.reactionCap;
+  /* What counts as the player's own on this post: what was sent and what is pending. */
+  const kinds = new Set([...own.map((o) => o.kind), ...waiting.map((p) => p.kind)]);
   const left = Math.max(0, cap - kinds.size);
   const stops = [...(canReact ? shown.filter((r) => r.open).map((r) => r.key) : []), ...(canReact ? [REACT_STOP] : [])];
   const current = stop !== null && stops.includes(stop) ? stop : (stops.includes(REACT_STOP) ? REACT_STOP : stops[0]);
 
-  const press = async (key: string) => {
-    if (left === 0 || kinds.has(key)) return;
-    const pressedAs = asId;
-    /* A press dropped for one in flight leaves the one in flight marked as it is. */
-    const marks = !busy;
-    if (marks) setSending(key);
-    const answer = await send(key).finally(() => { if (marks) setSending(null); });
-    if (answer === 'busy') return;
-    /* The press was for the character it was made as: another in the HUD, or no right to react now, and its answer is dropped. */
-    if (live.current.asId !== pressedAs || !live.current.canReact) return;
-    setSaid('');
-    if (answer === 'sent') { setSaid(`Reacted with ${readable(key)}${as ? ` as ${as.name}` : ''}`); return; }
-    /* The picker opens as it does from React, and gives focus back to it on Close: the modal layer returns focus to what held it as it opened. */
-    button.current?.focus();
-    setRefusal(answer.refusal);
-    setOpen(true);
+  /* A free kind starts its grace. The cap is read from `mine` as it is now, not as the last render drew it: two presses in one tick are each decided on what the one before left. */
+  const start = (key: string): 'held' | 'busy' => {
+    if (mine.get(act).length + mine.pending(act).length >= cap) return 'busy';
+    const r = staged ? stagedPress(key) : sent.press(key);
+    if (r === 'held') setSaid(`Reacting with ${readable(key)}${as ? ` as ${as.name}` : ''} in ${REACTION_GRACE_MS / 1000} seconds`);
+    return r;
+  };
+  /*
+   * The picker's bridge until the picker takes `press` itself (Task 6): a kind chosen starts its grace and answers 'sent' so the picker closes at once;
+   * what is pending counts as the player's own in it, and nothing is ever in flight to wait for.
+   */
+  const choose = async (key: string): Promise<SendAnswer> => { setRowRefusal(null); return start(key) === 'held' ? 'sent' : 'busy'; };
+  const pickerOwn = [...own, ...waiting.map((p) => ({ act, kind: p.kind, character: p.character }))];
+  const press = (key: string) => {
+    setRowRefusal(null);
+    /* A pending tile: the same press again is the undo. */
+    if (mine.pending(act).some((p) => p.kind === key)) {
+      if (staged ? stagedUndo(key) : sent.undo(key)) setSaid(`${readable(key)} undone`);
+      return;
+    }
+    /* Your own sent kind: nothing happens here yet (Task 6 adds the tooltip). */
+    if (mine.get(act).some((o) => o.kind === key)) return;
+    start(key);
   };
 
   /* Left and Right along the row's buttons (no wrap), Home and End to the ends; only its own buttons answer, not the picker's, whose events pass through here. */
@@ -219,17 +266,25 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
         <ul className="kb-reaction-list" aria-label="Reactions">
           {shown.map((r) => {
             const n = r.count;
-            const yours = kinds.has(r.key);
+            const waits = r.pending;
+            const left5 = waits === null ? 0 : secondsLeft(waits);
+            /* Sent and kept by this screen: a pending kind is not yours yet (its press is an undo). */
+            const yours = waits === null && kinds.has(r.key);
             const face = (
               <span className="kb-meta-tile-in" aria-hidden="true">
                 <span className="kb-reaction-emoji">{r.emoji}</span>
                 {n === null ? '' : <>{' '}<span className="kb-reaction-count"><span key={n}>{n}</span></span></>}
+                {waits !== null && reduced && <span className="kb-reaction-grace">{left5}</span>}
               </span>
             );
             const common = { 'data-kb-reaction': r.key, 'data-kb-own': yours ? '' : undefined } as const;
             /* The stamp's color: the class the instance gives the kind's quadrant, else the glass's ready gold (reactions.css). */
             const cls = r.quadrant === null ? undefined : ui.quadrantClasses?.[r.quadrant];
-            const hue = cls === undefined ? undefined : ({ '--kb-reaction-hue': `var(--kb-glass-class-${cls}-large)` } as CSSProperties);
+            /* A pending tile also carries its grace: the whole of it and what is left, which reactions.css starts the ring from. */
+            const style = {
+              ...(cls === undefined ? {} : { '--kb-reaction-hue': `var(--kb-glass-class-${cls}-large)` }),
+              ...(waits === null ? {} : { '--kb-grace-ms': `${REACTION_GRACE_MS}ms`, '--kb-grace-due': `${Math.max(0, waits.due - Date.now())}ms` }),
+            } as CSSProperties;
             const stamp = landed?.key === r.key ? (landed.after ? 'after' : 'now') : undefined;
             /* Where the totals are hidden the chip is the reader's own kind with no number; its name says so, as an own kind's does. */
             const said = n === null ? `${r.name}, yours` : `${r.name}, ${n}${yours ? ', including yours' : ''}`;
@@ -243,16 +298,20 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
                 </li>
               );
             }
-            const name = n === null ? `${r.name}, yours`
+            /* A pending tile says who it will go out as (the mask it was pressed as, which a switch in the HUD does not change), and how to undo. */
+            const waitsAs = waits === null || waits.character === STAGED_READER ? undefined : player.characters.find((c) => c.id === waits.character)?.name;
+            const name = waits !== null ? `${r.name}${n === null ? ', yours' : ''}, sending in ${left5} ${left5 === 1 ? 'second' : 'seconds'}${waitsAs ? ` as ${waitsAs}` : ''}. Press again to undo`
+              : n === null ? `${r.name}, yours`
               : yours ? `${r.name}, ${n}, including yours`
                 : left === 0 ? `${r.name}, ${n}. You have left all ${cap} of your reactions on this post`
                   : `${r.name}, ${n}. React${as ? ` as ${as.name}` : ''}`;
             return (
               <li key={r.key}>
                 <button
-                  type="button" className="kb-meta-tile kb-reaction" {...common} aria-label={name} aria-disabled={yours || left === 0 ? 'true' : undefined}
-                  data-kb-stop={r.key} tabIndex={current === r.key ? 0 : -1} onClick={() => void press(r.key)}
-                  data-kb-landed={stamp} data-kb-sending={sending === r.key ? '' : undefined} style={hue}
+                  type="button" className="kb-meta-tile kb-reaction" {...common} aria-label={name} aria-disabled={waits === null && (yours || left === 0) ? 'true' : undefined}
+                  data-kb-stop={r.key} tabIndex={current === r.key ? 0 : -1} onClick={() => press(r.key)}
+                  data-kb-landed={stamp} data-kb-pending={waits === null ? undefined : ''}
+                  data-kb-sending={waits !== null && busy && waits.due <= Date.now() ? '' : undefined} style={style}
                 >
                   {face}
                   {stamp !== undefined && !reduced && (
@@ -273,17 +332,18 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
       {canReact && (
         <button
           ref={button} type="button" className="kb-meta-tile kb-reaction kb-react-button" aria-haspopup="dialog" aria-expanded={open}
-          data-kb-stop={REACT_STOP} tabIndex={current === REACT_STOP ? 0 : -1} onClick={() => { setRefusal(null); setOpen(!open); }}
+          data-kb-stop={REACT_STOP} tabIndex={current === REACT_STOP ? 0 : -1} onClick={() => { setRowRefusal(null); setOpen(!open); }}
         >
           <span className="kb-meta-tile-in"><span aria-hidden="true">+ </span>React</span>
         </button>
       )}
+      {rowRefusal !== null && <p className="kb-notice kb-reactions-refusal" data-kb-tone="refusal" role="alert">{rowRefusal}</p>}
       {line !== null && <p className="kb-reactions-line kb-small">{line}</p>}
       {canReact && <span role="status" className="kb-visually-hidden">{said}</span>}
       <Layers>
       {open && canReact && (
         <Picker
-          subject={subject ?? `${authorName}'s post`} as={as} own={own} local={kinds0} send={send} busy={busy} refusal={refusal} anchor={pickerAt === 'button' ? button : row}
+          subject={subject ?? `${authorName}'s post`} as={as} own={pickerOwn} local={kinds0} send={choose} busy={false} anchor={pickerAt === 'button' ? button : row}
           onClose={(refocus) => { setOpen(false); if (refocus) button.current?.focus(); }}
         />
       )}

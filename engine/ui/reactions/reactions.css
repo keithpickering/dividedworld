@@ -14,6 +14,12 @@
   margin: 0;
 }
 
+/* The server's words for a reaction refused at its send: a line of its own under the row, until the next press on it. */
+.kb-reactions-refusal {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
 .kb-chips {
   display: flex;
   flex-wrap: wrap;
@@ -281,6 +287,63 @@ button.kb-reaction:active:not([aria-disabled='true']) {
   animation: kb-stamp-wait 520ms 140ms cubic-bezier(0.45, 0, 0.55, 1) infinite alternate both;
 }
 
+/*
+ * The grace (Reactions.tsx; reaction-grace design, sections 2 and 3): a pressed kind waits on this screen before it is sent. Its tile
+ * wears a ring in the kind's class color that drains over the grace, and its count is drawn a step down in emphasis. Reactions.tsx sets
+ * --kb-grace-ms (the whole grace, from REACTION_GRACE_MS: no second number lives here) and --kb-grace-due (what is left of it as the tile
+ * is drawn), so a tile drawn partway through, by a render or by a second row of the Act, starts its ring from where it is: a negative
+ * delay of the time already spent. The ring is a conic mask on the tile's own border edge, so it skews with the tile.
+ */
+@property --kb-grace-sweep {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 360deg;
+}
+
+.kb-reaction[data-kb-pending] {
+  position: relative;
+}
+
+.kb-reaction[data-kb-pending]::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  box-sizing: border-box;
+  padding: 3px;
+  pointer-events: none;
+  background: conic-gradient(var(--kb-reaction-hue, var(--kb-glass-ready)) var(--kb-grace-sweep), transparent 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: kb-grace-drain var(--kb-grace-ms) linear calc(var(--kb-grace-due) - var(--kb-grace-ms)) both;
+}
+
+@keyframes kb-grace-drain {
+  from { --kb-grace-sweep: 360deg; }
+  to { --kb-grace-sweep: 0deg; }
+}
+
+.kb-reaction[data-kb-pending] .kb-reaction-count {
+  color: var(--kb-glass-text-2);
+}
+
+/* The press's pop: the tile's give (above) and a swell of the emoji, which settles at once. */
+.kb-reaction[data-kb-pending] .kb-reaction-emoji {
+  animation: kb-grace-pop 260ms cubic-bezier(0.2, 0.8, 0.4, 1) both;
+}
+
+@keyframes kb-grace-pop {
+  0% { scale: 1; }
+  35% { scale: 1.45; }
+  100% { scale: 1; }
+}
+
+/* The seconds left, drawn instead of the ring where nothing moves (Reactions.tsx draws it only under Off). */
+.kb-reaction-grace {
+  font-variant-numeric: tabular-nums;
+  color: var(--kb-glass-text-2);
+}
+
 /* Off (the device's reduced motion, unless the player chose full motion, or the player's own Off): nothing moves; the ring and count are simply there. */
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-kb-motion='full']) :is(button.kb-reaction, .kb-reaction[data-kb-landed], .kb-reaction .kb-reaction-emoji, .kb-reaction .kb-reaction-count > span, .kb-reaction-stamp *, .kb-picker-kind, .kb-picker-kind > span) {
@@ -289,8 +352,10 @@ button.kb-reaction:active:not([aria-disabled='true']) {
     scale: none;
   }
 
-  :root:not([data-kb-motion='full']) .kb-reaction-stamp {
+  :root:not([data-kb-motion='full']) .kb-reaction-stamp,
+  :root:not([data-kb-motion='full']) .kb-reaction[data-kb-pending]::after {
     display: none;
+    animation: none;
   }
 }
 
@@ -300,13 +365,24 @@ button.kb-reaction:active:not([aria-disabled='true']) {
   scale: none;
 }
 
-:root[data-kb-motion='reduce'] .kb-reaction-stamp {
+:root[data-kb-motion='reduce'] .kb-reaction-stamp,
+:root[data-kb-motion='reduce'] .kb-reaction[data-kb-pending]::after {
   display: none;
+  animation: none;
 }
 
 @media (forced-colors: active) {
   .kb-reaction-stamp {
     display: none;
+  }
+
+  /* The ring has no color to keep: the pending tile is outlined, and the seconds are in its name. */
+  .kb-reaction[data-kb-pending]::after {
+    background: none;
+    border: 2px dashed Highlight;
+    -webkit-mask: none;
+    mask: none;
+    animation: none;
   }
 }
 
