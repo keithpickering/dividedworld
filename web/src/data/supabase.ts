@@ -45,7 +45,7 @@ import type { HandoffFacts } from '../../../engine/system/meeting.ts';
 import type {
   SurfaceAct, SurfaceNow, SurfaceWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Unsealed, SealedPack, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
@@ -656,7 +656,9 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     })),
     packs: src['packs'].map((r): PackEvent => ({
       pack: r['id'], kind: r['pack'], price: num(r['price']), repriced: r['repriced'] === true,
+      /* A sealed pack's `contents` is null (0377): its cards are read by no one until it is opened. */
       contents: Array.isArray(r['contents']) ? r['contents'].filter((c): c is string => typeof c === 'string') : [], at: r['bought_at'],
+      source: r['source'] === 'welcome' ? 'welcome' : 'bought', openedAt: typeof r['opened_at'] === 'string' ? r['opened_at'] : null,
     })),
     playsOnMine: src['playsOnMine'].map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
     writes: src['writes'].map((r): WrittenOnMine => ({ play: r['play'], post: r['post'], version: r['version'], failed: r['failed'] === true, opening: r['opening'] === true, over: r['over'] === true, at: r['at'] })),
@@ -1181,7 +1183,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
       rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs,pack,repriced'), 'at', (q) => q, ['card', 'kind', 'act', 'price', 'pack']),
       /* The packs the player bought (0139): kind, price, the Boss's markup and the cards in pull order; the pulled rows above name each by `pack`. */
-      rows(() => client.from('my_packs').select('id,pack,price,repriced,contents,bought_at'), 'bought_at', (q) => q, ['id']),
+      rows(() => client.from('my_packs').select('id,pack,price,repriced,contents,bought_at,opened_at,source'), 'bought_at', (q) => q, ['id']),
       rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
       /* The texts and failures of cards that write on the posts the player's characters wrote (0149): the rows are the author's alone, and public facts. */
       rows(() => client.from('my_posts_written_on').select('play,post,version,failed,opening,over,at'), 'at', (q) => q.order('play', { ascending: true }).order('version', { ascending: true }), ['play', 'version']),
@@ -1563,6 +1565,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* A purchase names its slot and the price the screen showed; the database holds the slot and refuses a price that has since changed. */
     buyCard: (slot) => act({ action: 'buyCard', slot: slot.id, price: slot.price }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
     buyPack: (slot) => act({ action: 'buyPack', slot: slot.id, price: slot.price }, (r): Opened => ({ pack: r['pack'], contents: Array.isArray(r['contents']) ? r['contents'].filter((c): c is string => typeof c === 'string') : [], balance: num(r['balance']) })),
+    /* The packs given and not yet opened: the view answers a sealed pack's kind and date and no cards. */
+    sealedPacks: async () => (await list(() => client.from('my_packs').select('id,pack,bought_at').is('opened_at', null).order('bought_at', { ascending: false }))).map((r): SealedPack => ({ pack: r['id'], kind: r['pack'], at: r['bought_at'] })),
+    /* Opening is a direct function of the account's own pack (open_pack), not an act: no Aura moves, and no balance comes back. */
+    openPack: async (pack) => {
+      const a = await rpcWrite(() => client.rpc('open_pack', { pack }));
+      return a.ok ? { ok: true, value: { pack: a.value['pack'], kind: a.value['kind'], contents: Array.isArray(a.value['contents']) ? a.value['contents'].filter((c): c is string => typeof c === 'string') : [] } satisfies Unsealed } : a;
+    },
     /* A gift: the Edge Function's answer is the gift's projection and the giver's own balance after. */
     donate: (character, drive, amount) => act({ action: 'donate', character, drive, amount }, (r): Donated => ({ act: toAct(r['gift'] as Row), balance: num(r['balance']) })),
     async driveGifts(drives) {

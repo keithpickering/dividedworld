@@ -1388,6 +1388,23 @@ export interface Opened {
   readonly balance: number;
 }
 
+/**
+ * A sealed pack opened by the player (`open_pack`'s answer): its id, its kind and the cards it gave in the pack's order. Its own type rather than
+ * an `Opened` with an optional balance, because opening moves no Aura, and a balance that is sometimes there would make every purchase screen check it.
+ */
+export interface Unsealed {
+  readonly pack: Id;
+  readonly kind: string;
+  readonly contents: readonly string[];
+}
+
+/** A pack the account holds and has not opened (`my_packs` where `opened_at` is null): its kind and when it was given. Its cards are not readable until it is open. */
+export interface SealedPack {
+  readonly pack: Id;
+  readonly kind: string;
+  readonly at: string;
+}
+
 /* ------------------------------------------------------------------ the log ---- */
 
 /**
@@ -1471,7 +1488,10 @@ export interface CardEvent {
   readonly whoExcept?: boolean;
 }
 
-/** A pack the player bought (`my_packs`): its kind, its price, whether the Boss had moved that price, and the cards it gave in pull order. */
+/**
+ * A pack the player bought or was given (`my_packs`): its kind, its price, whether the Boss had moved that price, and the cards it gave in pull order.
+ * `source` says where it came from (a `welcome` pack costs nothing); `openedAt` is when it was opened, null while it is sealed, and `contents` is empty then.
+ */
 export interface PackEvent {
   readonly pack: Id;
   /** The pack kind's key, which `InstanceUi.packs` names. */
@@ -1479,7 +1499,10 @@ export interface PackEvent {
   readonly price: number;
   readonly repriced: boolean;
   readonly contents: readonly string[];
+  /** When it was bought or given. */
   readonly at: string;
+  readonly source: 'bought' | 'welcome';
+  readonly openedAt: string | null;
 }
 
 /**
@@ -2909,6 +2932,13 @@ export interface KayfaApi {
    * the hand. Private.
    */
   buyPack(slot: Slot): Promise<Answer<Opened>>;
+  /** The packs the account was given and has not opened, newest first (`my_packs`): a sealed pack's cards are readable by no one. Private. */
+  sealedPacks(): Promise<readonly SealedPack[]>;
+  /**
+   * Open one of the account's own sealed packs (`open_pack`): its cards, in the pack's order, are in the hand. Moves no Aura, so no balance comes back. A pack
+   * that does not exist and one that is another account's are refused in the same words, and so is one already open. Private.
+   */
+  openPack(pack: Id): Promise<Answer<Unsealed>>;
   /**
    * Play a card the player holds on a post, as one of their characters: the card's own settings (`config`), the caster's message (plain
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.
