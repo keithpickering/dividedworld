@@ -2086,10 +2086,12 @@ button.kb-hud-secret:focus-visible {
   position: relative;
 }
 
+/* A badge on the button's corner, outside the label and the count, so on the phone's narrow button it covers neither. */
 .kb-hud-hand-dot {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: -6px;
+  right: -6px;
+  pointer-events: none;
   width: 12px;
   height: 12px;
   border-radius: 50%;
