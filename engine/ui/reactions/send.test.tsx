@@ -342,4 +342,34 @@ describe('useReactionSend', () => {
     expect(mine.get(w.theirs)).toHaveLength(2);
     expect(boom.current!.busy).toBe(false);
   });
+
+  test('a failure of the local effects after the server accepted it is still answered sent', async () => {
+    const w = world();
+    const v = mount(w);
+    v.tallies.merge = () => { throw new Error('tally broke'); };
+    act(() => { v.out.current!.press('fire'); });
+    await grace();
+    expect(v.answers).toEqual([{ kind: 'fire', character: w.hooligan, answer: 'sent' }]);
+    expect(v.mine.get(w.theirs)).toEqual([{ act: w.theirs, kind: 'fire', character: w.hooligan }]);
+  });
+
+  test('a queued kind that mine already holds when its turn comes is not sent again: answered sent, no estimate', async () => {
+    const w = world();
+    const real = w.fake.react.bind(w.fake);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    let first = true;
+    w.fake.react = async (...args: Parameters<typeof real>) => { if (first) { first = false; await gate; } return real(...args); };
+    const react = vi.spyOn(w.fake, 'react');
+    const v = mount(w);
+    act(() => { v.out.current!.press('tea'); v.out.current!.press('fire'); });
+    await grace();
+    expect(react).toHaveBeenCalledTimes(1);
+    /* Another tab's reaction arrives by a re-read while 'fire' waits its turn. */
+    act(() => { v.mine.merge(w.theirs, [{ act: w.theirs, kind: 'fire', character: w.hooligan }]); });
+    await act(async () => { release(); await vi.advanceTimersByTimeAsync(0); });
+    expect(react).toHaveBeenCalledTimes(1);
+    expect(v.answers.map((a) => [a.kind, a.answer])).toEqual([['tea', 'sent'], ['fire', 'sent']]);
+    expect(landed).toHaveBeenCalledTimes(1);
+  });
 });

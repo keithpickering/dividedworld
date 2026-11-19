@@ -9,7 +9,9 @@
  * show (the held kind released first).
  *
  * Leaving ends the grace early and does not end the reaction: unmounting sends what this hook holds at once,
- * and so does `pagehide`, with a keepalive request so it can outlive the page. Only the kinds this hook
+ * and so does `pagehide`, with a keepalive request so it can outlive the page. On `pagehide` only the first
+ * send per Act reliably leaves: sends on an Act go one at a time (the server refuses two at once), and the
+ * page may be gone before the first is answered. Only the kinds this hook
  * pressed are flushed, so another row of the same Act closing does not send what this one holds.
  *
  * Call it once per Act: its queue is one per call, so a row of tiles and its picker share one hook.
@@ -66,13 +68,18 @@ const REFUSED = 'The reaction could not be sent. Try again.';
 
 async function send({ pending, keepalive, api, player, tallies, mine }: Item): Promise<'sent' | { refusal: string }> {
   const act = pending.act;
+  /* Another tab's reaction, merged by a re-read while this one waited its turn: it has landed, so it is not sent again. */
+  if (mine.get(act).some((r) => r.kind === pending.kind)) return 'sent';
   try {
     const r = keepalive ? await api.react(act, pending.character, pending.kind, { keepalive: true }) : await api.react(act, pending.character, pending.kind);
     if (r.ok) {
-      mine.add({ act, kind: pending.kind, character: pending.character });
-      /* A blind post answers no tally to anyone: the screen holds none of its totals. */
-      if (r.value.tally !== null) tallies.merge(act, r.value.tally);
-      player.reactionLanded();
+      /* The server has it: a screen effect failing is never "could not be sent". */
+      try {
+        mine.add({ act, kind: pending.kind, character: pending.character });
+        /* A blind post answers no tally to anyone: the screen holds none of its totals. */
+        if (r.value.tally !== null) tallies.merge(act, r.value.tally);
+        player.reactionLanded();
+      } catch { /* the answer is still 'sent' */ }
       return 'sent';
     }
     mine.release(act, pending.kind);
@@ -86,7 +93,7 @@ async function send({ pending, keepalive, api, player, tallies, mine }: Item): P
 }
 
 /* One send at a time; whatever one entry does, the rest of the lane is still sent. */
-async function drain(lane: Lane): Promise<void> {
+async function drain(lane: Lane, mine: Mine, act: Id): Promise<void> {
   if (lane.draining) return;
   lane.draining = true;
   try {
@@ -99,6 +106,9 @@ async function drain(lane: Lane): Promise<void> {
     }
   } finally {
     lane.draining = false;
+    /* An empty lane is forgotten; a later press makes a new one. */
+    const byAct = lanes.get(mine);
+    if (lane.queue.length === 0 && byAct?.get(act) === lane) byAct.delete(act);
   }
 }
 
@@ -151,10 +161,10 @@ export function useReactionSend({ act, as, tallies, mine, onAnswer }: Args): { p
   useEffect(() => mine.subscribe(act, () => pruneRef.current()), [mine, act]);
 
   const flush = (keepalive: boolean): void => {
-    const lanesUsed = new Set<Lane>();
-    for (const [kind, entry] of [...own.current]) if (take(kind, keepalive)) lanesUsed.add(laneOf(entry.mine, entry.pending.act));
+    const lanesUsed = new Map<Lane, { mine: Mine; act: Id }>();
+    for (const [kind, entry] of [...own.current]) if (take(kind, keepalive)) lanesUsed.set(laneOf(entry.mine, entry.pending.act), { mine: entry.mine, act: entry.pending.act });
     sync();
-    for (const lane of lanesUsed) void drain(lane);
+    for (const [lane, at] of lanesUsed) void drain(lane, at.mine, at.act);
   };
   const flushRef = useRef(flush);
   flushRef.current = flush;
@@ -174,7 +184,7 @@ export function useReactionSend({ act, as, tallies, mine, onAnswer }: Args): { p
     const pending: Pending = { act, kind, character: as.id, due: Date.now() + REACTION_GRACE_MS };
     if (!mine.hold(pending)) return 'busy';
     const timer = setTimeout(() => {
-      if (take(kind, false)) void drain(laneOf(mine, act));
+      if (take(kind, false)) void drain(laneOf(mine, act), mine, act);
       sync();
     }, REACTION_GRACE_MS);
     own.current.set(kind, { timer, pending, mine });
