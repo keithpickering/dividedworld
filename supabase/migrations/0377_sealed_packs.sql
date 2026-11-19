@@ -1210,3 +1210,17 @@ end
 $function$;
 
 -- Grants: create or replace keeps each replaced function's, and the new ones are granted where they are made (welcome_pack_kind to the service role, open_pack to authenticated alone).
+
+-- card_in_open_pack (0140's, the same signature, search_path and grants), also counting a fixed pack on sale: it can give a card that is in its `contents`. A pull pack as 0140 wrote it.
+create or replace function card_in_open_pack(card text) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (
+    select 1
+    from card_kinds c
+    join machine_slots s on s.pack is not null and s.availability = 'onSale'
+    join pack_kinds p on p.key = s.pack
+    where c.key = card_in_open_pack.card
+      and case when p.contents is not null then c.key = any (p.contents)
+               else c.key <> all (p.leaves) and exists (select 1 from jsonb_array_elements(p.pulls) e where (e -> 'weights') ? c.rarity) end
+  )
+$$;

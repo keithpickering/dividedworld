@@ -300,3 +300,17 @@ begin
   perform seed_instance(payload);
   if (select count(*) from packs where account = fay and source = 'welcome') is distinct from 1 then raise exception 'a character made later was not backfilled by the next seed'; end if;
 end $$;
+
+-- ---- 6. A card in a fixed pack on sale is offered (card_in_open_pack) ----
+do $$
+begin
+  -- The fixed kind 'ws-starter' holds sweetie, splat and blot; a slot sells it. A card is offered only while a pack on sale can give it.
+  insert into card_kinds (key, name, alignment, rarity) values ('ws-lone', 'Lone', 'sweet', 'legendary');
+  insert into pack_kinds (key, pulls, leaves, contents) values ('ws-lonepack', null, '{}', array['ws-lone']);
+  if card_in_open_pack('ws-lone') is distinct from false then raise exception 'a card in no pack on sale reads as offered'; end if;
+  insert into machine_slots (position, pack, availability, price) values (9780, 'ws-lonepack', 'hidden', 100);
+  if card_in_open_pack('ws-lone') is distinct from false then raise exception 'a fixed pack that is not on sale offered its card'; end if;
+  update machine_slots set availability = 'onSale' where pack = 'ws-lonepack';
+  if card_in_open_pack('ws-lone') is distinct from true then raise exception 'a card in a fixed pack on sale reads as not offered'; end if;
+  if card_in_open_pack('ws-nothing-here') is distinct from false then raise exception 'a card in no pack reads as offered'; end if;
+end $$;
