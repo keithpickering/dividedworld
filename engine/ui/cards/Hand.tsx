@@ -36,6 +36,13 @@
  * layout, so the row is measured, the opening card (`opening`, the armed one, else the first) put in the middle at once and the pose
  * written each time `open` becomes true, in a layout effect of the commit that takes `hidden` off; while it is closed nothing is measured.
  *
+ * A pack the account holds and has not opened (`api.sealedPacks`; the starter pack design, sections 6 and 7) stands first, before every
+ * card group, as a button with the pack's art at a card's size, named "Starter Pack, sealed: open it". It is a place like a card's: on the arc
+ * (`placesOf`), in the phone's row where it can reach the middle, and in the list's keys; it cannot be armed and the sheet's count leaves it out.
+ * Pressing it opens it (`api.openPack`) and then the reveal (engine/ui/vending/PackOpening.tsx) over the hand, with a fixed pack's no hit; when
+ * the reveal closes the hand's cards and packs are read again and focus goes to the first place. A refusal says its words in the sheet's line,
+ * on either board, and leaves the pack where it was.
+ *
  * A card is a button, and pressing it is the caller's to answer (engine/ui/cards/play.tsx): `armed` is
  * the key of the card that waits to be played, and `onPick` is what pressing a card does. An armed
  * card's name ends ", armed: pick a post", and it carries that as a floating tag and pulses; the sheet's line then says, for Whoops!,
@@ -44,13 +51,20 @@
  * in the sheet's line.
  */
 import { useCallback, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import type { HeldCard } from '../data/api.ts';
+import type { HeldCard, SealedPack } from '../data/api.ts';
+import { useKayfa } from '../context.tsx';
+import { packHit } from '../../rules/packs.ts';
+import { PackArt } from '../vending/PackArt.tsx';
+import { PackOpening } from '../vending/PackOpening.tsx';
+import { packSize } from '../vending/machine-words.ts';
+import { Layers } from '../glass/layer.tsx';
 import { useBoard } from '../glass/useBoard.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Postcard, cardLabel } from './Postcard.tsx';
-import type { CardFace } from './faces.ts';
+import { plainRefusal, type CardFace } from './faces.ts';
+import { useSealedPacks } from './sealed.ts';
 import { CalmRegion } from '../glass/Calm.tsx';
-import { SWIPE_REACH, SWIPE_STEP, arcSlots, handOrder, swipeKeyframes, swipeMiddle, swipePose } from './arc.ts';
+import { SWIPE_REACH, SWIPE_STEP, arcSlots, handOrder, placesOf, swipeKeyframes, swipeMiddle, swipePose } from './arc.ts';
 
 /** An armed card's tag, and the end of its name: while it is being played they say where. */
 const tagOf = (playing: { readonly seq: number } | null): string => (playing ? `Playing · post #${playing.seq}` : 'Armed · pick a post');
@@ -106,8 +120,26 @@ function firstAtLeast(xs: readonly number[], x: number): number {
   return lo;
 }
 
+/** A card the instance no longer has, as the reveal shows it: its name alone, claiming no rarity or alignment. */
+const unknownFace = (key: string, like: CardFace | undefined): CardFace => ({
+  key, name: 'A card this machine no longer has', alignment: 'sweet', tag: '', extra: 0, stack: 1, tagline: '', summary: '', describe: '',
+  art: like?.art ?? { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, rarity: 'common', play: like?.play ?? 'set', kind: '', unknown: true,
+});
+
+/** A sealed pack's place is keyed apart from every card's. */
+const packKey = (p: SealedPack): string => `pack:${p.pack}`;
+
+/** A sealed pack that is being opened: the pack, the cards its answer gave in pull order, and the button it was pressed on, which the reveal rises from. */
+interface Opened { readonly pack: SealedPack; readonly contents: readonly string[] }
+
 export interface HandProps {
   readonly held: readonly HeldCard[];
+  /** The sealed packs to draw; with none given the hand reads them itself and reads them again whenever `held` changes. */
+  readonly sealed?: readonly SealedPack[];
+  /** The caller's reads of the player's rows again, once a pack's reveal closes (the hand's cards, the HUD's count of packs). */
+  readonly onOpened?: () => Promise<unknown>;
+  /** The HUD's hand button, which the opened cards fly to. */
+  readonly handLink?: () => HTMLElement | null;
   readonly faces: readonly CardFace[];
   /** The key of the card that is armed, if any. */
   readonly armed?: string | null;
@@ -126,25 +158,42 @@ export interface HandProps {
   readonly open?: boolean;
 }
 
-export function Hand({ held, faces, armed = null, playing = null, onPick, onClose, vendingHref, instant = false, opening = null, open = true }: HandProps) {
+export function Hand({ held, sealed: given, onOpened, handLink, faces, armed = null, playing = null, onPick, onClose, vendingHref, instant = false, opening = null, open = true }: HandProps) {
   const idBase = useId();
   /* The Main board's layout stands full-size cards on the arc; the Phone board's sheet holds smaller ones in a row. */
   const { board } = useBoard();
   const main = board === 'main';
+  const { api, instance, ui } = useKayfa();
+  const own = useSealedPacks(given === undefined, held);
+  const sealed = given ?? own.sealed;
   const arc = handOrder(held, faces);
-  const slots = arcSlots(arc.map((c) => c.group));
-  const shown = arc.length;
+  /* The places in order: each sealed pack, then each card's kind. */
+  const np = sealed.length;
+  const groups = placesOf(np, arc.map((c) => c.group));
+  const order = [...sealed.map(packKey), ...arc.map((c) => c.face.key)];
+  const slots = arcSlots(groups);
+  const shown = order.length;
   /* Rows further back stand lower; within a row a card is above the one to its left. */
-  const byDepth = arc.map((c, i) => ({ key: c.face.key, i })).sort((p, q) => slots[q.i]!.row - slots[p.i]!.row || p.i - q.i);
+  const byDepth = order.map((key, i) => ({ key, i })).sort((p, q) => slots[q.i]!.row - slots[p.i]!.row || p.i - q.i);
   const stack = new Map(byDepth.map(({ key }, z) => [key, z + 1] as const));
   const count = held.reduce((n, h) => n + h.held, 0);
   const [viewed, setViewed] = useState<string | null>(null);
+  /* A pack that was opened and whose reveal is showing; the refusal an open met, in plain words, until the next press; the pressed button. */
+  const [opened, setOpened] = useState<Opened | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const pressed = useRef<HTMLElement | null>(null);
+  const opening$ = useRef(false);
   /* The Phone board's middle card, by key: the one the row's scroll puts nearest its middle (`pose`). */
   const [middle, setMiddle] = useState<string | null>(opening);
   const list = useRef<HTMLUListElement>(null);
-  const middleAt = Math.max(0, arc.findIndex((c) => c.face.key === middle));
-  const middleKey = arc[middleAt]?.face.key;
+  const middleAt = Math.max(0, order.indexOf(middle ?? ''));
+  const middleKey = order[middleAt];
   const inView = faces.find((f) => f.key === (main ? armed ?? viewed ?? arc[0]?.face.key : middleKey));
+  /* The pack in the middle of the phone's row, whose words the sheet's line says in a card's place. */
+  const packInView = main ? undefined : sealed.find((p) => packKey(p) === middleKey);
+  const lookOf = (p: SealedPack) => ui.packs?.[p.kind];
+  const nameOf = (p: SealedPack) => lookOf(p)?.name ?? p.kind;
+  const rulesOf = (p: SealedPack) => instance.packs.find((r) => r.key === p.kind);
 
   /* The phone's pose. `centers` is each card's center in the row's own coordinates, measured when the sheet opens, on resize and when
      the cards change while it is open (never from a transformed box, and never while it is hidden, where every box is 0); `posed` is the range of cards that has a live pose. */
@@ -243,7 +292,7 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
   /* The handlers the row's listeners call, the latest render's (they read `instant`). */
   const settleNow = useRef(settle);
   settleNow.current = settle;
-  const cardsSignature = arc.map((c) => c.face.key).join('|');
+  const cardsSignature = order.join('|');
   /* Measure and pose when the cards change while the sheet is open (closed, it has no layout; the opening below does it). */
   useLayoutEffect(() => {
     if (main || !open || shown === 0) return;
@@ -257,7 +306,7 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
     if (main || !open || shown === 0) return;
     posed.current = null;
     measure();
-    const key = opening && arc.some((c) => c.face.key === opening) ? opening : arc[0]!.face.key;
+    const key = opening && order.includes(opening) ? opening : order[0]!;
     center(key, true);
     pose();
     // The opening and the cards are read at the open, not followed.
@@ -304,6 +353,43 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
 
   /* The keys: arrows and Home/End move along the cards and stop at the ends. On the Main board Tab and Shift+Tab wrap at the ends;
      on the phone they are the dialog's own. */
+  /* On the phone a pointer press on a side place only brings it to the middle, judged by what stood in the middle when the press began (its focus moves the row before the click); a keyboard's or a reader's click (no pointer) acts. True: the press was only that. */
+  const onlyCenters = (e: { readonly detail: number }, key: string): boolean => {
+    if (main || e.detail === 0) return false;
+    const was = pressedMiddle.current ?? middleKey;
+    pressedMiddle.current = null;
+    if (was === key) return false;
+    center(key);
+    return true;
+  };
+  /* Open a sealed pack, then show its reveal. A refusal leaves it where it was and says why; a lost answer is read for, since the pack may be open. */
+  const openIt = async (p: SealedPack, el: HTMLElement) => {
+    if (opening$.current) return;
+    opening$.current = true;
+    pressed.current = el;
+    try {
+      const answer = await api.openPack(p.pack);
+      if (!answer.ok) {
+        setRefusal(plainRefusal(answer.error));
+        if (answer.uncertain) await settleRows();
+        return;
+      }
+      setRefusal(null);
+      setOpened({ pack: p, contents: answer.value.contents });
+    } finally {
+      opening$.current = false;
+    }
+  };
+  /* The rows read again after an opening: the caller's (the cards, the HUD's packs), and this hand's own packs where it reads them. */
+  const settleRows = async () => {
+    await onOpened?.();
+    if (given === undefined) await own.reload();
+  };
+  /* The reveal closed: read the rows again, then focus the first place (the pack that held it is gone). */
+  const closeReveal = () => {
+    setOpened(null);
+    void settleRows().then(() => setTimeout(() => list.current?.querySelector<HTMLElement>('li.kb-hand-card > button')?.focus({ preventScroll: true }), 0));
+  };
   const onKeys = (e: KeyboardEvent<HTMLUListElement>) => {
     if (e.defaultPrevented || e.nativeEvent.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
     const buttons = [...(list.current?.querySelectorAll<HTMLButtonElement>('li.kb-hand-card > button') ?? [])];
@@ -342,24 +428,67 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
           onTouchEnd={main ? undefined : onTouchEnd}
           onTouchCancel={main ? undefined : onTouchEnd}
         >
-          {arc.map(({ face, held: n, group }, i) => {
+          {sealed.map((p, i) => {
+            const key = packKey(p);
             const slot = slots[i]!;
+            const says = `${idBase}-${key}`;
+            const isMiddle = !main && i === middleAt;
+            const name = nameOf(p);
+            const rules = rulesOf(p);
+            const style = main
+              ? ({ '--kb-fan-x': `${slot.x}px`, '--kb-fan-y': `${slot.y}px`, '--kb-fan-turn': `${slot.deg}deg`, '--kb-fan-z': stack.get(key) } as CSSProperties)
+              : ({ '--kb-fan-z': isMiddle ? order.length + 1 : order.length - Math.abs(i - middleAt) } as CSSProperties);
+            const look = lookOf(p);
+            return (
+              <li
+                key={key}
+                className="kb-hand-card kb-hand-pack"
+                data-kb-card={key}
+                data-kb-pack=""
+                data-kb-row={main ? slot.row : undefined}
+                data-kb-group-start={!main && i > 0 && groups[i] !== groups[i - 1] ? '' : undefined}
+                data-kb-middle={isMiddle ? '' : undefined}
+                data-kb-side={main ? undefined : i < middleAt ? 'left' : i > middleAt ? 'right' : undefined}
+                style={style}
+              >
+                <button
+                  type="button"
+                  className="kb-hand-pack-button"
+                  aria-label={`${name}, sealed: open it`}
+                  aria-describedby={says}
+                  onFocus={main ? undefined : () => center(key)}
+                  onPointerDown={main ? undefined : () => { pressedMiddle.current = middleKey ?? null; }}
+                  onPointerCancel={main ? undefined : () => { pressedMiddle.current = null; }}
+                  onClick={(e) => {
+                    if (onlyCenters(e, key)) return;
+                    void openIt(p, e.currentTarget);
+                  }}
+                >
+                  <PackArt name={name} count={rules ? packSize(rules) : 0} {...(look?.art ? { art: look.art } : {})} width={main ? 150 : 104} />
+                </button>
+                <span id={says} className="kb-visually-hidden">A sealed {name}. Press it to open it{rules ? `: ${packSize(rules)} cards go into your hand` : ''}.</span>
+              </li>
+            );
+          })}
+          {arc.map(({ face, held: n }, i) => {
+            const slot = slots[np + i]!;
+            const at = np + i;
             const isArmed = armed === face.key;
             const says = `${idBase}-${face.key}`;
-            const isMiddle = !main && i === middleAt;
+            const isMiddle = !main && at === middleAt;
             const style = main
               ? ({ '--kb-fan-x': `${slot.x}px`, '--kb-fan-y': `${slot.y}px`, '--kb-fan-turn': `${slot.deg}deg`, '--kb-fan-z': stack.get(face.key) } as CSSProperties)
               /* The middle card above every other, the rest lower the further they stand from it. */
-              : ({ '--kb-fan-z': isMiddle ? arc.length + 1 : arc.length - Math.abs(i - middleAt) } as CSSProperties);
+              : ({ '--kb-fan-z': isMiddle ? order.length + 1 : order.length - Math.abs(at - middleAt) } as CSSProperties);
             return (
               <li
                 key={face.key}
                 className="kb-hand-card"
                 data-kb-card={face.key}
                 data-kb-row={main ? slot.row : undefined}
-                data-kb-group-start={!main && i > 0 && group !== arc[i - 1]!.group ? '' : undefined}
+                data-kb-group-start={!main && at > 0 && groups[at] !== groups[at - 1] ? '' : undefined}
                 data-kb-middle={isMiddle ? '' : undefined}
-                data-kb-side={main ? undefined : i < middleAt ? 'left' : i > middleAt ? 'right' : undefined}
+                data-kb-side={main ? undefined : at < middleAt ? 'left' : at > middleAt ? 'right' : undefined}
                 data-armed={isArmed ? '' : undefined}
                 style={style}
               >
@@ -377,12 +506,8 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
                   /* A canceled press (a swipe takes it) has no click of its own to clear this. A pointer leaving the card must not clear it: a touch pointer leaves when the finger lifts, before the tap's click. */
                   onPointerCancel={main ? undefined : () => { pressedMiddle.current = null; }}
                   onClick={(e) => {
-                    /* On the phone a pointer press on a side card only brings it to the middle, judged by what stood in the middle when the press began (its focus moves the row before the click); a keyboard's or a reader's click (no pointer) acts. */
-                    if (!main && e.detail !== 0) {
-                      const was = pressedMiddle.current ?? middleKey;
-                      pressedMiddle.current = null;
-                      if (was !== face.key) { center(face.key); return; }
-                    }
+                    if (onlyCenters(e, face.key)) return;
+                    setRefusal(null);
                     setViewed(face.key);
                     onPick?.(face);
                   }}
@@ -395,14 +520,36 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
           })}
         </ul>
       )}
-      {inView && shown > 0 && (
-        <CalmRegion as="p" className="kb-hand-says">
-          {armed === inView.key
-            ? <>{inView.name} is armed. Every post it can land on now shows a dashed <b>+ mark</b> beside its date, named Play {inView.name} on that post. Press it to play {inView.name} there.</>
-            : <><b>{inView.name}.</b> {inView.summary}</>}
+      {shown > 0 && (refusal !== null || inView || packInView) && (
+        <CalmRegion as="p" className="kb-hand-says" {...(refusal !== null ? { role: 'alert', 'data-kb-refusal': '' } : {})}>
+          {refusal !== null
+            ? refusal
+            : packInView
+              ? <><b>{nameOf(packInView)}.</b> Sealed. Press it to open it{rulesOf(packInView) ? `: its ${packSize(rulesOf(packInView)!)} cards go into your hand` : ''}.</>
+              : inView && armed === inView.key
+                ? <>{inView.name} is armed. Every post it can land on now shows a dashed <b>+ mark</b> beside its date, named Play {inView.name} on that post. Press it to play {inView.name} there.</>
+                : inView ? <><b>{inView.name}.</b> {inView.summary}</> : null}
         </CalmRegion>
       )}
       <CalmRegion className="kb-hand-vending"><ButtonRow align="center"><GlassButton to={vendingHref}>Vending Machine</GlassButton></ButtonRow></CalmRegion>
+      {opened && (
+        /* The reveal is a layer of its own; the drawer's keys (the phone's Tab trap) are not its. */
+        <div style={{ display: 'contents' }} onKeyDown={(e) => e.stopPropagation()}>
+          <Layers>
+            <PackOpening
+              hit={((r) => (r ? packHit(r) : false))(rulesOf(opened.pack))}
+              name={nameOf(opened.pack)}
+              {...(lookOf(opened.pack)?.art ? { art: lookOf(opened.pack)!.art } : {})}
+              note={null}
+              cards={opened.contents.map((k) => faces.find((f) => f.key === k) ?? unknownFace(k, faces[0]))}
+              from={() => pressed.current}
+              {...(handLink ? { handLink } : {})}
+              returnFocusTo={() => pressed.current}
+              onClose={closeReveal}
+            />
+          </Layers>
+        </div>
+      )}
     </>
   );
 }

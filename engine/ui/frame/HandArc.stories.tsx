@@ -34,6 +34,20 @@ const hand = (keys: readonly string[] | null): World => (fake, instance) => {
 };
 
 /**
+ * The same player, with a pack sealed in the hand: the instance's starting pack is granted when a character is made (`createCharacter`; the fake's seed makes
+ * characters without it), so the one character is made that way, and the cards held are the three-kind hand's. Where the instance names no starting pack there is no
+ * sealed pack and the story shows the cards alone.
+ */
+const sealedHand: World = (fake, instance) => {
+  const [a] = instance.classes;
+  const me = fake.seed.account('story-player', { seasoned: true });
+  fake.signInAs(me);
+  void fake.createCharacter('Pipewrench', a!.key, 'now', 'silent');
+  fake.seed.settle({ wallet: { [me]: 240 } });
+  fake.seed.cards(me, Object.fromEntries(THREE_KINDS.map((key, i) => [cardOf(instance.cards, key).key, i + 1])));
+};
+
+/**
  * Arms the card of this key, as pressing it in the hand does. With `open` it also opens the hand once the card is armed (the phone's hand button puts an
  * armed card back, so a player's own press cannot reach an armed phone hand open; a story can). The play provider drops everything armed and opened in its
  * cleanup for the account that is leaving, so this acts once the account is signed in (`session.account`): React runs every cleanup of a commit before any of
@@ -101,3 +115,8 @@ export const PhoneThreeKinds: Story = { ...phone, parameters: { world: hand(THRE
 export const PhoneEveryKind: Story = { ...phone, parameters: { world: hand(null) } };
 /** The phone: every kind with the second armed, the hand open on the armed card. */
 export const PhoneEveryKindArmed: Story = { ...phone, play: armedPhone, args: { armed: ARMED, opened: true }, parameters: { world: hand(null) } };
+
+/** A pack sealed in the hand, first on the arc before the three kinds, the hand open; the Hand button carries its dot and says "1 sealed pack". */
+export const SealedPack: Story = { parameters: { world: sealedHand } };
+/** The phone: the sealed pack first in the row, the hand open on it. */
+export const PhoneSealedPack: Story = { ...phone, parameters: { world: sealedHand } };
