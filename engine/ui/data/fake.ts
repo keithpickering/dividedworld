@@ -1495,7 +1495,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
-  function react(act: Id, character: Id, kind: string): Answer<{ act: Id; tally: Tally | null }> {
+  function react(act: Id, character: Id, kind: string, _opts?: { readonly keepalive?: boolean }): Answer<{ act: Id; tally: Tally | null }> {
     /* A post-local kind (a card added it to one post, key `x-…`) passes the rules by its shape; the post's own kinds are read below, as `react` reads them. */
     const local = emojiOfKey(kind) !== null;
     const bad = request({ action: 'react', act, character, kind });

@@ -1222,6 +1222,71 @@ describe('writes through the act function', () => {
   });
 });
 
+describe('a reaction that may outlive the page', () => {
+  it('sends keepalive on the request only when the caller asks for it', async () => {
+    const inits: RequestInit[] = [];
+    const fetchFake = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input instanceof Request ? input.url : input).includes('/functions/v1/act')) inits.push(init ?? {});
+      return json({ act: A, tally: { fire: 1 } });
+    }) as typeof fetch;
+    const api = createSupabaseApi({ url: URL_, publishableKey: PUBLISHABLE, settingsFallback: FALLBACK, fetch: fetchFake });
+    expect(await api.react(A, B, 'fire', { keepalive: true })).toEqual({ ok: true, value: { act: A, tally: { fire: 1 } } });
+    expect(await api.react(A, B, 'fire')).toEqual({ ok: true, value: { act: A, tally: { fire: 1 } } });
+    expect(inits).toHaveLength(2);
+    expect(inits[0]?.keepalive).toBe(true);
+    expect(inits[1]?.keepalive).not.toBe(true);
+  });
+
+  it('a keepalive reaction calls fetch in the same task once the token is known, without waiting on getSession', async () => {
+    let onAuth: ((event: string, session: unknown) => void) | null = null;
+    const calls: RequestInit[] = [];
+    const fetchFake = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init ?? {});
+      return json({ act: A, tally: { fire: 1 } });
+    }) as typeof fetch;
+    const client = {
+      /* A getSession that never resolves: the keepalive path must not depend on it once the token is known. */
+      auth: {
+        getSession: () => new Promise(() => undefined),
+        onAuthStateChange: (cb: (event: string, session: unknown) => void) => {
+          onAuth = cb;
+          return { data: { subscription: { unsubscribe() {} } } };
+        },
+      },
+    };
+    const api = createSupabaseApi({ url: URL_, publishableKey: PUBLISHABLE, settingsFallback: FALLBACK, client: client as never, fetch: fetchFake });
+    (onAuth as ((event: string, session: unknown) => void) | null)?.('SIGNED_IN', { access_token: JWT, user: { id: 'u-1' } });
+    const pending = api.react(A, B, 'fire', { keepalive: true });
+    /* No await between the call and this line: a page closing must not be waited on. */
+    expect(calls).toHaveLength(1);
+    expect(new Headers(calls[0]?.headers).get('authorization')).toBe(`Bearer ${JWT}`);
+    expect(calls[0]?.keepalive).toBe(true);
+    void pending;
+  });
+
+  it('an ordinary reaction still waits on getSession before it calls fetch', async () => {
+    let resolveSession: ((v: unknown) => void) | null = null;
+    const calls: RequestInit[] = [];
+    const fetchFake = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init ?? {});
+      return json({ act: A, tally: { fire: 1 } });
+    }) as typeof fetch;
+    const client = {
+      auth: {
+        getSession: () => new Promise((resolve) => { resolveSession = resolve; }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+      },
+    };
+    const api = createSupabaseApi({ url: URL_, publishableKey: PUBLISHABLE, settingsFallback: FALLBACK, client: client as never, fetch: fetchFake });
+    const pending = api.react(A, B, 'fire');
+    expect(calls).toHaveLength(0);
+    (resolveSession as unknown as (v: unknown) => void)({ data: { session: { access_token: JWT, user: { id: 'u-1' } } } });
+    expect(await pending).toEqual({ ok: true, value: { act: A, tally: { fire: 1 } } });
+    expect(calls).toHaveLength(1);
+    expect(new Headers(calls[0]?.headers).get('authorization')).toBe(`Bearer ${JWT}`);
+  });
+});
+
 describe('a card\'s effect', () => {
   it('releases through the release_effect function and says when', async () => {
     const h = harness((r) => (r.url.pathname.endsWith('/rpc/release_effect') ? json({ play: A, released_at: '2026-10-30T10:00:00+00:00' }) : json({}, 404)));
