@@ -152,6 +152,8 @@ export function scoredAs(lines: readonly LogLine[], instance: Instance): string 
 }
 
 const className = (instance: Instance, key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
+/** "a, b and c": a list of names in a sentence. */
+const andList = (names: readonly string[]) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(''));
 const withArticle = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}`;
 
 /** A link to an Act: a post by its number in its thread; a card play by the post it landed on. */
@@ -794,16 +796,11 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   const bossSaid = (repriced: boolean | undefined) => (repriced ? ' The Boss had repriced it.' : '');
   /* A pack is one line: its pulled rows (one per card) with the pack row that holds its kind, its price and the cards in pull order. */
   const packsDone = new Set<Id>();
-  /* A pack the game gave is two lines of its own, not a purchase: the gift when it arrived, sealed, and its opening (the pulled rows say nothing more, so they are not a line). No Aura moves on either. */
-  const giftPacks = new Set(data.log.packs.filter((p) => p.source === 'welcome').map((p) => p.pack));
+  /* A pack the game gave is two lines of its own, not a purchase. The gift is the pack row's, at the day it arrived, sealed. The opening is read from the pulled rows, at their own time: the pack row
+     is on the page of the gift and the pulled rows on the page of the opening, which may be another. No Aura moves on either. */
   data.log.packs.forEach((p) => {
     if (p.source !== 'welcome') return;
-    const packName = ui.packs[p.kind]?.name ?? 'pack';
-    rows.push({ key: `pack:gift:${p.pack}`, kind: 'pack', at: p.at, what: `Welcome gift: a sealed ${packName}`, details: [], aura: 0, wallet: null, characters: [] });
-    if (p.openedAt === null) return;
-    const names = p.contents.map(cardName);
-    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join('');
-    rows.push({ key: `pack:opened:${p.pack}`, kind: 'pack', at: p.openedAt, what: `You opened your ${packName}`, details: [`${list}.`], aura: 0, wallet: null, characters: [] });
+    rows.push({ key: `pack:gift:${p.pack}`, kind: 'pack', at: p.at, what: `Welcome gift: a sealed ${ui.packs[p.kind]?.name ?? 'pack'}`, details: [], aura: 0, wallet: null, characters: [] });
   });
   data.log.cards.forEach((e, i) => {
     /* A card an Event found is the Event's line (`cosmeticRows`), once. */
@@ -832,12 +829,16 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       return;
     }
     if (e.kind === 'pulled') {
-      if (!e.pack || packsDone.has(e.pack) || giftPacks.has(e.pack)) return;
+      if (!e.pack || packsDone.has(e.pack)) return;
       packsDone.add(e.pack);
       const bought = data.log.packs.find((p) => p.pack === e.pack);
-      /* Pull order is the pack row's; the pulled rows only say which pack, since they are read at one instant in no order of their own. */
-      const names = (bought?.contents ?? data.log.cards.filter((c) => c.kind === 'pulled' && c.pack === e.pack).map((c) => c.card)).map(cardName);
-      const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join('');
+      /* Pull order is the pack row's when it is on this page; the pulled rows only say which pack, since they are read at one instant in no order of their own. */
+      const names = (bought?.contents.length ? bought.contents : data.log.cards.filter((c) => c.kind === 'pulled' && c.pack === e.pack).map((c) => c.card)).map(cardName);
+      const list = andList(names);
+      if ((bought?.source ?? e.packSource) === 'welcome') {
+        rows.push({ key: `pack:opened:${e.pack}`, kind: 'pack', at: e.at, what: `You opened your ${ui.packs[bought?.kind ?? e.packKind ?? '']?.name ?? 'pack'}`, details: [`${list}.`], aura: 0, wallet: null, characters: [] });
+        return;
+      }
       const spent = bought ? take((w) => w.kind === 'purchase' && at(w.at) === at(bought.at) && w.change === -bought.price) : undefined;
       rows.push({
         key: `pack:${e.pack}`, kind: 'pack', at: e.at, what: `You bought ${withArticle(ui.packs[bought?.kind ?? '']?.name ?? 'pack')}`,

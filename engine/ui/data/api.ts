@@ -1471,6 +1471,9 @@ export interface CardEvent {
   readonly act: Id | null;
   /** The pack a pulled card came from; absent on any other row. */
   readonly pack?: Id;
+  /** For a pulled card: its pack's kind and where the pack came from, read with the card, since the pack's own row is windowed by the day it was given and can be on another page than the opening. */
+  readonly packKind?: string;
+  readonly packSource?: 'bought' | 'welcome';
   /** For a purchase: true when the Boss had moved the price it was bought at. Absent otherwise, and on any other row. */
   readonly repriced?: boolean;
   readonly price: number;

@@ -652,6 +652,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
       ...(typeof backs.get(r['act'])?.['passage'] === 'string' ? { passage: backs.get(r['act'])!['passage'] } : {}),
       ...(Array.isArray(backs.get(r['act'])?.['who']) ? { who: backs.get(r['act'])!['who'], whoExcept: backs.get(r['act'])!['who_except'] === true } : {}),
       ...(typeof r['pack'] === 'string' ? { pack: r['pack'] } : {}),
+      ...(typeof r['pack_kind'] === 'string' ? { packKind: r['pack_kind'], packSource: r['pack_source'] === 'welcome' ? 'welcome' as const : 'bought' as const } : {}),
       ...(r['kind'] === 'bought' && r['repriced'] === true ? { repriced: true } : {}),
     })),
     packs: src['packs'].map((r): PackEvent => ({

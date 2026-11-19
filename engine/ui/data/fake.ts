@@ -1985,7 +1985,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const made = uuid();
     const at = stamp ?? now();
     packLedger.push({ account: account.id, order: ++logOrder, ms: at, event: { pack: made, kind: pack.key, price: seen.price, repriced: movedPrice(seen), contents, at: iso(at), source: 'bought', openedAt: iso(at) } });
-    for (const card of contents) recordCard(account.id, at, { card, kind: 'pulled', act: null, pack: made, price: 0 });
+    for (const card of contents) recordCard(account.id, at, { card, kind: 'pulled', act: null, pack: made, packKind: pack.key, packSource: 'bought', price: 0 });
     return ok({ pack: made, contents, balance: left });
   }
 
@@ -2000,7 +2000,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const at = stamp ?? now();
     sealed.delete(pack);
     for (const card of held.contents) account.cards[card] = (account.cards[card] ?? 0) + 1;
-    for (const card of held.contents) recordCard(account.id, at, { card, kind: 'pulled', act: null, pack, price: 0 });
+    for (const card of held.contents) recordCard(account.id, at, { card, kind: 'pulled', act: null, pack, packKind: entry.event.kind, packSource: entry.event.source, price: 0 });
     entry.event = { ...entry.event, contents: held.contents, openedAt: iso(at) };
     return ok({ pack, kind: entry.event.kind, contents: held.contents });
   }

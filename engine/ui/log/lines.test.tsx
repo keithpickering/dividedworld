@@ -1663,6 +1663,13 @@ describe('a pack in the log', () => {
     expect(rows[0]!.details.join('')).toBe('Cutter and Whoops!.');
   });
 
+  test('a welcome pack opened on a later page than its gift: pulled rows alone make the opening line, never a purchase', () => {
+    const welcome = (card: string) => ({ ...pulled(card, 'pk', opened), packKind: 'starter', packSource: 'welcome' as const });
+    const rows = lines({ ...empty, cards: [welcome('cutter'), welcome('whoops')] });
+    expect(rows.map((r) => [r.what, r.at, r.aura])).toEqual([['You opened your Starter Pack', opened, 0]]);
+    expect(rows[0]!.details.join('')).toBe('Cutter and Whoops!.');
+  });
+
   test('a sealed welcome pack shows the gift line alone', () => {
     const rows = lines({ ...empty, packs: [pack({ kind: 'starter', price: 0, source: 'welcome', contents: [], openedAt: null })] });
     expect(rows.map((r) => r.what)).toEqual(['Welcome gift: a sealed Starter Pack']);
