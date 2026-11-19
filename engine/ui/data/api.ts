@@ -2955,8 +2955,8 @@ export interface KayfaApi {
   wash(play: Id, character: Id, input: unknown): Promise<Answer<SurfaceWritten>>;
   /** A surface play's live draws and washes, oldest first (`surface_acts`); null where the play has no surface. */
   surfaceActs(play: Id): Promise<SurfaceActs | null>;
-  /** Leave a reaction: an instance's kind, or a post-local one (key `x-…`) its post offers. The tally is null where the post's totals are hidden (a blind post), for everyone alike. */
-  react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
+  /** Leave a reaction: an instance's kind, or a post-local one (key `x-…`) its post offers. The tally is null where the post's totals are hidden (a blind post), for everyone alike. `keepalive` asks the request to outlive the page (a tab closing). */
+  react(act: Id, character: Id, kind: string, opts?: { readonly keepalive?: boolean }): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
   unmask(character: Id, thread: Id, message: string): Promise<Answer<Act>>;

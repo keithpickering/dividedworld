@@ -2240,7 +2240,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     edit: (post, character, body) => act({ action: 'edit', post, character, body }, toAct),
     spin: (origin, character, title, body, framing, at) => act({ action: 'spin', origin, character, title, body, ...framed(framing), ...(at ? { at } : {}) }, withThread),
     apologize: (move, character, title, body, framing) => act({ action: 'apologize', move, character, title, body, ...framed(framing) }, withThread),
-    react: (target, character, kind) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: isObject(r['tally']) ? r['tally'] as Tally : null })),
+    react: (target, character, kind, _opts) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: isObject(r['tally']) ? r['tally'] as Tally : null })),
     turn: (character, to, loudness, showFrom, showTo) =>
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),
     withdrawTurn: (character) => act({ action: 'withdrawTurn', character }, () => ({ withdrawn: true as const })),

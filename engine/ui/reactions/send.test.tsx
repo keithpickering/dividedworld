@@ -1,9 +1,10 @@
-import { act, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { act } from '@testing-library/react';
+import { useState } from 'react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { MyCharacter } from '../data/api.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { createTallies } from '../thread/tallies.ts';
-import { createMine } from './mine.ts';
+import { createMine, REACTION_GRACE_MS } from './mine.ts';
 import { useReactionSend } from './send.ts';
 
 /* The HUD's estimate is asked for through the player; this file watches that call. */
@@ -13,7 +14,8 @@ vi.mock('../player.tsx', async (original) => {
   return { ...m, usePlayer: () => ({ ...m.usePlayer(), reactionLanded: landed }) };
 });
 
-beforeEach(() => { landed.mockClear(); });
+beforeEach(() => { landed.mockClear(); vi.useFakeTimers(); });
+afterEach(() => { vi.useRealTimers(); });
 
 function world() {
   const fake = buildWorld();
@@ -30,28 +32,170 @@ function world() {
 function mount(w: ReturnType<typeof world>) {
   const tallies = createTallies();
   const mine = createMine();
-  const out: { current: ReturnType<typeof useReactionSend> | null } = { current: null };
-  const Probe = () => { out.current = useReactionSend({ act: w.theirs, as: w.as, tallies, mine }); return null; };
-  renderIn(w.fake, <Probe />);
-  return { tallies, mine, out };
+  const answers: { kind: string; character: string; answer: unknown }[] = [];
+  const out: { current: ReturnType<typeof useReactionSend> | null; setAs: (a: MyCharacter | null) => void } = { current: null, setAs: () => {} };
+  const Probe = () => {
+    const [as, setAs] = useState<MyCharacter | null>(w.as);
+    out.setAs = setAs;
+    out.current = useReactionSend({ act: w.theirs, as, tallies, mine, onAnswer: (a) => { answers.push(a); } });
+    return null;
+  };
+  const view = renderIn(w.fake, <Probe />);
+  return { tallies, mine, out, answers, view };
 }
 
+const grace = async (ms = REACTION_GRACE_MS) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+
 describe('useReactionSend', () => {
-  test('records the reaction as the HUD character, merges the tally, adds to mine and asks for the estimate once', async () => {
+  test('a press sends nothing and holds the kind pending as the HUD character', async () => {
     const w = world();
     const react = vi.spyOn(w.fake, 'react');
     const v = mount(w);
-    let result: unknown;
-    await act(async () => { result = await v.out.current!.send('fire'); });
-    expect(result).toBe('sent');
+    let held: unknown;
+    act(() => { held = v.out.current!.press('fire'); });
+    expect(held).toBe('held');
+    expect(react).not.toHaveBeenCalled();
+    expect(v.mine.pending(w.theirs)).toEqual([{ act: w.theirs, kind: 'fire', character: w.hooligan, due: Date.now() + REACTION_GRACE_MS }]);
+    expect(v.mine.get(w.theirs)).toEqual([]);
+  });
+
+  test('sends nothing a millisecond early; at the grace sends once, as the pressed character, and lands it', async () => {
+    const w = world();
+    const react = vi.spyOn(w.fake, 'react');
+    const v = mount(w);
+    act(() => { v.out.current!.press('fire'); });
+    await grace(REACTION_GRACE_MS - 1);
+    expect(react).not.toHaveBeenCalled();
+    await grace(1);
+    expect(react).toHaveBeenCalledTimes(1);
     expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, 'fire');
     expect(v.mine.get(w.theirs)).toEqual([{ act: w.theirs, kind: 'fire', character: w.hooligan }]);
+    expect(v.mine.pending(w.theirs)).toEqual([]);
     expect(v.tallies.get(w.theirs)).toEqual({ fire: 1 });
+    expect(v.answers).toEqual([{ kind: 'fire', character: w.hooligan, answer: 'sent' }]);
     expect(landed).toHaveBeenCalledTimes(1);
     expect(v.out.current!.busy).toBe(false);
   });
 
-  test('answers a refusal in the server\'s words, and takes the player\'s own reactions from the re-read', async () => {
+  test('an undo within the grace sends nothing, ever, and empties pending', async () => {
+    const w = world();
+    const react = vi.spyOn(w.fake, 'react');
+    const v = mount(w);
+    act(() => { v.out.current!.press('fire'); });
+    await grace(REACTION_GRACE_MS - 1);
+    let undone: boolean | undefined;
+    act(() => { undone = v.out.current!.undo('fire'); });
+    expect(undone).toBe(true);
+    expect(v.mine.pending(w.theirs)).toEqual([]);
+    await grace(REACTION_GRACE_MS * 3);
+    expect(react).not.toHaveBeenCalled();
+    expect(v.out.current!.undo('fire')).toBe(false);
+    v.view.unmount();
+    await grace(1);
+    expect(react).not.toHaveBeenCalled();
+  });
+
+  test('a press of a kind already pending or sent answers busy', async () => {
+    const w = world();
+    const v = mount(w);
+    act(() => { v.out.current!.press('fire'); });
+    expect(v.out.current!.press('fire')).toBe('busy');
+    await grace();
+    expect(v.out.current!.press('fire')).toBe('busy');
+  });
+
+  test('answers busy with no character to react as', () => {
+    const w = world();
+    const v = mount(w);
+    act(() => { v.out.setAs(null); });
+    expect(v.out.current!.press('fire')).toBe('busy');
+    expect(v.mine.pending(w.theirs)).toEqual([]);
+  });
+
+  test('two kinds pressed a second apart send in order; the second, due while the first is in flight, is not dropped', async () => {
+    const w = world();
+    const real = w.fake.react.bind(w.fake);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    let first = true;
+    w.fake.react = async (...args: Parameters<typeof real>) => { if (first) { first = false; await gate; } return real(...args); };
+    const react = vi.spyOn(w.fake, 'react');
+    const v = mount(w);
+    act(() => { v.out.current!.press('fire'); });
+    await grace(1000);
+    act(() => { v.out.current!.press('tea'); });
+    await grace(REACTION_GRACE_MS - 1000);
+    expect(react).toHaveBeenCalledTimes(1);
+    expect(v.out.current!.busy).toBe(true);
+    await grace(1000);
+    expect(react).toHaveBeenCalledTimes(1);
+    await act(async () => { release(); await vi.advanceTimersByTimeAsync(0); });
+    expect(react.mock.calls.map((c) => c[2])).toEqual(['fire', 'tea']);
+    expect(v.mine.get(w.theirs).map((r) => r.kind)).toEqual(['fire', 'tea']);
+    expect(v.answers.map((a) => a.kind)).toEqual(['fire', 'tea']);
+    expect(v.out.current!.busy).toBe(false);
+  });
+
+  test('a mask change after the press still sends as the first character', async () => {
+    const w = world();
+    const react = vi.spyOn(w.fake, 'react');
+    const v = mount(w);
+    act(() => { v.out.current!.press('fire'); });
+    act(() => { v.out.setAs({ id: 'someone-else', name: 'Else' } as unknown as MyCharacter); });
+    await grace();
+    expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, 'fire');
+  });
+
+  test('unmounting with one pending sends it at once', async () => {
+    const w = world();
+    const react = vi.spyOn(w.fake, 'react');
+    const v = mount(w);
+    act(() => { v.out.current!.press('fire'); });
+    await act(async () => { v.view.unmount(); await vi.advanceTimersByTimeAsync(0); });
+    expect(react).toHaveBeenCalledTimes(1);
+    expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, 'fire');
+    expect(v.mine.get(w.theirs)).toHaveLength(1);
+    await grace(REACTION_GRACE_MS * 2);
+    expect(react).toHaveBeenCalledTimes(1);
+  });
+
+  test('unmounting sends only what this hook pressed', async () => {
+    const w = world();
+    const react = vi.spyOn(w.fake, 'react');
+    const v = mount(w);
+    v.mine.hold({ act: w.theirs, kind: 'tea', character: w.hooligan, due: Date.now() + REACTION_GRACE_MS });
+    await act(async () => { v.view.unmount(); await vi.advanceTimersByTimeAsync(0); });
+    expect(react).not.toHaveBeenCalled();
+  });
+
+  test('pagehide sends what is pending at once, with keepalive, and only once', async () => {
+    const w = world();
+    const react = vi.spyOn(w.fake, 'react');
+    const v = mount(w);
+    act(() => { v.out.current!.press('fire'); v.out.current!.press('tea'); });
+    await act(async () => { window.dispatchEvent(new Event('pagehide')); await vi.advanceTimersByTimeAsync(0); });
+    expect(react.mock.calls).toEqual([[w.theirs, w.hooligan, 'fire', { keepalive: true }], [w.theirs, w.hooligan, 'tea', { keepalive: true }]]);
+    await grace(REACTION_GRACE_MS * 2);
+    expect(react).toHaveBeenCalledTimes(2);
+    await act(async () => { window.dispatchEvent(new Event('pagehide')); await vi.advanceTimersByTimeAsync(0); });
+    expect(react).toHaveBeenCalledTimes(2);
+  });
+
+  test('removes its pagehide listener when nothing is pending', () => {
+    const w = world();
+    const add = vi.spyOn(window, 'addEventListener');
+    const remove = vi.spyOn(window, 'removeEventListener');
+    const v = mount(w);
+    const hides = (spy: typeof add) => spy.mock.calls.filter((c) => c[0] === 'pagehide').length;
+    act(() => { v.out.current!.press('fire'); });
+    expect(hides(add)).toBe(1);
+    act(() => { v.out.current!.undo('fire'); });
+    expect(hides(remove)).toBe(1);
+    add.mockRestore();
+    remove.mockRestore();
+  });
+
+  test('a refusal releases the pending kind, answers in the server\'s words, and takes the player\'s own reactions from the re-read', async () => {
     const w = world();
     /* Another tab left Tea; this screen's `mine` does not know yet. */
     w.fake.seed.react(w.me, w.hooligan, w.theirs, 'tea');
@@ -59,9 +203,11 @@ describe('useReactionSend', () => {
     w.fake.react = async () => ({ ok: false as const, error: 'you have left 3 reactions here, the most there are' });
     const v = mount(w);
     expect(v.mine.get(w.theirs)).toEqual([]);
-    let result: unknown;
-    await act(async () => { result = await v.out.current!.send('fire'); });
-    expect(result).toEqual({ refusal: 'you have left 3 reactions here, the most there are' });
+    act(() => { v.out.current!.press('fire'); });
+    expect(v.mine.pending(w.theirs)).toHaveLength(1);
+    await grace();
+    expect(v.answers).toEqual([{ kind: 'fire', character: w.hooligan, answer: { refusal: 'you have left 3 reactions here, the most there are' } }]);
+    expect(v.mine.pending(w.theirs)).toEqual([]);
     expect(mineRead).toHaveBeenCalledWith([w.theirs]);
     expect(v.mine.get(w.theirs)).toEqual([{ act: w.theirs, kind: 'tea', character: w.hooligan }]);
     expect(v.tallies.get(w.theirs)).toEqual({});
@@ -73,44 +219,75 @@ describe('useReactionSend', () => {
     w.fake.react = async () => ({ ok: false as const, error: 'the server\'s words' });
     const v = mount(w);
     v.mine.merge = () => { throw new Error('merge broke'); };
-    let result: unknown;
-    await act(async () => { result = await v.out.current!.send('tea'); });
-    expect(result).toEqual({ refusal: 'the server\'s words' });
+    act(() => { v.out.current!.press('tea'); });
+    await grace();
+    expect(v.answers).toEqual([{ kind: 'tea', character: w.hooligan, answer: { refusal: 'the server\'s words' } }]);
   });
 
-  test('answers a throw with the plain sentence, adds nothing, and the next send works', async () => {
+  test('a throw is a refusal in the plain sentence, adds nothing, releases the kind, and the next press works', async () => {
     const w = world();
     const real = w.fake.react.bind(w.fake);
     w.fake.react = async () => { throw new Error('offline'); };
     const v = mount(w);
-    let result: unknown;
-    await act(async () => { result = await v.out.current!.send('tea'); });
-    expect(result).toEqual({ refusal: 'The reaction could not be sent. Try again.' });
+    act(() => { v.out.current!.press('tea'); });
+    await grace();
+    expect(v.answers[0]!.answer).toEqual({ refusal: 'The reaction could not be sent. Try again.' });
     expect(v.mine.get(w.theirs)).toEqual([]);
+    expect(v.mine.pending(w.theirs)).toEqual([]);
     expect(v.tallies.get(w.theirs)).toEqual({});
     expect(v.out.current!.busy).toBe(false);
     w.fake.react = real;
-    await act(async () => { result = await v.out.current!.send('tea'); });
-    expect(result).toBe('sent');
+    act(() => { v.out.current!.press('tea'); });
+    await grace();
+    expect(v.answers[1]!.answer).toBe('sent');
   });
 
-  test('is busy while a send is in flight; a second send answers busy, and the fake holds one reaction', async () => {
+  test('asks for the estimate once per sent kind', async () => {
+    const w = world();
+    const v = mount(w);
+    act(() => { v.out.current!.press('fire'); v.out.current!.press('tea'); });
+    await grace();
+    expect(v.answers.map((a) => a.answer)).toEqual(['sent', 'sent']);
+    expect(landed).toHaveBeenCalledTimes(2);
+  });
+
+  test('a pending kind is undoable from another row of the Act: nothing is ever sent, pending empties and the first row\'s pagehide listener is gone', async () => {
+    const w = world();
+    const react = vi.spyOn(w.fake, 'react');
+    const a = mount(w);
+    const tallies = createTallies();
+    const second: { current: ReturnType<typeof useReactionSend> | null } = { current: null };
+    const Other = () => { second.current = useReactionSend({ act: w.theirs, as: w.as, tallies, mine: a.mine, onAnswer: () => {} }); return null; };
+    renderIn(w.fake, <Other />);
+    act(() => { a.out.current!.press('fire'); });
+    await grace(1000);
+    let undone: boolean | undefined;
+    act(() => { undone = second.current!.undo('fire'); });
+    expect(undone).toBe(true);
+    expect(a.mine.pending(w.theirs)).toEqual([]);
+    await act(async () => { window.dispatchEvent(new Event('pagehide')); await vi.advanceTimersByTimeAsync(0); });
+    await grace(REACTION_GRACE_MS * 2);
+    expect(react).not.toHaveBeenCalled();
+    expect(a.mine.get(w.theirs)).toEqual([]);
+    expect(second.current!.undo('fire')).toBe(false);
+  });
+
+  test('a kind already taken onto the queue answers false to another row\'s undo, and is sent once', async () => {
     const w = world();
     const real = w.fake.react.bind(w.fake);
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => { release = r; });
     w.fake.react = async (...args: Parameters<typeof real>) => { await gate; return real(...args); };
     const react = vi.spyOn(w.fake, 'react');
-    const v = mount(w);
-    let first: Promise<unknown> = Promise.resolve();
-    act(() => { first = v.out.current!.send('fire'); });
-    await waitFor(() => expect(v.out.current!.busy).toBe(true));
-    let second: unknown;
-    await act(async () => { second = await v.out.current!.send('tea'); });
-    expect(second).toBe('busy');
-    await act(async () => { release(); await first; });
-    expect(v.out.current!.busy).toBe(false);
+    const a = mount(w);
+    const second: { current: ReturnType<typeof useReactionSend> | null } = { current: null };
+    const Other = () => { second.current = useReactionSend({ act: w.theirs, as: w.as, tallies: createTallies(), mine: a.mine, onAnswer: () => {} }); return null; };
+    renderIn(w.fake, <Other />);
+    act(() => { a.out.current!.press('fire'); });
+    await grace();
+    expect(second.current!.undo('fire')).toBe(false);
+    await act(async () => { release(); await vi.advanceTimersByTimeAsync(0); });
     expect(react).toHaveBeenCalledTimes(1);
-    expect(v.mine.get(w.theirs)).toHaveLength(1);
+    expect(a.mine.get(w.theirs)).toHaveLength(1);
   });
 });
