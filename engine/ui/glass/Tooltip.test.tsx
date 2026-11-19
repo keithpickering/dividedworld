@@ -35,6 +35,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
 });
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   document.documentElement.removeAttribute('data-kb-motion');
   vi.restoreAllMocks();
@@ -99,7 +100,6 @@ describe('the tooltip', () => {
     anchor.getBoundingClientRect = rect({ top, left: 400, right: 430, bottom: top + 30 });
     act(() => { window.dispatchEvent(new Event('scroll')); vi.advanceTimersByTime(5); });
     expect(tip.style.top).not.toBe(before);
-    vi.unstubAllGlobals();
   });
 
   test('with no anchor element it shows and says nothing', () => {

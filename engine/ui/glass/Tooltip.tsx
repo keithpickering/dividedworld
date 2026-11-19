@@ -69,10 +69,10 @@ function Panel({ anchor, id, children }: { readonly anchor: RefObject<HTMLElemen
     let frame: number | null = null;
     const soon = () => { if (frame === null) frame = requestAnimationFrame(() => { frame = null; place(); }); };
     window.addEventListener('resize', soon);
-    window.addEventListener('scroll', soon, true);
+    window.addEventListener('scroll', soon, { capture: true, passive: true });
     return () => {
       window.removeEventListener('resize', soon);
-      window.removeEventListener('scroll', soon, true);
+      window.removeEventListener('scroll', soon, { capture: true });
       if (frame !== null) cancelAnimationFrame(frame);
     };
   }, [anchor]);
