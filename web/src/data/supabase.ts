@@ -748,12 +748,23 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     }
     return res;
   };
+  /* The last access token this client has seen; undefined until one is known. A keepalive request (a page closing) uses it without
+   * awaiting getSession: a closing page may not live to finish a token refresh, and a token near expiry is still valid. */
+  let knownToken: string | null | undefined = undefined;
   const client: SupabaseClient =
     options.client ??
     createClient(url, publishableKey, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
       global: { fetch: clientFetch },
     });
+  /* Keeps knownToken current without an await: the callback only copies the token. */
+  try {
+    client.auth.onAuthStateChange((_event, s) => {
+      knownToken = s?.access_token ?? null;
+    });
+  } catch {
+    /* A client without auth events: the token is learned from bearer() alone. */
+  }
   const avatarUrl = (key: string | null): string | null => (key ? `${url}/storage/v1/object/public/avatars/${key}` : null);
   /** An admin's trophy art, in the public `trophies` bucket (an instance's own kinds have none: their art is the instance UI's, by the kind's key). */
   const trophyArtUrl = (key: string | null): string | null => (key ? `${url}/storage/v1/object/public/trophies/${key}` : null);
@@ -843,7 +854,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /** The bearer: the session's access token, or null signed out, when the publishable key in apikey is the whole of the call's credentials. */
   async function bearer(): Promise<string | null> {
     try {
-      return (await client.auth.getSession()).data.session?.access_token ?? null;
+      const token = (await client.auth.getSession()).data.session?.access_token ?? null;
+      knownToken = token;
+      return token;
     } catch {
       return null;
     }
@@ -857,9 +870,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const offline = (): boolean => typeof navigator !== 'undefined' && navigator.onLine === false;
 
   /** One POST to an edge function. `resend` is true only for a read (the estimate), never for a write. */
-  async function edge(fn: string, body: unknown, lost: string, resend = false): Promise<Answer<Row>> {
+  async function edge(fn: string, body: unknown, lost: string, resend = false, keepalive = false): Promise<Answer<Row>> {
     if (!resend && offline()) return notSent();
-    const token = await bearer();
+    /* A keepalive call with a known token takes no await before fetch, so the request starts within the caller's task. */
+    const token = keepalive && knownToken !== undefined ? knownToken : await bearer();
     const send = async (): Promise<{ status: number; text: string } | null> => {
       try {
         const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
@@ -867,6 +881,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           method: 'POST',
           headers: { apikey: publishableKey, ...(token ? { authorization: `Bearer ${token}` } : {}), ...(isForm ? {} : { 'content-type': 'application/json' }) },
           body: isForm ? (body as FormData) : JSON.stringify(body),
+          ...(keepalive ? { keepalive: true } : {}),
         });
         return { status: res.status, text: await res.text() };
       } catch {
@@ -1140,8 +1155,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const rows = await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card_end').in('target_act_id', part).order('created_at', { ascending: true }).limit(ID_CHUNK)));
     return merged(rows, 'created_at', 'id');
   };
-  const act = async <T,>(body: Row, map: (r: Row) => T | Promise<T>): Promise<Answer<T>> => {
-    const a = await edge('act', body, LOST);
+  const act = async <T,>(body: Row, map: (r: Row) => T | Promise<T>, keepalive = false): Promise<Answer<T>> => {
+    const a = await edge('act', body, LOST, false, keepalive);
     return a.ok ? { ok: true, value: await map(a.value) } : a;
   };
   const withThread = (r: Row) => {
@@ -2240,7 +2255,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     edit: (post, character, body) => act({ action: 'edit', post, character, body }, toAct),
     spin: (origin, character, title, body, framing, at) => act({ action: 'spin', origin, character, title, body, ...framed(framing), ...(at ? { at } : {}) }, withThread),
     apologize: (move, character, title, body, framing) => act({ action: 'apologize', move, character, title, body, ...framed(framing) }, withThread),
-    react: (target, character, kind, _opts) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: isObject(r['tally']) ? r['tally'] as Tally : null })),
+    react: (target, character, kind, opts) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: isObject(r['tally']) ? r['tally'] as Tally : null }), opts?.keepalive === true),
     turn: (character, to, loudness, showFrom, showTo) =>
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),
     withdrawTurn: (character) => act({ action: 'withdrawTurn', character }, () => ({ withdrawn: true as const })),
