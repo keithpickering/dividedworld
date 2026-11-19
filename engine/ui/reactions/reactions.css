@@ -301,9 +301,10 @@ button.kb-reaction:active:not([aria-disabled='true']) {
   padding: 3px;
   pointer-events: none;
   background: conic-gradient(var(--kb-reaction-hue, var(--kb-glass-ready)) var(--kb-grace-sweep), transparent 0);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  /* A mask reads only alpha: currentColor is any opaque stop, as characters.css's fade does. */
+  -webkit-mask: linear-gradient(currentColor 0 0) content-box, linear-gradient(currentColor 0 0);
   -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mask: linear-gradient(currentColor 0 0) content-box exclude, linear-gradient(currentColor 0 0);
   animation: kb-grace-drain var(--kb-grace-ms) linear calc(var(--kb-grace-due) - var(--kb-grace-ms)) both;
 }
 
