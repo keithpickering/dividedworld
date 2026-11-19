@@ -856,7 +856,12 @@ insert into poisons (key, value) values
   ('pronouns', '{"subject": "a b", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'),
   ('pronouns', '"it"'),
   ('pronouns', 'null'),
-  ('pronouns', '[]');
+  ('pronouns', '[]'),
+  ('startingPack', '5'),
+  ('startingPack', 'true'),
+  ('startingPack', '""'),
+  ('startingPack', '[]'),
+  ('startingPack', '{}');
 
 create temp table goods (key text, value text);
 insert into goods (key, value) values
@@ -1032,7 +1037,9 @@ insert into goods (key, value) values
   ('cosmetics', '{"gear": {"wornMost": 12, "reach": 2}, "trophies": {"shownMost": 3}, "events": {"windowMinutes": 1440, "dayMost": 4, "outcomes": {"line": 9007199254740991, "gear": 1, "card": 1, "none": 0}, "gearRarity": {"common": 1, "uncommon": 1, "rare": 1, "legendary": 1}, "cardRarity": {"common": 80, "uncommon": 17, "rare": 3}}}'),
   ('cosmetics', '{"gear": {"wornMost": 12, "reach": 0.4}, "trophies": {"shownMost": 3}, "events": {"windowMinutes": 15, "dayMost": 4, "outcomes": {"line": 70, "gear": 20, "card": 10, "none": 5}, "gearRarity": {"common": 80, "uncommon": 17, "rare": 3}, "cardRarity": {"common": 80, "uncommon": 17, "rare": 3}}}'),
   ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'),
-  ('pronouns', '{"subject": "she", "object": "her", "determiner": "her", "possessive": "hers", "reflexive": "herself", "plural": false}');
+  ('pronouns', '{"subject": "she", "object": "her", "determiner": "her", "possessive": "hers", "reflexive": "herself", "plural": false}'),
+  ('startingPack', 'null'),
+  ('startingPack', '"starter"');
 
 do $$
 declare r record; refused boolean; seen integer; first_good text;

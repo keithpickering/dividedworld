@@ -74,6 +74,12 @@ export function handOrder(held: readonly HeldCard[], faces: readonly CardFace[])
   return ranks.flatMap((rank, group) => kept.filter((k) => k.rank === rank).map(({ face, held: n }): ArcCard => ({ face, held: n, group })));
 }
 
+/** The group a sealed pack stands in: before every card's, so a change of group gives the first card its gap, and the packs stand first. */
+export const PACK_GROUP = -1;
+
+/** The groups of a hand's places in order: one place for each sealed pack, first, then one for each card's kind; `arcSlots` stands them all. */
+export const placesOf = (sealed: number, cardGroups: readonly number[]): readonly number[] => [...Array<number>(sealed).fill(PACK_GROUP), ...cardGroups];
+
 /** The board's three slots, which one to three kinds use. */
 const BOARD: readonly ArcSlot[] = [
   { x: -60, y: -260, deg: -11, row: 0 },

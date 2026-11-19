@@ -56,7 +56,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const open = () => renderIn(buildWorld(), <Layers><PackOpening name="Booster" art={{ color: '#ffd93d', ink: '#1a1403', canvas: '', mark: '' }} cards={pulled} note={null} onClose={vi.fn()} /></Layers>);
+const open = () => renderIn(buildWorld(), <Layers><PackOpening hit name="Booster" art={{ color: '#ffd93d', ink: '#1a1403', canvas: '', mark: '' }} cards={pulled} note={null} onClose={vi.fn()} /></Layers>);
 const pull = (el: Element) => Number((el.closest('[data-kb-pull]') ?? el).getAttribute('data-kb-pull'));
 const onCard = (c: Call) => c.el.hasAttribute('data-kb-pull');
 

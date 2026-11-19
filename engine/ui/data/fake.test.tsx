@@ -1673,7 +1673,7 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     const slot = (await fake.machine()).find((m) => 'pack' in m.item)!;
     const opened = must(await fake.buyPack(slot));
     const log = await fake.log(null);
-    expect(log.packs).toEqual([{ pack: opened.pack, kind: 'booster', price: 300, repriced: false, contents: opened.contents, at: expect.any(String) }]);
+    expect(log.packs).toEqual([{ pack: opened.pack, kind: 'booster', price: 300, repriced: false, contents: opened.contents, at: expect.any(String), source: 'bought', openedAt: expect.any(String) }]);
     expect(log.cards.filter((c) => c.kind === 'pulled').map((c) => [c.card, c.pack, c.price])).toEqual(opened.contents.map((c) => [c, opened.pack, 0]));
     fake.seed.slot({ card: 'splat' }, { price: 150, move: { kind: 'repriceSlot', act: 'a1', ends: '2026-11-09T12:00:00Z', demand: null, progress: null, was: 100, percent: 150, hours: null } });
     must(await fake.buyCard((await fake.machine()).find((m) => 'card' in m.item)!));
@@ -1714,6 +1714,21 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     };
     expect(await ended(true)).toBe(0);
     expect(await ended(false)).toBe(1);
+  });
+
+  test('a card a fixed pack on sale holds is in an open pack, so its Pull stays when another pack goes off sale', async () => {
+    const pull = { kind: 'pullSlot' as const, act: 'no-such-act', ends: '2026-11-09T12:00:00Z', demand: null, progress: null, was: 100, percent: null, hours: null };
+    const own: Instance = {
+      ...shop, cards: [splat],
+      packs: [{ key: 'booster', pulls: [{ weights: { common: 1 } }] }, { key: 'starter', contents: ['splat'] }],
+      machine: [{ item: { card: 'splat' }, availability: 'onSale' as const, price: 100 }, { item: { pack: 'booster' }, availability: 'onSale' as const, price: 300 }, { item: { pack: 'starter' }, availability: 'onSale' as const, price: 300 }],
+    };
+    const fake = createFake({ instance: own });
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    fake.seed.slot({ card: 'splat' }, { move: pull });
+    const booster = (await fake.adminMachine()).find((m) => 'pack' in m.item && m.item.pack === 'booster')!;
+    const answer = await fake.setSlot(booster.id, 'soldOut', booster.price);
+    expect(answer.ok ? answer.value.ended : -1).toBe(0);
   });
 
   test('a purchase is refused in the server\'s words: a sold out slot, a stale price, the wrong kind of slot, and a wallet that falls short', async () => {
@@ -5824,5 +5839,93 @@ describe('cards on a spun thread', () => {
     w.fake.clock.advance(3 * DAY + MINUTE);
     expect(await w.fake.characterCounts(w.anaFace)).toEqual({ posts: 0, spins: 1, cards: 0 });
     expect(await w.fake.characterCounts(stand)).toEqual({ posts: 0, spins: 0, cards: 0 });
+  });
+});
+
+describe('the welcome pack: one sealed gift per account, opened by the player', () => {
+  const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, stack: 9, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }) };
+  const dud = { ...splat, key: 'dud', name: 'Dud' };
+  const gifted = (startingPack: string | null): Instance => ({
+    ...instance, cards: [splat, dud], settings: { ...settings, startingPack },
+    packs: [{ key: 'starter', contents: ['splat', 'dud', 'splat'] }, { key: 'booster', pulls: [{ weights: { common: 1 } }] }],
+  });
+  const world = (startingPack: string | null = 'starter') => {
+    const fake = createFake({ instance: gifted(startingPack) });
+    const ana = fake.seed.account('ana');
+    fake.signInAs(ana);
+    return { fake, ana };
+  };
+  const make = async (fake: ReturnType<typeof createFake>, name: string) => { const a = await fake.createCharacter(name, 'face', 'now', 'silent'); expect(a.ok).toBe(true); };
+
+  test('a first character grants one sealed pack, whose cards reach no hand until it is opened', async () => {
+    const { fake } = world();
+    expect(await fake.sealedPacks()).toEqual([]);
+    await make(fake, 'Ana Face');
+    expect(await fake.sealedPacks()).toEqual([{ pack: expect.any(String), kind: 'starter', at: expect.any(String) }]);
+    expect(await fake.myCards()).toEqual([]);
+    const log = await fake.log(null);
+    expect(log.packs).toEqual([{ pack: expect.any(String), kind: 'starter', price: 0, repriced: false, contents: [], at: expect.any(String), source: 'welcome', openedAt: null }]);
+    expect(log.cards).toEqual([]);
+  });
+
+  test('a second character grants nothing more, and no gift is granted where the instance names none', async () => {
+    const { fake } = world();
+    await make(fake, 'Ana Face');
+    await make(fake, 'Ana Heel');
+    expect(await fake.sealedPacks()).toHaveLength(1);
+    const none = world(null);
+    await make(none.fake, 'Ana Face');
+    expect(await none.fake.sealedPacks()).toEqual([]);
+  });
+
+  test('opening gives the cards in the pack\'s order, once, with no Aura moved, and leaves the pack in the log opened', async () => {
+    const { fake } = world();
+    await make(fake, 'Ana Face');
+    const [sealed] = await fake.sealedPacks();
+    const before = await fake.wallet();
+    const opened = await fake.openPack(sealed!.pack);
+    expect(opened).toEqual({ ok: true, value: { pack: sealed!.pack, kind: 'starter', contents: ['splat', 'dud', 'splat'] } });
+    expect(await fake.wallet()).toEqual(before);
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 2 }, { card: 'dud', held: 1 }]);
+    expect(await fake.sealedPacks()).toEqual([]);
+    const log = await fake.log(null);
+    expect(log.packs).toEqual([{ pack: sealed!.pack, kind: 'starter', price: 0, repriced: false, contents: ['splat', 'dud', 'splat'], at: expect.any(String), source: 'welcome', openedAt: expect.any(String) }]);
+    expect(log.cards.filter((c) => c.kind === 'pulled').map((c) => [c.card, c.pack, c.price])).toEqual([['splat', sealed!.pack, 0], ['dud', sealed!.pack, 0], ['splat', sealed!.pack, 0]]);
+    expect(await fake.openPack(sealed!.pack)).toEqual(refused('this pack is already open'));
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 2 }, { card: 'dud', held: 1 }]);
+  });
+
+  test('a pack that does not exist and a pack that is another account\'s are refused in the same words', async () => {
+    const { fake } = world();
+    await make(fake, 'Ana Face');
+    const [sealed] = await fake.sealedPacks();
+    const bo = fake.seed.account('bo');
+    fake.signInAs(bo);
+    expect(await fake.openPack(sealed!.pack)).toEqual(refused('there is no such pack'));
+    expect(await fake.openPack('00000000-0000-4000-8000-000000000000')).toEqual(refused('there is no such pack'));
+    expect(await fake.sealedPacks()).toEqual([]);
+    fake.signInAs(null);
+    expect(await fake.sealedPacks()).toEqual([]);
+  });
+
+  test('a startingPack that names a pull pack, or no pack at all, grants nothing', async () => {
+    for (const named of ['booster', 'ghost']) {
+      const { fake } = world(named);
+      await make(fake, 'Ana Face');
+      expect(await fake.sealedPacks()).toEqual([]);
+    }
+  });
+
+  test('a bought pack is opened at once and is never sealed', async () => {
+    const own: Instance = { ...gifted(null), machine: [{ item: { pack: 'starter' }, availability: 'onSale' as const, price: 300 }] };
+    const fake = createFake({ instance: own });
+    const ana = fake.seed.account('ana');
+    fake.seed.wallet(ana, 500);
+    fake.signInAs(ana);
+    const bought = await fake.buyPack((await fake.machine())[0]!);
+    expect(bought.ok).toBe(true);
+    expect(await fake.sealedPacks()).toEqual([]);
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 2 }, { card: 'dud', held: 1 }]);
+    expect((await fake.log(null)).packs[0]).toMatchObject({ source: 'bought', openedAt: expect.any(String) });
   });
 });

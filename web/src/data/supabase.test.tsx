@@ -1324,6 +1324,23 @@ describe('buying and playing a card', () => {
     expect(lost.log.filter((r) => r.url.pathname === '/functions/v1/act')).toHaveLength(1);
   });
 
+  it('reads the sealed packs through my_packs where unopened, newest first', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/my_packs` ? rows([{ id: PACK, pack: 'starter', bought_at: '2026-10-29T16:00:00+00:00' }]) : undefined));
+    expect(await h.api.sealedPacks()).toEqual([{ pack: PACK, kind: 'starter', at: '2026-10-29T16:00:00+00:00' }]);
+    const [req] = h.to('my_packs');
+    expect(req?.url.searchParams.get('opened_at')).toBe('is.null');
+    expect(req?.url.searchParams.get('select')).toBe('id,pack,bought_at');
+    expect(req?.url.searchParams.get('order')).toBe('bought_at.desc');
+  });
+
+  it('opens a pack through the open_pack function, and says the cards it gave and no balance; a refusal is the server\'s words', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/open_pack') ? json({ pack: PACK, kind: 'starter', contents: ['whoops', 'dud'] }) : json({}, 404)));
+    expect(await h.api.openPack(PACK)).toEqual({ ok: true, value: { pack: PACK, kind: 'starter', contents: ['whoops', 'dud'] } });
+    expect(h.to('rpc/open_pack')[0]?.body).toEqual({ pack: PACK });
+    const refused = harness((r) => (r.url.pathname.endsWith('/rpc/open_pack') ? json({ code: 'P0002', message: 'there is no such pack', hint: 'kayfabb.refusal' }, 400) : json({}, 404)));
+    expect(await refused.api.openPack(PACK)).toMatchObject({ ok: false, error: 'there is no such pack' });
+  });
+
   it('buys a pack through the act function, and reads what it gave in pull order', async () => {
     const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ pack: T, kind: 'booster', contents: ['whoops', 'stick', 'whoops', 'dud', 'trap'], balance: 162 }) : undefined));
     expect(await h.api.buyPack(await slotOf(SLOT_PACK))).toEqual({ ok: true, value: { pack: T, contents: ['whoops', 'stick', 'whoops', 'dud', 'trap'], balance: 162 } });
@@ -1913,7 +1930,11 @@ describe('the log', () => {
           { card: 'dud', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', springs: null, pack: PACK, repriced: false },
         ]);
       }
-      if (name === 'my_packs') return rows([{ id: PACK, pack: 'booster', price: 450, repriced: true, contents: ['dud', 'whoops'], bought_at: '2026-10-29T17:00:00+00:00' }]);
+      if (name === 'my_packs') {
+        return r.url.searchParams.get('opened_at') === 'is.null'
+          ? rows([{ id: PACK, pack: 'starter', bought_at: '2026-10-29T16:00:00+00:00' }])
+          : rows([{ id: PACK, pack: 'booster', price: 450, repriced: true, contents: ['dud', 'whoops'], bought_at: '2026-10-29T17:00:00+00:00', opened_at: '2026-10-29T17:00:00+00:00', source: 'bought' }, { id: B, pack: 'starter', price: 0, repriced: false, contents: null, bought_at: '2026-10-29T16:00:00+00:00', opened_at: null, source: 'welcome' }]);
+      }
       if (name === 'my_posts_played_on') {
         return r.url.searchParams.get('select') === 'play,post,saved_at'
           ? rows([{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }])
@@ -1963,7 +1984,7 @@ describe('the log', () => {
         /* A purchase keeps whether the Boss had moved its price (0139); a pulled row keeps its pack (0139), and no other row carries either. */
         { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', repriced: true },
         { card: 'dud', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', pack: PACK }],
-      packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['dud', 'whoops'], at: '2026-10-29T17:00:00+00:00' }],
+      packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['dud', 'whoops'], at: '2026-10-29T17:00:00+00:00', source: 'bought', openedAt: '2026-10-29T17:00:00+00:00' }, { pack: B, kind: 'starter', price: 0, repriced: false, contents: [], at: '2026-10-29T16:00:00+00:00', source: 'welcome', openedAt: null }],
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
       writes: [{ play: C, post: A, version: A, failed: false, opening: true, over: false, at: '2026-10-29T22:30:00+00:00' }, { play: C, post: A, version: SET, failed: true, opening: false, over: false, at: '2026-10-29T22:20:00+00:00' }],
       draws: [{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }, { act: A, kind: 'draw', play: C, post: A, character: A, mine: A, at: '2026-10-29T22:10:00+00:00', cells: 600 }],

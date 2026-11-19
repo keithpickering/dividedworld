@@ -1,22 +1,22 @@
 /**
  * The reveal after a pack is bought (docs/plans/2026-11-04-booster-packs-design.md, section 5 and its amendments of 2026-11-07; boards 02, 03 and 04 in
- * docs/research/2026-11-07-booster-packs/): a modal over the machine that shows what the purchase's answer says the pack held, five cards in pull order,
+ * docs/research/2026-11-07-booster-packs/): a modal over the machine that shows what the purchase's answer says the pack held, the pack's cards in pull order (five for a pack that rolls, six for the Starter Pack),
  * face down, turned one at a time. It shows the `cards` it is given and rolls nothing: the cards were in the hand from the moment of purchase, so a
- * reload or reduced motion never changes what was bought, and closing early loses nothing ("These five are already in your hand.").
+ * reload or reduced motion never changes what was bought, and closing early loses nothing ("These N are already in your hand.").
  *
- *  - The emptied pack is parked at the top, past the screen's edge with its foot in view, and "N OF 5 TURNED OVER" is under it.
+ *  - The emptied pack is parked at the top, past the screen's edge with its foot in view, and "N OF (the pack's own count) TURNED OVER" is under it.
  *  - The cards lie in a row at the fan's size. The card last turned is shown above the row at the sheet's size (the spotlight), so each is read large
  *    as it is turned; before the first, it holds the first card's back. Only the next card is a button.
  *  - A card is turned by a click or a tap on the next card, "Turn the next card", or Space. "Turn all" turns the rest. The hit (the last card) has the
  *    same back as the others and, once turned, a gold tag naming its rarity and card, with a glow and a few sparks.
- *  - On a phone the cards are a pile at the sheet's size: a tap on the pile or a swipe across it turns the next card, and a row of five outlines counts down.
+ *  - On a phone the cards are a pile at the sheet's size: a tap on the pile or a swipe across it turns the next card, and a row of outlines, one for each card, counts down.
  *  - A screen reader hears each card as it is turned, and the whole pack once all are, from one live region (the count line, which holds both). A face-down card is named with no word of what it is.
  *
  * Motion (the design's amendment "The reveal's motion"; plan Task 10): the beats are the presets of engine/ui/glass/motion.ts on the feel's tokens, and this
  * file holds no duration of its own. It starts nothing before its mount, which is the purchase's answer (a refusal never opens it), and reads nothing but
  * the cards it was given, which only the buyer's own stored pack says, so nobody else can watch it.
  *
- *  - Entrance: the dim (E1, `backdrop`); the pack rises from its slot's rect to the middle (E2); its crimped top tears away (E3); the five backs rise out of
+ *  - Entrance: the dim (E1, `backdrop`); the pack rises from its slot's rect to the middle (E2); its crimped top tears away (E3); the backs rise out of
  *    the opening (E4) and are dealt into the row while the emptied pack parks at the top (E5, `deal`); the head and buttons land (E6, `staggerItem`); the
  *    first back lifts into the spotlight (E7, `lift`). The cards are not drawn until the tear, and lie behind the pack's body until they clear it.
  *  - A turn: the card shown settles back into its slot as the next lifts out of its own (T1, a shared layout: one element per pull, one `layoutId` each);
@@ -29,10 +29,12 @@
  *  - Exit: the words, buttons, tag and sparks fade, the parked pack slides on up out of view, and the cards fly to the Your hand link along one arc each
  *    (`toHand`), staggered at twice the step; the link pulses and the dim lifts. The layer is `inert` from the exit's first frame and focus is back on the
  *    slot at once (`useLayer`, `useModalLayer`); only the picture is still playing.
- *  - On a phone the entrance is the 1440's (the pack rises from its slot, or from the window's edge nearest it, tears, and lets the five out, not drawn until the
- *    tear), but the deal stacks the five into the pile (`deal` toward the stage's place) and not into a row. The exit and turns below follow.
+ *  - On a phone the entrance is the 1440's (the pack rises from its slot, or from the window's edge nearest it, tears, and lets the cards out, not drawn until the
+ *    tear), but the deal stacks the cards into the pile (`deal` toward the stage's place) and not into a row. The exit and turns below follow.
  *  - On a phone the cards are a pile: a turned card is sent off toward the swipe's side (a drag follows the finger and commits past a third of the card's
- *    width) as the next is flipped, and the exit flies the five (the turned card on top and the backs under it) toward the hand link, or the window's top edge where the link is out of view.
+ *    width) as the next is flipped, and the exit flies the cards (the turned card on top and the backs under it) toward the hand link, or the window's top edge where the link is out of view.
+ *  - With `hit` false (a fixed pack, the Starter Pack's six) no card is the hit: no gold back, beat, halo, sparks or tag, and the count is the pack's own length.
+ *  - `from` is where the pack rises from (the sealed pack it was opened from); with none it rises from `returnFocusTo`'s element, the slot.
  *  - Under Off nothing moves: no wrapper, no rotation, no second piece of the pack. Each beat's end state is drawn at once.
  *
  * The modal is the glass's layer (`useModalLayer`): focus moves inside when it opens and is held there, Esc closes it, and focus goes back to where
@@ -64,6 +66,10 @@ export interface PackOpeningProps {
   readonly note: string | null;
   readonly onClose: () => void;
   readonly returnFocusTo?: () => HTMLElement | null;
+  /** Whether the last card is a hit: a pack that rolls has one, a fixed pack has none (then no card is gold, tagged, pulsed or sparked, and the count is the pack's own length). */
+  readonly hit: boolean;
+  /** Where the pack rises from: the slot or the sealed pack it was opened from. None: `returnFocusTo`'s element, the slot, as the machine opens it. */
+  readonly riseFrom?: () => HTMLElement | null;
   /** The machine's Your hand link, measured when the exit starts: the cards fly to it, and it pulses as they land. None: they fly to the window's top edge. */
   readonly handLink?: () => HTMLElement | null;
 }
@@ -94,7 +100,7 @@ const isPhone = () => document.documentElement.getAttribute('data-kb-layout') ==
 /** The pack's width in the middle of the screen, px: the hero size the pack grows to before it tears. */
 const HERO_W = 180;
 
-export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, handLink }: PackOpeningProps) {
+export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, handLink, hit: hasHit, riseFrom }: PackOpeningProps) {
   const { ui } = useKayfa();
   const feel = useFeel(ui.glass.motion);
   const count = cards.length;
@@ -115,7 +121,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
   /* The instance's mark and pictures for a back, passed to each as they are (none: the stylesheet's back). */
   const back = ui.cardBack ?? {};
   const all = turned >= count;
-  const hitShown = feel ? hitDone && all && count > 0 : all && count > 0;
+  const hitShown = hasHit && (feel ? hitDone && all && count > 0 : all && count > 0);
   const shownIndex = Math.max(0, turned - 1);
   const shown = cards[shownIndex];
   const phone = isPhone();
@@ -189,7 +195,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
 
   /** The turn of card `i`, from the moment it stands in the spotlight: the hit pulses first; the card turns; the hit's halo, sparks and tag follow. */
   async function turnOver(r: Run, f: NonNullable<ActiveFeel>, i: number) {
-    if (i === count - 1) await go(r, cardNode(i), split(beat(f)).target, split(beat(f)).transition);
+    if (hasHit && i === count - 1) await go(r, cardNode(i), split(beat(f)).target, split(beat(f)).transition);
     flipped.current.add(i);
     const t = split(turn(f));
     await go(r, flipNode(i), t.target, t.transition);
@@ -282,7 +288,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const home = rect(pack.getBoundingClientRect());
-    const slot = returnFocusTo?.()?.getBoundingClientRect();
+    const slot = (riseFrom ?? returnFocusTo)?.()?.getBoundingClientRect();
     /* The slot's rect; where the slot has scrolled out of view, the window's edge nearest it. */
     const from = slot && slot.width > 0 ? rect(slot) : { x: vw / 2 - 43, y: vh, width: 86, height: 129 };
     const edge = { x: Math.min(Math.max(from.x, 0), vw - from.width), y: Math.min(Math.max(from.y, -from.height / 2), vh - from.height / 2), width: from.width, height: from.height };
@@ -290,21 +296,22 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
       x: target.x + target.width / 2 - (home.x + home.width / 2), y: target.y + target.height / 2 - (home.y + home.height / 2), scale: target.width / widthOf,
     });
     const hero = { x: vw / 2 - HERO_W / 2, y: Math.round(vh * 0.24), width: HERO_W, height: HERO_W * 1.5 };
+    const mid = (count - 1) / 2;
     const slotAt = placeOf(edge);
     const heroAt = placeOf(hero);
     const cardNodes = Array.from({ length: count }, (_, i) => cardNode(i));
     const homes = cardNodes.map((c) => (c ? rect(c.getBoundingClientRect()) : { x: 0, y: 0, width: 0, height: 0 }));
-    const shut = (i: number) => ({ x: hero.x + hero.width / 2 + (i - 2) * 2 - (homes[i]!.x + homes[i]!.width / 2), y: hero.y + hero.height / 2 - (homes[i]!.y + homes[i]!.height / 2), scale: 1, rotate: 0 });
+    const shut = (i: number) => ({ x: hero.x + hero.width / 2 + (i - mid) * 2 - (homes[i]!.x + homes[i]!.width / 2), y: hero.y + hero.height / 2 - (homes[i]!.y + homes[i]!.height / 2), scale: 1, rotate: 0 });
     const fanned = (i: number) => ({
-      x: hero.x + hero.width / 2 + (i - 2) * 26 - (homes[i]!.x + homes[i]!.width / 2),
-      y: hero.y - hero.height * 0.29 + Math.abs(i - 2) * 10 - (homes[i]!.y + homes[i]!.height / 2),
+      x: hero.x + hero.width / 2 + (i - mid) * 26 - (homes[i]!.x + homes[i]!.width / 2),
+      y: hero.y - hero.height * 0.29 + Math.abs(i - mid) * 10 - (homes[i]!.y + homes[i]!.height / 2),
       scale: 1, rotate: tilt(i, count),
     });
     const pile = node('.kb-opening-stage')?.getBoundingClientRect();
     const pileAt = (i: number) => {
       const h = homes[i]!;
       if (!pile || pile.width === 0 || h.width === 0) return { x: 0, y: 0, scale: 1 };
-      return { x: pile.x + pile.width / 2 + (i - 2) * 2 - (h.x + h.width / 2), y: pile.y + pile.height / 2 - (h.y + h.height / 2), scale: pile.width / h.width };
+      return { x: pile.x + pile.width / 2 + (i - mid) * 2 - (h.x + h.width / 2), y: pile.y + pile.height / 2 - (h.y + h.height / 2), scale: pile.width / h.width };
     };
     /* Before the first frame: the pack at its slot, the cards shut inside it and not drawn. */
     animate(pack, { x: slotAt.x, y: slotAt.y, scale: slotAt.scale }, NOW);
@@ -312,7 +319,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
     cardNodes.forEach((c, i) => { if (c) animate(c, { ...shut(i), opacity: 0 }, NOW); });
 
     const r = begin((quiet) => {
-      /* Finished: the pack parked, its top gone, the five in the row and the first in the spotlight, the head landed. */
+      /* Finished: the pack parked, its top gone, the cards in the row and the first in the spotlight, the head landed. */
       animate(pack, { x: 0, y: 0, scale: 1 }, NOW);
       animate(packIn, { opacity: 1, filter: 'none' }, NOW);
       animate(top, { opacity: 0 }, NOW);
@@ -333,14 +340,14 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
       /* E3: the crimped top rips away along the tear, up and to the side, and is gone for good. The cards wait inside. */
       cardNodes.forEach((c) => { if (c) animate(c, { opacity: 1 }, NOW); });
       await go(r, top, { x: [0, 40, 180], y: [0, -60, -340], rotate: [0, 18, 40], opacity: [1, 1, 0] }, { ...eased(f, f.enter * 1.5), times: [0, 0.4, 1] } as Beat);
-      /* E4: the five backs rise out of the opening, fanning, the hit last; once clear of the pack they pass in front of it. */
+      /* E4: the backs rise out of the opening, fanning, the hit last; once clear of the pack they pass in front of it. */
       const d = stagger(f, count);
       await Promise.all(cardNodes.map((c, i) => go(r, c, fanned(i), landing(f, f.enter, (d[i] ?? 0) * 1.5) as Beat)));
       setFront(true);
       /* E5: the deal, from the fan into the row, as the emptied pack slides up and parks. E6: the head and the buttons land. */
       setHeadIn(true);
       const parked = go(r, pack, { x: 0, y: 0, scale: 1 }, landing(f, f.screen, (d[2] ?? 0) * 3) as Beat);
-      /* On a phone the five are dealt into the pile (the stage's place, at the sheet's size, a little askew) and not into a row. */
+      /* On a phone the cards are dealt into the pile (the stage's place, at the sheet's size, a little askew) and not into a row. */
       const dealt = cardNodes.map((c, i) => {
         const { target, transition } = split(deal(f, i, d, phoneNow ? pileAt(i) : undefined));
         return go(r, c, { ...target }, transition);
@@ -540,7 +547,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
             <span className="kb-visually-hidden">{said}</span>
           </div>
           <ol className="kb-opening-outlines" aria-hidden="true">
-            {cards.map((c, i) => <li key={`${c.key}-${i}`} data-kb-turned={i < turned ? '' : undefined} data-kb-hit={i === count - 1 ? '' : undefined} />)}
+            {cards.map((c, i) => <li key={`${c.key}-${i}`} data-kb-turned={i < turned ? '' : undefined} data-kb-hit={hasHit && i === count - 1 ? '' : undefined} />)}
           </ol>
         </div>
 
@@ -578,7 +585,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
 
         <ol className="kb-opening-row" aria-label="The pack, in the order it was pulled">
           {cards.map((c, i) => {
-            const hit = i === count - 1;
+            const hit = hasHit && i === count - 1;
             if (feel) {
               const label = i < turned ? `Card ${i + 1}: ${saidOf(c)}${i === shownIndex ? ', the card shown' : ''}` : `Card ${i + 1}, face down${hit ? ', the hit' : ''}`;
               const lone = i === turned && spot !== i;

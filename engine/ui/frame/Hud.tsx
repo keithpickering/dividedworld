@@ -75,6 +75,7 @@ import { Link, searchOf, useLocation, useNavigate, useNavigation, useRouterInter
 import { usePendingControl } from '../glass/claims.tsx';
 import { Spinner } from '../glass/Spinner.tsx';
 import { Hand } from '../cards/Hand.tsx';
+import { useSealedPacks } from '../cards/sealed.ts';
 import { Postcard } from '../cards/Postcard.tsx';
 import { facesOf, withCardEconomy } from '../cards/faces.ts';
 import { usePlay } from '../cards/play.tsx';
@@ -490,6 +491,10 @@ export function Hud() {
   };
 
   const held = player.cards.reduce((n, c) => n + c.held, 0);
+  /* The packs waiting sealed, read again whenever the cards change (an opening changes them): the hand draws them and the hand button counts them. */
+  const sealedRead = useSealedPacks(signedIn, player.cards);
+  const sealedCount = sealedRead.sealed.length;
+  const sealedWord = sealedCount === 0 ? '' : `, ${sealedCount} sealed ${sealedCount === 1 ? 'pack' : 'packs'}`;
   /*
    * On the Phone board's layout an armed card is the hand button's words, and one press puts it back
    * (the owner's answer on #80): the sheet is put away once a card is armed, so the HUD is where the
@@ -499,7 +504,7 @@ export function Hud() {
   const peeked = wide && !handOpen && armed !== null ? faces.find((f) => f.key === armed) ?? null : null;
   const modal = handOpen;
   const armedName = !wide && armed !== null ? instance.cards.find((c) => c.key === armed)?.name ?? armed : null;
-  const handName = armedName !== null ? `${playing ? 'Playing' : 'Armed'} · ${armedName}, press to put it back` : `Hand, ${held} ${held === 1 ? 'postcard' : 'postcards'}${handOpen ? ', open' : ''}`;
+  const handName = armedName !== null ? `${playing ? 'Playing' : 'Armed'} · ${armedName}, press to put it back` : `Hand, ${held} ${held === 1 ? 'postcard' : 'postcards'}${sealedWord}${handOpen ? ', open' : ''}`;
   const className = hud ? instance.classes.find((c) => c.key === hud.class)?.name ?? hud.class : null;
   const tabVars = tab ? { '--tab-a': `${tab[0]}px`, '--tab-b': `${tab[1]}px`, '--tab-c': `${tab[2]}px`, '--tab-d': `${tab[3]}px` } as CSSProperties : undefined;
   const seam = tab ? `0,${TAB + 6} ${tab[0]},${TAB + 6} ${tab[1]},6 ${tab[2]},6 ${tab[3]},${TAB + 6} 10000,${TAB + 6}` : `0,${TAB + 6} 10000,${TAB + 6}`;
@@ -512,6 +517,9 @@ export function Hud() {
           <Smoke surface="hand">
             <Hand
               held={player.cards} faces={faces} vendingHref={GLASS_NAV.vending}
+              sealed={sealedRead.sealed}
+              onOpened={async () => { await player.refresh(); await sealedRead.reload(); }}
+              handLink={() => handButton.current}
               armed={armed}
               playing={playing}
               instant={!feel}
@@ -709,7 +717,7 @@ export function Hud() {
                     >
                       {armedName !== null
                         ? <span className="kb-hud-hand-armed kb-glass-upright">{playing ? 'Playing' : 'Armed'} · {armedName}</span>
-                        : <><span className="kb-glass-upright">Hand</span> <span className="kb-hud-hand-count kb-glass-upright kb-num">{held}</span></>}
+                        : <><span className="kb-glass-upright">Hand</span> <span className="kb-hud-hand-count kb-glass-upright kb-num">{held}</span>{sealedCount > 0 && <span className="kb-hud-hand-dot" aria-hidden="true" data-kb-art />}</>}
                     </button>
                   </div>
                 </div>

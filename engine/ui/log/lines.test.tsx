@@ -5,7 +5,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import type { Act, Log, LogSettlement, MyCharacter, TurnAnnounced, WalletEvent } from '../data/api.ts';
-import { testInstance } from '../test-world.tsx';
+import { testCutter, testInstance } from '../test-world.tsx';
 import { actsFollowed, actsNamed, logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
 import { around, mergeLogs } from './useLog.ts';
 import type { KayfaApi } from '../data/api.ts';
@@ -1635,5 +1635,43 @@ describe('the discipline cards\' lines', () => {
     const f = (id: string) => ({ infraction: id, character: 'p', at, post: 'post41', postSeq: 41, thread: T, rule: null, points: 2, mod: null, takerName: null });
     expect(mergeLogs({ ...empty, falls: [f('a')] }, { ...empty, falls: [f('b')] }).falls?.map((x) => x.infraction)).toEqual(['a', 'b']);
     expect(mergeLogs({ ...empty }, { ...empty, falls: [f('b')] }).falls?.map((x) => x.infraction)).toEqual(['b']);
+  });
+});
+
+describe('a pack in the log', () => {
+  const at = '2026-11-02T10:00:00.000Z';
+  const opened = '2026-11-03T12:00:00.000Z';
+  const pw: Words = { ...words, instance: { ...testInstance, cards: [...testInstance.cards, testCutter] }, ui: { ...words.ui, packs: { starter: { name: 'Starter Pack' }, big: { name: 'Big Pack' } } as unknown as Words['ui']['packs'] } };
+  const pulled = (card: string, pack: string, when: string) => ({ card, kind: 'pulled' as const, act: null, price: 0, at: when, pack });
+  const pack = (over: Partial<Log['packs'][number]>): Log['packs'][number] => ({ pack: 'pk', kind: 'big', price: 300, repriced: false, contents: ['whoops', 'cutter'], at, source: 'bought', openedAt: at, ...over });
+  const lines = (log: Log) => logRows(data({ log, mine: [char('p', 'Pipewrench', 'face')] }), pw, 600, 'p').filter((r) => r.kind === 'pack');
+
+  test('a bought pack\'s line is unchanged', () => {
+    const [row] = lines({ ...empty, cards: [pulled('whoops', 'pk', at), pulled('cutter', 'pk', at)], packs: [pack({})] });
+    expect(row!.what).toBe('You bought a Big Pack');
+    expect(row!.details.join('')).toBe('Whoops! and Cutter. From the Shop, for 3.00.');
+    expect(row!.aura).toBe(-300);
+  });
+
+  test('a welcome pack is its own line when given, and its opening a second line listing the cards in order', () => {
+    const log = { ...empty, cards: [pulled('cutter', 'pk', opened), pulled('whoops', 'pk', opened)], packs: [pack({ kind: 'starter', price: 0, source: 'welcome', contents: ['cutter', 'whoops'], openedAt: opened })] };
+    const rows = lines(log);
+    expect(rows.map((r) => [r.what, r.at, r.aura])).toEqual([
+      ['You opened your Starter Pack', opened, 0],
+      ['Welcome gift: a sealed Starter Pack', at, 0],
+    ]);
+    expect(rows[0]!.details.join('')).toBe('Cutter and Whoops!.');
+  });
+
+  test('a welcome pack opened on a later page than its gift: pulled rows alone make the opening line, never a purchase', () => {
+    const welcome = (card: string) => ({ ...pulled(card, 'pk', opened), packKind: 'starter', packSource: 'welcome' as const });
+    const rows = lines({ ...empty, cards: [welcome('cutter'), welcome('whoops')] });
+    expect(rows.map((r) => [r.what, r.at, r.aura])).toEqual([['You opened your Starter Pack', opened, 0]]);
+    expect(rows[0]!.details.join('')).toBe('Cutter and Whoops!.');
+  });
+
+  test('a sealed welcome pack shows the gift line alone', () => {
+    const rows = lines({ ...empty, packs: [pack({ kind: 'starter', price: 0, source: 'welcome', contents: [], openedAt: null })] });
+    expect(rows.map((r) => r.what)).toEqual(['Welcome gift: a sealed Starter Pack']);
   });
 });

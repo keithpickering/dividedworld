@@ -21,7 +21,7 @@
  */
 import { isPost, type Instance, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
-import { rollPack } from '../../rules/packs.ts';
+import { isFixed, rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
 import { atOrBelow, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
@@ -49,7 +49,7 @@ import type {
   SurfaceLogRow,
   AdminReport, AdminReview, ConductLogRow, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment, PageOrigin,
+  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment, PageOrigin,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct,
@@ -501,7 +501,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
   seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
-  apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true, draw: true, wash: true,
+  apologize: true, buyCard: true, buyPack: true, openPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true, draw: true, wash: true,
   react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
   acceptConduct: true, reportPost: true, decideReport: true, decide: true,
   wardrobe: true, setOutfit: true, beltLineage: true, showTrophies: true, randomEvent: true, grantGear: true, awardTrophy: true, reverseAward: true, makeTrophy: true,
@@ -1803,7 +1803,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   interface LedgerLine { readonly character: Id; readonly reason: string; readonly amount: number; readonly params?: Readonly<Record<string, number | string>>; readonly shares: readonly LogShare[] }
   const settlements: SettlementRec[] = [];
   const walletEvents: { readonly account: Id; readonly order: number; readonly event: WalletEvent; readonly ms: number }[] = [];
-  const packLedger: { readonly account: Id; readonly order: number; readonly event: PackEvent; readonly ms: number }[] = [];
+  const packLedger: { readonly account: Id; readonly order: number; readonly ms: number; event: PackEvent }[] = [];
+  /** A welcome pack not yet opened: the cards it holds, which no read shows until it is opened (`packs.contents`, read by no one before). */
+  const sealed = new Map<Id, { readonly account: Id; readonly contents: readonly string[] }>();
   const cardLedger: { readonly account: Id; readonly order: number; readonly event: CardEvent; readonly ms: number }[] = [];
   let logOrder = 0;
   const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
@@ -1852,7 +1854,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!('pack' in r.item) || r.availability !== 'onSale') return false;
       const key = r.item.pack;
       const pack = instance.packs.find((p) => p.key === key);
-      return pack !== undefined && !(pack.leaves ?? []).includes(card) && pack.pulls.some((pull) => rarity in pull.weights);
+      if (pack === undefined) return false;
+      if (isFixed(pack)) return pack.contents.includes(card);
+      return !(pack.leaves ?? []).includes(card) && pack.pulls.some((pull) => rarity in pull.weights);
     });
   }
   /** After a pack leaves sale: ends, as reversed by the admin, every Pull whose card is then in no pack on sale. Returns how many. */
@@ -1980,9 +1984,37 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* The pack's row and one pulled row per card, in pull order, at the purchase's instant, as buy_pack writes them. */
     const made = uuid();
     const at = stamp ?? now();
-    packLedger.push({ account: account.id, order: ++logOrder, ms: at, event: { pack: made, kind: pack.key, price: seen.price, repriced: movedPrice(seen), contents, at: iso(at) } });
-    for (const card of contents) recordCard(account.id, at, { card, kind: 'pulled', act: null, pack: made, price: 0 });
+    packLedger.push({ account: account.id, order: ++logOrder, ms: at, event: { pack: made, kind: pack.key, price: seen.price, repriced: movedPrice(seen), contents, at: iso(at), source: 'bought', openedAt: iso(at) } });
+    for (const card of contents) recordCard(account.id, at, { card, kind: 'pulled', act: null, pack: made, packKind: pack.key, packSource: 'bought', price: 0 });
     return ok({ pack: made, contents, balance: left });
+  }
+
+  /** `open_pack` (0377): the caller's own sealed pack, opened. A pack that is not the caller's and one that does not exist are refused alike. */
+  function openPack(pack: Id): Answer<Unsealed> {
+    const account = me();
+    if (!account) return refuse('sign in to act');
+    const held = sealed.get(pack);
+    const entry = packLedger.find((e) => e.event.pack === pack && e.account === account.id);
+    if (!entry) return refuse('there is no such pack');
+    if (!held) return refuse('this pack is already open');
+    const at = stamp ?? now();
+    sealed.delete(pack);
+    for (const card of held.contents) account.cards[card] = (account.cards[card] ?? 0) + 1;
+    for (const card of held.contents) recordCard(account.id, at, { card, kind: 'pulled', act: null, pack, packKind: entry.event.kind, packSource: entry.event.source, price: 0 });
+    entry.event = { ...entry.event, contents: held.contents, openedAt: iso(at) };
+    return ok({ pack, kind: entry.event.kind, contents: held.contents });
+  }
+
+  /** `welcome_pack_kind` and the grant in `create_character` (0377): one sealed pack per account, of the fixed pack `startingPack` names; none for null. The SQL seed's backfill is not mirrored by `seed.character`, which bypasses `createCharacter`: a screen that wants a sealed pack makes its character with `createCharacter`. */
+  function grantWelcomePack(account: AccountRec): void {
+    const named = settings.startingPack;
+    const kind = named === null ? undefined : instance.packs.find((p) => p.key === named);
+    if (!kind || !isFixed(kind)) return;
+    if (packLedger.some((e) => e.account === account.id && e.event.source === 'welcome')) return;
+    const made = uuid();
+    const at = stamp ?? now();
+    packLedger.push({ account: account.id, order: ++logOrder, ms: at, event: { pack: made, kind: kind.key, price: 0, repriced: false, contents: [], at: iso(at), source: 'welcome', openedAt: null } });
+    sealed.set(made, { account: account.id, contents: kind.contents });
   }
 
   /** land_refusal (0357): what a card's landing on a post refuses, in plain words, or null; the same reads whatever the card is. */
@@ -2557,6 +2589,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if ([...characters.values()].some((c) => sameName(c.name, named))) return refuse('that name is taken');
     if (pronouns !== undefined && !pronounsHold(pronouns)) return refuse(PRONOUNS_REFUSAL);
     const c = addCharacter(account.id, named, cls, { debuted: timing === 'now', loudness, ...(pronouns === undefined ? {} : { pronouns: normalizePronouns(pronouns) }) });
+    grantWelcomePack(account);
     return ok({ id: c.id, name: c.name, class: cls, waiting: timing === 'tally', loudness });
   }
 
@@ -3825,6 +3858,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     surfaceActs,
     buyCard: lossy(buyCard),
     buyPack: lossy(buyPack),
+    sealedPacks: () => { const account = me(); return account ? packLedger.filter((e) => e.account === account.id && sealed.has(e.event.pack)).sort((a, b) => b.order - a.order).map((e): SealedPack => ({ pack: e.event.pack, kind: e.event.kind, at: e.event.at })) : []; },
+    openPack,
     machine: () => machine(),
     adminMachine() {
       if (!me()?.admin) throw new Error('only an admin reads the machine');

@@ -905,6 +905,20 @@ button.kb-vending-slot[aria-disabled='true'] {
   font-weight: 800;
 }
 
+/* A fixed pack's cards, in the order it gives them, in place of the odds: the odds table's rows, numbered, with no chance. */
+.kb-vending-contents {
+  margin: 0;
+  padding: 0 0 0 1.6em;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text);
+}
+
+.kb-vending-contents li {
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
+}
+
 .kb-vending-odds-who {
   display: flex;
   align-items: center;

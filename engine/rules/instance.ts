@@ -15,9 +15,9 @@ import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { POSTING_OFFICES, TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
 import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
 import { pronounProblems } from './pronouns.ts';
-import { BEYOND_POST, DISCIPLINE_KINDS, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, instant, spanMs } from './cards.ts';
+import { BEYOND_POST, DISCIPLINE_KINDS, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, instant, spanMs, withheld } from './cards.ts';
 import type { CardRules } from './cards.ts';
-import type { Pull, SlotSeed } from './packs.ts';
+import { isFixed, type Pull, type SlotSeed } from './packs.ts';
 import type { EventLine } from './cosmetics.ts';
 
 /**
@@ -299,6 +299,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
   oldVoice: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  // Whether it names a fixed pack the instance has is packProblems's check, which sees the packs.
+  startingPack: (v) => (v === null || (typeof v === 'string' && v !== '') ? null : 'the key of a fixed pack, or null for none'),
   cardWriteSettleSeconds: whole(0, 'seconds', 600),
   oldVoiceWindow: (v) => (isWhole(v, 64) && v <= 1_000_000 ? null : 'a whole number of tokens from 64 to 1,000,000'),
   oldVoiceTokenizer: (v) => (v === 'gpt2' || v === 'bytes' ? null : '"gpt2" or "bytes"'),
@@ -418,6 +420,20 @@ function packProblems(instance: Instance): string[] {
   const machine = Array.isArray(instance.machine) ? instance.machine : (out.push('the instance has no machine list'), []);
   for (const k of duplicates(packs, (p) => p.key)) out.push(`pack key "${k}" is used twice`);
   for (const pack of packs) {
+    const hasPulls = 'pulls' in pack && pack.pulls !== undefined;
+    const hasContents = 'contents' in pack && pack.contents !== undefined;
+    if (hasPulls && hasContents) { out.push(`pack "${pack.key}" has both pulls and contents; a pack is one or the other`); continue; }
+    if (!hasPulls && !hasContents) { out.push(`pack "${pack.key}" has neither pulls nor contents`); continue; }
+    if (isFixed(pack)) {
+      if (!Array.isArray(pack.contents) || !pack.contents.length) out.push(`pack "${pack.key}" has no cards in its contents`);
+      else for (const k of new Set(pack.contents)) {
+        const card = instance.cards.find((c) => c.key === k);
+        if (!card) out.push(`pack "${pack.key}" holds "${k}", and the instance has no such card`);
+        else if (withheld(card, instance.settings)) out.push(`pack "${pack.key}" holds "${k}", which this instance withholds`);
+      }
+      if ('leaves' in pack) out.push(`pack "${pack.key}" is fixed and has a leaves list; a fixed pack leaves nothing out`);
+      continue;
+    }
     if (!Array.isArray(pack.pulls) || !pack.pulls.length) { out.push(`pack "${pack.key}" has no pulls`); continue; }
     for (const k of pack.leaves ?? []) if (!instance.cards.some((c) => c.key === k)) out.push(`pack "${pack.key}" leaves out "${k}", and the instance has no such card`);
     (pack.pulls as readonly Pull[]).forEach((pull, i) => {
@@ -430,6 +446,12 @@ function packProblems(instance: Instance): string[] {
         if (!eligible) out.push(`${where} names ${rarity}, and the pack has no eligible card of that rarity`);
       }
     });
+  }
+  const start = instance.settings?.startingPack;
+  if (typeof start === 'string') {
+    const named = packs.find((p) => p.key === start);
+    if (!named) out.push(`setting "startingPack" is "${start}", and that is no pack of this instance's`);
+    else if (!isFixed(named)) out.push(`setting "startingPack" is "${start}", which is a pull pack; the starting pack is a fixed pack`);
   }
   const names = (s: SlotSeed) => ('card' in s.item ? `card "${s.item.card}"` : `pack "${s.item.pack}"`);
   for (const slot of machine) {

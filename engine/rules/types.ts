@@ -252,6 +252,8 @@ export interface Settings {
    * not sold, not offered to the pool, and a play of one already held is refused in plain words. Switching The System off may keep it.
    */
   readonly oldVoice: boolean;
+  /** The key of the fixed pack a new account opens on arrival, or null for none. It names a fixed pack of the instance's own (`Instance.packs`). */
+  readonly startingPack: string | null;
   /**
    * How long a card that writes waits after its post's last edit before its text is made again, in seconds. A tail is made for each version of the
    * post, so a run of edits would make one for each; this waits for the editing to stop, and the first text after a cast is never made to wait.
