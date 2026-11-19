@@ -447,7 +447,7 @@ export function Hand({ held, sealed: given, onOpened, handLink, faces, armed = n
             return (
               <li
                 key={key}
-                className="kb-hand-card kb-hand-pack"
+                className="kb-hand-card"
                 data-kb-card={key}
                 data-kb-pack=""
                 data-kb-row={main ? slot.row : undefined}
