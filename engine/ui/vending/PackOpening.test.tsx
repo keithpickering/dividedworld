@@ -433,6 +433,15 @@ describe('a pack with no hit (a fixed pack of six)', () => {
     expect(document.querySelector('.kb-opening-tag')).toBeNull();
   });
 
+  test('under reduced motion six cards turn with no tag or spark and read "6 of 6"', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    open({ hit: false, cards: six });
+    fireEvent.click(screen.getByRole('button', { name: 'Turn all' }));
+    expect(counter()).toHaveTextContent('6 of 6 · all in your hand');
+    expect(document.querySelector('.kb-opening-tag')).toBeNull();
+    expect(document.querySelector('.kb-opening-spark')).toBeNull();
+  });
+
   test('with a hit the five-card reveal still draws the tag and marks the last card', () => {
     open();
     fireEvent.click(screen.getByRole('button', { name: 'Turn all' }));

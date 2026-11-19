@@ -1,22 +1,22 @@
 /**
  * The reveal after a pack is bought (docs/plans/2026-11-04-booster-packs-design.md, section 5 and its amendments of 2026-11-07; boards 02, 03 and 04 in
- * docs/research/2026-11-07-booster-packs/): a modal over the machine that shows what the purchase's answer says the pack held, five cards in pull order,
+ * docs/research/2026-11-07-booster-packs/): a modal over the machine that shows what the purchase's answer says the pack held, the pack's cards in pull order (five for a pack that rolls, six for the Starter Pack),
  * face down, turned one at a time. It shows the `cards` it is given and rolls nothing: the cards were in the hand from the moment of purchase, so a
- * reload or reduced motion never changes what was bought, and closing early loses nothing ("These five are already in your hand.").
+ * reload or reduced motion never changes what was bought, and closing early loses nothing ("These N are already in your hand.").
  *
- *  - The emptied pack is parked at the top, past the screen's edge with its foot in view, and "N OF 5 TURNED OVER" is under it.
+ *  - The emptied pack is parked at the top, past the screen's edge with its foot in view, and "N OF (the pack's own count) TURNED OVER" is under it.
  *  - The cards lie in a row at the fan's size. The card last turned is shown above the row at the sheet's size (the spotlight), so each is read large
  *    as it is turned; before the first, it holds the first card's back. Only the next card is a button.
  *  - A card is turned by a click or a tap on the next card, "Turn the next card", or Space. "Turn all" turns the rest. The hit (the last card) has the
  *    same back as the others and, once turned, a gold tag naming its rarity and card, with a glow and a few sparks.
- *  - On a phone the cards are a pile at the sheet's size: a tap on the pile or a swipe across it turns the next card, and a row of five outlines counts down.
+ *  - On a phone the cards are a pile at the sheet's size: a tap on the pile or a swipe across it turns the next card, and a row of outlines, one for each card, counts down.
  *  - A screen reader hears each card as it is turned, and the whole pack once all are, from one live region (the count line, which holds both). A face-down card is named with no word of what it is.
  *
  * Motion (the design's amendment "The reveal's motion"; plan Task 10): the beats are the presets of engine/ui/glass/motion.ts on the feel's tokens, and this
  * file holds no duration of its own. It starts nothing before its mount, which is the purchase's answer (a refusal never opens it), and reads nothing but
  * the cards it was given, which only the buyer's own stored pack says, so nobody else can watch it.
  *
- *  - Entrance: the dim (E1, `backdrop`); the pack rises from its slot's rect to the middle (E2); its crimped top tears away (E3); the five backs rise out of
+ *  - Entrance: the dim (E1, `backdrop`); the pack rises from its slot's rect to the middle (E2); its crimped top tears away (E3); the backs rise out of
  *    the opening (E4) and are dealt into the row while the emptied pack parks at the top (E5, `deal`); the head and buttons land (E6, `staggerItem`); the
  *    first back lifts into the spotlight (E7, `lift`). The cards are not drawn until the tear, and lie behind the pack's body until they clear it.
  *  - A turn: the card shown settles back into its slot as the next lifts out of its own (T1, a shared layout: one element per pull, one `layoutId` each);
@@ -29,10 +29,12 @@
  *  - Exit: the words, buttons, tag and sparks fade, the parked pack slides on up out of view, and the cards fly to the Your hand link along one arc each
  *    (`toHand`), staggered at twice the step; the link pulses and the dim lifts. The layer is `inert` from the exit's first frame and focus is back on the
  *    slot at once (`useLayer`, `useModalLayer`); only the picture is still playing.
- *  - On a phone the entrance is the 1440's (the pack rises from its slot, or from the window's edge nearest it, tears, and lets the five out, not drawn until the
- *    tear), but the deal stacks the five into the pile (`deal` toward the stage's place) and not into a row. The exit and turns below follow.
+ *  - On a phone the entrance is the 1440's (the pack rises from its slot, or from the window's edge nearest it, tears, and lets the cards out, not drawn until the
+ *    tear), but the deal stacks the cards into the pile (`deal` toward the stage's place) and not into a row. The exit and turns below follow.
  *  - On a phone the cards are a pile: a turned card is sent off toward the swipe's side (a drag follows the finger and commits past a third of the card's
- *    width) as the next is flipped, and the exit flies the five (the turned card on top and the backs under it) toward the hand link, or the window's top edge where the link is out of view.
+ *    width) as the next is flipped, and the exit flies the cards (the turned card on top and the backs under it) toward the hand link, or the window's top edge where the link is out of view.
+ *  - With `hit` false (a fixed pack, the Starter Pack's six) no card is the hit: no gold back, beat, halo, sparks or tag, and the count is the pack's own length.
+ *  - `from` is where the pack rises from (the sealed pack it was opened from); with none it rises from `returnFocusTo`'s element, the slot.
  *  - Under Off nothing moves: no wrapper, no rotation, no second piece of the pack. Each beat's end state is drawn at once.
  *
  * The modal is the glass's layer (`useModalLayer`): focus moves inside when it opens and is held there, Esc closes it, and focus goes back to where
@@ -317,7 +319,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
     cardNodes.forEach((c, i) => { if (c) animate(c, { ...shut(i), opacity: 0 }, NOW); });
 
     const r = begin((quiet) => {
-      /* Finished: the pack parked, its top gone, the five in the row and the first in the spotlight, the head landed. */
+      /* Finished: the pack parked, its top gone, the cards in the row and the first in the spotlight, the head landed. */
       animate(pack, { x: 0, y: 0, scale: 1 }, NOW);
       animate(packIn, { opacity: 1, filter: 'none' }, NOW);
       animate(top, { opacity: 0 }, NOW);
@@ -338,14 +340,14 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
       /* E3: the crimped top rips away along the tear, up and to the side, and is gone for good. The cards wait inside. */
       cardNodes.forEach((c) => { if (c) animate(c, { opacity: 1 }, NOW); });
       await go(r, top, { x: [0, 40, 180], y: [0, -60, -340], rotate: [0, 18, 40], opacity: [1, 1, 0] }, { ...eased(f, f.enter * 1.5), times: [0, 0.4, 1] } as Beat);
-      /* E4: the five backs rise out of the opening, fanning, the hit last; once clear of the pack they pass in front of it. */
+      /* E4: the backs rise out of the opening, fanning, the hit last; once clear of the pack they pass in front of it. */
       const d = stagger(f, count);
       await Promise.all(cardNodes.map((c, i) => go(r, c, fanned(i), landing(f, f.enter, (d[i] ?? 0) * 1.5) as Beat)));
       setFront(true);
       /* E5: the deal, from the fan into the row, as the emptied pack slides up and parks. E6: the head and the buttons land. */
       setHeadIn(true);
       const parked = go(r, pack, { x: 0, y: 0, scale: 1 }, landing(f, f.screen, (d[2] ?? 0) * 3) as Beat);
-      /* On a phone the five are dealt into the pile (the stage's place, at the sheet's size, a little askew) and not into a row. */
+      /* On a phone the cards are dealt into the pile (the stage's place, at the sheet's size, a little askew) and not into a row. */
       const dealt = cardNodes.map((c, i) => {
         const { target, transition } = split(deal(f, i, d, phoneNow ? pileAt(i) : undefined));
         return go(r, c, { ...target }, transition);
