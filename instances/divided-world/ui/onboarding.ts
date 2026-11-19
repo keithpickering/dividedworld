@@ -3,7 +3,7 @@
  * show, and the welcome letter. Every word is a DRAFT for the owner's review in the PR (docs/plans/2026-11-02-onboarding-plan.md).
  *
  * The glass may joke where it describes the game, and it never bluffs and never reveals what is hidden (CLAUDE.md, "The fiction may lie;
- * the log never does"). The lines that will name the starting gift wait for it (the plan's Task 11), and no setting is retyped as a
+ * the log never does"). The Starter Pack's lines are this design's (docs/plans/2026-11-18-starter-pack-design.md), and no setting is retyped as a
  * number, since a retune would leave it untrue. So each line says only what the screen shows the player about their own game, nothing about anyone else's
  * mask, class or reaction. The tips are keyed by the engine's tip keys (engine/ui/tips/keys.ts); `instanceUiProblems` holds this exact.
  */
@@ -21,7 +21,7 @@ export const onboarding: OnboardingUi = Object.freeze({
     },
     'tour-hand': {
       title: 'This is your hand',
-      line: 'Cards live here, shared by all your characters. Open it, arm a card, and pick where it lands.',
+      line: 'Cards live here, shared by all your characters. A new pack waits here sealed until you open it. Open the hand, arm a card, and pick where it lands.',
     },
     grid: {
       title: 'Four corners',

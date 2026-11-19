@@ -47,7 +47,7 @@ export const defaults: Settings = deepFreeze<Settings>({
   systemEnabled: false,
   /** The instance runs a completion endpoint, so a card that writes in the old voice is sold and played. */
   oldVoice: true,
-  startingPack: null,
+  startingPack: 'starter',
   /** An edit makes a card that writes wait half a minute for the editing to stop before it writes again. */
   cardWriteSettleSeconds: 30,
   /** The old voice's model holds 1024 tokens, the prompt and the text together. */
