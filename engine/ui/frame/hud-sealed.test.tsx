@@ -86,3 +86,27 @@ describe('the Hand button and sealed packs', () => {
     expect(await screen.findByRole('button', { name: 'Hand, 3 postcards, 2 sealed packs' })).toBeInTheDocument();
   });
 });
+
+describe('the dot follows the rows', () => {
+  test('a pack opened takes the dot away, and a character made gives it, with no reload', async () => {
+    const { buildWorld, renderIn, testInstance } = await import('../test-world.tsx');
+    const { usePlayer } = await import('../player.tsx');
+    const instance = { ...testInstance, settings: { ...testInstance.settings, startingPack: 'starter' }, packs: [{ key: 'starter', contents: ['whoops'] }] } as never;
+    const fake = buildWorld(undefined, instance);
+    fake.signInAs(fake.seed.account('ana'));
+    function Make() {
+      const { refresh } = usePlayer();
+      return <button type="button" onClick={async () => { await fake.createCharacter('Ana Face', 'face', 'now', 'silent'); await refresh(); }}>make</button>;
+    }
+    renderIn(fake, <Frame><Make /></Frame>, { instance });
+    const make = await screen.findByRole('button', { name: 'make' });
+    expect(dot()).toBeNull();
+    const { fireEvent, waitFor } = await import('@testing-library/react');
+    fireEvent.click(make);
+    await waitFor(() => expect(dot()).not.toBeNull());
+    expect(screen.getByRole('button', { name: /^Hand, 0 postcards, 1 sealed pack/u })).toBeInTheDocument();
+    await fake.openPack((await fake.sealedPacks())[0]!.pack);
+    fireEvent.click(make);
+    await waitFor(() => expect(dot()).toBeNull());
+  });
+});

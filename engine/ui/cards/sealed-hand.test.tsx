@@ -4,6 +4,7 @@
  * The world is a fake with one fixed pack, named by `startingPack`, so a made character is granted one sealed.
  */
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { Instance } from '../../rules/types.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
@@ -130,7 +131,7 @@ describe('a sealed pack in the hand', () => {
     expect(screen.getByRole('heading', { name: /^Hand/u })).toHaveTextContent('· 6');
   });
 
-  test('a refused open says why in the sheet\'s line and leaves the pack where it was', async () => {
+  test('a refused open says why and reads the rows again, so a pack opened elsewhere goes with its message', async () => {
     const fake = await world();
     renderIn(fake, <Given />, { instance, packs: packs as never });
     const pack = await packButton();
@@ -139,7 +140,55 @@ describe('a sealed pack in the hand', () => {
     await act(async () => { fireEvent.click(pack); });
     expect(await screen.findByText('This pack is already open.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: /Opening/u })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Starter Pack, sealed: open it' })).toBeNull());
+  });
+
+  test('an open that throws says so plainly and leaves the pack', async () => {
+    const fake = await world();
+    renderIn(fake, <Given />, { instance, packs: packs as never });
+    const pack = await packButton();
+    fake.openPack = async () => { throw new Error('offline'); };
+    await act(async () => { fireEvent.click(pack); });
+    expect(await screen.findByText('The pack could not be opened. Try again.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Starter Pack, sealed: open it' })).toBeInTheDocument();
+  });
+
+  test('a double press makes one open', async () => {
+    const fake = await world();
+    renderIn(fake, <Given />, { instance, packs: packs as never });
+    const pack = await packButton();
+    const real = fake.openPack.bind(fake);
+    let calls = 0;
+    fake.openPack = (id) => { calls += 1; return real(id); };
+    await act(async () => { fireEvent.click(pack); fireEvent.click(pack); });
+    await screen.findByRole('dialog', { name: 'Opening a Starter Pack' });
+    expect(calls).toBe(1);
+  });
+
+  test('the refusal goes when the sheet closes', async () => {
+    const fake = await world();
+    function Sheet() {
+      const [open, setOpen] = useState(true);
+      return <><button type="button" onClick={() => setOpen(!open)}>toggle</button><Hand held={holding} faces={faces} vendingHref="/vending" onClose={() => {}} open={open} /></>;
+    }
+    renderIn(fake, <Sheet />, { instance, packs: packs as never });
+    const pack = await packButton();
+    fake.openPack = async () => ({ ok: false as const, error: 'this pack is already open' });
+    await act(async () => { fireEvent.click(pack); });
+    await screen.findByText('This pack is already open.');
+    fireEvent.click(screen.getByRole('button', { name: 'toggle' }));
+    await waitFor(() => expect(screen.queryByText('This pack is already open.')).toBeNull());
+  });
+
+  test('focus after the reveal closes is on the hand\'s first place, not the body', async () => {
+    const fake = await world();
+    draw(fake);
+    fireEvent.click(await packButton());
+    const dialog = await screen.findByRole('dialog', { name: 'Opening a Starter Pack' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Turn all' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(document.activeElement).toBe(document.querySelector('li.kb-hand-card > button')));
+    expect(document.activeElement).not.toBe(document.body);
   });
 
   test('with no sealed pack the hand is the cards alone', async () => {

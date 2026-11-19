@@ -50,7 +50,7 @@
  * Press it to play Whoops! there". With neither, pressing a card shows its rules
  * in the sheet's line.
  */
-import { useCallback, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import type { HeldCard, SealedPack } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { packHit } from '../../rules/packs.ts';
@@ -182,6 +182,8 @@ export function Hand({ held, sealed: given, onOpened, handLink, faces, armed = n
   const [opened, setOpened] = useState<Opened | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const pressed = useRef<HTMLElement | null>(null);
+  /* A refusal is not kept past the sheet: it goes when the sheet closes. */
+  useEffect(() => { if (!open) setRefusal(null); }, [open]);
   const opening$ = useRef(false);
   /* The Phone board's middle card, by key: the one the row's scroll puts nearest its middle (`pose`). */
   const [middle, setMiddle] = useState<string | null>(opening);
@@ -370,12 +372,15 @@ export function Hand({ held, sealed: given, onOpened, handLink, faces, armed = n
     try {
       const answer = await api.openPack(p.pack);
       if (!answer.ok) {
+        /* Whatever the refusal, the rows are read again: a pack opened in another tab goes with its message. */
         setRefusal(plainRefusal(answer.error));
-        if (answer.uncertain) await settleRows();
+        await settleRows();
         return;
       }
       setRefusal(null);
       setOpened({ pack: p, contents: answer.value.contents });
+    } catch {
+      setRefusal('The pack could not be opened. Try again.');
     } finally {
       opening$.current = false;
     }

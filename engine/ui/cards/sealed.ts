@@ -15,7 +15,7 @@ export function useSealedPacks(enabled = true, refreshKey: unknown = null): { re
     try { setSealed(await api.sealedPacks()); } catch { /* the last answer stands */ }
   }, [api]);
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled) { setSealed([]); return undefined; }
     let live = true;
     void Promise.resolve().then(() => api.sealedPacks()).then((s) => { if (live) setSealed(s); }, () => {});
     return () => { live = false; };
