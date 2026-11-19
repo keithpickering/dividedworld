@@ -69,7 +69,7 @@ export interface PackOpeningProps {
   /** Whether the last card is a hit: a pack that rolls has one, a fixed pack has none (then no card is gold, tagged, pulsed or sparked, and the count is the pack's own length). */
   readonly hit: boolean;
   /** Where the pack rises from: the slot or the sealed pack it was opened from. None: `returnFocusTo`'s element, the slot, as the machine opens it. */
-  readonly from?: () => HTMLElement | null;
+  readonly riseFrom?: () => HTMLElement | null;
   /** The machine's Your hand link, measured when the exit starts: the cards fly to it, and it pulses as they land. None: they fly to the window's top edge. */
   readonly handLink?: () => HTMLElement | null;
 }
@@ -100,7 +100,7 @@ const isPhone = () => document.documentElement.getAttribute('data-kb-layout') ==
 /** The pack's width in the middle of the screen, px: the hero size the pack grows to before it tears. */
 const HERO_W = 180;
 
-export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, handLink, hit: hasHit, from: riseFrom }: PackOpeningProps) {
+export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, handLink, hit: hasHit, riseFrom }: PackOpeningProps) {
   const { ui } = useKayfa();
   const feel = useFeel(ui.glass.motion);
   const count = cards.length;

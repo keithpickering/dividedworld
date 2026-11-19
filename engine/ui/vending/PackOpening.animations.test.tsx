@@ -93,13 +93,13 @@ describe('where the pack rises from', () => {
     const slotRect = vi.spyOn(slot, 'getBoundingClientRect');
     const sealedRect = vi.spyOn(sealed, 'getBoundingClientRect');
     document.documentElement.setAttribute('data-kb-motion', 'full');
-    const view = renderIn(buildWorld(), <Layers><PackOpening hit={false} name="Starter" art={packArt} cards={pulled} note={null} onClose={vi.fn()} returnFocusTo={() => slot} from={() => sealed} /></Layers>);
+    const view = renderIn(buildWorld(), <Layers><PackOpening hit={false} name="Starter" art={packArt} cards={pulled} note={null} onClose={vi.fn()} returnFocusTo={() => slot} riseFrom={() => sealed} /></Layers>);
     expect(sealedRect).toHaveBeenCalled();
     expect(slotRect).not.toHaveBeenCalled();
     view.unmount();
     sealedRect.mockClear();
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
-    renderIn(buildWorld(), <Layers><PackOpening hit={false} name="Starter" art={packArt} cards={pulled} note={null} onClose={vi.fn()} returnFocusTo={() => slot} from={() => sealed} /></Layers>);
+    renderIn(buildWorld(), <Layers><PackOpening hit={false} name="Starter" art={packArt} cards={pulled} note={null} onClose={vi.fn()} returnFocusTo={() => slot} riseFrom={() => sealed} /></Layers>);
     expect(sealedRect).not.toHaveBeenCalled();
   });
 });

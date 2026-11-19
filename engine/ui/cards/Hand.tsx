@@ -547,7 +547,7 @@ export function Hand({ held, sealed: given, onOpened, handLink, faces, armed = n
               {...(lookOf(opened.pack)?.art ? { art: lookOf(opened.pack)!.art } : {})}
               note={null}
               cards={opened.contents.map((k) => faces.find((f) => f.key === k) ?? unknownFace(k, faces[0]))}
-              from={() => pressed.current}
+              riseFrom={() => pressed.current}
               {...(handLink ? { handLink } : {})}
               returnFocusTo={() => pressed.current}
               onClose={closeReveal}
