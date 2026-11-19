@@ -794,6 +794,17 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   const bossSaid = (repriced: boolean | undefined) => (repriced ? ' The Boss had repriced it.' : '');
   /* A pack is one line: its pulled rows (one per card) with the pack row that holds its kind, its price and the cards in pull order. */
   const packsDone = new Set<Id>();
+  /* A pack the game gave is two lines of its own, not a purchase: the gift when it arrived, sealed, and its opening (the pulled rows say nothing more, so they are not a line). No Aura moves on either. */
+  const giftPacks = new Set(data.log.packs.filter((p) => p.source === 'welcome').map((p) => p.pack));
+  data.log.packs.forEach((p) => {
+    if (p.source !== 'welcome') return;
+    const packName = ui.packs[p.kind]?.name ?? 'pack';
+    rows.push({ key: `pack:gift:${p.pack}`, kind: 'pack', at: p.at, what: `Welcome gift: a sealed ${packName}`, details: [], aura: 0, wallet: null, characters: [] });
+    if (p.openedAt === null) return;
+    const names = p.contents.map(cardName);
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join('');
+    rows.push({ key: `pack:opened:${p.pack}`, kind: 'pack', at: p.openedAt, what: `You opened your ${packName}`, details: [`${list}.`], aura: 0, wallet: null, characters: [] });
+  });
   data.log.cards.forEach((e, i) => {
     /* A card an Event found is the Event's line (`cosmeticRows`), once. */
     if (e.kind === 'found') return;
@@ -821,7 +832,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       return;
     }
     if (e.kind === 'pulled') {
-      if (!e.pack || packsDone.has(e.pack)) return;
+      if (!e.pack || packsDone.has(e.pack) || giftPacks.has(e.pack)) return;
       packsDone.add(e.pack);
       const bought = data.log.packs.find((p) => p.pack === e.pack);
       /* Pull order is the pack row's; the pulled rows only say which pack, since they are read at one instant in no order of their own. */
