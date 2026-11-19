@@ -148,6 +148,10 @@ test.describe('a reaction press is held before it is sent', () => {
     await same.click();
     await expect(same).not.toHaveAttribute('data-kb-pending');
     await expect.poll(count).toBe(n);
+    /* And past the grace nothing lands: the undone reaction was never sent. */
+    await page.clock.runFor(5000);
+    await expect(same).not.toHaveAttribute('data-kb-landed');
+    await expect.poll(count).toBe(n);
 
     /* Pressed and left for the grace: the send lands, the stamp plays, and the count stays one more. */
     await same.click();
@@ -156,6 +160,7 @@ test.describe('a reaction press is held before it is sent', () => {
     await expect.poll(count).toBe(n + 1);
 
     /* Pressed again, as your own sent kind: the tooltip says it can't be taken back. */
+    /* `force` only because Playwright holds an aria-disabled control not enabled; a person's click reaches it and opens the tooltip. */
     await same.click({ force: true });
     await expect(page.getByRole('tooltip')).toContainText("Reactions can't be taken back.");
   });
