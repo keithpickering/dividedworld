@@ -30,7 +30,8 @@ import { usePlayer } from '../player.tsx';
 import { useTally, type Tallies } from '../thread/tallies.ts';
 import { REACTION_GRACE_MS, useMine, usePending, type Mine, type Pending } from './mine.ts';
 import { Picker } from './Picker.tsx';
-import { useReactionSend, type Answered, type SendAnswer } from './send.ts';
+import { useReactionSend, type Answered } from './send.ts';
+import { Tooltip } from '../glass/index.ts';
 import '../cards/kit.css';
 import '../glass/meta-tile.css';
 import './reactions.css';
@@ -38,6 +39,9 @@ import { Layers } from '../glass/layer.tsx';
 import { useStaged } from '../staged.ts';
 import { useMotionReduced } from '../appearance.ts';
 import type { Quadrant } from '../../rules/types.ts';
+
+/** The tooltip's words on a press of your own sent kind, in the row and in the picker (reaction-grace design, section 7). */
+export const CANT_TAKE_BACK = "Reactions can't be taken back.";
 
 /** A reaction's name for a reader: its key made readable ("raised-hands" is "Raised hands"). */
 export const readable = (key: string): string => {
@@ -106,6 +110,10 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   /* The row's one tab stop: the last tile focused, else React where there is one, else the first tile. */
   const [stop, setStop] = useState<string | null>(null);
   const button = useRef<HTMLButtonElement>(null);
+  /* The tooltip of an own sent tile (one open at a time): the kind it stands on, the tile it stands by, and a count that restarts its 3 seconds. */
+  const [tipKind, setTipKind] = useState<string | null>(null);
+  const [tipRestart, setTipRestart] = useState(0);
+  const tipAt = useRef<HTMLElement | null>(null);
   const row = useRef<HTMLDivElement>(null);
   const staged = useStaged();
   const theirs = author !== null && player.characters.some((c) => c.id === author);
@@ -153,7 +161,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   openNow.current = open;
   /* A picker is for the character it was opened for: another character in the HUD closes it, and what was said of a reaction as the last one goes. */
   const asId = as?.id;
-  useEffect(() => { setOpen(false); setSaid(''); }, [asId]);
+  useEffect(() => { setOpen(false); setSaid(''); setTipKind(null); }, [asId]);
   /* What an answer that comes back late is checked against: the HUD character and whether a press is possible now. */
   const live = useRef({ asId, canReact });
   live.current = { asId, canReact };
@@ -245,21 +253,20 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
     if (r === 'held') setSaid(`Reacting with ${readable(key)}${as ? ` as ${as.name}` : ''} in ${REACTION_GRACE_MS / 1000} seconds`);
     return r;
   };
-  /*
-   * The picker's bridge until the picker takes `press` itself (Task 6): a kind chosen starts its grace and answers 'sent' so the picker closes at once;
-   * what is pending counts as the player's own in it, and nothing is ever in flight to wait for.
-   */
-  const choose = async (key: string): Promise<SendAnswer> => { setRowRefusal(null); return start(key) === 'held' ? 'sent' : 'busy'; };
-  const pickerOwn = [...own, ...waiting.map((p) => ({ act, kind: p.kind, character: p.character }))];
-  const press = (key: string) => {
+  /* A pending kind's press is its undo: it sends nothing, ever. */
+  const undoKind = (key: string): void => {
     setRowRefusal(null);
-    /* A pending tile: the same press again is the undo. */
-    if (mine.pending(act).some((p) => p.kind === key)) {
-      if (staged ? stagedUndo(key) : sent.undo(key)) setSaid(`${readable(key)} undone`);
+    if (staged ? stagedUndo(key) : sent.undo(key)) setSaid(`${readable(key)} undone`);
+  };
+  const pressed = (key: string, el: HTMLElement) => {
+    setRowRefusal(null);
+    if (mine.pending(act).some((p) => p.kind === key)) { undoKind(key); return; }
+    /* Your own sent kind: it can't be taken back, and the tooltip says so; a press while it is open gives it a fresh 3 seconds. */
+    if (mine.get(act).some((o) => o.kind === key)) {
+      tipAt.current = el;
+      if (tipKind === key) setTipRestart((n) => n + 1); else setTipKind(key);
       return;
     }
-    /* Your own sent kind: nothing happens here yet (Task 6 adds the tooltip). */
-    if (mine.get(act).some((o) => o.kind === key)) return;
     start(key);
   };
 
@@ -322,15 +329,15 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
             /* A pending tile says who it will go out as (the mask it was pressed as, which a switch in the HUD does not change), and how to undo. */
             const waitsAs = waits === null || waits.character === STAGED_READER ? undefined : player.characters.find((c) => c.id === waits.character)?.name;
             const name = waits !== null ? `${r.name}${n === null ? ', yours' : ''}, sending in ${left5} ${left5 === 1 ? 'second' : 'seconds'}${waitsAs ? ` as ${waitsAs}` : ''}. Press again to undo`
-              : n === null ? `${r.name}, yours`
-              : yours ? `${r.name}, ${n}, including yours`
+              : n === null ? `${r.name}, yours${yours ? ", can't be taken back" : ''}`
+              : yours ? `${r.name}, ${n}, including yours, can't be taken back`
                 : left === 0 ? `${r.name}, ${n}. You have left all ${cap} of your reactions on this post`
                   : `${r.name}, ${n}. React${as ? ` as ${as.name}` : ''}`;
             return (
               <li key={r.key}>
                 <button
                   type="button" className="kb-meta-tile kb-reaction" {...common} aria-label={name} aria-disabled={waits === null && (yours || left === 0) ? 'true' : undefined}
-                  data-kb-stop={r.key} tabIndex={current === r.key ? 0 : -1} onClick={() => press(r.key)}
+                  data-kb-stop={r.key} tabIndex={current === r.key ? 0 : -1} onClick={(e) => pressed(r.key, e.currentTarget)}
                   data-kb-landed={stamp} data-kb-pending={waits === null ? undefined : ''}
                   data-kb-sending={waits !== null && busy && waits.due <= Date.now() ? '' : undefined} style={style}
                 >
@@ -358,13 +365,14 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
           <span className="kb-meta-tile-in"><span aria-hidden="true">+ </span>React</span>
         </button>
       )}
+      <Tooltip anchor={tipAt} open={tipKind !== null} onClose={() => setTipKind(null)} restart={tipRestart}>{CANT_TAKE_BACK}</Tooltip>
       {rowRefusal !== null && <p className="kb-notice kb-reactions-refusal" data-kb-tone="refusal" role="alert">{rowRefusal}</p>}
       {line !== null && <p className="kb-reactions-line kb-small">{line}</p>}
-      {canReact && <span role="status" className="kb-visually-hidden">{said}</span>}
+      {canReact && <span role="status" className="kb-visually-hidden" data-kb-row-status="">{said}</span>}
       <Layers>
       {open && canReact && (
         <Picker
-          subject={subject ?? `${authorName}'s post`} as={as} own={pickerOwn} local={kinds0} send={choose} busy={false} anchor={pickerAt === 'button' ? button : row}
+          subject={subject ?? `${authorName}'s post`} as={as} own={own} pending={waiting} local={kinds0} press={(k) => { setRowRefusal(null); return start(k); }} undo={undoKind} anchor={pickerAt === 'button' ? button : row}
           onClose={(refocus) => { setOpen(false); if (refocus) button.current?.focus(); }}
         />
       )}

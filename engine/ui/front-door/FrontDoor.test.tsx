@@ -67,10 +67,10 @@ describe('the front door', () => {
   test('a reaction the visitor leaves lands on their screen: its count grows and it is theirs', async () => {
     draw();
     await userEvent.click(screen.getByRole('button', { name: 'Fire, 2. React' }));
-    expect(await screen.findByRole('button', { name: 'Fire, 3, including yours' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Fire, 3, including yours, can\'t be taken back' })).toBeInTheDocument();
     await userEvent.click(screen.getAllByRole('button', { name: 'React' })[1]!);
     await userEvent.click(within(screen.getByRole('dialog', { name: /^React to Bo/ })).getByRole('button', { name: /^Tea, / }));
-    expect(await screen.findByRole('button', { name: 'Tea, 2, including yours' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Tea, 2, including yours, can\'t be taken back' })).toBeInTheDocument();
   });
 
   test('a post with a play has its mark on the date row, and the mark opens the Lens with the card\'s controls, no Spin and no Go to post', async () => {
@@ -157,7 +157,7 @@ describe('the front door', () => {
       const lens = await screen.findByRole('dialog', { name: 'Cards on this post' });
       await userEvent.click(within(lens).getByRole('button', { name: '1 play · Ann' }));
       await userEvent.click(within(lens).getByRole('button', { name: 'Fire, 1. React' }));
-      await within(lens).findByRole('button', { name: 'Fire, 2, including yours' });
+      await within(lens).findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
     });
     expect([...withDoor].filter((n) => !baseline.has(n))).toEqual([]);
   });

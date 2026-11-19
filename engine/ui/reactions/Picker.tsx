@@ -12,18 +12,20 @@
  * 540px with the phone's 16px gutters) the picker opens by its post and a quadrant's kinds are four
  * across, as the board draws them in its 900px window; in a narrower window (a phone) it is a sheet
  * above the HUD and they are two across. The overlay holds focus and Tab, closes on Esc, Close or a
- * press on the dimmed page, and returns focus to React; a choice made closes it too. The first time it opens, the grid tip is drawn over it (engine/ui/tips).
+ * press on the dimmed page, and returns focus to React; a choice made closes it at once (it starts the row's grace, which sends nothing yet).
+ * A kind the player has already sent is aria-disabled and not disabled: the arrow keys reach it, and a press shows the glass tooltip
+ * "Reactions can't be taken back." and leaves the picker open. A pending kind is drawn as theirs, and a press on it undoes it. The first time it opens, the grid tip is drawn over it (engine/ui/tips).
  */
-import { useIsPresent } from 'motion/react';
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
+import { useId, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { MyCharacter, MyReaction } from '../data/api.ts';
+import type { Pending } from './mine.ts';
 import type { Quadrant } from '../../rules/types.ts';
 import { Overlay, type Placed } from '../glass/Overlay.tsx';
 import { useTip } from '../tips/Tips.tsx';
-import { localName, readable } from './Reactions.tsx';
+import { CANT_TAKE_BACK, localName, readable } from './Reactions.tsx';
+import { Tooltip } from '../glass/index.ts';
 import type { LocalKind } from '../cards/plays.ts';
-import type { SendAnswer } from './send.ts';
 
 /** Top-left, top-right, bottom-left, bottom-right. */
 const GRID: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
@@ -67,13 +69,14 @@ interface Props {
   /** What is reacted to, as the thread names it, for the dialog's name ("Alex's post", "Mrs. Hooligan's Whoops!"). */
   readonly subject: string;
   readonly as: MyCharacter | null;
+  /** The kinds the player has sent on this post (an own kind: aria-disabled, with the tooltip on a press). */
   readonly own: readonly MyReaction[];
-  /**
-   * The row's one send (`useReactionSend`, called once per Act in Reactions.tsx, so a tile's press and the picker's share one lock),
-   * and whether it is in flight.
-   */
-  readonly send: (kind: string) => Promise<SendAnswer>;
-  readonly busy: boolean;
+  /** The kinds waiting out their grace on this screen: drawn as the player's own, and pressed they are undone. */
+  readonly pending: readonly Pending[];
+  /** The row's press (reactions.css, Reactions.tsx `start`): starts the kind's grace. The picker closes when it is held. */
+  readonly press: (kind: string) => 'held' | 'busy';
+  /** The row's undo of a pending kind. */
+  readonly undo: (kind: string) => void;
   /** The reactions cards added to this post: the live ones are listed in their quadrant's group, after the instance's (an ended one is not offered). */
   readonly local?: readonly LocalKind[];
   /** A refusal already given (a tile pressed in the row was refused): shown as the picker opens, in the alert. */
@@ -83,26 +86,26 @@ interface Props {
   readonly onClose: (refocus: boolean) => void;
 }
 
-export function Picker({ subject, as, own, local = [], send, busy, refusal: given = null, anchor, onClose }: Props) {
+export function Picker({ subject, as, own, pending, local = [], press, undo, refusal: given = null, anchor, onClose }: Props) {
   const { instance, ui, settings } = useKayfa();
   const [placed, setPlaced] = useState<Placed | null>(null);
   const grid = useRef<HTMLDivElement>(null);
   const [refusal, setRefusal] = useState<string | null>(given);
-  /* The kind a choice is waiting on: it stays pressed in until the answer comes. */
-  const [choosing, setChoosing] = useState<string | null>(null);
-  const alive = useRef(true);
+  /* The tooltip of an own sent kind: the kind it stands on, the button it stands by, and a count that restarts its 3 seconds. */
+  const [tipKind, setTipKind] = useState<string | null>(null);
+  const [tipRestart, setTipRestart] = useState(0);
+  const tipAt = useRef<HTMLElement | null>(null);
   const countId = useId();
   const describedId = useId();
   const cap = settings.reactionCap;
-  const kinds = new Set(own.map((o) => o.kind));
+  const sentKinds = new Set(own.map((o) => o.kind));
+  const waiting = new Set(pending.map((p) => p.kind));
+  /* What counts toward the cap: sent and pending alike. */
+  const kinds = new Set([...sentKinds, ...waiting]);
   const left = Math.max(0, cap - kinds.size);
-  const free = (k: string) => left > 0 && !kinds.has(k);
   const columns = KIND_COLUMNS[placed === 'sheet' ? 'sheet' : 'popover'];
   const buttons = () => [...(grid.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
 
-  /* Alive until its caller closes it: a picker that is leaving (glass/layer.tsx) is still mounted and no longer open. */
-  const present = useIsPresent();
-  useEffect(() => { if (!present) return; alive.current = true; return () => { alive.current = false; }; }, [present]);
   /* The grid tip (tips/store.ts): the first time a picker opens, over it, with the grid in the cut-out; the layer is already open, and the store lets a tip about the open layer's own contents through. */
   useTip('grid', grid, { when: left > 0 });
 
@@ -120,16 +123,17 @@ export function Picker({ subject, as, own, local = [], send, busy, refusal: give
     all[to]!.focus();
   };
 
-  const choose = async (kind: string) => {
-    /* A press dropped for one in flight leaves a refusal on screen as it is. */
-    if (busy) return;
+  const choose = (kind: string, el: HTMLElement) => {
     setRefusal(null);
-    setChoosing(kind);
-    const answer = await send(kind).finally(() => { if (alive.current) setChoosing(null); });
-    if (answer === 'busy') return;
-    if (answer !== 'sent') { setRefusal(answer.refusal); return; }
-    /* Closed meanwhile (Esc, Close): the reaction still counts, but focus is not taken back. */
-    if (alive.current) onClose(true);
+    /* Pending: the same press again is the undo, and the picker stays. */
+    if (waiting.has(kind)) { undo(kind); return; }
+    /* Sent: it can't be taken back. The tooltip says so and the picker stays; a press while it is open restarts its 3 seconds. */
+    if (sentKinds.has(kind)) {
+      tipAt.current = el;
+      if (tipKind === kind) setTipRestart((n) => n + 1); else setTipKind(kind);
+      return;
+    }
+    if (press(kind) === 'held') onClose(true);
   };
 
   let first = true;
@@ -147,7 +151,7 @@ export function Picker({ subject, as, own, local = [], send, busy, refusal: give
     >
       {/* What the dialog is described by: the count, and the mask the reaction goes out under (the HUD's, which the overlay dims). */}
       <span id={describedId} hidden>{left} of {cap} left{as ? `, reacting as ${as.name}` : ''}</span>
-      <div className="kb-picker-body" aria-busy={busy || undefined} onKeyDown={move}>
+      <div className="kb-picker-body" onKeyDown={move}>
         {left === 0 && <p className="kb-picker-none">You have left all {cap} of your reactions on this post. You cannot leave another.</p>}
         {left > 0 && (
           <div className="kb-picker-field">
@@ -164,16 +168,18 @@ export function Picker({ subject, as, own, local = [], send, busy, refusal: give
                     <div id={`${countId}-${q}`} className="kb-picker-label kb-glass-display">{ui.quadrantLabels[q]}</div>
                     <div className="kb-picker-kinds">
                       {kindsOf(q).map((r, ki) => {
-                        const ok = free(r.key);
+                        const yours = sentKinds.has(r.key);
+                        const waits = waiting.has(r.key);
+                        /* Only the cap makes a kind unavailable (disabled); the player's own are aria-disabled so they can be reached and pressed. */
+                        const ok = yours || waits || left > 0;
                         const tab = ok && first;
                         if (ok) first = false;
                         return (
                           <button
-                            key={r.key} type="button" className="kb-picker-kind" disabled={!ok} tabIndex={tab ? 0 : -1}
-                            data-kb-reaction={r.key} data-kb-row={at[qi]![ki]!.row} data-kb-col={at[qi]![ki]!.col} data-kb-own={kinds.has(r.key) ? '' : undefined}
-                            data-kb-choosing={choosing === r.key ? '' : undefined}
-                            aria-label={`${r.name}${kinds.has(r.key) ? ', your reaction' : ''}`}
-                            onClick={() => void choose(r.key)}
+                            key={r.key} type="button" className="kb-picker-kind" disabled={!ok} aria-disabled={yours ? 'true' : undefined} tabIndex={tab ? 0 : -1}
+                            data-kb-reaction={r.key} data-kb-row={at[qi]![ki]!.row} data-kb-col={at[qi]![ki]!.col} data-kb-own={yours || waits ? '' : undefined} data-kb-pending={waits ? '' : undefined}
+                            aria-label={`${r.name}${waits ? ', your reaction, sending. Press again to undo' : yours ? ', your reaction' : ''}`}
+                            onClick={(e) => choose(r.key, e.currentTarget)}
                           >
                             <span aria-hidden="true">{r.emoji}</span>
                           </button>
@@ -192,6 +198,7 @@ export function Picker({ subject, as, own, local = [], send, busy, refusal: give
         {refusal && <p className="kb-notice kb-picker-refusal" data-kb-tone="refusal" role="alert">{refusal}</p>}
         {left > 0 && <p className="kb-picker-hint">Arrow keys move, Enter reacts. Outlined: yours.</p>}
       </div>
+      <Tooltip anchor={tipAt} open={tipKind !== null} onClose={() => setTipKind(null)} restart={tipRestart}>{CANT_TAKE_BACK}</Tooltip>
     </Overlay>
   );
 }

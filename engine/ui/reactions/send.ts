@@ -28,7 +28,6 @@ import { REACTION_GRACE_MS, type Mine, type Pending } from './mine.ts';
 const taken = new WeakMap<Mine, Set<string>>();
 const takenKey = (act: Id, kind: string): string => `${act}\u0000${kind}`;
 
-export type SendAnswer = 'sent' | { readonly refusal: string } | 'busy';
 export interface Answered { readonly kind: string; readonly character: Id; readonly answer: 'sent' | { readonly refusal: string } }
 
 interface Args {

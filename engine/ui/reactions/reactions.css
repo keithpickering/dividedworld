@@ -267,24 +267,13 @@ button.kb-reaction:active:not([aria-disabled='true']) {
   100% { transform: translateY(calc(var(--kb-shard-reach) * -1)) scaleY(0.15); opacity: 0; }
 }
 
-/* A kind pressed in the picker gives at once, and stays pressed in while its answer comes. */
+/* A kind pressed in the picker gives at once; the picker then closes, and the row draws it pending. */
 .kb-picker-kind {
   transition: scale 90ms cubic-bezier(0.3, 0, 0.4, 1), background-color 120ms ease-out, border-color 120ms ease-out;
 }
 
-.kb-picker-kind:active:not(:disabled),
-.kb-picker-kind[data-kb-choosing] {
+.kb-picker-kind:active:not(:disabled):not([aria-disabled='true']) {
   scale: 0.9;
-}
-
-.kb-picker-kind[data-kb-choosing] {
-  border-color: var(--kb-glass-text-hi);
-  background: color-mix(in srgb, var(--kb-glass-text-hi) 16%, transparent);
-}
-
-.kb-picker-kind[data-kb-choosing] > span {
-  display: inline-block;
-  animation: kb-stamp-wait 520ms 140ms cubic-bezier(0.45, 0, 0.55, 1) infinite alternate both;
 }
 
 /*
@@ -544,9 +533,9 @@ button.kb-reaction:active:not([aria-disabled='true']) {
   cursor: pointer;
 }
 
-.kb-picker-kind:hover:not(:disabled) { background: color-mix(in srgb, var(--kb-glass-text-hi) 12%, transparent); }
-.kb-picker-kind:disabled { cursor: default; }
-.kb-picker-kind:disabled > span { opacity: 0.4; } /* the emoji only: a kind already left keeps its outline's contrast */
+.kb-picker-kind:hover:not(:disabled):not([aria-disabled='true']) { background: color-mix(in srgb, var(--kb-glass-text-hi) 12%, transparent); }
+.kb-picker-kind:disabled, .kb-picker-kind[aria-disabled='true'] { cursor: default; }
+.kb-picker-kind:disabled > span, .kb-picker-kind[aria-disabled='true'] > span { opacity: 0.4; } /* the emoji only: a kind already left keeps its outline's contrast */
 .kb-picker-kind[data-kb-own] { border: 2px solid var(--kb-glass-text-hi); }
 
 .kb-picker-hint,
