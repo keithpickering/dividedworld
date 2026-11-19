@@ -342,6 +342,10 @@ button.kb-reaction:active:not([aria-disabled='true']) {
 .kb-reaction-grace {
   font-variant-numeric: tabular-nums;
   color: var(--kb-glass-text-2);
+  /* Set apart from the count it follows ("2" and "4" must not read as 24). */
+  margin-inline-start: 0.4em;
+  padding-inline-start: 0.4em;
+  border-inline-start: 1px solid var(--kb-glass-text-2);
 }
 
 /* Off (the device's reduced motion, unless the player chose full motion, or the player's own Off): nothing moves; the ring and count are simply there. */

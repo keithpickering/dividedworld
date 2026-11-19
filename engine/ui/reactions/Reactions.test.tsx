@@ -1075,9 +1075,16 @@ describe('the grace', () => {
     const { w, v } = fanned();
     const react = vi.spyOn(w.fake, 'react');
     await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
-    await wait(REACTION_GRACE_MS - 1000);
-    expect(react).not.toHaveBeenCalled();
+    /* No stamp at the press, nor within its own length (1400ms) after it, and the status is still the press's. */
     expect(screen.getByRole('button', { name: PENDING_FIRE })).not.toHaveAttribute('data-kb-landed');
+    expect(document.querySelector('.kb-reaction-stamp')).toBeNull();
+    expect(status()).not.toHaveTextContent('Reacted');
+    await wait(1000);
+    expect(screen.getByRole('button', { name: /^Fire, sending/u })).not.toHaveAttribute('data-kb-landed');
+    expect(status()).not.toHaveTextContent('Reacted');
+    await wait(REACTION_GRACE_MS - 2000);
+    expect(react).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /^Fire, sending/u })).not.toHaveAttribute('data-kb-landed');
     await wait(1000);
     const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
     expect(react).toHaveBeenCalledTimes(1);
@@ -1098,6 +1105,52 @@ describe('the grace', () => {
     expect(screen.getByRole('button', { name: /^Fire, sending in 4 seconds as/u })).toBeInTheDocument();
     await wait(3000);
     expect(screen.getByRole('button', { name: /^Fire, sending in 1 second as/u })).toBeInTheDocument();
+  });
+
+  test('the ring\'s start is set once for a pending kind: the once-a-second re-renders leave --kb-grace-due as it was', async () => {
+    fanned();
+    await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    const due = () => screen.getByRole('button', { name: /^Fire, sending/u }).style.getPropertyValue('--kb-grace-due');
+    const first = due();
+    expect(first).toBe(`${REACTION_GRACE_MS}ms`);
+    await wait(1000);
+    /* The name has moved on (the row did re-render); the ring's delay must not, or a running animation would be pushed along. */
+    expect(screen.getByRole('button', { name: /^Fire, sending in 4 seconds/u })).toBeInTheDocument();
+    expect(due()).toBe(first);
+    await wait(1000);
+    expect(screen.getByRole('button', { name: /^Fire, sending in 3 seconds/u })).toBeInTheDocument();
+    expect(due()).toBe(first);
+  });
+
+  test('a row first drawn 2 seconds into the grace carries what is left, about 3000ms', async () => {
+    const { w, v } = fanned();
+    await screen.findByRole('button', { name: 'React' });
+    act(() => { v.mine.hold({ act: w.theirs, kind: 'tea', character: w.hooligan, due: Date.now() + REACTION_GRACE_MS }); });
+    await wait(2000);
+    const later = renderIn(w.fake, <Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={v.tallies} mine={v.mine} pickerAt="button" />);
+    const tile = await within(later.container).findByRole('button', { name: /^Tea, sending/u });
+    const left = Number.parseInt(tile.style.getPropertyValue('--kb-grace-due'), 10);
+    expect(left).toBeGreaterThan(2800);
+    expect(left).toBeLessThanOrEqual(3000);
+    /* The first row's own tile keeps its own start. */
+    expect(screen.getAllByRole('button', { name: /^Tea, sending/u })[0]!.style.getPropertyValue('--kb-grace-due')).toBe(`${REACTION_GRACE_MS}ms`);
+  });
+
+  test('the once-a-second re-render runs only while something is pending', async () => {
+    const { w } = fanned();
+    await screen.findByRole('button', { name: 'React' });
+    const idle = vi.getTimerCount();
+    await press(screen.getByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    /* The hook's send timer and the row's interval. */
+    expect(vi.getTimerCount()).toBeGreaterThanOrEqual(idle + 2);
+    await press(screen.getByRole('button', { name: /^Fire, sending/u }));
+    expect(vi.getTimerCount()).toBe(idle);
+    await press(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
+    await wait(REACTION_GRACE_MS);
+    await screen.findByRole('button', { name: /^Tea, 1, including yours/u });
+    await wait(1500);
+    expect(w.theirs).toBeTruthy();
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(idle + 1);
   });
 
   test('a pending kind counts toward the cap: with a cap of 2, one sent and one pending, a third tile is aria-disabled with the cap\'s words', async () => {
@@ -1202,8 +1255,8 @@ describe('the grace', () => {
       const tallies = createTallies();
       const mine = createMine();
       tallies.merge('front-door:0', { fire: 2 });
-      renderIn(fake, <StagedCtx.Provider value={true}><Reactions act="front-door:0" author="front-door:ann" authorName="Ann" tallies={tallies} mine={mine} /></StagedCtx.Provider>);
-      return { called, tallies, mine };
+      const { unmount } = renderIn(fake, <StagedCtx.Provider value={true}><Reactions act="front-door:0" author="front-door:ann" authorName="Ann" tallies={tallies} mine={mine} /></StagedCtx.Provider>);
+      return { called, tallies, mine, unmount };
     }
 
     test('a press is pending with the same grace, an undo within it changes nothing, and nothing is called', async () => {
@@ -1222,6 +1275,20 @@ describe('the grace', () => {
       expect(tallies.get('front-door:0')).toEqual({ fire: 2 });
       expect(mine.get('front-door:0')).toEqual([]);
       expect(called).toEqual([]);
+    });
+
+    test('leaving the page ends the grace early and does not end the reaction: the held kind lands locally, with no request and no stamp', async () => {
+      const { called, tallies, mine, unmount } = stagedRow();
+      await press(await screen.findByRole('button', { name: 'Fire, 2. React' }));
+      expect(mine.pending('front-door:0').map((p) => p.kind)).toEqual(['fire']);
+      unmount();
+      expect(mine.pending('front-door:0')).toEqual([]);
+      expect(mine.get('front-door:0').map((r) => r.kind)).toEqual(['fire']);
+      expect(tallies.get('front-door:0')).toEqual({ fire: 3 });
+      await wait(REACTION_GRACE_MS * 2);
+      expect(tallies.get('front-door:0')).toEqual({ fire: 3 });
+      expect(called).toEqual([]);
+      expect(landed).not.toHaveBeenCalled();
     });
 
     test('at the grace\'s end the count grows and the kind is the visitor\'s, with the stamp then, and no request or estimate', async () => {

@@ -195,12 +195,33 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
     stagedTimers.current.delete(kind);
     return mine.release(act, kind) !== null;
   };
-  /* Leaving the page ends a staged kind's grace with nothing: it is never counted, and no tile is left pending. */
+  /* Leaving ends a staged kind's grace early and does not end the reaction (design, section 5): each held kind lands locally at once, as it would at its end, with no stamp (nobody is left to see it) and no request. */
   useEffect(() => () => {
-    for (const [kind, timer] of stagedTimers.current) { clearTimeout(timer); mine.release(act, kind); }
+    for (const [kind, timer] of stagedTimers.current) {
+      clearTimeout(timer);
+      const held = mine.pending(act).find((p) => p.kind === kind);
+      if (held === undefined) continue;
+      if (mine.get(act).length >= cap || !mine.add({ act, kind, character: STAGED_READER })) { mine.release(act, kind); continue; }
+      tallies.merge(act, { [kind]: (tallies.get(act)[kind] ?? 0) + 1 });
+    }
     stagedTimers.current.clear();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the latest cap and stores are read as it unmounts
   }, [mine, act]);
   const busy = staged ? false : sent.busy;
+  /*
+   * What was left of a pending kind's grace when this row first drew it, kept for as long as the kind is pending. The ring's animation-delay is
+   * made from it (reactions.css), and a running animation keeps its start when its delay changes, so a delay recomputed at each of the
+   * once-a-second renders would push the ring along and drain it too fast. Another row of the Act, drawn partway, has its own record and so
+   * starts from the true time left.
+   */
+  const firstLefts = useRef(new WeakMap<Pending, number>());
+  const firstLeft = (p: Pending): number => {
+    const known = firstLefts.current.get(p);
+    if (known !== undefined) return known;
+    const left = Math.max(0, p.due - Date.now());
+    firstLefts.current.set(p, left);
+    return left;
+  };
   /* The seconds on a pending tile's name (and the reduced-motion text) are read at render: the row renders once a second while anything is pending. */
   const [, tick] = useState(0);
   const holding = waiting.length > 0;
@@ -283,7 +304,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
             /* A pending tile also carries its grace: the whole of it and what is left, which reactions.css starts the ring from. */
             const style = {
               ...(cls === undefined ? {} : { '--kb-reaction-hue': `var(--kb-glass-class-${cls}-large)` }),
-              ...(waits === null ? {} : { '--kb-grace-ms': `${REACTION_GRACE_MS}ms`, '--kb-grace-due': `${Math.max(0, waits.due - Date.now())}ms` }),
+              ...(waits === null ? {} : { '--kb-grace-ms': `${REACTION_GRACE_MS}ms`, '--kb-grace-due': `${firstLeft(waits)}ms` }),
             } as CSSProperties;
             const stamp = landed?.key === r.key ? (landed.after ? 'after' : 'now') : undefined;
             /* Where the totals are hidden the chip is the reader's own kind with no number; its name says so, as an own kind's does. */
