@@ -5908,6 +5908,14 @@ describe('the welcome pack: one sealed gift per account, opened by the player', 
     expect(await fake.sealedPacks()).toEqual([]);
   });
 
+  test('a startingPack that names a pull pack, or no pack at all, grants nothing', async () => {
+    for (const named of ['booster', 'ghost']) {
+      const { fake } = world(named);
+      await make(fake, 'Ana Face');
+      expect(await fake.sealedPacks()).toEqual([]);
+    }
+  });
+
   test('a bought pack is opened at once and is never sealed', async () => {
     const own: Instance = { ...gifted(null), machine: [{ item: { pack: 'starter' }, availability: 'onSale' as const, price: 300 }] };
     const fake = createFake({ instance: own });

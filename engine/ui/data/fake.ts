@@ -1995,7 +1995,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!account) return refuse('sign in to act');
     const held = sealed.get(pack);
     const entry = packLedger.find((e) => e.event.pack === pack && e.account === account.id);
-    if (!entry || (!held && entry.event.openedAt === null)) return refuse('there is no such pack');
+    if (!entry) return refuse('there is no such pack');
     if (!held) return refuse('this pack is already open');
     const at = stamp ?? now();
     sealed.delete(pack);
@@ -2005,7 +2005,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ pack, kind: entry.event.kind, contents: held.contents });
   }
 
-  /** `welcome_pack_kind` and the grant in `create_character` (0377): one sealed pack per account, of the fixed pack `startingPack` names; none for null. */
+  /** `welcome_pack_kind` and the grant in `create_character` (0377): one sealed pack per account, of the fixed pack `startingPack` names; none for null. The SQL seed's backfill is not mirrored by `seed.character`, which bypasses `createCharacter`: a screen that wants a sealed pack makes its character with `createCharacter`. */
   function grantWelcomePack(account: AccountRec): void {
     const named = settings.startingPack;
     const kind = named === null ? undefined : instance.packs.find((p) => p.key === named);
