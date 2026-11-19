@@ -43,7 +43,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { animate, motion } from 'motion/react';
-import { isFixed, type PullPack } from '../../rules/packs.ts';
+import { isFixed, packHit, type PackRules } from '../../rules/packs.ts';
 import { motionReduced } from '../appearance.ts';
 import { Postcard, PostcardBack, cardLabel } from '../cards/Postcard.tsx';
 import { facesOf, orbs, plainRefusal, withCardEconomy, type CardFace } from '../cards/faces.ts';
@@ -66,9 +66,9 @@ import { CalmRegion } from '../glass/Calm.tsx';
 import { Layers } from '../glass/layer.tsx';
 import { deliveryMs, landing, pulse, toHand, useFeel, type ActiveFeel, type Rect } from '../glass/motion.ts';
 import { PackArt } from './PackArt.tsx';
-import { PackOdds } from './PackOdds.tsx';
+import { PackContents, PackOdds } from './PackOdds.tsx';
 import { PackOpening } from './PackOpening.tsx';
-import { oddsGroups, packCards, packLine, moveWords, priceNote, soldWhy, unsoldOnTheirOwn } from './machine-words.ts';
+import { fixedNames, oddsGroups, packCards, packLine, packSize, moveWords, priceNote, soldWhy, unsoldOnTheirOwn } from './machine-words.ts';
 
 /* The refusal's words are the cards' (the play form says them too); the Vending Machine's tests and callers still reach them here. */
 export { plainRefusal };
@@ -98,7 +98,7 @@ interface Item {
   /** The admin's price, where a Boss move has changed it: it is shown struck through beside the new one. */
   readonly was: number | null;
   readonly face: CardFace | null;
-  readonly pack: PullPack | null;
+  readonly pack: PackRules | null;
   readonly look: PackLook | null;
   readonly sold: boolean;
   readonly color: string;
@@ -106,7 +106,7 @@ interface Item {
 }
 
 /** What a button says of what the slot sells, after its price: "common Cast", "a pack of 5 postcards". */
-const whatOf = (it: Item) => (it.pack ? `a pack of ${it.pack.pulls.length} postcards` : `${it.face!.rarity} ${it.face!.kind}`);
+const whatOf = (it: Item) => (it.pack ? `a pack of ${packSize(it.pack)} postcards` : `${it.face!.rarity} ${it.face!.kind}`);
 
 /** What a sold out slot's info says in place of a price to buy: the slot's own words (`soldWhy`), as a sentence ("Sold out", "Pulled by the Boss until Nov 9"). */
 const soldSaid = (move: SlotMove | null): string => { const why = soldWhy(move); return `${why.charAt(0).toUpperCase()}${why.slice(1)}`; };
@@ -198,6 +198,8 @@ interface Opening {
   readonly art: PackArtLook | undefined;
   readonly cards: readonly string[];
   readonly note: string | null;
+  /** Whether the pack's last card is a hit (`packHit`). */
+  readonly hit: boolean;
 }
 
 /** What the screen holds, with the account it was held for. */
@@ -224,11 +226,11 @@ export function pick(list: readonly string[] | undefined, fallback: string, rand
 /** The art of a slot's item: a card's face at the slot's size, or the pack's foil. */
 function SlotArt({ it }: { readonly it: Item }) {
   if (it.face) return <Postcard face={it.face} size="slot" />;
-  return <PackArt name={it.name} count={it.pack!.pulls.length} {...(it.look?.art ? { art: it.look.art } : {})} />;
+  return <PackArt name={it.name} count={packSize(it.pack!)} {...(it.look?.art ? { art: it.look.art } : {})} />;
 }
 
-/** "In this pack": five small backs, all the same, and what opening does. */
-function InPack({ pack, count, line, back }: { readonly pack: PullPack; readonly count: number; readonly line: string; readonly back: InstanceUi['cardBack'] }) {
+/** "In this pack": the pack's small backs, all the same, and what opening does. */
+function InPack({ pack, count, line, back }: { readonly pack: PackRules; readonly count: number; readonly line: string; readonly back: InstanceUi['cardBack'] }) {
   return (
     <section className="kb-vending-inpack" aria-label="In this pack">
       <p className="kb-vending-inpack-head" aria-hidden="true" data-kb-art />
@@ -379,8 +381,7 @@ export function Vending() {
     }
     const key = slot.item.pack;
     const pack = instance.packs.find((p) => p.key === key);
-    // Fixed packs in the machine land with the about panel (docs/plans/2026-11-18-starter-pack-plan.md, Task 5).
-    if (!pack || isFixed(pack)) return [];
+    if (!pack) return [];
     const look = ui.packs?.[key] ?? null;
     return [{ slot, name: look?.name ?? key, price: slot.price, was, face: null, pack, look, sold, color: look?.art.color ?? 'var(--kb-glass-ready)', ink: look?.art.ink ?? 'var(--kb-glass-ink-ready)' }];
   }).map((it, i): Item => ({ ...it, code: codeOf(i) })), [slots, cardFaces, instance.packs, ui.packs]);
@@ -441,7 +442,7 @@ export function Vending() {
   const shortWords = picked ? `${picked.name} costs ${orbs(picked.price)} and your wallet holds ${orbs(balance)}. Only solid Aura can be spent; the ghost estimate cannot.` : '';
   const after = picked && !short ? balance - picked.price : null;
   /* How many cards buying the picked slot puts in the hand. */
-  const arrives = picked?.pack ? picked.pack.pulls.length : 1;
+  const arrives = picked?.pack ? packSize(picked.pack) : 1;
 
   /* The drain, once played, is forgotten, so a later change of the wallet starts from where it stands. */
   useEffect(() => {
@@ -477,7 +478,8 @@ export function Vending() {
     }
     /* A purchase that landed is read again too: another slot may have changed while this one was bought. */
     void look();
-    if (picked.pack && 'contents' in bought.value) {
+    const bou = picked.pack;
+    if (bou && 'contents' in bought.value) {
       const { contents, balance: left } = bought.value;
       const text = `${picked.name} opened: its ${contents.length} cards are in your hand. ${orbs(left)} is left, solid.`;
       /* The reveal returns focus to the slot it was bought from, so the slot has it as the reveal opens. */
@@ -485,10 +487,10 @@ export function Vending() {
       /* A card the pack gave that the machine does not sell on its own: said once the hit is turned, plainly. */
       const hitKey = contents[contents.length - 1];
       const alone = (key: string) => slots?.some((s) => 'card' in s.item && s.item.card === key && s.availability === 'onSale') ?? false;
-      const hit = hitKey === undefined ? undefined : cardFaces.find((f) => f.key === hitKey);
+      const hit = hitKey === undefined || !packHit(bou) ? undefined : cardFaces.find((f) => f.key === hitKey);
       const note = hit && !alone(hit.key) ? `${hit.name} isn't sold on its own; this is one of the ways to get it.` : null;
       change(account, () => ({
-        busy: false, outcome: { tone: 'done', text }, opening: { slot: picked.slot.id, name: picked.name, art: picked.look?.art, cards: contents, note },
+        busy: false, outcome: { tone: 'done', text }, opening: { slot: picked.slot.id, name: picked.name, art: picked.look?.art, cards: contents, note, hit: packHit(bou) },
         ...(motionReduced() ? {} : { drainFrom: before }),
       }));
       return;
@@ -520,17 +522,17 @@ export function Vending() {
 
   /* The pack picked: its odds beside the machine, and what is in it by the price. */
   const pack = picked?.pack ?? null;
-  const packOf = (it: Item | null) => (it?.pack ? { odds: oddsGroups(it.pack, instance.cards, instance.settings), line: packLine(it.pack, instance.cards, instance.settings) } : null);
+  const packOf = (it: Item | null) => (it?.pack ? { odds: isFixed(it.pack) ? [] : oddsGroups(it.pack, instance.cards, instance.settings), line: packLine(it.pack, instance.cards, instance.settings) } : null);
   const picks = packOf(picked);
   /* The cards a pack can give that the machine is not selling now: "Main Event isn't sold on its own." */
-  const unsold = (p: PullPack) => unsoldOnTheirOwn(packCards(p, instance.cards, instance.settings).filter((k) => !slots?.some((s) => 'card' in s.item && s.item.card === k)).map((k) => cardFaces.find((f) => f.key === k)?.name ?? k));
+  const unsold = (p: PackRules) => isFixed(p) ? null : unsoldOnTheirOwn(packCards(p, instance.cards, instance.settings).filter((k) => !slots?.some((s) => 'card' in s.item && s.item.card === k)).map((k) => cardFaces.find((f) => f.key === k)?.name ?? k));
   /* Every Boss move in force, in plain words, in the machine's order. */
   const moves = items.flatMap((it) => {
     const move = it.slot.move;
     if (!move) return [];
     const board = move.demand && typeof move.demand.params['board'] === 'string' ? boards.find((b) => b.id === move.demand!.params['board'])?.name ?? null : null;
     const key = it.face?.key;
-    const carrier = key ? items.find((o) => o.pack && !o.sold && packCards(o.pack, instance.cards, instance.settings).includes(key)) : undefined;
+    const carrier = key ? items.find((o) => o.pack && !isFixed(o.pack) && !o.sold && packCards(o.pack, instance.cards, instance.settings).includes(key)) : undefined;
     return [{ id: it.slot.id, ...moveWords(move, { name: it.name, price: it.price, board, inPacks: move.kind === 'pullSlot' && carrier !== undefined, packsWord: `${carrier?.name ?? 'packs'}s` }) }];
   });
   const emptied = status === 'ready' ? slotsFor(items.length) - items.length : 0;
@@ -581,15 +583,19 @@ export function Vending() {
         feel={feel} hand={() => handLinkEl.current} cards={cardFaces}
         onLanded={(id) => { change(account, (m) => ({ drop: m.drop && m.drop.flying.length > 1 ? { ...m.drop, flying: m.drop.flying.filter((f) => f.id !== id) } : null })); if (feel && handLinkEl.current) animate(handLinkEl.current, pulse(feel).animate as never); }}
         retry={() => void look()} slotRef={slotRef}
-        inPack={pack && picks ? <InPack pack={pack} count={pack.pulls.length} line={picks.line} back={ui.cardBack} /> : null}
+        inPack={pack && picks ? <InPack pack={pack} count={packSize(pack)} line={picks.line} back={ui.cardBack} /> : null}
       />
 
       {/* The column's words stand in one calm, as an aside's do (the smoke is taken away under them). */}
       <CalmRegion className="kb-vending-right">
         {pack && picked && picks && (
           <aside className="kb-vending-about-pack" aria-label={`About the ${picked.name}`}>
-            <PackOdds name={picked.name} groups={picks.odds} />
-            <p className="kb-vending-note">{unsold(pack) ? `${unsold(pack)} ` : ''}Within a rarity, every card is equally likely.</p>
+            {isFixed(pack) ? <PackContents name={picked.name} cards={fixedNames(pack, instance.cards)} /> : (
+              <>
+                <PackOdds name={picked.name} groups={picks.odds} />
+                <p className="kb-vending-note">{unsold(pack) ? `${unsold(pack)} ` : ''}Within a rarity, every card is equally likely.</p>
+              </>
+            )}
           </aside>
         )}
         {moves.length > 0 && (
@@ -629,8 +635,12 @@ export function Vending() {
             <div className="kb-vending-about-body">
               <p className="kb-vending-about-price kb-num">{orbs(aboutItem.price)}</p>
               <p className="kb-vending-about-says">{packLine(aboutItem.pack, instance.cards, instance.settings)}</p>
-              <PackOdds name={aboutItem.name} groups={oddsGroups(aboutItem.pack, instance.cards, instance.settings)} />
-              <p className="kb-vending-about-says">{unsold(aboutItem.pack) ? `${unsold(aboutItem.pack)} ` : ''}Within a rarity, every card is equally likely.</p>
+              {isFixed(aboutItem.pack) ? <PackContents name={aboutItem.name} cards={fixedNames(aboutItem.pack, instance.cards)} /> : (
+                <>
+                  <PackOdds name={aboutItem.name} groups={oddsGroups(aboutItem.pack, instance.cards, instance.settings)} />
+                  <p className="kb-vending-about-says">{unsold(aboutItem.pack) ? `${unsold(aboutItem.pack)} ` : ''}Within a rarity, every card is equally likely.</p>
+                </>
+              )}
             </div>
           ) : null}
         </Overlay>
@@ -638,7 +648,7 @@ export function Vending() {
       {opening && (
         <PackOpening
           handLink={() => handLinkEl.current}
-          name={opening.name} {...(opening.art ? { art: opening.art } : {})} note={opening.note}
+          hit={opening.hit} name={opening.name} {...(opening.art ? { art: opening.art } : {})} note={opening.note}
           cards={opening.cards.map((k) => cardFaces.find((f) => f.key === k) ?? unknownFace(k, cardFaces[0]))}
           onClose={() => change(account, () => ({ opening: null }))}
           returnFocusTo={() => slotButtons.current.get(opening.slot) ?? null}

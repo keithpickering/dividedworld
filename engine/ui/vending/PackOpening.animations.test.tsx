@@ -58,7 +58,7 @@ beforeEach(() => { started.length = 0; });
 afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); document.documentElement.removeAttribute('data-kb-motion-feel'); vi.restoreAllMocks(); });
 
 function open() {
-  return renderIn(buildWorld(), <Layers><PackOpening name="Booster" art={packArt} cards={pulled} note={null} onClose={vi.fn()} /></Layers>);
+  return renderIn(buildWorld(), <Layers><PackOpening hit name="Booster" art={packArt} cards={pulled} note={null} onClose={vi.fn()} /></Layers>);
 }
 
 const inputs = () => {
@@ -83,5 +83,23 @@ describe('animations running', () => {
     expect(document.getAnimations()).toEqual([]);
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(document.getAnimations()).toEqual([]);
+  });
+});
+
+describe('where the pack rises from', () => {
+  test('under a feel the entrance measures `from` and not the slot; under Off neither is measured', () => {
+    const slot = document.createElement('button');
+    const sealed = document.createElement('button');
+    const slotRect = vi.spyOn(slot, 'getBoundingClientRect');
+    const sealedRect = vi.spyOn(sealed, 'getBoundingClientRect');
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const view = renderIn(buildWorld(), <Layers><PackOpening hit={false} name="Starter" art={packArt} cards={pulled} note={null} onClose={vi.fn()} returnFocusTo={() => slot} from={() => sealed} /></Layers>);
+    expect(sealedRect).toHaveBeenCalled();
+    expect(slotRect).not.toHaveBeenCalled();
+    view.unmount();
+    sealedRect.mockClear();
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    renderIn(buildWorld(), <Layers><PackOpening hit={false} name="Starter" art={packArt} cards={pulled} note={null} onClose={vi.fn()} returnFocusTo={() => slot} from={() => sealed} /></Layers>);
+    expect(sealedRect).not.toHaveBeenCalled();
   });
 });

@@ -64,6 +64,10 @@ export interface PackOpeningProps {
   readonly note: string | null;
   readonly onClose: () => void;
   readonly returnFocusTo?: () => HTMLElement | null;
+  /** Whether the last card is a hit: a pack that rolls has one, a fixed pack has none (then no card is gold, tagged, pulsed or sparked, and the count is the pack's own length). */
+  readonly hit: boolean;
+  /** Where the pack rises from: the slot or the sealed pack it was opened from. None: `returnFocusTo`'s element, the slot, as the machine opens it. */
+  readonly from?: () => HTMLElement | null;
   /** The machine's Your hand link, measured when the exit starts: the cards fly to it, and it pulses as they land. None: they fly to the window's top edge. */
   readonly handLink?: () => HTMLElement | null;
 }
@@ -94,7 +98,7 @@ const isPhone = () => document.documentElement.getAttribute('data-kb-layout') ==
 /** The pack's width in the middle of the screen, px: the hero size the pack grows to before it tears. */
 const HERO_W = 180;
 
-export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, handLink }: PackOpeningProps) {
+export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, handLink, hit: hasHit, from: riseFrom }: PackOpeningProps) {
   const { ui } = useKayfa();
   const feel = useFeel(ui.glass.motion);
   const count = cards.length;
@@ -115,7 +119,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
   /* The instance's mark and pictures for a back, passed to each as they are (none: the stylesheet's back). */
   const back = ui.cardBack ?? {};
   const all = turned >= count;
-  const hitShown = feel ? hitDone && all && count > 0 : all && count > 0;
+  const hitShown = hasHit && (feel ? hitDone && all && count > 0 : all && count > 0);
   const shownIndex = Math.max(0, turned - 1);
   const shown = cards[shownIndex];
   const phone = isPhone();
@@ -189,7 +193,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
 
   /** The turn of card `i`, from the moment it stands in the spotlight: the hit pulses first; the card turns; the hit's halo, sparks and tag follow. */
   async function turnOver(r: Run, f: NonNullable<ActiveFeel>, i: number) {
-    if (i === count - 1) await go(r, cardNode(i), split(beat(f)).target, split(beat(f)).transition);
+    if (hasHit && i === count - 1) await go(r, cardNode(i), split(beat(f)).target, split(beat(f)).transition);
     flipped.current.add(i);
     const t = split(turn(f));
     await go(r, flipNode(i), t.target, t.transition);
@@ -282,7 +286,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const home = rect(pack.getBoundingClientRect());
-    const slot = returnFocusTo?.()?.getBoundingClientRect();
+    const slot = (riseFrom ?? returnFocusTo)?.()?.getBoundingClientRect();
     /* The slot's rect; where the slot has scrolled out of view, the window's edge nearest it. */
     const from = slot && slot.width > 0 ? rect(slot) : { x: vw / 2 - 43, y: vh, width: 86, height: 129 };
     const edge = { x: Math.min(Math.max(from.x, 0), vw - from.width), y: Math.min(Math.max(from.y, -from.height / 2), vh - from.height / 2), width: from.width, height: from.height };
@@ -290,21 +294,22 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
       x: target.x + target.width / 2 - (home.x + home.width / 2), y: target.y + target.height / 2 - (home.y + home.height / 2), scale: target.width / widthOf,
     });
     const hero = { x: vw / 2 - HERO_W / 2, y: Math.round(vh * 0.24), width: HERO_W, height: HERO_W * 1.5 };
+    const mid = (count - 1) / 2;
     const slotAt = placeOf(edge);
     const heroAt = placeOf(hero);
     const cardNodes = Array.from({ length: count }, (_, i) => cardNode(i));
     const homes = cardNodes.map((c) => (c ? rect(c.getBoundingClientRect()) : { x: 0, y: 0, width: 0, height: 0 }));
-    const shut = (i: number) => ({ x: hero.x + hero.width / 2 + (i - 2) * 2 - (homes[i]!.x + homes[i]!.width / 2), y: hero.y + hero.height / 2 - (homes[i]!.y + homes[i]!.height / 2), scale: 1, rotate: 0 });
+    const shut = (i: number) => ({ x: hero.x + hero.width / 2 + (i - mid) * 2 - (homes[i]!.x + homes[i]!.width / 2), y: hero.y + hero.height / 2 - (homes[i]!.y + homes[i]!.height / 2), scale: 1, rotate: 0 });
     const fanned = (i: number) => ({
-      x: hero.x + hero.width / 2 + (i - 2) * 26 - (homes[i]!.x + homes[i]!.width / 2),
-      y: hero.y - hero.height * 0.29 + Math.abs(i - 2) * 10 - (homes[i]!.y + homes[i]!.height / 2),
+      x: hero.x + hero.width / 2 + (i - mid) * 26 - (homes[i]!.x + homes[i]!.width / 2),
+      y: hero.y - hero.height * 0.29 + Math.abs(i - mid) * 10 - (homes[i]!.y + homes[i]!.height / 2),
       scale: 1, rotate: tilt(i, count),
     });
     const pile = node('.kb-opening-stage')?.getBoundingClientRect();
     const pileAt = (i: number) => {
       const h = homes[i]!;
       if (!pile || pile.width === 0 || h.width === 0) return { x: 0, y: 0, scale: 1 };
-      return { x: pile.x + pile.width / 2 + (i - 2) * 2 - (h.x + h.width / 2), y: pile.y + pile.height / 2 - (h.y + h.height / 2), scale: pile.width / h.width };
+      return { x: pile.x + pile.width / 2 + (i - mid) * 2 - (h.x + h.width / 2), y: pile.y + pile.height / 2 - (h.y + h.height / 2), scale: pile.width / h.width };
     };
     /* Before the first frame: the pack at its slot, the cards shut inside it and not drawn. */
     animate(pack, { x: slotAt.x, y: slotAt.y, scale: slotAt.scale }, NOW);
@@ -540,7 +545,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
             <span className="kb-visually-hidden">{said}</span>
           </div>
           <ol className="kb-opening-outlines" aria-hidden="true">
-            {cards.map((c, i) => <li key={`${c.key}-${i}`} data-kb-turned={i < turned ? '' : undefined} data-kb-hit={i === count - 1 ? '' : undefined} />)}
+            {cards.map((c, i) => <li key={`${c.key}-${i}`} data-kb-turned={i < turned ? '' : undefined} data-kb-hit={hasHit && i === count - 1 ? '' : undefined} />)}
           </ol>
         </div>
 
@@ -578,7 +583,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
 
         <ol className="kb-opening-row" aria-label="The pack, in the order it was pulled">
           {cards.map((c, i) => {
-            const hit = i === count - 1;
+            const hit = hasHit && i === count - 1;
             if (feel) {
               const label = i < turned ? `Card ${i + 1}: ${saidOf(c)}${i === shownIndex ? ', the card shown' : ''}` : `Card ${i + 1}, face down${hit ? ', the hit' : ''}`;
               const lone = i === turned && spot !== i;

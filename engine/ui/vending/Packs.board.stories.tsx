@@ -11,11 +11,15 @@
  * owner's review.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { facesOf } from '../cards/faces.ts';
+import { useKayfa } from '../context.tsx';
+import { Layers } from '../glass/layer.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Page } from '../glass/Page.tsx';
 import { cardOf, type World } from '../story.tsx';
 import { PackArt } from './PackArt.tsx';
+import { PackOpening } from './PackOpening.tsx';
 import { Vending } from './Vending.tsx';
 import testPicture from './pack-test-art.webp?url';
 import testRelief from './pack-test-relief.webp?url';
@@ -142,3 +146,18 @@ function PicturedPacks() {
  * and top, with the drawn pack that has no picture last in each row. The pictures are the engine's test fixtures. For the owner and the render's review; no board draws it.
  */
 export const Pictured: Story = { name: 'Pictured', render: () => <PicturedPacks /> };
+
+/** Six cards, none the hit (a fixed pack): the cards are the instance's first six, by key. */
+function FixedReveal() {
+  const { instance, ui } = useKayfa();
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings, ui.copy.cardKinds), [instance, ui.cards, ui.copy.cardKinds]);
+  const six = faces.slice(0, 6);
+  return (
+    <Page surface="vending">
+      <Layers><PackOpening hit={false} name="Starter Pack" art={lookDrawn} cards={six} note={null} onClose={() => {}} /></Layers>
+    </Page>
+  );
+}
+
+/** The reveal of a fixed pack: six cards, "6 of 6", and no hit (no gold back, tag, halo or sparks on the last). For the owner's review; no board draws it. */
+export const FixedSixNoHit: Story = { name: 'Reveal, fixed pack of six, no hit', render: () => <FixedReveal /> };

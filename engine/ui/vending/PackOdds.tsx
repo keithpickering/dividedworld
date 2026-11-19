@@ -27,3 +27,12 @@ export function PackOdds({ name, groups }: { readonly name: string; readonly gro
     </table>
   );
 }
+
+/** A fixed pack's cards in the order it gives them, in place of odds: nothing is rolled, so no chance is shown. */
+export function PackContents({ name, cards }: { readonly name: string; readonly cards: readonly string[] }) {
+  return (
+    <ol className="kb-vending-contents" aria-label={`${name} contents`}>
+      {cards.map((c, i) => <li key={`${c}-${i}`}>{c}</li>)}
+    </ol>
+  );
+}

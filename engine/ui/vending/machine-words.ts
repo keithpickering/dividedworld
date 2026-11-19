@@ -5,7 +5,7 @@
  * server returned, never from anything the Boss wrote. Pure: nothing here reads a clock or a database (`now` is given).
  */
 import { RARITIES, type CardRules, type Rarity } from '../../rules/cards.ts';
-import { packOdds, type PullPack } from '../../rules/packs.ts';
+import { isFixed, packOdds, type PackRules, type PullPack } from '../../rules/packs.ts';
 import type { Settings } from '../../rules/types.ts';
 import { demandKind } from '../../system/demands.ts';
 import type { SlotMove } from '../data/api.ts';
@@ -136,10 +136,19 @@ export function hitLeast(pack: PullPack, cards: readonly CardRules[], settings: 
   return hit.map((r) => r.rarity).sort((a, b) => RARITIES.indexOf(a) - RARITIES.indexOf(b))[0]!;
 }
 
-/** What a pack's selection says about opening it: "Five cards, the last one at least uncommon. It opens as soon as you buy it." */
-export function packLine(pack: PullPack, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>): string {
-  const n = pack.pulls.length;
-  const least = hitLeast(pack, cards, settings);
+/** How many cards a pack gives: a pull pack's pulls, a fixed pack's contents. */
+export const packSize = (pack: PackRules): number => (isFixed(pack) ? pack.contents.length : pack.pulls.length);
+
+/** A fixed pack's cards by the instance's names, in the order the pack gives them. */
+export function fixedNames(pack: PackRules, cards: readonly CardRules[]): string[] {
+  return isFixed(pack) ? pack.contents.map((key) => cards.find((c) => c.key === key)?.name ?? key) : [];
+}
+
+/** What a pack's selection says about opening it: "Five cards, the last one at least uncommon. It opens as soon as you buy it."; a fixed pack: "Six cards, always the same. ...". */
+export function packLine(pack: PackRules, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>): string {
+  const n = packSize(pack);
   const head = `${countWord(n).charAt(0).toUpperCase()}${countWord(n).slice(1)} cards`;
+  if (isFixed(pack)) return `${head}, always the same. It opens as soon as you buy it.`;
+  const least = hitLeast(pack, cards, settings);
   return `${head}${least && least !== 'common' ? `, the last one at least ${least}` : ''}. It opens as soon as you buy it.`;
 }

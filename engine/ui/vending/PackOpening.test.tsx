@@ -28,10 +28,10 @@ const face = (key: string) => faces.find((f) => f.key === key)!;
 const pulled = ['whoops', 'stick', 'dud', 'stick', 'main'].map(face);
 const packArt = { color: '#ffd93d', ink: '#1a1403', canvas: '', mark: '', credit: 'Test' };
 
-function open(o: { onClose?: () => void; note?: string | null; opener?: HTMLElement; cardBack?: { mark: string; canvas?: string } } = {}) {
+function open(o: { hit?: boolean; cards?: typeof pulled; onClose?: () => void; note?: string | null; opener?: HTMLElement; cardBack?: { mark: string; canvas?: string } } = {}) {
   const onClose = o.onClose ?? vi.fn();
   const view = renderIn(buildWorld(), (
-    <Layers><PackOpening name="Booster" art={packArt} cards={pulled} note={o.note ?? null} onClose={onClose} {...(o.opener ? { returnFocusTo: () => o.opener! } : {})} /></Layers>
+    <Layers><PackOpening hit={o.hit ?? true} name="Booster" art={packArt} cards={o.cards ?? pulled} note={o.note ?? null} onClose={onClose} {...(o.opener ? { returnFocusTo: () => o.opener! } : {})} /></Layers>
   ), o.cardBack ? { cardBack: o.cardBack } : {});
   cleanupOpen = () => view.unmount();
   return { onClose, ...view };
@@ -207,7 +207,7 @@ describe('leaving', () => {
     slot.focus();
     let close: () => void = () => {};
     const { rerender } = renderIn(buildWorld(), (
-      <Layers><PackOpening name="Booster" art={packArt} cards={pulled} note={null} onClose={() => close()} returnFocusTo={() => slot} /></Layers>
+      <Layers><PackOpening hit name="Booster" art={packArt} cards={pulled} note={null} onClose={() => close()} returnFocusTo={() => slot} /></Layers>
     ));
     expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
     /* Tab does not leave the dialog: from the last control it comes round to the first. */
@@ -314,7 +314,7 @@ describe('the reveal\'s motion', () => {
   const card = (i: number) => document.querySelector(`[data-kb-pull="${i}"]`);
 
   test('a pack whose art has a picture is two parts that each hold the picture', () => {
-    const view = renderIn(buildWorld(), <Layers><PackOpening name="Booster" art={{ color: '#ffd93d', ink: '#1a1403', picture: '/booster.webp' }} cards={pulled} note={null} onClose={vi.fn()} /></Layers>);
+    const view = renderIn(buildWorld(), <Layers><PackOpening hit name="Booster" art={{ color: '#ffd93d', ink: '#1a1403', picture: '/booster.webp' }} cards={pulled} note={null} onClose={vi.fn()} /></Layers>);
     cleanupOpen = () => view.unmount();
     for (const part of ['opened', 'top']) {
       expect(document.querySelector(`.kb-opening-pack .kb-pack[data-part="${part}"] img.kb-pack-picture`)).toHaveAttribute('src', '/booster.webp');
@@ -374,7 +374,7 @@ describe('the reveal\'s motion', () => {
     const onClose = vi.fn();
     function Host() {
       const [on, setOn] = useState(true);
-      return <Layers>{on && <PackOpening name="Booster" art={packArt} cards={pulled} note={null} onClose={() => { onClose(); setOn(false); }} returnFocusTo={() => opener} />}</Layers>;
+      return <Layers>{on && <PackOpening hit name="Booster" art={packArt} cards={pulled} note={null} onClose={() => { onClose(); setOn(false); }} returnFocusTo={() => opener} />}</Layers>;
     }
     renderIn(buildWorld(), <Host />);
     /* Turn all: the hit's turn is still running when Done is pressed. */
@@ -403,5 +403,40 @@ describe('the reveal\'s motion', () => {
     fireEvent.keyDown(dialog(), { key: ' ' });
     expect(counter()).toHaveTextContent('3 of 5 turned over');
     expect(document.querySelector('.kb-opening-spot')).toContainElement(card(2) as HTMLElement);
+  });
+});
+
+describe('a pack with no hit (a fixed pack of six)', () => {
+  const six = ['stick', 'whoops', 'dud', 'stick', 'trap', 'main'].map(face);
+
+  test('turns six, counts "6 of 6", and no card is the hit: no tag, glow, sparks, gold ring or "the hit" in a name', () => {
+    open({ hit: false, cards: six });
+    expect(counter()).toHaveTextContent('0 of 6 turned over');
+    expect(row().getAllByRole('listitem')).toHaveLength(6);
+    expect(screen.getByText('Click the next card or press Space to turn it. All six are already in your hand.')).toBeInTheDocument();
+    for (let i = 0; i < 6; i++) fireEvent.click(next());
+    expect(counter()).toHaveTextContent('6 of 6 · all in your hand');
+    expect(screen.getByText('These six are already in your hand.')).toBeInTheDocument();
+    expect(row().getAllByRole('listitem')).toHaveLength(6);
+    expect(document.querySelector('.kb-opening-tag')).toBeNull();
+    expect(document.querySelector('.kb-opening-glow')).toBeNull();
+    expect(document.querySelector('.kb-opening-spark')).toBeNull();
+    expect(document.querySelector('[data-kb-hit]')).toBeNull();
+    expect(screen.queryByLabelText(/the hit/u)).toBeNull();
+  });
+
+  test('face down, the last card is named like the others, and Turn all turns all six', () => {
+    open({ hit: false, cards: six });
+    expect(row().getAllByRole('listitem')[5]).toHaveAccessibleName('Card 6, face down');
+    fireEvent.click(screen.getByRole('button', { name: 'Turn all' }));
+    expect(counter()).toHaveTextContent('6 of 6 · all in your hand');
+    expect(document.querySelector('.kb-opening-tag')).toBeNull();
+  });
+
+  test('with a hit the five-card reveal still draws the tag and marks the last card', () => {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn all' }));
+    expect(document.querySelector('.kb-opening-tag')).not.toBeNull();
+    expect(document.querySelector('.kb-opening-card[data-kb-hit]')).not.toBeNull();
   });
 });
