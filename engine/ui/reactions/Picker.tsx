@@ -170,13 +170,12 @@ export function Picker({ subject, as, own, pending, local = [], press, undo, ref
                       {kindsOf(q).map((r, ki) => {
                         const yours = sentKinds.has(r.key);
                         const waits = waiting.has(r.key);
-                        /* Only the cap makes a kind unavailable (disabled); the player's own are aria-disabled so they can be reached and pressed. */
-                        const ok = yours || waits || left > 0;
-                        const tab = ok && first;
-                        if (ok) first = false;
+                        /* The grid is drawn only with a slot left, so every kind in it is pressable; the player's own are aria-disabled so they can be reached. */
+                        const tab = first;
+                        first = false;
                         return (
                           <button
-                            key={r.key} type="button" className="kb-picker-kind" disabled={!ok} aria-disabled={yours ? 'true' : undefined} tabIndex={tab ? 0 : -1}
+                            key={r.key} type="button" className="kb-picker-kind" aria-disabled={yours ? 'true' : undefined} tabIndex={tab ? 0 : -1}
                             data-kb-reaction={r.key} data-kb-row={at[qi]![ki]!.row} data-kb-col={at[qi]![ki]!.col} data-kb-own={yours || waits ? '' : undefined} data-kb-pending={waits ? '' : undefined}
                             aria-label={`${r.name}${waits ? ', your reaction, sending. Press again to undo' : yours ? ', your reaction' : ''}`}
                             onClick={(e) => choose(r.key, e.currentTarget)}
@@ -198,7 +197,8 @@ export function Picker({ subject, as, own, pending, local = [], press, undo, ref
         {refusal && <p className="kb-notice kb-picker-refusal" data-kb-tone="refusal" role="alert">{refusal}</p>}
         {left > 0 && <p className="kb-picker-hint">Arrow keys move, Enter reacts. Outlined: yours.</p>}
       </div>
-      <Tooltip anchor={tipAt} open={tipKind !== null} onClose={() => setTipKind(null)} restart={tipRestart}>{CANT_TAKE_BACK}</Tooltip>
+      {/* Mounted while open and keyed by the kind (see Reactions.tsx). */}
+      {tipKind !== null && <Tooltip key={tipKind} anchor={tipAt} open onClose={() => setTipKind(null)} restart={tipRestart}>{CANT_TAKE_BACK}</Tooltip>}
     </Overlay>
   );
 }

@@ -211,7 +211,7 @@ describe('the chips', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
       await afterGrace();
       await screen.findByRole('alert');
-      expect([document.querySelector('[data-kb-row-status]')!].some((x) => /Reacted with/u.test(x.textContent ?? ''))).toBe(false);
+      expect(rowStatus().textContent).not.toMatch(/Reacted with/u);
     });
 
     test('a second kind pressed while the first is in flight is held, not dropped: it is sent after it, and the row is busy meanwhile', async () => {
@@ -1553,6 +1553,30 @@ describe('the can\'t-be-taken-back tooltip', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
+  test('pressing a different own tile while it is open moves the tooltip to that tile and gives it a fresh 3 seconds (no focus change)', async () => {
+    const { w, v } = sent();
+    act(() => { v.tallies.merge(w.theirs, { tomato: 1 }); v.mine.add({ act: w.theirs, kind: 'tomato', character: w.pipe }); });
+    const fire = await screen.findByRole('button', { name: OWN });
+    const tomato = screen.getByRole('button', { name: 'Tomato, 1, including yours, can\'t be taken back' });
+    await press(fire);
+    await wait(2000);
+    await press(tomato);
+    const tip = screen.getByRole('tooltip');
+    expect(tomato.getAttribute('aria-describedby') ?? '').toContain(tip.id);
+    expect(fire.getAttribute('aria-describedby') ?? '').not.toContain(tip.id);
+    await wait(2500);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+    await wait(600);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  test('the tooltip is said in the polite status when it opens', async () => {
+    sent();
+    await press(await screen.findByRole('button', { name: OWN }));
+    await wait(200);
+    expect(screen.getAllByRole('status').some((x) => x.textContent === CANT_TAKE_BACK)).toBe(true);
+  });
+
   test('the tile\'s name says it can\'t be taken back (the totals-hidden wording is held in the blind post\'s test)', async () => {
     sent();
     expect(await screen.findByRole('button', { name: OWN })).toBeInTheDocument();
@@ -1575,8 +1599,11 @@ describe('the can\'t-be-taken-back tooltip', () => {
       expect(own).toHaveAttribute('aria-disabled', 'true');
       expect(own).not.toBeDisabled();
       expect(own).toHaveAttribute('data-kb-own', '');
+      own.focus();
       await press(own);
       expect(screen.getByRole('tooltip')).toHaveTextContent(CANT_TAKE_BACK);
+      expect(own).toHaveFocus();
+      expect(own.getAttribute('aria-describedby') ?? '').toContain(screen.getByRole('tooltip').id);
       expect(screen.getByRole('dialog')).toBeInTheDocument();
       await wait(REACTION_GRACE_MS * 2);
       expect(react).not.toHaveBeenCalled();
@@ -1590,11 +1617,42 @@ describe('the can\'t-be-taken-back tooltip', () => {
       expect(p.getByRole('button', { name: 'Fire, Hype, your reaction' })).toHaveFocus();
     });
 
-    test('a kind unavailable only because of the cap is still disabled', async () => {
+    test('a second press while it is open restarts its 3 seconds', async () => {
+      sent();
+      const p = await open();
+      const own = p.getByRole('button', { name: 'Fire, Hype, your reaction' });
+      await press(own);
+      await wait(2000);
+      await press(p.getByRole('button', { name: 'Fire, Hype, your reaction' }));
+      await wait(2000);
+      expect(screen.getByRole('tooltip')).toBeInTheDocument();
+      await wait(1100);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    test('pressing a different own kind while it is open moves the tooltip to that kind and gives it a fresh 3 seconds', async () => {
+      const { w, v } = sent();
+      act(() => { v.mine.add({ act: w.theirs, kind: 'tomato', character: w.pipe }); });
+      const p = await open();
+      const fire = p.getByRole('button', { name: 'Fire, Hype, your reaction' });
+      const tomato = p.getByRole('button', { name: 'Tomato, Heat, your reaction' });
+      await press(fire);
+      await wait(2000);
+      await press(tomato);
+      const tip = screen.getByRole('tooltip');
+      expect(tomato.getAttribute('aria-describedby') ?? '').toContain(tip.id);
+      expect(fire.getAttribute('aria-describedby') ?? '').not.toContain(tip.id);
+      await wait(2500);
+      expect(screen.getByRole('tooltip')).toBeInTheDocument();
+      await wait(600);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    test('at the cap no grid is drawn, so no kind is offered to press', async () => {
       const { w, v } = sent();
       act(() => { v.mine.add({ act: w.theirs, kind: 'tomato', character: w.pipe }); v.mine.add({ act: w.theirs, kind: 'zzz', character: w.hooligan }); });
       const p = await open();
-      /* Cap reached: the picker offers none, so a cap-only disable is held with one slot left instead. */
+      /* At the cap no grid is drawn at all, so no kind is drawn disabled and none is an own kind button. */
       expect(p.queryAllByRole('button', { name: /your reaction/u }).length).toBe(0);
     });
 

@@ -365,7 +365,8 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
           <span className="kb-meta-tile-in"><span aria-hidden="true">+ </span>React</span>
         </button>
       )}
-      <Tooltip anchor={tipAt} open={tipKind !== null} onClose={() => setTipKind(null)} restart={tipRestart}>{CANT_TAKE_BACK}</Tooltip>
+      {/* Mounted while open and keyed by the kind: a press on another own tile moves it there, and a quiet row holds no tooltip. */}
+      {tipKind !== null && <Tooltip key={tipKind} anchor={tipAt} open onClose={() => setTipKind(null)} restart={tipRestart}>{CANT_TAKE_BACK}</Tooltip>}
       {rowRefusal !== null && <p className="kb-notice kb-reactions-refusal" data-kb-tone="refusal" role="alert">{rowRefusal}</p>}
       {line !== null && <p className="kb-reactions-line kb-small">{line}</p>}
       {canReact && <span role="status" className="kb-visually-hidden" data-kb-row-status="">{said}</span>}
