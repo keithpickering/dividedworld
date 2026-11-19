@@ -42,3 +42,8 @@
     color: CanvasText;
   }
 }
+
+/* Nothing shows until the component has placed it. */
+.kb-tooltip:not([data-kb-place]) {
+  visibility: hidden;
+}

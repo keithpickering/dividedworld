@@ -38,6 +38,9 @@ afterEach(() => {
   vi.useRealTimers();
   document.documentElement.removeAttribute('data-kb-motion');
   vi.restoreAllMocks();
+  delete (document.documentElement as unknown as Record<string, unknown>).clientWidth;
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
 });
 
 describe('the tooltip', () => {
@@ -52,9 +55,62 @@ describe('the tooltip', () => {
 
   test('its text is also said once in a polite status, and the ⓘ is hidden from readers', () => {
     render(<Harness />);
+    act(() => { vi.advanceTimersByTime(60); });
     expect(screen.getByRole('status').textContent).toBe('Reactions can\'t be taken back.');
     expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite');
     expect(screen.getByRole('tooltip').querySelector('[aria-hidden="true"]')?.textContent).toBe('ⓘ');
+  });
+
+  test('a restart empties the status and fills it again, so a second press is heard', () => {
+    const { rerender } = render(<Harness restart={0} />);
+    act(() => { vi.advanceTimersByTime(60); });
+    const status = screen.getByRole('status');
+    expect(status.textContent).not.toBe('');
+    rerender(<Harness restart={1} />);
+    expect(status.textContent).toBe('');
+    act(() => { vi.advanceTimersByTime(60); });
+    expect(status.textContent).toBe('Reactions can\'t be taken back.');
+  });
+
+  test('an anchor with no prior description has none again after it closes', () => {
+    function Bare() {
+      const ref = useRef<HTMLButtonElement>(null);
+      const [open, setOpen] = useState(true);
+      return <KayfaProvider value={kayfa}><button ref={ref} type="button">Bare</button><Tooltip anchor={ref} open={open} onClose={() => setOpen(false)}>Hi</Tooltip></KayfaProvider>;
+    }
+    render(<Bare />);
+    expect(screen.getByRole('button', { name: 'Bare' }).getAttribute('aria-describedby')).toBe(screen.getByRole('tooltip').id);
+    act(() => { vi.advanceTimersByTime(TOOLTIP_MS); });
+    expect(screen.getByRole('button', { name: 'Bare' }).hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  test('the width cap is on before the box is measured, and a scroll places it again', async () => {
+    let capWhenMeasured = '';
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { if (this.getAttribute('role') === 'tooltip') capWhenMeasured = this.style.maxWidth; return 200; });
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(40);
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => setTimeout(() => f(0), 0) as unknown as number);
+    let top = 300;
+    render(<Harness rectOf={{ top, left: 400, right: 430, bottom: top + 30 }} />);
+    expect(capWhenMeasured).toBe(`${window.innerWidth - 32}px`);
+    const tip = screen.getByRole('tooltip');
+    const before = tip.style.top;
+    const anchor = screen.getByRole('button', { name: 'Anchor' });
+    top = 500;
+    anchor.getBoundingClientRect = rect({ top, left: 400, right: 430, bottom: top + 30 });
+    act(() => { window.dispatchEvent(new Event('scroll')); vi.advanceTimersByTime(5); });
+    expect(tip.style.top).not.toBe(before);
+    vi.unstubAllGlobals();
+  });
+
+  test('with no anchor element it shows and says nothing', () => {
+    function None() {
+      const ref = useRef<HTMLButtonElement>(null);
+      return <KayfaProvider value={kayfa}><Tooltip anchor={ref} open onClose={() => {}}>Hi</Tooltip></KayfaProvider>;
+    }
+    render(<None />);
+    act(() => { vi.advanceTimersByTime(60); });
+    expect(screen.getByRole('status').textContent).toBe('');
+    expect(screen.getByRole('tooltip', { hidden: true }).hasAttribute('data-kb-place')).toBe(false);
   });
 
   test('it takes no focus and holds nothing pressable', () => {
@@ -110,9 +166,8 @@ describe('the tooltip', () => {
   test('it stays inside a 360px window, 16px from each edge, whatever the anchor', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 });
     Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: 360 });
-    const w = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(220);
-    const h = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(40);
-    expect([w, h].length).toBe(2);
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(220);
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(40);
     const { unmount } = render(<Harness rectOf={{ top: 300, left: 320, right: 350, bottom: 330 }} />);
     const tip = screen.getByRole('tooltip');
     const left = parseFloat(tip.style.left);
@@ -123,7 +178,6 @@ describe('the tooltip', () => {
     unmount();
     render(<Harness rectOf={{ top: 300, left: 0, right: 30, bottom: 330 }} />);
     expect(parseFloat(screen.getByRole('tooltip').style.left)).toBeGreaterThanOrEqual(16);
-    delete (document.documentElement as unknown as Record<string, unknown>).clientWidth;
   });
 
   test('where above would leave the window it goes below', () => {
