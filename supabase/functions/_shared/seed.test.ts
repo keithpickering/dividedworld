@@ -50,8 +50,14 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(disciplined.find((c) => c.key === 'disciplined')!.discipline, { kind: 'watch', weight: 2 }, 'the seed carries the discipline');
   assert.deepEqual(disciplined.filter((c) => c.discipline !== undefined).map((c) => c.key), [...instance.cards.filter((c) => c.discipline !== undefined).map((c) => c.key), 'disciplined'], 'a card without one travels with none');
   // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
-  assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.filter((p): p is PullPack => !isFixed(p)).map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
-  assert.deepEqual(seed.packs[0]!.pulls[4], { weights: { uncommon: 74, rare: 24, legendary: 2 } }, 'the hit pull reaches the SQL as written');
+  const pulled = seed.packs.filter((p): p is Extract<typeof p, { pulls: unknown }> => 'pulls' in p);
+  assert.deepEqual(pulled.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.filter((p): p is PullPack => !isFixed(p)).map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
+  assert.deepEqual(pulled[0]!.pulls[4], { weights: { uncommon: 74, rare: 24, legendary: 2 } }, 'the hit pull reaches the SQL as written');
+  // A fixed pack (0377) reaches the SQL with its cards in order and no pulls, whatever the instance holds; a pull pack carries no `contents`.
+  const fixedSeed = instanceSeed({ ...instance, packs: [...instance.packs, { key: 'welcome-test', contents: [instance.cards[1]!.key, instance.cards[0]!.key] }] }, conduct).packs;
+  assert.deepEqual(fixedSeed.find((p) => p.key === 'welcome-test'), { key: 'welcome-test', contents: [instance.cards[1]!.key, instance.cards[0]!.key] }, 'a fixed pack goes as its cards, in order');
+  assert.equal(fixedSeed.filter((p) => 'contents' in p).length, instance.packs.filter(isFixed).length + 1);
+  assert.ok(pulled.every((p) => !('contents' in p)), 'a pull pack carries no contents');
   assert.deepEqual(seed.machine.map((m) => ('card' in m ? m.card : m.pack)), instance.machine.map((m) => ('card' in m.item ? m.item.card : m.item.pack)));
   assert.deepEqual(seed.machine.find((m) => 'pack' in m), { pack: 'booster', availability: 'onSale', price: 300 });
   assert.deepEqual(seed.machine.find((m) => 'card' in m && m.card === 'main-event'), { card: 'main-event', availability: 'hidden', price: 300 });

@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
 
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -311,6 +311,12 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into machine_slots (position, pack, availability, price) values (9500, 'exppack', 'onSale', 250);
       update wallets set balance = 250 where account = ann;
       perform buy_pack(ann, (select id from machine_slots where pack = 'exppack'), 250);
+      -- A welcome pack still sealed (Ann's) and one opened (Bob's) (0377): a fixed kind's cards stored with each pack, the opening as its own row, and the six-card order the opening wrote to the ledger.
+      insert into pack_kinds (key, pulls, leaves, contents) values ('expwelcome', null, '{}', array['exppull', 'exppull']);
+      insert into packs (id, account, pack, price, contents, source) values (gen_random_uuid(), ann, 'expwelcome', 0, array['exppull', 'exppull'], 'welcome'), ('00000000-0000-4000-8000-0000000377b0', bob, 'expwelcome', 0, array['exppull', 'exppull'], 'welcome');
+      perform tests.become(bob);
+      perform open_pack('00000000-0000-4000-8000-0000000377b0');
+      perform tests.unbecome();
       -- One more card, played as the sweetie above is, for an admin to end after the caught one (0092); its id is fixed in the test.
       insert into acts (id, character, kind, thread, target_act_id, payload) values ('${endedPlay}', a, 'card', t, p, '{"card": "sweetie", "config": {}}');
       -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an

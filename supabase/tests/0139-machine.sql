@@ -96,7 +96,7 @@ begin
   -- The one-read log hands the buyer the pack as its own source, as my_packs reads it, and each pulled card with the pack it came from.
   perform tests.become(ann);
   if (log_page(null) -> 'sources' -> 'packs') is distinct from jsonb_build_array(jsonb_build_object('id', pack_row.id, 'pack', 'mc-pack', 'price', 300, 'repriced', false,
-        'contents', to_jsonb(rolled), 'bought_at', pack_row.bought_at)) then
+        'contents', to_jsonb(rolled), 'bought_at', pack_row.bought_at, 'source', 'bought')) then
     raise exception 'log_page''s packs: %', log_page(null) -> 'sources' -> 'packs';
   end if;
   if (select count(*) from jsonb_array_elements(log_page(null) -> 'sources' -> 'cards') x where x ->> 'kind' = 'pulled' and x ->> 'pack' = pack_row.id::text) is distinct from 5 then
@@ -155,7 +155,9 @@ begin
   perform tests.unbecome();
   perform tests.become(bob);
   if card_held(ann, 'mc-com-1') is distinct from 0 then raise exception 'a player counted another''s hand: % of %', card_held(ann, 'mc-com-1'), ann_held; end if;
-  if exists (select 1 from my_cards) or exists (select 1 from my_packs) or exists (select 1 from packs) or exists (select 1 from card_ledger) then raise exception 'another player read whose packs and cards are whose'; end if;
+  if exists (select 1 from my_cards) or exists (select 1 from my_packs) or exists (select 1 from card_ledger) then raise exception 'another player read whose packs and cards are whose'; end if;
+  -- The packs table itself is no player's to read (0377): a sealed pack's cards are read through my_packs alone.
+  if pg_temp.refusal('select id from packs') is null then raise exception 'a player read the packs table'; end if;
   perform tests.unbecome();
 
   -- machine_now is what players see: every slot but a hidden one, the same for a visitor and a player.
