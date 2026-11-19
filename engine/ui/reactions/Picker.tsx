@@ -93,6 +93,7 @@ export function Picker({ subject, as, own, pending, local = [], press, undo, ref
   const [refusal, setRefusal] = useState<string | null>(given);
   /* The tooltip of an own sent kind: the kind it stands on, the button it stands by, and a count that restarts its 3 seconds. */
   const [tipKind, setTipKind] = useState<string | null>(null);
+  const [tipOpen, setTipOpen] = useState(false);
   const [tipRestart, setTipRestart] = useState(0);
   const tipAt = useRef<HTMLElement | null>(null);
   const countId = useId();
@@ -130,7 +131,7 @@ export function Picker({ subject, as, own, pending, local = [], press, undo, ref
     /* Sent: it can't be taken back. The tooltip says so and the picker stays; a press while it is open restarts its 3 seconds. */
     if (sentKinds.has(kind)) {
       tipAt.current = el;
-      if (tipKind === kind) setTipRestart((n) => n + 1); else setTipKind(kind);
+      if (tipOpen && tipKind === kind) setTipRestart((n) => n + 1); else { setTipKind(kind); setTipOpen(true); }
       return;
     }
     if (press(kind) === 'held') onClose(true);
@@ -197,8 +198,8 @@ export function Picker({ subject, as, own, pending, local = [], press, undo, ref
         {refusal && <p className="kb-notice kb-picker-refusal" data-kb-tone="refusal" role="alert">{refusal}</p>}
         {left > 0 && <p className="kb-picker-hint">Arrow keys move, Enter reacts. Outlined: yours.</p>}
       </div>
-      {/* Mounted while open and keyed by the kind (see Reactions.tsx). */}
-      {tipKind !== null && <Tooltip key={tipKind} anchor={tipAt} open onClose={() => setTipKind(null)} restart={tipRestart}>{CANT_TAKE_BACK}</Tooltip>}
+      {/* Mounted from the first press on, so its exit plays when it closes, and keyed by the last kind pressed (see Reactions.tsx). */}
+      {tipKind !== null && <Tooltip key={tipKind} anchor={tipAt} open={tipOpen} onClose={() => setTipOpen(false)} restart={tipRestart}>{CANT_TAKE_BACK}</Tooltip>}
     </Overlay>
   );
 }

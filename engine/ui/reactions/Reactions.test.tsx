@@ -1570,6 +1570,21 @@ describe('the can\'t-be-taken-back tooltip', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
+  test('under full motion the tooltip leaves with its exit after the 3 seconds, and a press after it closed opens and says it again', async () => {
+    sent();
+    expect(document.documentElement.getAttribute('data-kb-motion')).not.toBe('reduce');
+    await press(await screen.findByRole('button', { name: OWN }));
+    await wait(3050);
+    /* Just closed: the panel is still on the page, leaving (hidden from readers), for its exit. */
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(document.querySelector('.kb-tooltip-wrap[data-kb-exiting]')).not.toBeNull();
+    /* (That the leaving panel is removed once its exit ends is Layers' own, held in glass/layer tests: Motion's frame loop does not run reliably late in this file.) */
+    await press(screen.getByRole('button', { name: OWN }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent(CANT_TAKE_BACK);
+    await wait(200);
+    expect(screen.getAllByRole('status').some((x) => x.textContent === CANT_TAKE_BACK)).toBe(true);
+  });
+
   test('the tooltip is said in the polite status when it opens', async () => {
     sent();
     await press(await screen.findByRole('button', { name: OWN }));

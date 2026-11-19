@@ -6,7 +6,7 @@
  * The caller owns `open`. It closes (calls `onClose`) by itself after `TOOLTIP_MS`, when the anchor loses focus, and on a page Esc
  * (glass/keys.ts `pageEscape`: not one typed in a field, not a held key's repeat). While open the anchor's `aria-describedby` names the
  * tooltip (any value it had stays, and is put back after). Focus alone would not read it on a press, so its text is also said once in a
- * polite `role="status"` region that is always in the page, emptied and filled again on each open and restart.
+ * polite `role="status"` region that is in the page while it is mounted (a caller may mount it on its first open and keep it mounted, so its exit plays), emptied and filled again on each open and restart.
  *
  * RESTART: pressing again while it is open should give it a fresh 3 seconds. A parent passes `restart`, a number it bumps on each such
  * press; a changed value restarts the timer. (Opening after a close restarts it anyway, since `open` changed.)

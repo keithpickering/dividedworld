@@ -112,6 +112,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   const button = useRef<HTMLButtonElement>(null);
   /* The tooltip of an own sent tile (one open at a time): the kind it stands on, the tile it stands by, and a count that restarts its 3 seconds. */
   const [tipKind, setTipKind] = useState<string | null>(null);
+  const [tipOpen, setTipOpen] = useState(false);
   const [tipRestart, setTipRestart] = useState(0);
   const tipAt = useRef<HTMLElement | null>(null);
   const row = useRef<HTMLDivElement>(null);
@@ -161,7 +162,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   openNow.current = open;
   /* A picker is for the character it was opened for: another character in the HUD closes it, and what was said of a reaction as the last one goes. */
   const asId = as?.id;
-  useEffect(() => { setOpen(false); setSaid(''); setTipKind(null); }, [asId]);
+  useEffect(() => { setOpen(false); setSaid(''); setTipOpen(false); }, [asId]);
   /* What an answer that comes back late is checked against: the HUD character and whether a press is possible now. */
   const live = useRef({ asId, canReact });
   live.current = { asId, canReact };
@@ -264,7 +265,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
     /* Your own sent kind: it can't be taken back, and the tooltip says so; a press while it is open gives it a fresh 3 seconds. */
     if (mine.get(act).some((o) => o.kind === key)) {
       tipAt.current = el;
-      if (tipKind === key) setTipRestart((n) => n + 1); else setTipKind(key);
+      if (tipOpen && tipKind === key) setTipRestart((n) => n + 1); else { setTipKind(key); setTipOpen(true); }
       return;
     }
     start(key);
@@ -365,8 +366,8 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
           <span className="kb-meta-tile-in"><span aria-hidden="true">+ </span>React</span>
         </button>
       )}
-      {/* Mounted while open and keyed by the kind: a press on another own tile moves it there, and a quiet row holds no tooltip. */}
-      {tipKind !== null && <Tooltip key={tipKind} anchor={tipAt} open onClose={() => setTipKind(null)} restart={tipRestart}>{CANT_TAKE_BACK}</Tooltip>}
+      {/* Mounted from the first press on, so its exit plays when it closes, and keyed by the last kind pressed: a press on another own tile moves it there, and a quiet row holds no tooltip. */}
+      {tipKind !== null && <Tooltip key={tipKind} anchor={tipAt} open={tipOpen} onClose={() => setTipOpen(false)} restart={tipRestart}>{CANT_TAKE_BACK}</Tooltip>}
       {rowRefusal !== null && <p className="kb-notice kb-reactions-refusal" data-kb-tone="refusal" role="alert">{rowRefusal}</p>}
       {line !== null && <p className="kb-reactions-line kb-small">{line}</p>}
       {canReact && <span role="status" className="kb-visually-hidden" data-kb-row-status="">{said}</span>}
