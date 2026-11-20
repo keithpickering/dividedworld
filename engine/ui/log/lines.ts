@@ -47,6 +47,8 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   | 'grouped'
   /* The aura-grant design, section 2: an admin gave the player Aura (docs/plans/2026-11-08-aura-grant-design.md). */
   | 'grant'
+  /* The crowd pay design, section 5: crowd pay, the wallet's own line for the settlement, and the estimate's so far. */
+  | 'crowd'
   /* The conduct design, section 8: an admin hid, brought back or approved the player's own post under the code of conduct. */
   | 'conduct'
   /* The cosmetics plan, Task 12: a Random Event's find, gear an admin gave, a trophy given or taken back, and a belt lost. */
@@ -106,6 +108,8 @@ export interface Words {
   readonly instance: Instance;
   readonly ui: Pick<InstanceUi, 'reasonWords' | 'quadrantLabels' | 'cards' | 'copy' | 'packs'>;
   readonly postsPerPage: number;
+  /** The most Acts one settlement pays crowd pay for (`ScreenSettings.crowdPayMost`); absent, no line says it is reached. */
+  readonly crowdPayMost?: number;
   /** The economy as the server holds it now (`economyNow`): the numbers a line with none of its own is said with. */
   readonly economy: Readonly<Record<string, number>>;
   /** The time "now" is read against: the backend's (`api.now()`), so a line that says a time has passed compares it with the clock its times come from. */
@@ -389,12 +393,13 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...grantRows(data).filter((r) => inTab(r.characters)));
+  rows.push(...crowdRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...cosmeticRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...giftRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...conductRows(data).filter((r) => inTab(r.characters)));
   rows.push(...surfaceRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, crowd: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -435,6 +440,37 @@ function grantRows(data: LogData): LogRow[] {
     rows.push({
       key: `grant:${w.at}`, kind: 'grant', at: w.at, what: 'An admin gave you Aura',
       details: [`An admin gave you ${plain(w.change)} Aura.${w.overflow > 0 ? ` ${plain(w.overflow)} more didn't fit under your wallet's cap.` : ''}`],
+      aura: w.change, wallet: w.balanceAfter, characters: [],
+    });
+  }
+  return rows;
+}
+
+/** "6 Acts", "1 Act". */
+const actCount = (n: number) => `${n} ${n === 1 ? 'Act' : 'Acts'}`;
+/** Acts as links, as the log names an Act elsewhere (`actLink`), joined by commas; an Act that could not be read has no link, and the count says it was there. */
+function crowdLinks(acts: readonly Id[], data: LogData, words: Words): Segment[] {
+  const links = acts.flatMap((id) => { const link = actLink(data.acts.get(id), data, words); return link === null ? [] : [link]; });
+  return links.flatMap((link, i): Segment[] => (i === 0 ? [link] : [', ', link]));
+}
+
+/**
+ * Crowd pay (docs/plans/2026-11-20-crowd-pay-design.md, section 5): the wallet's own event of kind `crowd`, in plain and true words, with a link to each Act it paid for. It belongs to the account, so it is in
+ * every tab. The Acts are the caller's own `crowd` rows for the event's settlement; it says how many there were, whether that is the most one settlement pays and how much of it the wallet's cap held back.
+ * It names no one who reacted: the Acts are the posts the player reacted to, which the player knows.
+ */
+export function crowdRows(data: LogData, words: Words): LogRow[] {
+  const rows: LogRow[] = [];
+  for (const w of data.log.wallet) {
+    if (w.kind !== 'crowd' || w.settlement === null) continue;
+    const acts = (data.log.crowd ?? []).filter((c) => c.settlement === w.settlement).map((c) => c.act);
+    const most = acts.length > 0 && words.crowdPayMost !== undefined && acts.length >= words.crowdPayMost ? " That's the most one settlement pays." : '';
+    const over = w.overflow > 0 ? ` ${plain(w.overflow)} more didn't fit under your wallet's cap.` : '';
+    const paid = acts.length > 0 ? `You reacted to ${actCount(acts.length)} by other players and were paid ${plain(w.change)} Aura.` : `You were paid ${plain(w.change)} Aura for reacting to posts by other players.`;
+    const links = crowdLinks(acts, data, words);
+    rows.push({
+      key: `crowd:${w.settlement}`, kind: 'crowd', at: w.at, what: 'Crowd pay',
+      details: links.length === 0 ? [`${paid}${most}${over}`] : [`${paid}${most}${over} `, ...links, '.'],
       aura: w.change, wallet: w.balanceAfter, characters: [],
     });
   }
@@ -1202,13 +1238,20 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
 function estimateRows(data: LogData, words: Words, tab: Id | null): LogRow[] {
   const lines = (data.estimate?.lines ?? []).filter((l) => tab === null || l.character === tab);
   const asOf = data.estimate?.asOf ?? new Date(0).toISOString();
-  return lines
+  /* Crowd pay so far (the estimate's `crowd`, null where none): the wallet's, so in every tab, at the estimate's time. */
+  const crowd = data.estimate?.crowd ?? null;
+  const crowdLinked = crowd === null ? [] : crowdLinks(crowd.acts, data, words);
+  const crowdRow: LogRow[] = crowd === null ? [] : [{
+    key: 'estimate:crowd', kind: 'estimate', at: asOf, what: 'Estimate', aura: crowd.amount, wallet: null, characters: [],
+    details: [`Crowd pay so far: ${actCount(crowd.acts.length)}, ${plain(crowd.amount)} Aura.${crowdLinked.length > 0 ? ' ' : ''}`, ...crowdLinked, ...(crowdLinked.length > 0 ? ['.'] : [])],
+  }];
+  return [...crowdRow, ...lines
     .map((l, i) => ({ l, i, at: l.at !== undefined ? new Date(l.at).toISOString() : asOf }))
     .sort((a, b) => micros(b.at) - micros(a.at) || a.i - b.i)
     .map(({ l, i, at }) => ({
       key: `estimate:${i}`, kind: 'estimate' as const, at, what: 'Estimate', details: estimateWords(l, data, words, tab),
       aura: l.amount, wallet: null, characters: [l.character],
-    }));
+    }))];
 }
 
 /**
@@ -1244,6 +1287,8 @@ function estimateWords(l: EstimateLine, data: LogData, words: Words, tab: Id | n
 /** The Acts the log's lines name: every share's, every estimate line's, every announcement's and every card line's; then the posts the card plays among them landed on. */
 export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly TurnAnnounced[]): Id[] {
   const ids = new Set<Id>();
+  for (const c of log.crowd ?? []) ids.add(c.act);
+  for (const a of estimate?.crowd?.acts ?? []) ids.add(a);
   for (const s of log.settlements) for (const l of s.lines) for (const sh of l.shares) ids.add(sh.act);
   for (const l of estimate?.lines ?? []) if (l.act) ids.add(l.act);
   for (const t of turns) ids.add(t.act);

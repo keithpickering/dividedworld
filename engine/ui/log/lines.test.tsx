@@ -1675,3 +1675,95 @@ describe('a pack in the log', () => {
     expect(rows.map((r) => r.what)).toEqual(['Welcome gift: a sealed Starter Pack']);
   });
 });
+
+/**
+ * Crowd pay (docs/plans/2026-11-20-crowd-pay-plan.md, Task 5): a wallet event of kind `crowd` is a row of its own in every tab, in plain and true words, with a link to each Act paid
+ * for; the estimate says the crowd pay so far in a row of its own. The wallet's, so no character's: nothing here says who reacted, and none moves a character's Aura.
+ */
+describe('the crowd pay line', () => {
+  const at = '2099-11-20T09:00:00.000Z';
+  const act = (id: string, seq: number): Act =>
+    ({ id, kind: 'post', character: 'g', thread: 'th', targetActId: null, seq, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null });
+  const acts = (n: number) => Array.from({ length: n }, (_, i) => act(`a${i + 1}`, i + 1));
+  const heldActs = (n: number) => new Map(acts(n).map((a) => [a.id, a]));
+  const names = new Map([['g', 'Gloomba']]);
+  const mine = [char('p', 'Pat', 'face'), char('q', 'Quinn', 'heel')];
+  const event = (change: number, overflow: number, settlement = 5): Log['wallet'][number] => ({ settlement, kind: 'crowd', change, overflow, floored: 0, balanceAfter: 300, ref: null, at });
+  const paid = (n: number, settlement = 5) => acts(n).map((a) => ({ settlement, act: a.id, startsAt: '2099-11-19T09:00:00.000Z', endsAt: at }));
+  const w: Words = { ...words, crowdPayMost: 7 };
+  const rowsOf = (log: Log, tab: string | null, n: number) => logRows(data({ log, mine, names, acts: heldActs(n) }), w, 600, tab).filter((r) => r.kind === 'crowd');
+  const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+  const links = (r: { details: readonly unknown[] }) => r.details.filter((d) => typeof d !== 'string') as { text: string; href: string }[];
+
+  test('a crowd event of 14 over 6 Acts says the sentence, with 6 links, in All and in a tab alike', () => {
+    for (const tab of [null, 'p', 'q']) {
+      const [row, ...rest] = rowsOf({ ...empty, wallet: [event(14, 0)], crowd: paid(6) }, tab, 6);
+      expect(rest).toEqual([]);
+      expect(row).toMatchObject({ key: 'crowd:5', kind: 'crowd', at, what: 'Crowd pay', aura: 14, wallet: 300, characters: [] });
+      expect(said(row!)).toBe(`You reacted to 6 Acts by other players and were paid 0.14 Aura. ${acts(6).map((a) => `Gloomba's post #${a.seq}`).join(', ')}.`);
+      expect(links(row!)).toHaveLength(6);
+      expect(links(row!)[0]).toEqual({ text: "Gloomba's post #1", href: expect.stringContaining('th') });
+    }
+  });
+
+  test('one Act is "1 Act", not "1 Acts"', () => {
+    const [row] = rowsOf({ ...empty, wallet: [event(2, 0)], crowd: paid(1) }, null, 1);
+    expect(said(row!)).toMatch(/^You reacted to 1 Act by other players and were paid 0.02 Aura\. /u);
+  });
+
+  test('at the most one settlement pays, it says so', () => {
+    const [row] = rowsOf({ ...empty, wallet: [event(14, 0)], crowd: paid(7) }, null, 7);
+    expect(said(row!)).toMatch(/^You reacted to 7 Acts by other players and were paid 0.14 Aura\. That's the most one settlement pays\. Gloomba's post #1/u);
+    expect(links(row!)).toHaveLength(7);
+    const [under] = rowsOf({ ...empty, wallet: [event(12, 0)], crowd: paid(6) }, null, 6);
+    expect(said(under!)).not.toContain('the most one settlement pays');
+  });
+
+  test('what the wallet\'s cap held back is said, and only when it held something back', () => {
+    const [row] = rowsOf({ ...empty, wallet: [event(10, 4)], crowd: paid(7) }, null, 7);
+    expect(said(row!)).toMatch(/Aura\. That's the most one settlement pays\. 0.04 more didn't fit under your wallet's cap\. Gloomba's post #1/u);
+    const [none] = rowsOf({ ...empty, wallet: [event(10, 0)], crowd: paid(5) }, null, 5);
+    expect(said(none!)).not.toContain("didn't fit");
+  });
+
+  test('another settlement\'s Acts are not this one\'s, and an Act that could not be read keeps the count without a link', () => {
+    const log = { ...empty, wallet: [event(4, 0, 5), event(2, 0, 6)], crowd: [...paid(2, 5), { settlement: 6, act: 'gone', startsAt: at, endsAt: at }] };
+    const rows = rowsOf(log, null, 2);
+    expect(rows.map((r) => r.key)).toEqual(['crowd:5', 'crowd:6']);
+    expect(links(rows[0]!)).toHaveLength(2);
+    expect(said(rows[1]!)).toMatch(/^You reacted to 1 Act by other players and were paid 0.02 Aura\.$/u);
+  });
+
+  test('it names no one who reacted, and no class', () => {
+    const [row] = rowsOf({ ...empty, wallet: [event(14, 0)], crowd: paid(7) }, null, 7);
+    expect(said(row!)).not.toMatch(/heel|face|Pat|Quinn/iu);
+  });
+
+  test('the estimate with crowd pay shows its row in All and in a tab, linking the Acts; without it, none', () => {
+    const estimate = (crowd: { acts: string[]; amount: number } | null) => ({ entries: [], asOf: at, freshAfter: null, crowd, lines: [] });
+    for (const tab of [null, 'p']) {
+      const rows = logRows(data({ estimate: estimate({ acts: ['a1', 'a2', 'a3'], amount: 6 }), mine, names, acts: heldActs(3) }), w, 600, tab).filter((r) => r.kind === 'estimate');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ key: 'estimate:crowd', what: 'Estimate', wallet: null, characters: [] });
+      expect(said(rows[0]!)).toBe("Crowd pay so far: 3 Acts, 0.06 Aura. Gloomba's post #1, Gloomba's post #2, Gloomba's post #3.");
+      expect(links(rows[0]!)).toHaveLength(3);
+    }
+    expect(said(logRows(data({ estimate: estimate({ acts: ['a1'], amount: 2 }), mine, names, acts: heldActs(1) }), w, 600, null)[0]!)).toMatch(/^Crowd pay so far: 1 Act, 0.02 Aura\./u);
+    expect(logRows(data({ estimate: estimate(null), mine }), w, 600, null)).toEqual([]);
+  });
+
+  test('actsNamed names the Acts paid and the Acts the estimate counts', () => {
+    const estimate = { entries: [], asOf: at, freshAfter: null, crowd: { acts: ['e1'], amount: 2 }, lines: [] };
+    expect(actsNamed({ ...empty, crowd: paid(2) }, estimate, []).sort()).toEqual(['a1', 'a2', 'e1']);
+  });
+
+  test('two pages merged keep each page\'s crowd rows', () => {
+    const merged = mergeLogs({ ...empty, crowd: paid(1, 6) }, { ...empty, crowd: paid(2, 5) });
+    expect(merged.crowd).toHaveLength(3);
+  });
+
+  test('the crowd row sits with the wallet\'s other rows, after the settlement\'s at one time', () => {
+    const log = { ...empty, wallet: [event(2, 0)], crowd: paid(1), settlements: [settled(5, at, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }])] };
+    expect(logRows(data({ log, mine, names, acts: heldActs(1) }), w, 600, null).map((r) => r.kind)).toEqual(['settlement', 'crowd']);
+  });
+});

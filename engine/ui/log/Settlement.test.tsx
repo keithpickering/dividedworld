@@ -328,6 +328,49 @@ describe('every state of the summary\'s page has Back to the board', () => {
   });
 });
 
+/**
+ * Crowd pay (docs/plans/2026-11-20-crowd-pay-plan.md, Task 5): the wallet's own line, in the summary's words as the log's, in whichever character's tab is shown; a settlement
+ * whose only line of the player's is crowd pay is one they have a line in, so it opens the summary.
+ */
+describe('crowd pay in the summary', () => {
+  const crowdLog = (log: Awaited<ReturnType<Fake['log']>>, settlement: number, endsAt: string, acts: readonly string[], over: { readonly overflow?: number; readonly stub?: boolean } = {}) => ({
+    ...log,
+    settlements: over.stub === true ? [{ id: settlement, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines: [] }, ...log.settlements] : log.settlements,
+    wallet: [{ settlement, kind: 'crowd' as const, change: acts.length * 2, overflow: over.overflow ?? 0, floored: 0, balanceAfter: 600, ref: null, at: endsAt }, ...log.wallet],
+    crowd: [...(log.crowd ?? []), ...acts.map((act) => ({ settlement, act, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt }))],
+  });
+
+  test('says the crowd pay line in the log\'s words, linking each Act, in every character\'s tab', async () => {
+    const { fake, me, pipe } = world();
+    const real = fake.logPage.bind(fake);
+    const first = (await fake.log()).settlements[0]!;
+    vi.spyOn(fake, 'logPage').mockImplementation(async (before) => {
+      const page = await real(before);
+      return { ...page, log: crowdLog(page.log, first.id, first.endsAt, [page.log.settlements[0]!.lines[0]!.shares[0]!.act]) };
+    });
+    await openSummary(fake, me, pipe);
+    const line = await screen.findByText(/^You reacted to 1 Act by other players and were paid 0\.02 Aura\./u);
+    const whole = line.closest('[data-kb-crowd]') as HTMLElement;
+    expect(whole.textContent).toMatch(/^You reacted to 1 Act by other players and were paid 0\.02 Aura\. (Pipewrench's post|your post|post) #\d+\.$/u);
+    expect(within(whole).getAllByRole('link')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Mrs. Hooligan' }));
+    expect(await screen.findByText(/^You reacted to 1 Act by other players and were paid 0\.02 Aura\./u)).toBeInTheDocument();
+  });
+
+  test('a settlement with crowd pay alone is one the player has a line in: it opens the summary on the first load', async () => {
+    const { fake } = world();
+    const other = fake.seed.account('other');
+    const glo = fake.seed.character(other, 'Gloomba', 'heel');
+    fake.seed.settle({ at: at(30, 8, 17), debut: false, turns: false, ledger: [{ character: glo, reason: 'heel.drewHeat', amount: 10 }] });
+    const real = fake.log.bind(fake);
+    vi.spyOn(fake, 'log').mockImplementation(async (before) => crowdLog(await real(before), 77, new Date(at(30, 8, 17)).toISOString(), ['x'], { stub: true }));
+    localStorage.clear();
+    startLoad();
+    renderIn(fake, <><SettlementOnLoad active /><Where /></>, { path: '/' });
+    await waitFor(() => expect(where.path).toBe('/log/settlement'));
+  });
+});
+
 describe('the summary on the first load after a settlement', () => {
   function load(fake: Fake, path = '/') {
     return renderIn(fake, <><SettlementOnLoad active /><Where /></>, { path });

@@ -1446,8 +1446,8 @@ export interface LogSettlement {
 /** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout, and The System's payout for a staff card a trap caught. */
 export interface WalletEvent {
   readonly settlement: number | null;
-  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). `grant` is an admin's (0146): Aura given by the instance's operator, `ref` null. */
-  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant' | 'gift_out' | 'gift_in';
+  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). `grant` is an admin's (0146): Aura given by the instance's operator, `ref` null. `crowd` is crowd pay (0384): the settlement's, `ref` null; the Acts are `Log.crowd`. */
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant' | 'gift_out' | 'gift_in' | 'crowd';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;
@@ -1957,6 +1957,14 @@ export interface LogAppeal {
  * `before`, which is where the next page starts (null at the log's start). Each source is read a page
  * at a time, so a long-played account reads a page and never its history.
  */
+/** One Act a settlement paid the caller crowd pay for (`my_crowd_paid`, 0384), with that settlement's window: the caller's own rows, never an account. */
+export interface CrowdPaid {
+  readonly settlement: number;
+  readonly act: Id;
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
 export interface Log {
   /** The warn points the player's characters were given, by when each landed (`my_infractions`). */
   readonly infractions: readonly LogInfraction[];
@@ -1972,6 +1980,8 @@ export interface Log {
   readonly appeals: readonly LogAppeal[];
   readonly settlements: readonly LogSettlement[];
   readonly wallet: readonly WalletEvent[];
+  /** The Acts crowd pay was paid for, by the settlements the wallet rows of kind `crowd` name (`my_crowd_paid`); a settlement whose only line of the player's is crowd pay is also a settlement here with no lines. Absent from a payload older than crowd pay; read it as none. */
+  readonly crowd?: readonly CrowdPaid[];
   readonly cards: readonly CardEvent[];
   /** The packs the player bought, by when each was bought. */
   readonly packs: readonly PackEvent[];

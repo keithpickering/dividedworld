@@ -2060,6 +2060,7 @@ describe('the log', () => {
         ],
       }],
       wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
+      crowd: [],
       /* A card with no trap keeps its `springs` (0075); a row that is not a card set face down carries none. */
       cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'dud', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false, catches: 'whoops' },
         /* A purchase keeps whether the Boss had moved its price (0139); a pulled row keeps its pack (0139), and no other row carries either. */
@@ -3204,6 +3205,16 @@ describe('a screen in one call', () => {
       expect(page.log.scoredAs).toEqual([{ settlement: 9, character: B, classKey: 'heel', play: C, card: 'offday', startsAt: row.starts_at, endsAt: row.ends_at }]);
       const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
       expect(older.log).not.toHaveProperty('scoredAs');
+    });
+
+    it('maps the crowd source (0385) to the Acts paid with their window, and a crowd-only settlement is a settlement with no lines', async () => {
+      const wallet = { settlement: 12, kind: 'crowd', change: 4, overflow: 0, floored: 0, balance_after: 500, ref: null, at: '2026-10-31T08:17:02+00:00' };
+      const row = { settlement: 12, act: A, starts_at: '2026-10-30T08:17:00+00:00', ends_at: '2026-10-31T08:17:00+00:00' };
+      const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW], wallet: [wallet], crowd: [row] }))).api.logPage(null);
+      expect(page.log.crowd).toEqual([{ settlement: 12, act: A, startsAt: row.starts_at, endsAt: row.ends_at }]);
+      expect(page.log.settlements.map((s) => [s.id, s.lines.length])).toEqual([[12, 0], [9, 1]]);
+      const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
+      expect(older.log.crowd).toEqual([]);
     });
 
     it('files each card\'s shares under its own line, where two lines of one character and reason name two cards', async () => {
