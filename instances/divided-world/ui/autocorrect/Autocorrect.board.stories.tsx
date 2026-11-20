@@ -119,6 +119,8 @@ const wait = (ms: number) => new Promise<void>((done) => { setTimeout(done, ms);
 
 /** The author presses the first strip's left end and holds it to `PICK`, then stops the frames so the hold stays there. */
 const holdPick: Story['play'] = async ({ canvasElement }) => {
+  /* The a11y sweep (web/a11y-stories.tsx) runs this play under jsdom, which has no layout: no line is measured, so no tape is laid and there is nothing to press. */
+  if (/jsdom/iu.test(navigator.userAgent)) return;
   let piece: HTMLElement | null = null;
   for (let i = 0; i < 200 && !piece; i++) {
     piece = canvasElement.querySelector<HTMLElement>('[data-kb-ac-piece]');
