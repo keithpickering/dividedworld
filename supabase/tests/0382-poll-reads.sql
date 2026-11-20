@@ -59,7 +59,7 @@ declare
   adm uuid := pg_temp.mkpoll(t, pk, a1, at => now() - interval '5 hours');
   aut uuid := pg_temp.mkpoll(t, pa, a1, at => now() - interval '5 hours');
   pb1 uuid; pb2 uuid; sb1 uuid; sbs uuid; sbc uuid; adm_close uuid; aut_close uuid;
-  da jsonb; db jsonb; dc jsonb; dd jsonb; e jsonb; v jsonb; place jsonb; who_i integer;
+  da jsonb; db jsonb; dc jsonb; dd jsonb; e jsonb; v jsonb; place jsonb; who_i integer; kk text;
 begin
   -- The public poll: five ballots by three characters; b1 changed hers and c1 withdrew, so the counted are b1's {2} and b2's {1}.
   pb1 := pg_temp.vote(pub, b1, '[0]', now() - interval '4 hours');
@@ -125,6 +125,14 @@ begin
   end if;
   if dc::text like '%' || s1::text || '%' or dd::text like '%' || s1::text || '%' or da::text like '%' || s1::text || '%' then raise exception '1 a page names the character that voted only on a secret poll'; end if;
   if (db - 'myBallots')::text like '%' || s1::text || '%' then raise exception '1 the owner''s page names her secret voter outside myBallots'; end if;
+  -- The keys the comparison above sets aside (the caller's reactions, reading, following, presence, unread) carry no poll part and no secret voter or ballot, for any reader: the poll's parts are the keys named, and myBallots alone is the reader's.
+  foreach who_i in array array[1, 2, 3, 4] loop
+    e := case who_i when 1 then db when 2 then dc when 3 then da else dd end;
+    foreach kk in array array['mine', 'reading', 'following', 'presence', 'unread'] loop
+      if (e -> kk)::text ~ (s1::text || '|' || sec::text || '|' || sbs::text || '|' || sbc::text || '|' || sb1::text) then raise exception '1 the key % holds a secret poll''s part or voter: %', kk, e -> kk; end if;
+    end loop;
+    if e -> 'mine' is distinct from '[]'::jsonb then raise exception '1 mine holds more than reactions (there are none): %', e -> 'mine'; end if;
+  end loop;
   -- myBallots: the reader's own counted ballots, with the character and the picks of a secret one, and no one else's.
   if (select jsonb_agg(jsonb_build_object('poll', x ->> 'poll', 'character', x ->> 'character', 'picks', x -> 'picks') order by x ->> 'poll', x ->> 'character') from jsonb_array_elements(db -> 'myBallots') x)
      is distinct from (select jsonb_agg(jsonb_build_object('poll', r.poll, 'character', r.ch, 'picks', r.picks) order by r.poll::text, r.ch::text) from (values
@@ -273,4 +281,45 @@ begin
   if d::text like '%' || v1::text || '%' or d::text like '%' || v2::text || '%' or d::text like '%' || v3::text || '%' or d::text like '%Prd Voter%' then raise exception '5 the digest names a voter: %', d; end if;
   -- The digest's role reads the counts (a public view of characters counted) and no one's own ballots.
   if not has_table_privilege('kayfabb_digest', 'poll_counts', 'select') or has_table_privilege('kayfabb_digest', 'my_ballots', 'select') or has_table_privilege('kayfabb_digest', 'my_poll_closes', 'select') then raise exception '5 the digest role''s reach of the poll views'; end if;
+end $$;
+
+-- ---- 1b. A poll on a quoted (nested) post, and a poll that was removed ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('prn-ann'); dee uuid := tests.account('prn-dee'); bob uuid := tests.account('prn-bob');
+  a1 uuid := tests.character(ann, 'Prn Ann'); d1 uuid := tests.character(dee, 'Prn Dee'); b1 uuid := tests.character(bob, 'Prn Bob');
+  t uuid := tests.thread('Prn nested'); t2 uuid := tests.thread('Prn spun from a removed poll');
+  parent uuid := tests.post(a1, t, 'The parent.', now() - interval '6 hours'); reply uuid := tests.post(a1, t, 'The quoted reply.', now() - interval '5 hours');
+  play uuid; npoll uuid; pr uuid := tests.post(a1, t, 'Had a poll.', now() - interval '4 hours'); old uuid; gone uuid; e jsonb;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, replies) values ('prnest', 'Pr Nest', 'sweet', 'common', 'cast', '{post}', true) on conflict (key) do nothing;
+  play := tests.act(a1, 'card', t, jsonb_build_object('card', 'prnest', 'reach', 'post', 'reply', reply), parent, now() - interval '5 hours');
+  insert into post_under (play, parent, reply, thread) values (play, parent, reply, t);
+  npoll := pg_temp.mkpoll(t, reply, a1, at => now() - interval '4 hours');
+  perform pg_temp.vote(npoll, b1, '[1]', now() - interval '3 hours');
+  e := pg_temp.page(dee, t);
+  if jsonb_array_length(e -> 'under') is distinct from 1 then raise exception '1b the reply is not drawn under its parent: %', e -> 'under'; end if;
+  if (select count(*) from jsonb_array_elements(e -> 'polls') x where (x ->> 'post')::uuid = reply and (x -> 'act' ->> 'id')::uuid = npoll and x -> 'counts' = '[0, 1, 0]'::jsonb) is distinct from 1
+     or not exists (select 1 from jsonb_array_elements(e -> 'voters') x where (x ->> 'poll')::uuid = npoll and (x ->> 'character')::uuid = b1) then
+    raise exception '1b the poll of a quoted (nested) post is not in the page: %', e -> 'polls';
+  end if;
+  -- A poll that was removed: its post has no current poll, so the page shows none for it; the removal is no poll (poll_ballots), the replaced poll's own ballots stay as history, and a thread spun from the replaced poll has an origin with the poll Act and no live poll.
+  old := pg_temp.mkpoll(t, pr, a1, at => now() - interval '3 hours 30 minutes');
+  perform pg_temp.vote(old, b1, '[0]', now() - interval '3 hours 20 minutes');
+  gone := tests.act(a1, 'poll', t, '{"removed": true}', pr, now() - interval '3 hours');
+  e := pg_temp.page(dee, t);
+  if exists (select 1 from jsonb_array_elements(e -> 'polls') x where (x ->> 'post')::uuid = pr) or exists (select 1 from jsonb_array_elements(e -> 'voters') x where (x ->> 'poll')::uuid = old) or e::text like '%' || gone::text || '%' then
+    raise exception '1b a post whose poll was removed still shows one: %', e -> 'polls';
+  end if;
+  perform tests.become(dee);
+  if pg_temp.say(format('select poll_ballots(%L)', gone)) is distinct from 'there is no such poll' then raise exception '1b the removal is read as a poll: %', pg_temp.say(format('select poll_ballots(%L)', gone)); end if;
+  if jsonb_array_length(poll_ballots(old) -> 'ballots') is distinct from 1 then raise exception '1b the replaced poll''s ballots are not kept as history'; end if;
+  perform tests.unbecome();
+  perform tests.post(d1, t2, 'Spun from the poll that was removed.', now());
+  update threads set origin_act_id = old where id = t2;
+  e := pg_temp.page(dee, t2);
+  if (e -> 'origin' -> 'act' ->> 'id')::uuid is distinct from old or e -> 'origin' -> 'polls' is distinct from '[]'::jsonb or e -> 'origin' -> 'voters' is distinct from '[]'::jsonb then
+    raise exception '1b the origin of a removed poll carries a live poll: %', e -> 'origin';
+  end if;
 end $$;
