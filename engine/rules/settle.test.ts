@@ -1225,6 +1225,87 @@ test('a face-down Move that lands by a quote is one play on the quoter: its spri
   assert.deepEqual(landings.map((c) => c.act), ['laid']);
 });
 
+/* How the room took what a play is scored against (docs/plans/2026-11-18-face-thunder-plan.md, Task 1): "lens" records every card it
+   played. The target is Eve's post `tp`, or a staff post, or the cast a Reversal's spring caught; Ann's two masks are the caster's
+   player, so one's votes never count toward the lean of what the other's card is scored against. */
+const lensPlays: ClassInput['cardsPlayed'][number][] = [];
+const lens: ClassRules = { key: 'lens', name: 'Lens', earn: (input) => { lensPlays.push(...input.cardsPlayed); return []; } };
+const lensWorld: Instance = {
+  ...instance,
+  classes: [...instance.classes, lens],
+  cards: [
+    ...instance.cards,
+    { ...splat, key: 'sugar', alignment: 'sweet' },
+    { ...splat, key: 'plain', alignment: 'pepperoni' },
+    { ...splat, key: 'catch', play: 'set', trap: { trigger: { on: 'cast' } } },
+  ],
+};
+function lensBoard(acts: InputAct[], reactions: InputReaction[], over: Partial<SettlementInput> = {}): SettlementInput {
+  return {
+    window: { id: 'w1', from: FROM, to: TO },
+    characters: [
+      { id: 'ann-lens', player: 'ann', classes: [{ class: 'lens', from: 0 }] },
+      { id: 'ann-quiet', player: 'ann', classes: [{ class: 'quiet', from: 0 }] },
+      ...['bob', 'cat', 'dee', 'eve'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+    acts,
+    reactions,
+    ...over,
+  };
+}
+const playsOf = (input: SettlementInput, options?: Parameters<typeof settle>[2]) => { lensPlays.length = 0; settle(input, lensWorld, options); return [...lensPlays]; };
+const onTp = (): InputAct[] => [post('tp', 'eve-1', FROM + 1 * H), { id: 'k1', character: 'ann-lens', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp', card: 'splat' }];
+
+test('a play is handed how the room took its target: positive shares minus negative, each player one vote', () => {
+  const lean = playsOf(lensBoard(onTp(), [react('tp', 'bob', 'bob-1', 'zzz', FROM + 3 * H), react('tp', 'cat', 'cat-1', 'zzz', FROM + 4 * H), react('tp', 'dee', 'dee-1', 'fire', FROM + 5 * H)]))[0]!.targetLean;
+  assert.equal(lean, -1, 'two players booed it and one cheered');
+});
+test('the caster\'s own player\'s votes, from any mask, are left out of the target\'s lean', () => {
+  const lean = playsOf(lensBoard(onTp(), [react('tp', 'bob', 'bob-1', 'zzz', FROM + 3 * H), react('tp', 'ann', 'ann-quiet', 'zzz', FROM + 4 * H)]))[0]!.targetLean;
+  assert.equal(lean, -1, 'Ann booing from her other mask is not counted');
+});
+test('one player\'s heat and cheer on the target are half a vote each, and cancel', () => {
+  const lean = playsOf(lensBoard(onTp(), [react('tp', 'bob', 'bob-1', 'tomato', FROM + 3 * H), react('tp', 'bob', 'bob-1', 'fire', FROM + 4 * H)]))[0]!.targetLean;
+  assert.equal(lean, 0);
+});
+test('a target\'s lean reads every reaction up to the window\'s end, those before the window included', () => {
+  const acts: InputAct[] = [post('tp', 'eve-1', FROM - 10 * H), onTp()[1]!];
+  const lean = playsOf(lensBoard(acts, [react('tp', 'bob', 'bob-1', 'zzz', FROM - 5 * H), react('tp', 'cat', 'cat-1', 'zzz', FROM - 4 * H)]))[0]!.targetLean;
+  assert.equal(lean, -2, 'no reaction reached it in the window');
+});
+test('a target nobody reacted to has a lean of 0', () => {
+  assert.equal(playsOf(lensBoard(onTp(), []))[0]!.targetLean, 0);
+});
+test('a staff post\'s lean is read from its own reactions', () => {
+  const acts: InputAct[] = [{ id: 'k1', character: 'ann-lens', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'boss', card: 'splat' }];
+  const staff = { id: 'boss', kind: 'post' as const, at: FROM + 1 * H, thread: 't1', staff: true as const };
+  const lean = playsOf(lensBoard(acts, [react('boss', 'bob', 'bob-1', 'zzz', FROM + 3 * H), react('boss', 'cat', 'cat-1', 'tomato', FROM + 4 * H)], { unscoredTargets: [staff] }))[0]!.targetLean;
+  assert.equal(lean, -2);
+});
+test('with the shared vote off, each reaction is a vote of its own in the lean', () => {
+  const reactions = [react('tp', 'bob', 'bob-1', 'zzz', FROM + 3 * H), react('tp', 'bob', 'bob-1', 'tomato', FROM + 4 * H), react('tp', 'bob', 'bob-1', 'zzz', FROM + 5 * H)];
+  assert.equal(playsOf(lensBoard(onTp(), reactions))[0]!.targetLean, -1, 'settled: one player, one vote');
+  assert.equal(playsOf(lensBoard(onTp(), reactions), { sharedVote: false, halving: false })[0]!.targetLean, -3, 'estimated: three reactions');
+});
+test('a spring that caught a cast is handed how that cast reads this window; a play on a post is handed none', () => {
+  const springOn = (castCard: string, staffCard?: string) => {
+    const acts: InputAct[] = [
+      post('ap', 'ann-lens', FROM + 1 * H),
+      ...(staffCard === undefined ? [{ id: 'cast', character: 'bob-1', kind: 'card' as const, at: FROM + 2 * H, thread: 't1', target: 'ap', card: castCard }] : []),
+      { id: 'sp', character: 'ann-lens', kind: 'spring', at: FROM + 3 * H, thread: 't1', target: 'ap', card: 'catch', by: staffCard === undefined ? 'cast' : 'visit' },
+    ];
+    const unscoredTargets = staffCard === undefined ? [] : [{ id: 'visit', kind: 'post' as const, at: FROM + 1 * H, thread: 't1', staff: true as const, card: staffCard }];
+    return playsOf(lensBoard(acts, staffCard === undefined ? [react('cast', 'cat', 'cat-1', 'tomato', FROM + 4 * H)] : [], { unscoredTargets })).find((c) => c.act === 'sp')!;
+  };
+  assert.equal(springOn('splat').targetReadsAs, 'salty', 'a Salty cast');
+  assert.equal(springOn('sugar').targetReadsAs, 'sweet', 'a Sweet cast');
+  assert.equal(springOn('plain').targetReadsAs, 'salty', 'a Pepperoni cast a third player booed');
+  assert.equal(springOn('x', 'splat').targetReadsAs, 'salty', 'a staff cast keeps its own alignment');
+  assert.equal(springOn('x', 'sugar').targetReadsAs, 'sweet');
+  assert.ok(!('targetReadsAs' in springOn('x', 'plain')), 'a Pepperoni staff cast has no room to read it');
+  assert.ok(!('targetReadsAs' in playsOf(lensBoard(onTp(), []))[0]!), 'a play on a post');
+});
+
 function earnBoard(gimmicks: InputAct[], reactions: InputReaction[]): SettlementInput {
   return {
     window: { id: 'w1', from: FROM, to: TO },
