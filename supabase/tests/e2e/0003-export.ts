@@ -548,6 +548,11 @@ test('an instance exported and imported into a fresh database is the same instan
         perform donate(bob, b, dplay, 25);
         perform donate(ann, a, dplay, 10);
       end;
+      -- A doctored quote (Forged quotes, Task 7): Bob's mask quotes Ann's post p with words it never had, so the Act is written with its verdict (forged, the quoted post's id), no
+      -- target (the verdict drops it), and its quote_sources row; the export carries all three and the import writes them as a replica.
+      perform tests.become((select owner from characters where id = b));
+      perform post(t, b, '[quote=' || p || ']Never said in this post.[/quote] Bob, doctored.', p);
+      perform tests.unbecome();
     end $$;
     -- A table holding what the instance's own do not yet: a type whose name has a comma, an
     -- array, an astral character. Made here and in the fresh database alike.
@@ -617,6 +622,11 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.equal(sql(`select ends_at <= now() from face_down where card = 'exptime'`), 't', 'a back whose time passed is held as ended');
   // The post earn (Task 6): a cast on a post for three days carries its ends in its payload, and the round trip below carries that value as it is.
   const postEnds = (url: string) => psqlOn(url, `select coalesce(string_agg(payload ->> 'ends', ',' order by payload ->> 'ends'), '-') from acts where kind = 'card' and payload ->> 'card' = 'exppost'`);
+  // A doctored quote (Forged quotes, Task 7): its Act's `forged` is the list of the post it forges, and its quote_sources rows (one per version written) are read by its Act's id.
+  const doctoredRow = (url: string) => psqlOn(url, `select (a.payload -> 'forged')::text || '|' || (select count(*) from quote_sources s where s.act = a.id) || '|' || coalesce((select string_agg(s.source || '#' || s.digest, ',' order by s.digest) from quote_sources s where s.act = a.id), '-')
+    from acts a where a.payload ->> 'body' like '%Bob, doctored.'`);
+  assert.equal(psqlOn(from, `select (a.payload -> 'forged') = jsonb_build_array(substring(a.payload ->> 'body' from '[[]quote=([0-9a-f-]{36})[]]')::uuid) from acts a where a.payload ->> 'body' like '%Bob, doctored.'`), 't', 'the doctored quote\'s verdict forges the post it quotes');
+  assert.match(doctoredRow(from), /^\["[0-9a-f-]{36}"\]\|1\|.+#[0-9a-f]{32}$/, 'the doctored quote holds its verdict and one quote_sources row');
   assert.match(postEnds(from), /^\d{4}-\d{2}-\d{2}T[\d:.]+[+-]\d{2}:\d{2}$/, 'the post earn\'s play holds the ends its three days give');
   assert.equal(sql(`select (payload ->> 'ends')::timestamptz - created_at from acts where kind = 'card' and payload ->> 'card' = 'exppost'`), '3 days', 'the post earn ends three days after it was played');
   // The drive and its gifts (0153): the play opened a drive with a drawn key, both gifts are `donation` Acts, and each wallet event names its gift; Ann's full wallet cut off part of what arrived.
@@ -824,6 +834,8 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
+    // The doctored quote's Act still holds its verdict, and its quote_sources rows are the same in the imported instance (Forged quotes, Task 7).
+    assert.equal(doctoredRow(fresh.toString()), doctoredRow(from), 'the doctored quote\'s forged list and its quote_sources rows survive the round trip');
     // A custom pronoun set (0124) is carried as it was chosen, not reset to the column's default.
     const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
     const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
