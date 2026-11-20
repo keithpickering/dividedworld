@@ -41,8 +41,10 @@ const AGE = 3 * YEAR;
  * Each card played on the post, by key, how many times, and any settings its plays carry. A card with `lasts` runs its time and is
  * played again; Whoops! (`early`) was played to its stack of three in the post's first week and is still on it.
  */
-const PLAYED: readonly { readonly key: string; readonly times: number; readonly config?: Readonly<Record<string, unknown>>; readonly early?: boolean }[] = [
-  { key: 'whoops', times: 3, config: { color: '#ff2bd6', seed: 20231120 }, early: true },
+/* A card that takes a configuration (`staff`) is played in its first staff configuration, so the story names no color of its own (an
+   instance's colors never reach the engine: tools/check-ui-tokens.mjs). */
+const PLAYED: readonly { readonly key: string; readonly times: number; readonly config?: Readonly<Record<string, unknown>>; readonly staff?: boolean; readonly early?: boolean }[] = [
+  { key: 'whoops', times: 3, config: { seed: 20231120 }, staff: true, early: true },
   { key: 'sugar-coat', times: 14 },
   { key: 'last-word', times: 11 },
   { key: 'force-field', times: 9 },
@@ -81,7 +83,7 @@ function sequence(seed: number): () => number {
 }
 
 /** Writes the famous thread, three years old, and every play on its opening post. Returns the thread. */
-async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { readonly key: string; readonly lasts?: Parameters<typeof spanMs>[0] }[]): Promise<Id> {
+async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { readonly key: string; readonly lasts?: Parameters<typeof spanMs>[0]; readonly staffConfigs?: readonly unknown[] }[]): Promise<Id> {
   const { seed } = fake;
   /* The page reads its own clock (onPageClock); the fake's is brought up to it, so a play up now is up on the page and an admin can end it. */
   if (fake.now() > fake.clock.now()) fake.clock.advance(fake.now() - fake.clock.now());
@@ -133,7 +135,8 @@ async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { reado
         at = born + year * YEAR + (near ? next() * 10 * DAY : next() * YEAR);
         at = Math.min(at, now - (lasts ?? DAY) - HOUR);
       }
-      plays.push({ at, key: p.key, ...(p.config ? { config: p.config } : {}) });
+      const config = p.staff ? { ...(rules.staffConfigs?.[0] as Readonly<Record<string, unknown>> | undefined), ...p.config } : p.config;
+      plays.push({ at, key: p.key, ...(config ? { config } : {}) });
     }
   }
   plays.sort((a, b) => a.at - b.at);
