@@ -59,6 +59,9 @@ import { dealWords, exposed, flapOf, piecesOf, rollDiameter, roomOf, stripsOf, s
 import './autocorrect.css';
 
 /** The numbers the hands read from the card's settings when the instance has not set them (autocorrect.ts `screenReads`). */
+/** A pending pick's hand moves past this many px and the press is a peek instead; the corner waits this long into a still hold (feel design, section 1). */
+const SLOP = 8;
+const CORNER_DELAY_MS = 150;
 const DEFAULTS = { pace: 90, pickMs: 450, give: 34, peekStayMs: 300, peekSettle: 300 } as const;
 /** What a screen reader hears when a strip is pressed under another. */
 const COVERED = 'Another strip is stuck over this one. That one comes off first.';
@@ -702,7 +705,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   const handsNow = useCallback((): Hands => {
     const cards = now.current.cards;
     const read = (key: keyof typeof DEFAULTS) => cards[`autocorrect.${key}`] ?? DEFAULTS[key];
-    const cfg: HandSettings = { pace: read('pace'), pickMs: read('pickMs'), give: read('give'), peekStayMs: read('peekStayMs'), peekSettle: read('peekSettle'), reduced: motionReduced(), author: model.current.author };
+    const cfg: HandSettings = { pace: read('pace'), pickMs: read('pickMs'), give: read('give'), peekStayMs: read('peekStayMs'), peekSettle: read('peekSettle'), reduced: motionReduced(), author: model.current.author, slop: SLOP, cornerDelayMs: CORNER_DELAY_MS };
     if (hands.current) hands.current.setSettings(cfg); else hands.current = new Hands(cfg);
     return hands.current;
   }, []);
@@ -757,7 +760,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
 
   const onKey = useCallback((strip: TapeStrip, down: boolean) => {
     const hs = handsNow();
-    if (down) { onMeet(); hs.keyDown(strip.key); } else hs.keyUp();
+    if (down) { onMeet(); hs.keyDown(strip.key, model.current.author && !drawn.current.get(strip.key)?.held ? 'peel' : 'peek'); } else hs.keyUp();
     after(hs);
   }, [handsNow, onMeet, after]);
   /* The pointer's place on a piece, in the piece's own pixels: from its untilted box (offsetLeft ignores the tilt), not the rotated rect. */
@@ -770,7 +773,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     const hs = handsNow();
     onMeet();
     const did = hs.press(id, placeOf(e), e.pointerId ?? 0);
-    if (did === 'picking' || did === 'peeling' || did === 'peeking') {
+    if (did === 'pending' || did === 'peeling' || did === 'peeking') {
       /* Only a press that is taken stops the page's own selection and drag: a press that is not leaves the words and links alone. */
       e.preventDefault();
       try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* A pointer already gone has nothing to capture. */ }
