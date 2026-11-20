@@ -235,11 +235,11 @@ export function blindPlaysOf(plays: readonly CardPlay[], cards: readonly Pick<Ca
     .map((p) => ({ play: p.id, caster: p.caster, ends: p.ends! }));
 }
 
-/** The soonest end still ahead among plays beyond a post, as an epoch, or null: when what is drawn changes next by itself. */
+/** The soonest end still ahead among plays that have one (a play beyond a post, or a ward on a post), as an epoch, or null: when what is drawn, or what a mark says, changes next by itself. */
 export function nextEnd(plays: readonly CardPlay[], now: number): number | null {
   let soonest: number | null = null;
   for (const p of plays) {
-    if (!p.reach || p.ends === undefined) continue;
+    if (p.ends === undefined) continue;
     const at = Date.parse(p.ends);
     if (at > now && (soonest === null || at < soonest)) soonest = at;
   }

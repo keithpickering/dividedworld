@@ -49,7 +49,7 @@
 }
 
 /* The glow marks a play that has landed; a ghost is not one, so it has none and its dashed tint reads as not landed. */
-.kb-mark.kb-meta-tile:not(:focus-visible, .kb-ghost-mark) {
+.kb-mark.kb-meta-tile:not(:focus-visible, .kb-ghost-mark, [data-kb-spent='true']) {
   box-shadow: 0 0 8px color-mix(in srgb, var(--kb-meta-line) 55%, transparent);
 }
 
@@ -198,6 +198,11 @@
   .kb-mark[aria-expanded="true"] {
     border-color: Highlight;
   }
+
+  /* A spent mark is outlined in the system's gray, as it is unlit. */
+  .kb-mark.kb-meta-tile[data-kb-spent='true'] {
+    border-color: GrayText;
+  }
 }
 
 /*
@@ -311,10 +316,22 @@
   width: 1.45rem;
   height: 1.45rem;
 }
-/* A caught play is spent and did nothing: its mark is drawn dim, with its name saying so. */
-.kb-mark[data-kb-caught='true'] {
-  opacity: 0.55;
-  border-style: dashed;
+/* A spent kind (spent-marks design, section 2): every play over. Unlit: no glow, a gray solid border (never dashed, the ghost's sign), the ground under
+   it, the icon grayed. It stays a button, so its border is held to 3:1 on the ground (web/src/contrast.test.ts). */
+.kb-mark.kb-meta-tile[data-kb-spent='true'] {
+  --kb-meta-line: color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
+  background: var(--kb-glass-ground);
+  box-shadow: none;
+}
+.kb-mark[data-kb-spent='true'] .kb-mark-icon,
+.kb-mark[data-kb-spent='true'] .kb-mark-swatch {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+/* A spent mark's Lens open: a faint fill, as the ground lifted toward the text. */
+.kb-mark.kb-meta-tile[data-kb-spent='true'][aria-expanded="true"],
+.kb-mark.kb-meta-tile[data-kb-spent='true'][aria-expanded="true"]:hover:not([aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--kb-glass-text) 18%, var(--kb-glass-ground));
 }
 
 /*

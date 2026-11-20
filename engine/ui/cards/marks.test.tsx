@@ -9,7 +9,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { Id } from '../data/api.ts';
+import type { Act, Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, tapThread, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
@@ -303,9 +303,9 @@ describe('a strip that compares nothing listens to nothing', () => {
   });
 });
 
-/* An admin's end (supabase/migrations/0092_card_end.sql): a kind whose plays an admin all ended is dimmed as a caught one is, its mark kept to say so. */
+/* An admin's end (supabase/migrations/0092_card_end.sql): a kind whose plays an admin all ended is unlit as a spent one is, its mark kept to say so. */
 describe('a mark whose plays an admin ended', () => {
-  const dimmed = (post: HTMLElement) => marks(post).map((m) => m.getAttribute('data-kb-caught'));
+  const dimmed = (post: HTMLElement) => marks(post).map((m) => m.getAttribute('data-kb-spent'));
 
   test('is dimmed when every play of its kind was ended, and not while one is still in force', async () => {
     const w = world();
@@ -317,6 +317,103 @@ describe('a mark whose plays an admin ended', () => {
     await waitFor(() => expect(marks(post)).toHaveLength(3));
     /* Billed newest first: k3 (one of two ended), k2 (untouched), k1 (both ended). */
     expect(dimmed(post)).toEqual([null, null, 'true']);
+  });
+});
+
+/*
+ * A spent mark (docs/plans/2026-11-20-spent-marks-design.md, section 2): a kind whose every play is over is unlit, `data-kb-spent`, which
+ * replaces the caught look. It is worked out from the plays the strip holds and the clock the mark reads, so a play's end flips it with no re-read.
+ */
+describe('a spent mark', () => {
+  const HOUR = 3_600_000;
+  const spentInstance = { ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'kp', name: 'Keeper', keeps: true }] };
+  const spentCards: CardUi[] = [...cards, cardUi('kp')];
+  type Made = { readonly id: string; readonly payload?: Record<string, unknown>; readonly ends?: 'past' | 'future'; readonly untaken?: true; readonly card?: string };
+  /** A strip on the post of a world, holding plays as the store holds them: each Act is a play of `card` (k1 unless said), `spent` ones marked spent by a filing, `then` a moment's. */
+  async function strip(made: readonly Made[], o: { readonly spent?: readonly string[]; readonly then?: readonly string[] } = {}) {
+    const { MarkStrip } = await import('./Marks.tsx');
+    const { createTallies } = await import('../thread/tallies.ts');
+    const { createPlays } = await import('./plays.ts');
+    const w = world();
+    const [on] = await w.fake.acts(w.thread, 2, 2);
+    const plays = createPlays();
+    plays.add(made.map((m, i): Act => ({
+      id: m.id, character: w.spritey, kind: 'card', thread: w.thread, targetActId: on!.id, seq: null, createdAt: new Date(w.fake.clock.now() + i).toISOString(),
+      payload: { card: m.card ?? 'k1', layer: i + 1, message: '', config: {}, ...m.payload, ...(m.ends ? { ends: new Date(w.fake.clock.now() + (m.ends === 'past' ? -HOUR : HOUR)).toISOString() } : {}) }, currentPayload: {}, editedAt: null, shownEditedAt: null, ...(m.untaken ? { untaken: true } : {}),
+    })));
+    plays.setBilling(on!.id, made.map((m) => m.id));
+    if (o.spent) plays.setSpent(o.spent);
+    const view = renderIn(w.fake, <MarkStrip post={on!.id} plays={plays} tallies={createTallies()} onOpen={() => {}} {...(o.then ? { then: new Set(o.then) } : {})} />, { instance: spentInstance, cards: spentCards });
+    await waitFor(() => expect(marks(view.container)).not.toHaveLength(0));
+    return { w, view, marks: () => marks(view.container) };
+  }
+
+  test('a kind whose only play timed out is spent, and a kind whose play is still up is not', async () => {
+    const past = await strip([{ id: 'a', ends: 'past' }]);
+    expect(past.marks()[0]).toHaveAttribute('data-kb-spent', 'true');
+    expect(past.marks()[0]).not.toHaveAttribute('data-kb-caught');
+    const up = await strip([{ id: 'a', ends: 'future' }]);
+    expect(up.marks()[0]).not.toHaveAttribute('data-kb-spent');
+  });
+
+  test('flips at the end with no re-read: the clock passes the end, and the mark goes dark by itself', async () => {
+    const real = globalThis.setTimeout;
+    const woke: (() => void)[] = [];
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (typeof ms === 'number' && ms > HOUR - 1000 && ms < HOUR + 1000) { woke.push(fn); return 0; }
+      return real(fn, ms, ...rest);
+    }) as unknown as typeof setTimeout);
+    const w = world();
+    const ends = new Date(w.fake.clock.now() + HOUR).toISOString();
+    w.fake.seed.card(w.spritey, w.second, 'k1', { ends });
+    open(w);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(1));
+    expect(marks(post)[0]).not.toHaveAttribute('data-kb-spent');
+    expect(woke.length).toBeGreaterThan(0);
+    w.fake.clock.advance(HOUR + 2);
+    act(() => { for (const fn of woke) fn(); });
+    await waitFor(() => expect(marks(post)[0]).toHaveAttribute('data-kb-spent', 'true'));
+  });
+
+  test('is set for every play over: all caught, all reversed, all untaken, instant, and a spent fall', async () => {
+    const caught = await strip([{ id: 'a', payload: { caught: 'set1' } }, { id: 'b', payload: { caught: 'set2' } }]);
+    expect(caught.marks()[0]).toHaveAttribute('data-kb-spent', 'true');
+    const untaken = await strip([{ id: 'a', untaken: true }, { id: 'b', untaken: true }]);
+    expect(untaken.marks()[0]).toHaveAttribute('data-kb-spent', 'true');
+    const instant = await strip([{ id: 'a', payload: { instant: true } }]);
+    expect(instant.marks()[0]).toHaveAttribute('data-kb-spent', 'true');
+    const fall = await strip([{ id: 'a' }], { spent: ['a'] });
+    expect(fall.marks()[0]).toHaveAttribute('data-kb-spent', 'true');
+  });
+
+  test('is set for plays an admin all ended', async () => {
+    const w = world();
+    w.fake.seed.admin(w.me);
+    const one = w.play('k1'); const two = w.play('k1');
+    for (const p of [one, two]) expect((await w.fake.reverseCard(p)).ok).toBe(true);
+    open(w);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(1));
+    expect(marks(post)[0]).toHaveAttribute('data-kb-spent', 'true');
+  });
+
+  test('is not set for one live play beside one caught, for a card that keeps, or for a timed-out play in a moment', async () => {
+    const mixed = await strip([{ id: 'a' }, { id: 'b', payload: { caught: 'set1' } }]);
+    expect(mixed.marks()[0]).not.toHaveAttribute('data-kb-spent');
+    const keeper = await strip([{ id: 'a', card: 'kp', ends: 'past' }]);
+    expect(keeper.marks()[0]).not.toHaveAttribute('data-kb-spent');
+    const then = await strip([{ id: 'a', ends: 'past' }], { then: ['a'] });
+    expect(then.marks()[0]).not.toHaveAttribute('data-kb-spent');
+  });
+
+  test('is unlit: no ink and no edge, and its name ends "Ended"', async () => {
+    const s = await strip([{ id: 'a', ends: 'past' }]);
+    const mark = s.marks()[0]!;
+    expect(mark.style.getPropertyValue('--kb-mark-ink')).toBe('');
+    expect(mark).not.toHaveAttribute('data-kb-edge');
+    expect(mark.querySelector('.kb-mark-edge')).toBeNull();
+    expect(mark).toHaveAccessibleName('Card 1, 1 play, Ended. Opens the cards on this post.');
   });
 });
 
@@ -485,7 +582,7 @@ describe('a play that did not take', () => {
     await waitFor(() => expect(marks(post)).toHaveLength(1));
     expect(marks(post)[0]).toHaveTextContent('×2');
     expect(marks(post)[0]).toHaveAccessibleName(/^Card W, 2 plays/u);
-    expect(marks(post)[0]).not.toHaveAttribute('data-kb-caught');
+    expect(marks(post)[0]).not.toHaveAttribute('data-kb-spent');
   });
 
   test('a post whose only play did not take keeps its mark, dimmed, naming the one play and what became of it', async () => {
@@ -496,7 +593,7 @@ describe('a play that did not take', () => {
     const post = await article(2);
     await waitFor(() => expect(marks(post)).toHaveLength(1));
     expect(marks(post)[0]).not.toHaveTextContent('×');
-    expect(marks(post)[0]).toHaveAttribute('data-kb-caught', 'true');
+    expect(marks(post)[0]).toHaveAttribute('data-kb-spent', 'true');
     expect(marks(post)[0]).toHaveAccessibleName("Card W, 1 play, Didn't take. Opens the cards on this post.");
   });
 });
