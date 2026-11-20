@@ -2453,6 +2453,17 @@ test('a post that quotes the spark at or after the window\'s end is no member', 
   assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: TO - 1, voice: 1 }]);
 });
 
+test('a quote that does not name an earlier post in the input is read as none: a cycle, a self-quote, a later post, an unknown Act and a tie by id', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), post('b', 'cat-1', FROM + 3 * H), post('m1', 'dee-1', FROM + 5 * H), post('m2', 'eve-1', FROM + 5 * H)],
+    [quote('a', 'p1'), quote('b', 'a'), quote('a', 'b'), quote('b', 'b'), quote('p1', 'b'), quote('a', 'ghost'), quote('m1', 'm2')],
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs).map((d) => d.act).sort(), ['a', 'p1'], 'no post is a spark of a quote from an earlier or equal one');
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: FROM + 2 * H, voice: 1 }, { at: FROM + 3 * H, voice: 2 }]);
+  assert.deepEqual(debatesOf(inputs, 'a')[0]?.posts, [{ at: FROM + 3 * H, voice: 1 }]);
+});
+
 test('a spark with no member in the window is not handed over, and neither is one older than debateDays before it', () => {
   const { rules, inputs } = spy();
   settle(debateBoard(

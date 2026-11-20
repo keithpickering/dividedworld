@@ -93,8 +93,10 @@
  *   one, which has no room in the input to read it by.
  * - A spun thread's repliers are the distinct other players who posted in it, counted before
  *   the window and by its end, so a class can pay the window in which a threshold is crossed.
- * - A post's debate is every post that quotes it, transitively, and the spin and posts of each thread another player spun from it, up to the
- *   window's end (`quotes` and the Acts in the input; a staff post or one of The System's is not in the input, so it is no member). A character's
+ * - A post's debate is every post that quotes it, transitively, and the spin and posts of each thread another player
+ *   spun from it, up to the window's end. The walk follows threads spun "from the spark" only: a thread spun from a post
+ *   inside the debate is not followed. Only `quotes` and the Acts in the input count (a staff post or one of The System's
+ *   is not in the input, so it is no member). A character's
  *   class is handed a `SparkedDebate` for each of its posts made no earlier than `debateDays` before the window with a member inside the window,
  *   or with a member and a vote that moved on it inside the window: the members as times and voices that name no one (0 the author's player, then
  *   1, 2... by first post, a character each with the shared vote off), whether the post is itself in an earlier post's debate by its own player,
@@ -418,13 +420,12 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     given.set(v.character, list);
   }
   /* Each Act a vote moved on in the window, with every other player's vote there at the window's start and end: one pass
-     over the window's votes and the paid votes of the Acts they touched, indexed by Act. The paid votes are what earlier
-     windows paid (weight x shares); `payVotes` returned what this window changed, which replaces them. With the shared
+     over the window's votes and the paid votes (or earlier reactions) of every Act, indexed by Act, whole. The paid votes are
+     what earlier windows paid (weight x shares); `payVotes` returned what this window changed, which replaces them. With the shared
      vote off (the estimate) nothing is paid, so each earlier reaction is a voter of its own at a whole vote. */
   const asVote = (weight: number, shares: Readonly<Record<Quadrant, number>>): Standing => ({
     excitedPositive: weight * shares.excitedPositive, excitedNegative: weight * shares.excitedNegative, calmPositive: weight * shares.calmPositive, boredNegative: weight * shares.boredNegative,
   });
-  const touched = new Set(windowVotes.map((v) => v.act));
   /* Indexed by Act, whole: an Act a vote moved on and a spark whose debate moved both read them (the input holds only those Acts'). */
   const paidBefore = group(sharedVote ? input.paid ?? [] : [], (p) => p.act);
   const reactedBefore = sharedVote ? new Map<string, typeof reactions>() : group(reactions.filter((r) => r.at < window.from), (r) => r.act);
@@ -647,7 +648,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       const take = (id: string) => { if (!seen.has(id)) { seen.add(id); members.push(order.get(id)!); } };
       const down = [spark.id];
       for (let id = down.pop(); id !== undefined; id = down.pop()) {
-        for (const q of quotedBy.get(id) ?? []) if (!seen.has(q)) { take(q); down.push(q); }
+        for (const q of quotedBy.get(id) ?? []) if (!seen.has(q)) { seen.add(q); members.push(order.get(q)!); down.push(q); }
       }
       for (const s of spinsOf.get(spark.id) ?? []) {
         if (playerOf(s.character) === author) continue;
@@ -668,7 +669,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       const latest = posts[posts.length - 1]!.at;
       const moved = windowVotesOn.get(spark.id);
       if (!inWindow(latest) && !moved) continue;
-      const placed = inWindow(latest) ? latest : Math.max(...moved!.map((v) => v.at));
+      const placed = inWindow(latest) ? latest : moved!.reduce((m, v) => Math.max(m, v.at), -Infinity);
       const { before, now } = standingMaps(spark.id);
       out.push({ placed, debate: { act: spark.id, at: spark.at, posts, inOwnDebate: inOwnDebateOf(spark), standing: { before: inOrder(before), now: inOrder(now) }, cushioned: cushionedOn(spark) } });
     }
