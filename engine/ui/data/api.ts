@@ -334,7 +334,41 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   /* A gift to a drive (0153): an Act of the drive's thread on its opening play, no place in the thread (`seq` null). */
   | 'donation'
   /* A surface's layer (0317): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
-  | 'draw' | 'wash';
+  | 'draw' | 'wash'
+  /* A poll (0381): a poll on a post, a ballot on a poll, and a close of a poll. Acts of the post's thread, no place in the thread (`seq` null). */
+  | 'poll' | 'ballot' | 'poll_close';
+
+/** A poll as the page draws it (`thread_page`'s `polls`, 0382): the poll's Act, its counts for each option, how many characters voted, when it ends, whether it has, and its close (an Act of kind `poll_close`) if one was written. */
+export interface Poll {
+  /** The post (or spin) the poll is on. */
+  readonly post: Id;
+  readonly act: Act;
+  readonly counts: readonly number[];
+  readonly voters: number;
+  readonly endsAt: string;
+  readonly closed: boolean;
+  readonly close: Act | null;
+}
+
+/** The live counts of a poll (the `poll` event, 0382's `poll_counts`): the same for every caller. */
+export interface PollCounts {
+  readonly poll: Id;
+  readonly counts: readonly number[];
+  readonly voters: number;
+  readonly endsAt: string;
+  readonly closed: boolean;
+}
+
+/** A ballot of the caller's own (`my_ballots`, 0381): the poll it is on, its character, the picked indices (empty for a withdrawal) and when. */
+export interface Ballot {
+  readonly act: Id;
+  readonly poll: Id;
+  readonly character: Id;
+  readonly picks: readonly number[];
+  readonly at: string;
+}
+
+export type { PollDraft } from '../../rules/polls.ts';
 
 /**
  * A draw or a wash on a surface, as every reader sees it (`surface_acts`, 0317): the Act, whose payload holds its `strokes` and its `cells`
