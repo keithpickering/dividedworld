@@ -139,9 +139,11 @@ begin
   if v is distinct from '{}'::uuid[] then raise exception 'a quote of the original after an edit is forged: %', v; end if;
   v := tests.verdict(format('[quote=%s]Edited words there.[/quote]', orig), base + interval '30 minutes');
   if v is distinct from '{}'::uuid[] then raise exception 'a quote of an edit is forged: %', v; end if;
-  -- the plan's rule, as written: every quote of a post stands in ONE version, so quotes that need two versions are forged together
+  -- each quote is judged on its own against any eligible version (design, section 2): one from the original and one from the edit are both authentic; one doctored among them forges the post (section 5)
   v := tests.verdict(format('[quote=%s]Original words here.[/quote] [quote=%s]Edited words there.[/quote]', orig, orig), base + interval '30 minutes');
-  if v is distinct from array[orig] then raise exception 'two quotes of one post from two versions are authentic: %', v; end if;
+  if v is distinct from '{}'::uuid[] then raise exception 'two honest quotes of one post from two versions are forged: %', v; end if;
+  v := tests.verdict(format('[quote=%s]Original words here.[/quote] [quote=%s]Edited words there.[/quote] [quote=%s]Never said.[/quote]', orig, orig, orig), base + interval '30 minutes');
+  if v is distinct from array[orig] then raise exception 'one doctored quote among honest ones of two versions is not forged: %', v; end if;
   v := tests.verdict(format('[quote=%s]Original words there.[/quote]', orig), base + interval '30 minutes');
   if v is distinct from array[orig] then raise exception 'words spliced from two versions are authentic: %', v; end if;
   -- a version written after the quoting Act is not one: by `at`

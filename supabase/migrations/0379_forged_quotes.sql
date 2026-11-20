@@ -1404,8 +1404,8 @@ end $function$;
 -- a source is a row of its own and not an Act's content; the verdict is not backfilled (that would be an update of an Act's content), so an Act written before this reads as it always did.
 --
 -- quote_holds(source, pieces): engine/bbcode/quoted.ts's holds, in PL/pgSQL: every piece in order, each found by strpos at or after the end of the last, empty pieces skipped, no pieces holds.
--- quote_forged(body, at): one walk of the body; for each Act it quotes, its eligible versions newest first, a text seen already (by digest) not searched twice, the first version in which every quote of the
---   Act holds ends the search; no version at all (an id that is no Act, an Act with no text body, every version hidden or written after `at`) is forged. Security definer, no client grant.
+-- quote_forged(body, at): one walk of the body; for each Act it quotes, its eligible versions newest first, a text seen already (by digest) once; each quote of the Act is judged on its own against any one
+--   version (design, section 2), and one that stands in none forges the Act (section 5); no version at all (an id that is no Act, an Act with no text body, every version hidden or written after `at`) is forged. Security definer, no client grant.
 -- quote_check(body): within postMaxLength, then quote_forged(body, now()): the composer's preview asks it of a draft. It reads only public facts (versions that are not hidden now, which the History shows
 --   everyone), nothing about the caller or who owns anything, so a guess at a hidden post's words comes back forged for its author and for anyone alike.
 -- Security: invoker, no table is read in quote_holds; the others pin search_path ending in pg_temp.
@@ -1472,15 +1472,20 @@ declare
   walked jsonb;
   k text;
   quotes jsonb;
+  q jsonb;
   forged uuid[] := '{}';
-  authentic boolean;
+  sources text[];
   seen text[];
   v record;
+  held boolean;
+  doctored boolean;
+  i integer;
 begin
   if body is null or body !~* '\[quote=' then return '{}'::uuid[]; end if;
   select w.held into walked from bbcode_walk(body, null) w;
   for k, quotes in select e.key, e.value from jsonb_each(coalesce(walked, '{}'::jsonb)) e loop
-    authentic := false;
+    -- The eligible versions' texts, newest first, a text seen already (by digest) once; a hidden version is never read (hidden is asked first, so a hidden copy of a text does not hide a visible one).
+    sources := '{}';
     seen := '{}';
     for v in
       select x.id, s.source, s.digest
@@ -1492,15 +1497,22 @@ begin
       join quote_sources s on s.act = x.id
       order by x.created_at desc, x.id desc
     loop
-      -- A hidden version is never read; a text seen already is not searched twice (hidden is asked first, so a hidden copy of a text does not hide a visible one).
       continue when v.digest = any (seen) or version_hidden(v.id, k::uuid);
       seen := seen || v.digest;
-      if not exists (select 1 from jsonb_array_elements(quotes) q where not quote_holds(v.source, q)) then
-        authentic := true;
-        exit;
-      end if;
+      sources := sources || v.source;
     end loop;
-    if not authentic then forged := forged || k::uuid; end if;
+    -- Each quote is judged on its own against any one version (design, section 2); one that stands in none forges the post (section 5). No version at all: forged.
+    doctored := cardinality(sources) = 0;
+    if not doctored then
+      for q in select jsonb_array_elements(quotes) loop
+        held := false;
+        for i in 1..cardinality(sources) loop
+          if quote_holds(sources[i], q) then held := true; exit; end if;
+        end loop;
+        if not held then doctored := true; exit; end if;
+      end loop;
+    end if;
+    if doctored then forged := forged || k::uuid; end if;
   end loop;
   return coalesce((select array_agg(f order by f) from unnest(forged) f), '{}'::uuid[]);
 end $$;
