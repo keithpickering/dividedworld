@@ -40,3 +40,7 @@
 .kb-poll-add {
   margin: 0.4em 0;
 }
+
+.kb-poll-draft .kb-field > span {
+  font-weight: normal;
+}

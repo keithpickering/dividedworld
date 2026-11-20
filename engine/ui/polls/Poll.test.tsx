@@ -96,7 +96,7 @@ describe('voting', () => {
     openThread(w);
     const poll = await group();
     const vote = within(poll).getByRole('button', { name: 'Vote as Pipewrench' });
-    expect(vote).toBeDisabled();
+    expect(vote).toHaveAttribute('aria-disabled', 'true');
     const user = userEvent.setup();
     await user.click(within(poll).getByRole('radio', { name: 'Badwagon' }));
     /* Out of the radio group by keyboard and onto the button. */
@@ -157,7 +157,7 @@ describe('voting', () => {
     await user.click(within(poll).getByRole('button', { name: 'Vote as Pipewrench' }));
     expect(await within(poll).findByRole('alert')).toHaveTextContent('that poll has closed');
     expect(within(poll).getByRole('radio', { name: 'Badwagon' })).toBeChecked();
-    expect(within(poll).getByRole('button', { name: 'Vote as Pipewrench' })).toBeEnabled();
+    expect(within(poll).getByRole('button', { name: 'Vote as Pipewrench' })).toHaveAttribute('aria-disabled', 'false');
     expect(within(poll).getByRole('status')).toBeEmptyDOMElement();
   });
 });
@@ -453,5 +453,46 @@ describe('under a card\'s ink', () => {
     expect(within(poll).getByRole('radio', { name: 'Badwagon' })).toBeChecked();
     await user.click(within(inkEl).getByText('post 1'));
     expect(presses.n).toBe(1);
+  });
+});
+
+describe('focus', () => {
+  const kept = (poll: HTMLElement) => expect(poll.contains(document.activeElement) && document.activeElement !== document.body).toBe(true);
+  test('stays inside the poll after a vote, a change and a withdrawal', async () => {
+    const w = world();
+    openThread(w);
+    const poll = await group();
+    const user = userEvent.setup();
+    later(w);
+    await user.click(within(poll).getByRole('radio', { name: 'Badwagon' }));
+    await user.click(within(poll).getByRole('button', { name: 'Vote as Pipewrench' }));
+    await within(poll).findByText('Ballot cast as Pipewrench');
+    kept(poll);
+    later(w);
+    await user.click(within(poll).getByRole('radio', { name: 'Mr. Scooty' }));
+    await user.click(within(poll).getByRole('button', { name: 'Change ballot as Pipewrench' }));
+    await waitFor(() => expect(within(poll).getByRole('radio', { name: 'Mr. Scooty' })).toBeChecked());
+    await waitFor(() => expect(row(poll, 'Mr. Scooty')).toHaveTextContent('Pipewrench'));
+    kept(poll);
+    later(w);
+    await user.click(within(poll).getByRole('button', { name: 'Withdraw' }));
+    await within(poll).findByText('Ballot withdrawn as Pipewrench');
+    kept(poll);
+  });
+});
+
+describe('a long list of names', () => {
+  test('opens 100 at a time, with "show more" for the rest', async () => {
+    const w = world();
+    const crowd = w.fake.seed.account('crowd');
+    for (let i = 1; i <= 130; i++) w.fake.seed.ballot(w.fake.seed.character(crowd, `Fan ${String(i).padStart(3, '0')}`, 'face'), w.poll, [0]);
+    openThread(w);
+    const poll = await group();
+    const first = row(poll, 'Pipe Frame');
+    await userEvent.click(within(first).getByRole('button', { name: /^and \d+ more$/u }));
+    expect(first.textContent).toContain('Fan 091');
+    expect(first.textContent).not.toContain('Fan 130');
+    await userEvent.click(await within(first).findByRole('button', { name: /^show \d+ more names$/u }));
+    expect(first).toHaveTextContent('Fan 130');
   });
 });

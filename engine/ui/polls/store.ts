@@ -25,8 +25,11 @@ export interface Polls {
   subscribe(post: Id, listener: () => void): () => void;
   /** A voter's name as the poll knows it, or undefined where it was never read. */
   name(character: Id): string | undefined;
-  /** What a page read says of the polls on its posts (`ThreadPage`): the poll of each post, its voters, and the caller's ballots. */
-  take(page: PollParts & { readonly voterCast: readonly Character[] }): void;
+  /**
+   * What a page read says of the polls on `posts` (`ThreadPage`): the poll of each, its voters, and the caller's ballots. `ticket` is the clock value when the read was asked: a poll
+   * changed by anything heard (or cast) since is newer than the read and keeps what it holds, as a tally keeps its largest. A post in `posts` the page holds no poll for has none now.
+   */
+  take(page: PollParts & { readonly voterCast: readonly Character[] }, ticket: number, posts: readonly Id[]): void;
   /** A `poll` event: the counts, in order. */
   counts(event: PollEvent): void;
   /** A poll Act heard live: the post's poll replaced (an edit's), or taken away. */
@@ -49,12 +52,16 @@ const time = (iso: string) => { const t = Date.parse(iso); return Number.isNaN(t
 const after = (at: string, id: Id, than: string, thanId: Id) => time(at) > time(than) || (time(at) === time(than) && id > thanId);
 const picksOf = (v: unknown): number[] => (Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n)) : []);
 
-export function createPolls(): Polls {
+/** `clock` gives each live change its place in the order the thread's reads are asked in (its tickets), so a late read can be told from a newer event. */
+export function createPolls(clock: () => number = () => 0): Polls {
   const views = new Map<Id, PollView>();
   /* A poll's id to its post, so a ballot or a close finds where it goes. */
   const postOf = new Map<Id, Id>();
   /* A post whose poll was taken away: an older poll Act heard late must not bring it back. */
   const removed = new Map<Id, { at: string; id: Id }>();
+  /* When each poll and each post was last changed by something heard or cast, on `clock`. */
+  const touched = new Map<Id, number>();
+  const touch = (...keys: Id[]) => { const at = clock(); for (const k of keys) touched.set(k, at); };
   const names = new Map<Id, string>();
   /* The voters a read was asked for: each is read once, for its name. */
   const asked = new Set<Id>();
@@ -74,6 +81,7 @@ export function createPolls(): Polls {
   };
   const secret = (poll: Poll) => poll.act.payload.secret === true;
   /* A name that arrives redraws every poll listed: a voter is named wherever it is shown. */
+  /* Cost: a new name redraws every post that lists polls on the page (one copy of its view each), once per name that arrives; a page holds at most a page of posts, so that is a page's worth of cheap redraws, and a voter's name arrives once. */
   const note = (characters: readonly Character[]) => {
     let fresh = false;
     for (const c of characters) { if (names.get(c.id) !== c.name) fresh = true; names.set(c.id, c.name); }
@@ -102,12 +110,14 @@ export function createPolls(): Polls {
     const voters = secret(here.view.poll) ? here.view.voters : withVoter(here.view.voters, { poll, act, character, picks, at });
     const mine = own ? withMine(here.view.mine, { act, poll, character, picks, at }) : here.view.mine;
     if (voters === here.view.voters && mine === here.view.mine) return;
+    touch(poll, here.post);
     set(here.post, { ...here.view, voters, mine });
   }
 
   function closeAct(act: Act): void {
     const here = act.targetActId === null ? undefined : viewOf(act.targetActId);
     if (here === undefined || here.view.poll.close !== null) return;
+    touch(act.targetActId!, here.post);
     set(here.post, { ...here.view, poll: { ...here.view.poll, close: act } });
   }
 
@@ -115,6 +125,7 @@ export function createPolls(): Polls {
     const here = viewOf(e.poll);
     if (here === undefined || here.view.poll.closed) return;
     const { poll } = here.view;
+    touch(e.poll, here.post);
     set(here.post, { ...here.view, poll: { ...poll, counts: e.counts, voters: e.voters, endsAt: e.endsAt, closed: e.closed } });
   });
 
@@ -127,16 +138,27 @@ export function createPolls(): Polls {
     },
     name: (id) => names.get(id),
     named: note,
-    take(page) {
+    take(page, ticket, posts) {
       note(page.voterCast);
       const more = new Set(page.votersMore);
+      const newer = (...keys: Id[]) => keys.some((k) => (touched.get(k) ?? -1) > ticket);
       for (const poll of page.polls) {
         const held = views.get(poll.post);
+        /* Something heard or cast after this read was asked is newer than the read: the poll keeps what it holds. */
+        if (newer(poll.act.id, poll.post)) continue;
         /* A read that is older than a close or a replacement already heard never undoes it: a poll that is closed keeps its closed counts. */
         if (held !== undefined && held.poll.act.id === poll.act.id && held.poll.closed && !poll.closed) continue;
         if (held !== undefined && held.poll.act.id !== poll.act.id && after(held.poll.act.createdAt, held.poll.act.id, poll.act.createdAt, poll.act.id)) continue;
         const id = poll.act.id;
-        set(poll.post, { poll, voters: page.voters.filter((v) => v.poll === id), more: more.has(id), mine: page.myBallots.filter((b) => b.poll === id) });
+        /* A secret poll lists no voter, whatever a read carries. */
+        const voters = secret(poll) ? [] : page.voters.filter((v) => v.poll === id);
+        set(poll.post, { poll, voters, more: !secret(poll) && more.has(id), mine: page.myBallots.filter((b) => b.poll === id) });
+      }
+      /* A post the page was read for that holds no poll now (an edit took it away) has none here. */
+      const held = new Set(page.polls.map((p) => p.post));
+      for (const post of posts) {
+        const view = views.get(post);
+        if (view !== undefined && !held.has(post) && !newer(post, view.poll.act.id)) set(post, undefined);
       }
     },
     counts: heard,
@@ -147,6 +169,7 @@ export function createPolls(): Polls {
       const gone = removed.get(post);
       if (held !== undefined && !after(act.createdAt, act.id, held.createdAt, held.id)) return;
       if (gone !== undefined && !after(act.createdAt, act.id, gone.at, gone.id)) return;
+      touch(post, act.id);
       if (act.payload.removed === true) {
         removed.set(post, { at: act.createdAt, id: act.id });
         if (held !== undefined) set(post, undefined);

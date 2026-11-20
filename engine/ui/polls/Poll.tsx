@@ -33,6 +33,8 @@ import './poll.css';
 
 /** The first names an option lists before "and N more". */
 export const NAMES_SHOWN = 8;
+/** The names an opened option draws at a time, and each "show more" adds: a busy poll's option can hold thousands. */
+export const NAMES_OPENED = 100;
 const MOST_MS = 2 ** 31 - 1;
 
 export function Poll({ post, polls }: { readonly post: Id; readonly polls?: Polls | undefined }) {
@@ -63,7 +65,7 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
   const by = poll.close === null ? null : poll.close.payload.by === 'admin' ? 'admin' : 'author';
 
   /* The poll ends by itself at its time: the page draws it closed then, without a read. */
-  const [, tick] = useState(0);
+  const [ticks, tick] = useState(0);
   const end = Date.parse(poll.endsAt);
   const now = api.now();
   useEffect(() => {
@@ -71,16 +73,26 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
     if (poll.closed || poll.close !== null || !(left > 0)) return;
     const timer = setTimeout(() => tick((n) => n + 1), Math.min(left, MOST_MS));
     return () => clearTimeout(timer);
-  }, [api, end, poll.closed, poll.close]);
+  /* A time past one timer's reach (setTimeout's cap) is waited out in as many as it takes: each firing renders again and arms the next. */
+  }, [api, end, poll.closed, poll.close, ticks]);
   const closed = poll.closed || poll.close !== null || now >= end;
 
   /* The HUD's mask's counted ballot: its picks start the form, and a withdrawal is none. */
   const mine = hud === null ? undefined : view.mine.find((b) => b.character === hud.id && b.picks.length > 0);
+  /* The form starts over when the mask or its counted ballot changes, so a ballot of this mask's from another tab replaces what is picked here: the ballot that counts is the one the poll shows. */
   const formKey = `${hud?.id ?? ''}:${mine?.act ?? ''}`;
   const [seenKey, setSeenKey] = useState(formKey);
   const [sel, setSel] = useState<readonly number[]>(mine?.picks ?? []);
   if (seenKey !== formKey) { setSeenKey(formKey); setSel(mine?.picks ?? []); }
 
+  /* Pressing Vote, Change or Withdraw changes which controls stand (Withdraw goes with the ballot), so focus is kept in the poll: on its fieldset where the pressed control is gone. */
+  const fieldset = useRef<HTMLFieldSetElement>(null);
+  const [settled, setSettled] = useState(0);
+  useEffect(() => {
+    if (settled === 0) return;
+    const at = document.activeElement;
+    if (at === null || at === document.body || !fieldset.current?.contains(at)) fieldset.current?.focus();
+  }, [settled]);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [said, setSaid] = useState('');
@@ -100,6 +112,7 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
       setRefusal('The ballot could not be sent. Press the button to try again.');
     } finally {
       setBusy(false);
+      setSettled((n) => n + 1);
     }
   };
   const close = async () => {
@@ -113,6 +126,7 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
       setRefusal('The poll could not be closed. Press the button to try again.');
     } finally {
       setBusy(false);
+      setSettled((n) => n + 1);
     }
   };
   const canClose = !closed && ((hud !== null && hud.id === poll.act.character) || admin);
@@ -121,11 +135,11 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
   const nameOf = (c: Id) => store.name(c) ?? thread?.nameOf(c) ?? 'A character';
 
   /* The rest of a public poll's voters, read once from its record when an option's "and N more" is opened. */
-  const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
+  const [open, setOpen] = useState<ReadonlyMap<number, number>>(new Map());
   const [reading, setReading] = useState(false);
   const reads = useRef(false);
   const expand = (option: number) => {
-    setOpen((s) => new Set(s).add(option));
+    setOpen((s) => new Map(s).set(option, NAMES_OPENED));
     if (!view.more || reads.current) return;
     reads.current = true;
     setReading(true);
@@ -181,7 +195,7 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
 
   return (
     <div className="kb-poll-root" data-kb-over-ink="">
-      <fieldset className="kb-poll" aria-busy={busy || undefined}>
+      <fieldset ref={fieldset} tabIndex={-1} className="kb-poll" aria-busy={busy || undefined}>
         <legend className="kb-poll-head">
           <b className="kb-poll-question">{String(poll.act.payload.question ?? '')}</b>
           <span className="kb-poll-meta">{secret ? 'secret' : 'public'} ballots · choose {pick} · {closing({ endsAt: poll.endsAt, closed }, by, now)}</span>
@@ -192,7 +206,8 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
             {options.map((option, i) => {
               const count = poll.counts[i] ?? 0;
               const names = secret ? [] : voters.filter((v) => v.picks.includes(i)).sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || (a.act < b.act ? -1 : 1));
-              const shown = open.has(i) ? names : names.slice(0, NAMES_SHOWN);
+              const limit = open.get(i);
+              const shown = names.slice(0, limit ?? NAMES_SHOWN);
               const rest = count - shown.length;
               const input = `${group}-${i}`;
               return (
@@ -200,8 +215,8 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
                   {form && (
                     <td className="kb-poll-pick">
                       <input
-                        id={input} type={pick === 1 ? 'radio' : 'checkbox'} name={group} checked={sel.includes(i)} disabled={busy}
-                        onChange={(e) => setSel((s) => (pick === 1 ? [i] : e.target.checked ? [...s, i].sort((a, b) => a - b) : s.filter((n) => n !== i)))}
+                        id={input} type={pick === 1 ? 'radio' : 'checkbox'} name={group} checked={sel.includes(i)}
+                        onChange={(e) => busy ? undefined : setSel((s) => (pick === 1 ? [i] : e.target.checked ? [...s, i].sort((a, b) => a - b) : s.filter((n) => n !== i)))}
                       />
                     </td>
                   )}
@@ -210,8 +225,9 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
                     {!secret && names.length > 0 && (
                       <span className="kb-poll-who">
                         {shown.map((v) => nameOf(v.character)).join(', ')}
-                        {rest > 0 && !open.has(i) && <>{', '}<button type="button" className="kb-link-button" onClick={() => expand(i)}>and {rest} more</button></>}
-                        {open.has(i) && reading && <span role="status"> Reading the rest…</span>}
+                        {rest > 0 && limit === undefined && <>{', '}<button type="button" className="kb-link-button" onClick={() => expand(i)}>and {rest} more</button></>}
+                        {limit !== undefined && names.length > shown.length && <>{', '}<button type="button" className="kb-link-button" onClick={() => setOpen((m) => new Map(m).set(i, limit + NAMES_OPENED))}>show {Math.min(NAMES_OPENED, names.length - shown.length)} more names</button></>}
+                        {limit !== undefined && reading && <span> Reading the rest…</span>}
                       </span>
                     )}
                     {!secret && names.length === 0 && rest > 0 && <span className="kb-poll-who"><button type="button" className="kb-link-button" onClick={() => expand(i)}>and {rest} more</button></span>}
@@ -228,10 +244,10 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
             <>
               <button
                 type="button" className="kb-button" data-kb-size="small" data-kb-primary=""
-                disabled={busy || sel.length === 0 || (mine !== undefined && same(sel, mine.picks))}
-                onClick={() => void send(sel)}
+                aria-disabled={busy || sel.length === 0 || (mine !== undefined && same(sel, mine.picks))}
+                onClick={(e) => { if (e.currentTarget.getAttribute('aria-disabled') !== 'true') void send(sel); }}
               >{mine === undefined ? 'Vote' : 'Change ballot'} as {hud!.name}</button>
-              {mine !== undefined && <button type="button" className="kb-button" data-kb-size="small" disabled={busy} onClick={() => void send([])}>Withdraw</button>}
+              {mine !== undefined && <button type="button" className="kb-button" data-kb-size="small" aria-disabled={busy} onClick={() => void send([])}>Withdraw</button>}
             </>
           )}
           {closed || hud === null || bannedUntil === null ? null : <BannedNote character={hud} until={bannedUntil} />}
@@ -240,10 +256,10 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
           <span className="kb-poll-links">
             {!secret && <button type="button" className="kb-link-button" aria-expanded={listing} onClick={toggleBallots}>Ballots</button>}
             <button type="button" className="kb-link-button" aria-expanded={spinning} onClick={() => setSpinning((s) => !s)}>Spin</button>
-            {canClose && <button type="button" className="kb-link-button" disabled={busy} onClick={() => void close()}>Close poll</button>}
+            {canClose && <button type="button" className="kb-link-button" aria-disabled={busy} onClick={() => void close()}>Close poll</button>}
           </span>
           <SpunInto act={id} />
-          <span className="kb-poll-said kb-visually-hidden" role="status" aria-live="polite">{said}</span>
+          <span className="kb-poll-said kb-visually-hidden" role="status" aria-live="polite">{said || (reading ? 'Reading the rest of the voters' : listed === 'reading' ? 'Reading the ballots' : '')}</span>
           {refusal !== null && <p className="kb-poll-refusal" role="alert">{refusal}</p>}
         </div>
         {listing && (
@@ -257,7 +273,7 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
               </ol>
             )}
             {history?.ballots.length === 0 && <p className="kb-small">No ballots have been cast.</p>}
-            {listed === 'reading' && <p className="kb-small" role="status">Reading the ballots…</p>}
+            {listed === 'reading' && <p className="kb-small">Reading the ballots…</p>}
             {listed === 'failed' && <p className="kb-small" role="alert">The ballots could not be read. Press Ballots to try again.</p>}
             {history?.more === true && listed !== 'reading' && <button type="button" className="kb-button" data-kb-size="small" onClick={() => void readBallots(true)}>Show older ballots</button>}
           </div>

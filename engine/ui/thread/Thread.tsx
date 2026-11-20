@@ -119,7 +119,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const [lines, setLines] = useState<readonly { readonly key: number; readonly text: string }[]>([]);
   const tallies = useMemo(() => createTallies(), []);
   /* The polls on the posts on screen, taken from each page read and from the poll, ballot and close events heard (polls/store.ts). */
-  const polls = useMemo(() => createPolls(), []);
+  const polls = useMemo(() => createPolls(() => ++tickets.current), []);
   const mine = useMemo(() => createMine(), []);
   /* The card plays on the posts on screen (engine/ui/cards/plays.ts), and which cards the instance draws an effect for: only theirs have a state to read. */
   const plays = useMemo(() => createPlays(), []);
@@ -312,7 +312,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     /* The origin's Act and its plays are Acts of the page's document too: their reactions and spins are the page's, which the box reads from the same stores. */
     const ids = [...new Set([...page.acts.map((a) => a.id), ...under.map((a) => a.id), ...played.map((a) => a.id), ...(page.origin?.act ? [page.origin.act.id] : []), ...page.polls.map((x) => x.act.id), ...(page.origin?.plays ?? []).filter((a) => a.kind !== 'card_end').map((a) => a.id)])];
     for (const [id, t] of Object.entries(page.tallies)) tallies.merge(id, t);
-    polls.take(page);
+    polls.take(page, ticket, posts);
     for (const id of ids) mine.merge(id, page.mine.filter((r) => r.act === id));
     const loader = spunLoader(api);
     const from = new Map<Id, ThreadSummary[]>();
