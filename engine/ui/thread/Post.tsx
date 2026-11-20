@@ -193,6 +193,8 @@ function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin,
           {act.kind === 'post' && history.button}
           {onReport && <button type="button" className="kb-button" data-kb-size="small" aria-haspopup="dialog" onClick={(e) => onReport(e.currentTarget)}>Report</button>}
         </div>
+        {/* Under the buttons, out of the content area: an effect on the post neither covers the list nor is sized around it. */}
+        <SpunInto act={act.id} />
       </footer>
       <div className="kb-act-panels">
         <div id={`spin-${act.id}`}>
@@ -336,7 +338,6 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
         </header>
         <div className="kb-act-main" data-kb-cell="words" data-kb-content-area>
           <Body act={act} name={name} spoken={spoken} person={person} editing={editing} own={own} onEdit={() => setEditing(true)} onDone={() => setEditing(false)} marks={marks} visit={visit} />
-          <SpunInto act={act.id} />
         </div>
         <Actions act={act} about={{ seq, name: spoken }} canEdit={canEdit} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} onReport={reportable ? askReport : null} />
       </div>

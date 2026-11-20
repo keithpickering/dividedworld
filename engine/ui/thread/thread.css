@@ -128,7 +128,9 @@
 
 .kb-act-foot {
   grid-area: foot;
-  /* The action buttons are Chrome's small ones; the row keeps room for their 24px target. */
+  /* The action buttons are Chrome's small ones; the row keeps room for their 24px target. "Spun into" wraps to a row under them. */
+  flex-wrap: wrap;
+  row-gap: 0.4em;
   align-items: center;
   padding-block: 0.4em;
   margin-top: 1px;
@@ -223,7 +225,7 @@
   /*
    * A card's effect may paint over the post's words, out to the borders of this body (Whoops!'s ink, instances/divided-world/
    * cards/whoops/whoops.css). The effect marks the layer it paints with `data-kb-effect-ink`, wherever another card's effect has
-   * wrapped it. What the engine lifts over that layer (the reactions row, the spun line) carries `data-kb-over-ink`: it is
+   * wrapped it. What the engine lifts over that layer (the reactions row) carries `data-kb-over-ink`: it is
    * lifted by that mark, as wide as its content, so the rest of its row is ink an effect may take, and an effect starts nothing
    * on a press inside it. Any control the engine draws over a post's ink carries the mark. No wrapper is a stacking context
    * of its own, so the ink is in this one. These three rules (ink, lifted, bright) are written against `data-kb-content-area`, which

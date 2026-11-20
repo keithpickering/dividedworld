@@ -172,28 +172,60 @@ describe('the foil', () => {
   });
 
   /* A scroll redraws every post in view each frame, about five of them (the design's section 6), so one render is a fifth of the
-   * page's frame at most. Measured at 1.1 to 1.8 ms a render here (the bench's per-cell code took 5.4 to 9.4); the bound is
-   * about twice the slowest, so a render that slides back toward the old cost goes red. The best of three renders is timed, so
-   * one collector pause on a busy machine does not count. */
-  test('one 988 x 300 render takes under 4ms in Node', () => {
-    const box = { w: 988, h: 300 };
+   * page's frame at most. A render was measured at 1.1 to 1.8 ms (the bench's per-cell code took 5.4 to 9.4), and the bound goes red
+   * if one slides back toward the old cost. It is a ratio, not milliseconds (#472): a fixed reference pass over the same cells is
+   * timed just before each render, and the best render is held to the best reference times RATIO_MOST. A runner that is slow, or a
+   * suite running beside this one, slows both alike. Measured 2026-11-20: the worst of the six ratios was 1.66 to 1.94 idle and
+   * 1.62 to 2.07 with test:ui and test:engine running beside it, where the times moved by up to 3x; a render doing its work five
+   * times (the per-cell code's cost) read 8.7 to 32.7 under that load. RATIO_MOST is about twice the slowest
+   * (docs/plans/2026-11-20-timing-flakes-design.md). */
+  const RATIO_MOST = 4;
+  const box = { w: 988, h: 300 };
+  /* The reference: one pass over the render's cells, a little float math each, its bytes written where the render writes its own. */
+  const reference = (out: Uint8ClampedArray, k: number) => {
+    const n = out.length >> 2;
+    for (let i = 0; i < n; i++) {
+      const t = Math.sin(i * 0.013 + k) * 0.5 + 0.5;
+      const u = Math.cos(i * 0.007 - k) * 0.5 + 0.5;
+      const j = i << 2;
+      out[j] = 255 * t; out[j + 1] = 255 * u; out[j + 2] = 255 * t * u; out[j + 3] = 255;
+    }
+  };
+  /* Each pattern on each board: its best render over the best reference, the two timed in turn for ten rounds after twenty to warm. A render is
+   * repeated `times` times for the poison. */
+  const ratios = (times: number) => {
     const px = new Uint8ClampedArray(Math.ceil(box.w / 3) * Math.ceil(box.h / 3) * 4);
-    const times: string[] = [];
+    const out: { name: string; ratio: number; ms: number }[] = [];
     for (const pattern of PATTERNS) {
       for (const mode of ['light', 'dark'] as const) {
         const foil = foilFor(pattern, mode);
-        for (let k = 0; k < 20; k++) foil.render(box, { x: k * 0.05, y: -k * 0.03 }, bands[mode], px);
-        let ms = Infinity;
-        for (let k = 0; k < 3; k++) {
-          const t0 = performance.now();
-          foil.render(box, { x: 0.2 + k * 0.01, y: 0.1 }, bands[mode], px);
+        for (let k = 0; k < 20; k++) { foil.render(box, { x: k * 0.05, y: -k * 0.03 }, bands[mode], px); reference(px, k); }
+        let ref = Infinity, ms = Infinity;
+        for (let k = 0; k < 10; k++) {
+          let t0 = performance.now();
+          reference(px, k);
+          ref = Math.min(ref, performance.now() - t0);
+          t0 = performance.now();
+          for (let m = 0; m < times; m++) foil.render(box, { x: 0.2 + k * 0.01, y: 0.1 }, bands[mode], px);
           ms = Math.min(ms, performance.now() - t0);
         }
-        times.push(`${pattern}/${mode} ${ms.toFixed(1)}ms`);
-        assert.ok(ms < 4, `${pattern}/${mode} took ${ms}ms`);
+        out.push({ name: `${pattern}/${mode}`, ratio: ms / ref, ms: ms / times });
       }
     }
-    console.log('render times:', times.join('; '));
+    return out;
+  };
+  const shown = (rs: ReturnType<typeof ratios>) => rs.map((r) => `${r.name} ${r.ratio.toFixed(2)} (${r.ms.toFixed(1)}ms a render)`).join('; ');
+
+  test(`one 988 x 300 render costs under ${RATIO_MOST} times a reference pass over the same cells, timed in turn with it`, () => {
+    const honest = ratios(1);
+    console.log('render over reference:', shown(honest));
+    for (const r of honest) assert.ok(r.ratio < RATIO_MOST, `${r.name}: ${r.ratio.toFixed(2)} times the reference`);
+  });
+
+  test('POISON: a render that does its work five times, the per-cell code\'s cost, is over the bound', () => {
+    const poisoned = ratios(5);
+    console.log('poisoned render over reference:', shown(poisoned));
+    assert.ok(poisoned.some((r) => r.ratio > RATIO_MOST), `a render five times over stayed under ${RATIO_MOST}: ${shown(poisoned)}`);
   });
 });
 
