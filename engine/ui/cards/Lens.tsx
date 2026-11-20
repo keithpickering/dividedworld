@@ -306,12 +306,18 @@ export const moreBelow = (el: { readonly scrollTop: number; readonly clientHeigh
 /** Whether a scrolling part is scrolled off its top: the fade at the Lens body's top shows only then. A fractional offset (zoom) that rounds to 0 is the top. */
 export const scrolledPast = (el: { readonly scrollTop: number }): boolean => Math.round(el.scrollTop) > 0;
 
+/** The card a kind's tab stands for: the kind itself, or for a sprung back the card it became; none for a face-down back. The tab's name and its icon both read it. */
+export function tabCard(kind: string, plays: readonly CardPlay[]): string | undefined {
+  if (!isBack(kind)) return kind;
+  /* A sprung back is a kind of its own, one back; a live kind's backs name no card. */
+  return plays.find((p) => p.card === kind && p.revealed)?.revealed?.card;
+}
+
 /** A tab's name: the card's, or for the card backs, "Card back", and the card it was once one has sprung. */
 export function kindName(instance: { readonly cards: readonly { readonly key: string; readonly name: string }[] }, kind: string, plays: readonly CardPlay[]): string {
-  if (!isBack(kind)) return instance.cards.find((c) => c.key === kind)?.name ?? kind;
-  /* A sprung back is a kind of its own, one back; a live kind's backs name no card. */
-  const sprung = plays.find((p) => p.card === kind && p.revealed);
-  return sprung ? instance.cards.find((c) => c.key === sprung.revealed!.card)?.name ?? 'Card back' : 'Card back';
+  const card = tabCard(kind, plays);
+  if (card === undefined) return 'Card back';
+  return instance.cards.find((c) => c.key === card)?.name ?? (isBack(kind) ? 'Card back' : kind);
 }
 
 /** Whether this play has more public reactions than the post: a boolean, so only a change in the answer draws the row again. */
@@ -889,6 +895,9 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     }
   };
 
+  /* A tab's icon is its card's art; the visit's tab and a face-down back show none, and a form's tab (report, appeal) is no card. */
+  const tabArtOf = (kind: string) => { const key = tabCard(kind, here.plays); return key === undefined || kind === VISIT_KIND ? undefined : ui.cards.find((c) => c.key === key)?.art; };
+
   return (
     <Float
       label={onForm ? (form.kind === REPORT_KIND ? `Report this ${where}` : `Appeal on this ${where}`) : visit ? (cardKinds.length === 0 ? `Visit to this ${where}` : `Visit and cards on this ${where}`) : `Cards on this ${where}`} surface="effect" anchor={anchor} keep={() => anchor.current?.closest<HTMLElement>('article, .kb-origin') ?? null} sheet={narrow} host={host}
@@ -903,18 +912,11 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           {kinds.map((kind) => {
             const label = onForm ? formTabName(form) : kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
             const selected = kind === card;
-            /* A form's tab shows its card; a sprung back the card it became; a face-down back and the visit's tab none. */
-            const tabArt = (k: string) => {
-              if (onForm) return ui.cards.find((c) => c.key === form.kind)?.art;
-              if (k === VISIT_KIND) return undefined;
-              if (isBack(k)) { const sprung = here.plays.find((p) => p.card === k && p.revealed); return sprung ? ui.cards.find((c) => c.key === sprung.revealed!.card)?.art : undefined; }
-              return ui.cards.find((c) => c.key === k)?.art;
-            };
             return (
               <PreparedTab
                 key={kind} ref={(el) => { if (el) tabs.current.set(kind, el); else tabs.current.delete(kind); }}
                 id={tabId(kind)} kind={kind} selected={selected} controls={selected ? panelId : undefined} read={readOf(kind)} onChoose={() => choose(kind)}
-              ><TabIcon art={tabArt(kind)} />{label}</PreparedTab>
+              ><TabIcon art={tabArtOf(kind)} />{label}</PreparedTab>
             );
           })}
         </div>

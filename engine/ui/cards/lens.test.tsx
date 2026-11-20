@@ -2925,8 +2925,7 @@ describe('a card\'s icon on its tab', () => {
 
   test('the visit\'s tab shows none, and a card tab beside it does', async () => {
     width(false);
-    const w = laid({ visit: true });
-    expect(w).toBeDefined();
+    laid({ visit: true });
     await userEvent.click(await screen.findByRole('button', { name: /Opens the visit\.$/u }));
     const l = screen.getByRole('dialog', { name: /^Visit/u });
     expect(within(l).getByRole('tab', { name: /^On a visit/u }).querySelector('.kb-lens-tab-icon')).toBeNull();
