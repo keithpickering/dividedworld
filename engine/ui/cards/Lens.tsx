@@ -231,8 +231,10 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
   const fallback = useMemo(() => {
     const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
     const ofKind = here.plays.filter((p) => p.card === kind);
+    /* A play in `then` is judged as it stood (as `playOver` does): its timed end does not count, so its way out says "Ends" and never "Ended". No moment time reaches the Lens, so the clock that says so is one before every end. */
+    const clock = ofKind.some((p) => then?.has(p.id)) ? Number.NEGATIVE_INFINITY : api.now();
     if (isBack(kind) && ofKind.length > 0) {
-      const say = (p: CardPlay) => backWords(p, nameOf?.(p.caster) ?? 'someone', cardName, api.now());
+      const say = (p: CardPlay) => backWords(p, nameOf?.(p.caster) ?? 'someone', cardName, clock);
       const yours = (p: CardPlay) => (here.faces[p.id] ? `Yours: ${cardName(here.faces[p.id]!)}, which nobody else can see.` : '');
       const first = say(ofKind[0]!);
       return { progress: null, state: first.state, ends: first.ends, yours: false, controls: [], notes: Object.fromEntries(ofKind.map((p) => [p.id, [say(p).note, yours(p)].filter((w) => w !== '').join(' ')])) };
@@ -244,7 +246,7 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
        never reaches it (it is simply ended, below), so "took it" is said only of a fall a filing spent (`CardPlay.spent`, from the page). */
     const waiting = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.spent);
     const base = {
-      ...defaultView({ name: rules?.name ?? kind, ...(rules?.keeps ? { keeps: true as const } : {}) }, ui.cards.find((c) => c.key === kind), economy, latestEnd, waiting, api.now()),
+      ...defaultView({ name: rules?.name ?? kind, ...(rules?.keeps ? { keeps: true as const } : {}) }, ui.cards.find((c) => c.key === kind), economy, latestEnd, waiting, clock),
       /* A fall waiting has no time up: its way out is a filing or an admin. */
       ...(rules?.discipline?.kind === 'fall' && waiting.length > 0 ? { ends: FALL_ENDS } : {}),
     };
@@ -270,7 +272,7 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
       return { ...base, state: gimmick.state, ...(gimmick.ends ? { ends: gimmick.ends } : {}), ...(gimmick.report ? { report: gimmick.report } : {}), notes: caught };
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
-  }, [api, instance.cards, ui.cards, kind, economy, here, nameOf, now]);
+  }, [api, instance.cards, ui.cards, kind, economy, here, nameOf, now, then]);
   /* Every play of the kind over (ended by an admin, or it did not take): its effect draws nothing, so whatever view it last gave is stale. */
   const allEnded = here.plays.length > 0 && here.plays.every((p) => p.reversed || p.untaken);
   if (!given || allEnded) return fallback;

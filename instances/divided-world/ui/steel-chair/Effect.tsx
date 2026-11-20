@@ -234,7 +234,9 @@ export function SteelChairEffect(props: EffectProps) {
   const { plays, show, children } = props;
   const inMoment = props.moment !== null;
   const ends = useMemo(() => plays.flatMap((p) => (p.ends !== undefined ? [Date.parse(p.ends)] : [])), [plays]);
-  const now = useAt(inMoment ? [] : ends);
+  const clock = useAt(inMoment ? [] : ends);
+  /* In a moment the way out is worded at the moment's time, not the page's. */
+  const now = props.moment ? props.moment.at : clock;
   /* A moment draws every play it is handed, as they stood; a live post drops the plays whose end has passed (the engine goes on handing them over). */
   const live = useMemo(
     () => (inMoment ? plays : plays.filter((p) => p.ends === undefined || Date.parse(p.ends) > now)).slice(0, MOST),

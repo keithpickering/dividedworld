@@ -101,6 +101,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const cardUi = ui.cards.find((c) => c.key === shownKind);
   const view = useResolvedView(store, post, kind, nameOf, postAt, then);
   const more = useOutdrawing(tallies, plays, postTotal, compare);
+  /* Only the name is read here, so the clock passed does not matter. */
   const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', (k) => instance.cards.find((c) => c.key === k)?.name ?? k, api.now()).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
   const icon = art?.mark;

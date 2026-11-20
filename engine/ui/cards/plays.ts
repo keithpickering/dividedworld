@@ -317,14 +317,16 @@ export function sameView(a: CardView, b: CardView): boolean {
  * else its `summary`, else the first sentence of what `describe` says under `settings`, else (no settings to describe under)
  * its name; no edge, no notch, no controls. A play that ends on a timer (`endsAt`, a Use's `ends`) gives the view its way out,
  * "Ends Nov 7, 9:14 PM", in the reader's zone; a card that keeps (`rules.keeps`) whose end has passed at `now` says "Ended Nov 7, 9:14 PM. Posts written while it was up keep it." A status that is a function is given the card's `plays` on the post.
+ * The overloads: with no `endsAt` there is no end to word and no clock is needed; with an `endsAt` (even one that may be `undefined`) a `now` is required, so the tense of "Ends" or "Ended" is never guessed.
+ * A strip showing a post in a moment passes a clock before the end, so the end reads as it stood then.
  */
 export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: undefined, plays?: readonly CardPlay[]): CardView;
 /** With an end that may be given, the clock is required: the tense of "Ends" or "Ended" is the clock's to give. */
 export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings: Settings | undefined, endsAt: string | undefined, plays: readonly CardPlay[], now: number): CardView;
-export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: string, plays: readonly CardPlay[] = [], now?: number): CardView {
+export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: string, plays: readonly CardPlay[] = [], now = 0): CardView {
   const described = ui && settings ? ui.describe(settings) : '';
   const first = /^.*?[.!?](?=\s|$)/s.exec(described.trim())?.[0] ?? described.trim();
-  return { progress: null, state: (typeof ui?.status === 'function' ? ui.status(plays) : ui?.status) ?? ui?.summary ?? (first || rules.name), ...(endsAt !== undefined ? { ends: rules.keeps === true && Date.parse(endsAt) <= now! ? keptEndedWords(endsAt, now!) : endsWords(endsAt, now!) } : {}), yours: false, controls: [], notes: {} };
+  return { progress: null, state: (typeof ui?.status === 'function' ? ui.status(plays) : ui?.status) ?? ui?.summary ?? (first || rules.name), ...(endsAt !== undefined ? { ends: rules.keeps === true && Date.parse(endsAt) <= now ? keptEndedWords(endsAt, now) : endsWords(endsAt, now) } : {}), yours: false, controls: [], notes: {} };
 }
 
 export interface Plays {

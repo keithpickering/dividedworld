@@ -1128,6 +1128,21 @@ describe('plays shown as they stood (then)', () => {
     expect(asThen(plays, new Set(['never']))).toBe(plays);
   });
 
+  test('a play in then whose end has passed since says Ends in its way out, as it stood', async () => {
+    width(false);
+    const w = world();
+    w.fake.clock.advance(60_000);
+    const ended = new Date(w.fake.clock.now() - 3_600_000).toISOString();
+    const plays = createPlays();
+    const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+    plays.add([{ ...base, id: 'then-timed', kind: 'card', payload: { card: 'k2', ends: ended }, currentPayload: { card: 'k2', ends: ended } }]);
+    plays.setBilling(w.second, ['then-timed']);
+    const then = new Set(['then-timed']);
+    renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} then={then} /></LensProvider>, { path: '/', instance, cards });
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+    expect(lens().querySelector('.kb-lens-ends')!.textContent).toBe(`Ends ${dayAndTime(ended)}`);
+  });
+
   test("the same play, not in then, is ended: its effect's view is not said", async () => {
     width(false);
     strip(undefined);
