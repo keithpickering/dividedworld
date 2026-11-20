@@ -141,7 +141,7 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
       const out: Record<string, number[]> = {};
       let total = Object.values(keptStuck ?? {}).reduce((n, list) => n + list.length, 0);
       for (const [key, shares] of Object.entries(drops)) {
-        const held = keptStuck?.[key];
+        const held = keptStuck && Object.hasOwn(keptStuck, key) ? keptStuck[key] : undefined;
         if (!held) return refuse('a place in drops is in stuck');
         if (!Array.isArray(shares)) return refuse('drops holds a list of shares for each place');
         total += shares.length;

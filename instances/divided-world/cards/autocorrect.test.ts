@@ -157,6 +157,10 @@ test('Autocorrect\'s saved state keeps where a roll fell, by the strip\'s place:
   assert.deepEqual(check({ peeled: [0], stuck }), { ok: true, value: { peeled: [0], stuck } }, 'a state without drops is unchanged');
   refused({ peeled: [], stuck, drops: [[0.1]] }, /drops is/);
   refused({ peeled: [], stuck, drops: { '3': [0.1] } }, /place in drops is in stuck/);
+  // A place named like an object's own inherited key is no place in stuck, and is refused rather than thrown on.
+  for (const key of ['__proto__', 'constructor', 'toString']) {
+    refused({ peeled: [], stuck, drops: JSON.parse(`{"${key}":[0.1]}`) }, /place in drops is in stuck/);
+  }
   refused({ peeled: [], stuck, drops: { '2': 0.1 } }, /drops holds a list of shares/);
   refused({ peeled: [], stuck, drops: { '2': [0.1, 'a'] } }, /share is from 0 to 1/);
   refused({ peeled: [], stuck, drops: { '2': [1.5] } }, /share is from 0 to 1/);
