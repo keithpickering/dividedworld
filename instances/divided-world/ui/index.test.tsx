@@ -568,7 +568,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.hint).toBe('Lift a strip by one end to read what is under it.');
     const said = ac.describe(instance.settings);
     expect(said).toContain('A Pepperoni card');
-    expect(said).toContain("Any reader can lift a strip by one end to read under it, and it lays back down. Only the post's author can peel strips off, slowly, for everyone, and the author's words are always under the tape and in the post's History. The author can't peel any of a play's tape for the first 24 hours after it lands.");
+    expect(said).toContain("Any reader can lift a strip by one end to read under it, and it lays back down. Only the post's author can peel strips off, slowly, for everyone and press a started peel back down, and the author's words are always under the tape and in the post's History. The author can't peel any of a play's tape for the first 24 hours after it lands.");
     expect(said).toContain('0.25 more for every 50 characters it covers');
     expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.holdHours': 0 } })).not.toContain("can't peel any");
     expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.volumeStep': 40 } })).toContain('every 40 characters');

@@ -72,6 +72,9 @@ const COVERED = 'Another strip is stuck over this one. That one comes off first.
 const BUZZ = [10, 40, 10];
 /** What a key pick says, where a hand feels the buzz. */
 const PICKED = 'Picked. Keep holding to peel.';
+const NOTHING_BACK = 'Nothing to press back down.';
+/** What a held key asks of the hands. */
+type KeyMode = 'peek' | 'peel' | 'unroll';
 const SAVE_AFTER_MS = 400;
 const RETRY_AFTER_MS = 1500;
 const MAX_SAVE_RETRIES = 3;
@@ -87,8 +90,8 @@ const MOST_RESIDUE_PIXELS = 4_000_000;
 /** The Lens's ends (design section 12), the glass's plain words, kept where a test can read them. */
 export const LENS = Object.freeze({
   readerEnds: 'Lift a strip by one end to read under it; it lays back down. Only the post\'s author can peel strips off for good.',
-  authorEnds: 'Peel a strip off for good: hold one end until it lifts, then pull slowly. Pull too fast and it tears.',
-  authorHeld: (left: string) => `Stuck on for ${left}. After that you can peel strips off for good: hold one end until it lifts, then pull slowly. Pull too fast and it tears.`,
+  authorEnds: 'Drag a strip by one end to read under it; it lays back down. To peel it off for good, hold one end still until the corner lifts, then pull slowly. Pull too fast and it tears. Push a roll back to stick the tape down again.',
+  authorHeld: (left: string) => `Stuck on for ${left}. Until then, drag a strip by one end to read under it. After that you can peel strips off for good: hold one end still until the corner lifts, then pull slowly.`,
 });
 
 /** How long a hold has left, rounded up to the minute: "5h 12m", "12m", or "less than a minute". */
@@ -217,7 +220,7 @@ interface AnchorProps {
   readonly author: boolean;
   readonly open: boolean;
   /** A key goes down on (or comes up from) the anchor. */
-  readonly onKey: (strip: TapeStrip, down: boolean) => void;
+  readonly onKey: (strip: TapeStrip, down: boolean, mode?: KeyMode) => void;
   readonly onFocus: (key: string | null) => void;
   /** The author's hold on the strip's play, as time left in words; absent when none runs. */
   readonly heldLeft?: string;
@@ -231,17 +234,22 @@ interface AnchorProps {
 function Anchor({ strip, author, open, onKey, onFocus, heldLeft }: AnchorProps) {
   const name = author && heldLeft !== undefined
     ? `Autocorrected text: “${strip.replacement}”. Stuck on for ${heldLeft}. Hold Enter or Space to lift it and read under it`
-    : `Autocorrected text: “${strip.replacement}”. Hold Enter or Space to ${author ? 'peel it off for good' : 'lift it and read under it'}`;
+    : author
+      ? `Autocorrected text: “${strip.replacement}”. Hold Enter or Space to lift it and read under it. Hold Shift with Enter or Space to peel it off for good. Hold Backspace to press a started peel back down.`
+      : `Autocorrected text: “${strip.replacement}”. Hold Enter or Space to lift it and read under it`;
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const press = e.key === 'Enter' || e.key === ' ';
+    /* Backspace is the author's unroll, out of the hold; for anyone else it is left alone, so the browser's own use of it stands. */
+    if (!press && !(e.key === 'Backspace' && author && heldLeft === undefined)) return;
     e.preventDefault();
-    if (!e.repeat) onKey(strip, true);
+    if (e.repeat) return;
+    onKey(strip, true, e.key === 'Backspace' ? 'unroll' : e.shiftKey && author && heldLeft === undefined ? 'peel' : 'peek');
   };
   return (
     <button
       type="button" className="kb-visually-hidden dw-ac-anchor" data-kb-ac-anchor={strip.key} data-kb-quotable={open ? 'shown' : 'hidden'}
       tabIndex={open ? 0 : -1} aria-label={name}
-      onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === 'Enter' || e.key === ' ') onKey(strip, false); }}
+      onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Backspace') onKey(strip, false); }}
       onFocus={() => onFocus(strip.key)} onBlur={() => { onKey(strip, false); onFocus(null); }}
     >{strip.replacement}</button>
   );
@@ -829,12 +837,16 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   /* What the hands did just now is drawn, and the loop runs while they still have something to do. */
   const after = useCallback((hs: Hands) => { apply(hs.drain()); setFrame((n) => n + 1); if (hs.busy()) run(); }, [apply, run]);
 
-  const onKey = useCallback((strip: TapeStrip, down: boolean) => {
+  const onKey = useCallback((strip: TapeStrip, down: boolean, mode: KeyMode = 'peek') => {
     const hs = handsNow();
     byKey.current = down;
-    if (down) { onMeet(); hs.keyDown(strip.key, model.current.author && !drawn.current.get(strip.key)?.held ? 'peel' : 'peek'); } else hs.keyUp();
+    if (down) {
+      onMeet();
+      /* A refusal says why; a covered strip's own words, if the hands have them, come after and stand. */
+      if (!hs.keyDown(strip.key, mode) && mode === 'unroll') say(NOTHING_BACK);
+    } else hs.keyUp();
     after(hs);
-  }, [handsNow, onMeet, after]);
+  }, [handsNow, onMeet, after, say]);
   /* The pointer's place on a piece, in the piece's own pixels: from its untilted box (offsetLeft ignores the tilt), not the rotated rect. */
   const placeOf = (e: PointerEvent<HTMLElement>) => e.clientX - ((e.currentTarget.offsetParent?.getBoundingClientRect().left ?? 0) + e.currentTarget.offsetLeft);
   /* While a hand is held, a pointerup or pointercancel anywhere lets it go: its piece may be gone from the page, and no event would come to it. */
