@@ -102,7 +102,7 @@ function useQuoteCheck(value: string, check: ((body: string) => Promise<readonly
     called.then(done, () => done(NONE));
   });
   useEffect(() => {
-    if (!real) { setForged(NONE); return; }
+    if (!real) { due.current = false; setForged(NONE); return; }
     const timer = setTimeout(() => { if (inFlight.current) due.current = true; else ask.current(value); }, CHECK_AFTER_MS);
     return () => clearTimeout(timer);
   }, [value, real]);

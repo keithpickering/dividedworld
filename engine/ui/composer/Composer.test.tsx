@@ -801,6 +801,25 @@ describe('the line about a quote that is not in the post it names', () => {
     expect(shaky()).toBeNull();
   });
 
+  test('a retry owed to a newer draft is not made once that draft holds no real quote', async () => {
+    const w = threadWorld(2);
+    const answers: ((v: readonly string[]) => void)[] = [];
+    const asked: string[] = [];
+    vi.spyOn(w.fake, 'quoteCheck').mockImplementation((body: string) => { asked.push(body); return new Promise<readonly string[]>((resolve) => { answers.push(resolve); }) as never; });
+    const { type, wait } = await open(w);
+    const first = `[quote=${w.ids[0]}]one[/quote]`;
+    type(first);
+    await wait(WAIT);
+    type(`[quote=${w.ids[0]}]two[/quote]`);
+    await wait(WAIT);
+    type('plain now');
+    await wait(WAIT);
+    await act(async () => { answers[0]!([w.ids[0]!]); });
+    await wait(WAIT);
+    expect(asked).toEqual([first]);
+    expect(screen.queryByText(LINE)).toBeNull();
+  });
+
   test('a failed call shows nothing and the post still posts', async () => {
     const w = threadWorld(2);
     vi.spyOn(w.fake, 'quoteCheck').mockRejectedValue(new Error('down'));
