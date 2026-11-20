@@ -60,7 +60,8 @@ That is Blender's Python module, with no Blender install and no GPU; the full Bl
 while changing a scene, `ART_SCALE=1 ART_SAMPLES=40` makes a half-size draft in under a minute: give a draft another
 name, such as `draft.png`, since the guard refuses an `art.webp` of any other size, and do not commit it. Each scene's
 other settings (a seed, a camera) are environment variables read at its top. Whoops! is the one scene that needs
-`scipy`. Heat Magnet's fire is a fluid simulation, which fails inside the Python module, so that one scene needs the
+`scipy`. Pop Steal's sign takes its lettering from `instances/divided-world/ui/fonts/`, as the pack's scene does, so it
+needs `fonttools brotli`. Heat Magnet's fire is a fluid simulation, which fails inside the Python module, so that one scene needs the
 full Blender build. Blender also writes a 24 MB file, `waveletNoiseTile.bin`, into the folder it is run from when it
 simulates that fire; the repository ignores it, and it can be deleted.
 
