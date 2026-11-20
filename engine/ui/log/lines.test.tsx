@@ -1829,3 +1829,19 @@ describe('the poll lines', () => {
     expect(JSON.stringify(r)).not.toMatch(/voter|reacted/u);
   });
 });
+
+describe('merging pages with poll lines', () => {
+  const place = { thread: 't', title: 'T', seq: 1 };
+  const b = (act: string) => ({ act, poll: 'p', character: 'c', picks: [0], at: '2026-11-20T12:00:00.000Z', question: 'Q', secret: false, options: ['A', 'B'], changed: false, place });
+  const k = (act: string) => ({ act, poll: 'p', character: 'c', at: '2026-11-20T12:00:00.000Z', question: 'Q', place });
+  test('ballots and closes of both pages are kept, newer first', () => {
+    const merged = mergeLogs({ ...empty, ballots: [b('b1')], pollCloses: [k('k1')] }, { ...empty, ballots: [b('b2')], pollCloses: [k('k2')] });
+    expect(merged.ballots?.map((x) => x.act)).toEqual(['b1', 'b2']);
+    expect(merged.pollCloses?.map((x) => x.act)).toEqual(['k1', 'k2']);
+  });
+  test('where only one page has them they survive, and where neither does they stay absent', () => {
+    expect(mergeLogs({ ...empty, ballots: [b('b1')] }, { ...empty }).ballots?.map((x) => x.act)).toEqual(['b1']);
+    expect(mergeLogs({ ...empty }, { ...empty, pollCloses: [k('k2')] }).pollCloses?.map((x) => x.act)).toEqual(['k2']);
+    expect(mergeLogs({ ...empty }, { ...empty }).ballots).toBeUndefined();
+  });
+});

@@ -1470,7 +1470,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const p = pollOf(a.target ?? '');
       const place = p === undefined ? null : pollPlace(p);
       if (p === undefined || place === null) return [];
-      const changed = ballotsOn(p.id).some((o) => o.character === a.character && (o.at < a.at || (o.at === a.at && o.order < a.order)));
+      const previous = ballotsOn(p.id).filter((o) => o.character === a.character && (o.at < a.at || (o.at === a.at && o.order < a.order))).at(-1);
+      const changed = previous !== undefined && (previous.payload.picks as readonly number[]).length > 0;
       return [{ ms: a.at, order: a.order, r: { act: a.id, poll: p.id, character: a.character!, picks: a.payload.picks as readonly number[], at: iso(a.at), question: String(p.payload.question), secret: p.payload.secret === true, options: p.payload.options as readonly string[], changed, place } }];
     });
     const closes = [...acts.values()].filter((a) => a.kind === 'poll_close' && a.payload.by === 'admin').flatMap((a) => {
@@ -3972,7 +3973,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             draws: newest(surfaces.draws.filter((x) => fits(x.ms))).map(({ r }) => r),
             wallsDrawn: newest(surfaces.walls.filter((x) => fits(x.ms))).map(({ r }) => r),
           }))(account === undefined ? { draws: [], walls: [] } : surfaceLog(account)),
-          /* my_ballots and my_poll_closes (0388, 0389), as log_page's `ballots` and `pollCloses` read them: the caller's own ballots (a secret one's character and picks too, a withdrawal's picks empty, `changed` where the character had an earlier ballot on the poll) and an admin's closes of the polls their characters wrote. */
+          /* my_ballots and my_poll_closes (0388, 0389), as log_page's `ballots` and `pollCloses` read them: the caller's own ballots (a secret one's character and picks too, a withdrawal's picks empty, `changed` where the character's previous ballot on the poll picked something) and an admin's closes of the polls their characters wrote. */
           ...((rows) => ({
             ballots: newest(rows.ballots.filter((x) => fits(x.ms))).map(({ r }) => r),
             pollCloses: newest(rows.closes.filter((x) => fits(x.ms))).map(({ r }) => r),

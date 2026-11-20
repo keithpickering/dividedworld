@@ -58,7 +58,7 @@ declare
   tmo uuid := pg_temp.mkpoll(t, pc, a1, closes => now() - interval '1 hour', at => now() - interval '5 hours');
   adm uuid := pg_temp.mkpoll(t, pk, a1, at => now() - interval '5 hours');
   aut uuid := pg_temp.mkpoll(t, pa, a1, at => now() - interval '5 hours');
-  pb1 uuid; pb2 uuid; sb1 uuid; sbs uuid; sbc uuid; adm_close uuid; aut_close uuid;
+  wd uuid; rc uuid; pb1 uuid; pb2 uuid; sb1 uuid; sbs uuid; sbc uuid; adm_close uuid; aut_close uuid;
   da jsonb; db jsonb; dc jsonb; dd jsonb; e jsonb; v jsonb; place jsonb; who_i integer; kk text;
 begin
   -- The public poll: five ballots by three characters; b1 changed hers and c1 withdrew, so the counted are b1's {2} and b2's {1}.
@@ -220,6 +220,9 @@ begin
   perform tests.unbecome();
 
   -- ---- 4. log_page ----
+  -- b1 withdraws on the public poll and then casts again: the withdrawal is a change (her last ballot picked something), the new cast is not (her last ballot picked nothing).
+  wd := pg_temp.vote(pub, b1, '[]', now() - interval '50 minutes');
+  rc := pg_temp.vote(pub, b1, '[1]', now() - interval '40 minutes');
   perform tests.become(bob);
   e := log_page(null);
   perform tests.unbecome();
@@ -233,6 +236,9 @@ begin
   -- The poll's options, to word the picks, and `changed`: whether the character had a ballot on the poll before this one (the first is not a change; the second of b1's on the public poll is; a withdrawal is a ballot too).
   if v -> 'options' is distinct from (select p.payload -> 'options' from acts p where p.id = sec) or v ->> 'changed' is distinct from 'false' then raise exception '4 a ballot line holds no options or the wrong change flag: %', v; end if;
   if (select x ->> 'changed' from jsonb_array_elements(e -> 'sources' -> 'ballots') x where (x ->> 'act')::uuid = pb1) is distinct from 'false' or (select x ->> 'changed' from jsonb_array_elements(e -> 'sources' -> 'ballots') x where (x ->> 'act')::uuid = pb2) is distinct from 'true' then raise exception '4 the change flag of a first and a second ballot: %', e -> 'sources' -> 'ballots'; end if;
+  if (select x ->> 'changed' from jsonb_array_elements(e -> 'sources' -> 'ballots') x where (x ->> 'act')::uuid = wd) is distinct from 'true' or (select x ->> 'changed' from jsonb_array_elements(e -> 'sources' -> 'ballots') x where (x ->> 'act')::uuid = rc) is distinct from 'false' then
+    raise exception '4 a withdrawal is a change and a cast after it is not: %', e -> 'sources' -> 'ballots';
+  end if;
   if jsonb_array_length(e -> 'sources' -> 'pollCloses') is distinct from 0 then raise exception '4 bob''s log holds an admin''s close of a poll he did not write: %', e -> 'sources' -> 'pollCloses'; end if;
   if e::text like '%' || c1::text || '%' then raise exception '4 bob''s log names another player''s character'; end if;
   perform tests.become(cat);

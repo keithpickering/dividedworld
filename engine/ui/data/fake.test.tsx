@@ -6005,7 +6005,7 @@ describe('polls (0388, 0389)', () => {
     fake.clock.advance(1_000);
     const withdrawn = must(await fake.castBallot(id, anaFace, [])).act.id;
     fake.clock.advance(1_000);
-    /* A recast after a withdrawal is a change on purpose: the character had a ballot on the poll before. */
+    /* A cast after a withdrawal is a cast, not a change: the character's previous ballot picked nothing. */
     const recast = must(await fake.castBallot(id, anaFace, [0])).act.id;
     const hushed = must(await fake.castBallot(secret, anaFace, [2])).act.id;
     fake.signInAs(fake.seed.account('boss', { admin: true }));
@@ -6014,7 +6014,7 @@ describe('polls (0388, 0389)', () => {
     const log = (await fake.log(null));
     const place = { thread, title: 'Hello', seq: post.seq };
     const byAct = new Map((log.ballots ?? []).map((b) => [b.act, b]));
-    expect([first, second, withdrawn, recast].map((a) => [byAct.get(a)!.picks, byAct.get(a)!.changed])).toEqual([[[1], false], [[2], true], [[], true], [[0], true]]);
+    expect([first, second, withdrawn, recast].map((a) => [byAct.get(a)!.picks, byAct.get(a)!.changed])).toEqual([[[1], false], [[2], true], [[], true], [[0], false]]);
     expect(byAct.get(first)).toMatchObject({ poll: id, character: anaFace, question: 'Which?', secret: false, options: ['A', 'B', 'C'], place });
     expect(byAct.get(hushed)).toMatchObject({ character: anaFace, picks: [2], secret: true, question: 'Hush?', changed: false });
     expect(log.pollCloses).toEqual([{ act: close, poll: id, character: anaFace, at: expect.any(String), question: 'Which?', place }]);
