@@ -363,11 +363,17 @@ describe('crowd pay in the summary', () => {
     const glo = fake.seed.character(other, 'Gloomba', 'heel');
     fake.seed.settle({ at: at(30, 8, 17), debut: false, turns: false, ledger: [{ character: glo, reason: 'heel.drewHeat', amount: 10 }] });
     const real = fake.log.bind(fake);
-    vi.spyOn(fake, 'log').mockImplementation(async (before) => crowdLog(await real(before), 77, new Date(at(30, 8, 17)).toISOString(), ['x'], { stub: true }));
+    const endsAt = new Date(at(30, 8, 17)).toISOString();
+    vi.spyOn(fake, 'log').mockImplementation(async (before) => crowdLog(await real(before), 77, endsAt, ['x'], { stub: true }));
+    /* The first load's own path: boot names the settlement (the database's newestSettlement counts crowd pay), and no log is read to decide. */
+    const page = fake.logPage.bind(fake);
+    vi.spyOn(fake, 'logPage').mockImplementation(async (before) => ({ ...(await page(before)), log: crowdLog((await page(before)).log, 77, endsAt, ['x'], { stub: true }) }));
+    const boot = { ...(await fake.boot()), newestSettlement: endsAt };
     localStorage.clear();
     startLoad();
-    renderIn(fake, <><SettlementOnLoad active /><Where /></>, { path: '/' });
+    renderIn(fake, <><SettlementOnLoad active /><LoadedLog /><Where /></>, { path: '/', boot });
     await waitFor(() => expect(where.path).toBe('/log/settlement'));
+    expect(await screen.findByText(/^You reacted to 1 Act by other players and were paid 0\.02 Aura\./u)).toBeInTheDocument();
   });
 });
 
