@@ -41,6 +41,7 @@ import { ConcealingNote, HiddenNote, HiddenOwn, useMyHidden } from '../conduct/H
 import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteHead, text, useHistory, when, type PostAbout } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 import { FoldBar } from './FoldBar.tsx';
+import { Poll } from '../polls/Poll.tsx';
 import { RowFoldCtx, useFoldMotion } from './fold.tsx';
 
 export { ThreadCtx, type ThreadContext };
@@ -124,6 +125,7 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
                 </>
               )
               : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>}
+          {!editing && <Poll post={act.id} />}
           <LastEdited act={act} />
           <Reactions act={act.id} author={by} authorName={spoken} tallies={tallies} mine={mine} plays={plays} />
           {person && <Signature text={person.character.signature} />}

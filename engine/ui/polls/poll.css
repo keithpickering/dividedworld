@@ -1,0 +1,176 @@
+/*
+ * A poll on a post (Poll.tsx), the board's own: a 2003 poll table in the post's ink, black and white, with no color of its own (the engine names none: every value is a token).
+ * The root is `data-kb-over-ink` (thread.css lifts it over a post's ink, as wide as its content); the fieldset is the one border the poll draws, the table's, and nothing else
+ * here has a box of its own. The legend is the head: the question in bold and the settings in Courier beside it. A phone puts each option's bar and count on a line of its own
+ * under the option.
+ */
+.kb-poll-root {
+  margin: 0.6em 0;
+  max-width: 34em;
+  font-size: var(--kb-size-small);
+}
+
+.kb-poll {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--kb-rule);
+  color: var(--kb-fg);
+  /* The chips' own ground (reactions.css), so the table reads on any ink a card lays under it. */
+  background: var(--kb-chip-bg);
+}
+
+/* The legend is the head bar: a legend sits in its fieldset's border unless it floats, so it is floated across the whole width and the table clears it. */
+.kb-poll-head {
+  float: left;
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 1em;
+  padding: 0.3em 0.6em;
+  border-bottom: 1px solid var(--kb-rule);
+}
+
+.kb-poll-question {
+  font-size: var(--kb-size-body);
+}
+
+.kb-poll-meta {
+  font: var(--kb-size-fine) / 1.4 var(--kb-font-mono);
+  color: var(--kb-muted);
+}
+
+.kb-poll-table {
+  clear: both;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.kb-poll-table td {
+  padding: 0.3em 0.6em;
+  vertical-align: middle;
+  border-bottom: 1px dotted var(--kb-muted);
+}
+
+.kb-poll-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.kb-poll-pick {
+  width: 1.6em;
+}
+
+.kb-poll-pick input {
+  margin: 0;
+}
+
+.kb-poll-name {
+  width: 40%;
+  overflow-wrap: anywhere;
+}
+
+.kb-poll-who {
+  display: block;
+  font-size: var(--kb-size-fine);
+  color: var(--kb-muted);
+}
+
+.kb-poll-bar {
+  display: block;
+  height: 0.8em;
+  border: 1px solid var(--kb-rule);
+  background: var(--kb-chip-bg);
+}
+
+.kb-poll-bar i {
+  display: block;
+  height: 100%;
+  background: var(--kb-fg);
+}
+
+.kb-poll-count {
+  width: 6.5em;
+  text-align: right;
+  white-space: nowrap;
+  font-family: var(--kb-font-mono);
+}
+
+.kb-poll-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em 1em;
+  padding: 0.35em 0.6em;
+  border-top: 1px solid var(--kb-rule);
+  font-size: var(--kb-size-fine);
+}
+
+.kb-poll-links {
+  display: flex;
+  gap: 1em;
+  margin-left: auto;
+}
+
+.kb-poll-line,
+.kb-poll-refusal {
+  margin: 0;
+}
+
+.kb-poll-refusal {
+  flex: 1 0 100%;
+}
+
+/* The record opens under the foot, inside the table's own border and in the same ink. */
+.kb-poll-record {
+  padding: 0.35em 0.6em;
+  border-top: 1px solid var(--kb-rule);
+}
+
+.kb-poll-ballots {
+  margin: 0 0 0.4em;
+  padding-left: 1.4em;
+}
+
+/* A phone: each option's bar and count go on their own line under the option. */
+@media (max-width: 40em) {
+  .kb-poll-table,
+  .kb-poll-table tbody {
+    display: block;
+  }
+
+  .kb-poll-table tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    border-bottom: 1px dotted var(--kb-muted);
+  }
+
+  .kb-poll-table tr:last-child {
+    border-bottom: 0;
+  }
+
+  .kb-poll-table td {
+    border-bottom: 0;
+  }
+
+  .kb-poll-pick {
+    grid-column: 1;
+    width: auto;
+  }
+
+  .kb-poll-name {
+    grid-column: 2 / -1;
+    width: auto;
+  }
+
+  .kb-poll-barcell {
+    grid-column: 1 / 3;
+  }
+
+  .kb-poll-count {
+    grid-column: 3;
+    width: auto;
+  }
+}

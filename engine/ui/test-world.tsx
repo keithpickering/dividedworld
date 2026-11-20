@@ -199,6 +199,7 @@ export function tapThread(fake: Fake): () => ThreadListener {
     onTally: (act, t) => (listener ? listener.onTally?.(act, t) : void waiting.push((l) => l.onTally?.(act, t))),
     onEffect: (p, at) => (listener ? listener.onEffect?.(p, at) : void waiting.push((l) => l.onEffect?.(p, at))),
     onUnder: (parent, play, a) => (listener ? listener.onUnder?.(parent, play, a) : void waiting.push((l) => l.onUnder?.(parent, play, a))),
+    onPoll: (e) => (listener ? listener.onPoll?.(e) : void waiting.push((l) => l.onPoll?.(e))),
   };
   return () => proxy;
 }

@@ -4,6 +4,7 @@ import type { PronounSet } from '../../rules/pronouns.ts';
 import type { Act, Id, PageOrigin, ThreadSummary, Visit } from '../data/api.ts';
 import type { Plays } from '../cards/plays.ts';
 import type { Mine } from '../reactions/mine.ts';
+import type { Polls } from '../polls/store.ts';
 import type { Tallies } from './tallies.ts';
 
 /** A post of the reader's own that a card's author veil shows under the stand-in: which of their characters wrote it, the veil's play and when it ends (`ThreadPage.veiled`). */
@@ -16,6 +17,8 @@ export interface ThreadContext {
   readonly perPage: number;
   readonly summary: ThreadSummary;
   readonly tallies: Tallies;
+  /** The polls on the posts on screen (polls/store.ts), as the page read and heard them. Absent where a post is drawn outside the thread screen (a story's lone post), which then draws none. */
+  readonly polls?: Polls;
   /** The player's own reactions on the Acts on screen. */
   readonly mine: Mine;
   /** The card plays on the posts on screen, with what their effects keep (engine/ui/cards/plays.ts). */
