@@ -36,6 +36,7 @@ import { mainEvent, price as mainEventPrice } from './main-event.ts';
 import { mooch, price as moochPrice } from './mooch.ts';
 import { offDay, price as offDayPrice } from './off-day.ts';
 import { overreaction, price as overreactionPrice } from './overreaction.ts';
+import { popSteal, price as popStealPrice } from './pop-steal.ts';
 import { publicityTour, price as publicityTourPrice } from './publicity-tour.ts';
 import { requiredReading, price as requiredReadingPrice } from './required-reading.ts';
 import { ropeBreak, price as ropeBreakPrice } from './rope-break.ts';
@@ -81,6 +82,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [mooch as CardRules, moochPrice],
   [offDay as CardRules, offDayPrice],
   [overreaction as CardRules, overreactionPrice],
+  [popSteal as CardRules, popStealPrice],
   [publicityTour as CardRules, publicityTourPrice],
   [requiredReading as CardRules, requiredReadingPrice],
   [ropeBreak as CardRules, ropeBreakPrice],

@@ -37,6 +37,7 @@ import { ui as mainEventUi } from './cards/main-event/ui.ts';
 import { ui as moochUi } from './cards/mooch/ui.ts';
 import { ui as offDayUi } from './cards/off-day/ui.ts';
 import { ui as overreactionUi } from './cards/overreaction/ui.ts';
+import { ui as popStealUi } from './cards/pop-steal/ui.ts';
 import { ui as publicityTourUi } from './cards/publicity-tour/ui.ts';
 import { ui as requiredReadingUi } from './cards/required-reading/ui.ts';
 import { ui as ropeBreakUi } from './cards/rope-break/ui.ts';
@@ -84,6 +85,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   moochUi,
   offDayUi,
   overreactionUi,
+  popStealUi,
   publicityTourUi,
   requiredReadingUi,
   ropeBreakUi,

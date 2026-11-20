@@ -30,6 +30,7 @@ import { feelinGlam } from '../cards/feelin-glam.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
+import { popSteal } from '../cards/pop-steal.ts';
 import { ropeBreak } from '../cards/rope-break.ts';
 import { STEEL_CHAIR_LASTS } from '../cards/steel-chair.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
@@ -1183,6 +1184,22 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(said).toBe(`A Sweet card, ${ropeBreak.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Salty common card cast on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
     expect(said).not.toContain('names');
     expect(rope.describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day.');
+  });
+
+  test('Pop Steal is a face-down Reversal with the same status as every one, its Salty colors, no form and no effect, and its words say what it catches', () => {
+    const pop = ui('pop-steal');
+    expect(pop.status).toBe('Set, face down to everyone else');
+    expect(pop.status).toBe(ui('card-collector').status);
+    expect(pop.art.color).toBe('#ff3d7f');
+    expect(pop.art.ink).toBe('#14030a');
+    expect(pop.art.tagline).toBe('Steal the pop.');
+    expect(pop.summary).toBe('Set face down on your post. Catches the first Sweet common cast there, and takes it into your hand.');
+    expect(pop.Effect).toBeUndefined();
+    expect(pop.ConfigForm).toBeUndefined();
+    const said = pop.describe(instance.settings);
+    expect(said).toBe(`A Salty card, ${popSteal.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Sweet common card cast on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
+    expect(said).not.toContain('names');
+    expect(pop.describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day.');
   });
 
   test('Off Day says the class it names and when, before its window opens and from then', () => {
