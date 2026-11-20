@@ -15,6 +15,7 @@ insert into settings (key, value) values
   ('walletCap', '600'),
   ('vote', '10'),
   ('halving', '0.5'),
+  ('debateDays', '3'),
   ('settlementCron', '"17 8 * * *"'),
   ('viewCountCron', '"41 * * * *"'),
   ('settlementLength', '{"unit": "day", "count": 1}'),

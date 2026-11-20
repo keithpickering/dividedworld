@@ -140,8 +140,8 @@ begin
   if pg_temp.reactions_on(input, unrelated) <> '[]' then raise exception 'reactions on an Act nothing reached are in an input with no card plays'; end if;
   if input -> 'unscoredTargets' <> '[]' then raise exception 'an input with no card plays names unscored targets: %', input -> 'unscoredTargets'; end if;
   if input -> 'paid' <> '[]' then raise exception 'an input with no earlier payments names paid votes: %', input -> 'paid'; end if;
-  -- The input's keys are the keys 0376 sent.
-  if (select array_agg(k order by k) from jsonb_object_keys(input) k) is distinct from array['acts', 'characters', 'paid', 'reactions', 'scoredAs', 'systemActs', 'unscoredTargets', 'window'] then
+  -- The input's keys are the keys 0376 sent, and `quotes` (0379).
+  if (select array_agg(k order by k) from jsonb_object_keys(input) k) is distinct from array['acts', 'characters', 'paid', 'quotes', 'reactions', 'scoredAs', 'systemActs', 'unscoredTargets', 'window'] then
     raise exception 'the input''s keys changed: %', (select array_agg(k order by k) from jsonb_object_keys(input) k);
   end if;
 end $$;

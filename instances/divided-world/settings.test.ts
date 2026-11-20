@@ -28,6 +28,7 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
   assert.equal(defaults.walletCap, 600);
   assert.equal(defaults.vote, 10);
   assert.equal(defaults.halving, 0.5);
+  assert.equal(defaults.debateDays, 3);
   assert.equal(defaults.reactionCap, 3);
   assert.equal(defaults.charactersPerPlayer, 6);
   assert.deepEqual(defaults.seasonLength, { unit: 'month', count: 3 });
