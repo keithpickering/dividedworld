@@ -84,7 +84,7 @@ const buttons = () => anchors().filter((a) => a.tagName === 'BUTTON');
 const rooms = () => [...document.querySelectorAll<HTMLElement>('.dw-ac-room')];
 const pieces = () => [...document.querySelectorAll<HTMLElement>('[data-kb-ac-piece]')];
 /* The card's defaults (the test world sets none): the pick, then the pace. */
-const PICK = 450;
+const PICK = 1000;
 const PACE = 90;
 const wide = (el: HTMLElement) => Number.parseFloat(el.style.width);
 const pass = (ms: number) => act(async () => { vi.advanceTimersByTime(ms); });
@@ -1104,7 +1104,7 @@ describe('Autocorrect: review fixes', () => {
   test('a peel that landed in the saved state is no longer on its way: a later state without it brings the strip back', async () => {
     vi.useFakeTimers();
     const m = mount({ author: true, body: 'Mario and Mario' });
-    await hold(buttons()[0]!, 700);
+    await hold(buttons()[0]!, PICK + 250);
     await act(async () => { vi.advanceTimersByTime(500); });
     expect(buttons()).toHaveLength(1);
     m.setStates({ k1: savedOf({ peeled: [0] }) });

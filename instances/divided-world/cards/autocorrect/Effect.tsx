@@ -64,7 +64,7 @@ import './autocorrect.css';
 /** A pending pick's hand moves past this many px and the press is a peek instead; the corner waits this long into a still hold (feel design, section 1). */
 const SLOP = 8;
 const CORNER_DELAY_MS = 150;
-const DEFAULTS = { pace: 90, pickMs: 450, give: 34, peekStayMs: 300, peekSettle: 300 } as const;
+const DEFAULTS = { pace: 90, pickMs: 1000, give: 34, peekStayMs: 300, peekSettle: 300 } as const;
 /** What a screen reader hears when a strip is pressed under another. */
 const COVERED = 'Another strip is stuck over this one. That one comes off first.';
 const SAVE_AFTER_MS = 400;
