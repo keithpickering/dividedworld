@@ -16,8 +16,8 @@ export interface PollSettings {
 }
 
 /**
- * A poll as its author drafts it. `lasts` is a span ({unit, count}), which is what the client sends; the database also takes an interval
- * string ("3 days", "1 hour"), and so does this. The poll closes at the time of writing plus it.
+ * A poll as its author drafts it. `lasts` is a span ({unit, count}), which is what the client sends; the database also takes any interval
+ * string; this takes only one number and one unit ("3 days"), so it is a preview, never the authority. The poll closes at the time of writing plus it.
  */
 export interface PollDraft {
   readonly question: string;
