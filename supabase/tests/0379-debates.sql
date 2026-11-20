@@ -21,6 +21,17 @@ create function pg_temp.reactions_on(input jsonb, act uuid) returns jsonb langua
   select coalesce(jsonb_agg(e), '[]') from jsonb_array_elements(input -> 'reactions') e where e ->> 'act' = act::text
 $$;
 create function pg_temp.q(post uuid) returns text language sql as $$ select '[quote=x|' || post || ']hi[/quote] and more' $$;
+create function pg_temp.canon(j jsonb) returns text language plpgsql as $$
+declare t text := j::text; m text; seen text[] := '{}'; i integer;
+begin
+  -- The keys an estimate makes up for its request (md5 hashes) renamed in the order they appear, so two calls are equal when they differ in nothing but the salt.
+  for m in select x[1] from regexp_matches(t, '\m[0-9a-f]{32}\M', 'g') x loop
+    if not m = any (seen) then seen := seen || m; end if;
+  end loop;
+  for i in 1..coalesce(array_length(seen, 1), 0) loop t := replace(t, seen[i], 'K' || i); end loop;
+  -- `characters` is ordered by an id that may be one of those keys, so its order is the salt's too: put it in text order.
+  return (select jsonb_set(t::jsonb, '{characters}', coalesce((select jsonb_agg(x order by x::text) from jsonb_array_elements(t::jsonb -> 'characters') x), '[]'))::text);
+end $$;
 create function pg_temp.first_window() returns timestamptz language plpgsql as $$
 declare s1 constant timestamptz := (select min(starts_at) from seasons);
 begin
@@ -172,10 +183,12 @@ begin
   if exists (select 1 from jsonb_array_elements(est -> 'characters') x where x ->> 'id' = qb::text) then raise exception 'a post is named as a character'; end if;
   got := est -> 'characters';
   if not exists (select 1 from jsonb_array_elements(got) x where x ->> 'id' = b::text and x ->> 'player' <> x ->> 'id') then raise exception 'a debater is not named: %', got; end if;
-  -- Bob's own estimate holds his own spark (Cat quoted his quote) and not Ann's debate: the edge from his quote to her spark is not among his sparks' members.
+  -- Bob's own estimate holds his own spark (Cat quoted his quote) and not the rest of Ann's debate.
   est := estimate_input(bob, w0 + interval '8 hours');
   if not pg_temp.edge(est, qc, qb) then raise exception 'the debater''s estimate lacks the debate his own post sparked: %', est -> 'quotes'; end if;
-  if pg_temp.edge(est, qb, spark) then raise exception 'the debater''s estimate holds the author''s debate: %', est -> 'quotes'; end if;
+  -- What his post quotes is above it (the edge to the spark, a public Act, is there for inOwnDebate), but the rest of the author's debate is not: the spin of the thread spun from it is no part of his (his own reply in that thread is his own post).
+  if not pg_temp.edge(est, qb, spark) then raise exception 'the debater''s estimate lacks the edge above his own spark: %', est -> 'quotes'; end if;
+  if pg_temp.entry(est, spin) is not null then raise exception 'the debater''s estimate holds the thread spun from the author''s spark'; end if;
 end $$;
 
 -- ---- A spark with reactions only before the window and a quote inside it: the reactions and their paid rows are in the input ----
@@ -290,6 +303,159 @@ begin
   if pg_temp.entry(est, member) is null then raise exception 'the estimate lacks the member of the real spark'; end if;
   if pg_temp.entry(est, play) is not null then raise exception 'the estimate climbed a quote chain through a staff post to a spark (its cushion is in)'; end if;
   if pg_temp.entry(settlement_input(w0, w1), play) is not null then raise exception 'the settlement climbed a quote chain through a staff post to a spark'; end if;
+end $$;
+
+-- ---- A spark reached through a spun thread's origin or through a reaction brings its own ancestors: the engine reads inOwnDebate from the edges above it ----
+-- Ann's post P, two days old, is quoted by her own post S (a day and a half old). S is the origin of a thread Bob spun with a post of Cat's in the window; a second pair is reached by a reaction. Neither S is reached by a quote
+-- of the window, so neither input could climb to P; with no edge S to P the engine reads S as in nobody's debate, and Ann's own debate would be paid as another's.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('db-ann10'); bob uuid := tests.account('db-bob10'); cat uuid := tests.account('db-cat10');
+  a uuid := tests.character(ann, 'Db Ann Ten'); b uuid := tests.character(bob, 'Db Bob Ten'); c uuid := tests.character(cat, 'Db Cat Ten');
+  w0 timestamptz := pg_temp.first_window(); w1 timestamptz;
+  t uuid := tests.thread('Db ancestor thread'); spun uuid;
+  p uuid; s uuid; spin uuid; wp uuid; p2 uuid; s2 uuid; qb uuid; input jsonb; est jsonb;
+begin
+  w1 := w0 + interval '1 day';
+  p := tests.post(a, t, 'P.', w0 - interval '2 days');
+  s := tests.post(a, t, pg_temp.q(p), w0 - interval '36 hours');
+  insert into threads (board, title, origin_act_id) select board, 'Db ancestor spun', s from threads where id = t returning id into spun;
+  spin := tests.act(b, 'spin', spun, '{"title": "Db ancestor spun"}', s, w0 + interval '1 hour');
+  wp := tests.post(c, spun, 'A window post in the spun thread.', w0 + interval '2 hours');
+  p2 := tests.post(a, t, 'P two.', w0 - interval '2 days');
+  s2 := tests.post(a, t, pg_temp.q(p2), w0 - interval '30 hours');
+  qb := tests.post(b, t, pg_temp.q(s2), w0 - interval '2 hours');
+  insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values (s2, c, cat, 'up', 1, w0 + interval '3 hours');
+
+  input := settlement_input(w0, w1);
+  if pg_temp.entry(input, s) is null then raise exception 'the spun origin is not in the input'; end if;
+  if pg_temp.entry(input, p) is null or not pg_temp.edge(input, s, p) then raise exception 'the spun origin has no edge to the post it quotes: %', input -> 'quotes'; end if;
+  if pg_temp.entry(input, s2) is null then raise exception 'the post a reaction reached is not in the input'; end if;
+  if pg_temp.entry(input, p2) is null or not pg_temp.edge(input, s2, p2) then raise exception 'the spark a reaction reached has no edge to the post it quotes: %', input -> 'quotes'; end if;
+
+  est := estimate_input(ann, w0 + interval '8 hours');
+  if pg_temp.entry(est, s) is null or pg_temp.entry(est, s2) is null then raise exception 'the author''s estimate lacks a spark'; end if;
+  if pg_temp.entry(est, p) is null or not pg_temp.edge(est, s, p) then raise exception 'the estimate''s spun origin has no edge to the post it quotes: %', est -> 'quotes'; end if;
+  if pg_temp.entry(est, p2) is null or not pg_temp.edge(est, s2, p2) then raise exception 'the estimate''s reacted spark has no edge to the post it quotes: %', est -> 'quotes'; end if;
+end $$;
+
+-- ---- A bystander's estimate is what it was before the debate: the same bytes but for the keys made up for the request ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('db-ann11'); bob uuid := tests.account('db-bob11'); cat uuid := tests.account('db-cat11'); eve uuid := tests.account('db-eve11');
+  a uuid := tests.character(ann, 'Db Ann Eleven'); b uuid := tests.character(bob, 'Db Bob Eleven'); c uuid := tests.character(cat, 'Db Cat Eleven'); e uuid := tests.character(eve, 'Db Eve Eleven');
+  w0 timestamptz := pg_temp.first_window(); w1 timestamptz;
+  t uuid := tests.thread('Db bystander thread'); spun uuid; plain uuid; spark uuid; qb uuid; qc uuid; spin uuid; reply uuid; before_ text; after_ text;
+begin
+  w1 := w0 + interval '1 day';
+  plain := tests.post(e, t, 'A bystander''s own post.', w0 + interval '1 hour');
+  insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values (plain, c, cat, 'up', 1, w0 + interval '2 hours');
+  before_ := pg_temp.canon(estimate_input(eve, w0 + interval '8 hours'));
+  -- Then a debate among the others: a spark, quotes of it, a thread spun from it, and a reaction on the spark.
+  spark := tests.post(a, t, 'The spark.', w0 - interval '2 days');
+  qb := tests.post(b, t, pg_temp.q(spark), w0 + interval '3 hours');
+  qc := tests.post(c, t, pg_temp.q(qb), w0 + interval '4 hours');
+  insert into threads (board, title, origin_act_id) select board, 'Db bystander spun', spark from threads where id = t returning id into spun;
+  spin := tests.act(c, 'spin', spun, '{"title": "Db bystander spun"}', spark, w0 + interval '5 hours');
+  reply := tests.post(b, spun, 'A reply.', w0 + interval '6 hours');
+  insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values (spark, c, cat, 'up', 1, w0 + interval '7 hours');
+  after_ := pg_temp.canon(estimate_input(eve, w0 + interval '8 hours'));
+  if after_ is distinct from before_ then raise exception 'a debate among others changed a bystander''s estimate: % versus %', before_, after_; end if;
+  if estimate_input(eve, w0 + interval '8 hours') -> 'quotes' is distinct from '[]'::jsonb then raise exception 'a bystander''s estimate has quotes'; end if;
+end $$;
+
+-- ---- An ended play is no cushion; a member reached by a quote and by a spun thread is sent once; a spark's paid rows are sent once however it was reached ----
+-- An admin's card_end is of a card play (acts_well_formed), never of a post or a spin, so no member can be ended: what an end changes in a debate is the cushion play on its spark.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('db-ann12'); bob uuid := tests.account('db-bob12'); cat uuid := tests.account('db-cat12');
+  a uuid := tests.character(ann, 'Db Ann Twelve'); b uuid := tests.character(bob, 'Db Bob Twelve'); c uuid := tests.character(cat, 'Db Cat Twelve');
+  w0 timestamptz := pg_temp.first_window(); w1 timestamptz;
+  t uuid := tests.thread('Db twice thread'); spun uuid; spark uuid; both_ uuid; q uuid; live uuid; stopped uuid; input jsonb; est jsonb; n integer;
+begin
+  w1 := w0 + interval '1 day';
+  insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values
+    ('dbthick', 'Db Thick', 'sweet', 'uncommon', 'use', interval '3 days', '{character,post}', '{"kind": "cushion", "share": 0.5}')
+  on conflict (key) do nothing;
+  spark := tests.post(a, t, 'The spark.', w0 - interval '20 hours');
+  insert into threads (board, title, origin_act_id) select board, 'Db twice spun', spark from threads where id = t returning id into spun;
+  perform tests.act(c, 'spin', spun, '{"title": "Db twice spun"}', spark, w0 + interval '1 hour');
+  -- A post in the spun thread that also quotes the spark: a member by the quote and by the thread.
+  both_ := tests.post(b, spun, pg_temp.q(spark), w0 + interval '2 hours');
+  q := tests.post(b, t, pg_temp.q(both_), w0 + interval '3 hours');
+  live := tests.act(b, 'card', t, jsonb_build_object('card', 'dbthick', 'message', '', 'config', '{}'::jsonb, 'ends', w0 + interval '2 days'), spark, w0 - interval '10 hours');
+  stopped := tests.act(b, 'card', t, jsonb_build_object('card', 'dbthick', 'message', '', 'config', '{}'::jsonb, 'ends', w0 + interval '2 days'), spark, w0 - interval '9 hours');
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (null, 'card_end', t, stopped, '{"why": "reversed", "by": "admin"}', w0 - interval '8 hours');
+  perform set_config('kayfabb.card_end_writer', '', true);
+  -- The spark's reactions in the window and before it, and a paid row each for two players.
+  insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values (spark, b, bob, 'up', 1, w0 + interval '4 hours'), (spark, c, cat, 'meh', 1, w0 - interval '5 hours');
+  insert into paid_votes (account, act, weight, shares, settlement) values
+    (cat, spark, 1, '{"calmPositive": 1}', (select max(id) from settlements)), (bob, spark, 1, '{"calmPositive": 1}', (select max(id) from settlements));
+
+  for input in select settlement_input(w0, w1) union all select estimate_input(ann, w0 + interval '8 hours') loop
+    select count(*) into n from jsonb_array_elements(input -> 'acts') e where e ->> 'id' = both_::text;
+    if n <> 1 then raise exception 'a member reached two ways is sent % times', n; end if;
+    select count(*) into n from jsonb_array_elements(input -> 'quotes') e where e ->> 'act' = both_::text and e ->> 'quoted' = spark::text;
+    if n <> 1 then raise exception 'the edge of a member reached two ways is sent % times', n; end if;
+    select count(*) into n from jsonb_array_elements(input -> 'acts') e where e ->> 'id' = spark::text;
+    if n <> 1 then raise exception 'the spark is sent % times', n; end if;
+    if pg_temp.entry(input, live) is null then raise exception 'a live cushion on the spark is not in the input'; end if;
+    if pg_temp.entry(input, stopped) is not null then raise exception 'a cushion an admin ended is in the input'; end if;
+  end loop;
+  input := settlement_input(w0, w1);
+  select count(*) into n from jsonb_array_elements(input -> 'paid') p where p ->> 'act' = spark::text;
+  if n <> 2 then raise exception 'the spark''s paid rows (one for each of two players) are sent % times', n; end if;
+end $$;
+
+-- ---- An edit is no node: one that adds a quote pulls nothing into a debate, and a quote it removes stays an edge of the post it was written in ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('db-ann13'); bob uuid := tests.account('db-bob13'); cat uuid := tests.account('db-cat13');
+  a uuid := tests.character(ann, 'Db Ann Thirteen'); b uuid := tests.character(bob, 'Db Bob Thirteen'); c uuid := tests.character(cat, 'Db Cat Thirteen');
+  w0 timestamptz := pg_temp.first_window(); w1 timestamptz;
+  t uuid := tests.thread('Db edit thread'); spark uuid; plain uuid; plain_edit uuid; quoting uuid; quoting_edit uuid; real_q uuid; input jsonb; est jsonb;
+begin
+  w1 := w0 + interval '1 day';
+  spark := tests.post(a, t, 'The spark.', w0 - interval '2 days');
+  -- Bob's post of an hour before the window quotes nothing; an edit in the window adds a quote of the spark.
+  plain := tests.post(b, t, 'Quotes nothing, until edited.', w0 - interval '1 hour');
+  plain_edit := tests.act(b, 'edit', t, jsonb_build_object('body', pg_temp.q(spark)), plain, w0 + interval '1 hour');
+  input := settlement_input(w0, w1);
+  if pg_temp.entry(input, plain) is not null or pg_temp.entry(input, spark) is not null then raise exception 'an edit that adds a quote pulled a post or its spark into the input'; end if;
+  est := estimate_input(ann, w0 + interval '8 hours');
+  if pg_temp.entry(est, plain) is not null then raise exception 'an edit that adds a quote pulled a post into the author''s estimate'; end if;
+  -- A post that quotes the spark, in the window, is edited to leave the quote out: the original still quotes it.
+  quoting := tests.post(c, t, pg_temp.q(spark), w0 + interval '2 hours');
+  quoting_edit := tests.act(c, 'edit', t, jsonb_build_object('body', 'Never mind.'), quoting, w0 + interval '3 hours');
+  real_q := tests.post(b, t, pg_temp.q(spark), w0 + interval '4 hours');
+  input := settlement_input(w0, w1);
+  if not pg_temp.edge(input, quoting, spark) or not pg_temp.edge(input, real_q, spark) then raise exception 'a quote an edit removed is no edge from the original post: %', input -> 'quotes'; end if;
+  if pg_temp.edge(input, plain, spark) then raise exception 'an edit''s added quote is an edge from the post it edits: %', input -> 'quotes'; end if;
+  est := estimate_input(ann, w0 + interval '8 hours');
+  if not pg_temp.edge(est, quoting, spark) then raise exception 'a quote an edit removed is no edge in the estimate: %', est -> 'quotes'; end if;
+  if pg_temp.entry(est, plain) is not null then raise exception 'an edit that adds a quote pulled a post into the author''s estimate'; end if;
+end $$;
+
+-- ---- The author's own later post that quotes an earlier post of the author's makes it a spark in the estimate, as in the settlement ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('db-ann14'); a uuid := tests.character(ann, 'Db Ann Fourteen'); a2 uuid := tests.character(ann, 'Db Ann Fourteen Too');
+  w0 timestamptz := pg_temp.first_window(); w1 timestamptz;
+  t uuid := tests.thread('Db own thread'); earlier uuid; later uuid; input jsonb; est jsonb;
+begin
+  w1 := w0 + interval '1 day';
+  earlier := tests.post(a, t, 'An earlier post.', w0 - interval '2 days');
+  later := tests.post(a2, t, pg_temp.q(earlier), w0 + interval '1 hour');
+  input := settlement_input(w0, w1);
+  if pg_temp.entry(input, earlier) is null or not pg_temp.edge(input, later, earlier) then raise exception 'the settlement lacks the post quoted by the author''s own window post'; end if;
+  est := estimate_input(ann, w0 + interval '8 hours');
+  if pg_temp.entry(est, earlier) is null or not pg_temp.edge(est, later, earlier) then raise exception 'the estimate lacks the post quoted by the author''s own window post: %', est -> 'quotes'; end if;
 end $$;
 
 -- ---- A chain of 2,000 posts, each quoting the one before: both inputs hold the whole chain and each is built within a time bound (this asserts counts and time, not the plans) ----

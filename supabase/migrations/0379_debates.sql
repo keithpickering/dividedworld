@@ -3,17 +3,19 @@
 -- holds (engine/rules/settle.ts, SparkedDebate), so the input has to hold, for each spark the window reached, the spark, every member made before the window's end, the edges among them, the votes standing on the spark and
 -- the cushion plays that were ever up on it.
 --
---   1. settings_held     copied whole from 0377_sealed_packs.sql, gaining `debateDays`: a whole number of days, at least 1 (0, a fraction, text, null and a boolean are refused), as engine/rules/instance.ts holds it.
+--   1. settings_held     copied whole from 0377_sealed_packs.sql, gaining `debateDays`: a whole number of days from 1 to 365 (0, a fraction, text, null and a boolean are refused), as engine/rules/instance.ts holds it.
 --   2. settlement_input  copied whole from 0378_target_lean.sql. Two walks of recursive CTEs, each bounded by time at both ends and each a probe of an index at every step. `up` starts at every post or spin of the window
 --                        and climbs quote_refs (act to quoted, its primary key) to ancestors made no earlier than `debateDays` before the window's start; the origin of a spun thread with an Act in the window joins them, and so
 --                        does a post a reaction reached in the window that has a debate by then (a quote, or a spin of another player's, made before the window's end by an Act that is a node of the walks; a quote made after the window's end is no debate yet, so no spark; a nod that moves late still moves the refund, and the engine reads such a spark). Those are `sparks`. `down` starts at the sparks and
 --                        descends quote_refs_quoted (quoted to act) to members made before the window's end; `spun_spins` and `spun_posts` add the spin and the posts of each thread another player spun from a spark (a thread
 --                        spun by the spark's own player is not followed, as the engine does not). A staff Act, an Act of The System and one an admin ended are no node of either walk, so no quote chain runs through one, as the
---                        engine has none to follow. Sparks, members and `cushion_plays` (each cushion play on a spark or on its character that ended after the spark was made, whether or not it is still up) join `touched`.
+--                        engine has none to follow. `ancestry` climbs again from every spark, by whatever branch reached it (one reached as a spun thread's origin or by a reaction has no ancestor in `up`), stopping at a node `up` holds, so the input
+--                        holds the posts above a spark and the edges to them: engine/rules/settle.ts reads inOwnDebate from them. Sparks, ancestors, members and `cushion_plays` (each cushion play on a spark or on its character that ended after the spark was made, whether or not it is still up) join `touched`.
 --                        `earlier_reactions` joins the sparks, and `paid` sends the paid votes of the sparks no reaction reached beside those `reacted` reaches, so a spark's standing votes are in the input in a window no reaction
 --                        reached it (payVotes pays only a vote with a reaction in the window, so nothing is paid twice). The result gains `quotes`: each quote_refs row with both ends among the input's Acts.
 --   3. estimate_input    copied whole from 0378_target_lean.sql, with the same walks led only by the caller's own posts: `my_posts` (acts_character) walks down to find which have a member in the window, a walk up from those
---                        members (by the same node filters as the settlement's walks) names the sparks, as does a post of the caller's a reaction reached in the window that has a member made before the window's end, and a second walk down from the sparks alone names the members. The sparks join `voted` (their reactions are the
+--                        members (by the same node filters as the settlement's walks) names the sparks, as does a post of the caller's a reaction reached in the window that has a member made before the window's end, and a second walk down from the sparks alone names the members. The caller's own window post that quotes an earlier post of the caller's makes it a spark, as in the settlement (the members are the caller's own posts, so nothing is
+--                        leaked). `ancestry` climbs from every spark as the settlement's does (another player's post a spark quotes is a public Act, keyed under the salt like any other, and is in the input only for a caller whose spark quotes it). The sparks join `voted` (their reactions are the
 --                        caller's own posts', which the caller's log already shows); the members and the cushion plays join `touched` and never `voted`, so no reaction on a member is read. Every other member's author is keyed
 --                        under the per-request salt as any other player is, and `quotes` holds only the edges among the sparks and members, so a bystander's input holds none and is otherwise what it was.
 -- Scale: a window post that quotes nothing and sits in no spun thread costs one probe of quote_refs; the work for a spark is its debate's size (a visited node is held once, however many sparks reach it, so a chain of
@@ -43,8 +45,8 @@ begin
     when 'vote' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
     when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and setting_positive(v) and (v #>> '{}')::numeric <= 1, false)
       then 'a fraction above 0 and at most 1' end
-    -- How many days a post's debate is followed (0379): a whole number of days, at least 1.
-    when 'debateDays' then case when not setting_whole(v, 1) then 'a whole number of days, at least 1' end
+    -- How many days a post's debate is followed (0379): a whole number of days, at least 1 and at most 365 (as digestBoardDays and movedStubDays are), so the `::integer` and the interval the inputs build from it cannot overflow.
+    when 'debateDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
     when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
     when 'charactersPerPlayer' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
     when 'settlementCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
@@ -207,6 +209,17 @@ language sql stable security definer set search_path = public, pg_temp as $$
     cross join lateral (select c.owner from characters c where c.id = b.character offset 0) c
     where b.kind = 'post' and b.created_at >= (select at from cutoff) and b.created_at < window_end
       and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)),
+  -- Walk up again from every spark, by whatever branch reached it (a spark reached as the origin of a spun thread or by a reaction has no ancestor in `up`): the engine reads whether a spark is in an earlier post's debate by its own
+  -- player (inOwnDebate) from the edges above it, so each ancestor made no earlier than the cutoff, and the edges to it, are in the input. The same step and bounds as `up`, and it stops at a node `up` holds (its ancestors are in `up` already, so a chain of 2,000 posts is climbed once); a node reached from two sparks is held once.
+  ancestry as (
+    select s.id, s.at from sparks s
+    union
+    select b.id, b.created_at
+    from ancestry u cross join lateral (
+      select b.id, b.created_at from quote_refs r join acts b on b.id = r.quoted
+      where r.act = u.id and u.id not in (select id from up) and b.kind in ('post', 'spin') and b.created_at >= (select at from cutoff) and b.created_at < window_end and (b.created_at, b.id) < (u.at, u.id)
+        and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
+      offset 0) b),
   -- Walk down: from each spark, through quote_refs_quoted (`quoted` to `act`), to every post or spin that quotes a member, made before the window's end and after what it quotes.
   down as (
     select s.id, s.at from sparks s
@@ -294,7 +307,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     union select id from skim_up union select post from skim_up
     union select id from ride_springs union select id from ride_gimmicks union select post from rc
     union select id from scored
-    union select id from sparks union select id from members union select id from cushion_plays
+    union select id from ancestry union select id from members union select id from cushion_plays
   ),
   all_acts as (select a.* from touched t cross join lateral (select a.* from acts a where a.id = t.id offset 0) a where a.created_at < window_end and a.character is not null and a.kind <> 'donation'
                and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
@@ -457,7 +470,7 @@ begin
       offset 0) p),
   -- Walk up from each member in the window, through quote_refs, to ancestors made no earlier than the cutoff (and earlier than what quotes them): the caller's posts among them have a member in the window.
   up1 as (
-    select d.id, d.at from down1 d where d.at >= window_start and d.id not in (select id from my_posts)
+    select d.id, d.at from down1 d where d.at >= window_start
     union
     select b.id, b.created_at from up1 u cross join lateral (
       select b.id, b.created_at from quote_refs r join acts b on b.id = r.quoted
@@ -477,6 +490,16 @@ begin
            or exists (select 1 from acts sp where sp.target_act_id = p.id and sp.kind = 'spin' and sp.created_at < window_end and sp.created_at >= p.at and sp.character not in (select id from mine)
                         and not is_staff_side(sp.character, sp.kind, sp.target_act_id) and sp.id not in (select id from ended))
     ) k on k.id = p.id),
+  -- Walk up from every spark of the caller's (as settlement_input's `ancestry`), by whatever branch reached it: a spark reached through a spun thread or a reaction has no ancestor in `up1`, and the engine reads inOwnDebate from
+  -- the edges above a spark. Another player's post it quotes is a public Act, keyed under the salt like any other; a bystander has no spark, so none of this is in a bystander's input.
+  ancestry as (
+    select s.id, s.at from sparks s
+    union
+    select b.id, b.created_at from ancestry u cross join lateral (
+      select b.id, b.created_at from quote_refs r join acts b on b.id = r.quoted
+      where r.act = u.id and b.kind in ('post', 'spin') and b.created_at >= (select at from cutoff) and b.created_at < window_end and (b.created_at, b.id) < (u.at, u.id)
+        and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
+      offset 0) b),
   -- The members of the sparks alone: walk down again from them, so the input holds nothing of the caller's posts that have no member in the window.
   down as (
     select s.id, s.at from sparks s
@@ -542,7 +565,7 @@ begin
     union select target_act_id from acts a join spins s on s.id = a.id where a.target_act_id is not null
     union select id from first_posts
     union select id from skim_up union select id from my_gimmicks union select spring from rode
-    union select id from members union select id from cushion_plays
+    union select id from ancestry union select id from members union select id from cushion_plays
     -- The post each card, spin or spring among the voted Acts points at (Task 1, #137): a card the caller only reacted to is
     -- judged against its post, and a spin the caller only reacted to is read with its origin (settle.ts reads every spin's), as
     -- settlement_input reads every window play's target.
@@ -635,6 +658,6 @@ begin
     'quotes', coalesce((
       select jsonb_agg(jsonb_build_object('act', r.act, 'quoted', r.quoted) order by r.act, r.quoted)
       from all_acts a cross join lateral (select r.act, r.quoted from quote_refs r where r.act = a.id offset 0) r join all_acts q on q.id = r.quoted
-      where a.id in (select id from sparks union select id from members) and q.id in (select id from sparks union select id from members)), '[]'))
+      where a.id in (select id from ancestry union select id from members) and q.id in (select id from ancestry union select id from members)), '[]'))
   );
 end $$;

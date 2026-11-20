@@ -269,7 +269,7 @@ function cosmeticsRule(v: unknown): string | null {
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
   vote: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
-  debateDays: whole(1, 'days'),
+  debateDays: whole(1, 'days', 365),
   halving: (v) => (typeof v === 'number' && v > 0 && v <= 1 ? null : 'a fraction above 0 and at most 1'),
   reactionCap: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   charactersPerPlayer: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
