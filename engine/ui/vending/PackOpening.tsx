@@ -32,7 +32,7 @@
  *  - On a phone the entrance is the 1440's (the pack rises from its slot, or from the window's edge nearest it, tears, and lets the cards out, not drawn until the
  *    tear), but the deal stacks the cards into the pile (`deal` toward the stage's place) and not into a row. The exit and turns below follow.
  *  - On a phone the cards are a pile: a turned card is sent off toward the swipe's side (a drag follows the finger and commits past a third of the card's
- *    width) as the next is flipped, and the exit flies the cards (the turned card on top and the backs under it) toward the hand link, or the window's top edge where the link is out of view.
+ *    width) as the next is flipped; once all are turned, a swipe sends the last card off the same way and closes the reveal as Done does, and the exit flies the cards (the turned card on top and the backs under it) toward the hand link, or the window's top edge where the link is out of view.
  *  - With `hit` false (a fixed pack, the Starter Pack's six) no card is the hit: no gold back, beat, halo, sparks or tag, and the count is the pack's own length.
  *  - `from` is where the pack rises from (the sealed pack it was opened from); with none it rises from `returnFocusTo`'s element, the slot.
  *  - Under Off nothing moves: no wrapper, no rotation, no second piece of the pack. Each beat's end state is drawn at once.
@@ -455,15 +455,32 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
   const onPileUp = (e: ReactPointerEvent) => {
     const from = drag.current;
     drag.current = null;
-    if (from === null || all || !isPhone()) return;
+    if (from === null || !isPhone()) return;
     const moved = e.clientX - from;
     const width = box.current?.querySelector('.kb-opening-spot')?.getBoundingClientRect().width || 276;
+    if (all) {
+      /* Every card is turned: a swipe past a third sends the last one off toward its side and closes the reveal as Done does; a tap closes nothing. */
+      if (Math.abs(moved) >= width / 3) sendOffLast(moved > 0 ? 1 : -1);
+      else if (Math.abs(moved) >= 10) springBack();
+      return;
+    }
     if (Math.abs(moved) < 10 || Math.abs(moved) >= width / 3) {
       pointerTurnAt.current = performance.now();
       turnNext(moved > 0 ? 1 : -1);
       return;
     }
     springBack();
+  };
+  /** The last card sent off the pile toward `dir`, as a turn sends the one before it, and then the reveal closes. Done or Esc pressed during the send-off finishes it at once. */
+  const sendOffLast = (dir: -1 | 1) => {
+    if (!feel) { onClose(); return; }
+    const f = feel;
+    finishRun();
+    const r = begin(() => {});
+    play(r, async () => {
+      await go(r, cardNode(spotAt.current), { x: dir * window.innerWidth, rotate: dir * 14, opacity: 0 }, eased(f, f.exit) as Beat);
+      onClose();
+    });
   };
   const springBack = () => {
     const top = spotAt.current >= 0 ? cardNode(spotAt.current) : null;

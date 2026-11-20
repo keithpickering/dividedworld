@@ -318,6 +318,9 @@ before.
    it lies; the next turn, a tap or a swipe, sends the turned card off the pile toward the swipe's side (left by
    default; a drag follows the finger and commits past a third of the card's width) and flips the next. The exit flies
    the cards toward the Your hand link, or toward the viewport's top edge where the link has scrolled away.
+   **Decided** (the owner, 2026-11-20, after the last card was left where a drag dropped it): once every card is
+   turned, a swipe past a third sends the last card off the same way and closes the reveal as Done does; a shorter
+   drag springs back, and a tap closes nothing.
 
 **Where it lives.** The flight to the hand, the lift, the turn, the deal and the hit's beat are presets in
 `engine/ui/glass/motion.ts` beside Phase 3's, pure functions of the feel that are empty under Off, so the machine, the
