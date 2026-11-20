@@ -601,6 +601,6 @@ test('the glow\'s room shows at an end with nothing beyond it, and is hidden at 
   await expect.poll(async () => rooms(dialog)).toEqual({ before: 0, after: 32, room: 32 });
   await classGroup(dialog).getByRole('radio', { name: 'Lurker' }).check();
   await expect.poll(async () => rooms(dialog)).toEqual({ before: 32, after: 0, room: 32 });
-  const mask = await classGroup(dialog).locator('.kb-class-grid').evaluate((el) => getComputedStyle(el).maskImage);
-  expect(mask).toMatch(/^linear-gradient\(90deg, rgba\(0, 0, 0, 0\) 32px, /u);
+  /* The room eases over 0.2s and `rooms` reads it rounded, so the poll above can pass at 31.6px: the mask is polled until it has landed. */
+  await expect.poll(async () => classGroup(dialog).locator('.kb-class-grid').evaluate((el) => getComputedStyle(el).maskImage)).toMatch(/^linear-gradient\(90deg, rgba\(0, 0, 0, 0\) 32px, /u);
 });
