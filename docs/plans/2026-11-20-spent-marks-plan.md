@@ -155,7 +155,7 @@ Model: sonnet
   values as arguments if it has neither.
 - The header comments of `billing.ts` and `Marks.tsx` gain a sentence: spent kinds go last when a page is read, and a
   kind that goes spent later keeps its place.
-- **Tests first** in `engine/ui/cards/billing.test.ts` (or wherever `billPost` is tested): a post with a spent kind
+- **Tests first** in `engine/ui/cards/billing.test.tsx` (or wherever `billPost` is tested): a post with a spent kind
   drawn most and a live kind drawn least bills the live kind first. Two spent kinds keep billing order between them.
   A play arriving live after billing keeps its place after them. Red: billing order alone. And in
   `marks.test.tsx`: a strip whose live kind would be fifth by draws shows it among the first four, and a kind that

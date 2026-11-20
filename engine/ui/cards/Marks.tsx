@@ -10,7 +10,8 @@
  *
  * Marks are positioned over the post and never in the page's flow (marks.css), so a post is as tall with no marks as
  * with nine. Order is billing's, set when the page was read: a kind's place is the place of its first play there, and
- * a play that arrives live puts a new kind at the end, so no live reaction moves a mark under a reader's pointer.
+ * a play that arrives live puts a new kind at the end, so no live reaction moves a mark under a reader's pointer. Billing puts the spent kinds last when
+ * a page is read (spent-marks design, section 4), so live cards fill the strip before "+N"; a kind that goes spent while the page is open keeps its place.
  * Past four marks on a desktop, or three under the thread's 40em, the rest are one "+N" mark that opens the first kind
  * it hides. While a card is armed and can land on the post, the strip ends in the ghost mark (PlayActions.tsx).
  *

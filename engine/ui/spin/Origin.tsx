@@ -59,11 +59,11 @@ const NOT_THERE: PageOrigin = { act: null, plays: [], more: false, moment: null,
  * once for this page read, from the tallies and the spins of the plays that the page put in the thread's stores (`spun` holds those it counted). The plays join the store only here, so their tags are first drawn
  * in billing order and never move. Called by the thread screen's `absorb`, outside any render.
  */
-export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: Tallies, spun: ReadonlyMap<Id, Spun>): void {
+export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: Tallies, spun: ReadonlyMap<Id, Spun>, over: { readonly now: number; readonly keeps: ReadonlySet<string> }): void {
   const shown = origin.plays.filter((a) => a.kind !== 'card_end').slice(0, CARDS_SHOWN);
   const ends = origin.plays.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId));
   plays.add([...shown, ...ends, ...(origin.act ? [origin.act] : [])]);
-  billPost(plays, id, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
+  billPost(plays, id, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);
 }
 
 /**
@@ -72,7 +72,7 @@ export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: 
  * state and a tally are heard on the origin thread's channel. `more` says there were more plays than the box lists.
  */
 function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies, shared: boolean): { readonly act: Act | null; readonly more: boolean } {
-  const { api, ui } = useKayfa();
+  const { api, ui, instance } = useKayfa();
   const [act, setAct] = useState<Act | null>(from.act);
   const [more, setMore] = useState(from.more);
   /* A page read again brings the origin again: the newer of the Act held and the Act read (an edit heard since is never undone), and what the page says of the rest. */
@@ -83,7 +83,7 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
     setMore(from.more);
   }
   /* The thread screen takes the page's origin into its store of the box's plays as it takes a page in (`takeInOrigin`, called by `absorb`), so the box's first frame has its tags. A box drawn without that store (a story) takes its own in here. */
-  useEffect(() => { if (!shared) takeInOrigin(from, origin, plays, tallies, new Map()); }, [shared, from, origin, plays, tallies]);
+  useEffect(() => { if (!shared) takeInOrigin(from, origin, plays, tallies, new Map(), { now: api.now(), keeps: keepingKeys(instance.cards) }); }, [shared, from, origin, plays, tallies, api, instance.cards]);
   useEffect(() => {
     const cards = effectCards(ui);
     return api.subscribeThread(thread, {

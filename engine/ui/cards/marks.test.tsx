@@ -154,6 +154,47 @@ describe('order never moves while the page is read', () => {
   });
 });
 
+/* Spent last, at page read (docs/plans/2026-11-20-spent-marks-design.md, section 4). */
+describe('spent kinds go last when the page is read', () => {
+  const HOUR = 3_600_000;
+  const order = (post: HTMLElement) => names(post).map((n) => /^Card \d/u.exec(n!)?.[0]);
+
+  test('a live kind that billing alone would put fifth is among the first four', async () => {
+    width(false);
+    const w = world();
+    const past = new Date(w.fake.clock.now() - HOUR).toISOString();
+    w.fake.seed.card(w.spritey, w.second, 'k1', { message: '' });
+    for (const k of ['k2', 'k3', 'k4', 'k5', 'k6']) { w.fake.clock.advance(60_000); w.fake.seed.card(w.spritey, w.second, k, { message: '', ends: past }); }
+    open(w);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(5));
+    expect(order(post).slice(0, 4)).toContain('Card 1');
+    expect(order(post)[0]).toBe('Card 1');
+  });
+
+  test('a kind that goes spent while the page is open does not move', async () => {
+    width(false);
+    const real = globalThis.setTimeout;
+    const woke: (() => void)[] = [];
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (typeof ms === 'number' && ms > HOUR - 1000 && ms < HOUR + 1000) { woke.push(fn); return 0; }
+      return real(fn, ms, ...rest);
+    }) as unknown as typeof setTimeout);
+    const w = world();
+    w.fake.seed.card(w.spritey, w.second, 'k1', { message: '' });
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.second, 'k2', { message: '', ends: new Date(w.fake.clock.now() + HOUR).toISOString() });
+    open(w);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(2));
+    expect(order(post)).toEqual(['Card 2', 'Card 1']);
+    w.fake.clock.advance(HOUR + 2);
+    act(() => { for (const fn of woke) fn(); });
+    await waitFor(() => expect(marks(post)[0]).toHaveAttribute('data-kb-spent', 'true'));
+    expect(order(post)).toEqual(['Card 2', 'Card 1']);
+  });
+});
+
 describe('the corner sign', () => {
   test('appears when a play of the kind has more public reactions than its post, and goes when the post catches up', async () => {
     const w = world();
