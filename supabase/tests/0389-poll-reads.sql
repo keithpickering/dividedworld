@@ -229,7 +229,10 @@ begin
      or v -> 'place' is distinct from jsonb_build_object('kind', 'post', 'thread', t, 'title', 'Pr reads', 'seq', 2) or (v ->> 'at')::timestamptz is distinct from (select b.created_at from acts b where b.id = sbs) then
     raise exception '4 the log does not name bob''s own secret ballot with its picks, its poll and its post: %', v;
   end if;
-  if (select array_agg(k order by k) from jsonb_object_keys(v) k) is distinct from array['act', 'at', 'character', 'picks', 'place', 'poll', 'question', 'secret'] then raise exception '4 a log line of a ballot carries other keys: %', v; end if;
+  if (select array_agg(k order by k) from jsonb_object_keys(v) k) is distinct from array['act', 'at', 'changed', 'character', 'options', 'picks', 'place', 'poll', 'question', 'secret'] then raise exception '4 a log line of a ballot carries other keys: %', v; end if;
+  -- The poll's options, to word the picks, and `changed`: whether the character had a ballot on the poll before this one (the first is not a change; the second of b1's on the public poll is; a withdrawal is a ballot too).
+  if v -> 'options' is distinct from (select p.payload -> 'options' from acts p where p.id = sec) or v ->> 'changed' is distinct from 'false' then raise exception '4 a ballot line holds no options or the wrong change flag: %', v; end if;
+  if (select x ->> 'changed' from jsonb_array_elements(e -> 'sources' -> 'ballots') x where (x ->> 'act')::uuid = pb1) is distinct from 'false' or (select x ->> 'changed' from jsonb_array_elements(e -> 'sources' -> 'ballots') x where (x ->> 'act')::uuid = pb2) is distinct from 'true' then raise exception '4 the change flag of a first and a second ballot: %', e -> 'sources' -> 'ballots'; end if;
   if jsonb_array_length(e -> 'sources' -> 'pollCloses') is distinct from 0 then raise exception '4 bob''s log holds an admin''s close of a poll he did not write: %', e -> 'sources' -> 'pollCloses'; end if;
   if e::text like '%' || c1::text || '%' then raise exception '4 bob''s log names another player''s character'; end if;
   perform tests.become(cat);

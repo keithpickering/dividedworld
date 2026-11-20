@@ -49,7 +49,7 @@ import type {
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent, CrowdPaid,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
-  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogBallot, LogPollClose, LogPlace, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -646,12 +646,14 @@ const toBosses = (v: unknown): { readonly staff: string; readonly name: string; 
 
 /** A draw or a wash on a surface, as the log reads it (`my_draws`, `my_walls_drawn_on`, 0317): public facts and the reader's own character. */
 const surfaceLogRow = (r: Row): SurfaceLogRow => ({ act: r['act'], kind: r['kind'], play: r['play'], post: r['post'], character: r['character'], mine: r['mine'], at: r['at'], cells: num(r['cells']) });
+/** A poll's post as `log_page` names it ({kind: 'post', thread, title, seq}). */
+const logPlace = (v: Row): LogPlace => ({ thread: String(v['thread']), title: String(v['title'] ?? ''), seq: num(v['seq']) });
 const COSMETIC_KINDS = ['found', 'granted', 'awarded', 'reversed', 'lost', 'beltBack'] as const;
 const COSMETIC_OUTCOMES = ['line', 'gear', 'card'] as const;
 const COSMETIC_BYS = ['season', 'boss', 'demand', 'admin'] as const;
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'falls' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>> & { readonly crowd?: Row[] }, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'falls' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>> & { readonly crowd?: Row[]; readonly ballots?: Row[]; readonly pollCloses?: Row[] }, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
@@ -686,6 +688,11 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     })),
     playsOnMine: src['playsOnMine'].map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
     writes: src['writes'].map((r): WrittenOnMine => ({ play: r['play'], post: r['post'], version: r['version'], failed: r['failed'] === true, opening: r['opening'] === true, over: r['over'] === true, at: r['at'] })),
+    ...(src.ballots === undefined ? {} : { ballots: src.ballots.flatMap((r): LogBallot[] => (isObject(r['place']) ? [{
+      act: r['act'], poll: r['poll'], character: r['character'], picks: Array.isArray(r['picks']) ? r['picks'].filter((n): n is number => typeof n === 'number') : [], at: r['at'], question: String(r['question'] ?? ''),
+      secret: r['secret'] === true, options: Array.isArray(r['options']) ? r['options'].map(String) : [], changed: r['changed'] === true, place: logPlace(r['place']),
+    }] : [])) }),
+    ...(src.pollCloses === undefined ? {} : { pollCloses: src.pollCloses.flatMap((r): LogPollClose[] => (isObject(r['place']) ? [{ act: r['act'], poll: r['poll'], character: r['character'], at: r['at'], question: String(r['question'] ?? ''), place: logPlace(r['place']) }] : [])) }),
     draws: src['draws'].map(surfaceLogRow),
     wallsDrawn: src['wallsDrawn'].map(surfaceLogRow),
     saves: src['saves'].map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
@@ -2252,7 +2259,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!isObject(d)) throw new ReadFailure('server');
       const sources: Row = isObject(d['sources']) ? d['sources'] : {};
       const first = toLogRead({
-        crowd: rowsOf(sources['crowd']),
+        crowd: rowsOf(sources['crowd']), ballots: rowsOf(sources['ballots']), pollCloses: rowsOf(sources['pollCloses']),
         ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), draws: rowsOf(sources['draws']), wallsDrawn: rowsOf(sources['wallsDrawn']), saves: rowsOf(sources['saves']),
         setEnds: rowsOf(sources['setEnds']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
         infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), falls: rowsOf(sources['falls']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']), cosmetics: rowsOf(sources['cosmetics']),

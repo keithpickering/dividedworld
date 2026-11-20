@@ -11,7 +11,7 @@
 --                       polls whose voters are more than the 50 listed), `voterCast` (each voter's `{character, profile}` head, as the origin's `cast` holds them, never `people`) and `myBallots` ([{act, poll, character, picks, at}]: the
 --                       caller's own counted ballots on these polls, from my_ballots, a secret one's and a withdrawal's too). The polls' ids join `ids`, so `spun` holds the threads spun from each. Where the origin is a poll or a ballot,
 --                       `origin` carries `polls`, `voters`, `votersMore` and `myBallots` for that poll the same way, its voters join `origin.cast`, and `origin.at` is the poll's post ({thread, seq}).
---   4. log_page        gains two sources: `ballots` (the caller's own ballots in the window: {act, poll, character, picks, at, question, secret, place}) and `pollCloses` (an admin's closes of polls the caller's characters wrote:
+--   4. log_page        gains two sources: `ballots` (the caller's own ballots in the window: {act, poll, character, picks, at, question, secret, options, changed, place}; `options` are the poll's, to word the picks, and `changed` is whether the character had an earlier ballot on the poll) and `pollCloses` (an admin's closes of polls the caller's characters wrote:
 --                       {act, poll, character, at, question, place}), `place` being the poll's post's `post` place.
 --   5. system_digest   an excerpt whose post has a current poll gains `poll: {question, options: [{text, count}], closed}`. It names no voter, public or secret. The digest's role reads acts_public and now poll_counts (granted here: a
 --                       view of characters counted that reads no owner), and no my_* view.
@@ -1253,6 +1253,10 @@ begin
              b.created_at AS at,
              (p.payload ->> 'question'::text) AS question,
              ((p.payload ->> 'secret'::text))::boolean AS secret,
+             (p.payload -> 'options'::text) AS options,
+             EXISTS ( SELECT 1
+                    FROM my_ballots o
+                   WHERE o.poll = b.poll AND o."character" = b."character" AND (o.created_at, o.act) < (b.created_at, b.act)) AS changed,
              jsonb_build_object('kind', 'post', 'thread', pp.thread, 'title', t.title, 'seq', pp.seq) AS place
             FROM (((my_ballots b
               JOIN acts_public p ON ((p.id = b.poll)))

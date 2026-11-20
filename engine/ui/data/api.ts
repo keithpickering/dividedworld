@@ -1836,6 +1836,40 @@ export interface SurfaceLogRow {
   readonly cells: number;
 }
 
+/** Where a poll's post is, as `log_page` names it: the thread, its title and the post's number. */
+export interface LogPlace {
+  readonly thread: Id;
+  readonly title: string;
+  readonly seq: number;
+}
+
+/**
+ * One of the caller's own ballots, as the log reads it (`my_ballots`): a cast ballot, a change (`changed`: the character had an earlier ballot on the poll) or a withdrawal (`picks` empty). `picks` are 0-based
+ * indexes into `options`, the poll's own. A secret ballot is the caller's own fact and is read only here; no line names another voter.
+ */
+export interface LogBallot {
+  readonly act: Id;
+  readonly poll: Id;
+  readonly character: Id;
+  readonly picks: readonly number[];
+  readonly at: string;
+  readonly question: string;
+  readonly secret: boolean;
+  readonly options: readonly string[];
+  readonly changed: boolean;
+  readonly place: LogPlace;
+}
+
+/** An admin's close of a poll one of the caller's characters wrote (`my_poll_closes`). */
+export interface LogPollClose {
+  readonly act: Id;
+  readonly poll: Id;
+  readonly character: Id;
+  readonly at: string;
+  readonly question: string;
+  readonly place: LogPlace;
+}
+
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
 export interface EffectSaved {
   readonly play: Id;
@@ -2104,6 +2138,10 @@ export interface Log {
   readonly draws?: readonly SurfaceLogRow[];
   /** The draws on, and the washes of, the surfaces on the player's own posts, by when each landed (`my_walls_drawn_on`). Absent from a payload older than the surface; read it as none. */
   readonly wallsDrawn?: readonly SurfaceLogRow[];
+  /** The ballots the player's characters cast, changed or withdrew (`my_ballots`), by when each was cast. Absent from a payload older than polls; read it as none. */
+  readonly ballots?: readonly LogBallot[];
+  /** The admin closes of polls the player's characters wrote (`my_poll_closes`), by when each landed. Absent from a payload older than polls; read it as none. */
+  readonly pollCloses?: readonly LogPollClose[];
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
   readonly setEnds: readonly FaceDownEnd[];
