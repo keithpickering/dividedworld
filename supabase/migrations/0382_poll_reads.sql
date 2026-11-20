@@ -2,7 +2,7 @@
 --
 -- 0381 wrote the kinds, the writes and the guards. This reads them back, in the screens' own reads, and changes nothing 0381 wrote. Each function and view below is copied whole from its latest definition (named in the comment above it), changing only what is named.
 --
---   1. poll_ballots    (poll, before): a public poll's every ballot, the changes included, newest first, 50 at a time, each with its character's public name and avatar; it refuses a secret poll in one sentence. And my_poll_closes, an
+--   1. poll_ballots    (poll, before, before_id): a public poll's every ballot, the changes included, newest first, 50 at a time paged by the keyset (at, act) of the last one, each with its character's public name and avatar; it refuses a secret poll in one sentence. And my_poll_closes, an
 --                       owner-rights view of an admin's closes of the polls the caller's characters wrote (as my_ballots is the caller's own ballots), which the log reads: the poll's character through acts_public may be the veil's stand-in.
 --   2. thread_open     `origin_place` names a poll ({kind: 'poll', question, on}) and a public ballot ({kind: 'ballot', character: {id, name}, question, on}), `on` being the poll's post's `post` place ({kind: 'post', thread, title, seq}).
 --                       A secret ballot is named by no origin (acts_public gives it no character). thread_list is select * from it and follows.
@@ -20,15 +20,75 @@
 -- parts of a secret poll are byte for byte the same for every caller; `myBallots` is the caller's own, from my_ballots, and the only part that differs. `voters` is read only for a public poll, `poll_ballots` refuses a secret one
 -- whatever the caller, and the digest carries counts and no one.
 --
--- A busy instance: a poll's voters are the characters' latest ballots through acts_ballots, DISTINCT ON the character, cut at 50 for each poll; the counts are poll_counts', which read the same index. A page reads one poll for each post it draws
--- (a probe of acts_polls, newest first, one row), so the read grows with the page's posts, never with the instance's Acts. poll_ballots reads one poll's ballots and returns 50.
+-- A busy instance: the counts are poll_counts', one pass over a poll's ballots through acts_ballots for each poll on the page (inherent: a count is of every counted ballot). A poll's voters are not another pass: poll_voter_acts walks the poll's
+-- ballots from the newest back through acts_ballots_recent and stops at 50, one probe of acts_ballots for each ballot it reads, so it reads the newest ballots and the changes among them, never the poll's every ballot; the voters' rows are then
+-- read through acts_public by primary key, for those ids alone. A page reads one poll for each post it draws (a probe of acts_polls, newest first, one row), so the read grows with the page's posts, never with the instance's Acts.
+-- poll_ballots reads one page of a poll's ballots by a keyset on (created_at, id) through the same index and returns 50: its cost is the page's, however deep.
+--
+-- A veiled author's own ballots on a poll of the veiled post are read through acts_public, which shows the stand-in for them, so they group under the stand-in in `voters` (one entry for the stand-in's latest, where poll_counts counts the true
+-- characters): `voters` listed can differ from the count by one for that author. Accepted: the veil hides who the author is, and the list is the page's shown voters.
 --
 -- Ways out: no state is added.
 
 -- ===================================================================================== 1. poll_ballots, my_poll_closes ====
--- poll_ballots (poll, before): a public poll's ballots, every one (a change of ballot and a withdrawal are each a ballot) and not only the counted ones, newest first, 50 at a time; `before` is the `at` of the last one a page gave. Each carries its
--- character's public name and avatar. It refuses a secret poll whatever the caller (the same sentence for every caller) and a poll that is not there. An invoker reading acts_public, as thread_page does (a secret ballot has no character there), with the generic plan and no JIT every client read keeps (0368).
-create function poll_ballots(poll uuid, before timestamptz default null) returns jsonb
+-- Two indexes and two readers of a poll's ballots, each a definer over base `acts` for the ids alone (an invoker reads no `character` of `acts`; the ids of a public poll's ballots are public, and both return nothing for a secret poll
+-- whatever the caller). What they hand on goes through acts_public by primary key, so the veil's stand-in and every other mask of the projection apply.
+--   acts_ballots_recent  a poll's ballots newest first: the voter list's walk and poll_ballots' keyset pages read it in order and stop at their limit.
+--   poll_voter_acts      (poll, ends, most): the ids of a poll's counted ballots with picks, newest first, `most` at most. It walks the poll's ballots from the newest back and keeps one only when it is its character's latest ballot
+--                        before `ends` (one probe of acts_ballots: the first row of the character's ballots newest first) and its picks are not empty (a withdrawal counts for its character and lists none); it stops at `most`, so its cost is the newest ballots read and one probe for
+--                        each, plus the changes among them, and never the poll's every ballot.
+--   poll_ballot_acts     (poll, before, before_id, most): the ids of a poll's ballots, every one, newest first, strictly older than the cursor (at, act) as a keyset on (created_at, id): ballots that tie on their time across a page edge are
+--                        neither skipped nor repeated, and a deep page costs what the first does. A cursor with no act reads strictly older times alone.
+create index acts_ballots_recent on acts (target_act_id, created_at desc, id desc) where kind = 'ballot';
+
+create function poll_voter_acts(poll uuid, ends timestamptz, most integer) returns setof uuid rows 50
+language plpgsql stable security definer set search_path = public, pg_temp set plan_cache_mode = force_custom_plan as $$
+declare
+  at timestamptz := poll_voter_acts.ends;
+  last uuid := '00000000-0000-0000-0000-000000000000';
+  b record;
+  seen integer;
+  found integer := 0;
+begin
+  if ballot_secret(poll_voter_acts.poll) then return; end if;
+  -- The ballots newest first in chunks of 64 by the keyset (created_at, id), strictly before the poll's end: each chunk is a short ordered walk of acts_ballots_recent that stops at its limit (a single statement with the
+  -- later-ballot test in it is planned as a read of every ballot and a sort). Its statements are planned with their values (force_custom_plan): the generic plan of the probe reads the poll's ballots newest first through acts_ballots_recent.
+  loop
+    seen := 0;
+    for b in select x.id, x.created_at, x."character", x.payload from acts x
+             where x.kind = 'ballot' and x.target_act_id = poll_voter_acts.poll and (x.created_at, x.id) < (at, last)
+             order by x.created_at desc, x.id desc limit 64 loop
+      seen := seen + 1; at := b.created_at; last := b.id;
+      if jsonb_array_length(b.payload -> 'picks') > 0
+         and b.id = (select l.id from acts l where l.kind = 'ballot' and l.target_act_id = poll_voter_acts.poll and l."character" = b."character" and l.created_at < poll_voter_acts.ends
+                     order by l.created_at desc, l.id desc limit 1) then
+        return next b.id;
+        found := found + 1;
+        if found >= poll_voter_acts.most then return; end if;
+      end if;
+    end loop;
+    exit when seen < 64;
+  end loop;
+end $$;
+revoke execute on function poll_voter_acts(uuid, timestamptz, integer) from public, anon;
+grant execute on function poll_voter_acts(uuid, timestamptz, integer) to authenticated;
+
+create function poll_ballot_acts(poll uuid, before timestamptz, before_id uuid, most integer) returns setof uuid rows 51
+language sql stable security definer set search_path = public, pg_temp as $$
+  select b.id from acts b
+  where b.kind = 'ballot' and b.target_act_id = poll_ballot_acts.poll and not ballot_secret(poll_ballot_acts.poll)
+    and (b.created_at, b.id) < (coalesce(poll_ballot_acts.before, 'infinity'::timestamptz),
+                                coalesce(poll_ballot_acts.before_id, case when poll_ballot_acts.before is null then 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid else '00000000-0000-0000-0000-000000000000'::uuid end))
+  order by b.created_at desc, b.id desc
+  limit poll_ballot_acts.most
+$$;
+revoke execute on function poll_ballot_acts(uuid, timestamptz, uuid, integer) from public, anon;
+grant execute on function poll_ballot_acts(uuid, timestamptz, uuid, integer) to authenticated;
+
+-- poll_ballots (poll, before, before_id): a public poll's ballots, every one (a change of ballot and a withdrawal are each a ballot) and not only the counted ones, newest first, 50 at a time. The cursor is the `at` and the `act` of the last
+-- ballot a page gave: a keyset on (created_at, id), so a tie across a page edge loses none and a deep page costs what the first does. Each ballot carries its character's public name and avatar. It refuses a secret poll whatever the
+-- caller (the same sentence for every caller) and a poll that is not there. An invoker reading acts_public by id, as thread_page does (a secret ballot has no character there), with the generic plan and no JIT every client read keeps (0368).
+create function poll_ballots(poll uuid, before timestamptz default null, before_id uuid default null) returns jsonb
 language plpgsql stable set search_path = public, pg_temp set plan_cache_mode = force_generic_plan set jit = off as $$
 declare
   p record;
@@ -39,10 +99,8 @@ begin
   return (
     with page as materialized (
       select b.id, b."character", b.payload -> 'picks' as picks, b.created_at
-      from acts_public b
-      where b.kind = 'ballot' and b.target_act_id = p.id and b.created_at < coalesce(poll_ballots.before, 'infinity'::timestamptz)
+      from poll_ballot_acts(p.id, poll_ballots.before, poll_ballots.before_id, 51) v(act) cross join lateral (select x.id, x."character", x.payload, x.created_at from acts_public x where x.id = v.act) b
       order by b.created_at desc, b.id desc
-      limit 51
     ), shown as materialized (
       select s.* from page s order by s.created_at desc, s.id desc limit 50
     )
@@ -52,8 +110,8 @@ begin
                            from shown s join characters_public c on c.id = s."character" left join character_profiles pr on pr."character" = c.id), '[]'::jsonb),
       'more', (select count(*) from page) > 50));
 end $$;
-revoke execute on function poll_ballots(uuid, timestamptz) from public, anon;
-grant execute on function poll_ballots(uuid, timestamptz) to authenticated;
+revoke execute on function poll_ballots(uuid, timestamptz, uuid) from public, anon;
+grant execute on function poll_ballots(uuid, timestamptz, uuid) to authenticated;
 
 -- my_poll_closes: an admin's closes of the polls the caller's characters wrote, the caller's own rows (the poll's character through acts_public may be the veil's stand-in, so the log reads the owner's). Owner rights, filtered by
 -- auth.uid() as my_ballots is; the log reads it and nothing else does.
@@ -569,25 +627,19 @@ begin
          ), pl_voters AS MATERIALIZED (
           SELECT p.post,
              p.poll,
-             v.id AS act,
-             v."character",
-             v.picks,
-             v.created_at
-            FROM (pl_polls p
-              CROSS JOIN LATERAL ( SELECT d.id,
-                     d."character",
-                     d.picks,
-                     d.created_at
-                    FROM ( SELECT DISTINCT ON (b."character") b.id,
-                             b."character",
-                             (b.payload -> 'picks'::text) AS picks,
-                             b.created_at
-                            FROM acts_public b
-                           WHERE ((NOT p.secret) AND (b.kind = 'ballot'::text) AND (b.target_act_id = p.poll) AND (b.created_at < p.ends_at))
-                           ORDER BY b."character", b.created_at DESC, b.id DESC) d
-                   WHERE (jsonb_array_length(d.picks) > 0)
-                   ORDER BY d.created_at DESC, d.id DESC
-                  LIMIT 50) v)
+             b.id AS act,
+             b."character",
+             (b.payload -> 'picks'::text) AS picks,
+             b.created_at
+            FROM ((pl_polls p
+              CROSS JOIN LATERAL poll_voter_acts(p.poll, p.ends_at, 50) v(act))
+              CROSS JOIN LATERAL ( SELECT x.id,
+                     x."character",
+                     x.payload,
+                     x.created_at
+                    FROM acts_public x
+                   WHERE (x.id = v.act)) b)
+           WHERE (NOT p.secret)
          ), pl_cast AS MATERIALIZED (
           SELECT DISTINCT v."character" AS c
             FROM pl_voters v

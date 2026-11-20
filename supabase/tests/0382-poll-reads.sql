@@ -323,3 +323,27 @@ begin
     raise exception '1b the origin of a removed poll carries a live poll: %', e -> 'origin';
   end if;
 end $$;
+
+-- ---- 2b. poll_ballots pages by (at, act): ballots that tie on their time across a page edge are neither skipped nor repeated ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('prt-ann'); bob uuid := tests.account('prt-bob'); dee uuid := tests.account('prt-dee');
+  a1 uuid := tests.character(ann, 'Prt Ann'); b1 uuid := tests.character(bob, 'Prt Bob');
+  t uuid := tests.thread('Prt ties'); p uuid := tests.post(a1, t, 'Many ballots.', now() - interval '20 hours');
+  poll uuid := pg_temp.mkpoll(t, p, a1, at => now() - interval '19 hours'); g integer; first_page jsonb; second_page jsonb; seen uuid[] := '{}'; last_b jsonb;
+begin
+  -- 52 ballots by one character, a second apart; the 2nd and 3rd oldest share their time, and the 50th and 51st newest (the page edge) are those two.
+  for g in 1..52 loop
+    perform pg_temp.vote(poll, b1, jsonb_build_array(g % 3), now() - interval '10 hours' + (case when g = 2 then 3 else g end) * interval '1 second');
+  end loop;
+  perform tests.become(dee);
+  first_page := poll_ballots(poll);
+  if jsonb_array_length(first_page -> 'ballots') is distinct from 50 or first_page -> 'more' is distinct from 'true'::jsonb then raise exception '2b the first page is not 50 ballots and more: %', jsonb_array_length(first_page -> 'ballots'); end if;
+  last_b := first_page -> 'ballots' -> 49;
+  second_page := poll_ballots(poll, (last_b ->> 'at')::timestamptz, (last_b ->> 'act')::uuid);
+  perform tests.unbecome();
+  if jsonb_array_length(second_page -> 'ballots') is distinct from 2 or second_page -> 'more' is distinct from 'false'::jsonb then raise exception '2b the page after a tied edge holds % ballots, not the 2 left: %', jsonb_array_length(second_page -> 'ballots'), second_page; end if;
+  select array_agg((x ->> 'act')::uuid) into seen from (select x from jsonb_array_elements(first_page -> 'ballots') x union all select x from jsonb_array_elements(second_page -> 'ballots') x) z(x);
+  if (select count(distinct a) from unnest(seen) a) is distinct from 52 or (select count(*) from acts b where b.kind = 'ballot' and b.target_act_id = poll) is distinct from 52 then raise exception '2b the two pages are not the 52 ballots, each once'; end if;
+end $$;

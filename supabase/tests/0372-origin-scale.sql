@@ -147,9 +147,10 @@ end $$;
 -- thread_page now carries the current poll of each post it draws, with its counts and the voters of a public poll. The reads (pl_cur, pl_polls, pl_voters, pl_cast, pl_mine, and o_post that finds the origin's post) must cost what a page's
 -- polls cost, bounded by the 50 voters each poll lists and by acts_ballots, never by the instance's Acts: a page of 20 posts, each with a public poll of 200 characters' ballots and 3 changes each (800 ballots a poll, 16,000 in all), among
 -- the 12,000 other posts and 6,000 plays above. The plan is read as case 1 reads it: the generic plan under explain (analyze, format json), the nodes under the poll CTEs counted.
---  3. The page of 20 posts with polls: no sequential scan of `acts` under the poll CTEs; the voters handed on are 50 a poll (1,000 in all) and `votersMore` names each of the 20 polls; the rows of `acts` the poll CTEs read stay within five
---     passes over the 16,000 ballots (through acts_ballots) and never grow with the instance's other Acts; the time is recorded in the notice and held to 5 s. Recorded 2026-11-20 on Postgres 16, localhost: 80,060 rows read, 1,000 voters handed on, the plan's own
---     time about 490 ms and the document's call about the same, for 20 polls of 800 ballots; the other cases above hold row counts (origin 423 rows for 400 plays) and no time, so these are the first.
+--  3. The page of 20 posts with polls: no sequential scan of `acts` under the poll CTEs; the voters handed on are 50 a poll (1,000 in all) and `votersMore` names each of the 20 polls; the counts are two passes over the 16,000 ballots at most
+--     (poll_counts, inherent) and the voter list a walk of the newest ballots that stops at 50 (a few hundred rows a poll, from the statistics, never another pass); the time is recorded in the notice and held to 5 s. Recorded 2026-11-20 on Postgres 16, localhost:
+--     35,060 rows read under the poll CTEs, the voter lists 3,300 rows for the 20 polls (165 a poll; 25,765 in the one-statement form that read every ballot), 1,000 voters handed on, the plan's own time about 120-260 ms and the document's call about 200-370 ms (480 ms and 550 ms
+--     when the voters were a DISTINCT ON over every ballot); the other cases above hold row counts (origin 423 rows for 400 plays) and no time, so these are the first.
 
 create function pg_temp.poll_nodes(plan jsonb) returns setof jsonb language sql as $$
   select d from jsonb_path_query(plan, '$.**') c, jsonb_path_query(c, '$.**') d
@@ -168,7 +169,7 @@ declare
   ann uuid := tests.account('ps-ann'); rdr uuid := tests.account('ps-rdr');
   oa uuid := tests.character(ann, 'Ps Author'); rd uuid := tests.character(rdr, 'Ps Reader');
   voters uuid[] := '{}'; owners uuid[] := '{}'; t uuid := tests.thread('Ps polls'); other uuid := tests.thread('Ps other thread');
-  p uuid; k integer; plan jsonb; doc jsonb; read_rows numeric; voters_out numeric; started timestamptz; took numeric;
+  p uuid; k integer; plan jsonb; doc jsonb; read_rows numeric; voters_out numeric; started timestamptz; took numeric; read0 numeric; read1 numeric;
 begin
   for k in 0..39 loop owners := owners || tests.account('ps-voter-' || k); end loop;
   for k in 1..200 loop voters := voters || tests.character(owners[k % 40 + 1], 'Ps Voter ' || k); end loop;
@@ -200,15 +201,28 @@ begin
   if (select count(*) from pg_temp.poll_nodes(plan) n where n ->> 'Node Type' = 'Seq Scan' and n ->> 'Relation Name' = 'acts') > 0 then raise exception '3 the polls'' reads scan acts: %', plan; end if;
   if plan::text not like '%acts_ballots%' or plan::text not like '%acts_polls%' then raise exception '3 the polls'' reads do not go through acts_polls and acts_ballots: %', plan; end if;
   if voters_out is distinct from 1000::numeric then raise exception '3 the voters handed on are % for 20 polls of 200 voters: they are bounded by 50 a poll', voters_out; end if;
-  -- Five passes over the 16,000 ballots, each through acts_ballots by poll: poll_counts' one, the voters' three (acts_public is three selects over `acts`, and each reads a poll's ballots to take or to pass them, as the origin's plays are read above), and my_ballots' one
-  -- by the caller's characters (few). It is the polls' own ballots and never the instance's 18,000 other Acts: a read that follows those is far above this.
-  if read_rows > 5 * 16000 + 2000 then raise exception '3 the poll CTEs read % rows of acts for 16,000 ballots: five passes at most, they must be those of the polls'' own ballots and not the instance''s Acts', read_rows; end if;
+  -- Under the poll CTEs the plan shows poll_counts' passes over the 16,000 ballots through acts_ballots_recent (two nodes of 16,000) and the polls' own rows; the voters' walk is inside poll_voter_acts and is measured below from the
+  -- statistics. A read that follows the instance's 18,000 other Acts is far above this.
+  if read_rows > 2 * 16000 + 4000 then raise exception '3 the poll CTEs read % rows of acts for 16,000 ballots: two passes of the counts at most, they must be those of the polls'' own ballots and not the instance''s Acts', read_rows; end if;
+  -- The voter list alone: the walk of the newest ballots stops at 50 voters, so for 20 polls it reads a few hundred rows each (64 of the newest and a probe for each), never the polls' 16,000 ballots.
+  perform pg_stat_force_next_flush();
+  read0 := (select idx_tup_fetch from pg_stat_xact_user_tables where relname = 'acts');
+  perform count(*) from acts a, lateral poll_voter_acts(a.id, now() + interval '9 days', 50) where a.kind = 'poll' and a.thread = t;
+  perform pg_stat_force_next_flush();
+  read1 := (select idx_tup_fetch from pg_stat_xact_user_tables where relname = 'acts') - read0;
+  raise notice '3 the voters of 20 polls of 800 ballots (50 each) fetched % rows of acts', read1;
+  if read1 > 20 * 300 then raise exception '3 the voter list fetched % rows of acts for 20 polls of 800 ballots: it must walk the newest ballots and stop at 50 (a few hundred a poll), not read every ballot', read1; end if;
+  perform pg_stat_force_next_flush();
+  read0 := (select idx_tup_fetch from pg_stat_xact_user_tables where relname = 'acts');
   perform tests.become(rdr);
   started := clock_timestamp();
   doc := thread_page(t, 1, null, 20, '{}');
   took := extract(epoch from clock_timestamp() - started) * 1000;
   perform tests.unbecome();
-  raise notice '3 the page of 20 polls took % ms in the document''s own call', round(took, 1);
+  perform pg_stat_force_next_flush();
+  read1 := (select idx_tup_fetch from pg_stat_xact_user_tables where relname = 'acts') - read0;
+  raise notice '3 the page of 20 polls took % ms in the document''s own call and fetched % rows of acts through indexes', round(took, 1), read1;
+  if read1 > 3 * 16000 then raise exception '3 the page fetched % rows of acts for 20 polls of 800 ballots: the counts are passes over them (16,000 each) and the voters a few hundred a poll, not another pass each', read1; end if;
   if jsonb_array_length(doc -> 'polls') is distinct from 20 or jsonb_array_length(doc -> 'voters') is distinct from 1000 or jsonb_array_length(doc -> 'votersMore') is distinct from 20 or jsonb_array_length(doc -> 'voterCast') is distinct from 50 then
     raise exception '3 the document holds % polls, % voters, % polls with more, % heads: 20, 1,000, 20 and 50 are those of 20 polls of 200 voters (the 50 newest characters are the same on each poll, so 50 heads)', jsonb_array_length(doc -> 'polls'), jsonb_array_length(doc -> 'voters'), jsonb_array_length(doc -> 'votersMore'), jsonb_array_length(doc -> 'voterCast');
   end if;

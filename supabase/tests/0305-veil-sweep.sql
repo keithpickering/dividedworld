@@ -224,6 +224,8 @@ select 'function', n, m, w from (values
   ('ballot_secret', 'no author', 'whether a poll is secret (0381): a public fact of the poll, which acts_public''s reader runs; it names no one'),
   ('cast_ballot', 'no author', 'a write (0381): answers the ballot through the projection, which names no character on a secret poll, and the poll''s counts of characters'),
   ('poll_ballots', 'no author', 'a public poll''s ballots through acts_public (0382), whose projection puts the stand-in where a veiled author''s own ballot is (0381); the post''s author is not read, and a secret poll is refused'),
+  ('poll_voter_acts', 'no author', 'the ids of a public poll''s counted ballots (0382), nothing for a secret poll: ids alone, which acts_public then projects by primary key, the veil''s stand-in included'),
+  ('poll_ballot_acts', 'no author', 'the ids of a public poll''s ballots (0382), nothing for a secret poll: ids alone, which acts_public then projects by primary key, the veil''s stand-in included'),
   ('close_poll', 'no author', 'a write (0381): answers the close through the projection and the poll''s counts, to the poll''s own author'),
   ('close_poll_as_admin', 'no author', 'a write (0381): an admin''s close has no character; answers the close through the projection and the poll''s counts'),
   ('edit_post', 'no author', 'a write: answers the Act it wrote through the projection, to its author'),
