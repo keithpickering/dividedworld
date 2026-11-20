@@ -708,9 +708,11 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       const list = gimmicksOn.get(a.target) ?? [];
       list.push({ id: a.id, card: a.card, user: a.character, at: a.at, ends: a.ends, share: rideGimmickOf.get(a.card)! });
       gimmicksOn.set(a.target, list);
-    } else if (a.kind === 'spring' && a.card && a.by !== undefined && rideTrapOf.has(a.card) && (rideTrapOf.get(a.card)!.every || a.quadrant !== undefined)) {
+    } else if (a.kind === 'spring' && a.card && a.by !== undefined && rideTrapOf.has(a.card)) {
+      const trap = rideTrapOf.get(a.card)!;
+      if (!trap.every && a.quadrant === undefined) continue;
       const list = springsBy.get(a.by) ?? [];
-      list.push({ card: a.card, setter: a.character, ...(rideTrapOf.get(a.card)!.every ? {} : { quadrant: a.quadrant }), share: rideTrapOf.get(a.card)!.share });
+      list.push({ card: a.card, setter: a.character, ...(trap.every ? {} : { quadrant: a.quadrant }), share: trap.share });
       springsBy.set(a.by, list);
     }
   }

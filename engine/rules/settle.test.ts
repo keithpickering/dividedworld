@@ -1722,6 +1722,7 @@ test('an every ride spring with no quadrant pays a quarter of a vote per other p
   const est = estimateForOwner(payBoard([cast(), noQuadrant], votes), payWorld, 'tom').lines.filter((l) => l.reason === 'card.ride');
   assert.equal(est.length, 4, 'the estimate shows the same lines to Tom\'s player');
   assert.equal(est.reduce((n, l) => n + l.amount, 0), 10);
+  assert.equal(ride(settle(payBoard([cast(), spring({ card: 'cushion' })], votes), payWorld), 'tom-1'), 10, 'a quadrant on an every ride\'s spring is not read');
 });
 test('a named ride spring pays only its quadrant, and one with no quadrant pays nothing', () => {
   const votes = [react('cast', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('cast', 'cat', 'cat-1', 'fire', FROM + 6 * H)];
