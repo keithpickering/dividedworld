@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Instance } from '../../rules/types.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { NewCharacter } from './NewCharacter.tsx';
+import { LoadedCharacters } from '../loaded.tsx';
 import type { ClassLook } from '../types.ts';
 import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 
@@ -74,6 +75,22 @@ describe('New character', () => {
     expect(made.debutedAt).not.toBeNull();
     const thread = await w.fake.startThread('general', made.id, 'A thread', 'Hi.');
     expect(thread.ok).toBe(true);
+  });
+
+  test('My characters shows the new character at once, though Cancel read the roster ahead before it was made', async () => {
+    const w = world();
+    renderIn(w.fake, <LoadedCharacters />, { path: '/characters/new', settings: { charactersPerPlayer: w.per } });
+    const f = await form();
+    const roster = vi.spyOn(w.fake, 'myCharactersPage');
+    /* A rest on Cancel reads My characters ahead, as a player passing over it on the way to the submit button does. */
+    await userEvent.hover(within(f).getByRole('link', { name: 'Cancel' }));
+    await waitFor(() => expect(roster).toHaveBeenCalledTimes(1));
+    await roster.mock.results[0]!.value;
+    await userEvent.type(within(f).getByLabelText('Name'), 'Spritey');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(f).getByRole('button', { name: 'Make the character' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/characters'));
+    expect(await screen.findByRole('tab', { name: /Spritey/u })).toBeInTheDocument();
   });
 
   test('makes a character that waits to debut when the settlement is chosen, announced by default, and leaves the player on My characters', async () => {

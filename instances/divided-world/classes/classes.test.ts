@@ -27,7 +27,7 @@ const input = (over: Partial<ClassInput>): ClassInput => ({
 });
 const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1', actAt = 0, kind = 'reaction'): ReceivedReaction => ({ act, actKind, quadrant, at: 10, actAt, kind, votes });
 const card = (over: Partial<PlayedCard>): PlayedCard => ({
-  act: 'k1', card: 'whoops', alignment: 'salty', at: 5, target: 'p9', onOthers: true, votes: 0, targetVotes: 0, targetAfter: none, drawnAfter: null, ...over,
+  act: 'k1', card: 'whoops', alignment: 'salty', at: 5, target: 'p9', onOthers: true, votes: 0, targetVotes: 0, targetAfter: none, drawnAfter: null, targetLean: 0, ...over,
   readsAs: over.readsAs ?? over.alignment ?? 'salty',
 });
 const total = (rules: ClassRules, i: ClassInput, reason?: string) =>
@@ -55,6 +55,24 @@ test('Face\'s weakness: its card outdrawing the post it landed on', () => {
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'sweet', votes: 3, targetVotes: 2 })] })), -20);
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'sweet', votes: 2, targetVotes: 2 })] })), 0, 'a tie is not outdrawing');
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'sweet', votes: 3, targetVotes: 1, onOthers: false })] })), 0, 'not on its own player\'s post');
+});
+/* Stolen thunder is charged only where there was thunder the room valued (docs/plans/2026-11-18-face-thunder-design.md, section 3). */
+const outdrew = (over: Partial<PlayedCard>) => input({ cardsPlayed: [card({ votes: 2, targetVotes: 1, ...over })] });
+test('Face\'s weakness: outdrawing a post the room cheered, split on or said nothing about costs; one it booed costs nothing', () => {
+  assert.equal(total(face, outdrew({ targetLean: 1 }), 'face.stoleThunder'), -20, 'well received');
+  assert.equal(total(face, outdrew({ targetLean: 0 }), 'face.stoleThunder'), -20, 'a tie, or no reaction at all');
+  assert.equal(total(face, outdrew({ targetLean: -1 }), 'face.stoleThunder'), 0, 'booed');
+  assert.equal(total(face, input({ cardsPlayed: [card({ votes: 1, targetVotes: 1, targetLean: 1 })] }), 'face.stoleThunder'), 0, 'not outdrawn');
+});
+test('Face\'s weakness: outdrawing a cast that reads as Salty costs nothing, whatever the room made of it; any other cast costs', () => {
+  assert.equal(total(face, outdrew({ targetLean: 1, targetReadsAs: 'salty' }), 'face.stoleThunder'), 0);
+  assert.equal(total(face, outdrew({ targetLean: 1, targetReadsAs: 'sweet' }), 'face.stoleThunder'), -20);
+  assert.equal(total(face, outdrew({ targetLean: 1, targetReadsAs: 'pepperoni' }), 'face.stoleThunder'), -20);
+});
+test('a Heel\'s stolen thunder pays at every lean, and for a Salty cast too', () => {
+  for (const over of [{ targetLean: 1 }, { targetLean: 0 }, { targetLean: -1 }, { targetLean: 1, targetReadsAs: 'salty' as const }]) {
+    assert.equal(total(heel, outdrew(over), 'heel.stoleThunder'), 20, JSON.stringify(over));
+  }
 });
 test('Face is unmoved by the quadrants it does not read', () => {
   assert.equal(total(face, input({ received: [got('excitedNegative'), got('calmPositive')] })), 0);
@@ -489,8 +507,8 @@ test('a Face\'s reveal drawing a cheer pays the Face\'s cheer; a Lurker\'s revea
 
 /* A card on a staff post earns its caster by class (#122; docs/plans/2026-11-01-card-plays-plan.md, Task 5): the Boss's post is
    the target it is judged against, and the Boss earns nothing. */
-function onTheBoss(card: { by: string; card: string }, cardVoters: string[], postVoters: string[]): SettlementInput {
-  const voters = ['v1', 'v2', 'v3'];
+function onTheBoss(card: { by: string; card: string }, cardVoters: string[], postVoters: string[], postKind = 'facepalm'): SettlementInput {
+  const voters = ['v1', 'v2', 'v3', 'v4', 'v5'];
   return {
     window: { id: 'w', from: 0, to: 24 * H },
     characters: [
@@ -502,7 +520,7 @@ function onTheBoss(card: { by: string; card: string }, cardVoters: string[], pos
     unscoredTargets: [{ id: 'boss-post', kind: 'post', at: 1 * H, thread: 't', staff: true }],
     reactions: [
       ...cardVoters.map((v, i) => ({ act: 'k1', player: `p-${v}`, character: v, kind: 'facepalm', at: (3 + i) * H })),
-      ...postVoters.map((v, i) => ({ act: 'boss-post', player: `p-${v}`, character: v, kind: 'facepalm', at: (3 + i) * H })),
+      ...postVoters.map((v, i) => ({ act: 'boss-post', player: `p-${v}`, character: v, kind: postKind, at: (3 + i) * H })),
     ],
   };
 }
@@ -514,11 +532,12 @@ test('a Heel\'s Salty card that draws more than a Boss\'s post earns the Heel\'s
   assert.equal(settle(onTheBoss({ by: 'he', card: 'whoops' }, ['v1'], ['v2', 'v3']), world).entries.filter((e) => e.reason === 'heel.stoleThunder').length, 0, 'outdrawn by the Boss\'s post, it steals nothing');
 });
 
-test('a Face\'s Sweet card that draws more than a Boss\'s post pays the Face\'s −0.20', () => {
+test('a Face\'s Sweet card that draws more than a Boss\'s post the room cheered pays the Face\'s −0.20; one the room booed, nothing', () => {
   const sweet = { ...world, cards: [...world.cards, { ...world.cards[0]!, key: 'stick-around', name: 'Stick Around', alignment: 'sweet' as const }] };
-  const r = settle(onTheBoss({ by: 'fa', card: 'stick-around' }, ['v1', 'v2'], ['v3']), sweet);
+  const r = settle(onTheBoss({ by: 'fa', card: 'stick-around' }, ['v1', 'v2'], ['v3'], 'fire'), sweet);
   assert.deepEqual(r.entries.filter((e) => e.reason === 'face.stoleThunder').map((e) => [e.character, e.amount]), [['fa', -20]]);
-  assert.equal(settle(onTheBoss({ by: 'fa', card: 'stick-around' }, ['v1'], ['v2', 'v3']), sweet).entries.filter((e) => e.reason === 'face.stoleThunder').length, 0, 'outdrawn by the Boss\'s post, it pays nothing');
+  assert.equal(settle(onTheBoss({ by: 'fa', card: 'stick-around' }, ['v1'], ['v2', 'v3'], 'fire'), sweet).entries.filter((e) => e.reason === 'face.stoleThunder').length, 0, 'outdrawn by the Boss\'s post, it pays nothing');
+  assert.equal(settle(onTheBoss({ by: 'fa', card: 'stick-around' }, ['v1', 'v2', 'v3'], ['v4', 'v5']), sweet).entries.filter((e) => e.reason === 'face.stoleThunder').length, 0, 'the Boss\'s post booed by two: upstaging it is the Face doing its job');
 });
 
 /* Cards beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 6): a Heel's Salty card on a character has no target post to
@@ -619,6 +638,22 @@ test('settled whole: a Salty spring catching another player\'s cast that it outd
   const counterWorld = { ...world, cards: [...world.cards, reversal('counter', 'salty', 'cast')] };
   assert.equal(stole(settle(spring('fa'), counterWorld)), 1, 'another player\'s cast, outdrawn by the spring');
   assert.equal(stole(settle(spring('he2'), counterWorld)), 0, 'the setter\'s own other mask\'s cast');
+});
+test('settled whole: a Face\'s Sweet spring that outdraws the Salty cast it caught is not charged; one that outdraws a Sweet cast is', () => {
+  const b = board();
+  const saveWorld = { ...world, cards: [...world.cards, reversal('save', 'sweet', 'cast'), { ...world.cards[0]!, key: 'stick-around', name: 'Stick Around', alignment: 'sweet' as const }] };
+  const save = (cast: string): SettlementInput => ({
+    ...b,
+    acts: [...b.acts,
+      { id: 'fp', character: 'fa', kind: 'post', at: 5 * H, thread: 't' },
+      { id: 'cast', character: 'he', kind: 'card', at: 6 * H, thread: 't', target: 'fp', card: cast },
+      { id: 'sp', character: 'fa', kind: 'spring', at: 7 * H, thread: 't', target: 'fp', card: 'save', by: 'cast' }],
+    // The room cheers the save; nobody reacts to the cast itself.
+    reactions: [...b.reactions, { act: 'sp', player: 'pl', character: 'lu', kind: 'fire', at: 8 * H }, { act: 'sp', player: 'pj', character: 'ja', kind: 'fire', at: 8 * H }],
+  });
+  const charged = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.character === 'fa' && e.reason === 'face.stoleThunder').map((e) => e.amount);
+  assert.deepEqual(charged(settle(save('whoops'), saveWorld)), [], 'the other player swung first, with a Salty play');
+  assert.deepEqual(charged(settle(save('stick-around'), saveWorld)), [-20], 'upstaging a Sweet play is the case the weakness is for');
 });
 test('settled whole: a face-down Salty Move that lands by a Jabroni\'s quote sells one L, and its spring steals no thunder', () => {
   const b = board();
