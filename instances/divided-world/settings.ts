@@ -18,6 +18,7 @@ export const defaults: Settings = deepFreeze<Settings>({
   halving: 0.5,
   /** A post's debate is followed for three days: long enough for a thread to catch fire over a weekend, short enough that a stale post is not a spark. */
   debateDays: 3,
+  revealPerk: 0.2,
   reactionCap: 3,
   /** Minus World's ratio: giving a reaction paid a fifth of getting one, and a vote is 10. */
   crowdPayEach: 2,

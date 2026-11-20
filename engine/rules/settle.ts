@@ -51,6 +51,12 @@
  *   a flat earn, whether it names quadrants or reaction kinds, never costs the character: its flat boosts as a whole never sum below zero. One play's own
  *   lines can, when a larger play paid and ended and a smaller one still up takes the share back.
  *   An earn may be a cast card's on a character or a post.
+ * - The reveal perk: while a character's reveal is current, each positive earning of its class that the class marks `fromReactions` (Earning.fromReactions: a
+ *   reaction to the character's own Acts, or its own early call, caused it) and that has a time adds `settings.revealPerk` times itself as `reveal.perk`, with
+ *   `{ share }` in the entry's params and no class. A reveal is the time of an `unmask` Act (InputCharacter.reveals); it is current at a time `t` when the latest
+ *   reveal `u <= t` has no class row of the character starting in `(u, t]`, so any Turn, announced or silent, ends it from the Turn's time, a new reveal starts it
+ *   again, and a reveal made at a Turn's moment is current. It reads the class's own earnings as returned, so a loss, a boost, a cushion and a payout are never
+ *   perked, and a perk is never cushioned; with `revealPerk` 0 or no reveal it adds nothing.
  * - A cushion play (a use card whose gimmick is `cushion`), on a character or a post and not ended, with an `ends`, gives back
  *   `share` of a loss from a reaction: each earning of the character's own class that has a time, an Act of that character, a negative amount and
  *   positive `votes` (Earning.votes, the signed votes of the one reaction it pays for, which a class sets where it pays per vote), inside the play's
@@ -609,7 +615,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   }
 
   /* ---- each class's rules, stretch by stretch ---- */
-  type Contribution = Detail & { class?: string; params?: Readonly<Record<string, number | string>>; kind?: string; votes?: number; ofWindow?: true };
+  type Contribution = Detail & { class?: string; params?: Readonly<Record<string, number | string>>; kind?: string; votes?: number; ofWindow?: true; fromReactions?: true };
   const contributions: Contribution[] = [];
   /* The earn gimmicks up in the input, indexed once by what they are on: a character (a character-reach play) or a post. An admin-ended
      play is not in the input. Each character's pass below reads only its own and its posts' lists, so the pass costs its earnings
@@ -741,7 +747,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
-        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}), ...(e.votes !== undefined ? { votes: e.votes } : {}), ...(e.ofWindow ? { ofWindow: true as const } : {}) });
+        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}), ...(e.votes !== undefined ? { votes: e.votes } : {}), ...(e.ofWindow ? { ofWindow: true as const } : {}), ...(e.fromReactions ? { fromReactions: true as const } : {}) });
       }
     }
     /* Earn by a percentage: each positive earning of the character's own Act, with a time and a quadrant, inside a gimmick's window and in what it
@@ -754,6 +760,25 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         const boost = tidy(e.amount * g.by);
         if (!boost) continue;
         contributions.push({ player: e.player, character: e.character, class: e.class, reason: 'card.boost', amount: boost, params: { card: g.card, by: g.by }, act: e.act, quadrant: e.quadrant, at: e.at });
+      }
+    }
+    /* The reveal perk: each positive earning the class marks `fromReactions`, of the character's own Act and at a time its reveal is current, adds
+       `revealPerk` times itself as `reveal.perk`, with no class. Current at `t`: a reveal at `u <= t` (the latest such) and no class row starting in
+       (u, t], so a Turn ends it and a reveal made at the Turn's moment is current. Read from `own` and pushed after the boosts, so a boost, a cushion
+       or a payout is never perked, and a perk is never boosted or cushioned. */
+    if (settings.revealPerk > 0 && c.reveals?.length) {
+      const reveals = [...c.reveals].sort((x, y) => x - y);
+      const turns = c.classes.map((k) => k.from);
+      const current = (t: number) => {
+        let u = -Infinity;
+        for (const r of reveals) if (r <= t) u = r;
+        return u !== -Infinity && !turns.some((f) => f > u && f <= t);
+      };
+      for (const e of own) {
+        if (!e.fromReactions || !(e.amount > 0) || e.at === undefined || !current(e.at)) continue;
+        const perk = tidy(e.amount * settings.revealPerk);
+        if (!perk) continue;
+        contributions.push({ player: e.player, character: e.character, reason: 'reveal.perk', amount: perk, params: { share: settings.revealPerk }, ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), at: e.at });
       }
     }
     /* A cushion: a loss of the character's own Act, inside a cushion's window on the character or on the Act, gives back the largest share that
