@@ -34,7 +34,7 @@ begin
     filler := repeat('own words here ', 1000);
     qbody := format('[quote=%s]%sz[/quote] ', post_id, left(repeat(unit, NEEDLE_CHARS), NEEDLE_CHARS)) || left(filler, BODY_CHARS - NEEDLE_CHARS - 80);
     t0 := clock_timestamp();
-    select w2.held into w from bbcode_walk(qbody, null) w2;
+    select w2.held into w from bbcode_walk(qbody, null, '{}', true) w2;
     walk_spent := clock_timestamp() - t0;
     t0 := clock_timestamp();
     v := quote_forged(qbody, now());

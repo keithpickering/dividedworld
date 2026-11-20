@@ -6548,14 +6548,18 @@ http://a.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
       end if;
     end if;
     if f.held is not null then
-      if (select w.held from bbcode_walk(f.body, null, coalesce(f.forged, '{}')) w) is distinct from f.held then
-        raise exception 'bbcode_walk: fixture "%" gave held %, wanted %', f.name, (select w.held from bbcode_walk(f.body, null, coalesce(f.forged, '{}')) w), f.held;
+      if (select w.held from bbcode_walk(f.body, null, coalesce(f.forged, '{}'), true) w) is distinct from f.held then
+        raise exception 'bbcode_walk: fixture "%" gave held %, wanted %', f.name, (select w.held from bbcode_walk(f.body, null, coalesce(f.forged, '{}'), true) w), f.held;
       end if;
     end if;
     if f.source is not null then
-      if (select w.source from bbcode_walk(f.body, null, coalesce(f.forged, '{}')) w) is distinct from f.source then
-        raise exception 'bbcode_walk: fixture "%" gave source %, wanted %', f.name, to_json((select w.source from bbcode_walk(f.body, null, coalesce(f.forged, '{}')) w)), to_json(f.source);
+      if (select w.source from bbcode_walk(f.body, null, coalesce(f.forged, '{}'), true) w) is distinct from f.source then
+        raise exception 'bbcode_walk: fixture "%" gave source %, wanted %', f.name, to_json((select w.source from bbcode_walk(f.body, null, coalesce(f.forged, '{}'), true) w)), to_json(f.source);
       end if;
+    end if;
+    -- the default walk builds neither: a reader that never uses them does not pay for them (search's cold-read budget)
+    if (select w.held from bbcode_walk(f.body, null, coalesce(f.forged, '{}')) w) is distinct from '{}'::jsonb or (select w.source from bbcode_walk(f.body, null, coalesce(f.forged, '{}')) w) is not null then
+      raise exception 'bbcode_walk: fixture "%" built held or source without being asked', f.name;
     end if;
   end loop;
 end

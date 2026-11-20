@@ -409,7 +409,7 @@ begin
   -- the migration's backfill, as written there: a source for each version already written, and no verdict
   insert into quote_sources (act, source, digest)
   select a.id, w.source, md5(w.source)
-  from acts a, lateral bbcode_walk(a.payload ->> 'body', null, act_forged(a.payload)) w
+  from acts a, lateral bbcode_walk(a.payload ->> 'body', null, act_forged(a.payload), true) w
   where a.kind in ('post', 'spin', 'edit') and jsonb_typeof(a.payload -> 'body') = 'string'
   on conflict do nothing;
   if (select s.source from quote_sources s where s.act = old_post) is distinct from 'Never said.' then raise exception 'the backfill wrote no source for an old post'; end if;

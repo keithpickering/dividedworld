@@ -55,9 +55,13 @@ $$;
 revoke execute on function quote_norm(text) from public, anon;
 grant execute on function quote_norm(text) to authenticated, service_role;
 
+-- The fourth argument, `want_held`, is the cost of the two new columns: held and source are a second buffer of every word and a quote_norm pass over the body, and a reader that never uses them (every search
+-- reader, through bbcode_plain, and each walk of a body for its plain words, excerpt, unquoted or quotes) must not pay it, in time or in the plan memory a connection keeps (supabase/tests/e2e/0028-cold-read-budget.ts:
+-- search_threads went from 5.715 to 6.059 MB measured on Postgres 16, over its budget on 17). False (the default) gives held = '{}' and source = null and builds neither; the callers that read them pass true:
+-- the quote_sources trigger and backfill, quote_forged's reading, and the fixture assertions.
 drop function bbcode_walk(text, uuid);
 
-create function bbcode_walk(body text, quoted uuid, forged uuid[] default '{}') returns table(plain text, excerpt text, quotes text[], unquoted text, held jsonb, source text)
+create function bbcode_walk(body text, quoted uuid, forged uuid[] default '{}', want_held boolean default false) returns table(plain text, excerpt text, quotes text[], unquoted text, held jsonb, source text)
 language plpgsql immutable parallel safe set search_path = public, pg_temp as $$
 declare
   -- The tag names of engine/bbcode/parse.ts: BBCODE_TAGS (openers), its closers, the ones that keep a count of how many are open (every tag that makes a frame),
@@ -162,7 +166,7 @@ declare
   qw text[] := array[]::text[];
   xn int;
 begin
-  if body is null or body = '' then plain := ''; excerpt := ''; quotes := '{}'; unquoted := ''; held := '{}'::jsonb; source := ''; return next; return; end if;
+  if body is null or body = '' then plain := ''; excerpt := ''; quotes := '{}'; unquoted := ''; held := '{}'::jsonb; source := case when want_held then '' end; return next; return; end if;
   -- Tokens: a tag (`[`, no bracket, `]`), a lone `[`, or a run of text with no `[`.
   select array_agg(coalesce(m[1], m[2]) order by o) into toks
     from regexp_matches(body, '(\[[^\[\]]*\])|([^\[]+|\[)', 'g') with ordinality as r (m, o);
@@ -210,14 +214,14 @@ begin
       sp := sp - 1;
       cl := case when matched then unw_raw end;
       if k = 'literal' then
-        if matched then oc := oc + 1; out[oc] := unw_raw; sc := sc + 1; sr[sc] := replace(unw_raw, cutc, ''); end if;
+        if matched then oc := oc + 1; out[oc] := unw_raw; if want_held then sc := sc + 1; sr[sc] := replace(unw_raw, cutc, ''); end if; end if;
       else
         if k = 'pass' then
           -- its words are already in place; a block edge closes with a separator
-          if fname in ('center', 'left', 'right', 'marquee', 'spoiler', 'quote') then sc := sc + 1; sr[sc] := E'\n'; end if;
+          if fname in ('center', 'left', 'right', 'marquee', 'spoiler', 'quote') then if want_held then sc := sc + 1; sr[sc] := E'\n'; end if; end if;
         elsif k = 'list' then
           oc := oc + 1; out[oc] := E'\n';
-          sc := sc + 1; sr[sc] := E'\n';
+          if want_held then sc := sc + 1; sr[sc] := E'\n'; end if;
         elsif k = 'sep' or k = 'keep' then
           -- A kept quote's words go to the excerpt first (nested real quotes and links in them are already one separator each, as in the plain output), one separator before each after the first.
           -- Kept quotes never nest, so each piece of out is copied at most once and the cost stays linear.
@@ -233,10 +237,10 @@ begin
             dd[ftok] := dd[ftok] + 1; dd[dend + 1] := dd[dend + 1] - 1;
             if fcut then
               -- a cut is not shown: its words (and the cuts inside it) go, one cut mark stays between two separators
-              sc := fsstart; sc := sc + 1; sr[sc] := cutc; sc := sc + 1; sr[sc] := E'\n';
+              if want_held then sc := fsstart; sc := sc + 1; sr[sc] := cutc; sc := sc + 1; sr[sc] := E'\n'; end if;
             else
               -- a real quote's words, normalized and split at each cut mark: its pieces
-              if fq > 0 then
+              if fq > 0 and want_held then
                 -- Its pieces are copied out one at a time: a slice of sr would flatten the whole array at every close (quadratic in the quotes of a post), and this costs the quote's own size.
                 xn := 0;
                 for j in fsstart + 1..sc loop xn := xn + 1; qw[xn] := sr[j]; end loop;
@@ -244,7 +248,7 @@ begin
                 hq[fq] := case when qnorm = '' then '[]'::jsonb
                   else to_jsonb(string_to_array(replace(replace(qnorm, ' ' || cutc, cutc), cutc || ' ', cutc), cutc)) end;   -- each piece trimmed: the blanks beside a cut mark go
               end if;
-              sc := sc + 1; sr[sc] := E'\n';
+              if want_held then sc := sc + 1; sr[sc] := E'\n'; end if;
             end if;
           end if;
         else -- bareurl: a link only when closed, around nothing but text that is one good address (or one noparse alone); its opener is the piece before its start
@@ -265,10 +269,10 @@ begin
           end if;
           if cl is not null and not f_nodey[sp + 1] and (f_np[sp + 1] = 0 or (f_np[sp + 1] = 1 and oc - fstart = f_npp[sp + 1])) and bbcode_plain_url_ok(contents, array['http','https','mailto'], true) then
             oc := fstart; out[oc] := E'\n';
-            sr[fsstart] := '';                        -- a link's words stay, its opener does not
+            if want_held then sr[fsstart] := ''; end if;   -- a link's words stay, its opener does not
           elsif cl is not null then
             oc := oc + 1; out[oc] := cl;
-            sc := sc + 1; sr[sc] := replace(cl, cutc, '');
+            if want_held then sc := sc + 1; sr[sc] := replace(cl, cutc, ''); end if;
           end if;
         end if;
         f_nodey[f_home[sp]] := true;
@@ -280,10 +284,10 @@ begin
 
     tok := toks[t];
     -- Text, a lone `[`, and a tag the parser does not read: the words as written.
-    if length(tok) < 2 or left(tok, 1) <> '[' then oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, ''); t := t + 1; continue; end if;
+    if length(tok) < 2 or left(tok, 1) <> '[' then oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; t := t + 1; continue; end if;
     b := substr(tok, 2, length(tok) - 2);
     if b = '' or length(b) > max_tag or (length(b) > max_tag / 2 and bbcode_plain_u16len(b) > max_tag) then
-      oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, ''); t := t + 1; continue;
+      oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; t := t + 1; continue;
     end if;
     val := null;
     qrest := null;
@@ -291,12 +295,12 @@ begin
       nm := '*';
     elsif left(b, 1) = '/' then
       nm := lower(substr(b, 2));
-      if not (nm = any (closers)) then oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, ''); t := t + 1; continue; end if;
+      if not (nm = any (closers)) then oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; t := t + 1; continue; end if;
       -- A closer with nothing open to close is text; otherwise it closes the nearest opener of its name and what was opened inside it. Inside an inline spoiler the closer of a block tag
       -- or a link is text, and a [/video] or [/youtube] is always text (no frame of either is ever open).
       t := t + 1;
       if (open_isp > 0 and (nm = any (blocks) or nm = 'url')) or nm in ('video', 'youtube') or cnt[array_position(counted, nm)] = 0 then
-        oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, '');
+        oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if;
       else
         unw := 1; unw_name := nm; unw_raw := tok;
       end if;
@@ -307,7 +311,7 @@ begin
     else
       eq := strpos(b, '=');
       nm := lower(case when eq = 0 then b else left(b, eq - 1) end);
-      if not (nm = any (openers)) then oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, ''); t := t + 1; continue; end if;
+      if not (nm = any (openers)) then oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; t := t + 1; continue; end if;
       if eq > 0 then
         val := substr(b, eq + 1);
         if length(val) >= 2 and left(val, 1) = '"' and right(val, 1) = '"' then val := substr(val, 2, length(val) - 2); end if;
@@ -316,52 +320,52 @@ begin
 
     if open_isp > 0 and nm <> '*' and (nm = any (blocks) or nm = 'url' or nm = 'ispoiler') then
       -- A block tag, a link or another inline spoiler inside an inline spoiler is the words as written (the spoiler is a button, and a button holds nothing interactive).
-      oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, ''); t := t + 1; continue;
+      oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; t := t + 1; continue;
     end if;
 
     if nm = '*' then
       -- An item marker is one only directly inside a list; elsewhere it is text.
-      oc := oc + 1; sc := sc + 1;
-      if f_kind[f_home[sp]] = 'list' then out[oc] := E'\n'; sr[sc] := E'\n'; else out[oc] := tok; sr[sc] := replace(tok, cutc, ''); end if;
+      oc := oc + 1;
+      if f_kind[f_home[sp]] = 'list' then out[oc] := E'\n'; if want_held then sc := sc + 1; sr[sc] := E'\n'; end if; else out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; end if;
       t := t + 1; continue;
     elsif nm = 'hr' then
       -- A rule is a leaf with no closer; with an attribute it is text.
-      oc := oc + 1; sc := sc + 1;
-      if val is null then out[oc] := E'\n'; sr[sc] := E'\n'; f_nodey[f_home[sp]] := true; else out[oc] := tok; sr[sc] := replace(tok, cutc, ''); end if;
+      oc := oc + 1;
+      if val is null then out[oc] := E'\n'; if want_held then sc := sc + 1; sr[sc] := E'\n'; end if; f_nodey[f_home[sp]] := true; else out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; end if;
       t := t + 1; continue;
     elsif nm = 'code' then
       -- Raw up to the closing tag; with none, or an attribute, only the opener is text.
       if val is null and nxt_code[t] > 0 then
         oc := oc + 1; out[oc] := E'\n'; f_nodey[f_home[sp]] := true;
-        sc := sc + 1; sr[sc] := E'\n';
-        for idx in t + 1..nxt_code[t] - 1 loop sc := sc + 1; sr[sc] := replace(toks[idx], cutc, ''); end loop;
-        sc := sc + 1; sr[sc] := E'\n';
+        if want_held then sc := sc + 1; sr[sc] := E'\n'; end if;
+        for idx in t + 1..nxt_code[t] - 1 loop if want_held then sc := sc + 1; sr[sc] := replace(toks[idx], cutc, ''); end if; end loop;
+        if want_held then sc := sc + 1; sr[sc] := E'\n'; end if;
         t := nxt_code[t] + 1; continue;
       end if;
-      oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, ''); t := t + 1; continue;
+      oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; t := t + 1; continue;
     elsif nm = 'noparse' then
       -- Raw up to the closing tag, its contents one node of the post's own words as written (none at all when empty); with no closer, or an attribute, only the opener is text.
       j := nxt_noparse[t];
       if val is null and j > 0 then
         if j > t + 1 then
           -- Its tokens go in piece by piece (a substr of the body would walk to its offset each time, and a slice of toks would copy it), and are joined once at the end.
-          for idx in t + 1..j - 1 loop oc := oc + 1; out[oc] := toks[idx]; sc := sc + 1; sr[sc] := replace(toks[idx], cutc, ''); end loop;
+          for idx in t + 1..j - 1 loop oc := oc + 1; out[oc] := toks[idx]; if want_held then sc := sc + 1; sr[sc] := replace(toks[idx], cutc, ''); end if; end loop;
           f_np[f_home[sp]] := f_np[f_home[sp]] + 1;
           f_npp[f_home[sp]] := f_npp[f_home[sp]] + (j - t - 1);
         end if;
         t := j + 1; continue;
       end if;
-      oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, ''); t := t + 1; continue;
+      oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; t := t + 1; continue;
     elsif nm = 'img' then
       j := nxt_img[t];
       if val is null and j > 0 and cum[j - 1] - cum[t] <= max_raw then
         contents := '';                               -- joined token by token, since a slice of toks would copy the whole array each time; the check above bounds it
         for idx in t + 1..j - 1 loop contents := contents || toks[idx]; end loop;
         if bbcode_plain_u16len(contents) <= max_raw and bbcode_plain_url_ok(contents, array['http','https'], false) then
-          oc := oc + 1; out[oc] := E'\n'; sc := sc + 1; sr[sc] := E'\n'; f_nodey[f_home[sp]] := true; t := j + 1; continue;
+          oc := oc + 1; out[oc] := E'\n'; if want_held then sc := sc + 1; sr[sc] := E'\n'; end if; f_nodey[f_home[sp]] := true; t := j + 1; continue;
         end if;
       end if;
-      oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, ''); t := t + 1; continue;
+      oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; t := t + 1; continue;
     elsif nm = 'video' or nm = 'youtube' then
       -- Taken as an image is; the contents (trimmed) must be an address videoOf has a player for, or for [youtube] a bare id. Otherwise only the opener is text.
       j := case when nm = 'video' then nxt_video[t] else nxt_youtube[t] end;
@@ -371,11 +375,11 @@ begin
         if bbcode_plain_u16len(contents) <= max_raw then
           vid := bbcode_plain_trim(contents);
           if vid <> '' and ((nm = 'youtube' and vid ~ '^[A-Za-z0-9_-]{11}$') or bbcode_plain_video_ok(vid) is true) then
-            oc := oc + 1; out[oc] := E'\n'; sc := sc + 1; sr[sc] := E'\n'; f_nodey[f_home[sp]] := true; t := j + 1; continue;
+            oc := oc + 1; out[oc] := E'\n'; if want_held then sc := sc + 1; sr[sc] := E'\n'; end if; f_nodey[f_home[sp]] := true; t := j + 1; continue;
           end if;
         end if;
       end if;
-      oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, ''); t := t + 1; continue;
+      oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; t := t + 1; continue;
     end if;
 
     want := null;
@@ -418,22 +422,22 @@ begin
 
     if want is null or (f_depth[f_home[sp]] >= max_depth and not cut) then
       -- An opener that is text, kept on the stack so its closer is text too.
-      oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, '');
+      oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if;
       sp := sp + 1;
       f_kind[sp] := 'literal'; f_name[sp] := nm; f_start[sp] := 0;
       f_depth[sp] := f_depth[sp - 1]; f_home[sp] := f_home[sp - 1]; f_nodey[sp] := false; f_np[sp] := 0; f_npp[sp] := 0; f_tok[sp] := t; f_q[sp] := 0;
     else
       -- A list puts a separator before its words, and a bare link its opener (given back as text if it is not a link), so each is the piece before the frame's start.
-      if want = 'list' then oc := oc + 1; out[oc] := E'\n'; sc := sc + 1; sr[sc] := E'\n'; elsif want = 'bareurl' then oc := oc + 1; out[oc] := tok; sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if;
+      if want = 'list' then oc := oc + 1; out[oc] := E'\n'; if want_held then sc := sc + 1; sr[sc] := E'\n'; end if; elsif want = 'bareurl' then oc := oc + 1; out[oc] := tok; if want_held then sc := sc + 1; sr[sc] := replace(tok, cutc, ''); end if; end if;
       sp := sp + 1;
       f_kind[sp] := want; f_name[sp] := nm; f_start[sp] := oc;
       f_depth[sp] := f_depth[f_home[sp - 1]] + 1; f_home[sp] := sp; f_nodey[sp] := false; f_np[sp] := 0; f_npp[sp] := 0; f_tok[sp] := t; f_q[sp] := 0;
       -- a block edge opens with a separator in the source, a spoiler with its title between two (the default title when it has none, as the parser shows it)
       if nm in ('center', 'left', 'right', 'marquee', 'quote') then
-        sc := sc + 1; sr[sc] := E'\n';
+        if want_held then sc := sc + 1; sr[sc] := E'\n'; end if;
       elsif nm = 'spoiler' then
         stitle := coalesce(nullif(bbcode_plain_trim(val), ''), 'Spoiler');
-        sc := sc + 1; sr[sc] := E'\n'; sc := sc + 1; sr[sc] := replace(stitle, cutc, ''); sc := sc + 1; sr[sc] := E'\n';
+        if want_held then sc := sc + 1; sr[sc] := E'\n'; end if; if want_held then sc := sc + 1; sr[sc] := replace(stitle, cutc, ''); end if; if want_held then sc := sc + 1; sr[sc] := E'\n'; end if;
       end if;
       if nm = 'url' then open_urls := open_urls + 1; end if;
       if nm = 'ispoiler' then open_isp := open_isp + 1; end if;
@@ -458,18 +462,18 @@ begin
   unquoted := array_to_string(out[1 : oc], '');
   -- Each Act once, at the place it first opens.
   quotes := coalesce((select array_agg(d.x order by d.o) from (select distinct on (u.x) u.x, u.o from unnest(qs[1 : qc]) with ordinality u(x, o) order by u.x, u.o) d), '{}');
-  source := quote_norm(array_to_string(sr[1 : sc], ''));
+  source := case when want_held then quote_norm(array_to_string(sr[1 : sc], '')) end;
   -- Each Act's quotes, in the order their openers stand. A cut's Acts are not shown and have no pieces: its slot in hq stays null (a gap, when a real quote opens after it), and the filter drops it.
-  held := coalesce((select jsonb_object_agg(g.a, g.q) from (
+  held := case when want_held then coalesce((select jsonb_object_agg(g.a, g.q) from (
     select u.a, jsonb_agg(h.p order by u.o) q from unnest(qs[1 : qc]) with ordinality u(a, o) join unnest(hq) with ordinality h(p, o) on h.o = u.o where h.p is not null group by u.a
-  ) g), '{}'::jsonb);
+  ) g), '{}'::jsonb) else '{}'::jsonb end;
   return next;
   return;
 end
 $$;
 
-revoke execute on function bbcode_walk(text, uuid, uuid[]) from public, anon;
-grant execute on function bbcode_walk(text, uuid, uuid[]) to authenticated, service_role;
+revoke execute on function bbcode_walk(text, uuid, uuid[], boolean) from public, anon;
+grant execute on function bbcode_walk(text, uuid, uuid[], boolean) to authenticated, service_role;
 
 -- ===================================================================================== 2. the readers pass the verdict ====
 -- An Act's verdict is its payload's `forged` (the posts some real quote of which in its body is doctored; Task 3 writes it). A real quote of a forged post is a counterfeit in every reader, as parse.ts's third argument makes it in the
@@ -1433,7 +1437,7 @@ revoke execute on function quote_sources_append_only() from public, anon, authen
 -- Backfill: a source for each version already written (no verdict: act_forged of an old payload is empty).
 insert into quote_sources (act, source, digest)
 select a.id, w.source, md5(w.source)
-from acts a, lateral bbcode_walk(a.payload ->> 'body', null, act_forged(a.payload)) w
+from acts a, lateral bbcode_walk(a.payload ->> 'body', null, act_forged(a.payload), true) w
 where a.kind in ('post', 'spin', 'edit') and jsonb_typeof(a.payload -> 'body') = 'string'
 on conflict do nothing;
 
@@ -1441,7 +1445,7 @@ create function acts_quote_sources() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare s text;
 begin
-  select w.source into s from bbcode_walk(new.payload ->> 'body', null, act_forged(new.payload)) w;
+  select w.source into s from bbcode_walk(new.payload ->> 'body', null, act_forged(new.payload), true) w;
   insert into quote_sources (act, source, digest) values (new.id, s, md5(s)) on conflict do nothing;
   return null;
 end $$;
@@ -1482,7 +1486,7 @@ declare
   i integer;
 begin
   if body is null or body !~* '\[quote=' then return '{}'::uuid[]; end if;
-  select w.held into walked from bbcode_walk(body, null) w;
+  select w.held into walked from bbcode_walk(body, null, '{}', true) w;
   for k, quotes in select e.key, e.value from jsonb_each(coalesce(walked, '{}'::jsonb)) e loop
     -- The eligible versions' texts, newest first, a text seen already (by digest) once; a hidden version is never read (hidden is asked first, so a hidden copy of a text does not hide a visible one).
     sources := '{}';
