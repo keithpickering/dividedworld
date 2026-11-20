@@ -66,10 +66,11 @@ const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', '
 const count = (n: number) => (Number.isInteger(n) && n >= 0 && n <= 20 ? COUNTS[n]! : String(n));
 /* A number the words state, from the numbers they are told, or the compiled default where they are told none. */
 const num = (n: Readonly<Record<string, number | string>>, key: string) => { const v = n[key]; return typeof v === 'number' ? v : defaults.economy[key]!; };
-/* A reward's multiple, as the clause that follows what is paid: nothing for 0, one vote's worth for 1, "double" and "triple", and a count
+/* A reward's multiple, as the clause that follows what is paid: nothing for 0, half a vote for 0.5, one vote's worth for 1, "double" and "triple", and a count
  * of times over for the rest, a half said in words ("one and a half") and any other fraction in figures. True at every value `min: 0` allows. */
 const multiple = (n: number) => {
   if (n === 0) return 'which pay nothing';
+  if (n === 0.5) return 'each paid as half a vote';
   if (n === 1) return 'each paid as one vote';
   if (n === 2) return 'each paid double';
   if (n === 3) return 'each paid triple';

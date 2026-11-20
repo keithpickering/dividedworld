@@ -393,6 +393,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(at(2.5)).toContain('each paid two and a half times over');
     expect(at(1.25)).toContain('each paid 1.25 times over');
     expect(at(1.5)).not.toMatch(/\d/);
+    expect(at(0.5)).toContain('each paid as half a vote');
+    expect(at(0.5)).not.toMatch(/zero/);
   });
   test('the double the Heel and the Jabroni earn is said, and the Lurker\'s miss and the reveal perk are worded', () => {
     expect(wordsRead['heel']).toContain('heel.heatVotes');
