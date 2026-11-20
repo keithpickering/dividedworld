@@ -347,3 +347,37 @@ begin
   select array_agg((x ->> 'act')::uuid) into seen from (select x from jsonb_array_elements(first_page -> 'ballots') x union all select x from jsonb_array_elements(second_page -> 'ballots') x) z(x);
   if (select count(distinct a) from unnest(seen) a) is distinct from 52 or (select count(*) from acts b where b.kind = 'ballot' and b.target_act_id = poll) is distinct from 52 then raise exception '2b the two pages are not the 52 ballots, each once'; end if;
 end $$;
+
+-- ---- 2c. 60 voters, one of whom withdrew: votersMore, and a direct call that asks for more than a page ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('prm-ann'); dee uuid := tests.account('prm-dee');
+  a1 uuid := tests.character(ann, 'Prm Ann'); d1 uuid := tests.character(dee, 'Prm Dee');
+  t uuid := tests.thread('Prm many'); p uuid := tests.post(a1, t, 'Many voters.', now() - interval '20 hours');
+  poll uuid := pg_temp.mkpoll(t, p, a1, at => now() - interval '19 hours'); g integer; c uuid; owner_ uuid; e jsonb; n integer; ends timestamptz := now() + interval '1 day';
+begin
+  for g in 1..51 loop
+    if g % 5 = 1 then owner_ := tests.account('prm-v-' || g); end if;
+    c := tests.character(owner_, 'Prm Voter ' || g);
+    perform pg_temp.vote(poll, c, '[0]', now() - interval '10 hours' + g * interval '1 second');
+    -- The 51st voter withdraws: 50 voters pick something, so there is no more than the 50 listed.
+    if g = 51 then perform pg_temp.vote(poll, c, '[]', now() - interval '9 hours'); end if;
+  end loop;
+  e := pg_temp.page(dee, t);
+  if (select (x ->> 'voters')::integer from jsonb_array_elements(e -> 'polls') x where (x ->> 'post')::uuid = p) is distinct from 50 or e -> 'votersMore' is distinct from '[]'::jsonb or jsonb_array_length(e -> 'voters') is distinct from 50 then
+    raise exception '2c 51 characters voted and one withdrew: 50 voters and no more, got % %', e -> 'polls', e -> 'votersMore';
+  end if;
+  -- A new voter makes it 51 who pick something, and then there is more.
+  perform pg_temp.vote(poll, d1, '[1]', now() - interval '8 hours');
+  e := pg_temp.page(dee, t);
+  if e -> 'votersMore' is distinct from to_jsonb(array[poll]) or jsonb_array_length(e -> 'voters') is distinct from 50 then raise exception '2c 51 voters pick something: votersMore names the poll and 50 are listed: %', e -> 'votersMore'; end if;
+  for g in 1..4 loop perform pg_temp.vote(poll, tests.character(dee, 'Prm Extra ' || g), '[2]', now() - interval '7 hours' + g * interval '1 second'); end loop;
+  -- The two readers behind the pages take at most one page (51), however much a direct call asks for.
+  perform tests.become(dee);
+  select count(*) into n from poll_voter_acts(poll, ends, 1000000);
+  if n is distinct from 51 then raise exception '2c poll_voter_acts(most => 1000000) returned % ids, not the clamp of 51', n; end if;
+  select count(*) into n from poll_ballot_acts(poll, null, null, 1000000);
+  if n is distinct from 51 then raise exception '2c poll_ballot_acts(most => 1000000) returned % ids, not the clamp of 51', n; end if;
+  perform tests.unbecome();
+end $$;

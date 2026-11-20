@@ -169,7 +169,7 @@ declare
   ann uuid := tests.account('ps-ann'); rdr uuid := tests.account('ps-rdr');
   oa uuid := tests.character(ann, 'Ps Author'); rd uuid := tests.character(rdr, 'Ps Reader');
   voters uuid[] := '{}'; owners uuid[] := '{}'; t uuid := tests.thread('Ps polls'); other uuid := tests.thread('Ps other thread');
-  p uuid; k integer; plan jsonb; doc jsonb; read_rows numeric; voters_out numeric; started timestamptz; took numeric; read0 numeric; read1 numeric;
+  p uuid; k integer; plan jsonb; doc jsonb; read_rows numeric; voters_out numeric; started timestamptz; took numeric; read0 numeric; read1 numeric; deep_id uuid; deep_at timestamptz; first_read numeric; deep_read numeric;
 begin
   for k in 0..39 loop owners := owners || tests.account('ps-voter-' || k); end loop;
   for k in 1..200 loop voters := voters || tests.character(owners[k % 40 + 1], 'Ps Voter ' || k); end loop;
@@ -212,6 +212,22 @@ begin
   read1 := (select idx_tup_fetch from pg_stat_xact_user_tables where relname = 'acts') - read0;
   raise notice '3 the voters of 20 polls of 800 ballots (50 each) fetched % rows of acts', read1;
   if read1 > 20 * 300 then raise exception '3 the voter list fetched % rows of acts for 20 polls of 800 ballots: it must walk the newest ballots and stop at 50 (a few hundred a poll), not read every ballot', read1; end if;
+  -- A deep page of poll_ballots costs what the first does: page 10 of a poll of 800 ballots (the cursor is the 450th newest) fetches about as many rows of acts as page 1, since the keyset walks acts_ballots_recent from the cursor
+  -- and stops at 51, where an offset would read the 450 before it.
+  select b.id, b.created_at into deep_id, deep_at from acts b where b.kind = 'ballot' and b.target_act_id = (select id from acts where kind = 'poll' and thread = t order by created_at limit 1) order by b.created_at desc, b.id desc offset 449 limit 1;
+  perform tests.become(rdr);
+  perform pg_stat_force_next_flush();
+  read0 := (select idx_tup_fetch from pg_stat_xact_user_tables where relname = 'acts');
+  perform poll_ballots((select id from acts where kind = 'poll' and thread = t order by created_at limit 1));
+  perform pg_stat_force_next_flush();
+  first_read := (select idx_tup_fetch from pg_stat_xact_user_tables where relname = 'acts') - read0;
+  read0 := (select idx_tup_fetch from pg_stat_xact_user_tables where relname = 'acts');
+  perform poll_ballots((select id from acts where kind = 'poll' and thread = t order by created_at limit 1), deep_at, deep_id);
+  perform pg_stat_force_next_flush();
+  deep_read := (select idx_tup_fetch from pg_stat_xact_user_tables where relname = 'acts') - read0;
+  perform tests.unbecome();
+  raise notice '3 poll_ballots fetched % rows of acts for page 1 and % for page 10 of 800 ballots', first_read, deep_read;
+  if deep_read > first_read + 100 or first_read > 600 then raise exception '3 page 10 of poll_ballots fetched % rows of acts and page 1 %: a keyset page must cost the same however deep (and a page is 50 ballots)', deep_read, first_read; end if;
   perform pg_stat_force_next_flush();
   read0 := (select idx_tup_fetch from pg_stat_xact_user_tables where relname = 'acts');
   perform tests.become(rdr);

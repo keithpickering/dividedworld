@@ -34,6 +34,7 @@
 -- Two indexes and two readers of a poll's ballots, each a definer over base `acts` for the ids alone (an invoker reads no `character` of `acts`; the ids of a public poll's ballots are public, and both return nothing for a secret poll
 -- whatever the caller). What they hand on goes through acts_public by primary key, so the veil's stand-in and every other mask of the projection apply.
 --   acts_ballots_recent  a poll's ballots newest first: the voter list's walk and poll_ballots' keyset pages read it in order and stop at their limit.
+--   Both clamp `most` to 51 (a page and the one that says there is more), so a direct call can never walk a poll's every ballot.
 --   poll_voter_acts      (poll, ends, most): the ids of a poll's counted ballots with picks, newest first, `most` at most. It walks the poll's ballots from the newest back and keeps one only when it is its character's latest ballot
 --                        before `ends` (one probe of acts_ballots: the first row of the character's ballots newest first) and its picks are not empty (a withdrawal counts for its character and lists none); it stops at `most`, so its cost is the newest ballots read and one probe for
 --                        each, plus the changes among them, and never the poll's every ballot.
@@ -64,7 +65,7 @@ begin
                      order by l.created_at desc, l.id desc limit 1) then
         return next b.id;
         found := found + 1;
-        if found >= poll_voter_acts.most then return; end if;
+        if found >= least(poll_voter_acts.most, 51) then return; end if;
       end if;
     end loop;
     exit when seen < 64;
@@ -80,7 +81,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     and (b.created_at, b.id) < (coalesce(poll_ballot_acts.before, 'infinity'::timestamptz),
                                 coalesce(poll_ballot_acts.before_id, case when poll_ballot_acts.before is null then 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid else '00000000-0000-0000-0000-000000000000'::uuid end))
   order by b.created_at desc, b.id desc
-  limit poll_ballot_acts.most
+  limit least(poll_ballot_acts.most, 51)
 $$;
 revoke execute on function poll_ballot_acts(uuid, timestamptz, uuid, integer) from public, anon;
 grant execute on function poll_ballot_acts(uuid, timestamptz, uuid, integer) to authenticated;
