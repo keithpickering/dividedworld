@@ -127,7 +127,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
    */
   const originPlays = useMemo(() => createPlays(), []);
   const originTicket = useRef(-1);
-  /* A post's `now` at its first billing in this page's life: a re-read or a catch-up judges spent at that time, so a clock never moves a mark (cards/billing.ts). */
+  /* A post's `now` at its first billing while this thread is open: a re-read or a catch-up judges spent at that time,
+     so a clock never moves a mark (cards/billing.ts). */
   const billedAt = useRef(new Map<Id, number>());
   const [origin, setOrigin] = useState<PageOrigin | null>(() => doc.origin);
   const effects = useMemo(() => effectCards(ui), [ui]);

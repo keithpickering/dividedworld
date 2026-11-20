@@ -613,14 +613,14 @@
 .kb-lens-action .kb-spinner { height: 1em; }
 
 /* A card's icon on its tab (spent-marks design, section 5): always in color, spent or not. A tight halo in the field color lifts it off its own ink
-   fill, and a soft shadow under it keeps it from looking cut out. */
+   fill, and a soft shadow under it, the ground at half strength, keeps it from looking cut out. */
 .kb-lens-tab .kb-glass-upright { display: inline-flex; align-items: center; gap: 8px; }
 .kb-lens-tab-icon {
   flex: none;
   width: 1.35em;
   height: 1.35em;
   object-fit: contain;
-  filter: drop-shadow(0 0 1.5px var(--kb-glass-field)) drop-shadow(0 0 1.5px var(--kb-glass-field)) drop-shadow(0 3px 5px rgb(0 0 0 / 0.5));
+  filter: drop-shadow(0 0 1.5px var(--kb-glass-field)) drop-shadow(0 0 1.5px var(--kb-glass-field)) drop-shadow(0 3px 5px color-mix(in srgb, var(--kb-glass-ground) 50%, transparent));
 }
 .kb-lens-tab-swatch { box-sizing: border-box; border: 2px solid var(--kb-glass-text-hi); }
 @media (forced-colors: active) { .kb-lens-tab-icon { filter: none; } }

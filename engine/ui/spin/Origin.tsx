@@ -82,7 +82,9 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
     setAct((was) => (was && from.act ? newer(was, from.act) : from.act ?? was));
     setMore(from.more);
   }
-  /* The thread screen takes the page's origin into its store of the box's plays as it takes a page in (`takeInOrigin`, called by `absorb`), so the box's first frame has its tags. A box drawn without that store (a story) takes its own in here, and a story box is not billed for spent: it bills by draws alone. */
+  /* The thread screen takes the page's origin into its store of the box's plays as it takes a page in (`takeInOrigin`,
+     called by `absorb`), so the box's first frame has its tags. A box drawn without that store (a story) takes its own
+     in here, and a story box is not billed for spent: it bills by draws alone. */
   useEffect(() => { if (!shared) takeInOrigin(from, origin, plays, tallies, new Map()); }, [shared, from, origin, plays, tallies]);
   useEffect(() => {
     const cards = effectCards(ui);
