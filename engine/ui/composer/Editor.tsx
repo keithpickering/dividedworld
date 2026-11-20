@@ -83,6 +83,8 @@ function useQuoteCheck(value: string, check: ((body: string) => Promise<readonly
   const inFlight = useRef(false);
   const due = useRef(false);
   const alive = useRef(true);
+  /** The 600 ms timer of the latest change is still waiting: it will ask for the latest draft itself. */
+  const waiting = useRef(false);
   const asker = useRef(check);
   useEffect(() => { latest.current = value; asker.current = check; });
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -95,7 +97,9 @@ function useQuoteCheck(value: string, check: ((body: string) => Promise<readonly
       inFlight.current = false;
       if (!alive.current) return;
       if (latest.current === body) setForged(answer.length === 0 ? NONE : answer);
-      if (due.current) ask.current(latest.current);
+      /* A retry is owed only when no newer change is waiting out its own 600 ms; that change's timer asks. */
+      if (due.current && !waiting.current) ask.current(latest.current);
+      due.current = false;
     };
     let called: Promise<readonly string[]>;
     try { called = Promise.resolve(call(body)); } catch { called = Promise.reject(new Error('quote check')); }
@@ -103,8 +107,9 @@ function useQuoteCheck(value: string, check: ((body: string) => Promise<readonly
   });
   useEffect(() => {
     if (!real) { due.current = false; setForged(NONE); return; }
-    const timer = setTimeout(() => { if (inFlight.current) due.current = true; else ask.current(value); }, CHECK_AFTER_MS);
-    return () => clearTimeout(timer);
+    waiting.current = true;
+    const timer = setTimeout(() => { waiting.current = false; if (inFlight.current) due.current = true; else ask.current(value); }, CHECK_AFTER_MS);
+    return () => { clearTimeout(timer); waiting.current = false; };
   }, [value, real]);
   return real ? forged : NONE;
 }

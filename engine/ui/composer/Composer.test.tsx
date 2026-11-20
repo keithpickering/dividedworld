@@ -820,6 +820,55 @@ describe('the line about a quote that is not in the post it names', () => {
     expect(screen.queryByText(LINE)).toBeNull();
   });
 
+  test('a retry waits for 600 ms after the last keystroke, however long the call took', async () => {
+    const w = threadWorld(2);
+    const answers: ((v: readonly string[]) => void)[] = [];
+    const asked: string[] = [];
+    vi.spyOn(w.fake, 'quoteCheck').mockImplementation((body: string) => { asked.push(body); return new Promise<readonly string[]>((resolve) => { answers.push(resolve); }) as never; });
+    const { type, wait } = await open(w);
+    const draft = (n: string) => `[quote=${w.ids[0]}]${n}[/quote]`;
+    type(draft('one'));
+    await wait(WAIT);
+    type(draft('two'));
+    await wait(WAIT);
+    type(draft('three'));
+    await wait(300);
+    type(draft('four'));
+    await act(async () => { answers[0]!([]); });
+    expect(asked).toEqual([draft('one')]);
+    await wait(WAIT - 1);
+    expect(asked).toEqual([draft('one')]);
+    await wait(1);
+    expect(asked).toEqual([draft('one'), draft('four')]);
+  });
+
+  test('a draft over the longest post is refused by the check and shows no line', async () => {
+    const w = threadWorld(2, { postMaxLength: 50 });
+    const posted = vi.spyOn(w.fake, 'post');
+    const { type, wait } = await open(w);
+    type(`[quote=${w.ids[0]}]${'words nobody wrote '.repeat(5)}[/quote]`);
+    await wait(WAIT);
+    expect(screen.queryByText(LINE)).toBeNull();
+    expect(posted).not.toHaveBeenCalled();
+    await expect(Promise.resolve().then(() => w.fake.quoteCheck('x'.repeat(51)))).rejects.toThrow(/longer than 50/);
+  });
+
+  test('nothing is asked once the box is gone, whatever answer was owed', async () => {
+    const w = threadWorld(2);
+    const answers: ((v: readonly string[]) => void)[] = [];
+    const asked: string[] = [];
+    vi.spyOn(w.fake, 'quoteCheck').mockImplementation((body: string) => { asked.push(body); return new Promise<readonly string[]>((resolve) => { answers.push(resolve); }) as never; });
+    const { type, wait } = await open(w);
+    type(`[quote=${w.ids[0]}]one[/quote]`);
+    await wait(WAIT);
+    type(`[quote=${w.ids[0]}]two[/quote]`);
+    await wait(WAIT);
+    cleanup();
+    await act(async () => { answers[0]!([]); });
+    await wait(WAIT);
+    expect(asked).toHaveLength(1);
+  });
+
   test('a failed call shows nothing and the post still posts', async () => {
     const w = threadWorld(2);
     vi.spyOn(w.fake, 'quoteCheck').mockRejectedValue(new Error('down'));
