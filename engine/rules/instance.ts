@@ -648,7 +648,7 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a set card that springs on a cast does`);
   if (c.gimmick?.kind === 'noQuote' && c.reaches !== undefined && !(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${who} stops quotes, and a card that stops quotes reaches a post alone`);
   if (c.gimmick?.kind === 'ride' && postAlone === false) out.push(`${who} has a ride, and a card with a ride reaches a post alone`);
-  if (c.trap?.outcome !== undefined) out.push(...outcomeProblems(c.trap.outcome, who, play, on, match));
+  if (c.trap?.outcome !== undefined) out.push(...outcomeProblems(c.trap.outcome, who, play, on));
   if (c.skim !== undefined) out.push(...skimProblems(c, who, play));
   out.push(...veilProblems(c, who, play));
   if (c.scoresAs !== undefined) {
@@ -737,13 +737,13 @@ function shareProblem(e: Record<string, unknown>, who: string, what: string, sai
   return null;
 }
 
-/** A cast trap's outcome (Part 6 of the card notes): a ride, on a set card that springs on a cast and names its card, never one that matches. */
-function outcomeProblems(o: unknown, who: string, play: string, on: unknown, match: unknown): string[] {
+/** A cast trap's outcome (Part 6 of the card notes): a ride, on a set card that springs on a cast, beside a named card or a match. */
+function outcomeProblems(o: unknown, who: string, play: string, on: unknown): string[] {
   if (typeof o !== 'object' || o === null) return [`${who} has an outcome that is not an object`];
   if (play !== 'set' || on !== 'cast') return [`${who} has an outcome, and only a set card that springs on a cast does`];
   const e = o as Record<string, unknown>;
   const out: string[] = [];
-  if (match !== undefined) out.push(`${who} has an outcome beside a match; a ride outcome names its card (catches)`);
+  if ('every' in e && e.every !== true) out.push(`${who} has an outcome whose every is ${JSON.stringify(e.every)}; every is true or left out`);
   if (e.kind !== 'ride') out.push(`${who} has an outcome of kind ${JSON.stringify(e.kind)}; an outcome is ride`);
   else { const why = shareProblem(e, who, 'an outcome', 'an outcome of share'); if (why) out.push(why); }
   return out;

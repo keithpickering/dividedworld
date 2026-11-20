@@ -857,7 +857,10 @@ test('a trap outcome is a ride on a set card that springs on a cast and names it
   assert.match(set({ trigger: cast, outcome: { kind: 'sneeze', share: 1 } }), /card "splat" has an outcome of kind "sneeze"; an outcome is ride/);
   assert.match(set({ trigger: cast, outcome: 'ride' }), /card "splat" has an outcome that is not an object/);
   assert.match(set({ trigger: { on: 'visit' }, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" has an outcome, and only a set card that springs on a cast does/);
-  assert.match(set({ trigger: cast, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" has an outcome beside a match; a ride outcome names its card \(catches\)/);
+  const everyRide = (every: unknown) => set({ trigger: cast, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.25, every } }, {});
+  assert.doesNotMatch(set({ trigger: cast, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.25, every: true } }, {}), /card "splat"/);
+  assert.match(everyRide('yes'), /card "splat" has an outcome whose every is "yes"; every is true or left out/);
+  assert.match(everyRide(false), /card "splat" has an outcome whose every is false; every is true or left out/);
   assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" springs on a cast and names no card to catch/);
   assert.match(instanceProblems(withCards({ trap: { trigger: cast, outcome: { kind: 'ride', share: 1 } } })).join('\n'), /card "splat" has a trap, and only a set card has one/);
 });
