@@ -70,9 +70,3 @@ export const BarredAppealForm: Story = {
   parameters: { world: barred('none') },
   play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: /^Appeal to the Boss/u })); },
 };
-
-/** The reply box with "Add a poll" pressed: the question, two options, how many a voter may pick, secret ballots and how long it stays open. */
-export const WithPoll: Story = {
-  parameters: { world },
-  play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Add a poll' })); },
-};

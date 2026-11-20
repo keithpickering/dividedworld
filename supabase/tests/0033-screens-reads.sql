@@ -170,7 +170,9 @@ declare
                          -- The member groups' looks (0128): every group's key, name, color and stripe.
                          'groups',
                          -- How long a card set face down lasts (0156), for the line a card about to be set shows.
-                         'setLasts'];
+                         'setLasts',
+                         -- The poll editor's bounds (0388).
+                         'pollOptionsMax', 'pollQuestionMax', 'pollOptionMax', 'pollLastsMin', 'pollLastsMax'];
   k text;
 begin
   perform tests.become_anon();
