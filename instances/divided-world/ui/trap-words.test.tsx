@@ -38,7 +38,12 @@ describe('the trapStruck voice', () => {
     const detail = (card: string | null) => trapStruckWords({ ...f, card })!.detail;
     expect(detail('Whoopee Cushion')).toBe('Their face-down Whoopee Cushion sprang on your Whoops!. It landed as usual and you keep everything it earns; Pipewrench is paid for every reaction it draws.');
     expect(detail('4D Chess')).toBe('Their face-down 4D Chess named your Whoops!. It landed as usual and you keep everything it earns; Pipewrench is paid for the reactions it draws.');
-    expect(detail(null)).toBe('Their face-down card sprang on your Whoops!. It landed as usual and you keep everything it earns; Pipewrench is paid for every reaction it draws.');
+    expect(detail(null)).toBe('Their face-down card sprang on your Whoops!. It landed as usual and you keep everything it earns; Pipewrench is paid for the reactions it draws.');
+    /* The owner's words (#902): Whoopee Cushion has a line of its own; 4D Chess's, and an unread card's, stay as they were. */
+    const line = (card: string | null) => trapStruckWords({ ...f, card })!.line;
+    expect(line('Whoopee Cushion')).toBe("PFFFT! You sat on Pipewrench's whoopee cushion.");
+    expect(line('4D Chess')).toBe('Pipewrench wanted you to do that.');
+    expect(line(null)).toBe('Pipewrench wanted you to do that.');
   });
   test('without the setter or the card it says nothing, so the engine\'s plain words stand', () => {
     expect(trapStruckWords({ how: 'quote', setter: null, card: 'Whoops!', laid: null, span: null, setterStaff: false })).toBeUndefined();
