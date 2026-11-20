@@ -221,15 +221,25 @@ describe('the welcome page', () => {
   });
 
   test('while the preferences are being read the section is busy and holds no control; a read that fails says so and stops being busy', async () => {
-    let release: (v: Awaited<ReturnType<ReturnType<typeof buildWorld>['preferences']>>) => void = () => undefined;
-    const fake = tamper((f) => {
+    /*
+     * Every read of the preferences waits behind one gate, whoever asks and whenever: the page starts its read once the session is known, which
+     * may be after the section is first drawn busy, and the test never reads them itself (a read of its own could take the held answer and wait forever).
+     */
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { open = r; });
+    let read: ReturnType<typeof vi.spyOn> | null = null;
+    tamper((f) => {
       const real = f.preferences.bind(f);
-      vi.spyOn(f, 'preferences').mockImplementationOnce(() => new Promise((r) => { release = r as typeof release; })).mockImplementation(real);
+      read = vi.spyOn(f, 'preferences').mockImplementation(() => gate.then(real));
     });
     const before = await screen.findByRole('region', { name: 'Before you start' });
     expect(before.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(within(before).queryAllByRole('radio')).toHaveLength(0);
-    release(await fake.preferences());
+    /* The page has asked, and is still busy and holds no control while its read waits. */
+    await waitFor(() => expect(read!).toHaveBeenCalled());
+    expect(before.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(within(before).queryAllByRole('radio')).toHaveLength(0);
+    open();
     await within(await within(before).findByRole('radiogroup', { name: 'Motion' })).findByRole('radio', { name: 'Off' });
     expect(before.querySelector('[aria-busy="true"]')).toBeNull();
   });

@@ -6,7 +6,7 @@
  * of its own and has no state of loading or of a failed read; a page that fails has the thread screen's own failure and retry. An edit made after the spin
  * arrives on the origin thread's channel and shows here, as does a play, a saved state and a tally; the subscription is dropped when the thread is left. A page
  * read again (a rejoined channel, a catch-up) brings the origin again and the box takes it in: the newer of the Act held and the Act read, the plays added, the
- * billing set once. It says plainly when the Act is not there (the origin's `act` is null). A thread spun from a card play on a post shows that play's moment
+ * billing set once. It says plainly when the Act is not there (the origin's `act` is null). A play on the live post offers As it landed in its Lens row, as it does in the post's own thread: the play's moment is drawn in the box's content area in place of the live post (its ink filling the area as the live effect's does), with its tag at the moment's top, since the area is no post's body and has no date bar to hang it on, until Back to now. A thread spun from a card play on a post shows that play's moment
  * instead (the post as it read when the play landed), under the play's mark. The moment is read once and never changes, but it is playable (docs/plans/2026-11-16-playable-moments-design.md): each effect in
  * it runs live from the state it had then, saves and sends nothing, and is as it landed again on Reset, which the head carries ("… · as it landed · Reset"). The box has a mark for every card drawn in
  * it (the spun play's row keeps React and Spin; the other plays' rows say their state then, hold their controls and link Go to post), so an older card's obstacle has its Lens and its keyboard path. When the player has just spun the thread, focus is on this box.
@@ -286,7 +286,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-            <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>
+            <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small" data-kb-over-ink>{history.button}</p>}
             {/* Lifted always and empty until History opens: a wrapper with nothing in it draws and covers nothing, and its ground (spin.css) is on what it holds. */}

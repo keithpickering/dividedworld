@@ -1,4 +1,4 @@
--- What the lean reads (supabase/migrations/0377_target_lean.sql; docs/plans/2026-11-18-face-thunder-plan.md, Task 2; models: 0376-cushion.sql and 0048-staff.sql).
+-- What the lean reads (supabase/migrations/0378_target_lean.sql; docs/plans/2026-11-18-face-thunder-plan.md, Task 2; models: 0376-cushion.sql and 0048-staff.sql).
 -- A card or spring played in the window is scored against the Act it lies on and, for a spring, the cast it caught (`by`). settlement_input sends those Acts' earlier reactions whether or not a reaction reached them in
 -- the window, and names a staff cast a window spring caught as an unscored target with its card; estimate_input carries the reactions on a cast the caller's window spring caught, keyed under per-mask keys like every
 -- other. Nothing a window play is scored against adds a `paid` row: a vote is paid only where a reaction reached the Act in the window. The card keys are this file's own (tl...); no card kind is seeded for them, since nothing asserted here turns on one.
