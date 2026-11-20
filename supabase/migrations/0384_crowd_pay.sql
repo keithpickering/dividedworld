@@ -168,6 +168,7 @@ begin
   -- in words of its own where the engine would never have sent it: an Act of the window's `acts` (a character's, not a gift, not a staff character's, not a play an admin ended before the window's end), by a character of another
   -- player, that the player first reacted to inside the window (reactions: unique (act, reactor_account, kind) serves the one probe for each Act). The amount is never sent: it is the Acts counted times crowdPayEach, below.
   if jsonb_typeof(coalesce(crowd, '[]')) <> 'array' then raise exception 'crowd pay is a list' using errcode = '22023'; end if;
+  -- Times are compared in the whole milliseconds settlement_input sends, as the engine counts them.
   -- Read only where there is crowd pay to check, so a window that sends none (an old caller's, a retried one's) needs neither setting.
   if jsonb_array_length(coalesce(crowd, '[]')) > 0 then
     crowd_each := (setting('crowdPayEach'))::bigint;
@@ -185,10 +186,10 @@ begin
   if exists (select 1 from jsonb_array_elements(coalesce(crowd, '[]')) c where not exists (select 1 from accounts x where x.id = (c ->> 'player')::uuid)) then
     raise exception 'a crowd pay row names a player with no account' using errcode = '22023';
   end if;
-  if exists (select 1 from jsonb_array_elements(coalesce(crowd, '[]')) c group by c ->> 'player' having count(*) > 1) then
+  if exists (select 1 from jsonb_array_elements(coalesce(crowd, '[]')) c group by (c ->> 'player')::uuid having count(*) > 1) then
     raise exception 'crowd pay has two rows for one player' using errcode = '22023';
   end if;
-  if exists (select 1 from jsonb_array_elements(coalesce(crowd, '[]')) c, jsonb_array_elements_text(c -> 'acts') a group by c ->> 'player', a having count(*) > 1) then
+  if exists (select 1 from jsonb_array_elements(coalesce(crowd, '[]')) c, jsonb_array_elements_text(c -> 'acts') a group by (c ->> 'player')::uuid, a::uuid having count(*) > 1) then
     raise exception 'an Act is listed twice for one player''s crowd pay' using errcode = '22023';
   end if;
   if crowd_each = 0 and jsonb_array_length(coalesce(crowd, '[]')) > 0 then
@@ -214,12 +215,12 @@ begin
                        when is_staff_side(x.character, x.kind, x.target_act_id) then 4
                        when exists (select 1 from characters o where o.id = x.character and o.owner = p.player) then 5
                        when exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = x.id and e.created_at < window_end) then 6
-                       when f.first_at is null or f.first_at >= window_end then 7
-                       when f.first_at < window_start then 8
+                       when f.first_ms is null or f.first_ms >= (extract(epoch from window_end) * 1000)::bigint then 7
+                       when f.first_ms < (extract(epoch from window_start) * 1000)::bigint then 8
                        when exists (select 1 from crowd_paid k where k.account = p.player and k.act = p.act) then 9 end as why
     from (select (c ->> 'player')::uuid as player, a::uuid as act from jsonb_array_elements(coalesce(crowd, '[]')) c, jsonb_array_elements_text(c -> 'acts') a) p
     left join acts x on x.id = p.act
-    left join lateral (select min(rx.created_at) as first_at from reactions rx where rx.act = p.act and rx.reactor_account = p.player) f on true
+    left join lateral (select (extract(epoch from min(rx.created_at)) * 1000)::bigint as first_ms from reactions rx where rx.act = p.act and rx.reactor_account = p.player) f on true
   ) q where q.why is not null limit 1;
   if problem is not null then raise exception '%', problem using errcode = '22023'; end if;
 

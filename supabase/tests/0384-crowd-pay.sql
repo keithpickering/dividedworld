@@ -30,7 +30,7 @@ declare
   w1 timestamptz := coalesce((select max(ends_at) from settlements), '2030-01-01T00:00:00Z');
   w2 timestamptz := w1 + interval '1 day';
   w3 timestamptz := w1 + interval '2 days';
-  pb1 uuid; pb2 uuid; pb3 uuid; pb4 uuid; old uuid; pa uuid; sysact uuid; staffpost uuid; gift uuid; play uuid; ended_play uuid; staff uuid;
+  pb1 uuid; pb2 uuid; pb3 uuid; pb4 uuid; pb5 uuid; w4 timestamptz; old uuid; pa uuid; sysact uuid; staffpost uuid; gift uuid; play uuid; ended_play uuid; staff uuid;
   before_it text;
   why text;
   said jsonb;
@@ -107,6 +107,12 @@ begin
   if why is null or why not like '22023 %two rows for one player%' then raise exception 'two rows for one player: %', why; end if;
   why := pg_temp.apply(w1, w2, jsonb_build_array(jsonb_build_object('player', cat, 'acts', jsonb_build_array(gen_random_uuid()))));
   if why is null or why not like '22023 %an Act that does not exist%' then raise exception 'an Act that does not exist: %', why; end if;
+
+  -- An id is one id in either case: the same player twice, and the same Act twice, are refused though the text differs.
+  why := pg_temp.apply(w1, w2, jsonb_build_array(jsonb_build_object('player', cat, 'acts', jsonb_build_array(pb1)), jsonb_build_object('player', upper(cat::text), 'acts', jsonb_build_array(pb2))));
+  if why is null or why not like '22023 %two rows for one player%' then raise exception 'one player in two cases: %', why; end if;
+  why := pg_temp.apply(w1, w2, jsonb_build_array(jsonb_build_object('player', cat, 'acts', jsonb_build_array(pb1, upper(pb1::text)))));
+  if why is null or why not like '22023 %listed twice%' then raise exception 'one Act in two cases: %', why; end if;
 
   -- The shape of the call: a list of rows, each an object with a player who has an account and a list of uuids that is not empty.
   why := pg_temp.apply(w1, w2, '{"player": "x"}');
@@ -202,6 +208,28 @@ begin
   insert into reactions (act, reactor_account, reactor_character, kind, slot, created_at) values (pb4, eve, e, 'up', 1, w3 + interval '1 hour');
   why := pg_temp.apply(w3, w3 + interval '1 day', jsonb_build_array(jsonb_build_object('player', eve, 'acts', jsonb_build_array(pb4))));
   if why is null or why not like '22023 %already paid%' then raise exception 'an Act already paid in an earlier settlement: %', why; end if;
+
+  -- ---- Times are compared as settlement_input sends them, in whole milliseconds ----
+  w4 := w3 + interval '1 day';
+  pb5 := tests.post(b, t, 'Five.', w3 + interval '1 hour');
+  before_it := pg_temp.kept();
+  -- First reacted 0.7 ms before the window: it rounds to a millisecond before `from`, which the engine does not count.
+  insert into reactions (act, reactor_account, reactor_character, kind, slot, created_at) values (pb5, cat, c, 'up', 1, w3 - interval '700 microseconds');
+  why := pg_temp.apply(w3, w4, jsonb_build_array(jsonb_build_object('player', cat, 'acts', jsonb_build_array(pb5))));
+  if why is null or why not like '22023 %first reacted to%before the window%' then raise exception 'a first reaction rounding to before the window: %', why; end if;
+  delete from reactions where act = pb5 and reactor_account = cat;
+  -- First reacted 0.3 ms before the window end: it rounds to `to`, which the engine does not count.
+  insert into reactions (act, reactor_account, reactor_character, kind, slot, created_at) values (pb5, cat, c, 'up', 1, w4 - interval '300 microseconds');
+  why := pg_temp.apply(w3, w4, jsonb_build_array(jsonb_build_object('player', cat, 'acts', jsonb_build_array(pb5))));
+  if why is null or why not like '22023 %did not react to%inside the window%' then raise exception 'a first reaction rounding to the window end: %', why; end if;
+  delete from reactions where act = pb5 and reactor_account = cat;
+  if pg_temp.kept() is distinct from before_it then raise exception 'a refused call wrote something'; end if;
+  -- First reacted 0.3 ms before the window: it rounds to `from`, which the engine counts, so it is accepted and paid.
+  insert into reactions (act, reactor_account, reactor_character, kind, slot, created_at) values (pb5, cat, c, 'up', 1, w3 - interval '300 microseconds');
+  said := apply_settlement(w3, w4, '[]', '{}', '[]', '[]', jsonb_build_array(jsonb_build_object('player', cat, 'acts', jsonb_build_array(pb5))));
+  if not (said ->> 'applied')::boolean or (select count(*) from crowd_paid where settlement = (said ->> 'settlement')::bigint and account = cat and act = pb5) is distinct from 1::bigint then
+    raise exception 'a first reaction rounding to the window start should be paid: %', said;
+  end if;
 
   -- ---- The kind is held, and the old signature is gone ----
   why := pg_temp.refusal($f$select wallet_move((select id from accounts limit 1), 1, 'bogus', null, null)$f$);
