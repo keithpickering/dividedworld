@@ -1,6 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { creaseAt, foldMatrix } from './fold.ts';
+import { creaseAt, edgesAt, foldEnd, foldMatrix } from './fold.ts';
+import { endJags } from './paper.ts';
+import { seeded } from '../../ui/seeded.ts';
 
 const apply = (m: readonly number[], [x, y]: readonly [number, number]): [number, number] => [m[0]! * x + m[2]! * y + m[4]!, m[1]! * x + m[3]! * y + m[5]!];
 const near = (a: number, b: number, why: string) => assert.ok(Math.abs(a - b) < 1e-9, `${why}: ${a} vs ${b}`);
@@ -41,5 +43,38 @@ describe('the corner fold', () => {
       near(away, d * Math.cos(c.angle), `t=${t} lands d cos(angle) from the crease`);
       assert.ok(away < 0, 'past 90 degrees it lies back over the tape');
     }
+  });
+});
+
+describe('the end the fold comes from', () => {
+  const W = 90, H = 24, seed = 'play:1:0';
+  const mean = (j: ReadonlyArray<readonly [number, number]>) => j.reduce((a, [u]) => a + u, 0) / j.length;
+
+  test('the right end folds with its own jag, mirrored into the frame, not the left one', () => {
+    const left = foldEnd('a', 0, 0, W, H, seed), right = foldEnd('b', W, 0, W, H, seed);
+    assert.notDeepEqual(left.map(([u]) => u), right.map(([u]) => u));
+    const own = endJags(seed, W, H).right;
+    assert.deepEqual(right.map(([u]) => u), own.map(([x]) => W - x));
+    assert.ok(right.every(([u]) => u >= 0 && u <= 4.1), 'it runs into the tape from the end');
+  });
+
+  test('a tear inside the piece folds with the torn outline the body is cut by, and a peel line with a straight cut', () => {
+    const torn = foldEnd('a', 40, 2 * 3 + 0, W, H, seed);
+    const r = seeded(`${seed}:tear:40`);
+    assert.deepEqual(torn.map(([u]) => u), torn.map(() => (r() - 0.5) * 3.2));
+    assert.ok(torn.length > 4 && new Set(torn.map(([u]) => u)).size > 3, 'ragged');
+    assert.notDeepEqual(torn.map(([u]) => u), foldEnd('a', 0, 0, W, H, seed).map(([u]) => u));
+    const mirrored = foldEnd('b', 60, 0 * 3 + 2, W, H, seed);
+    const q = seeded(`${seed}:tear:60`);
+    assert.deepEqual(mirrored.map(([u]) => u), mirrored.map(() => -(q() - 0.5) * 3.2));
+    assert.deepEqual(foldEnd('a', 40, 1 * 3 + 0, W, H, seed), [[0, 0], [0, H]]);
+    assert.ok(Math.abs(mean(torn)) < 1.6);
+  });
+
+  test('the picked edge is read from the stretch that has it', () => {
+    const stuck = [[0, 30, 1], [50, 90, 2 * 3 + 0]];
+    assert.equal(edgesAt(stuck, 'a', 50), 6);
+    assert.equal(edgesAt(stuck, 'b', 30), 1);
+    assert.equal(edgesAt(stuck, 'a', 0), 1);
   });
 });

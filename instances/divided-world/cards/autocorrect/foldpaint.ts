@@ -10,7 +10,7 @@
  * The two faces (the paper with its words, and the sticky side) are made once for a pick and kept, so a frame of the pick costs two
  * image draws and not a redrawn paper. Everything is seeded: the faces are the strip's own, drawn the same on every screen.
  */
-import { creaseAt, foldMatrix } from './fold.ts';
+import { creaseAt, edgesAt, foldEnd, foldMatrix } from './fold.ts';
 import { drawPaper, drawUnderside, endJags, PAPER, tapePath, type Jag, type PaperContext } from './paper.ts';
 
 /** The canvas's margin around the piece, CSS px, so the fold and its shadow are not cut off where they leave the piece. */
@@ -18,8 +18,11 @@ export const FOLD_PAD = 10;
 
 export interface FoldFaces {
   readonly key: string;
+  readonly spec: FaceSpec;
   readonly top: HTMLCanvasElement;
-  readonly under: HTMLCanvasElement;
+  /** The sticky side, drawn with the picked end's own outline (fold.ts `foldEnd`): made on the first paint and again when the picked end changes. */
+  under: HTMLCanvasElement | null;
+  underKey: string;
   readonly ends: { left: Jag; right: Jag };
 }
 
@@ -40,7 +43,7 @@ function faceCanvas(s: FaceSpec, draw: (c: CanvasRenderingContext2D) => void): H
   return cv;
 }
 
-/** The paper with the marker's words on it, and the sticky side, for one piece. Null where a canvas cannot be had. */
+/** The paper with the marker's words on it for one piece (the sticky side is drawn by `paintFold`, for the end picked). Null where a canvas cannot be had. */
 export function makeFaces(s: FaceSpec): FoldFaces | null {
   const top = faceCanvas(s, (c) => {
     drawPaper(c as unknown as PaperContext, s.w, s.h, s.seed);
@@ -57,8 +60,7 @@ export function makeFaces(s: FaceSpec): FoldFaces | null {
     c.fillText(s.words, s.pad, s.h / 2 - 0.02 * s.fontPx);
     c.restore();
   });
-  const under = faceCanvas(s, (c) => drawUnderside(c as unknown as PaperContext, s.w, s.h, s.seed));
-  return top && under ? { key: facesKey(s), top, under, ends: endJags(s.seed, s.w, s.h) } : null;
+  return top ? { key: facesKey(s), spec: s, top, under: null, underKey: '', ends: endJags(s.seed, s.w, s.h) } : null;
 }
 
 export interface FoldPaint {
@@ -93,7 +95,15 @@ export function paintFold(cv: HTMLCanvasElement, faces: FoldFaces, o: FoldPaint)
     if (side === 'b') ctx.scale(-1, 1);
   };
   const blit = (ctx: CanvasRenderingContext2D, src: HTMLCanvasElement) => ctx.drawImage(src, -P, -P, src.width / dpr, src.height / dpr);
-  const crease = creaseAt(o.t, w, h, faces.ends.left[0]?.[0] ?? 0);
+  /* The fold is the picked end's own outline: the strip's end (this side's jag), a tear's ragged cut or a peel line's straight one. */
+  const end = foldEnd(side, o.at, edgesAt(o.stuck, side, o.at), w, h, faces.spec.seed);
+  const underKey = `${side}:${o.at.toFixed(1)}:${end.map(([u]) => u.toFixed(2)).join(',')}`;
+  if (faces.underKey !== underKey || !faces.under) {
+    faces.under = faceCanvas(faces.spec, (ctx) => drawUnderside(ctx as unknown as PaperContext, w, h, faces.spec.seed, { left: end, right: faces.ends.right }));
+    faces.underKey = underKey;
+  }
+  if (!faces.under) return false;
+  const crease = creaseAt(o.t, w, h, end[0]?.[0] ?? 0);
   const { n, A } = crease;
   /** A large polygon of the crease's one side (the corner's, or the far one), in the frame's pixels. */
   const half = (ctx: CanvasRenderingContext2D, corner: boolean) => {

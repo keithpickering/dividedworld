@@ -81,14 +81,13 @@ export function drawPaper(c: PaperContext, w: number, h: number, seed: string): 
  * outline, paler (lightness 88), smoother (the crepe at 0.6 and 0.45 of its strength), with no fibers and no factory edges, the same
  * darkening at the torn ends, and the adhesive's sheen. Ported from the feel bench's `drawPaper(..., under)`.
  */
-export function drawUnderside(c: PaperContext, w: number, h: number, seed: string): void {
-  face(c, w, h, seed, true);
+export function drawUnderside(c: PaperContext, w: number, h: number, seed: string, ends: { left: Jag; right: Jag } = endJags(seed, w, h)): void {
+  face(c, w, h, seed, true, ends);
 }
 
 /** The paper's face (`under` false) or its sticky side: one drawing, so the two share the outline, the crepe and the end darkening. */
-function face(c: PaperContext, w: number, h: number, seed: string, under: boolean): void {
+function face(c: PaperContext, w: number, h: number, seed: string, under: boolean, ends: { left: Jag; right: Jag } = endJags(seed, w, h)): void {
   const r = seeded(`${seed}:paper`);
-  const ends = endJags(seed, w, h);
   c.save();
   tapePath(c, ends);
   c.clip();
