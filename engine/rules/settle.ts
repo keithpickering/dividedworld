@@ -907,10 +907,12 @@ export interface EstimateLine {
  *   vote's own amount;
  * - any other is one line with no time.
  *
+ * `crowd` is the caller's row of `crowdPay` over the same input, or null: the crowd pay so far, exact for the caller.
+ *
  * The lines add up to the entries. Run on the server, from estimate_input()
  * (supabase/migrations/0017_estimate.sql), which reads only what this player's estimate needs.
  */
-export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number; params?: Readonly<Record<string, number | string>> }[]; lines: EstimateLine[] } {
+export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number; params?: Readonly<Record<string, number | string>> }[]; lines: EstimateLine[]; crowd: { acts: string[]; amount: number } | null } {
   const s = settle(input, instance, { sharedVote: false, halving: false });
   const mine = new Set(input.characters.filter((c) => c.player === player).map((c) => c.id));
   const playerOf = new Map(input.characters.map((c) => [c.id, c.player]));
@@ -937,5 +939,8 @@ export function estimateForOwner(input: SettlementInput, instance: Instance, pla
       lines.push({ ...line, at, amount: each + step });
     }
   }
-  return { entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount, params }) => ({ character, reason, amount, ...(typeof params?.card === 'string' ? { params: { card: params.card } } : {}) })), lines: lines.filter((l) => l.amount !== 0) };
+  // The crowd pay so far: the caller's own row of the window's, which is the open one when this runs on estimate_input.
+  const row = s.crowd.find((c) => c.player === player);
+  const crowd = row ? { acts: [...row.acts], amount: row.amount } : null;
+  return { crowd, entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount, params }) => ({ character, reason, amount, ...(typeof params?.card === 'string' ? { params: { card: params.card } } : {}) })), lines: lines.filter((l) => l.amount !== 0) };
 }

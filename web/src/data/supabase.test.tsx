@@ -1534,10 +1534,15 @@ describe('signing in goes through the account function', () => {
 });
 
 describe('the estimate', () => {
+  it('reads an estimate kept before crowd pay, which has no crowd key, as no crowd', async () => {
+    const kept = { entries: [{ character: B, reason: 'face.cheered', amount: 30 }], lines: [], asOf: '2026-10-29T12:00:00Z', freshAfter: '2026-10-29T12:00:30Z' };
+    const h = harness((r) => (r.url.pathname === '/functions/v1/estimate' ? json(kept) : undefined));
+    expect((await h.api.estimate()).crowd).toBeNull();
+  });
   it('asks with the bearer, and answers an ask before freshAfter from the last answer without a request', async () => {
     let now = Date.parse('2026-10-29T12:00:00Z');
     vi.spyOn(Date, 'now').mockImplementation(() => now);
-    const answer = { entries: [{ character: B, reason: 'face.cheered', amount: 30 }], lines: [{ character: B, reason: 'face.cheered', amount: 30, act: A, quadrant: 'excitedPositive', at: 1788000000000 }], asOf: '2026-10-29T12:00:00Z', freshAfter: '2026-10-29T12:00:30Z' };
+    const answer = { entries: [{ character: B, reason: 'face.cheered', amount: 30 }], lines: [{ character: B, reason: 'face.cheered', amount: 30, act: A, quadrant: 'excitedPositive', at: 1788000000000 }], crowd: { acts: [A], amount: 2 }, asOf: '2026-10-29T12:00:00Z', freshAfter: '2026-10-29T12:00:30Z' };
     const h = harness((r) => (r.url.pathname === '/functions/v1/estimate' ? json(answer) : undefined));
     try {
       expect(await h.api.estimate()).toEqual(answer);

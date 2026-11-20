@@ -51,7 +51,19 @@ test('the estimate is the signed-in caller\'s, read by the service for them, val
   assert.deepEqual(out.body, { ...(keptAnswer as object), ...stamped });
   assert.ok(body.entries.length > 0 && body.entries.every((e) => e.character === 'mine'), JSON.stringify(body));
   assert.ok(body.lines.some((l) => l.at === 2 * H), 'a line per reaction, with its time');
+  assert.ok('crowd' in body && (body as { crowd: unknown }).crowd === null, 'the answer carries the crowd pay so far; none here, the caller reacted to nothing');
   assert.ok(!JSON.stringify(body).includes('k1') && !JSON.stringify(body).includes('you-key'), 'no key reaches the answer');
+});
+
+test('the answer carries the caller\'s crowd pay so far, the Acts and the amount', async () => {
+  const reacting = { ...input, characters: [...input.characters, { id: 'mine-2', player: 'you-key', classes: [] }], acts: [...input.acts, { id: 'q1', character: 'k1', kind: 'post', at: H, thread: 't' }], reactions: [...input.reactions, { act: 'q1', kind: 'fire', at: 3 * H, player: 'you-key', character: 'mine' }] };
+  const { dbs: d } = dbs({ whoami: me, estimate_kept: null, estimate_input: reacting });
+  const keep = d.service.rpc;
+  d.service.rpc = async <T>(fn: string, args: Record<string, unknown>) => (fn === 'estimate_keep' ? args.answer as T : keep<T>(fn, args));
+  const out = await runEstimate(d, instance);
+  const body = out.body as { crowd: { acts: string[]; amount: number } | null };
+  assert.deepEqual(body.crowd?.acts, ['q1']);
+  assert.equal(body.crowd?.amount, instance.settings.crowdPayEach);
 });
 
 test('asked again within the hold, the kept estimate is the answer, and the window is not read again', async () => {

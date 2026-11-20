@@ -721,7 +721,10 @@ function toEstimate(r: Row): Estimate {
     ...(typeof l['at'] === 'number' ? { at: l['at'] } : {}),
   }));
   const entries = (Array.isArray(r['entries']) ? r['entries'] : []).map((e: Row) => ({ character: e['character'], reason: e['reason'], amount: e['amount'] }));
-  return { entries, lines, asOf: r['asOf'] ?? null, freshAfter: r['freshAfter'] ?? null };
+  // An estimate kept before crowd pay has no crowd: it reads as none.
+  const c = r['crowd'];
+  const crowd = isObject(c) && Array.isArray(c['acts']) && typeof c['amount'] === 'number' ? { acts: c['acts'] as Id[], amount: c['amount'] } : null;
+  return { entries, lines, crowd, asOf: r['asOf'] ?? null, freshAfter: r['freshAfter'] ?? null };
 }
 
 /* ---------------------------------------------------------------------- the adapter ---- */

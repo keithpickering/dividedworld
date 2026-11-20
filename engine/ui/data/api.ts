@@ -1233,6 +1233,8 @@ export interface MyReaction {
 export interface Estimate {
   readonly entries: readonly { readonly character: Id; readonly reason: string; readonly amount: number }[];
   readonly lines: readonly EstimateLine[];
+  /** The crowd pay so far (docs/plans/2026-11-20-crowd-pay-design.md): the Acts and the amount, or null. An estimate kept before crowd pay has none. */
+  readonly crowd: { readonly acts: readonly Id[]; readonly amount: number } | null;
   readonly asOf: string | null;
   /** Ask again only after this; an ask before it is answered by the same estimate. */
   readonly freshAfter: string | null;

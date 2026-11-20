@@ -1351,7 +1351,7 @@ describe('the payout cards\' lines', () => {
     const now = w.now;
     const open = act('k2', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: new Date(now - 3_600_000).toISOString(), ends: new Date(now + 3_600_000).toISOString() } });
     const soon = act('k3', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: new Date(now + 3_600_000).toISOString(), ends: new Date(now + 7_200_000).toISOString() } });
-    const estimate = { entries: [], asOf: new Date(now).toISOString(), freshAfter: null, lines: [{ character: 'p', reason: 'heel.drewHeat', amount: 5 }] };
+    const estimate = { entries: [], asOf: new Date(now).toISOString(), freshAfter: null, crowd: null, lines: [{ character: 'p', reason: 'heel.drewHeat', amount: 5 }] };
     const mine = [char('p', 'Pipewrench', 'face')];
     const [row] = logRows(data({ estimate, mine, acts: new Map([...posts, open].map((a) => [a.id, a])) }), w, 600, 'p');
     expect(text(row!)).toContain(' Scored as a Heel this window by Off Day.');

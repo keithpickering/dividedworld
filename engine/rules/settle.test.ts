@@ -2469,3 +2469,15 @@ test('crowd pay is a wallet\'s alone: entries, standings and byClass are the sam
   assert.deepEqual(on.standings, off.standings);
   assert.deepEqual(on.byClass, off.byClass);
 });
+
+test('the estimate\'s crowd is the caller\'s row of crowd pay, never another player\'s', () => {
+  // Ann and Dee each reacted to two of Bob's Acts; each is asked, and each is told only of their own.
+  const r = crowdBoard([
+    react('c1', 'ann', 'ann-fan', 'fire', FROM + 5 * H), react('c2', 'ann', 'ann-fan', 'fire', FROM + 6 * H),
+    react('c1', 'dee', 'dee-1', 'fire', FROM + 7 * H), react('c3', 'dee', 'dee-1', 'fire', FROM + 8 * H),
+  ]);
+  assert.deepEqual(estimateForOwner(r, instance, 'ann').crowd, { acts: ['c1', 'c2'], amount: 4 });
+  assert.deepEqual(estimateForOwner(r, instance, 'dee').crowd, { acts: ['c1', 'c3'], amount: 4 });
+  assert.equal(estimateForOwner(r, instance, 'cat').crowd, null, 'a player with no crowd Acts has none');
+  assert.ok(!JSON.stringify(estimateForOwner(r, instance, 'ann').crowd).includes('c3'), 'Dee\'s Act is not in Ann\'s answer');
+});
