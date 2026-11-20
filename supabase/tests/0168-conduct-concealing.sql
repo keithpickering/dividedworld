@@ -431,10 +431,11 @@ begin
   end if;
 
   -- ---- a hide until edited ends at the author's edit, computed: the quoters are asked again ----
+  -- the quote is written before the hide: a quote written after it is a counterfeit, which is entered in no quote_refs
+  q := tests.post(ch_reader, th, format('[quote=%s]No quote here[/quote]', plain), base + interval '13 minutes');
   perform tests.become(admin_a);
   perform decide(null, plain, 'hideUntilEdited', null, 'edit it');
   perform tests.unbecome();
-  q := tests.post(ch_reader, th, format('[quote=%s]No quote here[/quote]', plain), base + interval '13 minutes');
   select count(*) into reqs from conceal_requests where act = q;
   perform tests.act(ch_author, 'edit', th, '{"body": "Fixed words."}', plain, base + interval '14 minutes');
   if (select count(*) from conceal_requests where act = q) <= reqs then raise exception 'the author''s edit did not ask for the quoters'' layers again'; end if;

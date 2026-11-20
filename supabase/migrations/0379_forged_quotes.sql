@@ -1796,3 +1796,39 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(array_agg(r.quoted order by r.quoted), '{}'::uuid[]) from quote_refs r
   where r.act = v and quote_hidden(r.quoted) and r.quoted <> all (act_forged((select x.payload from acts x where x.id = v)))
 $$;
+
+-- acts_quote_refs (0340): the Act's forged posts are left out, as hidden_refs leaves them out, so a forged quote is entered in no quote_refs and no conceal request is ever written for it (a later hide of the post, or the author's edit,
+-- asks for the layers of quote_refs' Acts only). The verdict is the new Act's own payload (the BEFORE trigger wrote it). The after-insert trigger is as 0340 made it.
+create or replace function acts_quote_refs() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  forged uuid[] := act_forged(new.payload);
+begin
+  insert into quote_refs (act, quoted) select new.id, q from quote_ids(new.payload ->> 'body') q where q <> all (forged) on conflict do nothing;
+  if exists (select 1 from quote_refs r where r.act = new.id and quote_hidden(r.quoted)) then
+    insert into conceal_requests (act) values (new.id);
+  end if;
+  return null;
+end $$;
+
+-- write_reply (0348): a card's reply is a post that quotes nothing (it springs no back and writes no `quote` alert, from a variable or from its row), so only write_forged_framed is added after write_framed.
+create or replace function write_reply(through uuid, in_thread uuid, body text, framing uuid[], as_id uuid) returns uuid
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  on_board uuid;
+begin
+  perform not_banned(through);
+  perform within('body', body, 'postMaxLength');
+  select board into on_board from threads where id = in_thread;
+  if on_board is null then raise exception 'there is no such thread' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform not_the_systems(on_board);
+  perform not_barred(through, on_board);
+  -- Steps 3 to 5 of the lock order, for a post that quotes nothing: the thread's row, then the poster's count row.
+  perform lock_for_quote(through, in_thread, null);
+  insert into acts (id, character, kind, thread, payload)
+  values (as_id, through, 'post', in_thread, jsonb_build_object('body', body));
+  perform write_framed(body, framing, as_id, (select c.owner from characters c where c.id = through));
+  perform write_forged_framed(as_id, (select c.owner from characters c where c.id = through), framing);
+  perform draw_visits(as_id);
+  return as_id;
+end $$;

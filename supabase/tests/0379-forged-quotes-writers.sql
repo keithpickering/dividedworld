@@ -43,6 +43,9 @@ insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts
   ('fwmove', 'Fw Move', 'salty', 'common', 'cast', null, '{post}', null, null),
   ('fwlast', 'Fw Last Word', 'salty', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "noQuote"}');
 
+insert into card_kinds (key, name, alignment, rarity, play, stack, reaches, replies, trap, lasts, gimmick) values
+  ('fwcut', 'Fw Cut', 'pepperoni', 'rare', 'cast', 1, '{post}', true, null, null, null);
+
 -- ---- the function exists, and no API role runs it ----
 do $$
 begin
@@ -162,6 +165,9 @@ begin
   perform tests.unbecome();
   doctored := (pg_temp.post_as(qu, th, ch_qu, format('[quote=%s]Words nobody wrote.[/quote] doctored', hid)) ->> 'id')::uuid;
 
+  if exists (select 1 from conceal_requests r where r.act = doctored) or exists (select 1 from quote_refs r where r.act = doctored and r.quoted = hid) then
+    raise exception 'a forged quote of a hidden post was entered in quote_refs or asked for a layer';
+  end if;
   if hidden_refs(doctored) is distinct from '{}'::uuid[] then raise exception 'hidden_refs lists a forged post: %', hidden_refs(doctored); end if;
   if hidden_refs(honest) is distinct from array[hid] then raise exception 'hidden_refs does not list the honest quote of a hidden post: %', hidden_refs(honest); end if;
   perform tests.become(rd);
@@ -318,4 +324,22 @@ begin
   made := pg_temp.post_as(q, t, qc, body);
   select count(*) into n from alerts where kind = 'framed' and act = (made ->> 'id')::uuid;
   if n <> 4 then raise exception 'four forged authors were told % times', n; end if;
+end $$;
+
+-- ---- a card's reply is a post: its doctored quote frames the author, and no quote alert or spring is written ----
+do $$
+declare
+  ann uuid := tests.account('fw-rp-ann'); bob uuid := tests.account('fw-rp-bob');
+  a uuid := tests.character(ann, 'Fw Rp Ann'); b uuid := tests.character(bob, 'Fw Rp Bob');
+  t uuid := tests.thread('Fw reply'); p uuid := tests.post(a, t, 'The parent of a reply.'); p2 uuid := tests.post(a, t, 'A second parent.');
+  played jsonb; reply_id uuid;
+begin
+  perform pg_temp.hand(bob, 'fwcut');
+  perform tests.become_service();
+  played := play_card(bob, 'fwcut', b, p, '{}', 0, '', reply => format('[quote=%s]words nobody wrote[/quote]', p));
+  perform tests.unbecome();
+  reply_id := (played -> 'payload' ->> 'reply')::uuid;
+  if reply_id is null or (select payload -> 'forged' from acts where id = reply_id) is distinct from to_jsonb(array[p]) then raise exception 'the reply has no verdict: %', played; end if;
+  if pg_temp.alerts_of(reply_id, 'framed') <> 1 or not exists (select 1 from alerts where kind = 'framed' and act = reply_id and account = ann) then raise exception 'a card reply with a doctored quote did not frame its author'; end if;
+  if pg_temp.alerts_of(reply_id, 'quote') <> 0 or (select target_act_id from acts where id = reply_id) is not null then raise exception 'a card reply quoted a post'; end if;
 end $$;
