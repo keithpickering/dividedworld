@@ -63,7 +63,7 @@ import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { playIn, playOut, type Stop } from '../glass/play.ts';
 import { SecretLock } from '../glass/SecretLock.tsx';
-import { fanDeal, overlay as overlayPreset, stagger, useFeel } from '../glass/motion.ts';
+import { fanDeal, overlay as overlayPreset, recast, stagger, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
 import { isLeaving } from '../glass/Held.tsx';
@@ -448,6 +448,59 @@ export function Hud() {
     }
     drawerRun.current = () => { for (const stop of runs) stop(); el.removeAttribute('data-kb-dealing'); };
   }, [handOpen, feel]);
+
+  /*
+   * The plate recast for another mask (motion.ts `recast`; the owner's choice of 2026-11-20, "Recast in place"). When the HUD's mask
+   * changes to another of the same account's, the new mask's parts arrive in a short stagger, from below when it lies after the one left
+   * in the picker's order and from above when before (or from below when the one left is gone from it), and the plate's edge flares once
+   * (frame.css, data-kb-recast). Enter only: the old mask is gone with the change, so nothing is read twice, and the picker is the same
+   * element throughout, so the keyboard stays on it. It plays before paint, so the new mask is never drawn at rest first. Nothing plays
+   * when the HUD first draws its mask, when the account changes, or under Off. A change before the last has landed stops it and gives
+   * every part back to its stylesheet first. It reads only the player's own rows and sends nothing (player.tsx).
+   */
+  const account = player.session.account;
+  const recastFrom = useRef<{ readonly account: string | null; readonly id: string | null }>({ account, id: hudId });
+  const recastRun = useRef<(() => void) | null>(null);
+  const acting = player.actingCharacters;
+  useLayoutEffect(() => {
+    const was = recastFrom.current;
+    recastFrom.current = { account, id: hudId };
+    if (was.id === hudId && was.account === account) return;
+    recastRun.current?.();
+    recastRun.current = null;
+    const el = plate.current;
+    if (!el || !feel || hudId === null || was.id === null || was.account !== account) return;
+    const order = acting.map((c) => c.id);
+    const from = order.indexOf(was.id);
+    const dir: 1 | -1 = from < 0 || order.indexOf(hudId) > from ? 1 : -1;
+    /* The parts the board draws: the phone has no name line, and draws the name over the picker instead. */
+    const sel = wide ? ['.kb-hud-avatar', '.kb-hud-name', '.kb-hud-class-line'] : ['.kb-hud-avatar', '.kb-hud-picked'];
+    const parts = sel.map((s) => el.querySelector<HTMLElement>(s)).filter((p): p is HTMLElement => p !== null);
+    const delays = stagger(feel, parts.length);
+    const unpose = (p: HTMLElement) => { for (const prop of ['transform', 'opacity', 'filter', 'clip-path']) p.style.removeProperty(prop); };
+    const stops = parts.map((p, i) => { unpose(p); return playIn(p, recast(feel, dir, delays, i)); });
+    /* The flare is the stylesheet's, on the feel's screen duration and ease, set again from its start for each change. The phone's plate is not a box (frame.css), so it has no edge to flare. */
+    const flareEnd = (e: Event) => { if (e.target === el) el.removeAttribute('data-kb-recast'); };
+    if (wide) {
+      el.style.setProperty('--kb-hud-recast-ms', `${feel.screen}ms`);
+      el.style.setProperty('--kb-hud-recast-ease', feel.ease);
+      el.removeAttribute('data-kb-recast');
+      void el.offsetWidth;
+      el.setAttribute('data-kb-recast', '');
+      el.addEventListener('animationend', flareEnd);
+      el.addEventListener('animationcancel', flareEnd);
+    }
+    recastRun.current = () => {
+      for (const stop of stops) stop();
+      for (const p of parts) unpose(p);
+      el.removeEventListener('animationend', flareEnd);
+      el.removeEventListener('animationcancel', flareEnd);
+      el.removeAttribute('data-kb-recast');
+    };
+  // Only a change of mask plays: the order, the board and the feel are read as they stand when it changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hudId, account]);
+  useLayoutEffect(() => () => { recastRun.current?.(); recastRun.current = null; }, []);
 
   /* Esc on the board: the hand's when it is open, else the menu's. */
   useEffect(() => {

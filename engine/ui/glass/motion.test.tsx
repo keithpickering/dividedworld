@@ -5,7 +5,7 @@
  */
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { beat, deal, lift, pulse, toHand, turn, wipe, wipeMask, backdrop, crossing, crossingPinned, currentFeel, fanDeal, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
+import { beat, deal, lift, pulse, recast, toHand, turn, wipe, wipeMask, backdrop, crossing, crossingPinned, currentFeel, fanDeal, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
 
 const rect = { x: 10, y: 20, width: 100, height: 40 };
 const within = { width: 1000, height: 700 };
@@ -17,7 +17,7 @@ function presets(f: ActiveFeel) {
   return {
     crossing: crossing(f, { tab: rect, within }), screen: screen(f),
     overlay: overlay(f, { x: 4, y: 8 }), overlayCentered: overlay(f), modal: modal(f), backdrop: backdrop(f),
-    item: staggerItem(f, delays, 2), swap: swap(f),
+    item: staggerItem(f, delays, 2), swap: swap(f), recast: recast(f, 1, delays, 2),
   };
 }
 
@@ -181,6 +181,44 @@ describe('the rest state is Motion\'s own', () => {
     expect(end(overlay(smooth).animate)).toEqual({ filter: 'none' });
     expect(end(modal(smooth).animate)).toEqual({ filter: 'none' });
     expect(end(staggerItem(smooth, [0], 0).animate)).toEqual({ filter: 'none' });
+    expect(end(recast(smooth, 1, [0], 0).animate)).toEqual({ filter: 'none' });
+    expect(end(recast(snappy, 1, [0], 0).animate)).toEqual({ clipPath: 'none' });
+  });
+});
+
+describe('recast: the HUD\'s plate taking another mask', () => {
+  const at = (p: { initial?: unknown }) => p.initial as Record<string, number | string>;
+  const to = (p: { animate?: unknown }) => p.animate as Record<string, unknown> & { transition: { delay?: number } };
+
+  it('is enter only, in place: no exit, and nothing kept, since the plate stays', () => {
+    for (const f of [smooth, snappy]) {
+      const p = recast(f, 1, [0], 0);
+      expect(p).not.toHaveProperty('exit');
+      expect(p).not.toHaveProperty('data-kb-layer');
+    }
+  });
+
+  it('arrives from below when the mask chosen is after the one left, from above when before, half the feel\'s distance away, and lands at rest', () => {
+    for (const f of [smooth, snappy]) {
+      expect(at(recast(f, 1, [0], 0)).y).toBe(f!.distance / 2);
+      expect(at(recast(f, -1, [0], 0)).y).toBe(-f!.distance / 2);
+      expect(to(recast(f, 1, [0], 0)).y).toBe(0);
+    }
+  });
+
+  it('Smooth fades in out of the feel\'s blur; Snappy wipes in along the skew with its spring', () => {
+    expect(at(recast(smooth, 1, [0], 0))).toMatchObject({ opacity: 0, filter: `blur(${smooth!.blur}px)` });
+    expect(to(recast(smooth, 1, [0], 0))).toMatchObject({ opacity: 1, filter: 'blur(0px)' });
+    expect(at(recast(snappy, 1, [0], 0)).clipPath).toBe(wipe(-25));
+    expect(to(recast(snappy, 1, [0], 0)).clipPath).toBe(wipe(150));
+    expect(to(recast(snappy, 1, [0], 0)).transition).toMatchObject({ type: 'spring' });
+  });
+
+  it('starts each part at its place in the stagger', () => {
+    const delays = stagger(smooth, 3);
+    expect(to(recast(smooth, 1, delays, 0)).transition.delay).toBe(0);
+    expect(to(recast(smooth, 1, delays, 2)).transition.delay).toBe(delays[2]);
+    expect(delays[2]).toBeGreaterThan(0);
   });
 });
 
