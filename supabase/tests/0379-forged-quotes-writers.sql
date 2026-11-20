@@ -169,6 +169,9 @@ begin
     raise exception 'a forged quote of a hidden post was entered in quote_refs or asked for a layer';
   end if;
   if hidden_refs(doctored) is distinct from '{}'::uuid[] then raise exception 'hidden_refs lists a forged post: %', hidden_refs(doctored); end if;
+  -- acts_quote_refs already keeps a forged post out of quote_refs, so the filter in hidden_refs is tested on a row put there by hand: it must still leave the forged post out.
+  insert into quote_refs (act, quoted) values (doctored, hid);
+  if hidden_refs(doctored) is distinct from '{}'::uuid[] then raise exception 'hidden_refs lists a forged post when a quote_refs row is hand-written for it: %', hidden_refs(doctored); end if;
   if hidden_refs(honest) is distinct from array[hid] then raise exception 'hidden_refs does not list the honest quote of a hidden post: %', hidden_refs(honest); end if;
   perform tests.become(rd);
   select a.current_payload ->> 'body', a.concealing into shown, hiding from acts_public a where a.id = doctored;

@@ -43,13 +43,16 @@ test('a quote of a hidden post\'s exact words is forged for a non-author and for
   const thread = sql(`insert into threads (board, title) select b.id, 'Forged quotes, behind a mask' from boards_now b where b.merged_into is null and not b.closed and not b.is_system order by b.slug limit 1 returning id`);
   const hidden = sql(`select tests.post('${ada}', '${thread}', :'body', now() - interval '2 hours')`, { body: WORDS });
 
+  const body = quoteOf(hidden);
+  // Before the hide, the very same quote is honest: the post is forged because it is hidden, and for no other reason.
+  assert.deepEqual(await psqlDb(quoter).rpc<string[]>('quote_check', { body }), [], 'a quote of the words of a post that is not hidden is not forged');
+
   // The hide comes after the post is written, and before any quote of its words: a quote written now is judged against a version an admin has hidden.
   await psqlDb(admin).rpc('decide', { account: null, version_act: hidden, outcome: 'hideUntilEdited', until: null, note: 'Hidden for the quote.' });
 
   const asQuoter = psqlDb(quoter);
   const asAuthor = psqlDb(author);
   const asReader = psqlDb(reader);
-  const body = quoteOf(hidden);
 
   // The composer's preview: the same answer to a non-author, to the hidden post's own author and to a reader, since it reads nothing about the caller.
   const checkedByQuoter = await asQuoter.rpc<string[]>('quote_check', { body });
@@ -75,8 +78,9 @@ test('a quote of a hidden post\'s exact words is forged for a non-author and for
   // A doctored quote quotes no post: the trigger drops the target, so both posts have none.
   assert.equal(seenByQuoter.target_act_id, null, 'the non-author\'s post has no target');
   assert.equal(seenByAuthor.target_act_id, null, 'the author\'s post has no target');
-  // The projections have the same shape, and the same counterfeit body.
-  assert.deepEqual(Object.keys(seenByAuthor).sort(), Object.keys(seenByQuoter).sort(), 'the two projections have the same keys');
+  // The projections are equal but for what must differ between two posts: their own id, the mask that wrote each, and when each was written (created_at, seq).
+  const alike = (p: Record<string, any>) => { const { id, character, created_at, seq, ...rest } = p; return rest; };
+  assert.deepEqual(alike(seenByAuthor), alike(seenByQuoter), 'the two projections are equal but for id, character, created_at and seq');
   assert.equal(seenByQuoter.payload?.body, body, 'the non-author\'s counterfeit body is the words as written');
   assert.equal(seenByAuthor.payload?.body, seenByQuoter.payload?.body, 'the two counterfeit bodies are the same');
   assert.equal(seenByAuthor.current_payload?.body, seenByQuoter.current_payload?.body, 'the two current bodies are the same');

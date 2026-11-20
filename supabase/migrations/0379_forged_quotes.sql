@@ -1520,7 +1520,8 @@ end $$;
 revoke execute on function quote_forged(text, timestamptz) from public, anon, authenticated;
 
 create function quote_check(body text) returns uuid[]
-language plpgsql stable security definer set search_path = public, pg_temp as $$
+language plpgsql stable security definer set search_path = public, pg_temp
+set plan_cache_mode = force_generic_plan set jit = off as $$
 begin
   perform within('body', body, 'postMaxLength');
   return quote_forged(body, now());
@@ -1560,7 +1561,7 @@ create trigger acts_forged_quotes before insert on acts for each row when (new.k
 -- debuted, named by the body, as it reads them) take their places first, a character that one of them already told is not told again, and the forged authors take what is left, in the verdict's order, each character once.
 -- Which places are taken is worked out from the composer's ids and public facts alone (a character's debut, the body's words), never from who owns anything or whether write_alert wrote a row, so no answer differs with a private fact.
 -- `framing` is the third argument the plan's (written, acting) does not name: without it the function cannot tell how many of the five write_framed took. Callable by no API role.
-create function write_forged_framed(written uuid, acting uuid, framing uuid[] default '{}') returns void
+create function write_forged_framed(written uuid, acting uuid, framing uuid[]) returns void
 language plpgsql set search_path = public, pg_temp as $$
 declare
   p jsonb;

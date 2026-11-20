@@ -622,10 +622,11 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.equal(sql(`select ends_at <= now() from face_down where card = 'exptime'`), 't', 'a back whose time passed is held as ended');
   // The post earn (Task 6): a cast on a post for three days carries its ends in its payload, and the round trip below carries that value as it is.
   const postEnds = (url: string) => psqlOn(url, `select coalesce(string_agg(payload ->> 'ends', ',' order by payload ->> 'ends'), '-') from acts where kind = 'card' and payload ->> 'card' = 'exppost'`);
-  // A doctored quote (Forged quotes, Task 7): its Act's `forged` is the list of the post it forges, and its quote_sources rows (one per version written) are read by its Act's id.
+  // A doctored quote (Forged quotes, Task 7): its Act's `forged` is the list of the post it forges, and its quote_sources rows (one per Act, not per version) are read by its Act's id.
   const doctoredRow = (url: string) => psqlOn(url, `select (a.payload -> 'forged')::text || '|' || (select count(*) from quote_sources s where s.act = a.id) || '|' || coalesce((select string_agg(s.source || '#' || s.digest, ',' order by s.digest) from quote_sources s where s.act = a.id), '-')
     from acts a where a.payload ->> 'body' like '%Bob, doctored.'`);
   assert.equal(psqlOn(from, `select (a.payload -> 'forged') = jsonb_build_array(substring(a.payload ->> 'body' from '[[]quote=([0-9a-f-]{36})[]]')::uuid) from acts a where a.payload ->> 'body' like '%Bob, doctored.'`), 't', 'the doctored quote\'s verdict forges the post it quotes');
+  assert.equal(psqlOn(from, `select a.target_act_id is null from acts a where a.payload ->> 'body' like '%Bob, doctored.'`), 't', 'a doctored quote quotes no post: its target is null');
   assert.match(doctoredRow(from), /^\["[0-9a-f-]{36}"\]\|1\|.+#[0-9a-f]{32}$/, 'the doctored quote holds its verdict and one quote_sources row');
   assert.match(postEnds(from), /^\d{4}-\d{2}-\d{2}T[\d:.]+[+-]\d{2}:\d{2}$/, 'the post earn\'s play holds the ends its three days give');
   assert.equal(sql(`select (payload ->> 'ends')::timestamptz - created_at from acts where kind = 'card' and payload ->> 'card' = 'exppost'`), '3 days', 'the post earn ends three days after it was played');
