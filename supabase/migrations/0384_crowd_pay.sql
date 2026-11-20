@@ -2,7 +2,7 @@
 --
 --   1. wallet_events_kind_check   (0153's) also admits 'crowd', a wallet move of its own kind: no character's, so no ledger row and no standing.
 --   2. crowd_paid                 each Act a player was paid crowd pay for in a settlement. Private: RLS on, no grant to anon or authenticated, and append-only as the rows it sits beside are. It is read through
---                                 my_crowd_paid, the player's own, as my_ledger_shares (0034) is: the settlement and the Act, never the account. Its unique index (account, act) makes an Act a player is paid once a fact of the table, and serves the check that an Act is paid to a player once
+--                                 my_crowd_paid, the player's own, as my_ledger_shares (0034) is: the settlement, the Act and the cap in force when it was paid (`most`), never the account. Its unique index (account, act) makes an Act a player is paid once a fact of the table, and serves the check that an Act is paid to a player once
 --                                 (apply_settlement below) and the log's read of a player's own rows; the primary key (settlement, account, act) serves a settlement's. reactions needs none: its unique (act, reactor_account, kind)
 --                                 is the one probe for a player's reactions to an Act, whose first one is the earliest of those.
 --   3. apply_settlement           (0151's, whole) gains a last parameter `crowd jsonb default '[]'`. A new parameter is a new overload, so the old signature is dropped and the new one created, its grants stated again
@@ -16,6 +16,7 @@ create table crowd_paid (
   settlement bigint not null references settlements (id),
   account uuid not null references accounts (id),
   act uuid not null references acts (id),
+  most integer not null,   -- the setting('crowdPayMost') in force when this settlement paid: the log's "the most one settlement pays" is read from it, so a later change of the setting never makes an old line false
   primary key (settlement, account, act)
 );
 create unique index crowd_paid_account on crowd_paid (account, act);
@@ -27,7 +28,7 @@ alter table crowd_paid enable row level security;
 revoke all on crowd_paid from anon, authenticated;
 
 create view my_crowd_paid as
-  select settlement, act from crowd_paid where account = auth.uid();
+  select settlement, act, most from crowd_paid where account = auth.uid();
 revoke all on my_crowd_paid from anon, public;
 grant select on my_crowd_paid to authenticated;
 
@@ -242,7 +243,7 @@ begin
   -- Crowd pay, after the settlement's own moves, so the wallet's cap's overflow lands on it: each player's Acts kept, then one wallet move of the Acts counted times crowdPayEach, in player order. No ledger row,
   -- no share, no standing and no class's total: it is no character's (design, section 2).
   for r in select (c ->> 'player')::uuid as account, c -> 'acts' as acts from jsonb_array_elements(coalesce(crowd, '[]')) c order by 1 loop
-    insert into crowd_paid (settlement, account, act) select settled, r.account, a::uuid from jsonb_array_elements_text(r.acts) a;
+    insert into crowd_paid (settlement, account, act, most) select settled, r.account, a::uuid, crowd_most from jsonb_array_elements_text(r.acts) a;
     perform wallet_move(r.account, jsonb_array_length(r.acts) * crowd_each, 'crowd', settled, null);
   end loop;
 

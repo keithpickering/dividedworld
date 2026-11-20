@@ -3209,9 +3209,9 @@ describe('a screen in one call', () => {
 
     it('maps the crowd source (0385) to the Acts paid with their window, and a crowd-only settlement is a settlement with no lines', async () => {
       const wallet = { settlement: 12, kind: 'crowd', change: 4, overflow: 0, floored: 0, balance_after: 500, ref: null, at: '2026-10-31T08:17:02+00:00' };
-      const row = { settlement: 12, act: A, starts_at: '2026-10-30T08:17:00+00:00', ends_at: '2026-10-31T08:17:00+00:00' };
+      const row = { settlement: 12, act: A, most: 10, starts_at: '2026-10-30T08:17:00+00:00', ends_at: '2026-10-31T08:17:00+00:00' };
       const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW], wallet: [wallet], crowd: [row] }))).api.logPage(null);
-      expect(page.log.crowd).toEqual([{ settlement: 12, act: A, startsAt: row.starts_at, endsAt: row.ends_at }]);
+      expect(page.log.crowd).toEqual([{ settlement: 12, act: A, most: 10, startsAt: row.starts_at, endsAt: row.ends_at }]);
       expect(page.log.settlements.map((s) => [s.id, s.lines.length])).toEqual([[12, 0], [9, 1]]);
       const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
       expect(older.log.crowd).toEqual([]);

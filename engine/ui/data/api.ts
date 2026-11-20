@@ -1961,6 +1961,8 @@ export interface LogAppeal {
 export interface CrowdPaid {
   readonly settlement: number;
   readonly act: Id;
+  /** The most Acts one settlement paid, as the setting stood when this one was paid (`crowd_paid.most`): the log's cap sentence is read from it, never from today's setting. */
+  readonly most: number;
   readonly startsAt: string;
   readonly endsAt: string;
 }

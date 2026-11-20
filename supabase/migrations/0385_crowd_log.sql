@@ -321,8 +321,11 @@ begin
                     FROM lg x))
          ), cp AS MATERIALIZED (
           -- The caller's own crowd rows for the settlements the wallet rows read name, with each window; a row of another player's is in no one's view (my_crowd_paid).
+          -- Row bound: the wallet rows read are at most 200 settlements, and a settlement pays one player at most its `most` Acts (the cap recorded when it was paid), so at most 200 times `most` rows.
+          -- `most` is that recorded cap, so the log says "the most one settlement pays" of the cap in force then, not today's setting.
           SELECT c.settlement,
              c.act,
+             c.most,
              s.starts_at,
              s.ends_at
             FROM my_crowd_paid c

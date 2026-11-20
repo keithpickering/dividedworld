@@ -639,7 +639,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
   return {
     ledger,
     shares,
-    ...(src.crowd === undefined ? {} : { crowd: src.crowd.map((r): CrowdPaid => ({ settlement: num(r['settlement']), act: r['act'], startsAt: r['starts_at'], endsAt: r['ends_at'] })) }),
+    ...(src.crowd === undefined ? {} : { crowd: src.crowd.map((r): CrowdPaid => ({ settlement: num(r['settlement']), act: r['act'], most: num(r['most']), startsAt: r['starts_at'], endsAt: r['ends_at'] })) }),
     wallet: src['wallet'].map((r): WalletEvent => ({
       settlement: typeof r['settlement'] === 'number' ? r['settlement'] : null, kind: r['kind'], change: num(r['change']), overflow: num(r['overflow']),
       floored: num(r['floored']), balanceAfter: num(r['balance_after']), ref: r['ref'] ?? null, at: r['at'],
@@ -1239,10 +1239,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       .range(start, end)));
     /* The Acts crowd pay was paid for, for the settlements the wallet rows read name (0384): the caller's own rows, and each settlement's window (public), which a settlement with no ledger row of the player's gives nowhere else. */
     const crowdIds = [...new Set(walletRows.filter((r) => r['kind'] === 'crowd' && typeof r['settlement'] === 'number').map((r) => num(r['settlement'])))];
-    const crowdPaid = crowdIds.length === 0 ? [] : await byChunks(crowdIds, (part) => every((start, end) => client.from('my_crowd_paid').select('settlement,act').in('settlement', part)
+    const crowdPaid = crowdIds.length === 0 ? [] : await byChunks(crowdIds, (part) => every((start, end) => client.from('my_crowd_paid').select('settlement,act,most').in('settlement', part)
       .order('settlement', { ascending: false }).order('act', { ascending: true }).range(start, end)));
     const windows = crowdIds.length === 0 ? [] : await byChunks(crowdIds, (part) => every((start, end) => client.from('settlements').select('id,starts_at,ends_at').in('id', part).order('id', { ascending: true }).range(start, end)));
-    const crowdRows = crowdPaid.flatMap((r) => { const w = windows.find((x) => num(x['id']) === num(r['settlement'])); return w ? [{ settlement: r['settlement'], act: r['act'], starts_at: w['starts_at'], ends_at: w['ends_at'] }] : []; });
+    const crowdRows = crowdPaid.flatMap((r) => { const w = windows.find((x) => num(x['id']) === num(r['settlement'])); return w ? [{ settlement: r['settlement'], act: r['act'], most: r['most'], starts_at: w['starts_at'], ends_at: w['ends_at'] }] : []; });
     return toLogRead({ crowd: crowdRows, ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, draws: drawRows, wallsDrawn: wallRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, falls: fallRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows, cosmetics: cosmeticRows }, shareRows, await readBacks(cardRows));
   };
 

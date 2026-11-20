@@ -337,7 +337,7 @@ describe('crowd pay in the summary', () => {
     ...log,
     settlements: over.stub === true ? [{ id: settlement, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines: [] }, ...log.settlements] : log.settlements,
     wallet: [{ settlement, kind: 'crowd' as const, change: acts.length * 2, overflow: over.overflow ?? 0, floored: 0, balanceAfter: 600, ref: null, at: endsAt }, ...log.wallet],
-    crowd: [...(log.crowd ?? []), ...acts.map((act) => ({ settlement, act, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt }))],
+    crowd: [...(log.crowd ?? []), ...acts.map((act) => ({ settlement, act, most: 10, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt }))],
   });
 
   test('says the crowd pay line in the log\'s words, linking each Act, in every character\'s tab', async () => {

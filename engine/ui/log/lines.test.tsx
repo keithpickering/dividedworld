@@ -1689,8 +1689,8 @@ describe('the crowd pay line', () => {
   const names = new Map([['g', 'Gloomba']]);
   const mine = [char('p', 'Pat', 'face'), char('q', 'Quinn', 'heel')];
   const event = (change: number, overflow: number, settlement = 5): Log['wallet'][number] => ({ settlement, kind: 'crowd', change, overflow, floored: 0, balanceAfter: 300, ref: null, at });
-  const paid = (n: number, settlement = 5) => acts(n).map((a) => ({ settlement, act: a.id, startsAt: '2099-11-19T09:00:00.000Z', endsAt: at }));
-  const w: Words = { ...words, crowdPayMost: 7 };
+  const paid = (n: number, settlement = 5, most = 7) => acts(n).map((a) => ({ settlement, act: a.id, most, startsAt: '2099-11-19T09:00:00.000Z', endsAt: at }));
+  const w: Words = words;
   const rowsOf = (log: Log, tab: string | null, n: number) => logRows(data({ log, mine, names, acts: heldActs(n) }), w, 600, tab).filter((r) => r.kind === 'crowd');
   const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
   const links = (r: { details: readonly unknown[] }) => r.details.filter((d) => typeof d !== 'string') as { text: string; href: string }[];
@@ -1719,6 +1719,13 @@ describe('the crowd pay line', () => {
     expect(said(under!)).not.toContain('the most one settlement pays');
   });
 
+  test('the cap sentence is the cap recorded when it was paid, never today\'s setting', () => {
+    const [older] = rowsOf({ ...empty, wallet: [event(6, 0)], crowd: paid(3, 5, 10) }, null, 3);
+    expect(said(older!)).not.toContain('the most one settlement pays');
+    const [reached] = rowsOf({ ...empty, wallet: [event(6, 0)], crowd: paid(3, 5, 3) }, null, 3);
+    expect(said(reached!)).toContain("That's the most one settlement pays.");
+  });
+
   test('what the wallet\'s cap held back is said, and only when it held something back', () => {
     const [row] = rowsOf({ ...empty, wallet: [event(10, 4)], crowd: paid(7) }, null, 7);
     expect(said(row!)).toMatch(/Aura\. That's the most one settlement pays\. 0.04 more didn't fit under your wallet's cap\. Gloomba's post #1/u);
@@ -1727,7 +1734,7 @@ describe('the crowd pay line', () => {
   });
 
   test('another settlement\'s Acts are not this one\'s, and an Act that could not be read keeps the count without a link', () => {
-    const log = { ...empty, wallet: [event(4, 0, 5), event(2, 0, 6)], crowd: [...paid(2, 5), { settlement: 6, act: 'gone', startsAt: at, endsAt: at }] };
+    const log = { ...empty, wallet: [event(4, 0, 5), event(2, 0, 6)], crowd: [...paid(2, 5), { settlement: 6, act: 'gone', most: 7, startsAt: at, endsAt: at }] };
     const rows = rowsOf(log, null, 2);
     expect(rows.map((r) => r.key)).toEqual(['crowd:5', 'crowd:6']);
     expect(links(rows[0]!)).toHaveLength(2);

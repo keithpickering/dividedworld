@@ -108,8 +108,6 @@ export interface Words {
   readonly instance: Instance;
   readonly ui: Pick<InstanceUi, 'reasonWords' | 'quadrantLabels' | 'cards' | 'copy' | 'packs'>;
   readonly postsPerPage: number;
-  /** The most Acts one settlement pays crowd pay for (`ScreenSettings.crowdPayMost`); absent, no line says it is reached. */
-  readonly crowdPayMost?: number;
   /** The economy as the server holds it now (`economyNow`): the numbers a line with none of its own is said with. */
   readonly economy: Readonly<Record<string, number>>;
   /** The time "now" is read against: the backend's (`api.now()`), so a line that says a time has passed compares it with the clock its times come from. */
@@ -463,8 +461,10 @@ export function crowdRows(data: LogData, words: Words): LogRow[] {
   const rows: LogRow[] = [];
   for (const w of data.log.wallet) {
     if (w.kind !== 'crowd' || w.settlement === null) continue;
-    const acts = (data.log.crowd ?? []).filter((c) => c.settlement === w.settlement).map((c) => c.act);
-    const most = acts.length > 0 && words.crowdPayMost !== undefined && acts.length >= words.crowdPayMost ? " That's the most one settlement pays." : '';
+    const paidFor = (data.log.crowd ?? []).filter((c) => c.settlement === w.settlement);
+    const acts = paidFor.map((c) => c.act);
+    /* The cap in force when this settlement paid (`crowd_paid.most`), never today's setting: an admin's later change must not make an old line false. */
+    const most = paidFor.length > 0 && paidFor.length === paidFor[0]!.most ? " That's the most one settlement pays." : '';
     const over = w.overflow > 0 ? ` ${plain(w.overflow)} more didn't fit under your wallet's cap.` : '';
     const paid = acts.length > 0 ? `You reacted to ${actCount(acts.length)} by other players and were paid ${plain(w.change)} Aura.` : `You were paid ${plain(w.change)} Aura for reacting to posts by other players.`;
     const links = crowdLinks(acts, data, words);

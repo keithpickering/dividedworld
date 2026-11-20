@@ -155,6 +155,10 @@ begin
      or (select count(*) from crowd_paid where settlement = s1 and account = cat and act in (pb1, pb2)) is distinct from 2::bigint then
     raise exception 'two Acts each should be four crowd_paid rows, read %', (select jsonb_agg(to_jsonb(x)) from crowd_paid x);
   end if;
+  -- The cap in force is kept with each row (`most`), the setting at payment: the log reads it, never today's.
+  if exists (select 1 from crowd_paid where settlement = s1 and most is distinct from (setting('crowdPayMost'))::integer) or (select count(*) from crowd_paid where settlement = s1 and most = 10) is distinct from 4::bigint then
+    raise exception 'each crowd_paid row keeps the crowdPayMost in force when it was paid (10): %', (select jsonb_agg(to_jsonb(x)) from crowd_paid x);
+  end if;
   if (select count(*) from wallet_events where kind = 'crowd' and account = cat) is distinct from 1::bigint
      or (select change from wallet_events where kind = 'crowd' and account = cat) is distinct from 4
      or (select settlement from wallet_events where kind = 'crowd' and account = cat) is distinct from s1
@@ -180,7 +184,9 @@ begin
   if (select count(*) from my_crowd_paid) is distinct from 2::bigint or exists (select 1 from my_crowd_paid where settlement is distinct from s1 or act not in (pb1, pb2)) then
     raise exception 'Cat reads her two rows: %', (select jsonb_agg(to_jsonb(x)) from my_crowd_paid x);
   end if;
-  if (select count(*) from information_schema.columns where table_name = 'my_crowd_paid') is distinct from 2::bigint then raise exception 'my_crowd_paid names the settlement and the Act, never the account'; end if;
+  if (select count(*) from information_schema.columns where table_name = 'my_crowd_paid') is distinct from 3::bigint
+     or exists (select 1 from information_schema.columns where table_name = 'my_crowd_paid' and column_name = 'account') or exists (select 1 from my_crowd_paid where most is distinct from 10) then
+    raise exception 'my_crowd_paid names the settlement, the Act and the cap in force, never the account'; end if;
   why := pg_temp.refusal('select count(*) from crowd_paid');
   if why is null or why not like '42501 %' then raise exception 'a player read crowd_paid itself: %', why; end if;
   perform tests.become(eve);
@@ -211,11 +217,11 @@ begin
     raise exception 'a window called as before the change pays no crowd pay: %', said;
   end if;
   -- An Act is paid to a player once, as a fact of the table, not of one settlement: the same (account, act) under another settlement is refused too.
-  why := pg_temp.refusal(format('insert into crowd_paid (settlement, account, act) values (%L, %L, %L)', (said ->> 'settlement')::bigint, cat, pb1));
+  why := pg_temp.refusal(format('insert into crowd_paid (settlement, account, act, most) values (%L, %L, %L, 10)', (said ->> 'settlement')::bigint, cat, pb1));
   if why is null or why not like '23505 %crowd_paid_account%' then raise exception 'an Act paid to a player twice, under another settlement: %', why; end if;
 
   -- An Act already paid to the player in an earlier settlement is refused, though its first reaction reads inside this window (a state the settlement itself never writes, held against all the same).
-  insert into crowd_paid (settlement, account, act) values (s1, eve, pb4);
+  insert into crowd_paid (settlement, account, act, most) values (s1, eve, pb4, 10);
   insert into reactions (act, reactor_account, reactor_character, kind, slot, created_at) values (pb4, eve, e, 'up', 1, w3 + interval '1 hour');
   why := pg_temp.apply(w3, w3 + interval '1 day', jsonb_build_array(jsonb_build_object('player', eve, 'acts', jsonb_build_array(pb4))));
   if why is null or why not like '22023 %already paid%' then raise exception 'an Act already paid in an earlier settlement: %', why; end if;

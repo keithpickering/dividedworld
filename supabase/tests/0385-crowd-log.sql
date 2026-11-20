@@ -34,6 +34,7 @@ begin
   if not (said ->> 'applied')::boolean then raise exception 'the window should apply: %', said; end if;
   s1 := (said ->> 'settlement')::bigint;
 
+  update settings set value = '2' where key = 'crowdPayMost';  -- an admin's later change, after the payment at 7
   -- Cat: her two Acts, with the window, in settlement then Act order, and both Acts named among the document's Acts. Not Dan's.
   perform tests.become(cat);
   doc := log_page(null);
@@ -45,6 +46,10 @@ begin
   if exists (select 1 from jsonb_array_elements(mine) x where (x ->> 'settlement')::bigint is distinct from s1 or (x ->> 'ends_at')::timestamptz is distinct from w2 or (x ->> 'starts_at')::timestamptz is distinct from w1)
      or exists (select 1 from jsonb_array_elements(mine) x where x ? 'account') then
     raise exception 'each row names the settlement and its window, and no account: %', mine;
+  end if;
+  -- Each row says the cap in force when it was paid (7), and an admin's later change of the setting does not move it.
+  if exists (select 1 from jsonb_array_elements(log_page(null) -> 'sources' -> 'crowd') x where (x ->> 'most')::integer is distinct from 7) then
+    raise exception 'each crowd row carries the cap recorded at payment (7), not today''s: %', log_page(null) -> 'sources' -> 'crowd';
   end if;
   if not exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' = pb1::text)
      or not exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' = pb2::text) then

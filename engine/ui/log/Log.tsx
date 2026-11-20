@@ -196,7 +196,7 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
   const { api, instance, ui, settings } = useKayfa();
   /* Some rows are made from the player's characters (rank changes, Turns), so with them unread an empty log is not known to be empty. */
   const { charactersFailed } = usePlayer();
-  const words: Words = { instance, ui, postsPerPage: settings.postsPerPage, crowdPayMost: settings.crowdPayMost, economy: economyNow(instance.settings, settings.economy), now: api.now() };
+  const words: Words = { instance, ui, postsPerPage: settings.postsPerPage, economy: economyNow(instance.settings, settings.economy), now: api.now() };
   const tabs = tabsOf(data);
   const current = tabs.find((c) => c.id === tab) ?? null;
   const rows = logRows(data, words, settings.walletCap, current?.id ?? null);

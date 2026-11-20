@@ -18,7 +18,7 @@ begin
   insert into settlements (starts_at, ends_at, season) values (e3 - interval '1 day', e3, (select id from seasons order by starts_at limit 1)) returning id into s3;
   insert into ledger (settlement, account, character, reason, amount) values (s1, ann, a, 'post.liked', 3);
   -- Ann has a ledger line in s1 and crowd pay alone in s2; Bob has crowd pay alone in the newer s3.
-  insert into crowd_paid (settlement, account, act) values (s2, ann, pb), (s3, bob, pa);
+  insert into crowd_paid (settlement, account, act, most) values (s2, ann, pb, 10), (s3, bob, pa, 10);
   perform tests.become(ann);
   got := boot();
   perform tests.unbecome();
