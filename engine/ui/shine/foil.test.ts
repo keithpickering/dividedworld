@@ -209,12 +209,12 @@ describe('the foil', () => {
           for (let m = 0; m < times; m++) foil.render(box, { x: 0.2 + k * 0.01, y: 0.1 }, bands[mode], px);
           ms = Math.min(ms, performance.now() - t0);
         }
-        out.push({ name: `${pattern}/${mode}`, ratio: ms / ref, ms });
+        out.push({ name: `${pattern}/${mode}`, ratio: ms / ref, ms: ms / times });
       }
     }
     return out;
   };
-  const shown = (rs: ReturnType<typeof ratios>) => rs.map((r) => `${r.name} ${r.ratio.toFixed(2)} (${r.ms.toFixed(1)}ms)`).join('; ');
+  const shown = (rs: ReturnType<typeof ratios>) => rs.map((r) => `${r.name} ${r.ratio.toFixed(2)} (${r.ms.toFixed(1)}ms a render)`).join('; ');
 
   test(`one 988 x 300 render costs under ${RATIO_MOST} times a reference pass over the same cells, timed in turn with it`, () => {
     const honest = ratios(1);
