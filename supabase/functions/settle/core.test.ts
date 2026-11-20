@@ -147,6 +147,17 @@ test('the call to apply_settlement carries each entry\'s shares, which add up to
   assert.deepEqual(shares.filter((s) => s.reason === 'heel.drewHeat').map((s) => [s.act, s.quadrant, s.amount]), [['p1', 'excitedNegative', 35]]);
 });
 
+test('the call to apply_settlement carries each player\'s crowd pay as the Acts alone, never an amount (crowd pay, section 5)', async () => {
+  const { db, calls } = fakeDb();
+  await runSettlement(db, instance, new Date(TO).toISOString());
+  const apply = calls.find((c) => c.fn === 'apply_settlement')!.args;
+  // Cat, Dee, Eve and Fay each reacted to Bob's one post in the window; Bob reacted to nothing. The amount is the SQL's to price, from the setting.
+  assert.deepEqual(apply.crowd, [
+    { player: 'cat', acts: ['p1'] }, { player: 'dee', acts: ['p1'] }, { player: 'eve', acts: ['p1'] }, { player: 'fay', acts: ['p1'] },
+  ]);
+  for (const row of apply.crowd as object[]) assert.deepEqual(Object.keys(row).sort(), ['acts', 'player'], 'a row says who and which Acts, never how much');
+});
+
 test('the settings rows reach the settlement: an admin\'s tuning of a vote or a class\'s number is what pays', async () => {
   const { db, calls } = fakeDb(day, { vote: 20, economy: { ...instance.settings.economy, 'lurker.earlyMatch': 40 }, copy: { announcementsThreadTitle: 'x' } });
   await runSettlement(db, instance, new Date(TO).toISOString());

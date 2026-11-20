@@ -58,7 +58,9 @@ test('a day on the board settles into wallets and standings, once', async () => 
   const heel = Number(sql(`select balance from wallets where account = '${ids['e2e-heel']}'`));
   const lurk = Number(sql(`select balance from wallets where account = '${ids['e2e-lurk']}'`));
   assert.equal(heel, 20, 'two whole votes of heat on the Heel\'s post');
-  assert.equal(lurk, 0, 'the Lurker reacted early, but one other player is no crowd: no call is paid yet');
+  assert.equal(lurk, 2, 'the Lurker reacted early, but one other player is no crowd: no call is paid yet, and the one Act reacted to pays crowd pay (0384) of 0.02');
+  assert.equal(sql(`select string_agg(kind || ':' || change, ',') from wallet_events where account = '${ids['e2e-lurk']}'`), 'crowd:2', 'the Lurker\'s wallet holds the crowd pay alone');
+  assert.equal(sql(`select count(*) from ledger where account = '${ids['e2e-lurk']}'`), '0', 'crowd pay is no ledger line');
   // In the season the window settled into: a debut also wrote a row at 0 in the season the standings read (0030's roster).
   assert.equal(Number(sql(`select amount from standings where character = '${characters.Pipewrench}' and season = (select season from settlements order by ends_at desc limit 1)`)), 20);
   assert.equal(sql(`select string_agg(reason, ',' order by reason) from ledger where character = '${characters.Pipewrench}'`), 'heel.drewHeat');
@@ -85,7 +87,7 @@ test('a day on the board settles into wallets and standings, once', async () => 
     ${crowd.map((c, i) => `('${post}', '${c.character}', '${c.account}', 'tomato', 1, '${at(26 + i)}')`).join(',\n    ')}`);
   const second = await runSettlement(db, instance, at(48));
   assert.equal(second.status, 'applied', JSON.stringify(second));
-  assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-lurk']}'`)), 10, 'the third other player arrived: the call is paid');
+  assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-lurk']}'`)), 12, 'the third other player arrived: the call is paid (10), beside the crowd pay of the window before (2), which the Act does not pay again');
   assert.equal(sql(`select string_agg(reason, ',') from ledger where character = '${characters.Shadow}'`), 'lurker.calledIt');
   assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-heel']}'`)), 40, 'and the Heel two more votes of heat');
 });
