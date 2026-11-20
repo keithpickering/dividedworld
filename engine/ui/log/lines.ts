@@ -1177,7 +1177,7 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
         const kind = typeof spring?.payload.quadrant === 'string' ? words.ui.quadrantLabels[spring.payload.quadrant as Quadrant] : undefined;
         rows.push({
           key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
-          details: [`${cardName(e.card)} on `, on, ` sprang when ${nameOf(rode?.character)} cast ${move} on it. ${move} landed as usual, and its caster keeps what it earns. Each vote of ${kind ?? 'the kind it named'} it draws pays you ${share === undefined ? 'a share of a vote' : shareWords(share)}, in each settlement's lines.`],
+          details: [`${cardName(e.card)} on `, on, ` sprang when ${nameOf(rode?.character)} cast ${move} on it. ${move} landed as usual, and its caster keeps what it earns. Each vote ${typeof spring?.payload.quadrant === 'string' ? `of ${kind ?? 'the kind it named'} ` : ''}it draws pays you ${share === undefined ? 'a share of a vote' : shareWords(share)}, in each settlement's lines.`],
           aura: 0, wallet: null, characters,
         });
         continue;
