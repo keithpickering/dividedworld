@@ -122,6 +122,20 @@ export function livePlays(plays: readonly CardPlay[], now: number): readonly Car
 }
 
 /**
+ * Whether a play is over (spent-marks design, section 1): caught, ended by an admin, didn't take, instant, spent by a filing, a back that sprang, or its
+ * time is up and its card does not keep. In a moment (`then`), a play named there is judged as it stood: its timed end does not count.
+ */
+export function playOver(p: CardPlay, now: number, keeps: ReadonlySet<string>, then?: ReadonlySet<Id>): boolean {
+  if (p.caught || p.reversed || p.untaken || p.instant || p.spent || p.revealed) return true;
+  if (then?.has(p.id)) return false;
+  return p.ends !== undefined && Date.parse(p.ends) <= now && !keeps.has(p.card);
+}
+
+/** Whether a kind is spent on a post: it has plays, and every one is over. */
+export const kindSpent = (plays: readonly CardPlay[], now: number, keeps: ReadonlySet<string>, then?: ReadonlySet<Id>): boolean =>
+  plays.length > 0 && plays.every((p) => playOver(p, now, keeps, then));
+
+/**
  * The plays that hold a place in a target's stack, which is what the form and the ghost marks ask the rules whether another card lands on: `livePlays`, and also a fall a filing has spent, as the
  * server counts it (`place_cast`, 0361: a spent fall holds its place unless an admin ended it, which `reversed` says). An instant play holds none. A spent fall is never drawn from this list; it is a mark, and
  * `livePlays` is what draws.

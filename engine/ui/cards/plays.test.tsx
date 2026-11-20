@@ -8,8 +8,8 @@ import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
 import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playsFallingOn, shownPlays } from './plays.ts';
-import type { CardView } from './types.ts';
+import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays } from './plays.ts';
+import type { CardPlay, CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
 const OTHER = '11111111-0000-4000-8000-000000000002';
@@ -812,5 +812,65 @@ describe('the discipline plays', () => {
     const plays = createPlays();
     plays.add([watch]);
     expect(plays.get(TARGET).plays.map((p) => p.id)).toEqual([watch.id]);
+  });
+});
+
+describe('playOver', () => {
+  const NOW_MS = Date.parse('2026-10-30T12:00:00.000Z');
+  const NO_KEEPS: ReadonlySet<string> = new Set();
+  const at = (ms: number): string => new Date(ms).toISOString();
+  const play = (over: Partial<CardPlay> = {}): CardPlay => ({ ...playOf(card({ payload: { card: 'whoops', message: '', config: {} } }))!, ...over });
+
+  test('caught, reversed, untaken, instant, spent and revealed are over', () => {
+    expect(playOver(play({ caught: POST }), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(play({ reversed: true }), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(play({ untaken: true }), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(play({ instant: true }), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(play({ spent: true }), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(play({ revealed: { card: 'whoops', spring: POST, at: at(NOW_MS) } }), NOW_MS, NO_KEEPS)).toBe(true);
+  });
+
+  test('a play whose ends is one ms ahead is not over, and at its end it is', () => {
+    const ends = play({ ends: at(NOW_MS + 1) });
+    expect(playOver(ends, NOW_MS, NO_KEEPS)).toBe(false);
+    expect(playOver(ends, NOW_MS + 1, NO_KEEPS)).toBe(true);
+  });
+
+  test('a play whose ends has passed is not over where its card keeps', () => {
+    const kept = play({ card: 'stick-around', ends: at(NOW_MS - 1) });
+    expect(playOver(kept, NOW_MS, new Set(['stick-around']))).toBe(false);
+    expect(playOver(play({ card: 'stick-around', ends: at(NOW_MS - 1) }), NOW_MS, NO_KEEPS)).toBe(true);
+  });
+
+  test('a play in then whose ends has passed is not over, but one in then that is caught is', () => {
+    const timed = play({ ends: at(NOW_MS - 1) });
+    expect(playOver(timed, NOW_MS, NO_KEEPS, new Set([timed.id]))).toBe(false);
+    const caught = play({ ends: at(NOW_MS - 1), caught: POST });
+    expect(playOver(caught, NOW_MS, NO_KEEPS, new Set([caught.id]))).toBe(true);
+  });
+
+  test('a play with only starts ahead is not over', () => {
+    const later = playOf(card({ payload: { card: 'whoops', starts: at(NOW_MS + 60_000) } }))!;
+    expect(later.starts).toBe(at(NOW_MS + 60_000));
+    expect(later.ends).toBeUndefined();
+    expect(playOver(later, NOW_MS, NO_KEEPS)).toBe(false);
+  });
+});
+
+describe('kindSpent', () => {
+  const NOW_MS = Date.parse('2026-10-30T12:00:00.000Z');
+  const NO_KEEPS: ReadonlySet<string> = new Set();
+  const play = (over: Partial<CardPlay> = {}): CardPlay => ({ ...playOf(card({ payload: { card: 'whoops', message: '', config: {} } }))!, ...over });
+
+  test('is false for a kind with no plays', () => {
+    expect(kindSpent([], NOW_MS, NO_KEEPS)).toBe(false);
+  });
+
+  test('is false for one live play and one caught', () => {
+    expect(kindSpent([play(), play({ caught: POST })], NOW_MS, NO_KEEPS)).toBe(false);
+  });
+
+  test('is true for two plays that are both over', () => {
+    expect(kindSpent([play({ caught: POST }), play({ instant: true })], NOW_MS, NO_KEEPS)).toBe(true);
   });
 });
