@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PEELS, autocorrect, heldUntil } from './autocorrect.ts';
-import { decidePlay, type CardRules } from '../../../engine/rules/cards.ts';
+import { decidePlay, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
 import { on } from './test-kit.ts';
@@ -48,6 +48,15 @@ test('Autocorrect lands only where its phrase is, whole and in any case, never i
   assert.equal(play('[quote=0f8fad5b-d9cb-469f-a165-70867728950e]cats[/quote] dogs', 'cats').ok, false);
   assert.equal(play('ca[b]ts[/b]', 'cats').ok, true, 'across formatting');
   assert.equal(decidePlay(autocorrect as CardRules, settings, on('cats'), [1, 2, 3].map((i) => ({ card: 'autocorrect', act: `k${i}` })), { phrase: 'cats', replacement: 'dogs' }, '').ok, false, 'three deep already');
+});
+
+test('Autocorrect lands on a phrase inside a doctored quote (the Act\'s verdict makes it the poster\'s own words), and not inside an honest one', () => {
+  const id = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const body = `[quote=${id}]cats[/quote] dogs`;
+  const play = (forged?: readonly string[]) => decidePlay(autocorrect as CardRules, settings, postTarget('p1', 'post', body, undefined, undefined, undefined, forged), [], { phrase: 'cats', replacement: 'dogs' }, '');
+  assert.equal(play().ok, false, 'an honest quote is another post\'s words');
+  assert.equal(play([id]).ok, true, 'a forged one is the poster\'s own');
+  assert.equal(play(['1f8fad5b-d9cb-469f-a165-70867728950e']).ok, false, 'a verdict on another post changes nothing');
 });
 
 test('Autocorrect lands on a post when asked with a config that holds no phrase, as a screen asks before one is typed', () => {

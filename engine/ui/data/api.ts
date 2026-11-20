@@ -458,8 +458,9 @@ export interface Act {
  * until edited.
  */
 export type MyHiddenVersion =
-  | { readonly status: 'hiddenUntilEdited'; readonly version: Id; readonly words: string }
-  | { readonly status: 'waiting'; readonly version: Id; readonly words: string };
+  | { readonly status: 'hiddenUntilEdited'; readonly version: Id; readonly words: string; readonly forged?: readonly string[] }
+  | { readonly status: 'waiting'; readonly version: Id; readonly words: string; readonly forged?: readonly string[] };
+/* `forged` on either: that version's own verdict (its payload's `forged`), which the words are drawn with, as a version in History is. */
 
 /* ------------------------------------------------------------------------------ a visit (the Mod Bots design, sections 6 and 7) ---- */
 

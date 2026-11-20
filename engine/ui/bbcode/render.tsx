@@ -245,8 +245,8 @@ function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layer
         : <a key={key} href={n.href} rel={REL} referrerPolicy="no-referrer">{inside}</a>;
     }
     case 'img':
-      /* The parser keeps what the player wrote, http: included; the page's img-src is https only (web/headers.ts), so an http: image would be a broken picture. A link to it is what can be shown. */
-      if (/^http:/i.test(n.src)) return <a key={key} href={n.src} rel={REL} referrerPolicy="no-referrer">image: {n.src}</a>;
+      /* The parser keeps what the player wrote, http: included; the page's img-src is https only (web/headers.ts), so an http: image would be a broken picture. A link to it is what can be shown; its "image: " words are the page's, and an image has no words in a post's text, so a highlight leaves them out (a quote holds only the post's own words, forged-quotes design, section 4). */
+      if (/^http:/i.test(n.src)) return <a key={key} href={n.src} rel={REL} referrerPolicy="no-referrer" data-kb-quotable="hidden">image: {n.src}</a>;
       return <img key={key} className="kb-bb-img" src={n.src} alt={altFor(n.src)} loading="lazy" referrerPolicy="no-referrer" />;
     case 'video': return <Video key={key} video={n.video} />;
     case 'quote':

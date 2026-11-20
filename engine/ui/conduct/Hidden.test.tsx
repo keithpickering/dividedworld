@@ -288,6 +288,17 @@ describe('the author of a version hidden until they edit it', () => {
     expect(await within(art).findByRole('textbox')).toHaveValue(`${WORDS}, from me`);
   });
 
+  test('their own words are drawn with the hidden version\'s own verdict, not the current one\'s', async () => {
+    const w = world();
+    w.fake.seed.hide(w.mine, 'hideUntilEdited');
+    /* The version's words quote a post, and its verdict (not the Act's current payload, which carries none) says that quote is forged. */
+    vi.spyOn(w.fake, 'myHiddenVersion').mockResolvedValue({ status: 'hiddenUntilEdited', version: w.mine, words: `[quote=${w.theirs}]never said[/quote]mine`, forged: [w.theirs] });
+    open(w);
+    const art = await article(3);
+    const panel = (await within(art).findByText('Only you see this')).closest('.kb-hidden-own') as HTMLElement;
+    expect(panel.querySelector('blockquote')).toHaveAttribute('data-kb-counterfeit');
+  });
+
   test('the edit is saved as the post\'s own edit', async () => {
     const w = world();
     w.fake.seed.hide(w.mine, 'hideUntilEdited');

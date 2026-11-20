@@ -17,6 +17,7 @@ import type { Act, Refusal, Slot, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, START, TEST_CODE, TEST_LINK } from './fake.ts';
 import { cutLog, LOG_ROWS, micros } from './log-page.ts';
+import { targetOf as targetOf2 } from '../cards/land.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../../rules/test-system.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
@@ -3280,6 +3281,26 @@ describe('forged quotes', () => {
     const [d, h] = await w.fake.actsById([doctored.id, honest.id]);
     expect(d!.payload.body).toBe(`[quote=${w.quoted}]Words never said[/quote]tail`);
     expect(h!.payload.body).toBe(`[quote=${w.quoted}][/quote]tail`);
+  });
+
+  test('a character named by `framing` is never told a second time through a forged quote, whether or not the framing alert was skipped', async () => {
+    const w = forgedWorld();
+    /* Told once by framing (named in the body), and its post is also forged: one alert. */
+    must(await w.fake.post(w.thread, w.anaFace, `[quote=Someone user=${w.boFace}]x[/quote][quote=${w.quoted}]never said[/quote]`, null, [w.boFace]));
+    expect(await alertsFor(w, w.bo, 'framed')).toHaveLength(1);
+    /* Named in `framing` but not in the body, so the framing alert is skipped: the forged quote does not tell it either. */
+    must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]never said it again[/quote]`, null, [w.boFace]));
+    expect(await alertsFor(w, w.bo, 'framed')).toHaveLength(1);
+  });
+
+  test('a play on a phrase inside a doctored quote lands on the post as the poster\'s own words, and inside an honest quote it does not', async () => {
+    const w = forgedWorld();
+    const hits = (target: unknown) => (target as { text: string }).text;
+    const doctored = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Luigi never said this[/quote]tail`, null));
+    const honest = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Mario a lot[/quote]tail`, null));
+    const [d, h] = await w.fake.actsById([doctored.id, honest.id]);
+    expect(hits(targetOf2(d!))).toContain('Luigi never said this');
+    expect(hits(targetOf2(h!))).not.toContain('Mario a lot');
   });
 
   test('a thread start frames the author of each forged post, and with `framing` ids no more than five alerts are written, each character once', async () => {

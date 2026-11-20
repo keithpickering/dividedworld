@@ -1414,7 +1414,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * write_framed (0118): for each distinct id among the first 5 of `framing`, a debuted character whose id the body holds as `user=<id>` (case ignored)
    * is told through write_alert's rules, which skip a staff character (no owner) and the acting account's own masks. Any other id is skipped silently.
    */
-  function writeFramed(body: string, framing: readonly Id[] | undefined, act: ActRec): { readonly counted: number; readonly told: ReadonlySet<Id> } {
+  function writeFramed(body: string, framing: readonly Id[] | undefined, act: ActRec): { readonly counted: number; readonly told: ReadonlySet<Id>; readonly named: ReadonlySet<Id> } {
     const mine = me()?.id;
     const lowered = body.toLowerCase();
     const ids = new Set((framing ?? []).slice(0, 5));
@@ -1426,7 +1426,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       frame(c.owner, named, act);
       told.add(named);
     }
-    return { counted: ids.size, told };
+    return { counted: ids.size, told, named: ids };
   }
   /** One framed alert, written and heard live by the character's owner. */
   function frame(owner: Id, character: Id, act: ActRec) {
@@ -1439,13 +1439,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * together toward the most 5: `framed` is what write_framed returned (the ids it counted, the characters it told), each character is told once, and an author who has not debuted, has no owner or is the acting
    * account's own is skipped as there. Called for a post, a thread start and a spin, never an edit or a pool post.
    */
-  function writeForgedFramed(act: ActRec, framed: { readonly counted: number; readonly told: ReadonlySet<Id> }) {
+  function writeForgedFramed(act: ActRec, framed: { readonly counted: number; readonly told: ReadonlySet<Id>; readonly named: ReadonlySet<Id> }) {
     const mine = me()?.id;
     let counted = framed.counted;
     const told = new Set(framed.told);
     for (const quoted of forgedList(act.payload) ?? []) {
       const rec = acts.get(quoted);
-      if (!rec || (rec.kind !== 'post' && rec.kind !== 'spin') || rec.character === null || told.has(rec.character)) continue;
+      if (!rec || (rec.kind !== 'post' && rec.kind !== 'spin') || rec.character === null || told.has(rec.character) || framed.named.has(rec.character)) continue;
       if (counted >= 5) break;
       counted += 1;
       const c = characters.get(rec.character);
@@ -4448,8 +4448,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p === undefined || p.kind !== 'post' || owner === undefined || owner === null || owner !== me()?.id) return null;
       const cur = edits(p).at(-1) ?? p;
       const how = hiddenVersions.get(cur.id);
-      if (how === 'hideUntilEdited') return { status: 'hiddenUntilEdited', version: cur.id, words: String(cur.payload['body'] ?? '') };
-      return how === 'waiting' ? { status: 'waiting', version: cur.id, words: String(cur.payload['body'] ?? '') } : null;
+      const forged = forgedList(cur.payload);
+      if (how === 'hideUntilEdited') return { status: 'hiddenUntilEdited', version: cur.id, words: String(cur.payload['body'] ?? ''), ...(forged ? { forged } : {}) };
+      return how === 'waiting' ? { status: 'waiting', version: cur.id, words: String(cur.payload['body'] ?? ''), ...(forged ? { forged } : {}) } : null;
     },
     decideReport(report, outcomes) {
       if (!me()?.admin) return refuse('only an admin decides a report');

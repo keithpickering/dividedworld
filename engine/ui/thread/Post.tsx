@@ -121,7 +121,7 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
               ? (
                 <>
                   <HiddenNote />
-                  {own && <HiddenOwn own={own} onEdit={onEdit}><BbCode text={own.words} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></HiddenOwn>}
+                  {own && <HiddenOwn own={own} onEdit={onEdit}><BbCode text={own.words} quoteHead={quoteHead} forged={own.forged} /></HiddenOwn>}
                 </>
               )
               : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>}

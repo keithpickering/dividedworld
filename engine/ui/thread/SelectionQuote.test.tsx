@@ -311,10 +311,10 @@ describe('the Quote button on the thread', () => {
 
 
 /* The Quote button never makes a forged quote (docs/plans/2026-11-20-forged-quotes-design.md, section 4): whatever words of a post it quotes, those words are in the post. Random posts are built from the
-   fixtures' bodies (the plain-words fixtures, one list for both languages), with a seeded generator so a failure reproduces. A run inside a shut spoiler, an image's alt and a Lens layer are not read, and a fixture that nests eight tags or more is left out: wrapping such a post in one more quote can push a counterfeit past the parser's cap, where it reads as text (reported with this task). */
+   fixtures' bodies (the plain-words fixtures, one list for both languages), with a seeded generator so a failure reproduces. A highlight is drawn with every spoiler opened (a shut spoiler's body is not read, and is not what this asks), and a Lens layer is not drawn at all. A fixture that nests eight tags or more is left out: wrapping such a post in one more quote can push a counterfeit past the parser's cap, where it reads as text (reported with this task). */
 describe('the Quote button\'s text is never forged (a property)', () => {
   const POST = '2a8fad5b-d9cb-469f-a165-70867728950e';
-  const pool = PLAIN_FIXTURES.filter((f) => f.forged === undefined && !/\[(i?spoiler|img|video|noparse|code)/iu.test(f.body) && !/(\[[a-z]+[^\]]*\]){8}/iu.test(f.body)).map((f) => f.body);
+  const pool = PLAIN_FIXTURES.filter((f) => f.forged === undefined && !/(\[[a-z]+[^\]]*\]){8}/iu.test(f.body)).map((f) => f.body);
   /** mulberry32: a small seeded generator, so the same seed builds the same posts. */
   const generator = (seed: number) => () => {
     seed = (seed + 0x6d2b79f5) | 0;
@@ -364,6 +364,8 @@ describe('the Quote button\'s text is never forged (a property)', () => {
     for (const body of posts(31, 60)) {
       const view = render(<RouterProvider><article className="kb-act" data-kb-seq="1"><BbCode text={body} /></article></RouterProvider>);
       const box = view.container.querySelector('.kb-bb')!;
+      for (const d of box.querySelectorAll('details')) d.open = true;
+      act(() => { for (const b of box.querySelectorAll<HTMLButtonElement>('button.kb-bb-ispoiler')) b.click(); });
       const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
       const texts: Text[] = [];
       for (let n = walker.nextNode(); n; n = walker.nextNode()) if (!(n.parentElement?.closest('[data-kb-quotable="hidden"], .kb-quote-from, [hidden], [aria-hidden="true"]')) && (n.textContent ?? '') !== '') texts.push(n as Text);
