@@ -104,7 +104,7 @@ for r, a0, a1, w in ((3.3, 12, 40, 0.05), (3.7, 15, 46, 0.035), (4.1, 18, 50, 0.
         pts.append((H.x + r * math.sin(a), 0.5, H.z - r * math.cos(a)))
     rig.tube('streak', pts, w, streak, res=4)
 star_glow = rig.glow('star', rig.hexrgb('#fff1a0'), 3.0)
-for x, z, r, turn in ((-2.3, 2.6, 0.3, 0.2), (2.2, 3.3, 0.24, -0.3), (-2.4, 0.4, 0.18, 0.1)):
+for x, z, r, turn in ((-2.3, 2.6, 0.3, 0.2), (2.3, 0.3, 0.24, -0.3), (-2.4, 0.4, 0.18, 0.1)):
     o = rig.slab('star', rig.star(4, r, r * 0.3, turn), -0.02, 0.02, star_glow, 0.0); o.location = (x, -0.5, z)
 
 LOOK = (0, 0, 1.4)
