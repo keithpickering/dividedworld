@@ -203,6 +203,11 @@
   .kb-mark.kb-meta-tile[data-kb-spent='true'] {
     border-color: GrayText;
   }
+
+  /* Open still lifts a spent mark, as it lifts any mark (spent-marks design, section 2). */
+  .kb-mark.kb-meta-tile[data-kb-spent='true'][aria-expanded="true"] {
+    border-color: Highlight;
+  }
 }
 
 /*
