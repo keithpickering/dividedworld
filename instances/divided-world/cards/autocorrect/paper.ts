@@ -22,6 +22,17 @@ export const PAPER = Object.freeze({ base: '#e1d3b2', ink: '#17150f' });
 /** One end's ragged outline, as [x, y] points from the top to the bottom. */
 export type Jag = ReadonlyArray<readonly [number, number]>;
 
+/**
+ * The ragged cut a tear makes at `at` (the piece's pixels) down a piece `h` tall, as absolute [x, y] points from the top to the
+ * bottom. The one definition of that cut: the body's outline (Effect.tsx's `tornPath`) and the corner fold's end (fold.ts's
+ * `foldEnd`) both take it from here, so the fold's edge is the edge it lifts.
+ */
+export function tearJag(seed: string, at: number, h: number): Jag {
+  const r = seeded(`${seed}:tear:${at.toFixed(0)}`);
+  const steps = Math.max(4, Math.round(h / 2.5));
+  return Array.from({ length: steps + 1 }, (_, i): [number, number] => [at + (r() - 0.5) * 3.2, (h * i) / steps]);
+}
+
 /** The tape's two torn ends, in CSS pixels. */
 export function endJags(seed: string, w: number, h: number): { left: Jag; right: Jag } {
   const r = seeded(`${seed}:ends`);
@@ -64,7 +75,7 @@ export interface PaperContext {
 }
 
 /** The tape's outline, as the bench's `tapePath`: down the left end, back up the right. */
-function tapePath(c: PaperContext, ends: { left: Jag; right: Jag }): void {
+export function tapePath(c: PaperContext, ends: { left: Jag; right: Jag }): void {
   c.beginPath();
   ends.left.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
   [...ends.right].reverse().forEach(([x, y]) => c.lineTo(x, y));
@@ -73,39 +84,54 @@ function tapePath(c: PaperContext, ends: { left: Jag; right: Jag }): void {
 
 /** Draws one piece of tape, `w` by `h` CSS pixels, from the strip's seed. */
 export function drawPaper(c: PaperContext, w: number, h: number, seed: string): void {
+  face(c, w, h, seed, false);
+}
+
+/**
+ * The tape's sticky side, which a lifted corner shows (docs/plans/2026-11-20-autocorrect-feel-design.md section 5): the same
+ * outline, paler (lightness 88), smoother (the crepe at 0.6 and 0.45 of its strength), with no fibers and no factory edges, the same
+ * darkening at the torn ends, and the adhesive's sheen. Ported from the feel bench's `drawPaper(..., under)`.
+ */
+export function drawUnderside(c: PaperContext, w: number, h: number, seed: string, ends: { left: Jag; right: Jag } = endJags(seed, w, h)): void {
+  face(c, w, h, seed, true, ends);
+}
+
+/** The paper's face (`under` false) or its sticky side: one drawing, so the two share the outline, the crepe and the end darkening. */
+function face(c: PaperContext, w: number, h: number, seed: string, under: boolean, ends: { left: Jag; right: Jag } = endJags(seed, w, h)): void {
   const r = seeded(`${seed}:paper`);
-  const ends = endJags(seed, w, h);
   c.save();
   tapePath(c, ends);
   c.clip();
   /* The paper: a beige-cream with slow variation along its length. */
   const g = c.createLinearGradient(0, 0, w, 0);
   for (let i = 0; i <= 6; i++) {
-    const l = 79 + (r() - 0.5) * 4;
-    g.addColorStop(i / 6, `hsl(${42 + (r() - 0.5) * 3} ${44 + (r() - 0.5) * 6}% ${l}%)`);
+    const l = (under ? 88 : 79) + (r() - 0.5) * 4;
+    g.addColorStop(i / 6, `hsl(${42 + (r() - 0.5) * 3} ${(under ? 38 : 44) + (r() - 0.5) * 6}% ${l}%)`);
   }
   c.fillStyle = g;
   c.fillRect(0, 0, w, h);
   /* Crepe: fine ridges across the width, each a little crooked, darker and lighter by turns. */
   for (const [x, a, b] of crepeLines(seed, w)) {
-    c.strokeStyle = a > 0.62 ? `rgb(255 251 236 / ${0.1 + b * 0.12})` : `rgb(118 92 38 / ${0.05 + b * 0.08})`;
+    c.strokeStyle = a > 0.62 ? `rgb(255 251 236 / ${(0.1 + b * 0.12) * (under ? 0.6 : 1)})` : `rgb(118 92 38 / ${(0.05 + b * 0.08) * (under ? 0.45 : 1)})`;
     c.lineWidth = 0.5 + b * 0.6;
     c.beginPath();
     c.moveTo(x + (b - 0.5) * 0.8, 0);
     c.quadraticCurveTo(x + (a - 0.5) * 1.2, h / 2, x - (b - 0.5) * 0.8, h);
     c.stroke();
   }
-  /* Fiber: short faint flecks in the paper. */
-  for (let i = 0; i < w * h * 0.035; i++) {
-    c.fillStyle = r() > 0.5 ? 'rgb(255 250 232 / .16)' : 'rgb(110 86 34 / .09)';
-    c.fillRect(r() * w, r() * h, 0.6 + r() * 1.6, 0.4);
+  if (!under) {
+    /* Fiber: short faint flecks in the paper. */
+    for (let i = 0; i < w * h * 0.035; i++) {
+      c.fillStyle = r() > 0.5 ? 'rgb(255 250 232 / .16)' : 'rgb(110 86 34 / .09)';
+      c.fillRect(r() * w, r() * h, 0.6 + r() * 1.6, 0.4);
+    }
+    /* The factory edges, slightly darker, with a lit lip just inside the top one. */
+    c.fillStyle = 'rgb(140 110 52 / .28)';
+    c.fillRect(0, 0, w, 0.7);
+    c.fillRect(0, h - 0.8, w, 0.8);
+    c.fillStyle = 'rgb(255 255 255 / .25)';
+    c.fillRect(0, 1, w, 0.6);
   }
-  /* The factory edges, slightly darker, with a lit lip just inside the top one. */
-  c.fillStyle = 'rgb(140 110 52 / .28)';
-  c.fillRect(0, 0, w, 0.7);
-  c.fillRect(0, h - 0.8, w, 0.8);
-  c.fillStyle = 'rgb(255 255 255 / .25)';
-  c.fillRect(0, 1, w, 0.6);
   /* The torn ends darken a touch where the paper is crushed. */
   const eg = c.createLinearGradient(0, 0, w, 0);
   const e = Math.min(0.5, 6 / w);
@@ -115,7 +141,17 @@ export function drawPaper(c: PaperContext, w: number, h: number, seed: string): 
   eg.addColorStop(1, 'rgb(90 70 30 / .14)');
   c.fillStyle = eg;
   c.fillRect(0, 0, w, h);
+  if (under) {
+    /* The adhesive's sheen. */
+    const s = c.createLinearGradient(0, 0, w * 0.6, h);
+    s.addColorStop(0, 'rgb(255 255 255 / 0)');
+    s.addColorStop(0.45, 'rgb(255 255 255 / .38)');
+    s.addColorStop(0.7, 'rgb(255 255 255 / 0)');
+    c.fillStyle = s;
+    c.fillRect(0, 0, w, h);
+  }
   c.restore();
+  if (under) return;
   /* Loose fibers standing out of the torn ends. */
   c.strokeStyle = 'rgb(236 226 196 / .9)';
   c.lineWidth = 0.45;

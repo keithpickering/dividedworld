@@ -10,7 +10,7 @@ import { expect, test, type Page } from '@playwright/test';
 const STORY = (name: string) => `/?fixture=boards&story=boards-11-autocorrect--${name}`;
 /* The card's settings as the Effect defaults them (Effect.tsx DEFAULTS; autocorrect.pace, pickMs). */
 const PACE = 90;
-const PICK_MS = 450;
+const PICK_MS = 1000;
 
 const open = async (page: Page, name: string, size: { width: number; height: number }, ready = '[data-kb-ac-piece]') => {
   await page.setViewportSize(size);
@@ -45,7 +45,7 @@ const wordBoxes = (page: Page) => page.evaluate(() => {
 
 const pieces = (page: Page) => page.locator('[data-kb-ac-piece]').count();
 
-test('a strip peeled by the keyboard takes the pick and its width at the pace, and no word of the post moves', async ({ page }) => {
+test('a strip peeled by the keyboard (Shift with Enter) takes the pick and its width at the pace, and no word of the post moves', async ({ page }) => {
   await open(page, 'one-author', { width: 1440, height: 1120 });
   const before = await wordBoxes(page);
   expect(before.length).toBeGreaterThan(10);
@@ -53,10 +53,13 @@ test('a strip peeled by the keyboard takes the pick and its width at the pace, a
   const width = (await page.locator('[data-kb-ac-piece]').first().boundingBox())!.width;
   await page.locator('[data-kb-ac-anchor]').first().focus();
   const start = Date.now();
+  /* Shift with Enter is the author's peel; Enter alone only lifts it. */
+  await page.keyboard.down('Shift');
   await page.keyboard.down('Enter');
-  await expect.poll(() => pieces(page), { timeout: 5000, intervals: [20] }).toBe(count - 1);
+  await expect.poll(() => pieces(page), { timeout: PICK_MS + (width / PACE) * 1000 + 3000, intervals: [20] }).toBe(count - 1);
   const took = Date.now() - start;
   await page.keyboard.up('Enter');
+  await page.keyboard.up('Shift');
   expect(took).toBeGreaterThanOrEqual(PICK_MS + (width / PACE) * 1000 - 50);
   /* A half second of slack at the top: a peel that took twice as long is a hand that lagged, not the pace. */
   expect(took).toBeLessThan(PICK_MS + (width / PACE) * 1000 + 1500);

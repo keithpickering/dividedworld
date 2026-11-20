@@ -201,14 +201,14 @@ export const defaults: Settings = deepFreeze<Settings>({
   toastDefaults: ['quote', 'cardOnYours', 'cardEnded', 'trapStruck', 'trapSprang', 'ruling', 'settlement', 'update', 'trophy', 'beltLost', 'beltBack'],
   /**
    * The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone.
-   * Autocorrect's tape: `pace` is how fast a strip peels, in pixels a second; `pickMs` how long a finger holds before it picks at the
-   * tape; `give` how far a drag goes before a strip lets go, in pixels; `peekStayMs` how long a peeled corner stays curled; `peekSettle`
-   * how fast it settles back, in pixels a second. Graffiti's wall holds ink over at most `graffiti.limit` percent of its cells.
+   * Autocorrect's tape: `pace` is how fast a strip peels, in pixels a second; `pickMs` how long the author holds a press still at an
+   * end before the corner is up, the held press that turns a drag's peek into a peel; `give` how far a drag goes before a strip lets
+   * go, in pixels; `peekStayMs` how long a peeled corner stays curled; `peekSettle` how fast it settles back, in pixels a second. Graffiti's wall holds ink over at most `graffiti.limit` percent of its cells.
    * Laugh Track's audience: `line` is where a reader's line sits in the viewport (percent from the top),
    * `reachRem` how far a cue reaches from the line, `murmurMost` how much of a hit a murmur is (percent), `fadeMs` how long a sound fades
    * and `markMost` how much of its underline a cued place shows at its nearest (percent).
    */
-  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'laughTrack.markMost': 100, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40 },
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 1000, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'laughTrack.markMost': 100, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */

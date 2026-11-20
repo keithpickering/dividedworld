@@ -131,7 +131,7 @@ test('Divided World\'s whole instance has no problems', () => {
 
 test('Autocorrect\'s five screen settings are held, and an instance missing one is refused at load', () => {
   const held = defaults.cardSettings;
-  assert.deepEqual([held['autocorrect.pace'], held['autocorrect.pickMs'], held['autocorrect.give'], held['autocorrect.peekStayMs'], held['autocorrect.peekSettle']], [90, 450, 34, 300, 300]);
+  assert.deepEqual([held['autocorrect.pace'], held['autocorrect.pickMs'], held['autocorrect.give'], held['autocorrect.peekStayMs'], held['autocorrect.peekSettle']], [90, 1000, 34, 300, 300]);
   assert.equal('autocorrect.peelMs' in held, false, 'peelMs is gone');
   assert.deepEqual(playtest.cardSettings, held);
   const { 'autocorrect.pace': _gone, ...rest } = held;

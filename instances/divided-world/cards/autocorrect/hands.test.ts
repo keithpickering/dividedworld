@@ -4,9 +4,10 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { autocorrect } from '../autocorrect.ts';
 import { Hands, type HandEvent, type PieceSpec } from './hands.ts';
 
-const SETTINGS = { pace: 90, pickMs: 450, give: 34, peekStayMs: 300, peekSettle: 300, reduced: false };
+const SETTINGS = { pace: 90, pickMs: 450, give: 34, peekStayMs: 300, peekSettle: 300, reduced: false, slop: 8, cornerDelayMs: 150 };
 const piece = (o: Partial<PieceSpec> = {}): PieceSpec => ({ id: 's:0:0', strip: 's:0', index: 0, w: 200, h: 20, stuck: [[0, 200, 0]], open: true, under: [], held: false, ...o });
 const make = (specs: PieceSpec[], author = true, over: Partial<typeof SETTINGS> = {}) => {
   const hands = new Hands({ ...SETTINGS, ...over, author });
@@ -23,11 +24,10 @@ const events = (h: Hands, kind: HandEvent['kind']) => h.drain().filter((e) => e.
 
 test('a press at an end, held for pickMs, starts a peel; let go early it does not', () => {
   const held = make([piece()]);
-  assert.equal(held.press('s:0:0', 3, 1), 'picking');
+  assert.equal(held.press('s:0:0', 3, 1), 'pending');
   run(held, 200);
   assert.ok(held.view('s:0:0').corner, 'the corner lifts as the hold goes on');
-  assert.ok(held.view('s:0:0').corner!.t > 0.3 && held.view('s:0:0').corner!.t < 0.6);
-  held.move(1, 60);
+  assert.ok(held.view('s:0:0').corner!.t > 0 && held.view('s:0:0').corner!.t < 0.5, 'the corner is up a little: it waited out cornerDelayMs');
   run(held, 100);
   assert.equal(lo(held), 0, 'the line has not moved before the pick is up');
   run(held, 200);
@@ -47,18 +47,18 @@ test('a press at an end, held for pickMs, starts a peel; let go early it does no
   assert.deepEqual(early.view('s:0:0').stuck, [[0, 200, 0]]);
 });
 
-test('a press away from an end does nothing', () => {
+test('a press away from an end is a peek, never a pick', () => {
   const h = make([piece()]);
-  assert.equal(h.press('s:0:0', 100, 1), 'none');
+  assert.equal(h.press('s:0:0', 100, 1), 'peeking');
   run(h, 1000);
   assert.equal(h.view('s:0:0').corner, null);
   assert.deepEqual(h.view('s:0:0').stuck, [[0, 200, 0]]);
-  assert.equal(h.busy(), false);
+  assert.deepEqual(h.drain(), []);
 });
 
 test('either end works: a press at the far end peels from there', () => {
   const h = make([piece()]);
-  assert.equal(h.press('s:0:0', 197, 1), 'picking');
+  assert.equal(h.press('s:0:0', 197, 1), 'pending');
   run(h, 450);
   h.move(1, 150);
   run(h, 500);
@@ -87,10 +87,8 @@ test('a pull past give for long enough tears; then it needs a new pick at the to
   run(h, 1000);
   assert.equal(lo(h), at, 'a torn strip stays put without a new pick');
   h.release(1);
-  assert.equal(h.press('s:0:0', at + 4, 2), 'picking');
+  assert.equal(h.press('s:0:0', at + 4, 2), 'pending');
   run(h, 400);
-  h.move(2, at + 40);
-  run(h, 32);
   assert.equal(lo(h), at, 'not before the pick is up');
   run(h, 60);
   h.move(2, at + 40);
@@ -159,7 +157,7 @@ test('a strip of two pieces is off only once both are', () => {
 
 test('the keyboard picks for pickMs, then peels at pace, and cannot tear', () => {
   const h = make([piece({ w: 400, stuck: [[0, 400, 0]] })]);
-  assert.equal(h.keyDown('s:0'), true);
+  assert.equal(h.keyDown('s:0', 'peel'), true);
   run(h, 400);
   assert.equal(lo(h), 0);
   run(h, 50);
@@ -174,12 +172,12 @@ test('the keyboard picks for pickMs, then peels at pace, and cannot tear', () =>
 
 test('the keyboard takes the end that has a roll, else the start; held again it needs no pick', () => {
   const h = make([piece({ stuck: [[0, 120, 1]] })]);
-  assert.equal(h.keyDown('s:0'), true);
+  assert.equal(h.keyDown('s:0', 'peel'), true);
   run(h, 200);
   assert.ok(h.view('s:0:0').stuck[0]![1] < 120, 'peeled from the end whose roll waits, with no pick');
   h.keyUp();
   const fresh = make([piece()]);
-  fresh.keyDown('s:0');
+  fresh.keyDown('s:0', 'peel');
   run(fresh, 460 + 500);
   assert.ok(lo(fresh) > 30);
 });
@@ -190,7 +188,7 @@ test('pressing a covered piece says so and moves nothing', () => {
   assert.equal(events(h, 'covered').length, 1);
   run(h, 1000);
   assert.deepEqual(h.view('s:0:0').stuck, [[0, 200, 0]]);
-  assert.equal(h.keyDown('s:0'), false);
+  assert.equal(h.keyDown('s:0', 'peel'), false);
 });
 
 const chain = () => [piece({ id: 'a:0', strip: 'a', w: 100, stuck: [[0, 100, 0]], under: ['b:0'] }), piece({ id: 'b:0', strip: 'b', w: 80, open: false, stuck: [[0, 80, 0]] })];
@@ -279,7 +277,7 @@ test('reduced motion: the same stay, then it lays down at once', () => {
 
 test('a reader\'s held key lifts one piece\'s width every 0.45 seconds', () => {
   const h = make(chain(), false);
-  assert.equal(h.keyDown('a'), true);
+  assert.equal(h.keyDown('a', 'peek'), true);
   run(h, 450);
   assert.ok(Math.abs(h.view('a:0').lift!.lift - 100) < 4);
   run(h, 450);
@@ -297,7 +295,7 @@ const wrapped = (under: string[] = []) => [
 
 test('a reader\'s held key goes on from a wrapped strip\'s first line to its second, and lays both down on letting go', () => {
   const h = make(wrapped(), false);
-  assert.equal(h.keyDown('s:0'), true);
+  assert.equal(h.keyDown('s:0', 'peek'), true);
   run(h, 450);
   assert.ok(Math.abs(h.view('s:0:0').lift!.lift - 100) < 4, 'the first line is up');
   assert.ok((h.view('s:0:1').lift?.lift ?? 0) < 1, 'the second waits for the first');
@@ -311,7 +309,7 @@ test('a reader\'s held key goes on from a wrapped strip\'s first line to its sec
 
 test('a reader\'s held key lifts what lies under a wrapped strip\'s first line before its second line', () => {
   const h = make([...wrapped(['b:0']), piece({ id: 'b:0', strip: 'b', w: 80, open: false, stuck: [[0, 80, 0]] })], false);
-  h.keyDown('s:0');
+  h.keyDown('s:0', 'peek');
   run(h, 810);
   assert.ok(h.view('b:0').lift!.lift > 70, 'the strip under the first line is up');
   assert.ok((h.view('s:0:1').lift?.lift ?? 0) < 1, 'the second line waits for it');
@@ -349,7 +347,7 @@ test('a peel that finishes its piece with the pointer still down lets that hand 
   follow(h, 1200);
   assert.deepEqual(h.view('s:0:0').stuck, []);
   assert.equal(h.busy(), false);
-  assert.equal(h.press('s:0:1', 3, 2), 'picking');
+  assert.equal(h.press('s:0:1', 3, 2), 'pending');
 });
 
 test('a held pointer with nothing to do lets the loop rest, and a move wakes it: after a tear, and a peek held still', () => {
@@ -381,10 +379,231 @@ test('the author on a held piece peeks as a reader: lifts and lays back, no chan
   run(h, 3000);
   assert.equal(h.view('s:0:0').lift, null, 'and lays back down');
   assert.deepEqual(h.drain(), [], 'no change, no tear');
-  assert.equal(h.keyDown('s:0'), true);
+  assert.equal(h.keyDown('s:0', 'peek'), true);
   h.keyUp();
   run(h, 3000);
   assert.deepEqual(h.drain().filter((e) => e.kind === 'change' || e.kind === 'torn'), [], 'a key hold peeks too');
   h.sync([piece({ held: false })]);
-  assert.equal(h.press('s:0:0', 3, 1), 'picking');
+  assert.equal(h.press('s:0:0', 3, 1), 'pending');
+});
+
+/* Autocorrect's feel (docs/plans/2026-11-20-autocorrect-feel-plan.md, Task 2): peek or pick, unroll, drops. */
+
+test('an author\'s press at an end that moves past slop within 300ms is a peek: a flap lifts, nothing changes', () => {
+  const h = make([piece()]);
+  assert.equal(h.press('s:0:0', 3, 1), 'pending');
+  run(h, 100);
+  assert.equal(h.view('s:0:0').corner, null, 'no corner yet');
+  h.move(1, 40);
+  run(h, 200);
+  assert.equal(h.view('s:0:0').corner, null, 'the pick is dropped');
+  assert.equal(h.view('s:0:0').lift?.lift, 40, 'the peek lifts from where the hand went down (3), pulled to 40');
+  assert.deepEqual(h.drain(), [], 'no change, no pick');
+  assert.deepEqual(h.view('s:0:0').stuck, [[0, 200, 0]]);
+  h.release(1);
+  run(h, 3000);
+  assert.equal(h.view('s:0:0').lift, null, 'and it lays back down');
+});
+
+test('a movement within slop leaves the press pending; held still for pickMs it says picked once, then a drag peels', () => {
+  const h = make([piece({ w: 400, stuck: [[0, 400, 0]] })]);
+  assert.equal(h.press('s:0:0', 3, 1), 'pending');
+  h.move(1, 8);
+  run(h, 440);
+  assert.equal(events(h, 'picked').length, 0);
+  run(h, 20);
+  assert.deepEqual(h.drain().filter((e) => e.kind === 'picked'), [{ kind: 'picked', piece: 's:0:0' }]);
+  run(h, 500);
+  assert.equal(events(h, 'picked').length, 0, 'once');
+  follow(h, 800);
+  assert.ok(lo(h) > 30, `a drag now peels (${lo(h)})`);
+  assert.equal(h.view('s:0:0').lift, null, 'and does not peek');
+  assert.ok(h.drain().some((e) => e.kind === 'change'));
+});
+
+test('the corner is null for the first cornerDelayMs of a pick, then runs 0 to 1 until the pick is up', () => {
+  const h = make([piece()]);
+  h.press('s:0:0', 3, 1);
+  run(h, 100);
+  assert.equal(h.view('s:0:0').corner, null);
+  run(h, 200);
+  const t = h.view('s:0:0').corner!.t;
+  assert.ok(Math.abs(t - 0.5) < 0.06, `halfway between the delay and the pick (${t})`);
+});
+
+test('a roll in hand follows the hand back at no more than pace, never strains or tears, and stops where a roll fell', () => {
+  const h = make([piece({ w: 400, stuck: [[120, 400, 3]], drops: [10] })]);
+  assert.equal(h.press('s:0:0', 124, 1), 'peeling');
+  h.move(1, 0);
+  let last = lo(h);
+  for (let i = 0; i < 62; i++) {
+    h.tick(16);
+    const now = lo(h);
+    assert.ok(last - now <= 90 * 0.016 + 1e-6, `no faster than pace (${last - now})`);
+    assert.equal(h.view('s:0:0').strain, null);
+    last = now;
+  }
+  assert.ok(Math.abs(lo(h) - 30) < 3, `a second back is 90px of the 120 (${lo(h)})`);
+  run(h, 3000);
+  assert.equal(lo(h), 10, 'it stops at the drop, not the end');
+  assert.equal(events(h, 'torn').length, 0);
+  assert.equal(h.view('s:0:0').rolls.length, 0, 'the roll is all back');
+  assert.deepEqual(h.dropsOf('s:0'), [0.025]);
+});
+
+test('a roll unrolled to the strip\'s end is the play as it landed: kind 0, whole, with no drops', () => {
+  const h = make([piece({ stuck: [[80, 200, 3]] })]);
+  assert.equal(h.press('s:0:0', 84, 1), 'peeling');
+  h.move(1, 0);
+  run(h, 2000);
+  assert.deepEqual(h.view('s:0:0').stuck, [[0, 200, 0]]);
+  assert.deepEqual(h.sharesOf('s:0'), [[0, 1, 0]], 'a whole strip of kind 0 is the untouched model');
+  assert.deepEqual(h.dropsOf('s:0'), []);
+  assert.ok(h.drain().some((e) => e.kind === 'change'), 'every step is a change');
+});
+
+test('an unroll that reaches a neighbor stretch joins them with their outer kinds', () => {
+  const h = make([piece({ stuck: [[0, 60, 0], [100, 200, 3]] })]);
+  h.press('s:0:0', 104, 1);
+  h.move(1, 0);
+  run(h, 1000);
+  assert.deepEqual(h.view('s:0:0').stuck, [[0, 200, 0]]);
+});
+
+test('a tear, then a new pick, then an unroll, stops at the tear, not at the strip\'s end', () => {
+  const h = make([piece({ w: 400, stuck: [[0, 400, 0]] })]);
+  h.press('s:0:0', 3, 1);
+  run(h, 450);
+  h.move(1, 300);
+  run(h, 2500);
+  assert.equal(events(h, 'torn').length, 1);
+  const at = lo(h);
+  assert.equal(h.dropsOf('s:0').length, 1, 'the tear is a drop');
+  h.release(1);
+  assert.equal(h.press('s:0:0', at + 4, 2), 'pending');
+  run(h, 460);
+  for (let t = 0; t < 1000; t += 16) { h.move(2, lo(h) + 10); h.tick(16); }
+  const far = lo(h);
+  assert.ok(far > at + 40);
+  h.release(2);
+  assert.equal(h.press('s:0:0', far + 4, 3), 'peeling');
+  h.move(3, 0);
+  run(h, 4000);
+  assert.ok(Math.abs(lo(h) - at) < 0.01, `back to the tear, not the end (${lo(h)} from ${at})`);
+  assert.equal(h.view('s:0:0').stuck[0]![2] % 3, 0);
+  assert.equal(Math.floor(h.view('s:0:0').stuck[0]![2] / 3), 2, 'the end where a roll fell is a tear again');
+  assert.deepEqual(h.dropsOf('s:0'), [Math.round((at / 400) * 10_000) / 10_000]);
+});
+
+test('a finished piece drops its far end; shares of drops join over pieces and leave out those inside a stuck stretch', () => {
+  const two = [piece({ id: 's:0:0', w: 40, stuck: [[0, 40, 0]] }), piece({ id: 's:0:1', index: 1, w: 40, stuck: [[0, 40, 0]] })];
+  const h = make(two);
+  h.press('s:0:0', 3, 1);
+  run(h, 450);
+  follow(h, 800);
+  assert.deepEqual(h.dropsOf('s:0'), [0.5]);
+  const inside = make([piece({ w: 100, stuck: [[0, 100, 0]], drops: [30, 100] })]);
+  assert.deepEqual(inside.dropsOf('s:0'), [1], 'a drop strictly inside a stuck stretch is no drop');
+});
+
+test('keyDown unroll takes the first waiting roll at pace, and is false with none', () => {
+  assert.equal(make([piece()]).keyDown('s:0', 'unroll'), false);
+  const h = make([piece({ stuck: [[100, 200, 3]] })]);
+  assert.equal(h.keyDown('s:0', 'unroll'), true);
+  run(h, 1000);
+  assert.ok(Math.abs(lo(h) - 10) < 3, `a second at pace (${lo(h)})`);
+  run(h, 2000);
+  assert.deepEqual(h.view('s:0:0').stuck, [[0, 200, 0]]);
+  h.keyUp();
+});
+
+test('keyDown peek, as the author out of the hold, peeks; peel picks and says so', () => {
+  const h = make([piece()]);
+  assert.equal(h.keyDown('s:0', 'peek'), true);
+  run(h, 450);
+  assert.ok(h.view('s:0:0').lift, 'it lifts');
+  h.keyUp();
+  run(h, 3000);
+  assert.deepEqual(h.drain(), [], 'no change');
+  assert.equal(h.keyDown('s:0', 'peel'), true);
+  run(h, 460);
+  assert.deepEqual(h.drain().filter((e) => e.kind === 'picked'), [{ kind: 'picked', piece: 's:0:0' }]);
+  h.keyUp();
+  assert.equal(make([piece({ held: true })]).keyDown('s:0', 'peel'), false, 'a peel is refused while held');
+});
+
+test('an unroll with less rolled than the distance to its root goes back at pace, not in one jump', () => {
+  const h = make([piece({ w: 400, stuck: [[100, 400, 6]] })]);
+  assert.equal(h.press('s:0:0', 104, 1), 'pending');
+  run(h, 460);
+  for (let t = 0; t < 2000 && lo(h) < 150; t += 16) { h.move(1, lo(h) + 10); h.tick(16); }
+  const far = lo(h);
+  assert.ok(far >= 150);
+  h.move(1, 0);
+  run(h, 800);
+  assert.ok(Math.abs(far - lo(h) - 72) < 6, `0.8 seconds at pace is about 72px, not a jump to the end (${far} to ${lo(h)})`);
+  assert.ok(h.view('s:0:0').stuck[0]![2] % 3 === 0 && Math.floor(h.view('s:0:0').stuck[0]![2] / 3) === 1, 'still a peel line');
+});
+
+/* The pending press: each ends in exactly one of peek, pick or nothing, and never in a stray change. */
+
+test('a move of exactly slop stays pending, and the pick still completes', () => {
+  const h = make([piece({ w: 400, stuck: [[0, 400, 0]] })]);
+  assert.equal(h.press('s:0:0', 3, 1), 'pending');
+  h.move(1, 3 + 8);
+  run(h, 500);
+  assert.equal(h.view('s:0:0').lift, null, 'no peek');
+  assert.equal(events(h, 'picked').length, 1, 'the pick completed');
+  assert.equal(h.drain().filter((e) => e.kind === 'change').length, 0);
+});
+
+test('a move past slop on the tick the pick completes ends in exactly one outcome, in either call order', () => {
+  /* Stepped to pickMs, then moved: the pick is up, so the hand peels (a pick, no peek). */
+  const a = make([piece({ w: 400, stuck: [[0, 400, 0]] })]);
+  a.press('s:0:0', 3, 1);
+  run(a, 450);
+  a.move(1, 3 + 20);
+  const aOut = a.drain();
+  assert.equal(aOut.filter((e) => e.kind === 'picked').length, 1, 'picked once');
+  assert.equal(a.view('s:0:0').lift, null, 'and not a peek');
+  assert.equal(aOut.filter((e) => e.kind === 'change').length, 0, 'no change from the move itself');
+  /* Moved, then stepped: the move made it a peek, so the step has no pick to finish. */
+  const b = make([piece({ w: 400, stuck: [[0, 400, 0]] })]);
+  b.press('s:0:0', 3, 1);
+  run(b, 434);
+  b.move(1, 3 + 20);
+  run(b, 16);
+  assert.deepEqual(b.drain(), [], 'no pick, no change');
+  assert.ok(b.view('s:0:0').lift, 'a peek');
+  assert.deepEqual(b.view('s:0:0').stuck, [[0, 400, 0]]);
+});
+
+test('a release during the corner delay ends in nothing at all', () => {
+  const h = make([piece()]);
+  h.press('s:0:0', 3, 1);
+  run(h, 100);
+  h.release(1);
+  run(h, 1000);
+  assert.deepEqual(h.drain(), []);
+  assert.equal(h.view('s:0:0').corner, null);
+  assert.equal(h.view('s:0:0').lift, null);
+});
+
+test('an unroll that joins a neighbor stretch leaves shares and drops the card accepts', () => {
+  const h = make([piece({ stuck: [[0, 60, 0], [100, 200, 3]] })]);
+  h.press('s:0:0', 104, 1);
+  h.move(1, 0);
+  run(h, 1000);
+  const state = { peeled: [], stuck: { '0': h.sharesOf('s:0') }, ...(h.dropsOf('s:0').length ? { drops: { '0': h.dropsOf('s:0') } } : {}) };
+  assert.equal(autocorrect.validateState!(state).ok, true, JSON.stringify(state));
+});
+
+test('a join keeps the outer kinds, not the inner ones', () => {
+  const h = make([piece({ stuck: [[20, 60, 4], [100, 200, 5]] })]);
+  assert.equal(h.press('s:0:0', 104, 1), 'peeling');
+  h.move(1, 0);
+  run(h, 1000);
+  assert.deepEqual(h.view('s:0:0').stuck, [[20, 200, 5]], 'kinds 1 at the start and 2 at the end');
+  const state = { peeled: [], stuck: { '0': h.sharesOf('s:0') } };
+  assert.equal(autocorrect.validateState!(state).ok, true, JSON.stringify(state));
 });

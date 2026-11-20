@@ -122,9 +122,60 @@ test('Autocorrect\'s saved state keeps the stretches the author half-peeled, by 
   assert.equal(mostSaved.ok, true);
   const asPostgres = JSON.stringify(mostSaved.ok && mostSaved.value).replace(/([,:])/g, '$1 ');
   assert.ok(Buffer.byteLength(asPostgres) <= 262_144, `${Buffer.byteLength(asPostgres)} bytes`);
+  // The same bound with drops: STUCK.most split between stretches and drops, every split measured, the longest one included.
+  let longest = 0;
+  for (const stretches of [1, 2, 50, 500, 1000, 1500, 1999, 2000]) {
+    const drops = 2000 - stretches;
+    const places = Object.fromEntries(Array.from({ length: stretches }, (_, i) => [String(PEELS.most - 1 - i), [[0.5, 0.5001, 4]]]));
+    const dropped = Object.fromEntries(Array.from({ length: Math.min(stretches, drops) || 1 }, (_, p) => [String(PEELS.most - 1 - p), [] as number[]]));
+    const keys = Object.keys(dropped);
+    for (let i = 0; i < drops; i++) dropped[keys[i % keys.length]!]!.push(0);
+    for (const k of keys) dropped[k] = dropped[k]!.map((_, i) => Math.round((0.0001 * (i + 1) + (i % 2 ? 0.5001 : 0)) * 10_000) / 10_000).sort((a, b) => a - b);
+    const full = check({ peeled: Array.from({ length: PEELS.most - stretches }, (_, i) => i), clean: false, stuck: places, ...(drops ? { drops: dropped } : {}) });
+    assert.equal(full.ok, true, `${stretches} stretches and ${drops} drops: ${full.ok ? '' : full.why}`);
+    const written = Buffer.byteLength(JSON.stringify(full.ok && full.value).replace(/([,:])/g, '$1 '));
+    assert.ok(written <= 262_144, `${stretches} stretches and ${drops} drops: ${written} bytes`);
+    longest = Math.max(longest, written);
+  }
+  assert.ok(longest > 0);
   // Places are bounded by PEELS.most for both lists, so the other extreme is every place peeled.
   const wide = check({ peeled: Array.from({ length: PEELS.most }, (_, i) => i), clean: false, stuck: {} });
   assert.deepEqual(wide, { ok: true, value: { peeled: Array.from({ length: PEELS.most }, (_, i) => i), clean: false } }, 'an empty stuck is dropped');
+});
+
+test('Autocorrect\'s saved state keeps where a roll fell, by the strip\'s place: `drops` (the autocorrect feel design, section 4)', () => {
+  const check = (state: unknown) => autocorrect.validateState!(state);
+  const refused = (state: unknown, predicate: RegExp) => {
+    const r = check(state);
+    assert.equal(r.ok, false, JSON.stringify(state));
+    assert.match(r.ok ? '' : r.why, predicate, JSON.stringify(state));
+  };
+  const stuck = { '2': [[0.25, 0.5, 4]] };
+  const state = { peeled: [0], stuck, drops: { '2': [0, 0.1, 0.25, 0.5, 0.75, 1] } };
+  assert.deepEqual(check(state), { ok: true, value: state }, 'a share on a stretch\'s end is not inside it');
+  assert.deepEqual(check({ peeled: [0], stuck, drops: {} }), { ok: true, value: { peeled: [0], stuck } }, 'an empty drops is dropped');
+  assert.deepEqual(check({ peeled: [0], stuck }), { ok: true, value: { peeled: [0], stuck } }, 'a state without drops is unchanged');
+  refused({ peeled: [], stuck, drops: [[0.1]] }, /drops is/);
+  refused({ peeled: [], stuck, drops: { '3': [0.1] } }, /place in drops is in stuck/);
+  // A place named like an object's own inherited key is no place in stuck, and is refused rather than thrown on.
+  for (const key of ['__proto__', 'constructor', 'toString']) {
+    refused({ peeled: [], stuck, drops: JSON.parse(`{"${key}":[0.1]}`) }, /place in drops is in stuck/);
+  }
+  refused({ peeled: [], stuck, drops: { '2': 0.1 } }, /drops holds a list of shares/);
+  refused({ peeled: [], stuck, drops: { '2': [0.1, 'a'] } }, /share is from 0 to 1/);
+  refused({ peeled: [], stuck, drops: { '2': [1.5] } }, /share is from 0 to 1/);
+  refused({ peeled: [], stuck, drops: { '2': [-0.1] } }, /share is from 0 to 1/);
+  refused({ peeled: [], stuck, drops: { '2': [0.12345] } }, /to 4 places/);
+  refused({ peeled: [], stuck, drops: { '2': [0.2, 0.1] } }, /in order/);
+  refused({ peeled: [], stuck, drops: { '2': [0.1, 0.1] } }, /in order/);
+  refused({ peeled: [], stuck, drops: { '2': [0.3] } }, /not inside a stretch/);
+  const split = (stretches: number, drops: number) => ({
+    peeled: [],
+    stuck: Object.fromEntries(Array.from({ length: stretches }, (_, i) => [String(i), [[0.5, 0.5001, 4]]])),
+    drops: { '0': Array.from({ length: drops }, (_, i) => i / 10_000) },
+  });
+  assert.equal(check(split(1000, 1000)).ok, true, 'stretches and drops together fill the bound');
+  refused(split(1000, 1001), /a save holds at most 2000 stretches and drops/);
 });
 
 test('Autocorrect: a landing refusal is said before a configuration\'s, the face shows the most a play adds, and a phrase is priced in characters', () => {

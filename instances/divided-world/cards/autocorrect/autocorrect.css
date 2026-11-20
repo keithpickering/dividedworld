@@ -100,13 +100,10 @@
 :root[data-kb-motion='reduce'] .dw-ac-roll[data-shaking] {
   animation: none;
 }
-/* The corner lifting while an end is picked. */
-.dw-ac-corner {
+/* The corner folded back while an end is picked: one canvas over the piece, PAD (foldpaint.ts) around it, taking no pointer. */
+.dw-ac-fold {
   position: absolute;
-  top: 0;
   pointer-events: none;
-  background: linear-gradient(135deg, #f8f0da, #e2d4ad);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
 }
 /* A peek's flap: the lifted tape as a plane hinged at the fold, its sticky side up (lighter, with a gloss). */
 .dw-ac-flap {

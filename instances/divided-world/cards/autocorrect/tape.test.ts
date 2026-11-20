@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dealWords, exposed, flapOf, fromPieces, liftsOf, peelStep, piecesOf, rollDiameter, roomOf, settle, stripsOf, stuckOf, type Measure, type TapePlay } from './tape.ts';
+import { dealWords, exposed, flapOf, fromPieces, liftsOf, peelStep, piecesOf, dropsInPieces, rollDiameter, roomOf, settle, stripsOf, stuckOf, type Measure, type TapePlay } from './tape.ts';
 import type { Stretch } from '../autocorrect.ts';
 
 const text = 'Big cats are';
@@ -210,4 +210,13 @@ test('stripsOf: a strip over a looser match covers the original words, punctuati
   const { strips, total } = stripsOf(text, [{ id: 'k1', phrase: 'dont', replacement: 'do' }]);
   assert.deepEqual(strips.map((s) => text.slice(s.from, s.to)), ["don't", 'DONT']);
   assert.equal(total.k1, 2);
+});
+
+test('dropsInPieces: shares become each piece\'s local px, and a drop on a boundary is at the end of one piece and the start of the next', () => {
+  const near = (got: readonly (readonly number[])[], want: number[][]) => assert.deepEqual(got.map((l) => l.map((x) => Math.round(x * 1e6) / 1e6)), want);
+  near(dropsInPieces([0.1, 0.5, 0.9], [100, 100, 100]), [[30], [50], [70]]);
+  near(dropsInPieces([0.3333], [100, 100, 100]), [[99.99], [0], []]);
+  near(dropsInPieces([1 / 3], [100, 100, 100]), [[100], [0], []]);
+  near(dropsInPieces([0, 1], [100, 100]), [[0], [100]]);
+  near(dropsInPieces([], [100, 100]), [[], []]);
 });
