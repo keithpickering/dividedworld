@@ -149,10 +149,10 @@
   width: 100%;
 }
 
-.kb-spun {
-  border-top: 1px dashed var(--kb-rule);
-  margin: 0.6em 0 0;
-  padding-top: 0.3em;
+/* A row of the post's foot of its own, under the action buttons, at the foot's fine size and muted color. */
+.kb-act-foot .kb-spun {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 /* The second line of the head of a box spun from a card on a character: the post the card was cast from, under the one the spin was pressed on. */

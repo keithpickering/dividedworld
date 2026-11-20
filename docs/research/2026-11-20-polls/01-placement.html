@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poll placement</title>
+<!--
+  Record, written 2026-11-20. The polls design session's mockup: where a poll sits in a post (A, under the words;
+  B, over the words; C, a thread's poll in its own panel over the first post, as phpBB drew it), each in the board's
+  house style. Every option shows the same poll: public ballots, choose one, open. Static: no engine code.
+-->
+<style>
+:root {
+  --kb-fg: #000; --kb-bg: #fff; --kb-rule: #000; --kb-muted: #555;
+  --kb-font-body: Verdana, Geneva, sans-serif; --kb-font-mono: "Courier New", Courier, monospace;
+  --kb-size-body: 0.9375rem; --kb-size-small: 0.859375rem; --kb-size-fine: 0.78125rem;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px 32px 48px; background: #fff; color: #000; font: var(--kb-size-body)/1.45 var(--kb-font-body); }
+h1 { font: bold 1.4rem/1.2 var(--kb-font-body); margin: 0 0 4px; }
+.note { font-size: var(--kb-size-small); color: #333; max-width: 60em; margin: 0 0 20px; }
+.option { margin: 0 0 44px; max-width: 1100px; }
+.option > h2 { font: bold 1rem/1 var(--kb-font-mono); background: #000; color: #fff; display: inline-block; padding: 6px 10px; margin: 0 0 8px; }
+.option > p { font-size: var(--kb-size-small); margin: 0 0 10px; max-width: 60em; }
+a { color: #000; }
+
+.acts { border: 1px solid var(--kb-rule); }
+.act { display: grid; grid-template-columns: minmax(8em, min(18%, 14em)) minmax(0, 1fr); grid-template-areas: "bit meta" "bit main" "bit foot"; grid-template-rows: auto 1fr auto; border-bottom: 4px double var(--kb-rule); }
+.act:last-child { border-bottom: 0; }
+.bit { grid-area: bit; border-right: 1px solid var(--kb-rule); padding: 0.5em 6%; display: flex; flex-direction: column; gap: 0.3em; }
+.bit .ava { width: 100%; max-width: 90px; aspect-ratio: 1; border: 1px solid #000; background: repeating-linear-gradient(45deg, #eee 0 6px, #ddd 6px 12px); }
+.bit small { font-size: var(--kb-size-fine); color: var(--kb-muted); }
+.meta, .foot { display: flex; align-items: center; gap: 1em; padding: 0.25em 1%; font-size: var(--kb-size-fine); color: var(--kb-muted); }
+.meta { grid-area: meta; border-bottom: 1px solid var(--kb-rule); }
+.foot { grid-area: foot; border-top: 1px solid var(--kb-rule); gap: 1em; font-size: var(--kb-size-small); }
+.main { grid-area: main; padding: 0.6em 1% 0.8em; }
+.main p { margin: 0 0 0.6em; }
+.sig { border-top: 1px dashed #999; margin-top: 0.8em; padding-top: 0.4em; font-size: var(--kb-size-fine); color: var(--kb-muted); }
+
+/* The poll: a 2003 board's poll table, in the post's own ink. */
+.poll { border: 1px solid #000; margin: 0.6em 0; max-width: 34em; font-size: var(--kb-size-small); }
+.poll-head { border-bottom: 1px solid #000; padding: 0.3em 0.6em; display: flex; justify-content: space-between; gap: 1em; flex-wrap: wrap; }
+.poll-head b { font-size: var(--kb-size-body); }
+.poll-head span { font: var(--kb-size-fine)/1.4 var(--kb-font-mono); color: var(--kb-muted); }
+.poll table { width: 100%; border-collapse: collapse; }
+.poll td { padding: 0.3em 0.6em; vertical-align: middle; border-bottom: 1px dotted #999; }
+.poll tr:last-child td { border-bottom: 0; }
+.poll td.pick { width: 1.6em; }
+.poll td.name { width: 40%; }
+.bar { display: block; height: 0.8em; border: 1px solid #000; background: #fff; }
+.bar i { display: block; height: 100%; background: #000; }
+.poll td.n { font-family: var(--kb-font-mono); white-space: nowrap; width: 6.5em; text-align: right; }
+.who { display: block; font-size: var(--kb-size-fine); color: var(--kb-muted); }
+.poll-foot { border-top: 1px solid #000; padding: 0.35em 0.6em; display: flex; gap: 1em; align-items: center; flex-wrap: wrap; font-size: var(--kb-size-fine); }
+.poll-foot button { font: bold var(--kb-size-small) var(--kb-font-body); border: 2px outset #ccc; background: #e8e8e8; padding: 0.1em 0.8em; }
+.poll-foot .as { color: var(--kb-muted); }
+.poll-foot .links { margin-left: auto; display: flex; gap: 1em; }
+.panel { border: 1px solid #000; border-bottom: 0; padding: 0.6em 1%; }
+.panel .poll { margin: 0 auto; }
+</style>
+</head>
+<body>
+<h1>Where a poll sits</h1>
+<p class="note">One poll, drawn three ways. Public ballots, so each option lists the masks that chose it. The reader's HUD
+mask is Peach, who has not voted yet. Results are live. "Spin" spins the poll itself; the post keeps its own Spin.</p>
+
+<template id="poll">
+  <div class="poll" role="group" aria-label="Poll">
+    <div class="poll-head"><b>Best kart in the series?</b><span>public ballots · choose 1 · closes in 2 days</span></div>
+    <table>
+      <tr><td class="pick"><input type="radio" name="p" aria-label="Pipe Frame"></td><td class="name">Pipe Frame<span class="who">Wario, Mrs. Hooligan, Toadsworth</span></td><td><span class="bar"><i style="width:50%"></i></span></td><td class="n">3 · 50%</td></tr>
+      <tr><td class="pick"><input type="radio" name="p" aria-label="Badwagon"></td><td class="name">Badwagon<span class="who">Bowser Jr.</span></td><td><span class="bar"><i style="width:17%"></i></span></td><td class="n">1 · 17%</td></tr>
+      <tr><td class="pick"><input type="radio" name="p" aria-label="Mr. Scooty"></td><td class="name">Mr. Scooty<span class="who">Lakitu, Mario Mask</span></td><td><span class="bar"><i style="width:33%"></i></span></td><td class="n">2 · 33%</td></tr>
+    </table>
+    <div class="poll-foot"><button type="button">Vote</button><span class="as">as Peach</span><span>6 ballots</span><span class="links"><a href="#">Spin</a></span></div>
+  </div>
+</template>
+
+<section class="option">
+  <h2>A · Under the words</h2>
+  <p>The poll is part of the post, after what was said and before the reactions and signature. Every post with a poll
+  looks the same, the first post included. Words can introduce it ("settle this").</p>
+  <div class="acts">
+    <div class="act">
+      <div class="bit"><b>Wario</b><div class="ava"></div><small>Posts: 412</small></div>
+      <div class="meta"><span>#1</span><span>Nov 20, 2026, 3:12 pm</span></div>
+      <div class="main"><p>We've argued for three pages. Settle this.</p><div data-poll></div><div class="sig">wah</div></div>
+      <div class="foot"><a href="#">Quote</a><a href="#">Spin</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="option">
+  <h2>B · Over the words</h2>
+  <p>The poll leads the post, and the words follow as its commentary. The poll is seen first, but a reply that only
+  asks a question reads poll-then-question.</p>
+  <div class="acts">
+    <div class="act">
+      <div class="bit"><b>Wario</b><div class="ava"></div><small>Posts: 412</small></div>
+      <div class="meta"><span>#1</span><span>Nov 20, 2026, 3:12 pm</span></div>
+      <div class="main"><div data-poll></div><p>We've argued for three pages. Settle this.</p><div class="sig">wah</div></div>
+      <div class="foot"><a href="#">Quote</a><a href="#">Spin</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="option">
+  <h2>C · A thread's poll in its own panel</h2>
+  <p>A poll on a thread's first post is drawn in a panel above the posts, as phpBB did. A poll in any other post sits
+  under its words as in A. Two looks, and an effect on post #1 doesn't reach the poll (it's outside the post's
+  content area).</p>
+  <div class="panel"><div data-poll></div></div>
+  <div class="acts">
+    <div class="act">
+      <div class="bit"><b>Wario</b><div class="ava"></div><small>Posts: 412</small></div>
+      <div class="meta"><span>#1</span><span>Nov 20, 2026, 3:12 pm</span></div>
+      <div class="main"><p>We've argued for three pages. Settle this.</p><div class="sig">wah</div></div>
+      <div class="foot"><a href="#">Quote</a><a href="#">Spin</a></div>
+    </div>
+  </div>
+</section>
+<script>
+for (const slot of document.querySelectorAll('[data-poll]')) {
+  const node = document.getElementById('poll').content.cloneNode(true);
+  const name = 'p' + Math.random().toString(36).slice(2);
+  node.querySelectorAll('input').forEach((i) => (i.name = name));
+  slot.replaceWith(node);
+}
+</script>
+</body>
+</html>
