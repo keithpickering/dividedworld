@@ -52,7 +52,7 @@ import './spin.css';
 const CARDS_SHOWN = 20;
 
 /** What the box draws where the thread screen holds no origin for it (no page read has carried one): the Act is not there. */
-const NOT_THERE: PageOrigin = { act: null, plays: [], more: false, moment: null, at: null, cast: [] };
+const NOT_THERE: PageOrigin = { act: null, plays: [], more: false, moment: null, at: null, cast: [], polls: [], voters: [], votersMore: [], myBallots: [] };
 
 /**
  * Take a page's origin into the box's store of plays: the shown plays and their ends (and the Act, when it is a card play: the box's one mark; the store ignores any other Act), then the billing,

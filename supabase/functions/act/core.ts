@@ -88,6 +88,15 @@ const surfaceHeard = (play: unknown, answer: Row | undefined, thread: unknown): 
  * play and saved_at, never the state, which can be 256 KB and every reader fetches once, newest
  * saved_at wins.
  */
+/**
+ * A ballot or a close of a poll (0381): the Act's projection as `act` (on a secret poll the database's projection names no one) and the poll's live
+ * numbers as `poll`: `{ poll, counts, voters, ends_at, closed }`, counts of characters. Built from the answer alone, never from the request, so a
+ * secret ballot's event carries no character and no picks. A client keeps what has the later count of voters or the closed flag, as a tally's counts only grow.
+ */
+const polled = (a: Row): Broadcast[] => [
+  ...act(a.act),
+  ...(a.thread && a.poll ? [{ topic: `thread:${a.thread}`, event: 'poll', payload: { poll: a.poll, counts: a.counts, voters: a.voters, ends_at: a.ends_at, closed: a.closed } }] : []),
+];
 const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   post: (a) => withSprung(a, act(without(a, 'sprung'))),
   edit_post: (a) => act(a),
@@ -122,6 +131,9 @@ const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   withdraw_turn: () => [],
   // A null tally is a post whose totals are hidden (a blind study): there is none to send.
   react: (a) => withSprung(a, a.thread && a.tally !== null ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
+  cast_ballot: polled,
+  close_poll: polled,
+  close_poll_as_admin: polled,
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   // A gift is an Act of the drive's thread, heard as a play is. The answer also holds the giver's own balance, which is the giver's alone and is never sent on.
   donate: (a) => act(a.gift),

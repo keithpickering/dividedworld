@@ -354,3 +354,32 @@ test('a surface card is played with its first draw, and refused before SQL witho
   const plain = decide({ action: 'playCard', card: 'splat', character: id, target: other, first: dab }, walled);
   assert.ok(plain.ok && !('first' in plain.args), 'a card with no surface is sent no drawing');
 });
+
+// Polls (docs/plans/2026-11-20-polls-plan.md, Task 4).
+const draft = { question: 'Which?', options: ['A', 'B'], pick: 1, secret: false, lasts: { unit: 'day', count: 1 } };
+test('a poll rides on a post, a thread or an edit as the draft the database reads; a ballot and a close are decided into their functions', () => {
+  assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'Reply.', poll: draft }, instance),
+    { ok: true, rpc: 'post', args: { in_thread: other, through: id, body: 'Reply.', quoting: null, poll: draft } });
+  assert.deepEqual(decide({ action: 'startThread', board: 'general', character: id, title: 'Hello', body: 'First.', poll: draft }, instance),
+    { ok: true, rpc: 'start_thread', args: { board_slug: 'general', through: id, title: 'Hello', body: 'First.', poll: draft } });
+  assert.deepEqual(decide({ action: 'edit', post: other, character: id, body: 'Fixed.', poll: draft }, instance),
+    { ok: true, rpc: 'edit_post', args: { target: other, through: id, body: 'Fixed.', poll: draft } });
+  assert.deepEqual(decide({ action: 'edit', post: other, character: id, body: 'Fixed.', poll: { removed: true } }, instance),
+    { ok: true, rpc: 'edit_post', args: { target: other, through: id, body: 'Fixed.', poll: { removed: true } } });
+  assert.deepEqual(decide({ action: 'castBallot', poll: other, character: id, picks: [1, 0] }, instance), { ok: true, rpc: 'cast_ballot', args: { poll: other, through: id, picks: [1, 0] } });
+  assert.deepEqual(decide({ action: 'castBallot', poll: other, character: id, picks: [] }, instance), { ok: true, rpc: 'cast_ballot', args: { poll: other, through: id, picks: [] } });
+  assert.deepEqual(decide({ action: 'closePoll', poll: other, character: id }, instance), { ok: true, rpc: 'close_poll', args: { poll: other, through: id } });
+  assert.deepEqual(decide({ action: 'closePollAsAdmin', poll: other }, instance), { ok: true, rpc: 'close_poll_as_admin', args: { poll: other } });
+});
+test('a poll that is not a draft, and picks that are not option numbers, are refused with their field', () => {
+  assert.equal(refusal({ action: 'post', thread: other, character: id, body: 'x', poll: { ...draft, options: ['A'] } }), 'poll: a poll has 2 to 10 options');
+  assert.equal(refusal({ action: 'post', thread: other, character: id, body: 'x', poll: 'yes' }), 'poll: question is empty');
+  assert.equal(refusal({ action: 'startThread', board: 'general', character: id, title: 'Hi', body: 'x', poll: { ...draft, secret: 'no' } }), "poll: a poll's ballots are public or secret");
+  assert.equal(refusal({ action: 'post', thread: other, character: id, body: 'x', poll: { removed: true } }), 'poll: question is empty', 'only an edit removes a poll');
+  assert.equal(refusal({ action: 'edit', post: other, character: id, body: 'x', poll: { removed: false } }), 'poll: question is empty');
+  assert.match(refusal({ action: 'castBallot', poll: other, character: id, picks: '1' })!, /^picks: /);
+  assert.match(refusal({ action: 'castBallot', poll: other, character: id, picks: [1.5] })!, /^picks: /);
+  assert.match(refusal({ action: 'castBallot', poll: other, character: id })!, /^picks: /);
+  assert.match(refusal({ action: 'castBallot', poll: 'x', character: id, picks: [0] })!, /^poll: /);
+  assert.match(refusal({ action: 'closePoll', poll: other })!, /^character: /);
+});

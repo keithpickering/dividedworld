@@ -1168,6 +1168,48 @@ describe('writes through the act function', () => {
     }
   });
 
+  it('sends a poll with a post, a thread and an edit, and a ballot and the closes as their own actions, mapping their answers to the Act and the poll\'s counts', async () => {
+    const draft = { question: 'Which?', options: ['A', 'B'], pick: 1, secret: false, lasts: { unit: 'day' as const, count: 1 } };
+    const written = { act: ACT_ROW, poll: A, thread: T, counts: [1, 0], voters: 1, ends_at: '2026-10-02T09:00:00+00:00', closed: false };
+    const h = harness((r) => {
+      const a = (r.body as { action: string }).action;
+      if (a === 'castBallot' || a === 'closePoll' || a === 'closePollAsAdmin') return json(written);
+      if (a === 'startThread') return json({ thread: { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' }, act: ACT_ROW });
+      return json(ACT_ROW);
+    });
+    await h.api.post(T, B, 'hi', null, undefined, draft);
+    await h.api.startThread('general', B, 'A title', 'body', undefined, draft);
+    await h.api.edit(A, B, 'new', draft);
+    await h.api.edit(A, B, 'new', { removed: true });
+    const counts = { poll: A, counts: [1, 0], voters: 1, endsAt: '2026-10-02T09:00:00+00:00', closed: false };
+    expect(await h.api.castBallot(A, B, [0])).toEqual({ ok: true, value: { act: ACT, counts } });
+    expect(await h.api.castBallot(A, B, [])).toMatchObject({ ok: true });
+    expect(await h.api.closePoll(A, B)).toEqual({ ok: true, value: { act: ACT, counts } });
+    expect(await h.api.closePollAsAdmin(A)).toEqual({ ok: true, value: { act: ACT, counts } });
+    expect(act(h).map((r) => r.body)).toEqual([
+      { action: 'post', thread: T, character: B, body: 'hi', poll: draft },
+      { action: 'startThread', board: 'general', character: B, title: 'A title', body: 'body', poll: draft },
+      { action: 'edit', post: A, character: B, body: 'new', poll: draft },
+      { action: 'edit', post: A, character: B, body: 'new', poll: { removed: true } },
+      { action: 'castBallot', poll: A, character: B, picks: [0] },
+      { action: 'castBallot', poll: A, character: B, picks: [] },
+      { action: 'closePoll', poll: A, character: B },
+      { action: 'closePollAsAdmin', poll: A },
+    ]);
+  });
+
+  it('reads a public poll\'s ballots through poll_ballots by its keyset, and a refusal comes back in its words', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/poll_ballots')
+      ? json({ ballots: [{ act: A, character: { id: B, name: 'Bea', avatar_square: null, avatar_portrait: null }, picks: [1], at: '2026-10-01T09:00:00+00:00' }], more: true }) : undefined));
+    const page = await h.api.pollBallots(T, { at: '2026-10-01T10:00:00+00:00', act: C });
+    expect(page.ok && page.value).toMatchObject({ more: true, ballots: [{ act: A, character: { id: B, name: 'Bea' }, picks: [1], at: '2026-10-01T09:00:00+00:00' }] });
+    expect(h.to('rpc/poll_ballots').map((r) => r.body)).toEqual([{ poll: T, before: '2026-10-01T10:00:00+00:00', before_id: C }]);
+    await h.api.pollBallots(T);
+    expect(h.to('rpc/poll_ballots')[1]!.body).toEqual({ poll: T, before: null, before_id: null });
+    const secret = harness((r) => (r.url.pathname.endsWith('/rpc/poll_ballots') ? json({ message: 'that poll\'s ballots are secret', hint: 'kayfabb.refusal', code: '55000' }, 400) : undefined));
+    expect(await secret.api.pollBallots(T)).toEqual({ ok: false, error: 'that poll\'s ballots are secret' });
+  });
+
   it('sends an apology to the act function, never to the apologize rpc, and maps its answer as a spin\'s', async () => {
     const thread = { id: T, board: C, title: 'Sorry', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' };
     const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ thread, act: ACT_ROW }) : undefined));
@@ -1731,6 +1773,15 @@ describe('live', () => {
     expect(onEffect).toHaveBeenCalledWith(A, '2026-10-29T00:00:00Z');
     s.channels[0]?.handlers.get('card_text')?.({ payload: { play: A, version: B } });
     expect(onText).toHaveBeenCalledWith(A, B);
+  });
+
+  it('hears a poll\'s numbers as `poll`: the poll and its counts, never who', async () => {
+    const s = stub();
+    const onPoll = vi.fn();
+    s.api.subscribeThread(T, { onPoll });
+    await settle();
+    s.channels[0]?.handlers.get('poll')?.({ payload: { poll: A, counts: [2, 0], voters: 2, ends_at: '2026-10-02T09:00:00+00:00', closed: true } });
+    expect(onPoll).toHaveBeenCalledWith({ poll: A, counts: [2, 0], voters: 2, endsAt: '2026-10-02T09:00:00+00:00', closed: true });
   });
 
   it('hears a reply a play drew under a post as `under`: the parent, the play and the reply as an Act, and never as an act', async () => {
@@ -3011,12 +3062,31 @@ describe('a screen in one call', () => {
     expect(page?.tallies).toEqual({ [A]: {}, [ORIGIN]: { fire: 2 }, [PLAY1]: { tea: 1 } });
     /* An origin with no moment and no place, and one the instance no longer holds. */
     const bare = await once('thread_page', { ...DOC, origin: { act: null, plays: [], more: false, moment: null, at: null, cast: [] } }).api.threadPage(T, { page: 1 }, 20, []);
-    expect(bare?.origin).toEqual({ act: null, plays: [], more: false, moment: null, at: null, cast: [] });
+    expect(bare?.origin).toEqual({ act: null, plays: [], more: false, moment: null, at: null, cast: [], polls: [], voters: [], votersMore: [], myBallots: [] });
     /* A moment without `at` reads its first layer's time, as playMoment's does. */
     const old = await once('thread_page', { ...DOC, origin: { ...origin, moment: { ...origin.moment, at: undefined } } }).api.threadPage(T, { page: 1 }, 20, []);
     expect(old?.origin?.moment?.at).toBe(ACT.createdAt);
     /* A document without the key (another page, a thread that was not spun) has no origin. */
     expect((await once('thread_page', DOC).api.threadPage(T, { page: 2 }, 20, []))?.origin).toBeNull();
+  });
+
+  it('thread_page: maps the poll parts of the page and of the origin, and a page without them has none', async () => {
+    const poll = { post: A, act: { ...ACT_ROW, id: B, kind: 'poll', seq: null, payload: { question: 'Which?' } }, counts: [2, 1], voters: 3, ends_at: '2026-10-02T09:00:00+00:00', closed: false, close: null };
+    const DOC = { summary: THREAD_ROW, page: 1, acts: [ACT_ROW], plays: [], above: [], people: [], tallies: [] };
+    const doc = {
+      ...DOC, polls: [poll], voters: [{ poll: B, act: C, character: B, picks: [0], at: '2026-10-01T09:00:00+00:00' }], votersMore: [B],
+      voterCast: [{ character: { id: B, name: 'Bea', joined: '2026-10-01', staff: null, office: null }, profile: {} }], myBallots: [{ act: C, poll: B, character: B, picks: [], at: '2026-10-01T09:00:00+00:00' }],
+    };
+    const page = await once('thread_page', doc).api.threadPage(T, { page: 1 }, 20, []);
+    expect(page?.polls).toMatchObject([{ post: A, counts: [2, 1], voters: 3, endsAt: '2026-10-02T09:00:00+00:00', closed: false, close: null, act: { id: B, kind: 'poll' } }]);
+    expect(page?.voters).toEqual([{ poll: B, act: C, character: B, picks: [0], at: '2026-10-01T09:00:00+00:00' }]);
+    expect(page?.votersMore).toEqual([B]);
+    expect(page?.voterCast.map((c) => c.id)).toEqual([B]);
+    expect(page?.myBallots).toEqual([{ act: C, poll: B, character: B, picks: [], at: '2026-10-01T09:00:00+00:00' }]);
+    const plain = await once('thread_page', DOC).api.threadPage(T, { page: 1 }, 20, []);
+    expect([plain?.polls, plain?.voters, plain?.votersMore, plain?.voterCast, plain?.myBallots]).toEqual([[], [], [], [], []]);
+    const spun = await once('thread_page', { ...DOC, origin: { act: null, plays: [], more: false, moment: null, at: null, cast: [], polls: [poll], voters: [], votersMore: [], myBallots: [] } }).api.threadPage(T, { page: 1 }, 20, []);
+    expect(spun?.origin?.polls).toHaveLength(1);
   });
 
   it('thread_page: maps `under`, `cut` and `kept`, and asks the tallies of the nested replies and the kept plays too', async () => {

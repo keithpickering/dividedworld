@@ -21,6 +21,7 @@
  */
 import { isPost, type Instance, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
+import { countedBallots, lastsHours, pickRefusal, pollCounts, pollDraftProblems, type PollDraft } from '../../rules/polls.ts';
 import { isFixed, rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
@@ -52,7 +53,7 @@ import type {
   Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment, PageOrigin,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
-  SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct,
+  SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct, Ballot, Poll, PollBallotsPage, PollCounts, PollVoter, PollWritten,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -80,7 +81,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled' | 'poll';
 }
 
 export interface Seed {
@@ -101,6 +102,10 @@ export interface Seed {
   /** A thread with its first Act; a null character is The System's, on its board only. */
   thread(board: string, character: Id | null, title: string, body?: string, options?: SeedAct): { thread: Id; act: Id };
   post(thread: Id, character: Id | null, body: string, options?: SeedAct & { quote?: Id }): Id;
+  /** A poll on a post, written by the post's own character dated `at` (else now) and closing at `at` plus `draft.lasts`; returns the poll's Act. A draft the settings refuse is thrown. */
+  poll(post: Id, draft: PollDraft, options?: { readonly at?: number }): Id;
+  /** A ballot of a character's on a poll, as its player, dated `at` (else now); refused in the server's words like any other. */
+  ballot(character: Id, poll: Id, picks: readonly number[], options?: { readonly at?: number }): Id;
   /** An edit of a post by its own character, as that character's player, dated `at` (else now); returns the edit's Act, which is the version the History lists. */
   edit(post: Id, character: Id, body: string, options?: SeedAct): Id;
   /** A reaction, refused in the server's words like any other. */
@@ -500,7 +505,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   holdMove: true, reverseMove: true, reverseCard: true, replaceSuccessor: true, replaceQueuedDescription: true, describeBoard: true, setSlot: true,
   moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
-  seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
+  seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, castBallot: true, closePoll: true, closePollAsAdmin: true, pollBallots: true, spin: true,
   apologize: true, buyCard: true, buyPack: true, openPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true, draw: true, wash: true,
   react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
   acceptConduct: true, reportPost: true, decideReport: true, decide: true,
@@ -811,7 +816,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const publicPayload = (payload: Readonly<Record<string, unknown>>, hidden: boolean, version: Id): Readonly<Record<string, unknown>> =>
     typeof payload['body'] !== 'string' ? payload : hidden || concealingActs.has(version) ? { ...payload, body: null } : { ...payload, body: concealQuotes(payload['body'], hiddenPosts()) };
 
+  /** An Act as a reader sees it: a ballot on a secret poll names no character and no picks, for every reader alike (acts_public, 0381). */
   function publicAct(a: ActRec): Act {
+    const shown = plainAct(a);
+    return a.kind === 'ballot' && a.target !== null && pollOf(a.target)?.payload.secret === true
+      ? { ...shown, character: null, payload: { secret: true }, currentPayload: { secret: true } } : shown;
+  }
+  function plainAct(a: ActRec): Act {
     const latest = a.kind === 'post' ? edits(a).at(-1) : undefined;
     const own = hiddenVersions.has(a.id);
     const cur = latest === undefined ? own : hiddenVersions.has(latest.id);
@@ -1426,8 +1437,113 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return null;
   }
 
-  function post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Answer<Act> {
-    const bad = request({ action: 'post', thread, character, body, quote, ...(framing ? { framing } : {}) });
+  /* ----------------------------------------------------------------------- polls ---- */
+  /* A poll is an Act of kind `poll` on a post; its current poll is the latest on the post unless that is a removal. A ballot is an Act on a poll, a close an Act on a poll: all three take no place in the thread. The counts are `pollCounts`' (rules/polls.ts). */
+  const pollOf = (id: Id): ActRec | undefined => { const a = acts.get(id); return a?.kind === 'poll' && a.payload.removed !== true ? a : undefined; };
+  const byTime = (x: ActRec, y: ActRec) => x.at - y.at || x.order - y.order;
+  const pollsOn = (post: Id): ActRec[] => [...acts.values()].filter((a) => a.kind === 'poll' && a.target === post).sort(byTime);
+  const currentPoll = (post: Id): ActRec | undefined => { const latest = pollsOn(post).at(-1); return latest !== undefined && latest.payload.removed !== true ? latest : undefined; };
+  const closeOf = (poll: Id): ActRec | undefined => [...acts.values()].filter((a) => a.kind === 'poll_close' && a.target === poll).sort(byTime)[0];
+  const pollEnd = (p: ActRec): number => Math.min(Date.parse(String(p.payload.closes_at)), closeOf(p.id)?.at ?? Infinity);
+  const ballotsOn = (poll: Id): ActRec[] => [...acts.values()].filter((a) => a.kind === 'ballot' && a.target === poll).sort(byTime);
+  const asCounted = (b: ActRec) => ({ act: b.id, character: b.character, picks: b.payload.picks as readonly number[], at: iso(b.at) });
+  /** poll_counts: characters counted, the same for every caller. */
+  function countsOf(p: ActRec): PollCounts {
+    const endsAt = iso(pollEnd(p));
+    const { counts, voters } = pollCounts({ options: p.payload.options as readonly unknown[], endsAt }, ballotsOn(p.id).map(asCounted));
+    return { poll: p.id, counts, voters, endsAt, closed: now() >= pollEnd(p) };
+  }
+  /** The live `poll` event: counts, never who. */
+  const sendPoll = (p: ActRec) => {
+    const counts = countsOf(p);
+    send(`thread:${p.thread}`, 'poll', () => { for (const l of [...(threadListeners.get(p.thread) ?? [])]) l.onPoll?.(counts); });
+  };
+  /** The poll Act of a draft, written for the post by its character (poll_written); the draft was read by `decide`, so only the end is made here. */
+  function writePoll(post: ActRec, character: Id, draft: PollDraft): ActRec {
+    const at = stamp ?? now();
+    return write({ character, kind: 'poll', thread: post.thread, target: post.id, at, payload: { question: draft.question, options: draft.options, pick: draft.pick, secret: draft.secret, closes_at: iso(at + lastsHours(draft.lasts)! * 3_600_000) } });
+  }
+  /** What cast_ballot and the closes refuse of a poll alike: not one, replaced or removed, closed. */
+  function pollRefusal(p: ActRec | undefined): Refusal | null {
+    if (p === undefined) return refuse('there is no such poll');
+    if (currentPoll(p.target!)?.id !== p.id) return refuse('that poll was replaced');
+    if (now() >= pollEnd(p)) return refuse('that poll has closed');
+    return null;
+  }
+  const wrote = (rec: ActRec, p: ActRec): Answer<PollWritten> => { sendAct(rec); sendPoll(p); return ok({ act: publicAct(rec), counts: countsOf(p) }); };
+
+  function castBallot(poll: Id, character: Id, picks: readonly number[]): Answer<PollWritten> {
+    const bad = request({ action: 'castBallot', poll, character, picks });
+    if (bad) return bad;
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    const p = pollOf(poll);
+    if (p !== undefined && boards.find((b) => b.id === threads.get(p.thread)!.board)?.isSystem) return refuse(SYSTEM_BOARD);
+    const closed = pollRefusal(p);
+    if (closed) return closed;
+    const n = (p!.payload.options as readonly unknown[]).length;
+    const most = p!.payload.pick as number;
+    if (picks.length > most || picks.some((g) => g < 0 || g >= n) || new Set(picks).size !== picks.length) return refuse(pickRefusal(most));
+    const rec = write({ character, kind: 'ballot', thread: p!.thread, target: p!.id, payload: { picks: [...picks].sort((x, y) => x - y) } });
+    return wrote(rec, p!);
+  }
+  function closePollBy(poll: Id, character: Id | null): Answer<PollWritten> {
+    const p = pollOf(poll);
+    if (p === undefined) return refuse('there is no such poll');
+    if (character !== null && p.character !== character) return refuse('only a poll\'s author can close it');
+    const closed = pollRefusal(p);
+    if (closed) return closed;
+    return wrote(write({ character, kind: 'poll_close', thread: p.thread, target: p.id, payload: { by: character === null ? 'admin' : 'author' } }), p);
+  }
+  function closePoll(poll: Id, character: Id): Answer<PollWritten> {
+    const bad = request({ action: 'closePoll', poll, character });
+    if (bad) return bad;
+    const c = acting(character);
+    return isRefusal(c) ? c : closePollBy(poll, character);
+  }
+  function closePollAsAdmin(poll: Id): Answer<PollWritten> {
+    const bad = request({ action: 'closePollAsAdmin', poll });
+    if (bad) return bad;
+    return adminOnly('closes a poll') ?? closePollBy(poll, null);
+  }
+  /** poll_ballots: a public poll's ballots, the changes included, newest first, 50 a page by the keyset (at, act). */
+  function pollBallots(poll: Id, after?: { readonly at: string; readonly act: Id }): Answer<PollBallotsPage> {
+    if (!me()) return refuse('sign in to read');
+    const p = pollOf(poll);
+    if (p === undefined) return refuse('there is no such poll');
+    if (p.payload.secret === true) return refuse('that poll\'s ballots are secret');
+    const before = after === undefined ? Infinity : Date.parse(after.at);
+    const older = ballotsOn(poll).filter((b) => b.at < before || (b.at === before && after !== undefined && b.id < after.act)).sort((x, y) => byTime(y, x) || (x.id < y.id ? 1 : -1));
+    const page = older.slice(0, 50);
+    const named = core.characters([...new Set(page.map((b) => b.character!))]);
+    return ok({ ballots: page.map((b) => ({ act: b.id, character: named.find((x) => x.id === b.character)!, picks: b.payload.picks as readonly number[], at: iso(b.at) })), more: older.length > 50 });
+  }
+  /**
+   * The polls a set of posts draw, as thread_page reads them (0382): each post's current poll with its counts and close, a public poll's counted ballots with picks (the newest 50) and the polls with more,
+   * and the caller's own counted ballots, a secret one's and a withdrawal's too. `cast` names the voters listed.
+   */
+  function pollParts(posts: readonly Id[]): { polls: Poll[]; voters: PollVoter[]; votersMore: Id[]; myBallots: Ballot[]; cast: Id[] } {
+    const current = [...new Set(posts)].flatMap((post) => currentPoll(post) ?? []).sort(byTime);
+    const polls = current.map((p): Poll => {
+      const k = countsOf(p);
+      const close = closeOf(p.id);
+      return { post: p.target!, act: publicAct(p), counts: k.counts, voters: k.voters, endsAt: k.endsAt, closed: k.closed, close: close === undefined ? null : publicAct(close) };
+    });
+    const open = current.filter((p) => p.payload.secret !== true);
+    const voters = open.flatMap((p) => countedBallots(ballotsOn(p.id).map(asCounted), iso(pollEnd(p))).filter((b) => b.picks.length > 0)
+      .sort((x, y) => Date.parse(y.at) - Date.parse(x.at) || (x.act! < y.act! ? 1 : -1)).slice(0, 50)
+      .map((b): PollVoter => ({ poll: p.id, act: b.act!, character: b.character!, picks: b.picks, at: b.at })));
+    const mine = me()?.id;
+    const myBallots = current.flatMap((p) => countedBallots(ballotsOn(p.id).map(asCounted), iso(pollEnd(p))).filter((b) => characters.get(b.character!)?.owner === mine && mine !== undefined)
+      .map((b): Ballot => ({ act: b.act!, poll: p.id, character: b.character!, picks: b.picks, at: b.at }))).sort((x, y) => Date.parse(x.at) - Date.parse(y.at) || (x.act < y.act ? -1 : 1));
+    return {
+      polls, voters, votersMore: polls.filter((p) => acts.get(p.act.id)!.payload.secret !== true && p.voters > 50).map((p) => p.act.id), myBallots,
+      cast: [...new Set(voters.map((v) => v.character))].sort(),
+    };
+  }
+
+  function post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[], poll?: PollDraft): Answer<Act> {
+    const bad = request({ action: 'post', thread, character, body, quote, ...(framing ? { framing } : {}), ...(poll ? { poll } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1438,13 +1554,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const stopped = stoppedQuote(thread, quote, body);
     if (stopped) return refuse(stopped);
     const written = write({ character, kind: 'post', thread, target: quote, payload: { body } });
+    if (poll) writePoll(written, character, poll);
     sendAct(written);
     writeFramed(body, framing, written);
     return ok(publicAct(written));
   }
 
-  function startThread(boardSlug: string, character: Id, title: string, body: string, framing?: readonly Id[]): Answer<{ thread: ThreadSummary; act: Act }> {
-    const bad = request({ action: 'startThread', board: boardSlug, character, title, body, ...(framing ? { framing } : {}) });
+  function startThread(boardSlug: string, character: Id, title: string, body: string, framing?: readonly Id[], poll?: PollDraft): Answer<{ thread: ThreadSummary; act: Act }> {
+    const bad = request({ action: 'startThread', board: boardSlug, character, title, body, ...(framing ? { framing } : {}), ...(poll ? { poll } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1462,6 +1579,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, null);
     const written = write({ character, kind: 'post', thread: t.id, payload: { body } });
+    if (poll) writePoll(written, character, poll);
     sendThread(t);
     sendAct(written);
     writeFramed(body, framing, written);
@@ -2510,8 +2628,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
-  function edit(target: Id, character: Id, body: string): Answer<Act> {
-    const bad = request({ action: 'edit', post: target, character, body });
+  function edit(target: Id, character: Id, body: string, poll?: PollDraft | { readonly removed: true }): Answer<Act> {
+    const bad = request({ action: 'edit', post: target, character, body, ...(poll ? { poll } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -2519,7 +2637,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!original || original.kind !== 'post' || original.character !== character) return refuse('that is not a post of this character\'s');
     const stopped = stoppedQuote(original.thread, null, body, String(edits(original).at(-1)?.payload.body ?? original.payload.body ?? ''));
     if (stopped) return refuse(stopped);
+    /* edit_post: a poll that has a ballot, or has closed, cannot change; the words still edit (a removal on a post with no poll writes nothing). */
+    const had = poll ? currentPoll(target) : undefined;
+    if (had !== undefined && ballotsOn(had.id).length > 0) return refuse('a poll cannot change once a ballot is cast; you can still close it');
+    if (had !== undefined && now() >= pollEnd(had)) return refuse('a closed poll cannot change');
     write({ character, kind: 'edit', thread: original.thread, target, payload: { body } });
+    if (poll && 'removed' in poll) { if (had !== undefined) write({ character, kind: 'poll', thread: original.thread, target, payload: { removed: true } }); }
+    else if (poll) writePoll(original, character, poll);
     sendAct(original);
     return ok(publicAct(original));
   }
@@ -4229,11 +4353,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return {
           act, plays: [...shown, ...read.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId))], more: all.length > 20, moment,
           at: spot === null ? null : { thread: spot.thread, seq: spot.seq }, cast: core.characters([...new Set(named.filter((c): c is Id => c !== null))].sort()),
+          polls: [], voters: [], votersMore: [], myBallots: [],
         };
+      })();
+      /* A spun poll or ballot: the box draws the poll its post has, with the voters it lists (their faces join the origin's cast). */
+      const originPoll = ((): PageOrigin | null => {
+        const from = origin?.act ?? null;
+        const post = from === null ? undefined : from.kind === 'poll' ? from.targetActId : from.kind === 'ballot' ? acts.get(from.targetActId!)?.target : undefined;
+        if (origin === null || post == null) return origin;
+        const parts = pollParts([post]);
+        const spot = acts.get(post);
+        return { ...origin, at: spot === undefined ? origin.at : { thread: spot.thread, seq: spot.seq! }, cast: [...origin.cast, ...core.characters(parts.cast.filter((c) => !origin.cast.some((k) => k.id === c)))].sort((x, y) => (x.id < y.id ? -1 : 1)), polls: parts.polls, voters: parts.voters, votersMore: parts.votersMore, myBallots: parts.myBallots };
       })();
       const originPlays = origin === null ? [] : origin.plays.filter((a) => a.kind !== 'card_end');
       const wanted = [...played, ...originPlays].filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
       const ids = [...shownActs, ...under.map((u) => u.act), ...played, ...(origin?.act ? [origin.act] : []), ...originPlays].map((a) => a.id);
+      const pagePolls = pollParts(posts.map((a) => a.id));
       const visits = visitsOn(shownActs.filter((a) => a.kind === 'post' || a.kind === 'spin').concat(under.map((u) => u.act)).map((a) => a.id));
       /* A visit's Mod is named on the page (`who` in thread_page, 0108), though it has no post there. */
       const who = [...new Set([...shownActs, ...under.map((u) => u.act), ...played].flatMap((a) => (a.character === null ? [] : [a.character])).concat(visits.map((v) => v.mod)))].sort();
@@ -4248,7 +4383,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         states: core.effectStates(wanted), releases: core.myReleases(wanted), spent: plays.filter((a) => spentPlays().has(a.id)).map((a) => a.id),
         visits,
         tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
-        board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(), origin,
+        board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(), origin: originPoll,
+        polls: pagePolls.polls, voters: pagePolls.voters, votersMore: pagePolls.votersMore, voterCast: core.characters(pagePolls.cast), myBallots: pagePolls.myBallots,
       };
     },
     profilePage(id): ProfilePage | null {
@@ -4616,7 +4752,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     createInvite, reissueInvite,
 
-    startThread, post: lossy(post), edit: lossy(edit), spin: lossy(spin), react, turn, withdrawTurn, unmask, createCharacter, setDebut,
+    startThread, post: lossy(post), edit: lossy(edit), castBallot: lossy(castBallot), closePoll: lossy(closePoll), closePollAsAdmin: lossy(closePollAsAdmin), pollBallots, spin: lossy(spin), react, turn, withdrawTurn, unmask, createCharacter, setDebut,
     setProfile(character, title, signature, pipStyle, pronouns) {
       const c = acting(character);
       if (isRefusal(c)) return c;
@@ -4979,6 +5115,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (character === null) return systemAct(thread, o, body).id;
       const made = accepted(asAt(ownerOf(character), o.at, () => post(thread, character, body, o.quote ?? null)));
       return made.id;
+    },
+    poll(post, draft, o = {}) {
+      const on = acts.get(post);
+      if (on === undefined || on.character === null || !isPost(on.kind)) throw new Error('a poll is on a post of a character');
+      const problems = pollDraftProblems(draft, settings);
+      if (problems.length > 0) throw new Error(`the seed was refused: ${problems[0]}`);
+      return asAt(ownerOf(on.character), o.at, () => writePoll(on, on.character!, draft)).id;
+    },
+    ballot(character, poll, picks, o = {}) {
+      return accepted(asAt(ownerOf(character), o.at, () => castBallot(poll, character, picks))).act.id;
     },
     edit(post, character, body, o = {}) {
       accepted(asAt(ownerOf(character), o.at, () => edit(post, character, body)));

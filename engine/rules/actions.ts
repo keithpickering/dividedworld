@@ -15,6 +15,7 @@
 import type { Instance } from './types.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from './pronouns.ts';
 import { emojiOfKey } from './emoji.ts';
+import { pollDraftProblems, type PollSettings } from './polls.ts';
 import { OLD_VOICE_OFF, REACHES, casterMessage, listed, reachesOf, withheld, type Play, type Reach, type SetConditions } from './cards.ts';
 
 /**
@@ -219,6 +220,26 @@ const flag = (r: Fields, field: string): boolean => {
   return v;
 };
 
+/**
+ * A poll a post, a thread or an edit carries (supabase/migrations/0381_polls.sql): the draft as the database reads it, held to the settings in the words
+ * poll_written says them in (polls.ts). Absent or null is no poll; an edit alone may also send {"removed": true}, which takes a post's poll away.
+ */
+const pollDraft = (r: Fields, settings: PollSettings, { mayRemove = false } = {}): { poll?: unknown } => {
+  const v = r.poll;
+  if (v === undefined || v === null) return {};
+  if (mayRemove && typeof v === 'object' && Object.keys(v).length === 1 && (v as Fields).removed === true) return { poll: { removed: true } };
+  const problems = pollDraftProblems(v, settings);
+  if (problems.length) throw new Refused('poll', problems[0]!);
+  return { poll: v };
+};
+
+/** A ballot's picks: a list of option numbers, which may be empty (a withdrawal). Which are in range, and how many, is cast_ballot's to say. */
+const picksOf = (r: Fields, settings: PollSettings): number[] => {
+  const v = r.picks;
+  if (!Array.isArray(v) || v.length > settings.pollOptionsMax || v.some((x) => typeof x !== 'number' || !Number.isInteger(x))) throw new Refused('picks', 'is a list of option numbers');
+  return v as number[];
+};
+
 /** The drawing a draw or a wash carries: whatever the card's own validator reads, so only its presence is checked here. */
 const drawing = (r: Fields): unknown => {
   if (r.input === undefined || r.input === null) throw new Refused('input', 'is the drawing');
@@ -230,15 +251,15 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   startThread: (r, { settings }) => {
     const board = r.board;
     if (typeof board !== 'string' || !SLUG.test(board)) throw new Refused('board', 'is not a board');
-    return { rpc: 'start_thread', args: { board_slug: board, through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r) } };
+    return { rpc: 'start_thread', args: { board_slug: board, through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r), ...pollDraft(r, settings) } };
   },
   post: (r, { settings }) => ({
     rpc: 'post',
-    args: { in_thread: id(r, 'thread'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength), quoting: optionalId(r, 'quote'), ...framing(r) },
+    args: { in_thread: id(r, 'thread'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength), quoting: optionalId(r, 'quote'), ...framing(r), ...pollDraft(r, settings) },
   }),
   edit: (r, { settings }) => ({
     rpc: 'edit_post',
-    args: { target: id(r, 'post'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength) },
+    args: { target: id(r, 'post'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength), ...pollDraft(r, settings, { mayRemove: true }) },
   }),
   spin: (r, { settings }) => ({
     rpc: 'spin',
@@ -255,6 +276,10 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (typeof kind !== 'string' || !(reactions.some((k) => k.key === kind) || emojiOfKey(kind) !== null)) throw new Refused('kind', `there is no reaction ${JSON.stringify(kind)}`);
     return { rpc: 'react', args: { target: id(r, 'act'), through: id(r, 'character'), reaction: kind } };
   },
+  // A ballot, and the two closes of a poll (0381): the player's own calls, since the database reads the caller. Whose poll, which options and whether it is open are its to say.
+  castBallot: (r, { settings }) => ({ rpc: 'cast_ballot', args: { poll: id(r, 'poll'), through: id(r, 'character'), picks: picksOf(r, settings) } }),
+  closePoll: (r) => ({ rpc: 'close_poll', args: { poll: id(r, 'poll'), through: id(r, 'character') } }),
+  closePollAsAdmin: (r) => ({ rpc: 'close_poll_as_admin', args: { poll: id(r, 'poll') } }),
   turn: (r, instance) => {
     const to = r.class;
     if (typeof to !== 'string' || !instance.classes.some((c) => c.key === to)) throw new Refused('class', `there is no class ${JSON.stringify(to)}`);

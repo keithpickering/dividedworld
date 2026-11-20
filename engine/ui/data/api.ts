@@ -368,7 +368,49 @@ export interface Ballot {
   readonly at: string;
 }
 
-export type { PollDraft } from '../../rules/polls.ts';
+import type { PollDraft } from '../../rules/polls.ts';
+export type { PollDraft };
+
+/** A counted ballot a public poll lists (`voters` in thread_page, 0382): who, which options, when. A secret poll lists none. */
+export interface PollVoter {
+  readonly poll: Id;
+  readonly act: Id;
+  readonly character: Id;
+  readonly picks: readonly number[];
+  readonly at: string;
+}
+
+/** What a ballot or a close answers (`cast_ballot`, `close_poll`, `close_poll_as_admin`, 0381): the Act's projection, which on a secret poll names no one, and the poll's counts as they now stand. */
+export interface PollWritten {
+  readonly act: Act;
+  readonly counts: PollCounts;
+}
+
+/** One ballot of a public poll's record (`poll_ballots`, 0382): the character with its public face, the picked indices (empty for a withdrawal) and when. */
+export interface PollBallot {
+  readonly act: Id;
+  readonly character: Character;
+  readonly picks: readonly number[];
+  readonly at: string;
+}
+
+/** A page of a public poll's ballots, newest first, 50 at a time; `more` says an older page exists, whose cursor is the last ballot's `at` and `act`. */
+export interface PollBallotsPage {
+  readonly ballots: readonly PollBallot[];
+  readonly more: boolean;
+}
+
+/** What a thread's page, and the origin of a spun thread, say of the polls on the posts they draw (0382). Each reads the same for every caller but `myBallots`, the caller's own. */
+export interface PollParts {
+  /** The current poll of each post drawn. */
+  readonly polls: readonly Poll[];
+  /** Each public poll's counted ballots with picks, newest first, 50 at most for each poll; a secret poll lists none. */
+  readonly voters: readonly PollVoter[];
+  /** The polls whose voters are more than the 50 listed: read the rest with `pollBallots`. */
+  readonly votersMore: readonly Id[];
+  /** The caller's own counted ballots on these polls, a secret one's and a withdrawal's too. */
+  readonly myBallots: readonly Ballot[];
+}
 
 /**
  * A draw or a wash on a surface, as every reader sees it (`surface_acts`, 0317): the Act, whose payload holds its `strokes` and its `cells`
@@ -2101,6 +2143,8 @@ export interface ThreadListener {
    * `onAct`, so no screen draws it at the thread's tail first; it takes a number of its own that is left empty where the thread is paged. May come twice: key by id.
    */
   readonly onUnder?: (parent: Id, play: Id, act: Act) => void;
+  /** A poll's numbers after a ballot or a close (the `poll` event): characters counted, never who. Counts only grow in voters until a ballot is changed, so key by poll and keep the latest heard (a closed one is final). */
+  readonly onPoll?: (counts: PollCounts) => void;
   /**
    * The channel is joined and events are heard from now on. Called again each time the channel rejoins after a drop. A screen drawn from a
    * document read before this has missed whatever landed until now, and so has one whose connection dropped: what landed while the
@@ -2309,8 +2353,13 @@ export interface PageOrigin {
   readonly moment: PlayMoment | null;
   /** The post a play is on: the pressed post of a spin at a post, else the cast-from post of a play on a character, else the post a play on a post is on; null for any other origin. */
   readonly at: { readonly thread: Id; readonly seq: number } | null;
-  /** The origin's author, each play's caster and the character a play at character reach is on, with their profiles. */
+  /** The origin's author, each play's caster, the character a play at character reach is on and each voter listed on its poll, with their profiles. */
   readonly cast: readonly Character[];
+  /** The polls on the origin's post (`PollParts`); empty where the origin has none. */
+  readonly polls: readonly Poll[];
+  readonly voters: readonly PollVoter[];
+  readonly votersMore: readonly Id[];
+  readonly myBallots: readonly Ballot[];
 }
 
 /** A thread's page (thread_page, 0094): the page a page number or a seq lands on, with everything it draws. */
@@ -2357,6 +2406,12 @@ export interface ThreadPage {
   readonly unread: number;
   /** The origin of a spun thread, on the page that holds its first Act; null on any other page and on a thread that was not spun (`PageOrigin`). */
   readonly origin: PageOrigin | null;
+  /** The polls on the page's posts (`PollParts`), and the characters its voters name, with their profiles (as `people` is for authors). */
+  readonly polls: readonly Poll[];
+  readonly voters: readonly PollVoter[];
+  readonly votersMore: readonly Id[];
+  readonly voterCast: readonly Character[];
+  readonly myBallots: readonly Ballot[];
 }
 
 /** A character's profile page (profile_page, 0096). */
@@ -2948,9 +3003,19 @@ export interface KayfaApi {
    * Acting, as one of the player's characters. `framing`, on a post, a thread start and a spin, is the ids the body's counterfeit quotes name
    * (`framedIn`, composer/text.ts); each debuted character of another player that the body names is told (the `framed` alert, 0118).
    */
-  startThread(board: string, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
-  post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Promise<Answer<Act>>;
-  edit(post: Id, character: Id, body: string): Promise<Answer<Act>>;
+  startThread(board: string, character: Id, title: string, body: string, framing?: readonly Id[], poll?: PollDraft): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  /** `poll` puts a poll on the post (0381); a draft the settings refuse, or the database does, comes back in its words. */
+  post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[], poll?: PollDraft): Promise<Answer<Act>>;
+  /** `poll` left out keeps the post's poll, a draft sets one (replacing the old, until it has ballots), `{ removed: true }` takes it away. */
+  edit(post: Id, character: Id, body: string, poll?: PollDraft | { readonly removed: true }): Promise<Answer<Act>>;
+  /** One ballot of the character's on a poll: its picks (distinct option numbers, at most the poll's `pick`), or none to withdraw. The latest ballot before the poll's end counts. */
+  castBallot(poll: Id, character: Id, picks: readonly number[]): Promise<Answer<PollWritten>>;
+  /** The poll's own character closes it early. */
+  closePoll(poll: Id, character: Id): Promise<Answer<PollWritten>>;
+  /** An admin closes any poll; the Act has no character and says it is an admin's. */
+  closePollAsAdmin(poll: Id): Promise<Answer<PollWritten>>;
+  /** A public poll's ballots, the changes included, newest first, 50 at a time; `after` is the last ballot of the page held (`at` and `act`). A secret poll is refused. */
+  pollBallots(poll: Id, after?: { readonly at: string; readonly act: Id }): Promise<Answer<PollBallotsPage>>;
   spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[], at?: Id): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
    * A barred character's apology (`apologize`, 0130): the spin of the move that bars it, onto the board it bars, with the bar the one thing skipped, and a waiting

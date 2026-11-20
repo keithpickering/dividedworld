@@ -3440,6 +3440,7 @@ describe('a screen in one call is what the separate calls answer', () => {
       moment: null,
       at: null,
       cast: await fake.characters([boFace]),
+      polls: [], voters: [], votersMore: [], myBallots: [],
     });
     expect(first.origin!.plays.filter((a) => a.kind === 'card')).toHaveLength(20);
     expect(first.origin!.plays.filter((a) => a.kind === 'card_end')).toHaveLength(1);
@@ -5927,5 +5928,158 @@ describe('the welcome pack: one sealed gift per account, opened by the player', 
     expect(await fake.sealedPacks()).toEqual([]);
     expect(await fake.myCards()).toEqual([{ card: 'splat', held: 2 }, { card: 'dud', held: 1 }]);
     expect((await fake.log(null)).packs[0]).toMatchObject({ source: 'bought', openedAt: expect.any(String) });
+  });
+});
+
+describe('polls (0381, 0382)', () => {
+  const draft = { question: 'Which?', options: ['A', 'B', 'C'], pick: 2, secret: false, lasts: { unit: 'day' as const, count: 1 } };
+  const poll = async (secret = false) => {
+    const w = world();
+    const post = must(await w.fake.post(w.thread, w.anaFace, 'Vote.', null, undefined, { ...draft, secret }));
+    const page = (await w.fake.threadPage(w.thread, { page: 1 }, null, []))!;
+    return { ...w, post, id: page.polls[0]!.act.id, page };
+  };
+
+  test('a poll rides on its post, with its counts, and a draft the settings refuse is refused in the words poll_written uses', async () => {
+    const { page, post, anaFace, fake, thread } = await poll();
+    expect(page.polls).toHaveLength(1);
+    expect(page.polls[0]).toMatchObject({ post: post.id, counts: [0, 0, 0], voters: 0, closed: false, close: null });
+    expect(page.polls[0]!.act.kind).toBe('poll');
+    expect(page.polls[0]!.act.seq).toBeNull();
+    expect(await fake.post(thread, anaFace, 'No.', null, undefined, { ...draft, options: ['A', 'A'] })).toEqual(refused('no two options are the same', 'poll'));
+    expect(await fake.post(thread, anaFace, 'No.', null, undefined, { ...draft, lasts: { unit: 'minute', count: 5 } })).toEqual(refused('a poll lasts from 1 hour to 14 days', 'poll'));
+    expect(await fake.startThread('general', anaFace, 'T', 'b', undefined, { ...draft, pick: 9 })).toEqual(refused('a poll lets 1 to 3 options be picked', 'poll'));
+  });
+
+  test('a ballot counts its characters; the latest ballot counts, a withdrawal takes it back, and a refusal names the rule', async () => {
+    const { fake, id, anaFace, anaHeel } = await poll();
+    expect(must(await fake.castBallot(id, anaFace, [2, 0])).counts).toMatchObject({ counts: [1, 0, 1], voters: 1 });
+    fake.clock.advance(1_000);
+    expect(must(await fake.castBallot(id, anaFace, [1])).counts).toMatchObject({ counts: [0, 1, 0], voters: 1 });
+    // Two masks of one player each count.
+    expect(must(await fake.castBallot(id, anaHeel, [1])).counts).toMatchObject({ counts: [0, 2, 0], voters: 2 });
+    fake.clock.advance(1_000);
+    expect(must(await fake.castBallot(id, anaFace, [])).counts).toMatchObject({ counts: [0, 1, 0], voters: 1 });
+    expect(await fake.castBallot(id, anaFace, [0, 1, 2])).toEqual(refused('pick up to 2 options'));
+    expect(await fake.castBallot(id, anaFace, [3])).toEqual(refused('pick up to 2 options'));
+    expect(await fake.castBallot(id, anaFace, [1, 1])).toEqual(refused('pick up to 2 options'));
+    expect(await fake.castBallot(id, anaFace, [0.5])).toMatchObject({ ok: false, field: 'picks' });
+    expect(await fake.castBallot('00000000-0000-4000-8000-00000000ffff', anaFace, [0])).toEqual(refused('there is no such poll'));
+  });
+
+  test('a poll closes by itself at its end, by its author, and by an admin; a closed poll takes no ballot and a second close is refused', async () => {
+    const { fake, id, anaFace } = await poll();
+    must(await fake.castBallot(id, anaFace, [0]));
+    fake.clock.advance(DAY);
+    expect(await fake.castBallot(id, anaFace, [1])).toEqual(refused('that poll has closed'));
+
+    const early = await poll();
+    expect(await early.fake.closePoll(early.id, early.boFace)).toEqual(refused('you do not play that character'));
+    must(await early.fake.castBallot(early.id, early.anaFace, [1]));
+    early.fake.clock.advance(1_000);
+    expect(must(await early.fake.closePoll(early.id, early.anaFace)).counts).toMatchObject({ counts: [0, 1, 0], voters: 1, closed: true });
+    expect(await early.fake.castBallot(early.id, early.anaFace, [0])).toEqual(refused('that poll has closed'));
+    expect(await early.fake.closePoll(early.id, early.anaFace)).toEqual(refused('that poll has closed'));
+    const shown = (await early.fake.threadPage(early.thread, { page: 1 }, null, []))!.polls[0]!;
+    expect(shown.closed).toBe(true);
+    expect(shown.close).toMatchObject({ kind: 'poll_close', payload: { by: 'author' } });
+
+    const adminned = await poll();
+    expect(await adminned.fake.closePollAsAdmin(adminned.id)).toEqual(refused('only an admin closes a poll'));
+    adminned.fake.signInAs(adminned.fake.seed.account('boss', { admin: true }));
+    expect(must(await adminned.fake.closePollAsAdmin(adminned.id)).act).toMatchObject({ kind: 'poll_close', character: null, payload: { by: 'admin' } });
+  });
+
+  test('an author closes only its own poll', async () => {
+    const { fake, id, bo, boFace } = await poll();
+    fake.signInAs(bo);
+    expect(await fake.closePoll(id, boFace)).toEqual(refused('only a poll\'s author can close it'));
+  });
+
+  test('a public poll lists its voters, newest first, with their faces; the caller\'s own ballots come back as myBallots', async () => {
+    const { fake, id, anaFace, anaHeel, boFace, bo, thread } = await poll();
+    must(await fake.castBallot(id, anaFace, [0]));
+    fake.clock.advance(1_000);
+    fake.signInAs(bo);
+    must(await fake.castBallot(id, boFace, [2]));
+    const page = (await fake.threadPage(thread, { page: 1 }, null, []))!;
+    expect(page.voters.map((v) => [v.character, v.picks])).toEqual([[boFace, [2]], [anaFace, [0]]]);
+    expect(page.voterCast.map((c) => c.id).sort()).toEqual([anaFace, boFace].sort());
+    expect(page.myBallots.map((b) => b.character)).toEqual([boFace]);
+    expect(page.votersMore).toEqual([]);
+    const ballots = must(await fake.pollBallots(id));
+    expect(ballots.ballots.map((b) => [b.character.name, b.picks])).toEqual([['Bo Face', [2]], ['Ana Face', [0]]]);
+    expect(ballots.more).toBe(false);
+    expect(anaHeel).toBeDefined();
+  });
+
+  test('a secret poll names no one to anyone: the ballot Act, the event, the page and the record are the same for every caller, and the owner reads their own through myBallots', async () => {
+    const { fake, id, anaFace, bo, ana, thread } = await poll(true);
+    const heard: Act[] = [];
+    const counts: unknown[] = [];
+    fake.subscribeThread(thread, { onAct: (a) => heard.push(a), onPoll: (c) => counts.push(c) });
+    await flush();
+    const cast = must(await fake.castBallot(id, anaFace, [1]));
+    await flush();
+    expect(cast.act).toMatchObject({ kind: 'ballot', character: null, payload: { secret: true }, currentPayload: { secret: true } });
+    expect(JSON.stringify(heard)).not.toContain(anaFace);
+    expect(heard[0]).toEqual(cast.act);
+    expect(counts).toEqual([{ poll: id, counts: [0, 1, 0], voters: 1, endsAt: expect.any(String), closed: false }]);
+    expect(fake.broadcast.log.map((e) => e.event)).toContain('poll');
+    const mine = (await fake.threadPage(thread, { page: 1 }, null, []))!;
+    expect(mine.myBallots).toEqual([{ act: cast.act.id, poll: id, character: anaFace, picks: [1], at: expect.any(String) }]);
+    expect(mine.voters).toEqual([]);
+    fake.signInAs(bo);
+    const theirs = (await fake.threadPage(thread, { page: 1 }, null, []))!;
+    expect(theirs.myBallots).toEqual([]);
+    expect({ ...theirs.polls[0], act: null }).toEqual({ ...mine.polls[0], act: null });
+    expect(theirs.voters).toEqual([]);
+    expect(await fake.pollBallots(id)).toEqual(refused('that poll\'s ballots are secret'));
+    expect((await fake.actsById([cast.act.id]))[0]).toMatchObject({ character: null, payload: { secret: true } });
+    expect(ana).toBeDefined();
+  });
+
+  test('an edit may replace or remove a poll with no ballot; one with a ballot, or a closed one, cannot change, and the words still edit', async () => {
+    const { fake, anaFace, post, id, thread } = await poll();
+    must(await fake.edit(post.id, anaFace, 'Vote again.', { ...draft, question: 'Which one?' }));
+    const replaced = (await fake.threadPage(thread, { page: 1 }, null, []))!.polls[0]!;
+    expect(replaced.act.payload.question).toBe('Which one?');
+    expect(await fake.castBallot(id, anaFace, [0])).toEqual(refused('that poll was replaced'));
+    must(await fake.castBallot(replaced.act.id, anaFace, [0]));
+    expect(await fake.edit(post.id, anaFace, 'Vote once more.', { removed: true })).toEqual(refused('a poll cannot change once a ballot is cast; you can still close it'));
+    must(await fake.edit(post.id, anaFace, 'Words only.'));
+    expect((await fake.threadPage(thread, { page: 1 }, null, []))!.polls).toHaveLength(1);
+    // Closed with a ballot it is still the ballot that says so first; closed with none, it is final all the same.
+    must(await fake.closePoll(replaced.act.id, anaFace));
+    expect(await fake.edit(post.id, anaFace, 'Words only.', draft)).toEqual(refused('a poll cannot change once a ballot is cast; you can still close it'));
+    const bare = await poll();
+    must(await bare.fake.closePoll(bare.id, bare.anaFace));
+    expect(await bare.fake.edit(bare.post.id, bare.anaFace, 'Words only.', draft)).toEqual(refused('a closed poll cannot change'));
+    must(await bare.fake.edit(bare.post.id, bare.anaFace, 'Words only.'));
+  });
+
+  test('a removal takes a post\'s poll away; on a post with none it writes no poll', async () => {
+    const { fake, anaFace, post, thread } = await poll();
+    must(await fake.edit(post.id, anaFace, 'Never mind.', { removed: true }));
+    expect((await fake.threadPage(thread, { page: 1 }, null, []))!.polls).toEqual([]);
+    must(await fake.edit(post.id, anaFace, 'Never mind.', { removed: true }));
+    expect(await fake.edit(post.id, anaFace, 'x'.repeat(51), draft)).toEqual(refused('is longer than 50 characters', 'body'));
+  });
+
+  test('a poll is a place in no thread, and the settlement\'s Acts do not see it', async () => {
+    const { fake, id, anaFace, thread } = await poll();
+    must(await fake.castBallot(id, anaFace, [0]));
+    expect((await fake.thread(thread))?.lastSeq).toBe(2);
+  });
+
+  test('the seed writes a poll and a ballot as their characters do', async () => {
+    const { fake, anaFace, ana, thread } = world();
+    const post = fake.seed.post(thread, anaFace, 'Vote.');
+    const id = fake.seed.poll(post, draft, { at: START });
+    fake.seed.ballot(anaFace, id, [1], { at: START + MINUTE });
+    expect(() => fake.seed.poll(post, { ...draft, options: ['one'] })).toThrow(/a poll has 2 to 10 options/);
+    const page = (await fake.threadPage(thread, { page: 1 }, null, []))!;
+    expect(page.polls[0]).toMatchObject({ counts: [0, 1, 0], endsAt: new Date(START + DAY).toISOString() });
+    expect(ana).toBeDefined();
   });
 });
