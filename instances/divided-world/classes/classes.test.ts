@@ -875,11 +875,23 @@ test('refundAt is nothing before the spark has paid, and the shrugs on a halved 
   assert.equal(refundAt(d, 100 * H, calm(4, 0.5), settings), 10);
   assert.equal(refundAt(d, 100 * H, [{ ...none, boredNegative: 1 }, { ...none, excitedPositive: 1 }], settings), 5);
 });
+test('Outvoted is stamped at the latest member inside the stretch, never after its end', () => {
+  const d = spark([1, 2, 1, 2, 3, 4], { standing: { before: [], now: calm(4) } });
+  assert.equal(outvoted([d], { from: 0, to: 5.5 * H })[0]?.at, 5 * H, 'the sixth post is at 6H, after the stretch closed at 5.5H');
+  assert.equal(outvoted([d], { from: 5.5 * H, to: 5.75 * H })[0]?.at, 5.75 * H, 'no member in the stretch: its end');
+});
+test('Outvoted reads the vote and debateDays from the settings', () => {
+  const d = spark([1, 2, 1, 2, 3, 4], { standing: { before: [], now: calm(4) } });
+  assert.equal(sumOf(outvoted([d], {}, { ...settings, vote: 20 })), 40, 'four calm votes of 20 cost 40, four voices allow 40');
+  const late = spark([1, 2, 1, 2, 3, 4], { standing: { before: [], now: calm(4) }, posts: [1, 2, 1, 2, 3, 4].map((voice, i) => ({ at: i < 5 ? (i + 1) * H : 1.5 * DAY, voice })) });
+  assert.equal(sumOf(outvoted([late], {}, settings)), 20, 'the fourth voice is inside the three days');
+  assert.equal(sumOf(outvoted([late], {}, { ...settings, debateDays: 1 })), 15, 'and outside one day: three voices');
+});
 test('a cushion halves each refund', () => {
   const half = (over: Partial<SparkedDebate>) => ({ ...over, cushioned: 0.5 });
-  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3], half({ standing: { before: [], now: calm(4) } }))])), 7.5);
-  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3, 4], half({ standing: { before: calm(2), now: calm(3) } }))], { from: 24 * H })), 2.5);
-  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3, 4], half({ standing: { before: calm(4), now: [...calm(3), { ...none, excitedPositive: 1 }] } }))], { from: 24 * H })), -2.5);
+  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3], half({ standing: { before: [], now: calm(4) } }))])), 7, 'standing 7.5, floored');
+  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3, 4], half({ standing: { before: calm(2), now: calm(3) } }))], { from: 24 * H })), 2, 'standing 5, then 7.5 floored to 7');
+  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3, 4], half({ standing: { before: calm(4), now: [...calm(3), { ...none, excitedPositive: 1 }] } }))], { from: 24 * H })), -3, 'standing 10, then 7.5 floored to 7');
 });
 
 const cushionCard = { key: 'half', name: 'Half', alignment: 'sweet' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), gimmick: { kind: 'cushion' as const, share: 0.5 } };
@@ -904,9 +916,23 @@ test('settled whole, with a half cushion up when the nods landed: the spark\'s s
   assert.equal(of('tweener.litTheFuse'), 20);
   assert.equal(of('tweener.shrugged'), -20);
   assert.equal(of('card.cushion'), 10);
-  assert.equal(of('tweener.outvoted'), 8, 'a ledger line is whole hundredths: 7.5 rounds up');
+  assert.equal(of('tweener.outvoted'), 7, 'the refund standing is floored to a whole unit: 7.5 gives 7, so the cushion\'s 8 and this 7 do not pass the 15 lost');
   assert.ok(of('tweener.shrugged') + of('card.cushion') + of('tweener.outvoted') <= 0);
 });
+const cushioned = (share: number, nods: number) => {
+  const r = settle({
+    window: { id: 'w1', from: 0, to: 24 * H }, characters: fuseCharacters, quotes: fuseQuotes, reactions: fuseNods.slice(0, nods),
+    acts: [...fuseActs, { id: 'g1', character: 'k', kind: 'card', at: 0.5 * H, thread: 't', target: 'sp', card: 'half', ends: 100 * H }],
+  }, { ...instance, cards: [...instance.cards, { ...cushionCard, gimmick: { kind: 'cushion' as const, share } }] });
+  return (reason: string) => r.entries.filter((e) => e.character === 'tw' && e.reason === reason).reduce((t, e) => t + e.amount, 0);
+};
+for (const nods of [1, 3]) for (const share of [0.3, 0.5, 0.7]) {
+  test(`settled whole: ${nods} nod${nods > 1 ? 's' : ''} under a ${share} cushion, the spark's shrugs, cushion and outvoted never sum above nothing`, () => {
+    const of = cushioned(share, nods);
+    const sum = of('tweener.shrugged') + of('card.cushion') + of('tweener.outvoted');
+    assert.ok(sum <= 0, `shrugged ${of('tweener.shrugged')}, cushion ${of('card.cushion')}, outvoted ${of('tweener.outvoted')} sum to ${sum}`);
+  });
+}
 test('settled whole: two masks of one player and one other player, each back twice, are two voices and pay nothing; estimated by character they are three', () => {
   const characters = [
     { id: 'tw', player: 'pt', classes: [{ class: 'tweener', from: -1 }] },

@@ -72,7 +72,10 @@ export function refundAt(debate: SparkedDebate, upTo: number, standing: readonly
   const paid = paysAt(debate, settings);
   if (paid === null || paid >= upTo) return 0;
   const voices = new Set(debate.posts.filter((p) => p.voice !== 0 && p.at <= upTo && p.at - debate.at < settings.debateDays * DAY).map((p) => p.voice)).size;
-  return (1 - debate.cushioned) * Math.min(shrugLoss(standing, settings), voices * HALF * settings.vote);
+  /* Floored to a whole ledger unit (`settle` rounds each line to a whole unit): a cushion's line rounds up by at most a half, and the floor here
+     gives that back, so a window's cushion, refund and shrugs never sum past the loss. Tidied first, so 10.499999 of float noise is not 10. */
+  const standingNow = (1 - debate.cushioned) * Math.min(shrugLoss(standing, settings), voices * HALF * settings.vote);
+  return Math.floor(Math.round(standingNow * 1e6) / 1e6);
 }
 
 export const tweener: ClassRules = {
@@ -102,7 +105,8 @@ function fuse(input: ClassInput, settings: Settings): Earning[] {
     .sort((x, y) => x.at - y.at || (x.debate.act < y.debate.act ? -1 : x.debate.act > y.debate.act ? 1 : 0));
   const outvoted = input.debates
     .map((d): Earning => {
-      const latest = d.posts[d.posts.length - 1]?.at ?? input.to;
+      const inside = d.posts.filter((p) => p.at <= input.to);
+      const latest = inside[inside.length - 1]?.at ?? input.to;
       return { reason: 'tweener.outvoted', amount: refundAt(d, input.to, d.standing.now, settings) - refundAt(d, input.from, d.standing.before, settings), act: d.act, at: latest >= input.from ? latest : input.to };
     })
     .filter((e) => !nothing(e.amount));
