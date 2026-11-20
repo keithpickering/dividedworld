@@ -471,6 +471,42 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- 5b. The gates post runs: a banned character and a barred one are refused in the words not_banned and not_barred raise (a ban and a bar as 0127-bars-apologies.sql makes them).
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('pl5b-ann'); bob uuid := tests.account('pl5b-bob');
+  a1 uuid := tests.character(ann, 'Pl FiveB Ann'); banned uuid := tests.character(bob, 'Pl FiveB Banned'); barred uuid := tests.character(bob, 'Pl FiveB Barred');
+  t uuid := tests.thread('Pl gates'); gen uuid := (select th.board from threads th where th.id = t);
+  p uuid := tests.post(a1, t, 'Vote.', now() - interval '3 hours');
+  pl uuid := pg_temp.mkpoll(t, p, a1, at => now() - interval '2 hours');
+  bp uuid := tests.post(banned, t, 'A post that earned it.', now() - interval '3 hours');
+  inf uuid; boss uuid; mv uuid; got text; want text;
+begin
+  -- A one-day ban of `banned`.
+  perform set_config('kayfabb.warn_writer', 'on', true);
+  inf := tests.act(null, 'infraction', t, jsonb_build_object('character', banned, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', gen, 'about_act', bp, 'visit_act', null, 'staff', 'pl-boss', 'expires_at', now() + interval '14 days'));
+  perform tests.act(null, 'ban', t, jsonb_build_object('character', banned, 'days', 1, 'until', now() + interval '1 day', 'infraction_act', inf, 'season', 1));
+  perform set_config('kayfabb.warn_writer', '', true);
+  -- A bar of `barred` from the poll's board: a conferred group's move in force, with an expiry.
+  insert into move_kinds (key, structural) values ('conferGroup', false) on conflict (key) do nothing;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Pl Boss', 'pl-boss', 'persona', now()) returning id into boss;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  mv := tests.act(boss, 'move', t, jsonb_build_object('kind', 'conferGroup', 'body', 'Barred.', 'params', jsonb_build_object('character', barred::text, 'group', 'trialMembers', 'board', gen::text), 'expires_at', now() + interval '3 days'));
+  perform set_config('kayfabb.staff_writer', '', true);
+  perform tests.become(bob);
+  got := pg_temp.say(format('select cast_ballot(%L, %L, ''{0}'')', pl, banned));
+  want := format('this character is banned until %s UTC; the ban ends by itself then, and it holds only this character, not your other characters',
+    to_char(date_trunc('minute', banned_until(banned) + interval '59.999999 seconds') at time zone 'UTC', 'YYYY-MM-DD HH24:MI'));
+  if got is distinct from want then raise exception 'a ballot by a banned character: got %, wanted %', got, want; end if;
+  got := pg_temp.say(format('select cast_ballot(%L, %L, ''{0}'')', pl, barred));
+  want := format('Pl FiveB Barred is barred from posting on %s until %s UTC', (select n.name from boards_now n where n.id = gen),
+    to_char(date_trunc('minute', move_expires_at(mv) + interval '59.999999 seconds') at time zone 'UTC', 'YYYY-MM-DD HH24:MI'));
+  if got is distinct from want then raise exception 'a ballot by a barred character: got %, wanted %', got, want; end if;
+  perform tests.unbecome();
+  if pg_temp.polls_on(p) is distinct from 1 or exists (select 1 from acts a where a.kind = 'ballot' and a.target_act_id = pl) then raise exception 'a refused ballot left an Act behind'; end if;
+end $$;
+
 -- ---- 6. What a poll counts ----
 select tests.unbecome();
 do $$
