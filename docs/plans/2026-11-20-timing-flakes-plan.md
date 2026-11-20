@@ -27,10 +27,12 @@ times, where the old bound's test is shown red or slow under the same load with 
 
 Model: inline
 
-- `e2e/hot-box.spec.ts`, `sweepFor(page, ms, story)`: after `ms`, the sweep goes on, checking after each move,
-  until the frames painted since the ladder's last step (`__hbRung`) are 8 or more, or `SETTLE_CAP_MS = 6000`
-  more has passed. It returns `extra`, the milliseconds it swept past `ms` waiting for the ladder (0 when it had settled by then).
-- The cost line (`hot-box cost: …`) adds "and N s past it, waiting for the ladder to settle" when `extra` is over 0.
+- `e2e/hot-box.spec.ts`, `sweepFor(page, ms, story)`: after `ms`, the sweep goes on, checking at the first move past it
+  and then every tenth move, until the frames painted since the ladder's last step (`__hbRung`) are `LADDER_SETTLED` or
+  more (`LADDER_FIRST`, read from `instances/divided-world/ui/hot-box/Effect.tsx` as `FOG_BUDGET_MS` is), or
+  `SETTLE_CAP_MS = 6000` more has passed. The figures returned are the ones that check read, in one round trip. It returns `waited` (null when the ladder had settled by `ms`; otherwise how long it waited and whether the cap ran out).
+- The cost line (`hot-box cost: …`) adds "and N s past it, waiting for the ladder to settle" when it waited, and ", which it
+  had not by the cap" when the cap ran out.
 - The assertions are unchanged.
 
 Tests first: with the 4x sweep cut to 1 s (an environment override used for the run only, not committed; 400 ms is too short for the painter to run the 10 frames asserted first), the case

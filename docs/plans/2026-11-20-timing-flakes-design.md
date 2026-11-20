@@ -50,10 +50,14 @@ did fit; the test had no frames to judge it on.
 **Alternatives weighed.**
 - *A longer fixed sweep.* Makes a late step rarer, never impossible; costs every run the extra seconds. Not chosen.
 - *Accept fewer than 8 frames.* A mean of one frame is no mean. Not chosen.
-- *Sweep until settled, with a cap (chosen).* After the fixed sweep, the pointer keeps sweeping until 8 frames have been
-  painted at the ladder's last rung, or a cap of 6 s more. The ladder can step at most `FOG_LEVEL_MOST` (4) times and
-  each step waits 8 frames, so a ladder that is settling settles well inside the cap; one that never does fails the
-  same assertion it fails today. The budget, the throttle and the first 6 s are unchanged. The extra time the sweep took
+- *Sweep until settled, with a cap (chosen).* After the fixed sweep, the pointer keeps sweeping until 8 frames
+  (`LADDER_FIRST`, read from the effect's source) have been painted at the ladder's last rung, or a cap of 6 s more. The
+  ladder can step at most `FOG_LEVEL_MOST` (4) times and each step comes after at least 8 frames at the rung before, so
+  a ladder that is settling settles well inside the cap; one that never does fails the same assertion it fails today.
+  The figures judged are the ones the check that ended the sweep read, in the same round trip: the ladder judges a
+  rolling mean on every frame, so a step it took between that check and a later read would empty the rung again. The
+  check is a round trip to the page, so past the sweep's length it runs every tenth pointer move (about a second at 4x),
+  not every move. The budget, the throttle and the first 6 s are unchanged. The extra time the sweep took
   is written in the run's cost line, so a run that needed it says so.
 
 ## Open
