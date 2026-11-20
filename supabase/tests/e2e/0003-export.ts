@@ -23,6 +23,11 @@ const migrations = path.join(root, 'supabase/migrations');
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
 const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'play_reach', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
 
+/** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
+const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
+const BOB_BALLOTS = 'Exported closed poll?:Exported B:[0],Exported secret poll?:Exported B:[0],Exported closed poll?:Exported B:[1, 2]';
+const ANN_BALLOTS = 'Exported secret poll?:Exported A:[1]';
+
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
@@ -550,6 +555,20 @@ test('an instance exported and imported into a fresh database is the same instan
         perform donate(bob, b, dplay, 25);
         perform donate(ann, a, dplay, 10);
       end;
+      -- Polls (0388): a post whose poll was replaced by a second, a ballot of Bob's mask, the same mask's changed ballot and the author's close; and a secret poll on another post with a ballot from each of Bob's and Ann's masks.
+      -- Each Act is written at a time of its own (a transaction has one now(), and a ballot counts when it is created before the poll's end), as supabase/tests/0388-polls.sql writes them.
+      declare poll_post uuid := tests.post(a, t, 'A post that carries a poll.', now() - interval '6 hours'); secret_post uuid := tests.post(a, t, 'A post that carries a secret poll.', now() - interval '6 hours');
+              replaced uuid; closed uuid; secret uuid;
+      begin
+        replaced := tests.act(a, 'poll', t, '{"question": "Exported replaced poll?", "options": ["One", "Two"], "pick": 1, "secret": false, "closes_at": "2999-01-01T00:00:00Z"}', poll_post, now() - interval '5 hours');
+        closed := tests.act(a, 'poll', t, '{"question": "Exported closed poll?", "options": ["One", "Two", "Three"], "pick": 2, "secret": false, "closes_at": "2999-01-01T00:00:00Z"}', poll_post, now() - interval '4 hours');
+        perform tests.act(b, 'ballot', t, '{"picks": [0]}', closed, now() - interval '3 hours');
+        perform tests.act(b, 'ballot', t, '{"picks": [1, 2]}', closed, now() - interval '2 hours');
+        perform tests.act(a, 'poll_close', t, '{"by": "author"}', closed, now() - interval '1 hour');
+        secret := tests.act(a, 'poll', t, '{"question": "Exported secret poll?", "options": ["One", "Two"], "pick": 1, "secret": true, "closes_at": "2999-01-01T00:00:00Z"}', secret_post, now() - interval '5 hours');
+        perform tests.act(b, 'ballot', t, '{"picks": [0]}', secret, now() - interval '150 minutes');
+        perform tests.act(a, 'ballot', t, '{"picks": [1]}', secret, now() - interval '2 hours');
+      end;
     end $$;
     -- A table holding what the instance's own do not yet: a type whose name has a comma, an
     -- array, an astral character. Made here and in the fresh database alike.
@@ -842,6 +861,15 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.equal(postEnds(fresh.toString()), postEnds(from), 'the post earn\'s ends are the same in the imported instance');
     // A share of the skim ledger row carries across, and its owner reads the card it was paid by through my_ledger_shares (0290).
     const skimShare = (url: string) => psqlOn(url, `begin; select set_config('request.jwt.claims', jsonb_build_object('sub', (select id from auth.users where email = 'exp-ann@test.invalid'), 'role', 'authenticated')::text, true); set local role authenticated; select string_agg(coalesce(to_jsonb(s) ->> 'card', '-') || ':' || s.amount, ',' order by s.amount) from my_ledger_shares s where s.reason = 'card.skim'; rollback;`).split('\n').pop();
+    // Polls (0388): the polls' counts and each player's own ballots (a secret one's character and picks too) are the same after the round trip as in the fixture, and are what the fixture wrote.
+    const pollCounts = (url: string) => psqlOn(url, `select string_agg(p.payload ->> 'question' || ':' || c.counts::text || ':' || c.voters || ':' || c.closed, ',' order by p.payload ->> 'question') from poll_counts c join acts p on p.id = c.poll where p.payload ->> 'question' like 'Exported %'`);
+    const ballotsOf = (url: string, who: string) => psqlOn(url, `begin; select set_config('request.jwt.claims', jsonb_build_object('sub', (select id from auth.users where email = '${who}@test.invalid'), 'role', 'authenticated')::text, true); set local role authenticated; create temp table mine as select b.poll, b.character, b.picks, b.created_at from my_ballots b; reset role; select coalesce(string_agg(q.payload ->> 'question' || ':' || (select c.name from characters c where c.id = b.character) || ':' || b.picks::text, ',' order by b.created_at), '') from mine b join acts q on q.id = b.poll; rollback;`).split('\n').pop();
+    assert.equal(pollCounts(from), POLL_COUNTS, 'the fixture holds a replaced poll, a closed one with a changed ballot, and a secret one');
+    assert.equal(ballotsOf(from, 'exp-bob'), BOB_BALLOTS, 'Bob reads his three ballots, the changed one and the secret one included');
+    assert.equal(ballotsOf(from, 'exp-ann'), ANN_BALLOTS, 'Ann reads her own secret ballot and not Bob\'s');
+    assert.equal(pollCounts(fresh.toString()), pollCounts(from), 'the polls\' counts are the same after the round trip');
+    assert.equal(ballotsOf(fresh.toString(), 'exp-bob'), ballotsOf(from, 'exp-bob'), 'Bob\'s ballots are the same after the round trip');
+    assert.equal(ballotsOf(fresh.toString(), 'exp-ann'), ballotsOf(from, 'exp-ann'), 'Ann\'s ballots are the same after the round trip');
     assert.equal(skimShare(from), 'expskim:7', 'the skim share reads its card in the fixture');
     assert.equal(skimShare(fresh.toString()), 'expskim:7', 'the skim share reads its card after the round trip');
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
