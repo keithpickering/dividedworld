@@ -10,7 +10,7 @@ import { expect, test, type Page } from '@playwright/test';
 const STORY = (name: string) => `/?fixture=boards&story=boards-11-autocorrect--${name}`;
 /* The card's settings as the Effect defaults them (Effect.tsx DEFAULTS; autocorrect.pace, pickMs). */
 const PACE = 90;
-const PICK_MS = 450;
+const PICK_MS = 1000;
 
 const open = async (page: Page, name: string, size: { width: number; height: number }, ready = '[data-kb-ac-piece]') => {
   await page.setViewportSize(size);
