@@ -87,7 +87,12 @@ test('Face is unmoved by the quadrants it does not read', () => {
 
 /* ---- Heel ---- */
 test('Heel earns from excited-negative reactions (heat) on its own posts and cards', () => {
-  assert.equal(total(heel, input({ received: [got('excitedNegative'), got('excitedNegative', 1, 'card', 'k1')] })), 20);
+  assert.equal(total(heel, input({ received: [got('excitedNegative'), got('excitedNegative', 1, 'card', 'k1')] })), 40, 'two votes of heat, each paying two votes\' worth');
+});
+test('a Heel\'s heat pays double and its shrug costs one: one heat and one calm vote net 2 * vote - vote', () => {
+  assert.equal(total(heel, input({ received: [got('excitedNegative'), got('calmPositive')] })), 2 * settings.vote - settings.vote);
+  const tuned = withOverrides(settings, { economy: { 'heel.heatVotes': 1.5 } });
+  assert.equal(heel.earn(input({ received: [got('excitedNegative')] }), tuned).find((e) => e.reason === 'heel.drewHeat')?.amount, 15);
 });
 test('Heel earns from a Salty card that outdraws the post it landed on', () => {
   assert.equal(total(heel, input({ cardsPlayed: [card({ votes: 3, targetVotes: 1 })] })), 20);
@@ -159,7 +164,12 @@ test('Lurker\'s weakness: each post beyond three in a window', () => {
 /* ---- Jabroni ---- */
 const landed = (alignment: 'sweet' | 'salty' | 'pepperoni', readsAs = alignment): LandedCard => ({ act: 'k1', card: 'x', alignment, readsAs, at: 5, on: 'p1' });
 test('Jabroni earns from bored-negative reactions (the groan) on its own posts and cards', () => {
-  assert.equal(total(jabroni, input({ received: [got('boredNegative'), got('boredNegative', 0.5, 'card', 'k1')] })), 15);
+  assert.equal(total(jabroni, input({ received: [got('boredNegative'), got('boredNegative', 0.5, 'card', 'k1')] })), 30, 'a vote and a half of groan, each paying two votes\' worth');
+});
+test('a Jabroni\'s groan pays double and being taken sincerely costs one: one groan and one hype vote net 2 * vote - vote', () => {
+  assert.equal(total(jabroni, input({ received: [got('boredNegative'), got('excitedPositive')] })), 2 * settings.vote - settings.vote);
+  const tuned = withOverrides(settings, { economy: { 'jabroni.groanVotes': 1.5 } });
+  assert.equal(jabroni.earn(input({ received: [got('boredNegative')] }), tuned).find((e) => e.reason === 'jabroni.drewTheGroan')?.amount, 15);
 });
 test('Jabroni earns from Salty cards landing on its posts (selling the L)', () => {
   assert.equal(total(jabroni, input({ cardsLanded: [landed('salty'), landed('salty')] })), 40);
@@ -250,7 +260,7 @@ const sum = (s: ReturnType<typeof settle>, character: string) => s.entries.filte
 test('reactions to a card count for the card\'s player, under their class', () => {
   const r = settle(board(), world);
   assert.equal(sum(r, 'lu'), 20, 'the Lurker: two votes on its card; its tomato on p1, alone there, calls nothing');
-  assert.equal(sum(r, 'he'), 10, 'the Heel: heat from the Lurker\'s tomato, nothing from the card\'s reactions');
+  assert.equal(sum(r, 'he'), 20, 'the Heel: heat from the Lurker\'s tomato, paid two votes\' worth, nothing from the card\'s reactions');
 });
 
 /* A Lurker's call needs a crowd (the plan's Task E; the owner's answer 15, on #4). */
@@ -342,7 +352,7 @@ test('reactions to a card count for the card\'s player under whichever class the
   assert.deepEqual(asHeel.entries.filter((e) => e.character === 'lu').map((e) => [e.reason, e.amount]), [['heel.stoleThunder', 20]]);
   const b = board('heel');
   const heated: SettlementInput = { ...b, reactions: [...b.reactions, { act: 'k1', player: 'pf', character: 'fa', kind: 'tomato', at: 5 * H }] };
-  assert.equal(sum(settle(heated, world), 'lu'), 25, 'and the Face\'s player\'s tomato on the card is half their vote, of heat');
+  assert.equal(sum(settle(heated, world), 'lu'), 30, 'and the Face\'s player\'s tomato on the card is half their vote, of heat, paid two votes\' worth');
 });
 
 test('a Lurker\'s spun thread is not a post', () => {
