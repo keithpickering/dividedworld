@@ -119,14 +119,16 @@ test('a run settles the next window: reads its input, runs the instance\'s class
   // With no sender, the outbox is not even claimed: a claim nobody sends would hold the rows for its lease (a run that sends comes after).
   const apply = calls[4]!.args;
   assert.deepEqual(apply.entries, [
-    // Heat: Cat's, Eve's and Fay's whole votes and half of Dee's; a shrug: the other half of Dee's.
-    { player: 'bob', character: 'he', reason: 'heel.drewHeat', amount: 35 },
+    // Heat: Cat's, Eve's and Fay's whole votes and half of Dee's, each paying the Heel two votes' worth (heel.heatVotes); a shrug: the other half of Dee's.
+    { player: 'bob', character: 'he', reason: 'heel.drewHeat', amount: 70 },
     { player: 'bob', character: 'he', reason: 'heel.shrugged', amount: -5 },
     // Dee was second to react; with Fay, three other players have, and without Dee the post
     // leans excited-negative: her heat was an early call.
     { player: 'dee', character: 'de', reason: 'lurker.calledIt', amount: 5 },
+    // The other half of Dee's early vote was the shrug: the post did not end up calm, so that call missed and costs what a hit pays, by its share.
+    { player: 'dee', character: 'de', reason: 'lurker.misread', amount: -5 },
   ]);
-  assert.deepEqual(apply.class_totals, { heel: 30, lurker: 5 });
+  assert.deepEqual(apply.class_totals, { heel: 65, lurker: 0 });
   assert.equal(apply.window_start, new Date(FROM).toISOString());
 });
 
@@ -144,7 +146,7 @@ test('the call to apply_settlement carries each entry\'s shares, which add up to
     assert.equal(mine.reduce((t, s) => t + s.amount, 0), e.amount, `${e.reason}'s shares add up to it`);
   }
   // The heat is on p1, the post, in the quadrant the estimate valued.
-  assert.deepEqual(shares.filter((s) => s.reason === 'heel.drewHeat').map((s) => [s.act, s.quadrant, s.amount]), [['p1', 'excitedNegative', 35]]);
+  assert.deepEqual(shares.filter((s) => s.reason === 'heel.drewHeat').map((s) => [s.act, s.quadrant, s.amount]), [['p1', 'excitedNegative', 70]]);
 });
 
 test('the call to apply_settlement carries each player\'s crowd pay as the Acts alone, never an amount (crowd pay, section 5)', async () => {
@@ -162,7 +164,7 @@ test('the settings rows reach the settlement: an admin\'s tuning of a vote or a 
   const { db, calls } = fakeDb(day, { vote: 20, economy: { ...instance.settings.economy, 'lurker.earlyMatch': 40 }, copy: { announcementsThreadTitle: 'x' } });
   await runSettlement(db, instance, new Date(TO).toISOString());
   const entries = calls.find((c) => c.fn === 'apply_settlement')!.args.entries as { reason: string; amount: number }[];
-  assert.equal(entries.find((e) => e.reason === 'heel.drewHeat')?.amount, 70, 'three and a half votes of heat at 20 each');
+  assert.equal(entries.find((e) => e.reason === 'heel.drewHeat')?.amount, 140, 'three and a half votes of heat, two votes\' worth each, at 20 a vote');
   assert.equal(entries.find((e) => e.reason === 'lurker.calledIt')?.amount, 20);
 });
 
