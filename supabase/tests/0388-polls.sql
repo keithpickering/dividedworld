@@ -1,4 +1,4 @@
--- Polls (supabase/migrations/0381_polls.sql; docs/plans/2026-11-20-polls-design.md; plan docs/plans/2026-11-20-polls-plan.md, Task 1; models 0304-post-veils.sql, 0321-veil-cover.sql and 0378-target-lean.sql).
+-- Polls (supabase/migrations/0388_polls.sql; docs/plans/2026-11-20-polls-design.md; plan docs/plans/2026-11-20-polls-plan.md, Task 1; models 0304-post-veils.sql, 0321-veil-cover.sql and 0378-target-lean.sql).
 --
 -- The kinds, the writes and the guards. Every claim is a `raise exception`; a refusal is held to its one sentence. The cards and rows are this file's own (pl...).
 --

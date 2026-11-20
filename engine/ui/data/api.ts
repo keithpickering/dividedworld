@@ -337,10 +337,10 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   | 'donation'
   /* A surface's layer (0317): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
   | 'draw' | 'wash'
-  /* A poll (0381): a poll on a post, a ballot on a poll, and a close of a poll. Acts of the post's thread, no place in the thread (`seq` null). */
+  /* A poll (0388): a poll on a post, a ballot on a poll, and a close of a poll. Acts of the post's thread, no place in the thread (`seq` null). */
   | 'poll' | 'ballot' | 'poll_close';
 
-/** A poll as the page draws it (`thread_page`'s `polls`, 0382): the poll's Act, its counts for each option, how many characters voted, when it ends, whether it has, and its close (an Act of kind `poll_close`) if one was written. */
+/** A poll as the page draws it (`thread_page`'s `polls`, 0389): the poll's Act, its counts for each option, how many characters voted, when it ends, whether it has, and its close (an Act of kind `poll_close`) if one was written. */
 export interface Poll {
   /** The post (or spin) the poll is on. */
   readonly post: Id;
@@ -352,7 +352,7 @@ export interface Poll {
   readonly close: Act | null;
 }
 
-/** The live counts of a poll (the `poll` event, 0382's `poll_counts`): the same for every caller. */
+/** The live counts of a poll (the `poll` event, 0389's `poll_counts`): the same for every caller. */
 export interface PollCounts {
   readonly poll: Id;
   readonly counts: readonly number[];
@@ -386,7 +386,7 @@ export function pollHeard(apply: (e: PollEvent) => void): (e: PollEvent) => void
   };
 }
 
-/** A ballot of the caller's own (`my_ballots`, 0381): the poll it is on, its character, the picked indices (empty for a withdrawal) and when. */
+/** A ballot of the caller's own (`my_ballots`, 0388): the poll it is on, its character, the picked indices (empty for a withdrawal) and when. */
 export interface Ballot {
   readonly act: Id;
   readonly poll: Id;
@@ -398,7 +398,7 @@ export interface Ballot {
 import type { PollDraft } from '../../rules/polls.ts';
 export type { PollDraft };
 
-/** A counted ballot a public poll lists (`voters` in thread_page, 0382): who, which options, when. A secret poll lists none. */
+/** A counted ballot a public poll lists (`voters` in thread_page, 0389): who, which options, when. A secret poll lists none. */
 export interface PollVoter {
   readonly poll: Id;
   readonly act: Id;
@@ -407,13 +407,13 @@ export interface PollVoter {
   readonly at: string;
 }
 
-/** What a ballot or a close answers (`cast_ballot`, `close_poll`, `close_poll_as_admin`, 0381): the Act's projection, which on a secret poll names no one, and the poll's counts as they now stand. */
+/** What a ballot or a close answers (`cast_ballot`, `close_poll`, `close_poll_as_admin`, 0388): the Act's projection, which on a secret poll names no one, and the poll's counts as they now stand. */
 export interface PollWritten {
   readonly act: Act;
   readonly counts: PollCounts;
 }
 
-/** One ballot of a public poll's record (`poll_ballots`, 0382): the character with its public face, the picked indices (empty for a withdrawal) and when. */
+/** One ballot of a public poll's record (`poll_ballots`, 0389): the character with its public face, the picked indices (empty for a withdrawal) and when. */
 export interface PollBallot {
   readonly act: Id;
   readonly character: Character;
@@ -427,7 +427,7 @@ export interface PollBallotsPage {
   readonly more: boolean;
 }
 
-/** What a thread's page, and the origin of a spun thread, say of the polls on the posts they draw (0382). Each reads the same for every caller but `myBallots`, the caller's own. */
+/** What a thread's page, and the origin of a spun thread, say of the polls on the posts they draw (0389). Each reads the same for every caller but `myBallots`, the caller's own. */
 export interface PollParts {
   /** The current poll of each post drawn. */
   readonly polls: readonly Poll[];
@@ -3045,7 +3045,7 @@ export interface KayfaApi {
    * (`framedIn`, composer/text.ts); each debuted character of another player that the body names is told (the `framed` alert, 0118).
    */
   startThread(board: string, character: Id, title: string, body: string, framing?: readonly Id[], poll?: PollDraft): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
-  /** `poll` puts a poll on the post (0381); a draft the settings refuse, or the database does, comes back in its words. */
+  /** `poll` puts a poll on the post (0388); a draft the settings refuse, or the database does, comes back in its words. */
   post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[], poll?: PollDraft): Promise<Answer<Act>>;
   /** `poll` left out keeps the post's poll, a draft sets one (replacing the old, until it has ballots), `{ removed: true }` takes it away. */
   edit(post: Id, character: Id, body: string, poll?: PollDraft | { readonly removed: true }): Promise<Answer<Act>>;

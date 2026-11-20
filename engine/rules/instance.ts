@@ -284,7 +284,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   inviteLifetime: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
   editGrace: (v) => (isSpan(v, GRACE_UNITS) ? null : 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000'),
   postMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
-  // As SQL's settings_held holds them (0381): a poll has at least two options, and a span here may count hours.
+  // As SQL's settings_held holds them (0388): a poll has at least two options, and a span here may count hours.
   pollOptionsMax: whole(2, 'options', 100),
   pollQuestionMax: whole(1, 'characters'),
   pollOptionMax: whole(1, 'characters'),

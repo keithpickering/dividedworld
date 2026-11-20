@@ -1,4 +1,4 @@
--- The poll reads (supabase/migrations/0382_poll_reads.sql; docs/plans/2026-11-20-polls-design.md; plan docs/plans/2026-11-20-polls-plan.md, Task 2; models 0371-thread-page-origin.sql and 0375-spun-thread-reads.sql).
+-- The poll reads (supabase/migrations/0389_poll_reads.sql; docs/plans/2026-11-20-polls-design.md; plan docs/plans/2026-11-20-polls-plan.md, Task 2; models 0371-thread-page-origin.sql and 0375-spun-thread-reads.sql).
 --
 -- What the screens read of a poll. Every claim is a `raise exception`. The rows are this file's own (pr...); a poll and its ballots are written as the writers leave them (the act helpers), at times of the test's choosing.
 --

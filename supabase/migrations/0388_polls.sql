@@ -9,7 +9,7 @@
 --   1. the kinds        acts_kind_check, acts_seq_check, acts_take_seq (each copied from its latest definition, 0317) gain the three; acts_character_null (0092) lets a poll_close of an admin's have no character.
 --   2. the payloads     acts_poll_payload, acts_ballot_payload, acts_poll_close_payload, with builtins alone (jsonpath), so a direct writer meets no function it may not run. Lengths and counts that depend on settings are the writers'.
 --   3. indexes          acts_ballots (a poll's ballots by character, newest first: the counted ballot, the voter list), acts_polls (a post's polls, newest first: the current poll by key), acts_one_poll_close (a poll has one close).
---   4. the settings     pollOptionsMax, pollQuestionMax, pollOptionMax, pollLastsMin, pollLastsMax, held where written (settings_held, copied whole from 0377); engine/rules/instance.ts and 0079-settings-held.sql hold the same.
+--   4. the settings     pollOptionsMax, pollQuestionMax, pollOptionMax, pollLastsMin, pollLastsMax, held where written (settings_held, copied whole from 0383); engine/rules/instance.ts and 0079-settings-held.sql hold the same.
 --   5. acts_well_formed (copied whole from 0374) holds each Act to its target: a poll to a post_kind Act by the same character in the same thread, a ballot and a close to a poll in the same thread, an author's close to the poll's own character.
 --   6. the writers      poll_written (internal), latest_poll and ballot_secret (a public fact of a poll, for the readers of acts_public); span_words (0055) says a span in a refusal; post, start_thread and edit_post gain a last parameter, `poll jsonb default null` (the old signatures are dropped, so no call is ambiguous);
 --                       cast_ballot(poll, through, picks), close_poll(poll, through), close_poll_as_admin(poll), granted to authenticated. A draft is {question, options, pick, secret, lasts}; `lasts` is an interval string
@@ -47,7 +47,7 @@
 --
 -- Lock order: POST, THEN visits_open, THEN CHARACTER (0357's header), in each function below that takes more than one. edit_post takes the post `for no key update` before it checks anything when it sets or removes a poll, and cast_ballot and
 -- the closes take the poll's post `for share` before they read the post's current poll or check the character, so an edit and a ballot meet at the post's row and never hold one row each and wait on the other: whichever
--- commits second is refused (a ballot on the replaced poll, or an edit of a poll that has a ballot), never a ballot that counts on a replaced poll (supabase/tests/0381-polls.sql, section 1). A close also takes the poll's own row
+-- commits second is refused (a ballot on the replaced poll, or an edit of a poll that has a ballot), never a ballot that counts on a replaced poll (supabase/tests/0388-polls.sql, section 1). A close also takes the poll's own row
 -- `for no key update`, which a ballot's foreign key (`for key share`) does not conflict with, so two closes are laid one at a time and the second is refused. No function here takes a character's row; the veil's advisory lock
 -- (veil_cover_lock) is taken by the triggers after every row lock, as 0371 has it.
 --
@@ -110,8 +110,8 @@ create index acts_polls on acts (target_act_id, created_at desc, id desc) where 
 create unique index acts_one_poll_close on acts (target_act_id) where kind = 'poll_close';
 
 -- ===================================================================================== 4. the settings ====
--- settings_held (0377), also holding the five poll settings: the most options a poll has (2 to 100), the longest question and option (characters, at least 1), and the least and most a poll may last (a span: a unit of hour, day, week or month
--- and a whole count from 1 to 1000; an hour is allowed here as a card's `lasts` allows it). Everything else as 0377 wrote it. engine/rules/instance.ts (SETTINGS) holds the same, and 0079-settings-held.sql lists a poison at each edge.
+-- settings_held (0383), also holding the five poll settings: the most options a poll has (2 to 100), the longest question and option (characters, at least 1), and the least and most a poll may last (a span: a unit of hour, day, week or month
+-- and a whole count from 1 to 1000; an hour is allowed here as a card's `lasts` allows it). Everything else as 0383 wrote it (the crowd pay's two keys included). engine/rules/instance.ts (SETTINGS) holds the same, and 0079-settings-held.sql lists a poison at each edge.
 create or replace function public.settings_held()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -131,6 +131,8 @@ begin
     when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and setting_positive(v) and (v #>> '{}')::numeric <= 1, false)
       then 'a fraction above 0 and at most 1' end
     when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
+    when 'crowdPayEach' then case when not setting_whole(v, 0) then 'a whole number of hundredths, at least 0' end
+    when 'crowdPayMost' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
     when 'charactersPerPlayer' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
     when 'settlementCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
     when 'viewCountCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
@@ -248,6 +250,7 @@ begin
   if why is not null then raise exception '% is %', new.key, why using errcode = '23514'; end if;
   return new;
 end $function$;
+revoke execute on function settings_held() from public, anon, authenticated;
 
 -- ===================================================================================== 5. acts_well_formed ====
 -- acts_well_formed (0374), holding a poll to a post_kind Act by the same character in the same thread, a ballot and a close to a poll in the same thread, and an author's close to the poll's own character (an admin's has no character:

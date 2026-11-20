@@ -1,6 +1,6 @@
 -- Polls: the reads (docs/plans/2026-11-20-polls-design.md; plan docs/plans/2026-11-20-polls-plan.md, Task 2; models 0375_spun_thread_reads.sql, 0372_origin_in_page.sql and 0377_sealed_packs.sql).
 --
--- 0381 wrote the kinds, the writes and the guards. This reads them back, in the screens' own reads, and changes nothing 0381 wrote. Each function and view below is copied whole from its latest definition (named in the comment above it), changing only what is named.
+-- 0388 wrote the kinds, the writes and the guards. This reads them back, in the screens' own reads, and changes nothing 0388 wrote. Each function and view below is copied whole from its latest definition (named in the comment above it), changing only what is named.
 --
 --   1. poll_ballots    (poll, before, before_id): a public poll's every ballot, the changes included, newest first, 50 at a time paged by the keyset (at, act) of the last one, each with its character's public name and avatar; it refuses a secret poll in one sentence. And my_poll_closes, an
 --                       owner-rights view of an admin's closes of the polls the caller's characters wrote (as my_ballots is the caller's own ballots), which the log reads: the poll's character through acts_public may be the veil's stand-in.
@@ -905,7 +905,7 @@ revoke execute on function public.thread_page(uuid, integer, integer, integer, t
 grant execute on function public.thread_page(uuid, integer, integer, integer, text[]) to authenticated, service_role;
 
 -- ===================================================================================== 4. log_page ====
--- log_page (0377_sealed_packs.sql), also holding the caller's own ballots and an admin's closes of the caller's polls as the sources `ballots` and `pollCloses`. Everything else as 0377 wrote it.
+-- log_page (0385_crowd_log.sql), also holding the caller's own ballots and an admin's closes of the caller's polls as the sources `ballots` and `pollCloses`. Everything else as 0385 wrote it (the crowd pay's source included).
 create or replace function public.log_page(in_before timestamp with time zone)
  returns jsonb
  language plpgsql
@@ -1219,6 +1219,20 @@ begin
             FROM my_ledger_shares s
            WHERE (s.settlement IN ( SELECT x.settlement
                     FROM lg x))
+         ), cp AS MATERIALIZED (
+          -- The caller's own crowd rows for the settlements the wallet rows read name, with each window; a row of another player's is in no one's view (my_crowd_paid).
+          -- Row bound: the wallet rows read are at most 200 settlements, and a settlement pays one player at most its `most` Acts (the cap recorded when it was paid), so at most 200 times `most` rows.
+          -- `most` is that recorded cap, so the log says "the most one settlement pays" of the cap in force then, not today's setting.
+          SELECT c.settlement,
+             c.act,
+             c.most,
+             s.starts_at,
+             s.ends_at
+            FROM my_crowd_paid c
+              JOIN settlements s ON s.id = c.settlement
+           WHERE (c.settlement IN ( SELECT x.settlement
+                    FROM wl x
+                   WHERE ((x.kind = 'crowd'::text) AND (x.settlement IS NOT NULL))))
          ), sa AS MATERIALIZED (
           SELECT s.settlement,
              s."character",
@@ -1341,6 +1355,9 @@ begin
           SELECT x.ref
             FROM wl x
            WHERE ((x.kind = ANY (ARRAY['bribe'::text, 'gift_out'::text, 'gift_in'::text])) AND (x.ref IS NOT NULL))
+         UNION
+          SELECT x.act
+            FROM cp x
          ), walk(id, depth) AS (
           SELECT n.id,
              0 AS "?column?"
@@ -1455,7 +1472,8 @@ begin
             FROM gm x), '[]'::jsonb), 'reports', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*) ORDER BY x.at DESC, x.report) AS jsonb_agg
             FROM rp x), '[]'::jsonb), 'appeals', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*) ORDER BY x.at DESC, x.appeal) AS jsonb_agg
             FROM ap x), '[]'::jsonb), 'cosmetics', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*) ORDER BY x.at DESC, x.kind, x.id) AS jsonb_agg
-            FROM cs x), '[]'::jsonb), 'ballots', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*) ORDER BY x.at DESC, x.act) AS jsonb_agg
+            FROM cs x), '[]'::jsonb), 'crowd', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*) ORDER BY x.settlement DESC, ((x.act)::text COLLATE "C")) AS jsonb_agg
+            FROM cp x), '[]'::jsonb), 'ballots', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*) ORDER BY x.at DESC, x.act) AS jsonb_agg
             FROM bl x), '[]'::jsonb), 'pollCloses', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*) ORDER BY x.at DESC, x.act) AS jsonb_agg
             FROM pcl x), '[]'::jsonb)), 'shares', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*) ORDER BY x.settlement DESC, x."character", x.reason, x.card, x.act, x.quadrant) AS jsonb_agg
             FROM sh x), '[]'::jsonb), 'scoredAs', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*) ORDER BY x.ends_at DESC, x.settlement, x."character") AS jsonb_agg

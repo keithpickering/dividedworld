@@ -817,7 +817,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const publicPayload = (payload: Readonly<Record<string, unknown>>, hidden: boolean, version: Id): Readonly<Record<string, unknown>> =>
     typeof payload['body'] !== 'string' ? payload : hidden || concealingActs.has(version) ? { ...payload, body: null } : { ...payload, body: concealQuotes(payload['body'], hiddenPosts()) };
 
-  /** An Act as a reader sees it: a ballot on a secret poll names no character and no picks, for every reader alike (acts_public, 0381). */
+  /** An Act as a reader sees it: a ballot on a secret poll names no character and no picks, for every reader alike (acts_public, 0388). */
   function publicAct(a: ActRec): Act {
     const shown = plainAct(a);
     return a.kind === 'ballot' && a.target !== null && pollOf(a.target)?.payload.secret === true
@@ -1527,7 +1527,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ ballots: page.map((b) => ({ act: b.id, character: named.find((x) => x.id === b.character)!, picks: b.payload.picks as readonly number[], at: iso(b.at) })), more: older.length > 50 });
   }
   /**
-   * The polls a set of posts draw, as thread_page reads them (0382): each post's current poll with its counts and close, a public poll's counted ballots with picks (the newest 50) and the polls with more,
+   * The polls a set of posts draw, as thread_page reads them (0389): each post's current poll with its counts and close, a public poll's counted ballots with picks (the newest 50) and the polls with more,
    * and the caller's own counted ballots, a secret one's and a withdrawal's too. `cast` names the voters listed.
    */
   function pollParts(posts: readonly Id[]): { polls: Poll[]; voters: PollVoter[]; votersMore: Id[]; myBallots: Ballot[]; cast: Id[] } {
