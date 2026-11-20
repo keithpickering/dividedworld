@@ -45,7 +45,7 @@ import { Link } from '../router.tsx';
 import { spunCount, useSpunInto } from '../spin/spun.ts';
 import { when } from '../thread/lines.tsx';
 import type { Tallies } from '../thread/tallies.ts';
-import { inkOf, useOnInk, useSheet, useUntil } from './Effects.tsx';
+import { inkOf, momentParts, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
 import { olderWords, surfaceShare, surfaceWords } from './lens-words.ts';
@@ -197,13 +197,32 @@ export function useLensFor(store: LensStore, owner: string): LensOpen | null {
 const BEFORE_EVERY_END = -8.64e15;
 
 /**
+ * The plays shown as they stood on this post: `then` (an ORIGIN box's other drawn plays) and, while a play's moment is shown over the post (As it landed), the plays that moment draws
+ * (`momentParts`), whose timed ends came after the moment and so are no part of what it shows (spent-marks design, section 1, "In a moment"). It is the one `then` the mark's and the Lens's
+ * spent and view judgments take, so the Lens speaks the moment's own view with its controls and Back to now judges the kind spent again. The Lens's rows keep the `then` they were given.
+ */
+export function useMomentThen(store: Plays, post: Id, then?: ReadonlySet<Id>): ReadonlySet<Id> | undefined {
+  const { instance, ui } = useKayfa();
+  const lens = useLensStore();
+  const shown = useSyncExternalStore(lens.subscribe, lens.moment, () => null);
+  const moment = useSyncExternalStore(lens.subscribe, () => (shown === null ? undefined : lens.kept(shown)), () => undefined);
+  const onPost = shown !== null && store.get(post).plays.some((p) => p.id === shown);
+  return useMemo(() => {
+    if (!onPost || !moment) return then;
+    const drawn = momentParts(moment, instance.cards, ui.cards, () => '').drawn.map((p) => p.id);
+    return new Set([...(then ?? []), ...drawn]);
+  }, [onPost, moment, then, instance.cards, ui.cards]);
+}
+
+/**
  * A card's view on a post: the one its effect gave, else the engine's default for the card (its `summary`, no edge, no controls).
  * The card mechanic's kinds are the engine's to say (docs/plans/2026-11-01-card-plays-plan.md, Task 7): a card back says who set it
  * and when it ends, the same for every card face down, and on the setter's own screen which card it is; a ward says what it turns
  * away and until when; a caught play's note says what caught it.
  */
-export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (character: Id | null) => string, postAt?: string, then?: ReadonlySet<Id>): CardView {
+export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (character: Id | null) => string, postAt?: string, shown?: ReadonlySet<Id>): CardView {
   const { api, instance, settings, ui } = useKayfa();
+  const then = useMomentThen(store, post, shown);
   const given = useCardView(store, post, kind);
   /*
    * What this kind's words read of the post, as one string: its plays (who, when, caught by what, ending when, starting when, revealed as what, configured how) and

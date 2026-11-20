@@ -32,7 +32,7 @@ import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useNarrow, useOnInk, useUntil } from './Effects.tsx';
 import { Callout, useCallout } from './Callout.tsx';
-import { Lens, useLensFor, useLensHost, useLensStore, useResolvedView } from './Lens.tsx';
+import { Lens, useLensFor, useLensHost, useLensStore, useMomentThen, useResolvedView } from './Lens.tsx';
 import { GhostMark, ReachGhost, type ReachAt } from './PlayActions.tsx';
 import type { LensForm } from './Forms.tsx';
 import { VisitMark } from './Visit.tsx';
@@ -111,7 +111,8 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   /* Spent (spent-marks design, section 2): every play of the kind is over. The clock is `useUntil`'s, so a play's end unlights the mark with no re-read. */
   const now = useUntil(plays);
   const keeps = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
-  const spent = kindSpent(plays, now, keeps, then);
+  const judged = useMomentThen(store, post, then);
+  const spent = kindSpent(plays, now, keeps, judged);
   /* What the mark counts: the plays that took. A play that did not take (`untaken`) is over, so it is no layer on the post; where none took, the mark counts them all, since it still says what became of each. */
   const counted = plays.filter((p) => !p.untaken).length || plays.length;
   /* The ink is the top-billed play's, where the card chooses one for it (`CardUi.tag` is given the kind's plays in play order). */

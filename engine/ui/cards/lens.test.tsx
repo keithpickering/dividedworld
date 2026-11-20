@@ -963,6 +963,34 @@ describe('As it landed', () => {
     expect(pressed.live).toHaveBeenCalledTimes(1);
   });
 
+  test('a play whose time is up still shows the moment effect\'s view and its control in As it landed; Back to now says Ended', async () => {
+    width(false);
+    const w = world();
+    const k1 = w.fake.seed.card(w.spritey, w.second, 'k1', { message: 'k1 timed', ends: new Date(w.fake.clock.now() + 3_600_000).toISOString() });
+    w.fake.clock.advance(2 * 3_600_000);
+    pressed.moment.mockClear();
+    open(w, voiced);
+    const mark = await markOf(2, 'Card 1');
+    expect(mark).toHaveAttribute('data-kb-spent', 'true');
+    await userEvent.click(mark);
+    await userEvent.click(whoButton());
+    expect(within(lens()).queryByText('live view')).toBeNull();
+    expect(within(lens()).queryByRole('button', { name: 'live press' })).toBeNull();
+    await userEvent.click(landedButton(k1));
+    await frame();
+    /* The moment draws the play as it stood, so it is not over there: its view, its control. */
+    expect(await within(lens()).findByText('moment view')).toBeInTheDocument();
+    expect(within(lens()).queryByText('Ended')).toBeNull();
+    expect(mark).not.toHaveAttribute('data-kb-spent');
+    await userEvent.click(within(lens()).getByRole('button', { name: 'moment press' }));
+    expect(pressed.moment).toHaveBeenCalledTimes(1);
+    await userEvent.click(within(await frame()).getByRole('button', { name: 'Back to now' }));
+    await waitFor(() => expect(within(lens()).queryByText('moment view')).toBeNull());
+    expect(mark).toHaveAttribute('data-kb-spent', 'true');
+    expect(within(lens()).getByText('Ended')).toBeInTheDocument();
+    expect(within(lens()).queryByRole('button', { name: 'moment press' })).toBeNull();
+  });
+
   test("after Reset the Lens still shows the moment's view and its control still works, the live view absent; Back to now brings the live view back", async () => {
     const { k1b } = await landed(undefined, voiced);
     await userEvent.click(landedButton(k1b));
