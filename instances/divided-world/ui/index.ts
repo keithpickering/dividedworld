@@ -6,6 +6,7 @@
  * the owner has not yet named (the web plan's brief, item 7); each is marked where it stands.
  */
 import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
+import type { Settings } from '../../../engine/rules/types.ts';
 import { spanWords } from '../../../engine/ui/characters/format.ts';
 import { fractionWords, shareWords } from '../../../engine/ui/copy-words.ts';
 import glassData from './glass.json';
@@ -122,6 +123,11 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
     return 'A card: what its payout on a reaction earned';
   },
   'tweener.shrugged': 'Shrugged off: calm or bored reactions to the character\'s posts and cards',
+  'tweener.litTheFuse': (n) => {
+    const days = typeof n.debateDays === 'number' ? n.debateDays : defaults.debateDays;
+    return `Lit the fuse: within ${count(days)} day${days === 1 ? '' : 's'} of the character's post, ${count(num(n, 'tweener.catalystVoices'))} or more other players were arguing under it, ${count(num(n, 'tweener.catalystReturned'))} of them more than once, in quotes of it and threads spun from it, and the character's player had not posted in it`;
+  },
+  'tweener.outvoted': 'Outvoted: the players arguing under the character\'s post cancel its calm and bored reactions, a player for each vote, less the share a cushion card has covered. Taken back where a reaction moved away',
 };
 
 /** Every reason this instance's classes write, for the test that holds their words to the numbers in force. */
@@ -136,6 +142,17 @@ export const wordsRead: Readonly<Record<string, readonly string[]>> = Object.fre
   lurker: ['lurker.postsAllowed'],
   'lurker.spunAThread': ['lurker.spunThreadRepliers'],
   'lurker.postedTooMuch': ['lurker.postsAllowed'],
+  'tweener.litTheFuse': ['tweener.catalystVoices', 'tweener.catalystReturned'],
+});
+
+/**
+ * The settings beside the economy each reason states, by key in `Settings`: the earning carries each in its params, under the same key,
+ * so a settled line is said with the number it was settled under, and a test can retune them as it does `wordsRead`'s.
+ */
+/** A key of `Settings` whose value is a number: the only kind a reason's words can state. */
+type NumberSetting = { [K in keyof Settings]: Settings[K] extends number ? K : never }[keyof Settings];
+export const settingsRead: Readonly<Record<string, readonly NumberSetting[]>> = Object.freeze({
+  'tweener.litTheFuse': ['debateDays'],
 });
 
 export const instanceUi: InstanceUi = Object.freeze({
@@ -163,7 +180,7 @@ export const instanceUi: InstanceUi = Object.freeze({
     heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on.', hurtsBy: () => 'Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
     jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on the character\'s posts.', hurtsBy: () => 'Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
     technician: { color: '#1e8449', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'The respected regular. Earns from calm, positive reactions to the character\'s posts and cards, and more when an old post still draws them.', hurtsBy: () => 'Hurt by heat: excited, negative reactions.', marks: { label: 'Earns from the calm, hurt by heat', earns: ['calmPositive'], hurts: ['excitedNegative'] } },
-    tweener: { color: '#d63ab8', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Splits the room. Earns when a post or card draws hype and heat in equal measure, and when the character\'s card sets someone else\'s post arguing.', hurtsBy: () => 'Hurt by the shrug: calm or bored reactions.', marks: { label: 'Earns from a room split between hype and heat, hurt by the shrug', splits: ['excitedNegative', 'excitedPositive'], hurts: ['boredNegative', 'calmPositive'] } },
+    tweener: { color: '#d63ab8', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Splits the room. Earns when a post or card draws hype and heat in equal measure, and when the character\'s card sets someone else\'s post arguing. Also earns when its post sets others debating and it stays out, and the debate cancels that post\'s shrugs.', hurtsBy: () => 'Hurt by the shrug: calm or bored reactions.', marks: { label: 'Earns from a room split between hype and heat, hurt by the shrug', splits: ['excitedNegative', 'excitedPositive'], hurts: ['boredNegative', 'calmPositive'] } },
     lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: () => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to the character's cards.`, hurtsBy: (e, span) => `Hurt by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${times(num(e, 'lurker.postsAllowed'))} in one settlement window (${spanWords(span)})`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
   }),
   reasonWords: (reason: string, params: Readonly<Record<string, number | string>>, amount?: number) => {

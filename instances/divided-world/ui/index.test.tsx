@@ -19,7 +19,7 @@ import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import type { ClassInput } from '../../../engine/rules/types.ts';
-import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
+import { instanceUi, REASON_KEYS, settingsRead, wordsRead } from './index.ts';
 import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearUi } from './cosmetics.ts';
@@ -348,10 +348,12 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       ? `${instanceUi.classLooks[key]!.description(economy, instance.settings.settlementLength)} ${instanceUi.classLooks[key]!.hurtsBy(economy, instance.settings.settlementLength)}`
       : instanceUi.reasonWords(key, economy));
   const economy = instance.settings.economy;
+  /* The settings beside the economy a reason states, each shifted by 17 too, so a default the economy shares (three days, three voices) is never read for the other's. */
+  const settingsShifted = (key: string) => Object.fromEntries((settingsRead[key] ?? []).map((r) => [r, instance.settings[r] + 17]));
   test('each class\'s words say the numbers in force: shifted by 17, the shifted number is said and the default is not', () => {
     expect(Object.keys(wordsRead).length).toBeGreaterThan(0);
     for (const [key, reads] of Object.entries(wordsRead)) {
-      const shifted = { ...economy, ...Object.fromEntries(reads.map((r) => [r, economy[r]! + 17])) };
+      const shifted = { ...economy, ...Object.fromEntries(reads.map((r) => [r, economy[r]! + 17])), ...settingsShifted(key) };
       const text = said(key, shifted);
       for (const r of reads) {
         expect(text, `${key} says ${r} as tuned`).toMatch(new RegExp(`\\b${spelled(economy[r]! + 17)}\\b`, 'u'));
@@ -362,14 +364,39 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('the numbers a reason\'s earnings carry are the ones its words declare, so a settled line is said with its own', () => {
     const lurker = instance.classes.find((c) => c.key === 'lurker')!;
     const earned = lurker.earn({
-      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [],
+      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [], debates: [],
       threadsSpun: [{ act: 's1', thread: 't', at: 1, fromOthers: true, repliersBefore: 0, repliersNow: economy['lurker.spunThreadRepliers']! }],
     }, instance.settings);
-    const reasons = Object.keys(wordsRead).filter((k) => k.includes('.'));
+    const tweener = instance.classes.find((c) => c.key === 'tweener')!;
+    const lit = tweener.earn({
+      character: 'tw', from: 0, to: 10, posts: [], received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [], threadsSpun: [],
+      debates: [{ act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0 }],
+    }, instance.settings);
+    const reasons = [...new Set([...Object.keys(wordsRead), ...Object.keys(settingsRead)])].filter((k) => k.includes('.'));
     for (const reason of reasons) {
-      const carried = earned.filter((e) => e.reason === reason);
+      const carried = [...earned, ...lit].filter((e) => e.reason === reason);
       expect(carried.length, `${reason} is earned here`).toBeGreaterThan(0);
-      for (const e of carried) expect(Object.keys(e.params ?? {}).sort(), reason).toEqual([...wordsRead[reason]!].sort());
+      for (const e of carried) expect(Object.keys(e.params ?? {}).sort(), reason).toEqual([...(wordsRead[reason] ?? []), ...(settingsRead[reason] ?? [])].sort());
+    }
+  });
+  test('the Tweener\'s catalyst lines say the numbers they were settled under, and its description says it earns from a debate', () => {
+    expect(instanceUi.reasonWords('tweener.litTheFuse', { 'tweener.catalystVoices': 4, 'tweener.catalystReturned': 3, debateDays: 5 })).toBe(
+      'Lit the fuse: within five days of the character\'s post, four or more other players were arguing under it, three of them more than once, in quotes of it and threads spun from it, and the character\'s player had not posted in it');
+    expect(instanceUi.reasonWords('tweener.litTheFuse', economy)).toMatch(/^Lit the fuse: within three days .* three or more other players .* two of them more than once/u);
+    expect(instanceUi.reasonWords('tweener.outvoted', {})).toBe(
+      'Outvoted: the players arguing under the character\'s post cancel its calm and bored reactions, a player for each vote, less the share a cushion card has covered. Taken back where a reaction moved away');
+    expect(said('tweener', economy)).toContain('Also earns when its post sets others debating and it stays out, and the debate cancels that post\'s shrugs.');
+  });
+  test('a setting a reason states beside the economy is said as tuned: shifted by 17, the shifted number is said and the default is not', () => {
+    expect(Object.keys(settingsRead).length).toBeGreaterThan(0);
+    const s = instance.settings;
+    for (const [reason, reads] of Object.entries(settingsRead)) {
+      const economyShifted = Object.fromEntries((wordsRead[reason] ?? []).map((r) => [r, economy[r]! + 17]));
+      const text = instanceUi.reasonWords(reason, { ...economy, ...economyShifted, ...settingsShifted(reason) });
+      for (const r of reads) {
+        expect(text, `${reason} says ${r} as tuned`).toMatch(new RegExp(`\\b${spelled(s[r] + 17)}\\b`, 'u'));
+        expect(text, `${reason} never says ${r}'s default`).not.toMatch(new RegExp(`\\b${spelled(s[r])}\\b`, 'u'));
+      }
     }
   });
   test('every class description and reason that states a number names the economy keys it states', () => {
@@ -723,7 +750,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('every reason a class pays reads as a sentence of its own', () => {
     const reasons = ['face.cheered', 'face.liftedAPost', 'face.boredTheRoom', 'face.stoleThunder', 'heel.drewHeat', 'heel.stoleThunder', 'heel.shrugged',
       'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch',
-      'technician.respected', 'technician.evergreen', 'technician.draggedIn'];
+      'technician.respected', 'technician.evergreen', 'technician.draggedIn',
+      'tweener.splitTheRoom', 'tweener.stirredThePot', 'tweener.shrugged', 'tweener.litTheFuse', 'tweener.outvoted'];
     for (const r of reasons) expect(instanceUi.reasonWords(r, instance.settings.economy), r).not.toMatch(/^Settled under/);
   });
   test('every loss a class charges is one the cushion can read, or is named here', () => {
@@ -746,6 +774,12 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     });
     const i: ClassInput = {
       character: 'c', from: 0, to: 20 * DAY, received, given: [],
+      /* A spark that crosses in the window, and one that paid before it whose calm votes moved away in it, so its refund is taken back. */
+      debates: [
+        { act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0 },
+        { act: 'p2', at: -DAY, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1 - DAY, voice })), inOwnDebate: false,
+          standing: { before: [{ ...none, calmPositive: 1 }, { ...none, calmPositive: 1 }], now: [] }, cushioned: 0 },
+      ],
       posts: Array.from({ length: eco('lurker.postsAllowed') + 1 }, (_, n) => ({ act: `q${n}`, at: n })),
       held: [{ act: 'p9', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'excitedPositive' }],
       cardsPlayed: [played('sweet', 'k1'), played('salty', 'k2'), played('pepperoni', 'k3')],
@@ -760,6 +794,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const named: Record<string, string> = {
       'lurker.postedTooMuch': 'no reaction causes it; the sheet says nothing lost for any other reason is given back',
       'tweener.splitTheRoom': 'a gain taken back as the room stops being split',
+      'tweener.outvoted': 'a refund taken back as a calm or bored vote moves away; the shrug it answered was the loss, and the cushion read that',
     };
     const seen = new Set<string>();
     const seenNegative = new Set<string>();
