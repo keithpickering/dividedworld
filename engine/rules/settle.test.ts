@@ -2385,3 +2385,87 @@ test('with the vote unshared and unhalved and the window ending mid-day, the cus
   assert.equal(amountOf(none, 'ted-1', 'tallied.outdrawn'), 0);
   assert.equal(cushionsOf(none).length, 0);
 });
+
+/* ---- crowd pay (docs/plans/2026-11-20-crowd-pay-design.md): a flat sum for each Act of another player a player first reacts to in the window ---- */
+const crowdOf = (input: SettlementInput, settings: Partial<Instance['settings']> = {}) =>
+  settle(input, { ...instance, settings: { ...instance.settings, ...settings } }).crowd;
+const crowdBoard = (reactions: InputReaction[], acts: InputAct[] = [post('c1', 'bob-1', FROM + 1 * H), post('c2', 'bob-1', FROM + 2 * H), post('c3', 'bob-1', FROM + 3 * H)]): SettlementInput =>
+  ({ ...base(), acts, reactions });
+
+test('crowd pay: one Act pays one each, whether the player reacted once or three times with two masks', () => {
+  assert.deepEqual(crowdOf(crowdBoard([react('c1', 'ann', 'ann-fan', 'fire', FROM + 5 * H)])), [{ player: 'ann', acts: ['c1'], amount: 2 }]);
+  const three = crowdBoard([
+    react('c1', 'ann', 'ann-fan', 'fire', FROM + 5 * H),
+    react('c1', 'ann', 'ann-quiet', 'tea', FROM + 6 * H),
+    react('c1', 'ann', 'ann-fan', 'zzz', FROM + 7 * H),
+  ]);
+  assert.deepEqual(crowdOf(three), [{ player: 'ann', acts: ['c1'], amount: 2 }]);
+});
+
+test('crowd pay is blind to the quadrant: a hype and a heat reaction each pay the same', () => {
+  const r = crowdBoard([react('c1', 'ann', 'ann-fan', 'fire', FROM + 5 * H), react('c2', 'ann', 'ann-fan', 'tomato', FROM + 6 * H)]);
+  assert.deepEqual(crowdOf(r), [{ player: 'ann', acts: ['c1', 'c2'], amount: 4 }]);
+});
+
+test('crowd pay: an Act first reacted to before the window pays nothing when reacted to again inside it', () => {
+  const r = crowdBoard([
+    react('c1', 'ann', 'ann-fan', 'fire', FROM - 5 * H),
+    react('c1', 'ann', 'ann-fan', 'tea', FROM + 5 * H),
+    react('c2', 'ann', 'ann-fan', 'fire', FROM + 6 * H),
+  ], [post('c1', 'bob-1', FROM - 9 * H), post('c2', 'bob-1', FROM + 2 * H)]);
+  assert.deepEqual(crowdOf(r), [{ player: 'ann', acts: ['c2'], amount: 2 }]);
+});
+
+test('crowd pay: a reaction on a System Act or an unscored staff post pays nothing', () => {
+  const r: SettlementInput = {
+    ...crowdBoard([
+      react('sys-1', 'ann', 'ann-fan', 'fire', FROM + 5 * H),
+      react('boss-post', 'ann', 'ann-fan', 'fire', FROM + 6 * H),
+    ]),
+    systemActs: ['sys-1'],
+    unscoredTargets: [{ id: 'boss-post', kind: 'post', at: FROM + 1 * H, thread: 't1', staff: true }],
+  };
+  assert.deepEqual(crowdOf(r), []);
+});
+
+test('crowd pay: a reaction on an Act of the player\'s own character pays nothing', () => {
+  const r = crowdBoard([react('own', 'ann', 'ann-quiet', 'fire', FROM + 5 * H), react('c1', 'ann', 'ann-quiet', 'fire', FROM + 6 * H)], [post('own', 'ann-fan', FROM + 1 * H), post('c1', 'bob-1', FROM + 2 * H)]);
+  assert.deepEqual(crowdOf(r), [{ player: 'ann', acts: ['c1'], amount: 2 }]);
+});
+
+test('crowd pay: past the cap the earliest first reactions are paid, a tie in time going to the smaller Act id', () => {
+  const r = crowdBoard([
+    react('c3', 'ann', 'ann-fan', 'fire', FROM + 5 * H),
+    react('c2', 'ann', 'ann-fan', 'fire', FROM + 7 * H),
+    react('c1', 'ann', 'ann-fan', 'fire', FROM + 7 * H),
+  ]);
+  assert.deepEqual(crowdOf(r, { crowdPayMost: 2 }), [{ player: 'ann', acts: ['c3', 'c1'], amount: 4 }]);
+  assert.deepEqual(crowdOf(r, { crowdPayMost: 10 }), [{ player: 'ann', acts: ['c3', 'c1', 'c2'], amount: 6 }]);
+});
+
+test('crowd pay: crowdPayEach 0 gives no rows', () => {
+  assert.deepEqual(crowdOf(crowdBoard([react('c1', 'ann', 'ann-fan', 'fire', FROM + 5 * H)]), { crowdPayEach: 0 }), []);
+});
+
+test('crowd pay is the same in whatever order the rows arrive, and rows are sorted by player', () => {
+  const r = crowdBoard([
+    react('c1', 'dee', 'dee-1', 'fire', FROM + 5 * H),
+    react('c2', 'ann', 'ann-fan', 'fire', FROM + 6 * H),
+    react('c1', 'ann', 'ann-fan', 'zzz', FROM + 6 * H),
+    react('c3', 'cat', 'cat-1', 'tea', FROM + 8 * H),
+  ]);
+  const want = crowdOf(r);
+  assert.deepEqual(want.map((w) => w.player), ['ann', 'cat', 'dee']);
+  assert.deepEqual(want[0], { player: 'ann', acts: ['c1', 'c2'], amount: 4 });
+  assert.deepEqual(crowdOf({ ...r, reactions: [...r.reactions].reverse(), acts: [...r.acts].reverse(), characters: [...r.characters].reverse() }), want);
+});
+
+test('crowd pay is a wallet\'s alone: entries, standings and byClass are the same at 2 and at 0', () => {
+  const r = base();
+  const on = settle(r, instance);
+  const off = settle(r, { ...instance, settings: { ...instance.settings, crowdPayEach: 0 } });
+  assert.ok(on.crowd.length > 0 && off.crowd.length === 0);
+  assert.deepEqual(on.entries, off.entries);
+  assert.deepEqual(on.standings, off.standings);
+  assert.deepEqual(on.byClass, off.byClass);
+});

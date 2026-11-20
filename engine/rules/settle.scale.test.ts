@@ -75,6 +75,8 @@ test('one window with 500 players, 3,000 characters, 20,000 Acts and 100,000 rea
   for (const e of r.entries.slice(0, 500)) {
     assert.equal(sum(r.details.filter((d) => d.character === e.character && d.reason === e.reason).map((d) => d.amount)), e.amount, 'the log adds up');
   }
+  assert.ok(r.crowd.length > 100, 'crowd pay is paid to many players');
+  assert.ok(r.crowd.every((c) => c.acts.length >= 1 && c.acts.length <= instance.settings.crowdPayMost && c.amount === c.acts.length * instance.settings.crowdPayEach), 'each row is its Acts, flat, under the cap');
   assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
 });
 
