@@ -4,8 +4,8 @@ Record, written 2026-11-20. Carries out `docs/plans/2026-11-20-autocorrect-feel-
 first, with its red run. All of it is instance code under `instances/divided-world/`. The engine is untouched, and no interface is
 added or changed.
 
-Before Task 5, the build session reads the owner's picks from the bench (the buzz's length and the glue's strength) off the design PR's
-review. If none is there, it uses the design's defaults: 8ms, and the lighter glue (0.30 light, 0.20 dark).
+The owner's picks on the bench are in the design: the buzz is `[10, 40, 10]`, and the glue's tint is 0.30 on both boards (gloss 0.5
+light, 0.12 dark).
 
 ## Task 1. Where rolls fell, saved
 
@@ -123,7 +123,7 @@ Model: sonnet
 Model: sonnet
 
 - **Residue** `instances/divided-world/cards/autocorrect/residue.ts`:
-  - `RESIDUE_TINT: Record<Band['board'], number>` (the owner's pick, default 0.30 light and 0.20 dark).
+  - `RESIDUE_TINT: Record<Band['board'], number>` (0.30 light, 0.30 dark: the owner's pick).
   - `GLOSS_ALPHA` becomes `Record<Band['board'], number>` (0.5 light, 0.12 dark).
   - `glossAt(light, box)` gives the gradient's center in the post's pixels and its radius (150). The center is the light's place over
     the post's box, as the shine's relief maps `light * LIGHT_SCALE` over −1..1.
@@ -133,8 +133,8 @@ Model: sonnet
   - The gloss is laid through a radial gradient (white 0.9 at the center, 0.22 at 38%, clear at 72%) filled `source-in` on the
     scratch, at `GLOSS_ALPHA[band.board]`, and no longer as a flat color.
   - The fibers are unchanged.
-- **The buzz.** In `apply`, a `picked` event calls `try { navigator.vibrate?.(BUZZ) } catch {}`, with `BUZZ` the owner's pick
-  (default 8). For a key, it says "Picked. Keep holding to peel." in the status region instead.
+- **The buzz.** In `apply`, a `picked` event calls `try { navigator.vibrate?.(BUZZ) } catch {}`, with `BUZZ = [10, 40, 10]`,
+  the owner's pick. For a key, it says "Picked. Keep holding to peel." in the status region instead.
 - **Tests first:**
   - In `residue.test.ts`, the band check composites at `RESIDUE_TINT[board] * FILM_PEAK` and the gloss at its peak, and still passes.
     Its POISON keeps failing.
@@ -143,7 +143,7 @@ Model: sonnet
   - In `Effect.test.tsx`, a residue paint lays the tint at `RESIDUE_TINT` (spy the context's `globalAlpha` at the tint's
     `drawImage`). Red at 1.
   - In `Effect.test.tsx`, as in Whoops!'s buzz tests (`instances/divided-world/cards/whoops/Effect.test.tsx`):
-    - a held pick calls `navigator.vibrate(8)` once;
+    - a held pick calls `navigator.vibrate([10, 40, 10])` once;
     - a drag into a peek calls it never;
     - a device that throws does not stop the pick.
 

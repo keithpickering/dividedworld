@@ -55,9 +55,9 @@ peel):
 **Decided** (the owner chose 1000ms over 800ms and 1500ms):
 
 - `autocorrect.pickMs` goes from 450 to **1000**. Its bound (0 to 2000) is unchanged.
-- **The buzz.** When the pick is up, `navigator.vibrate(8)`, as Whoops!'s grab does. A device that refuses is ignored. iOS Safari
-  gives web pages no vibration, so an iPhone gets the corner standing up and no buzz. The bench offers 8, 15 and 25ms and a
-  10-40-10 pattern for the owner to feel. 8ms stands unless the owner picks another on the bench.
+- **The buzz.** When the pick is up, `navigator.vibrate([10, 40, 10])`: two short taps 40ms apart. The owner chose it on the
+  bench ("10-40-10 vibrate is good") over 8, 15 and 25ms single buzzes. Whoops!'s grab keeps its own 8ms. A device that refuses is
+  ignored. iOS Safari gives web pages no vibration, so an iPhone gets the corner standing up and no buzz.
 - **The keyboard** has no buzz. The corner is drawn as the pointer's is, and the status region says "Picked. Keep holding to peel."
   once the pick is up.
 
@@ -117,15 +117,15 @@ fact only peel lines have); saving the roll's length (which depends on the scree
 
 ## 6. The glue
 
-**Decided in direction** (the owner: "too high opacity and looks a bit like tape itself"). The strength is the owner's pick on the
-bench:
+**Decided** (the owner: "too high opacity and looks a bit like tape itself"; then, on the bench, "lighter glue for light board,
+bench for dark"):
 
-- **The film's tint** is laid at a strength per board, `RESIDUE_TINT[board]`, and no longer at 1. The bench offers the approved
-  tape bench's 0.48 / 0.30, a lighter 0.30 / 0.20 and a faint 0.18 / 0.12. **The session's recommendation is the lighter one**, which
-  the plan uses unless the owner picks another.
+- **The film's tint** is laid at a strength per board, `RESIDUE_TINT[board]`, and no longer at 1: **0.30 on the light board** (the
+  bench's lighter variant) and **0.30 on the dark board** (the approved tape bench's own). The bench also offered 0.48 on the light
+  board, 0.20 on the dark, and a faint 0.18 / 0.12.
 - **The gloss** is the tape bench's radial highlight. It is centered where the page's light falls on the post (the light's `x`, `y`
   over the post's box, as the shine places it), and its radius is 150px. It goes from white at 0.9 to clear at 72%, laid at
-  `GLOSS_ALPHA` per board (0.5 light, 0.12 dark). It is no longer a flat layer over the whole film. It stays what makes the film read as
+  `GLOSS_ALPHA` per board (0.5 light, as the lighter variant; 0.12 dark, as the tape bench). It is no longer a flat layer over the whole film. It stays what makes the film read as
   tacky: it moves with the light.
 - **Readability.** A thinner film only moves the post's ink further inside the readable band. The band check
   (`residue.test.ts`) composites at the new tint strength times `FILM_PEAK`, and at the gloss's peak.
@@ -190,7 +190,5 @@ instance that has the key keeps 450 until an admin changes it. The plan says so 
 
 ## Open
 
-- **The buzz's length**: 8ms unless the owner picks another on the bench.
-- **The glue's strength**: the lighter variant unless the owner picks another on the bench.
 - **Shift and Backspace** are the session's choice of keys. The owner confirms them in review.
 - **iOS** cannot buzz from a web page. The pick's feedback there is the fold alone.
