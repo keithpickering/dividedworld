@@ -73,3 +73,30 @@ test('percent is of the picks, rounded, 0 for none', () => {
   assert.equal(percent(2, 3), 67);
   assert.equal(percent(0, 0), 0);
 });
+
+test('two options are one when equal after stripping spaces only, as btrim does: a newline is a difference', () => {
+  assert.deepEqual(bad({ options: ['a', 'a\n', 'c'] }), []);
+  assert.deepEqual(bad({ options: ['a', '  a', 'c'] }), ['no two options are the same']);
+});
+
+test('a unit that is an inherited key is no span', () => {
+  assert.deepEqual(bad({ lasts: { unit: 'constructor', count: 3 } }), ['a poll lasts from 1 hour to 14 days']);
+});
+
+test('a draft that is null or a list, and an option that is no string, are refused in words', () => {
+  assert.deepEqual(pollDraftProblems(null, S), ['question is empty']);
+  assert.deepEqual(pollDraftProblems([], S), ['question is empty']);
+  assert.deepEqual(bad({ options: ['a', 5, 'c'] }), ['option is empty']);
+});
+
+test('a ballot of no character is not counted; an invalid time counts for nothing and closes nothing', () => {
+  assert.deepEqual(countedBallots([b('1', null, [0], '2026-01-01T00:00:00Z')], poll.endsAt), []);
+  assert.deepEqual(countedBallots([b('1', 'x', [0], 'soon')], poll.endsAt), []);
+  assert.deepEqual(countedBallots([b('1', 'x', [0], '2026-01-01T00:00:00Z')], 'never'), []);
+  assert.equal(pollClosed({ endsAt: 'never' }, null, '2030-01-01T00:00:00Z'), false);
+});
+
+test('a close later than the end changes nothing: the earlier wins', () => {
+  assert.equal(pollClosed(poll, { createdAt: '2026-01-05T00:00:00Z' }, '2026-01-03T00:00:00Z'), true);
+  assert.equal(pollClosed(poll, { createdAt: '2026-01-05T00:00:00Z' }, '2026-01-01T00:00:00Z'), false);
+});

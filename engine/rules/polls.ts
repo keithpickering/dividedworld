@@ -43,7 +43,9 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 /** `span_words` (0055): "1 hour", "14 days". */
 export const spanWords = (s: Span): string => plural(s.count, s.unit);
 
-const isSpan = (v: unknown): v is Span => typeof v === 'object' && v !== null && typeof (v as Span).count === 'number' && typeof (v as Span).unit === 'string' && (v as Span).unit in HOURS;
+const isSpan = (v: unknown): v is Span => typeof v === 'object' && v !== null && typeof (v as Span).count === 'number' && typeof (v as Span).unit === 'string' && Object.hasOwn(HOURS, (v as Span).unit);
+/** SQL's `btrim` with no characters: spaces only, never a tab or a newline. */
+const btrim = (s: string) => s.replace(/^ +| +$/g, '');
 const length = (s: string) => [...s].length;
 
 /** A draft's `lasts` in hours: a span, or an interval string of one number and one unit ("3 days"); null for anything else. */
@@ -56,8 +58,8 @@ export function lastsHours(lasts: unknown): number | null {
 
 /**
  * The first predicate a draft fails, as `poll_written` says it, in an array of one (none when the draft is well formed): the database
- * refuses at the first too, in this order: the question, each option in turn, the number of options, the pick, the secret, the length.
- * (The count of options is read first by the database, then the options one by one.)
+ * refuses at the first too, in this order: the question, the number of options, then each option in turn (empty, long, repeated), the
+ * pick, the secret, the length.
  */
 export function pollDraftProblems(draft: unknown, settings: PollSettings): string[] {
   const d = (typeof draft === 'object' && draft !== null ? draft : {}) as Record<string, unknown>;
@@ -73,8 +75,8 @@ export function pollDraftProblems(draft: unknown, settings: PollSettings): strin
     const s = typeof o === 'string' ? o : null;
     const bad = field('option', s, settings.pollOptionMax);
     if (bad) return [bad];
-    if (seen.includes(s!.trim())) return ['no two options are the same'];
-    seen.push(s!.trim());
+    if (seen.includes(btrim(s!))) return ['no two options are the same'];
+    seen.push(btrim(s!));
   }
   const n = opts.length;
   if (typeof d.pick !== 'number' || !Number.isInteger(d.pick) || d.pick < 1 || d.pick > n) return [`a poll lets 1 to ${n} options be picked`];
@@ -89,7 +91,10 @@ export function pollDraftProblems(draft: unknown, settings: PollSettings): strin
 /** `cast_ballot`'s refusal of too many picks, in its words: singular for one. */
 export const pickRefusal = (pick: number): string => `pick up to ${pick} option${pick === 1 ? '' : 's'}`;
 
-/** A poll's end is the earlier of its own end and its close's time; it is closed once `now` reaches it. */
+/**
+ * A poll's end is the earlier of its own end and its close's time; it is closed once `now` reaches it.
+ * A time that does not parse is no end: the poll is not closed by it. Times compare in milliseconds, where the database's are microseconds,
+ * so two ballots within one millisecond tie here and the id breaks it; the server's counts are exact and replace a preview. */
 export function pollClosed(poll: { readonly endsAt: string }, close: { readonly createdAt: string } | null, now: number | string | Date): boolean {
   const end = Math.min(Date.parse(poll.endsAt), close ? Date.parse(close.createdAt) : Infinity);
   return new Date(now).getTime() >= end;
@@ -97,7 +102,8 @@ export function pollClosed(poll: { readonly endsAt: string }, close: { readonly 
 
 /**
  * Each character's counted ballot: its latest by (time, id) created before the poll's end (`poll_counts`). A character that is unknown
- * (null, a secret ballot's projection) is not counted here: its ballots are never in what a reader holds.
+ * (null, a secret ballot's projection) is not counted here: its ballots are never in what a reader holds. A time that does not parse
+ * (the ballot's or the end) counts for nothing. Milliseconds, not the database's microseconds: a tie within one is broken by id.
  */
 export function countedBallots<B extends CountedBallot>(ballots: readonly B[], endsAt: string): B[] {
   const end = Date.parse(endsAt);
@@ -110,7 +116,10 @@ export function countedBallots<B extends CountedBallot>(ballots: readonly B[], e
   return [...latest.values()];
 }
 
-/** `poll_counts`'s counts for a poll: one entry for each option (picks past the options are ignored), and voters, the characters whose counted ballot picks something. */
+/**
+ * `poll_counts`'s counts for a poll: one entry for each option, and voters, the characters whose counted ballot picks an option in range.
+ * Picks past the options are ignored here; the database agrees because `cast_ballot` validates the picks, so none is ever stored out of range.
+ */
 export function pollCounts(poll: { readonly options: readonly unknown[]; readonly endsAt: string }, ballots: readonly CountedBallot[]): { counts: number[]; voters: number } {
   const counts = poll.options.map(() => 0);
   let voters = 0;
