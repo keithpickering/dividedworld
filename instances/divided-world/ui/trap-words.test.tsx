@@ -28,7 +28,7 @@ describe('the trapStruck voice', () => {
   test('a ride back: the setter wanted the cast, it landed as usual and its caster keeps what it earns', () => {
     expect(trapStruckWords({ how: 'rode', setter: 'Pipewrench', card: '4D Chess', laid: 'Whoops!', span: 'two days', setterStaff: false }))
       .toEqual({ line: 'Pipewrench wanted you to do that.', detail: 'Their face-down 4D Chess named your Whoops!. It landed as usual and you keep everything it earns; Pipewrench is paid for the reactions it draws.' });
-    /* Two cards ride, so where the spring was not read it is only "card"; the setter is still needed. */
+    /* More than one card rides, so where the spring was not read it is only "card"; the setter is still needed. */
     expect(trapStruckWords({ how: 'rode', setter: 'Pipewrench', card: null, laid: 'Whoops!', span: null, setterStaff: false })!.detail).toContain('Their face-down card sprang on your Whoops!.');
     expect(trapStruckWords({ how: 'rode', setter: null, card: '4D Chess', laid: 'Whoops!', span: null, setterStaff: false })).toBeUndefined();
     expect(JSON.stringify(trapStruckWords({ how: 'rode', setter: 'P', card: '4D Chess', laid: 'Whoops!', span: null, setterStaff: false }))).not.toMatch(/account|owner|player|class|quadrant/iu);

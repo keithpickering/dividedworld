@@ -8,7 +8,7 @@ import { cards } from '../cards/index.ts';
 
 export function trapStruckWords(f: TrapStruckFacts): { readonly line: string; readonly detail: string } | undefined {
   if (f.setter === null) return undefined;
-  /* A ride back's cast landed as usual: the voice says only what the spring shows everyone. A setter's card that names its card (`catches`, 4D Chess) says it named the cast; one that names none (Whoopee Cushion) says it sprang on it. Where the spring was not read (`f.card` null) two cards ride, so the card is only "card". */
+  /* A ride back's cast landed as usual: the voice says only what the spring shows everyone. A setter's card that names its card (`catches`, 4D Chess) says it named the cast; one that names none (Whoopee Cushion) says it sprang on it. Where the spring was not read (`f.card` null) more than one card rides, so the card is only "card". */
   if (f.how === 'rode') {
     const named = f.card !== null && cards.find((c) => c.name === f.card)?.catches !== undefined;
     return {
