@@ -5990,6 +5990,20 @@ describe('polls (0381, 0382)', () => {
     expect(must(await adminned.fake.closePollAsAdmin(adminned.id)).act).toMatchObject({ kind: 'poll_close', character: null, payload: { by: 'admin' } });
   });
 
+  test('a late older poll event does not overwrite a newer one, and a closed one is final', async () => {
+    const { fake, id, anaFace, thread } = await poll();
+    const heard: { counts: readonly number[]; closed: boolean; at: string }[] = [];
+    fake.subscribeThread(thread, { onPoll: (e) => heard.push(e) });
+    await flush();
+    fake.broadcast.hold();
+    must(await fake.castBallot(id, anaFace, [0]));
+    fake.clock.advance(1_000);
+    must(await fake.closePoll(id, anaFace));
+    fake.broadcast.flush({ reverse: true, twice: true });
+    await flush();
+    expect(heard.map((e) => e.closed)).toEqual([true]);
+    expect(heard[0]!.at > new Date(START).toISOString()).toBe(true);
+  });
   test('an author closes only its own poll', async () => {
     const { fake, id, bo, boFace } = await poll();
     fake.signInAs(bo);
@@ -6024,7 +6038,7 @@ describe('polls (0381, 0382)', () => {
     expect(cast.act).toMatchObject({ kind: 'ballot', character: null, payload: { secret: true }, currentPayload: { secret: true } });
     expect(JSON.stringify(heard)).not.toContain(anaFace);
     expect(heard[0]).toEqual(cast.act);
-    expect(counts).toEqual([{ poll: id, counts: [0, 1, 0], voters: 1, endsAt: expect.any(String), closed: false }]);
+    expect(counts).toEqual([{ poll: id, counts: [0, 1, 0], voters: 1, endsAt: expect.any(String), closed: false, at: cast.act.createdAt }]);
     expect(fake.broadcast.log.map((e) => e.event)).toContain('poll');
     const mine = (await fake.threadPage(thread, { page: 1 }, null, []))!;
     expect(mine.myBallots).toEqual([{ act: cast.act.id, poll: id, character: anaFace, picks: [1], at: expect.any(String) }]);

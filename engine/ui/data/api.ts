@@ -359,6 +359,31 @@ export interface PollCounts {
   readonly closed: boolean;
 }
 
+/**
+ * A `poll` event: a poll's numbers (`PollCounts`) and `at`, the created_at of the ballot or close that made them. Events can arrive twice or out of order, so a listener
+ * applies one only if its `at` is later than the last it applied for that poll (at a tie a closed one wins), and nothing replaces a closed poll's numbers: `closed` is final.
+ * `pollHeard` is that rule.
+ */
+export interface PollEvent extends PollCounts {
+  readonly at: string;
+}
+
+/** The ordering rule of the `poll` event, for one listener: the handler it returns passes an event on only when it is newer than the last one passed for its poll. */
+export function pollHeard(apply: (e: PollEvent) => void): (e: PollEvent) => void {
+  const last = new Map<Id, PollEvent>();
+  return (e) => {
+    const had = last.get(e.poll);
+    if (had !== undefined) {
+      const [a, b] = [Date.parse(e.at), Date.parse(had.at)];
+      const later = Number.isNaN(a) || Number.isNaN(b) ? e.at > had.at : a > b;
+      const ties = Number.isNaN(a) || Number.isNaN(b) ? e.at === had.at : a === b;
+      if (had.closed || !(later || (ties && e.closed))) return;
+    }
+    last.set(e.poll, e);
+    apply(e);
+  };
+}
+
 /** A ballot of the caller's own (`my_ballots`, 0381): the poll it is on, its character, the picked indices (empty for a withdrawal) and when. */
 export interface Ballot {
   readonly act: Id;
@@ -2143,8 +2168,8 @@ export interface ThreadListener {
    * `onAct`, so no screen draws it at the thread's tail first; it takes a number of its own that is left empty where the thread is paged. May come twice: key by id.
    */
   readonly onUnder?: (parent: Id, play: Id, act: Act) => void;
-  /** A poll's numbers after a ballot or a close (the `poll` event): characters counted, never who. Counts only grow in voters until a ballot is changed, so key by poll and keep the latest heard (a closed one is final). */
-  readonly onPoll?: (counts: PollCounts) => void;
+  /** A poll's numbers after a ballot or a close (the `poll` event): characters counted, never who. Delivered in order of `at` per poll (`pollHeard`): an older event heard late is dropped, and a closed poll's numbers are final. */
+  readonly onPoll?: (counts: PollEvent) => void;
   /**
    * The channel is joined and events are heard from now on. Called again each time the channel rejoins after a drop. A screen drawn from a
    * document read before this has missed whatever landed until now, and so has one whose connection dropped: what landed while the

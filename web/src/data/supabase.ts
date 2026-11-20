@@ -31,7 +31,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { SignedIn } from '../../../engine/ui/data/api.ts';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, pollHeard, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -43,7 +43,7 @@ import { RARITIES } from '../../../engine/rules/cards.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type { HandoffFacts } from '../../../engine/system/meeting.ts';
 import type {
-  SurfaceAct, SurfaceNow, SurfaceWritten, Ballot, Poll, PollCounts, PollVoter, PollWritten,
+  SurfaceAct, SurfaceNow, SurfaceWritten, Ballot, Poll, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Unsealed, SealedPack, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
@@ -284,6 +284,7 @@ const toDriveGifts = (v: unknown): DriveGift[] => (Array.isArray(v) ? (v as Row[
 const toPicks = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : []);
 /** A poll's live numbers (`poll_counts`'s columns, as the `poll` event and cast_ballot's answer carry them). */
 const toPollCounts = (r: Row): PollCounts => ({ poll: r['poll'] as Id, counts: toPicks(r['counts']), voters: num(r['voters']), endsAt: String(r['ends_at']), closed: r['closed'] === true });
+const toPollEvent = (r: Row): PollEvent => ({ ...toPollCounts(r), at: String(r['at']) });
 const toPollWritten = (r: Row): PollWritten => ({ act: toAct(r['act'] as Row), counts: toPollCounts(r) });
 /** thread_page's poll parts (0382), for the page and for the origin alike; a document without them reads as none. */
 const toPollParts = (d: Row) => ({
@@ -2401,9 +2402,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
 
     subscribeThread(thread, l) {
+      const onPoll = l.onPoll && pollHeard(l.onPoll);
       return join(`thread:${thread}`, ['act', 'tally', 'effect', 'surface', 'card_text', 'under', 'poll'], (event, p) => {
         if (event === 'act') l.onAct?.(toAct(p));
-        else if (event === 'poll') l.onPoll?.(toPollCounts(p));
+        else if (event === 'poll') onPoll?.(toPollEvent(p));
         else if (event === 'under') l.onUnder?.(p['parent'], p['play'], toAct(p['act']));
         else if (event === 'surface') l.onSurface?.(p['play'], num(p['covered']));
         else if (event === 'tally') l.onTally?.(p['act'], (p['tally'] ?? {}) as Tally);

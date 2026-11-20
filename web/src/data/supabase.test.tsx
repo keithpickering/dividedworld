@@ -1780,8 +1780,11 @@ describe('live', () => {
     const onPoll = vi.fn();
     s.api.subscribeThread(T, { onPoll });
     await settle();
-    s.channels[0]?.handlers.get('poll')?.({ payload: { poll: A, counts: [2, 0], voters: 2, ends_at: '2026-10-02T09:00:00+00:00', closed: true } });
-    expect(onPoll).toHaveBeenCalledWith({ poll: A, counts: [2, 0], voters: 2, endsAt: '2026-10-02T09:00:00+00:00', closed: true });
+    s.channels[0]?.handlers.get('poll')?.({ payload: { poll: A, counts: [2, 0], voters: 2, ends_at: '2026-10-02T09:00:00+00:00', closed: true, at: '2026-10-01T09:00:02+00:00' } });
+    expect(onPoll).toHaveBeenCalledWith({ poll: A, counts: [2, 0], voters: 2, endsAt: '2026-10-02T09:00:00+00:00', closed: true, at: '2026-10-01T09:00:02+00:00' });
+    /* A late older event is dropped, and a closed poll is final. */
+    s.channels[0]?.handlers.get('poll')?.({ payload: { poll: A, counts: [1, 0], voters: 1, ends_at: '2026-10-02T09:00:00+00:00', closed: false, at: '2026-10-01T09:00:01+00:00' } });
+    expect(onPoll).toHaveBeenCalledTimes(1);
   });
 
   it('hears a reply a play drew under a post as `under`: the parent, the play and the reply as an Act, and never as an act', async () => {

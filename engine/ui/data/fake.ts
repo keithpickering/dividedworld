@@ -20,6 +20,7 @@
  *  - A card's seeded settings are not drawn (a play carries no `seed`); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
  */
 import { isPost, type Instance, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
+import { pollHeard } from './api.ts';
 import { decide } from '../../rules/actions.ts';
 import { countedBallots, lastsHours, pickRefusal, pollCounts, pollDraftProblems, type PollDraft } from '../../rules/polls.ts';
 import { isFixed, rollPack } from '../../rules/packs.ts';
@@ -53,7 +54,7 @@ import type {
   Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment, PageOrigin,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
-  SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct, Ballot, Poll, PollBallotsPage, PollCounts, PollVoter, PollWritten,
+  SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct, Ballot, Poll, PollBallotsPage, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -1454,9 +1455,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { poll: p.id, counts, voters, endsAt, closed: now() >= pollEnd(p) };
   }
   /** The live `poll` event: counts, never who. */
-  const sendPoll = (p: ActRec) => {
-    const counts = countsOf(p);
-    send(`thread:${p.thread}`, 'poll', () => { for (const l of [...(threadListeners.get(p.thread) ?? [])]) l.onPoll?.(counts); });
+  const heardPoll = new WeakMap<ThreadListener, (e: PollEvent) => void>();
+  const sendPoll = (p: ActRec, by: ActRec) => {
+    const event: PollEvent = { ...countsOf(p), at: iso(by.at) };
+    send(`thread:${p.thread}`, 'poll', () => {
+      for (const l of [...(threadListeners.get(p.thread) ?? [])]) {
+        if (l.onPoll === undefined) continue;
+        if (!heardPoll.has(l)) heardPoll.set(l, pollHeard(l.onPoll));
+        heardPoll.get(l)!(event);
+      }
+    });
   };
   /** The poll Act of a draft, written for the post by its character (poll_written); the draft was read by `decide`, so only the end is made here. */
   function writePoll(post: ActRec, character: Id, draft: PollDraft): ActRec {
@@ -1470,7 +1478,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (now() >= pollEnd(p)) return refuse('that poll has closed');
     return null;
   }
-  const wrote = (rec: ActRec, p: ActRec): Answer<PollWritten> => { sendAct(rec); sendPoll(p); return ok({ act: publicAct(rec), counts: countsOf(p) }); };
+  const wrote = (rec: ActRec, p: ActRec): Answer<PollWritten> => { sendAct(rec); sendPoll(p, rec); return ok({ act: publicAct(rec), counts: countsOf(p) }); };
 
   function castBallot(poll: Id, character: Id, picks: readonly number[]): Answer<PollWritten> {
     const bad = request({ action: 'castBallot', poll, character, picks });

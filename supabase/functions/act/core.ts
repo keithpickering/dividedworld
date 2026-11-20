@@ -78,6 +78,16 @@ const surfaceHeard = (play: unknown, answer: Row | undefined, thread: unknown): 
   typeof play === 'string' && thread && answer && typeof answer.covered === 'number'
     ? [{ topic: `thread:${thread}`, event: 'surface', payload: { play, covered: answer.covered } }] : [];
 /**
+ * A ballot or a close of a poll (0381): the Act's projection as `act` (on a secret poll the database's projection names no one) and the poll's live
+ * numbers as `poll`: `{ poll, counts, voters, ends_at, closed, at }`, counts of characters, `at` the created_at of the Act the write made. Built from the answer
+ * alone, never from the request, so a secret ballot's event carries no character and no picks. Events can arrive twice or out of order: a listener applies one only
+ * if its `at` is later than the last it applied for that poll (at a tie a closed one wins), and `closed` is final (engine/ui/data/api.ts, pollHeard).
+ */
+const polled = (a: Row): Broadcast[] => [
+  ...act(a.act),
+  ...(a.thread && a.poll ? [{ topic: `thread:${a.thread}`, event: 'poll', payload: { poll: a.poll, counts: a.counts, voters: a.voters, ends_at: a.ends_at, closed: a.closed, at: (a.act as Row | undefined)?.created_at } }] : []),
+];
+/**
  * What each SQL function's answer sends live. Each is the public projection the function
  * returned, never more; a purchase, which is the player's alone, sends nothing, and so does a
  * Turn, which waits for the settlement to send its tally.
@@ -88,15 +98,6 @@ const surfaceHeard = (play: unknown, answer: Row | undefined, thread: unknown): 
  * play and saved_at, never the state, which can be 256 KB and every reader fetches once, newest
  * saved_at wins.
  */
-/**
- * A ballot or a close of a poll (0381): the Act's projection as `act` (on a secret poll the database's projection names no one) and the poll's live
- * numbers as `poll`: `{ poll, counts, voters, ends_at, closed }`, counts of characters. Built from the answer alone, never from the request, so a
- * secret ballot's event carries no character and no picks. A client keeps what has the later count of voters or the closed flag, as a tally's counts only grow.
- */
-const polled = (a: Row): Broadcast[] => [
-  ...act(a.act),
-  ...(a.thread && a.poll ? [{ topic: `thread:${a.thread}`, event: 'poll', payload: { poll: a.poll, counts: a.counts, voters: a.voters, ends_at: a.ends_at, closed: a.closed } }] : []),
-];
 const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   post: (a) => withSprung(a, act(without(a, 'sprung'))),
   edit_post: (a) => act(a),
