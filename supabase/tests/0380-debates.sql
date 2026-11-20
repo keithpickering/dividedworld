@@ -502,6 +502,8 @@ end $$;
 do $$
 declare w0 timestamptz := pg_temp.first_window(); small record; big record; n constant integer := 1000;
 begin
+  -- Rows a parallel worker reads never reach this backend's counters, so the comparison runs with none: what it counts is every row read.
+  perform set_config('max_parallel_workers_per_gather', '0', false);
   select * into small from pg_temp.chain(n, 'a', w0 + interval '20 days');
   select * into big from pg_temp.chain(2 * n, 'b', w0 + interval '30 days');
   if small.edges <> n - 1 or big.edges <> 2 * n - 1 or not small.whole or not big.whole then raise exception 'the chain is not whole in the input: % and % edges', small.edges, big.edges; end if;
@@ -512,4 +514,5 @@ begin
   if big.est_rows > 3 * small.est_rows then raise exception 'estimate_input does not scale with the chain: % acts rows at % posts, % at %', small.est_rows, n, big.est_rows, 2 * n; end if;
   -- The cap on the whole, after the comparison so that a cost that grows as the square is named as that.
   if big.settle > 3 or big.est > 3 then raise exception 'an input took % / % seconds (settlement / estimate) over a 2,000-post chain', big.settle, big.est; end if;
+  reset max_parallel_workers_per_gather;
 end $$;
