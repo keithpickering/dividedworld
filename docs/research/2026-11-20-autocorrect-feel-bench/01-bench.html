@@ -222,10 +222,16 @@ button[aria-pressed="true"] { background: #000; color: #fff; }
     s.append(u, cv); host.append(s);
     return { s, u, cv };
   }
+  /* A slot's size, measured once from the covered words' own width: the draws then set a min-width on them, and measuring again would read that back and grow the strip on every draw. A resize clears the cache. */
+  const sizes = new WeakMap();
   const measure = (s, px, words) => {
+    if (sizes.has(s)) return sizes.get(s);
     const c = document.createElement('canvas').getContext('2d'); c.font = `${px}px "Gochi Hand", cursive`;
+    s.style.minWidth = '';
     const r = s.getBoundingClientRect();
-    return { w: Math.max(r.width + 6, c.measureText(words).width + 14), h: Math.round(r.height * 0.82) };
+    const size = { w: Math.max(r.width + 6, c.measureText(words).width + 14), h: Math.round(r.height * 0.82) };
+    sizes.set(s, size);
+    return size;
   };
 
   /* ---------- Section 1: the fold at several picks, and today's triangle. ---------- */
@@ -403,6 +409,6 @@ button[aria-pressed="true"] { background: #000; color: #fff; }
 
   const all = () => { drawFolds(); holds.forEach((hd) => hd.draw()); drawResidues(); };
   (document.fonts?.ready ?? Promise.resolve()).then(all);
-  addEventListener('resize', () => { residues.forEach((r) => { r.film = null; }); all(); });
+  addEventListener('resize', () => { document.querySelectorAll('.slot .under').forEach((u) => sizes.delete(u)); residues.forEach((r) => { r.film = null; }); all(); });
 })();
 </script>
