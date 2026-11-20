@@ -157,6 +157,11 @@ export class Hands {
     this.settings = settings;
   }
 
+  /** Whether a pointer hand or a key already holds something, so a new key press is refused for that reason alone. */
+  occupied(): boolean {
+    return this.hand !== null || this.key !== null;
+  }
+
   /** Whether anything wants a tick: a pick or peel in hand, a peek being pulled, held by a key or laying down. A pointer held still with nothing to do does not. */
   busy(): boolean {
     if (this.work) return true;

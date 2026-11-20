@@ -334,9 +334,10 @@ describe('Autocorrect: the anchors', () => {
       await waiting();
       const w = wide(pieces()[0]!);
       fireEvent.pointerDown(pieces()[0]!, { clientX: w / 2, clientY: 5, pointerId: 1, pointerType: 'mouse', button: 0, isPrimary: true });
+      const before = document.querySelector('[data-kb-report]')!.textContent;
       fireEvent.keyDown(buttons()[0]!, { key: 'Backspace' });
       await pass(100);
-      expect(document.querySelector('[data-kb-report]')!.textContent?.trim()).not.toBe('Nothing to press back down.');
+      expect(document.querySelector('[data-kb-report]')!.textContent).toBe(before);
     });
 
     test('a whole result after a half peel whose save has not come back still saves { peeled: [] }', async () => {
@@ -360,6 +361,67 @@ describe('Autocorrect: the anchors', () => {
       expect(save).toHaveBeenLastCalledWith('k1', { peeled: [] });
     });
 
+    test('a refused half-peel save is not owed an undo: a half peel unrolled whole before its own save sends nothing', async () => {
+      vi.useFakeTimers();
+      const save = vi.fn(async () => ({ ok: false, error: 'No.' }));
+      mount({ author: true, body: 'Mario', save: save as unknown as EffectProps['save'] });
+      const w = wide(pieces()[0]!);
+      const half = PICK + (w / 2 / PACE) * 1000;
+      await hold(buttons()[0]!, half);
+      letGo(buttons()[0]!);
+      await pass(500);
+      expect(save).toHaveBeenCalledTimes(1);
+      /* The server refused it, so it holds no peel: the tape is whole again. Peel half and press it back before that is sent. */
+      await hold(buttons()[0]!, half);
+      letGo(buttons()[0]!);
+      await pass(100);
+      fireEvent.keyDown(buttons()[0]!, { key: 'Backspace' });
+      await pass((w / 2 / PACE) * 1000 + 200);
+      fireEvent.keyUp(buttons()[0]!, { key: 'Backspace' });
+      await pass(1000);
+      expect(save).toHaveBeenCalledTimes(1);
+    });
+
+    test('a refused key\'s key-up ends nothing: Backspace let go in the middle of a Shift+Enter peel leaves the peel going', async () => {
+      vi.useFakeTimers();
+      mount({ author: true, body: 'Mario' });
+      const w = wide(pieces()[0]!);
+      const a = buttons()[0]!;
+      await hold(a, 300);
+      fireEvent.keyDown(a, { key: 'Backspace' });
+      fireEvent.keyUp(a, { key: 'Backspace' });
+      await pass(through(w) - 300);
+      expect(buttons()).toHaveLength(0);
+    });
+
+    test('auto-repeat neither restarts a hold nor begins one', async () => {
+      vi.useFakeTimers();
+      const m = await waiting();
+      const a = buttons()[0]!;
+      fireEvent.keyDown(a, { key: 'Backspace', repeat: true });
+      await pass(3000);
+      expect(document.querySelector('[data-kb-ac-roll="waiting"]')).not.toBeNull();
+      expect(m.save).not.toHaveBeenCalled();
+      fireEvent.keyDown(a, { key: 'Enter', repeat: true });
+      await pass(300);
+      expect(document.querySelector('.dw-ac-flap')).toBeNull();
+    });
+
+    test('focus leaving mid-unroll ends it', async () => {
+      vi.useFakeTimers();
+      const m = await waiting();
+      const a = buttons()[0]!;
+      fireEvent.keyDown(a, { key: 'Backspace' });
+      await pass(100);
+      fireEvent.blur(a);
+      await pass(5000);
+      await pass(500);
+      expect(m.save).toHaveBeenCalledTimes(1);
+      const [, state] = m.save.mock.calls[0]! as unknown as [string, { stuck: Record<string, [number, number, number][]> }];
+      expect(state.stuck['0']![0]![0]).toBeGreaterThan(0.01);
+      expect(state.stuck['0']![0]![0]).toBeLessThan(0.5);
+    });
+
     test('a reader\'s Backspace does nothing, and the key is not prevented', async () => {
       vi.useFakeTimers();
       const m = mount({ body: 'Mario' });
@@ -370,6 +432,18 @@ describe('Autocorrect: the anchors', () => {
       expect(m.save).not.toHaveBeenCalled();
       expect(document.querySelector('.dw-ac-flap')).toBeNull();
     });
+  });
+
+  test('a reader\'s Shift with Enter peeks and never peels', async () => {
+    vi.useFakeTimers();
+    const m = mount({ body: 'Mario' });
+    await hold(buttons()[0]!, through(wide(pieces()[0]!)), true);
+    expect(document.querySelector('.dw-ac-flap')).not.toBeNull();
+    letGo(buttons()[0]!);
+    await pass(5000);
+    expect(buttons()).toHaveLength(1);
+    expect(pieces()).toHaveLength(1);
+    expect(m.save).not.toHaveBeenCalled();
   });
 
   test('the Lens words for the author are the design\'s', () => {
@@ -454,6 +528,12 @@ describe('Autocorrect: the author\'s hold', () => {
     const reader = mount({ author: false, body: 'Mario', plays: [hourAgo()] });
     expect(last(reader).ends).toBe(LENS.readerEnds);
     expect(buttons()[0]!.getAttribute('aria-label')).not.toContain('Stuck on');
+  });
+
+  test('an author in the hold pressing Backspace is not prevented', () => {
+    vi.useFakeTimers({ now: NOW });
+    mount({ author: true, body: 'Mario', plays: [hourAgo()] });
+    expect(fireEvent.keyDown(buttons()[0]!, { key: 'Backspace' })).toBe(true);
   });
 
   test('when the hold passes the clock moves on by itself: the words change and the author\'s drag peels and saves', async () => {

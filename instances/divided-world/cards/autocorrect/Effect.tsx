@@ -220,7 +220,7 @@ interface AnchorProps {
   readonly author: boolean;
   readonly open: boolean;
   /** A key goes down on (or comes up from) the anchor. */
-  readonly onKey: (strip: TapeStrip, down: boolean, mode?: KeyMode) => void;
+  readonly onKey: (strip: TapeStrip, down: boolean, mode?: KeyMode, which?: string) => void;
   readonly onFocus: (key: string | null) => void;
   /** The author's hold on the strip's play, as time left in words; absent when none runs. */
   readonly heldLeft?: string;
@@ -243,13 +243,13 @@ function Anchor({ strip, author, open, onKey, onFocus, heldLeft }: AnchorProps) 
     if (!press && !(e.key === 'Backspace' && author && heldLeft === undefined)) return;
     e.preventDefault();
     if (e.repeat) return;
-    onKey(strip, true, e.key === 'Backspace' ? 'unroll' : e.shiftKey && author && heldLeft === undefined ? 'peel' : 'peek');
+    onKey(strip, true, e.key === 'Backspace' ? 'unroll' : e.shiftKey && author && heldLeft === undefined ? 'peel' : 'peek', e.key);
   };
   return (
     <button
       type="button" className="kb-visually-hidden dw-ac-anchor" data-kb-ac-anchor={strip.key} data-kb-quotable={open ? 'shown' : 'hidden'}
       tabIndex={open ? 0 : -1} aria-label={name}
-      onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Backspace') onKey(strip, false); }}
+      onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Backspace') onKey(strip, false, undefined, e.key); }}
       onFocus={() => onFocus(strip.key)} onBlur={() => { onKey(strip, false); onFocus(null); }}
     >{strip.replacement}</button>
   );
@@ -688,6 +688,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     const kept = peeled.length ? savedAfterPeel(peeled, peeled[peeled.length - 1]!, now.current.total[play] ?? 0) : { peeled };
     const state = Object.keys(stuck).length ? { ...kept, stuck, ...(Object.keys(drops).length ? { drops } : {}) } : kept;
     /* What this session has sent for the play, so a whole result after a half peel still goes out while that save's state has not come back. */
+    const hadSent = sentStuck.current.has(play);
     if (Object.keys(stuck).length) sentStuck.current.add(play); else sentStuck.current.delete(play);
     inFlight.current.add(play);
     let answer: Answer<unknown>;
@@ -708,6 +709,8 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
       return;
     }
     dirty.current.delete(play);
+    /* The server never held what this save carried, so it is not owed an undo of it. */
+    if (hadSent) sentStuck.current.add(play); else sentStuck.current.delete(play);
     setRefusals((was) => ({ ...was, [play]: answer.error }));
     /* Only what this save carried comes back; a strip changed since waits for its own save. */
     setLocal((was) => {
@@ -840,14 +843,21 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   /* What the hands did just now is drawn, and the loop runs while they still have something to do. */
   const after = useCallback((hs: Hands) => { apply(hs.drain()); setFrame((n) => n + 1); if (hs.busy()) run(); }, [apply, run]);
 
-  const onKey = useCallback((strip: TapeStrip, down: boolean, mode: KeyMode = 'peek') => {
+  /* The key that began the hold now in hand: a refused key's key-up ends nothing. */
+  const heldKey = useRef<string | null>(null);
+  const onKey = useCallback((strip: TapeStrip, down: boolean, mode: KeyMode = 'peek', which?: string) => {
     const hs = handsNow();
-    byKey.current = down;
     if (down) {
       onMeet();
-      /* A refusal says why; a covered strip's own words, if the hands have them, come after and stand. */
-      if (!hs.keyDown(strip.key, mode) && mode === 'unroll' && !hs.rollWaiting(strip.key)) say(NOTHING_BACK);
-    } else hs.keyUp();
+      const busy = hs.occupied();
+      if (hs.keyDown(strip.key, mode)) { byKey.current = true; heldKey.current = which ?? null; }
+      /* A refusal says why, unless the hands are busy with something else; a covered strip's own words, if the hands have them, come after and stand. */
+      else if (mode === 'unroll' && !busy && !hs.rollWaiting(strip.key)) say(NOTHING_BACK);
+    } else if (which === undefined || which === heldKey.current) {
+      byKey.current = false;
+      heldKey.current = null;
+      hs.keyUp();
+    }
     after(hs);
   }, [handsNow, onMeet, after, say]);
   /* The pointer's place on a piece, in the piece's own pixels: from its untilted box (offsetLeft ignores the tilt), not the rotated rect. */
