@@ -151,7 +151,8 @@ function useRing() {
     const unhang = () => { t.removeAttribute('data-kb-hung'); t.removeAttribute('style'); };
     measure.current = () => {
       const now = bodyOf(el);
-      const nowBar = now?.closest('article')?.querySelector<HTMLElement>(':scope > .kb-act-grid > .kb-act-meta, :scope > .kb-act-meta') ?? null;
+      /* The bar is the date bar beside the body, in the body's own post: an ORIGIN box's area is no post's body, so the post the box stands in lends its moment no bar, and the tag stands in the moment's flow. */
+      const nowBar = now?.parentElement?.querySelector<HTMLElement>(':scope > .kb-act-meta') ?? null;
       if (now !== body || nowBar !== bar) {
         if (body) watch?.unobserve(body);
         if (bar) watch?.unobserve(bar);
