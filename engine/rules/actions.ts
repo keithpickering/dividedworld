@@ -221,7 +221,7 @@ const flag = (r: Fields, field: string): boolean => {
 };
 
 /**
- * A poll a post, a thread or an edit carries (supabase/migrations/0388_polls.sql): the draft as the database reads it, held to the settings in the words
+ * A poll a post, a thread or an edit carries (supabase/migrations/0392_polls.sql): the draft as the database reads it, held to the settings in the words
  * poll_written says them in (polls.ts). Absent or null is no poll; an edit alone may also send {"removed": true}, which takes a post's poll away.
  */
 const pollDraft = (r: Fields, settings: PollSettings, { mayRemove = false } = {}): { poll?: unknown } => {

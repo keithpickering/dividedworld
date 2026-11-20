@@ -143,7 +143,7 @@ begin
   if pg_temp.origin_relation_loops(plan) < 1 then raise exception '2 the meter sees no read of the origin on the page that holds it: it cannot tell a read that did not happen'; end if;
 end $$;
 
--- ---- 3. The polls of a page (supabase/migrations/0389_poll_reads.sql, Task 2 of docs/plans/2026-11-20-polls-plan.md) ----
+-- ---- 3. The polls of a page (supabase/migrations/0393_poll_reads.sql, Task 2 of docs/plans/2026-11-20-polls-plan.md) ----
 -- thread_page now carries the current poll of each post it draws, with its counts and the voters of a public poll. The reads (pl_cur, pl_polls, pl_voters, pl_cast, pl_mine, and o_post that finds the origin's post) must cost what a page's
 -- polls cost, bounded by the 50 voters each poll lists and by acts_ballots, never by the instance's Acts: a page of 20 posts, each with a public poll of 200 characters' ballots and 3 changes each (800 ballots a poll, 16,000 in all), among
 -- the 12,000 other posts and 6,000 plays above. The plan is read as case 1 reads it: the generic plan under explain (analyze, format json), the nodes under the poll CTEs counted.
