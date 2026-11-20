@@ -481,11 +481,12 @@ export class Hands {
     const s = p.stuck[w.k]!;
     w.strain = Math.max(0, w.strain - 2.5 * dt);
     const root = this.rootOf(p, w.k, w.side);
-    const room = Math.min(w.side === 'a' ? s[0] - root.at : root.at - s[1], w.rolled);
-    const moved = Math.min(peelStep({ rolled: w.rolled, strain: 0 }, back, dt, this.settings).moved, Math.max(0, room));
+    /* How far the root is, from the edge alone: what `rolled` says was taken up since a pick never stops an unroll short of it. */
+    const room = Math.max(0, w.side === 'a' ? s[0] - root.at : root.at - s[1]);
+    const moved = Math.min(peelStep({ rolled: w.rolled, strain: 0 }, back, dt, this.settings).moved, room);
     if (!(moved > 0)) { this.touch(p); return; }
     const reached = moved >= room - EPS;
-    w.rolled = reached ? 0 : w.rolled - moved;
+    w.rolled = reached ? 0 : Math.max(0, w.rolled - moved);
     const edge = reached ? root.at : (w.side === 'a' ? s[0] - moved : s[1] + moved);
     if (!reached) {
       p.stuck[w.k] = withKind(w.side === 'a' ? [edge, s[1], s[2]] : [s[0], edge, s[2]], w.side, 1);

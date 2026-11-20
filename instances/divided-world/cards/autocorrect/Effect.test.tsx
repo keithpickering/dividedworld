@@ -820,6 +820,22 @@ describe('Autocorrect: the hands on a piece', () => {
     expect(autocorrect.validateState!(state).ok).toBe(true);
   });
 
+  test('a half-peeled strip unrolled back whole saves an empty state, which the card accepts: it is the play as it landed', async () => {
+    vi.useFakeTimers();
+    const m = mount({ author: true, body: 'Mario', plays: [playOf(1, 'mario', 'Mr. Mario Mario')], states: { k1: savedOf({ peeled: [], stuck: { '0': [[0.5, 1, 3]] } }) } });
+    const piece = pieces()[0]!;
+    down(piece, 0.5 * wide(piece) + 3);
+    await pass(50);
+    move(piece, 0);
+    await pass(4000);
+    up(piece);
+    await pass(500);
+    expect(m.save).toHaveBeenCalledTimes(1);
+    const state = m.save.mock.calls[0]![1];
+    expect(state).toEqual({ peeled: [] });
+    expect(autocorrect.validateState!(state).ok).toBe(true);
+  });
+
   const rafSteps = () => vi.spyOn(globalThis, 'requestAnimationFrame');
   const stepsOf = (spy: ReturnType<typeof rafSteps>) => spy.mock.calls.filter(([cb]) => (cb as { name?: string }).name === 'step').length;
 

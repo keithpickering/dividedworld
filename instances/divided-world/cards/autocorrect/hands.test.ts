@@ -530,3 +530,16 @@ test('keyDown peek, as the author out of the hold, peeks; peel picks and says so
   h.keyUp();
   assert.equal(make([piece({ held: true })]).keyDown('s:0', 'peel'), false, 'a peel is refused while held');
 });
+
+test('an unroll with less rolled than the distance to its root goes back at pace, not in one jump', () => {
+  const h = make([piece({ w: 400, stuck: [[100, 400, 6]] })]);
+  assert.equal(h.press('s:0:0', 104, 1), 'pending');
+  run(h, 460);
+  for (let t = 0; t < 2000 && lo(h) < 150; t += 16) { h.move(1, lo(h) + 10); h.tick(16); }
+  const far = lo(h);
+  assert.ok(far >= 150);
+  h.move(1, 0);
+  run(h, 800);
+  assert.ok(Math.abs(far - lo(h) - 72) < 6, `0.8 seconds at pace is about 72px, not a jump to the end (${far} to ${lo(h)})`);
+  assert.ok(h.view('s:0:0').stuck[0]![2] % 3 === 0 && Math.floor(h.view('s:0:0').stuck[0]![2] / 3) === 1, 'still a peel line');
+});

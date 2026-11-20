@@ -638,7 +638,8 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     /* Drops are kept only for the places still in `stuck` (the card refuses any other). */
     for (const key of Object.keys(drops)) if (!Object.hasOwn(stuck, key)) delete drops[key];
     const peeled = [...places].sort((a, b) => a - b);
-    if (!peeled.length && !Object.keys(stuck).length) return;
+    /* Nothing peeled and nothing stuck: a play never touched saves nothing, but one saved half-peeled and unrolled whole is the play as it landed, and says so. */
+    if (!peeled.length && !Object.keys(stuck).length && !Object.keys(held.stuck ?? {}).length) return;
     const kept = peeled.length ? savedAfterPeel(peeled, peeled[peeled.length - 1]!, now.current.total[play] ?? 0) : { peeled };
     const state = Object.keys(stuck).length ? { ...kept, stuck, ...(Object.keys(drops).length ? { drops } : {}) } : kept;
     inFlight.current.add(play);
