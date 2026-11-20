@@ -25,12 +25,13 @@ export function Layers({ children }: { readonly children?: ReactNode }) {
 }
 
 type Values = Record<string, unknown>;
-/** A preset's target without the origin, which the box's placement decides (see `useLayer`). The preset's other props, its kept layer's mark among them (motion.ts), are spread as they are. */
+/** A preset's target without the origin, which the box's placement decides (see `useLayer`). */
 const bare = (t: unknown): unknown => {
   if (!t || typeof t !== 'object') return t;
   const { transformOrigin: _origin, ...rest } = t as Values;
   return rest;
 };
+/** A preset with its targets `bare`; its other props, its kept layer's mark among them (motion.ts `KEPT`), are spread as they are, so the mark reaches the box. */
 const trimmed = (p: MotionProps): MotionProps => ({ ...p, initial: bare(p.initial), animate: bare(p.animate), exit: bare(p.exit) }) as MotionProps;
 
 /** What marks a layer that is leaving, from the first render of its exit. */

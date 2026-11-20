@@ -5,7 +5,7 @@
  */
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { beat, deal, lift, toHand, turn, wipe, wipeMask, backdrop, crossing, crossingPinned, currentFeel, fanDeal, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
+import { beat, deal, lift, pulse, toHand, turn, wipe, wipeMask, backdrop, crossing, crossingPinned, currentFeel, fanDeal, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
 
 const rect = { x: 10, y: 20, width: 100, height: 40 };
 const within = { width: 1000, height: 700 };
@@ -407,7 +407,7 @@ describe('the kept layer', () => {
       const delays = stagger(f, 5);
       const unmarked = [
         crossing(f, { tab: rect, within }), crossingPinned(f, { tab: rect, within }), backdrop(f), staggerItem(f, delays, 2),
-        lift(f), toHand(f, rect, rect, 0), deal(f, 1, delays), fanDeal(f, 1, delays, { x: 0, y: 0 }), turn(f), beat(f),
+        lift(f), toHand(f, rect, rect, 0), deal(f, 1, delays), fanDeal(f, 1, delays, { x: 0, y: 0 }), turn(f), beat(f), pulse(f),
       ];
       for (const p of unmarked) expect(p).not.toHaveProperty('data-kb-layer');
     }
