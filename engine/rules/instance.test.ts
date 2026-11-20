@@ -14,6 +14,8 @@ const settings: Settings = {
   vote: 10,
   halving: 0.5,
   reactionCap: 3,
+  crowdPayEach: 2,
+  crowdPayMost: 10,
   charactersPerPlayer: 6,
   settlementCron: '17 8 * * *',
   viewCountCron: '41 * * * *',
