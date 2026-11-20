@@ -8,7 +8,7 @@
 --   bbcode_walk (0350's definition) gains two output columns, `held jsonb` (an object from each Act a real quote names, not a cut's, to an array of its quotes in the order their openers stand, each an array of
 --   pieces: the quote's words normalized and split at each cut) and `source text` (quote_norm of the words of the whole body, a cut a cut mark between separators), from the same single pass: every word is
 --   also written to a second buffer that drops nothing, and a real quote's words are that buffer from where its frame began, joined once at its close (a quote's nesting is capped at 16, so a word is joined
---   at most 16 times). It also takes a third argument, `forged uuid[]`, which has no effect yet (the plan's Task 2 uses it). A function's return type and argument list cannot change under create or replace, so
+--   at most 16 times). It also takes a third argument, `forged uuid[]`, an Act's verdict (section 2 below): a real quote of a forged post walks as a counterfeit. A function's return type and argument list cannot change under create or replace, so
 --   it is dropped and made again with its grants restated; bbcode_plain (0316) is a SQL wrapper that names it without a dependency, and every reader of the columns by name calls it with two arguments.
 --   The cut mark is U+FDD0, not U+0000, which a Postgres text cannot hold; every word has it stripped so only a cut puts one in the text.
 --   Security: invoker, no table is read, search_path ending in pg_temp, as bbcode_walk was.
@@ -387,6 +387,9 @@ begin
       if val is not null and val ~ '^[1-7]$' then want := 'pass'; end if;
     elsif nm = 'quote' then
       want := case bbcode_plain_quote_head(qrest) when 'real' then 'sep' when 'counterfeit' then 'pass' end;
+      -- A real quote of a forged post (the Act's verdict, `forged`) is a counterfeit, parse.ts's `forged`: its words are the post's own, in plain and in unquoted and in the source, and it is no real quote, so it is
+      -- never in quotes, the excerpt or held, and past the cap it is text as any counterfeit is. A forged post's every quote in the body is one, each by its Act id in any letters.
+      if want = 'sep' and coalesce(bbcode_plain_quote_act(qrest)::uuid = any (forged), false) then want := 'pass'; end if;
       -- A real quote of the Act asked for, with no real quote or real link open, is kept: cut from the plain output as any real quote is, and its words go to the excerpt.
       if want = 'sep' and quoted is not null and open_sep = 0 and bbcode_plain_quote_act(qrest) = quoted_text then want := 'keep'; end if;
     elsif nm = 'spoiler' then
@@ -467,3 +470,1009 @@ $$;
 
 revoke execute on function bbcode_walk(text, uuid, uuid[]) from public, anon;
 grant execute on function bbcode_walk(text, uuid, uuid[]) to authenticated, service_role;
+
+-- ===================================================================================== 2. the readers pass the verdict ====
+-- An Act's verdict is its payload's `forged` (the posts some real quote of which in its body is doctored; Task 3 writes it). A real quote of a forged post is a counterfeit in every reader, as parse.ts's third argument makes it in the
+-- engine (docs/plans/2026-11-20-forged-quotes-design.md, sections 1, 5 and 7): its words are the poster's own, in plain, unquoted and the source, and it is no quote, so it is never in quotes, the excerpt or held.
+-- act_forged(p) reads the verdict out of a payload; bbcode_plain, search_words and own_words take it as a last argument that defaults to none, so a body with no verdict reads as it always did. Each function below that reads an
+-- Act's words is its latest definition (found with grep, as the plan says) with only the call changed: it passes act_forged of the payload the body came from, and where it read the body without the payload (own_words, and the `before`
+-- read of claim_card_writes, which took the body of an edit) the payload is read with it. Every lock a copied function takes, and its order, stand as written.
+-- Not passed here: acts_quote_guard (Task 4), and a draft body (quote_check, Task 3).
+
+create function act_forged(p jsonb) returns uuid[]
+language sql immutable parallel safe set search_path = public, pg_temp as $$
+  select coalesce((select array_agg(x.v::uuid order by x.o) from jsonb_array_elements_text(case when jsonb_typeof(p -> 'forged') = 'array' then p -> 'forged' else '[]'::jsonb end) with ordinality x (v, o)
+                   where x.v ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'), '{}'::uuid[])
+$$;
+revoke execute on function act_forged(jsonb) from public, anon;
+grant execute on function act_forged(jsonb) to authenticated, service_role;
+
+-- bbcode_plain (0316): the wrapper of bbcode_walk, now with the verdict. A second argument with a default would make the one-argument function ambiguous beside it, so the old one is dropped (nothing depends on it: a SQL function's body names it without a dependency).
+drop function bbcode_plain(text);
+create function bbcode_plain(body text, forged uuid[] default '{}') returns text
+language sql immutable parallel safe set search_path = public, pg_temp as $$
+  select w.plain from bbcode_walk(body, null, forged) w
+$$;
+revoke execute on function bbcode_plain(text, uuid[]) from public, anon;
+grant execute on function bbcode_plain(text, uuid[]) to authenticated, service_role;
+
+-- search_words (0117): the verdict is a fourth argument; the three-argument function is dropped for the same reason as bbcode_plain's, and the two-argument one (a body with no verdict) stays as it was.
+drop function search_words(text, text, regconfig);
+create function search_words(body text, title text, lang regconfig, forged uuid[] default '{}') returns tsvector
+language sql stable set search_path = public, pg_temp as $$
+  select setweight(to_tsvector(lang, coalesce(title, '')), 'A') || to_tsvector(lang, bbcode_plain(body, forged))
+$$;
+revoke execute on function search_words(text, text, regconfig, uuid[]) from public, anon;
+grant execute on function search_words(text, text, regconfig, uuid[]) to authenticated, service_role;
+
+-- search_words_of, acts_search and search_backfill (0117, no later definition): the words of an Act's row, read with the verdict of the payload the body came from.
+create or replace function search_words_of(act_id uuid, lang regconfig) returns tsvector
+language sql stable security definer set search_path = public, pg_temp as $$
+  select search_words(a.current_payload ->> 'body', case when a.seq = 1 then t.title end, lang, act_forged(a.current_payload))
+  from acts_public a join threads t on t.id = a.thread where a.id = act_id
+$$;
+
+create or replace function acts_search() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  title text;
+  tboard uuid;
+  tseq integer;
+begin
+  if new.kind in ('post', 'spin') then
+    select case when new.seq = 1 then t.title end, t.board into title, tboard from threads t where t.id = new.thread;
+    insert into post_search (act, thread, board, first, character, created_at, words)
+    values (new.id, new.thread, tboard, new.seq = 1, new.character, new.created_at, search_words(new.payload ->> 'body', title, search_lang(), act_forged(new.payload)));
+  elsif new.kind = 'edit' then
+    if exists (select 1 from acts x where x.kind = 'edit' and x.target_act_id = new.target_act_id and (x.created_at, x.id) > (new.created_at, new.id)) then return null; end if;
+    select p.seq into tseq from acts p where p.id = new.target_act_id;
+    select t.title into title from threads t where t.id = new.thread and tseq = 1;
+    update post_search set words = search_words(new.payload ->> 'body', title, search_lang(), act_forged(new.payload)) where act = new.target_act_id;
+  end if;
+  return null;
+end $$;
+
+create or replace function search_backfill() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare n bigint;
+begin
+  insert into post_search (act, thread, board, first, character, created_at, words)
+  select a.id, a.thread, t.board, a.seq = 1, a.character, a.created_at, search_words(a.current_payload ->> 'body', case when a.seq = 1 then t.title end, search_lang(), act_forged(a.current_payload))
+  from acts_public a join threads t on t.id = a.thread
+  where a.kind in ('post', 'spin') and not exists (select 1 from post_search p where p.act = a.id)
+  on conflict (act) do nothing;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
+-- search_reindex_past_cap (0350)
+create or replace function search_reindex_past_cap() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare n bigint;
+begin
+  lock table acts, post_search in share row exclusive mode;
+  update post_search p set words = w.new_words
+  from (
+    select a.id as act, search_words(cur.body, case when a.seq = 1 then t.title end, search_lang(), cur.forged) as new_words
+    from post_search s
+    join acts a on a.id = s.act
+    join threads t on t.id = a.thread
+    left join lateral (
+      select x.id, x.payload from acts x where x.kind = 'edit' and x.target_act_id = a.id and a.kind = 'post' order by x.created_at desc, x.id desc limit 1
+    ) e on true
+    cross join lateral (select coalesce(e.payload, a.payload) ->> 'body' as body, act_forged(coalesce(e.payload, a.payload)) as forged) cur
+    where (cur.body ilike '%[quote%' or length(cur.body) - length(replace(cur.body, '[', '')) > 16)
+      and not (case when e.id is null then a.kind = 'post' and version_hidden(a.id, a.id) else version_hidden(e.id, a.id) end)
+  ) w
+  where p.act = w.act and p.words is distinct from w.new_words;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
+-- search_posts (0368)
+create or replace function public.search_posts(q text, author uuid, board uuid, from_at timestamp with time zone, to_at timestamp with time zone, titles_only boolean, sort text, after jsonb, per_page integer)
+ returns jsonb
+ language plpgsql
+ stable
+ set search_path to 'public', 'pg_temp'
+ set plan_cache_mode = force_generic_plan
+ set jit = off
+as $function$
+#variable_conflict use_column
+begin
+  perform
+         CASE
+             WHEN (char_length(COALESCE(q, ''::text)) > 200) THEN screen_refusal('a search is at most 200 characters'::text)
+             WHEN ((sort IS NOT NULL) AND (sort <> ALL (ARRAY['relevance'::text, 'newest'::text, 'oldest'::text]))) THEN screen_refusal('sort is relevance, newest or oldest'::text)
+             WHEN ((COALESCE(per_page, 20) < 1) OR (COALESCE(per_page, 20) > 50)) THEN screen_refusal('a page holds 1 to 50 results'::text)
+             WHEN (from_at >= to_at) THEN screen_refusal('the range ends before it begins'::text)
+             WHEN ((after IS NOT NULL) AND (NOT search_cursor_ok(after, ((COALESCE(sort, 'relevance'::text) = 'relevance'::text) AND (btrim(COALESCE(q, ''::text)) <> ''::text))))) THEN screen_refusal('that is not a cursor this search gave'::text)
+             ELSE NULL::integer
+         END AS "case";
+  return (
+  WITH k AS MATERIALIZED (
+          SELECT (btrim(COALESCE(q, ''::text)) <> ''::text) AS has_q
+         ), cfg AS MATERIALIZED (
+          SELECT COALESCE(search_posts.per_page, 20) AS pp,
+             COALESCE(( SELECT ((x.settings ->> 'searchRankPool'::text))::integer AS int4
+                    FROM screen_settings x
+                  LIMIT 1), 5000) AS pool,
+             COALESCE(( SELECT ((x.settings ->> 'postsPerPage'::text))::integer AS int4
+                    FROM screen_settings x
+                  LIMIT 1), 20) AS thread_pp,
+                 CASE
+                     WHEN (COALESCE(search_posts.sort, 'relevance'::text) = 'relevance'::text) THEN
+                     CASE
+                         WHEN k.has_q THEN 'relevance'::text
+                         ELSE 'newest'::text
+                     END
+                     ELSE search_posts.sort
+                 END AS s
+            FROM k
+         ), tsq AS MATERIALIZED (
+          SELECT
+                 CASE
+                     WHEN ( SELECT k.has_q
+                        FROM k) THEN websearch_to_tsquery(search_lang(), q)
+                     ELSE NULL::tsquery
+                 END AS t
+         ), au AS MATERIALIZED (
+          SELECT
+                 CASE
+                     WHEN (author IS NULL) THEN NULL::uuid
+                     WHEN (EXISTS ( SELECT 1
+                        FROM characters_public c
+                       WHERE (c.id = search_posts.author))) THEN author
+                     ELSE '00000000-0000-0000-0000-000000000000'::uuid
+                 END AS id
+         ), c AS MATERIALIZED (
+          SELECT ((after ->> 'rank'::text))::double precision AS rank,
+             ((after ->> 'at'::text))::timestamp with time zone AS at,
+             ((after ->> 'act'::text))::uuid AS act
+           WHERE (after IS NOT NULL)
+         ), m AS MATERIALIZED (
+          SELECT search_matches.act,
+             search_matches.thread,
+             search_matches.board,
+             search_matches.title,
+             search_matches."character",
+             search_matches.created_at,
+             search_matches.words
+            FROM search_matches(search_posts.q, ( SELECT au.id
+                    FROM au), search_posts.board, search_posts.from_at, search_posts.to_at, COALESCE(search_posts.titles_only, false), ( SELECT (cfg.s <> 'oldest'::text)
+                    FROM cfg),
+                 CASE
+                     WHEN (( SELECT cfg.s
+                        FROM cfg) <> 'relevance'::text) THEN ( SELECT c.at
+                        FROM c)
+                     ELSE NULL::timestamp with time zone
+                 END,
+                 CASE
+                     WHEN (( SELECT cfg.s
+                        FROM cfg) <> 'relevance'::text) THEN ( SELECT c.act
+                        FROM c)
+                     ELSE NULL::uuid
+                 END,
+                 CASE
+                     WHEN (( SELECT cfg.s
+                        FROM cfg) = 'relevance'::text) THEN (( SELECT cfg.pool
+                        FROM cfg) + 1)
+                     ELSE (( SELECT cfg.pp
+                        FROM cfg) + 1)
+                 END) search_matches(act, thread, board, title, "character", created_at, words)
+         ), cnt AS MATERIALIZED (
+          SELECT count(*) AS n
+            FROM search_matches(search_posts.q, ( SELECT au.id
+                    FROM au), search_posts.board, search_posts.from_at, search_posts.to_at, COALESCE(search_posts.titles_only, false), true, NULL::timestamp with time zone, NULL::uuid, 1001) search_matches(act, thread, board, title, "character", created_at, words)
+         ), ranked AS MATERIALIZED (
+          SELECT x.act,
+             x.thread,
+             x.board,
+             x.title,
+             x."character",
+             x.created_at,
+             x.words,
+             x.rn,
+                 CASE
+                     WHEN (( SELECT cfg.s
+                        FROM cfg) = 'relevance'::text) THEN (ts_rank_cd(x.words, ( SELECT tsq.t
+                        FROM tsq), 1))::double precision
+                     ELSE (0)::double precision
+                 END AS rank
+            FROM ( SELECT m.act,
+                     m.thread,
+                     m.board,
+                     m.title,
+                     m."character",
+                     m.created_at,
+                     m.words,
+                     row_number() OVER (ORDER BY m.created_at DESC, m.act DESC) AS rn
+                    FROM m) x
+           WHERE ((( SELECT cfg.s
+                    FROM cfg) <> 'relevance'::text) OR (x.rn <= ( SELECT cfg.pool
+                    FROM cfg)))
+         ), page AS MATERIALIZED (
+          SELECT r.act,
+             r.thread,
+             r.board,
+             r.title,
+             r."character",
+             r.created_at,
+             r.words,
+             r.rn,
+             r.rank,
+             row_number() OVER (ORDER BY r.rank DESC,
+                 CASE
+                     WHEN (cfg.s = 'oldest'::text) THEN r.created_at
+                     ELSE NULL::timestamp with time zone
+                 END,
+                 CASE
+                     WHEN (cfg.s <> 'oldest'::text) THEN r.created_at
+                     ELSE NULL::timestamp with time zone
+                 END DESC,
+                 CASE
+                     WHEN (cfg.s = 'oldest'::text) THEN r.act
+                     ELSE NULL::uuid
+                 END,
+                 CASE
+                     WHEN (cfg.s <> 'oldest'::text) THEN r.act
+                     ELSE NULL::uuid
+                 END DESC) AS n
+            FROM ranked r,
+             cfg
+           WHERE ((cfg.s <> 'relevance'::text) OR (NOT (EXISTS ( SELECT 1
+                    FROM c))) OR (ROW(r.rank, r.created_at, r.act) < ROW(( SELECT c.rank
+                    FROM c), ( SELECT c.at
+                    FROM c), ( SELECT c.act
+                    FROM c))))
+           ORDER BY (row_number() OVER (ORDER BY r.rank DESC,
+                 CASE
+                     WHEN (cfg.s = 'oldest'::text) THEN r.created_at
+                     ELSE NULL::timestamp with time zone
+                 END,
+                 CASE
+                     WHEN (cfg.s <> 'oldest'::text) THEN r.created_at
+                     ELSE NULL::timestamp with time zone
+                 END DESC,
+                 CASE
+                     WHEN (cfg.s = 'oldest'::text) THEN r.act
+                     ELSE NULL::uuid
+                 END,
+                 CASE
+                     WHEN (cfg.s <> 'oldest'::text) THEN r.act
+                     ELSE NULL::uuid
+                 END DESC))
+          LIMIT (( SELECT cfg_1.pp
+                    FROM cfg cfg_1) + 1)
+         ), shown AS MATERIALIZED (
+          SELECT p.act,
+             p.thread,
+             p.board,
+             p.title,
+             p."character",
+             p.created_at,
+             p.words,
+             p.rn,
+             p.rank,
+             p.n
+            FROM page p
+           WHERE (p.n <= ( SELECT cfg.pp
+                    FROM cfg))
+         ), people AS MATERIALIZED (
+          SELECT cp.id,
+             cp.name
+            FROM characters_public cp
+           WHERE (cp.id IN ( SELECT s."character"
+                    FROM shown s))
+         ), places AS MATERIALIZED (
+          SELECT b.id,
+             b.slug,
+             b.name
+            FROM boards_now b
+           WHERE (b.id IN ( SELECT s.board
+                    FROM shown s))
+         )
+  SELECT jsonb_build_object('count', ( SELECT cnt.n
+            FROM cnt), 'more', (( SELECT cnt.n
+            FROM cnt) > 1000), 'pooled', ((( SELECT cfg.s
+            FROM cfg) = 'relevance'::text) AND (( SELECT count(*) AS count
+            FROM m) > ( SELECT cfg.pool
+            FROM cfg))), 'results', COALESCE(( SELECT jsonb_agg(jsonb_build_object('act', s.act, 'thread', s.thread, 'title', s.title, 'board', s.board, 'board_slug', pl.slug, 'board_name', pl.name, 'seq', a.seq, 'page', (GREATEST((1)::numeric, ceil(((a.seq)::numeric / (( SELECT cfg.thread_pp
+                    FROM cfg))::numeric))))::integer, 'character', s."character", 'name', pe.name, 'created_at', s.created_at, 'snippet',
+                 CASE
+                     WHEN (( SELECT tsq.t
+                        FROM tsq) IS NULL) THEN "left"(regexp_replace(bbcode_plain((a.current_payload ->> 'body'::text), act_forged(a.current_payload)), '\s+'::text, ' '::text, 'g'::text), 200)
+                     ELSE ts_headline(search_lang(), bbcode_plain((a.current_payload ->> 'body'::text), act_forged(a.current_payload)), ( SELECT tsq.t
+                        FROM tsq), 'StartSel=<<,StopSel=>>,MaxFragments=1,MaxWords=30,MinWords=12'::text)
+                 END, 'cards', search_post_cards(s.act)) ORDER BY s.n) AS jsonb_agg
+            FROM (((shown s
+              JOIN acts_public a ON ((a.id = s.act)))
+              LEFT JOIN people pe ON ((pe.id = s."character")))
+              LEFT JOIN places pl ON ((pl.id = s.board)))), '[]'::jsonb), 'next', ( SELECT jsonb_build_object('rank', p.rank, 'at', p.created_at, 'act', p.act) AS jsonb_build_object
+            FROM page p
+           WHERE ((p.n = ( SELECT cfg.pp
+                    FROM cfg)) AND (EXISTS ( SELECT 1
+                    FROM page x
+                   WHERE (x.n = (( SELECT cfg.pp
+                            FROM cfg) + 1))))))) AS jsonb_build_object
+  );
+end
+$function$;
+
+-- search_threads (0368)
+create or replace function public.search_threads(q text, author uuid, board uuid, from_at timestamp with time zone, to_at timestamp with time zone, titles_only boolean, sort text, after jsonb, per_page integer)
+ returns jsonb
+ language plpgsql
+ stable
+ set search_path to 'public', 'pg_temp'
+ set plan_cache_mode = force_generic_plan
+ set jit = off
+as $function$
+#variable_conflict use_column
+begin
+  perform
+         CASE
+             WHEN (char_length(COALESCE(q, ''::text)) > 200) THEN screen_refusal('a search is at most 200 characters'::text)
+             WHEN ((sort IS NOT NULL) AND (sort <> ALL (ARRAY['relevance'::text, 'newest'::text, 'oldest'::text]))) THEN screen_refusal('sort is relevance, newest or oldest'::text)
+             WHEN ((COALESCE(per_page, 20) < 1) OR (COALESCE(per_page, 20) > 50)) THEN screen_refusal('a page holds 1 to 50 results'::text)
+             WHEN (from_at >= to_at) THEN screen_refusal('the range ends before it begins'::text)
+             WHEN ((after IS NOT NULL) AND (NOT search_cursor_ok(after, ((COALESCE(sort, 'relevance'::text) = 'relevance'::text) AND (btrim(COALESCE(q, ''::text)) <> ''::text))))) THEN screen_refusal('that is not a cursor this search gave'::text)
+             ELSE NULL::integer
+         END AS "case";
+  return (
+  WITH k AS MATERIALIZED (
+          SELECT (btrim(COALESCE(q, ''::text)) <> ''::text) AS has_q
+         ), cfg AS MATERIALIZED (
+          SELECT COALESCE(search_threads.per_page, 20) AS pp,
+             COALESCE(( SELECT ((x.settings ->> 'searchRankPool'::text))::integer AS int4
+                    FROM screen_settings x
+                  LIMIT 1), 5000) AS pool,
+             COALESCE(( SELECT ((x.settings ->> 'postsPerPage'::text))::integer AS int4
+                    FROM screen_settings x
+                  LIMIT 1), 20) AS thread_pp,
+                 CASE
+                     WHEN (COALESCE(search_threads.sort, 'relevance'::text) = 'relevance'::text) THEN
+                     CASE
+                         WHEN k.has_q THEN 'relevance'::text
+                         ELSE 'newest'::text
+                     END
+                     ELSE search_threads.sort
+                 END AS s
+            FROM k
+         ), tsq AS MATERIALIZED (
+          SELECT
+                 CASE
+                     WHEN ( SELECT k.has_q
+                        FROM k) THEN websearch_to_tsquery(search_lang(), q)
+                     ELSE NULL::tsquery
+                 END AS t
+         ), au AS MATERIALIZED (
+          SELECT
+                 CASE
+                     WHEN (author IS NULL) THEN NULL::uuid
+                     WHEN (EXISTS ( SELECT 1
+                        FROM characters_public c
+                       WHERE (c.id = search_threads.author))) THEN author
+                     ELSE '00000000-0000-0000-0000-000000000000'::uuid
+                 END AS id
+         ), c AS MATERIALIZED (
+          SELECT ((after ->> 'rank'::text))::double precision AS rank,
+             ((after ->> 'at'::text))::timestamp with time zone AS at,
+             ((after ->> 'act'::text))::uuid AS act
+           WHERE (after IS NOT NULL)
+         ), m AS MATERIALIZED (
+          SELECT search_matches.act,
+             search_matches.thread,
+             search_matches.board,
+             search_matches.title,
+             search_matches."character",
+             search_matches.created_at,
+             search_matches.words
+            FROM search_matches(search_threads.q, ( SELECT au.id
+                    FROM au), search_threads.board, search_threads.from_at, search_threads.to_at, COALESCE(search_threads.titles_only, false), true, NULL::timestamp with time zone, NULL::uuid,
+                 CASE
+                     WHEN (( SELECT cfg.s
+                        FROM cfg) = 'relevance'::text) THEN (( SELECT cfg.pool
+                        FROM cfg) + 1)
+                     ELSE 0
+                 END) search_matches(act, thread, board, title, "character", created_at, words)
+         ), ranked AS MATERIALIZED (
+          SELECT x.act,
+             x.thread,
+             x.board,
+             x.title,
+             x."character",
+             x.created_at,
+             x.words,
+             x.rn,
+             (ts_rank_cd(x.words, ( SELECT tsq.t
+                    FROM tsq), 1))::double precision AS rank
+            FROM ( SELECT m.act,
+                     m.thread,
+                     m.board,
+                     m.title,
+                     m."character",
+                     m.created_at,
+                     m.words,
+                     row_number() OVER (ORDER BY m.created_at DESC, m.act DESC) AS rn
+                    FROM m) x
+           WHERE (x.rn <= ( SELECT cfg.pool
+                    FROM cfg))
+         ), best AS MATERIALIZED (
+          SELECT DISTINCT ON (r.thread) r.act,
+             r.thread,
+             r.board,
+             r.title,
+             r."character",
+             r.created_at,
+             r.rank
+            FROM ranked r
+           ORDER BY r.thread, r.rank DESC, r.created_at DESC, r.act DESC
+         ), walk AS MATERIALIZED (
+          SELECT search_walk.act,
+             search_walk.thread,
+             search_walk.board,
+             search_walk.title,
+             search_walk."character",
+             search_walk.created_at,
+             search_walk.stop
+            FROM search_walk(search_threads.q, ( SELECT au.id
+                    FROM au), search_threads.board, search_threads.from_at, search_threads.to_at, COALESCE(search_threads.titles_only, false), ( SELECT (cfg.s <> 'oldest'::text)
+                    FROM cfg), ( SELECT c.at
+                    FROM c), ( SELECT c.act
+                    FROM c),
+                 CASE
+                     WHEN (( SELECT cfg.s
+                        FROM cfg) = 'relevance'::text) THEN 0
+                     ELSE (( SELECT cfg.pp
+                        FROM cfg) + 1)
+                 END, ( SELECT cfg.pool
+                    FROM cfg)) search_walk(act, thread, board, title, "character", created_at, stop)
+         ), walked AS MATERIALIZED (
+          SELECT w.act,
+             w.thread,
+             w.board,
+             w.title,
+             w."character",
+             w.created_at,
+             (0)::double precision AS rank
+            FROM walk w
+           WHERE (NOT w.stop)
+         ), cnt AS MATERIALIZED (
+          SELECT count(*) FILTER (WHERE (NOT w.stop)) AS n,
+             COALESCE(bool_or(w.stop), false) AS cut
+            FROM search_walk(search_threads.q, ( SELECT au.id
+                    FROM au), search_threads.board, search_threads.from_at, search_threads.to_at, COALESCE(search_threads.titles_only, false), true, NULL::timestamp with time zone, NULL::uuid, 1001, ( SELECT cfg.pool
+                    FROM cfg)) w(act, thread, board, title, "character", created_at, stop)
+         ), found AS MATERIALIZED (
+          SELECT best.act,
+             best.thread,
+             best.board,
+             best.title,
+             best."character",
+             best.created_at,
+             best.rank
+            FROM best
+         UNION ALL
+          SELECT walked.act,
+             walked.thread,
+             walked.board,
+             walked.title,
+             walked."character",
+             walked.created_at,
+             walked.rank
+            FROM walked
+         ), page AS MATERIALIZED (
+          SELECT b.act,
+             b.thread,
+             b.board,
+             b.title,
+             b."character",
+             b.created_at,
+             b.rank,
+             row_number() OVER (ORDER BY b.rank DESC,
+                 CASE
+                     WHEN (cfg.s = 'oldest'::text) THEN b.created_at
+                     ELSE NULL::timestamp with time zone
+                 END,
+                 CASE
+                     WHEN (cfg.s <> 'oldest'::text) THEN b.created_at
+                     ELSE NULL::timestamp with time zone
+                 END DESC,
+                 CASE
+                     WHEN (cfg.s = 'oldest'::text) THEN b.act
+                     ELSE NULL::uuid
+                 END,
+                 CASE
+                     WHEN (cfg.s <> 'oldest'::text) THEN b.act
+                     ELSE NULL::uuid
+                 END DESC) AS n
+            FROM found b,
+             cfg
+           WHERE ((cfg.s <> 'relevance'::text) OR (NOT (EXISTS ( SELECT 1
+                    FROM c))) OR (ROW(b.rank, b.created_at, b.act) < ROW(( SELECT c.rank
+                    FROM c), ( SELECT c.at
+                    FROM c), ( SELECT c.act
+                    FROM c))))
+           ORDER BY (row_number() OVER (ORDER BY b.rank DESC,
+                 CASE
+                     WHEN (cfg.s = 'oldest'::text) THEN b.created_at
+                     ELSE NULL::timestamp with time zone
+                 END,
+                 CASE
+                     WHEN (cfg.s <> 'oldest'::text) THEN b.created_at
+                     ELSE NULL::timestamp with time zone
+                 END DESC,
+                 CASE
+                     WHEN (cfg.s = 'oldest'::text) THEN b.act
+                     ELSE NULL::uuid
+                 END,
+                 CASE
+                     WHEN (cfg.s <> 'oldest'::text) THEN b.act
+                     ELSE NULL::uuid
+                 END DESC))
+          LIMIT (( SELECT cfg_1.pp
+                    FROM cfg cfg_1) + 1)
+         ), shown AS MATERIALIZED (
+          SELECT p.act,
+             p.thread,
+             p.board,
+             p.title,
+             p."character",
+             p.created_at,
+             p.rank,
+             p.n
+            FROM page p
+           WHERE (p.n <= ( SELECT cfg.pp
+                    FROM cfg))
+         ), people AS MATERIALIZED (
+          SELECT cp.id,
+             cp.name
+            FROM characters_public cp
+           WHERE (cp.id IN ( SELECT s."character"
+                    FROM shown s))
+         ), places AS MATERIALIZED (
+          SELECT b.id,
+             b.slug,
+             b.name
+            FROM boards_now b
+           WHERE (b.id IN ( SELECT s.board
+                    FROM shown s))
+         )
+  SELECT jsonb_build_object('count', ( SELECT cnt.n
+            FROM cnt), 'more', ((( SELECT cnt.n
+            FROM cnt) > 1000) OR ( SELECT cnt.cut
+            FROM cnt)), 'pooled', ((( SELECT cfg.s
+            FROM cfg) = 'relevance'::text) AND (( SELECT count(*) AS count
+            FROM m) > ( SELECT cfg.pool
+            FROM cfg))), 'results', COALESCE(( SELECT jsonb_agg(jsonb_build_object('thread', s.thread, 'title', s.title, 'board', s.board, 'board_slug', pl.slug, 'board_name', pl.name, 'act', s.act, 'seq', a.seq, 'page', (GREATEST((1)::numeric, ceil(((a.seq)::numeric / (( SELECT cfg.thread_pp
+                    FROM cfg))::numeric))))::integer, 'character', s."character", 'name', pe.name, 'created_at', s.created_at, 'snippet',
+                 CASE
+                     WHEN (( SELECT tsq.t
+                        FROM tsq) IS NULL) THEN "left"(regexp_replace(bbcode_plain((a.current_payload ->> 'body'::text), act_forged(a.current_payload)), '\s+'::text, ' '::text, 'g'::text), 200)
+                     ELSE ts_headline(search_lang(), bbcode_plain((a.current_payload ->> 'body'::text), act_forged(a.current_payload)), ( SELECT tsq.t
+                        FROM tsq), 'StartSel=<<,StopSel=>>,MaxFragments=1,MaxWords=30,MinWords=12'::text)
+                 END, 'matches', LEAST(h.n, (100)::bigint), 'matches_more', (h.n > 100)) ORDER BY s.n) AS jsonb_agg
+            FROM ((((shown s
+              JOIN acts_public a ON ((a.id = s.act)))
+              LEFT JOIN people pe ON ((pe.id = s."character")))
+              LEFT JOIN places pl ON ((pl.id = s.board)))
+              CROSS JOIN LATERAL ( SELECT search_thread_matches(s.thread, ( SELECT tsq.t
+                            FROM tsq), ( SELECT au.id
+                            FROM au), search_threads.from_at, search_threads.to_at, COALESCE(search_threads.titles_only, false)) AS n) h)), '[]'::jsonb), 'next', COALESCE(( SELECT jsonb_build_object('rank', p.rank, 'at', p.created_at, 'act', p.act) AS jsonb_build_object
+            FROM page p
+           WHERE ((p.n = ( SELECT cfg.pp
+                    FROM cfg)) AND (EXISTS ( SELECT 1
+                    FROM page x
+                   WHERE (x.n = (( SELECT cfg.pp
+                            FROM cfg) + 1)))))), ( SELECT jsonb_build_object('rank', 0, 'at', w.created_at, 'act', w.act) AS jsonb_build_object
+            FROM walk w
+           WHERE w.stop))) AS jsonb_build_object
+  );
+end
+$function$;
+
+-- rule_breaks (0340)
+create or replace function rule_breaks(post_act uuid, only_move uuid default null) returns setof rules_now
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  p record;
+  prev record;
+  r rules_now%rowtype;
+  body text;
+  broken boolean;
+begin
+  select a.character, a.thread, a.seq, a.created_at, a.payload ->> 'body' as body, act_forged(a.payload) as forged, t.board, t.title into p
+  from acts a join threads t on t.id = a.thread where a.id = post_act and a.kind in ('post', 'spin') and not coalesce(version_hidden(a.id), false);
+  if not found then return; end if;
+  -- Only a body that names a quote is walked; one that does not has nothing to cut.
+  body := coalesce(case when p.body ilike '%[quote%' then (select w.unquoted from bbcode_walk(p.body, null, p.forged) w) else p.body end, '');
+  -- The post before this one in the thread: the unique (thread, seq) index walked back. A thread's opener has none.
+  select x.character, x.created_at into prev from acts x
+  where x.thread = p.thread and x.seq < p.seq and x.kind in ('post', 'spin') order by x.seq desc limit 1;
+  for r in select * from rules_now x where (x.board is null or x.board = p.board) and (only_move is null or x.move_act = only_move) order by x.board nulls first, x.number loop
+    broken := case r.predicate
+      when 'minLength' then char_length(body) < (r.param #>> '{}')::integer
+      when 'maxLength' then char_length(body) > (r.param #>> '{}')::integer
+      when 'noAllCaps' then (
+        select w.letters > 0 and w.uppers * 2 > w.letters
+        from (select length(regexp_replace(q.s, '[^[:alpha:]]', '', 'g')) as letters, length(regexp_replace(q.s, '[^[:upper:]]', '', 'g')) as uppers
+              from (select regexp_replace(body, '\[/?[a-zA-Z*]+(=[^\]]*)?\]', '', 'g') as s) q) w)
+      when 'noDoublePost' then prev.character is not null and prev.character = p.character
+      when 'noNecropost' then prev.created_at is not null and p.created_at - prev.created_at > make_interval(days => (r.param #>> '{}')::integer)
+      when 'noDuplicateTitle' then p.seq = 1 and exists (
+        select 1 from threads o where o.board = p.board and o.id <> p.thread and lower(btrim(o.title)) = lower(btrim(p.title)))
+      when 'bannedWord' then body ~* ('(^|[^[:alnum:]_])' || regex_escape(r.param #>> '{}') || '([^[:alnum:]_]|$)')
+      when 'requiredWord' then body !~* ('(^|[^[:alnum:]_])' || regex_escape(r.param #>> '{}') || '([^[:alnum:]_]|$)')
+      when 'noTag' then body ~* ('\[' || regex_escape(r.param #>> '{}') || '([=\] ]|$)')
+      when 'repliesOnly' then p.seq = 1
+      else null end;
+    if broken is null then raise exception 'no check for predicate %', r.predicate using errcode = '0A000'; end if;
+    if broken then return next r; end if;
+  end loop;
+end $$;
+
+create or replace function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  f spring_facts;
+  k card_kinds%rowtype;
+  named text;
+  in_character integer;
+  in_thread integer;
+  in_board integer;
+  walked_plain text;
+  raw_body text;
+  walked_excerpt text;
+  ic card_kinds%rowtype;
+  m jsonb;
+  ic_rank integer;
+  up_rank integer;
+  own_rank integer;
+  flavor_ok boolean;
+  matched boolean;
+begin
+  -- 1. The setter's character, and what decides whether it can act (retired, not debuted), who it belongs to and whether it is staff.
+  select a.character into f.setter_character from acts a where a.id = fd.play;
+  select c.retired_at, c.debuted_at, c.owner, c.staff is not null into f.setter_retired, f.setter_debuted, f.setter_owner, f.setter_staff from characters c where c.id = f.setter_character;
+  -- 2. The back's card kind.
+  select * into k from card_kinds x where x.key = fd.card;
+  f.kind_play := k.play; f.kind_trap := k.trap; f.kind_stack := k.stack; f.kind_seeded := k.seeded;
+  f.kind_skim := k.skim is not null; f.kind_scores := k.scores_as;
+  f.reach := coalesce(k.reaches[1], 'post');
+  -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
+  -- or a visit by_act is not a post, or not yet written, and these find what they find.
+  select a.kind, a.character, a.thread, case when coalesce(version_hidden(a.id), false) then null else a.payload ->> 'body' end, t.board into f.by_kind, f.by_character, f.by_thread, raw_body, f.by_board
+  from acts a left join threads t on t.id = a.thread where a.id = by_act;
+  select a.id into f.first_post from acts a where a.thread = f.by_thread and a.seq = 1 and a.kind = 'post';
+  select t.id into f.announce_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
+  -- 4. The stack at the would-be target and reach, for every reach: the plays of the card still up on the Act (a post's), the layer to go on from, and the plays of it still up on
+  -- the Act's character, thread and board (a play beyond a post's), counted as place_cast counts them. Which reach the card takes is then a choice among values already read.
+  f.target := case f.reach when 'post' then by_act when 'character' then f.by_character when 'thread' then f.by_thread else f.by_board end;
+  -- Each play found is asked whether an admin ended it, whatever card it is (card_ended is a read of its own, and the subquery cannot be flattened away, so it is made for every play found and not only
+  -- for the ones of this back's card): which card is counted is chosen after the reads.
+  select count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended),
+         greatest(coalesce(max(l.layer) filter (where l.card is not distinct from fd.card), 0), count(*) filter (where l.card is not distinct from fd.card)) + 1,
+         count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended and l.quadrant is not distinct from (fd.config ->> 'quadrant'))
+    into f.up, f.layer, f.quadrant_up
+  from (select k2.payload ->> 'card' as card, (k2.payload ->> 'ends')::timestamptz as ends, (k2.payload ->> 'layer')::integer as layer, card_ended(k2.id) as ended,
+               k2.payload #>> '{config,quadrant}' as quadrant
+        from acts k2 where k2.kind = 'card' and k2.target_act_id = by_act and not (k2.payload ? 'caught') and coalesce(k2.payload ->> 'reach', 'post') = 'post' offset 0) l;
+  f.quadrant_ok := (fd.config ->> 'quadrant') = any (array['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative']);
+  -- The window a scored-as play would name, and whether the quoting character already has a class named for it: a play of any scored-as card made at or after the last settled window's end, not ended.
+  select w.opens, w.closes, w.why into f.window_opens, f.window_closes, f.window_why from scored_as_window(now()) w;
+  f.class_ok := exists (select 1 from class_kinds ck where ck.key = fd.config ->> 'class');
+  select count(*) filter (where l.card = fd.card and not l.ended and l.character = f.by_character), count(*) filter (where l.card = fd.card and not l.ended and l.thread = f.by_thread),
+         count(*) filter (where l.card = fd.card and not l.ended and l.board = f.by_board),
+         count(*) filter (where l.scores and not l.ended and l.character = f.by_character and l.at >= (select max(x.ends_at) from settlements x)) > 0
+    into in_character, in_thread, in_board, f.class_taken
+  from (select k2.payload ->> 'card' as card, r.character, r.thread, r.board, card_ended(r.play) as ended, k2.created_at as at, coalesce(ck.scores_as, false) as scores
+        from play_reach r join acts k2 on k2.id = r.play left join card_kinds ck on ck.key = k2.payload ->> 'card'
+        where r.ends_at > now() and (r.character = f.by_character or r.thread = f.by_thread or r.board = f.by_board) offset 0) l;
+  f.reach_up := case f.reach when 'character' then in_character when 'thread' then in_thread else in_board end;
+  -- 4b. Whether a live ward Gimmick on the Act turns the card away: place_cast turns a cast away by the same test (ward_refusal), and a Move does not land through it either.
+  f.warded := ward_refusal('post', by_act, k) is not null;
+  -- 5. A board's live card, whatever the card's reach.
+  select max(r.ends_at) into f.live_board from play_reach r where r.board = f.by_board and r.ends_at > now() and not card_ended(r.play);
+  -- 6. The named catch (a back with none reads its own card's row, so the read finds one row either way: a null key would be a read of nothing), compared with the incoming card.
+  select x.key into named from card_kinds x where x.key = coalesce(fd.catches, fd.card);
+  -- 6b. The back's match, and the incoming card's printed row, for every back whatever it holds (a back with no match reads the same row and asks the same questions of an empty one): the card's
+  -- flavor in the match's `flavors`, its rarity at or below the match's `upTo` and at or below the back's own card's. A cast back springs on the card it names or on one its match holds.
+  select * into ic from card_kinds x where x.key = incoming_card;
+  m := case when jsonb_typeof(k.trap -> 'match') = 'object' then k.trap -> 'match' else '{}'::jsonb end;
+  ic_rank := rarity_rank(ic.rarity); up_rank := rarity_rank(coalesce(m ->> 'upTo', 'legendary')); own_rank := rarity_rank(k.rarity);
+  flavor_ok := case when jsonb_typeof(m -> 'flavors') = 'array' then (m -> 'flavors') ? ic.alignment else true end;
+  matched := jsonb_typeof(k.trap -> 'match') = 'object' and ic.key is not null and flavor_ok and ic_rank <= up_rank and ic_rank <= own_rank;
+  f.caught := (fd.catches is not null and fd.catches = incoming_card and named is not null) or coalesce(matched, false);
+  -- 7. ONE walk of the Act's words for every back: its own visible words, and the excerpt of the quotes of the back's post (null for a cast or a visit, whose by_act holds no words). A function in a FROM
+  -- clause runs once however many columns are taken from it, and both are taken here, so the walk costs the same whatever the back holds.
+  select w.plain, w.excerpt, w.unquoted into walked_plain, walked_excerpt, f.by_body from bbcode_walk(raw_body, fd.post) w;
+  -- A quote of a post an admin hid carries its words, so the Quotes condition does not read them (the Act's own words, with every quote cut out, are all `by_body` and Says read).
+  if coalesce(quote_hidden(fd.post), false) then walked_excerpt := ''; end if;
+  if raw_body is null then f.by_body := null; end if;
+  -- 8. Both probes, for every back, whatever it holds: phrase_probe folds the text and compiles and runs a pattern of one shape (a back with no such condition has a pattern built around its own id, which
+  -- cannot match), the Says over the Act's own words and the Quotes, on a token of its own, over the excerpt. And the Who check, against an empty list for Anyone.
+  f.phrase_hit := coalesce(phrase_probe(walked_plain, fd.phrase, fd.play::text), false);
+  f.passage_hit := coalesce(phrase_probe(walked_excerpt, fd.passage, fd.play::text || 'p'), false);
+  f.who_hit := coalesce(f.by_character = any (coalesce(fd.who, '{}')), false);
+  return f;
+end $$;
+
+-- own_words (0340): the body of a version and that version's verdict. The one-argument function is dropped for the same reason as bbcode_plain's.
+drop function own_words(text);
+create function own_words(raw text, forged uuid[] default '{}') returns text
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(case when raw ilike '%[quote%' then (select w.unquoted from bbcode_walk(raw, null, forged) w) else raw end, '')
+$$;
+revoke execute on function own_words(text, uuid[]) from public, anon, authenticated;
+
+-- claim_card_writes (0375): the `before` read takes the payload of the version it reads the body of, so the verdict is that version's.
+CREATE OR REPLACE FUNCTION public.claim_card_writes(most integer, only_post uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  nearby integer := coalesce((((select s.value from settings s where s.key = 'pool') ->> 'chatterThreadPosts'))::integer, 8);
+  claimed jsonb;
+begin
+  delete from card_writes w where w.play in (
+    select x.play from card_writes x where card_ended(x.play) and (claim_card_writes.only_post is null or x.post = claim_card_writes.only_post) for update skip locked);
+  with picked as materialized (
+    select c.play from card_writes c join acts a on a.id = c.play
+    where (c.claimed_until is null or c.claimed_until < clock_timestamp()) and c.not_before <= clock_timestamp() and not card_ended(c.play)
+      and (claim_card_writes.only_post is null or c.post = claim_card_writes.only_post)
+      and not exists (select 1 from card_writes e join acts ea on ea.id = e.play
+                      where e.post = c.post and e.play <> c.play and not card_ended(e.play) and (ea.created_at, ea.id) < (a.created_at, a.id))
+    order by c.queued_at, c.play limit greatest(claim_card_writes.most, 0) for update of c skip locked
+  ), taken as (
+    update card_writes w set claimed_until = clock_timestamp() + interval '5 minutes', attempts = w.attempts + 1, version = post_version(w.post)
+    from picked where w.play = picked.play
+    returning w.play, w.post, w.version, w.attempts, w.queued_at
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'play', t.play, 'version', t.version, 'post', t.post, 'thread', pa.thread, 'attempts', t.attempts,
+      'card', pl.payload ->> 'card', 'config', coalesce(pl.payload -> 'config', '{}'::jsonb), 'tokens', (pl.payload ->> 'tokens')::integer,
+      'author', ch.name, 'body', own_words(case when version_hidden(v.id, pa.id) then null else v.payload ->> 'body' end, act_forged(v.payload)), 'title', th.title,
+      'before', (select coalesce(jsonb_agg(jsonb_build_object('name', x.name, 'body', x.body) order by x.seq), '[]'::jsonb)
+                 from (select n.seq, cn.name,
+                              own_words(cur.payload ->> 'body', act_forged(cur.payload)) as body
+                       from acts_public n join acts na on na.id = n.id join characters_public cn on cn.id = n.character
+                       cross join lateral (select case when n.hidden then null else coalesce((select e.payload from acts e where e.kind = 'edit' and e.target_act_id = n.id order by e.created_at desc, e.id desc limit 1), na.payload) end as payload) cur
+                       where n.thread = pa.thread and post_kind(n.kind) and n.seq < pa.seq
+                       order by n.seq desc limit greatest(nearby, 0)) x),
+      'earlier', (select coalesce(jsonb_agg(jsonb_build_object('play', q.id, 'text', q.text) order by q.created_at, q.id), '[]'::jsonb)
+                  from (select ea.id, ea.created_at,
+                          coalesce((select x.text from card_texts x where x.play = ea.id and x.version = t.version and x.text is not null),
+                                   (select x.text from card_texts x where x.play = ea.id and x.text is not null order by x.created_at desc, x.id desc limit 1)) as text
+                        from live_writing_plays(t.post) lp join acts ea on ea.id = lp
+                        where (ea.created_at, ea.id) < (pl.created_at, pl.id)) q
+                  where q.text is not null)
+    ) order by t.queued_at, t.play), '[]'::jsonb) into claimed
+  from taken t
+  join acts pl on pl.id = t.play
+  join acts pa on pa.id = t.post
+  join characters ch on ch.id = shown_author(pa.id, pa.character)
+  join threads th on th.id = pa.thread
+  join acts v on v.id = t.version;
+  return claimed;
+end $function$;
+
+-- place_set (0374)
+create or replace function public.place_set(setter uuid, card text, target uuid, config jsonb, payer uuid, price integer, catches text DEFAULT NULL::text, phrase text DEFAULT NULL::text, passage text DEFAULT NULL::text, named uuid[] DEFAULT NULL::uuid[], who_except boolean DEFAULT NULL::boolean)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  kind_of card_kinds%rowtype;
+  caught_kind card_kinds%rowtype;
+  target_kind text;
+  author uuid;
+  in_thread uuid;
+  written uuid;
+  rounds integer;
+  staff_setter boolean;
+  body text;
+  body_forged uuid[];
+  off_board integer;
+  nq_name text;
+  nq_ends timestamptz;
+begin
+  select c.staff is not null into staff_setter from characters c where c.id = setter;
+  if staff_setter is null then raise exception 'there is no such character' using errcode = 'P0002'; end if;
+  if staff_setter is distinct from (payer is null) then
+    raise exception 'a staff character''s card is paid by no one, and a player''s by its player' using errcode = '22023';
+  end if;
+  if payer is null and coalesce(price, 0) <> 0 then raise exception 'a staff character''s card costs nothing' using errcode = '22023'; end if;
+  if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
+  select * into kind_of from card_kinds k where k.key = place_set.card;
+  if kind_of.key is null then raise exception 'there is no such card' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if kind_of.play is distinct from 'cast' and kind_of.play is distinct from 'set' then
+    raise exception '% is %', kind_of.name, case kind_of.play when 'use' then 'used on your own post' else 'kept in the hand' end using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- A set card with no trap could never spring, and its setter would not know (decideSet's words). It is refused at seed time too; this is for a row that held one before.
+  if kind_of.play = 'set' and kind_of.trap is null then
+    raise exception '% has no trap to spring', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- A Reversal that waits for a cast waits for a named card or for a match; one set with neither could catch nothing, and its setter would not know. Naming and matching are one or the other.
+  if catches is null and kind_of.play = 'set' and kind_of.trap #>> '{trigger,on}' = 'cast' and jsonb_typeof(kind_of.trap -> 'match') is distinct from 'object' then
+    raise exception '% names no card to catch', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if catches is not null and jsonb_typeof(kind_of.trap -> 'match') = 'object' then
+    raise exception '% names a card or matches cards, never both', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- A ride is read in a quadrant, which the setter names when setting it.
+  if kind_of.play = 'set' and jsonb_typeof(kind_of.trap -> 'outcome') = 'object'
+     and not coalesce(coalesce(config, '{}') ->> 'quadrant' = any (array['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative']), false) then
+    raise exception 'this card names a reaction quadrant' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- A match reaches only cards at or below its own rarity, and so does a name (decideSet's words).
+  if jsonb_typeof(kind_of.trap -> 'match') = 'object' and kind_of.trap #>> '{match,upTo}' is not null
+     and rarity_rank(kind_of.trap #>> '{match,upTo}') > rarity_rank(kind_of.rarity) then
+    raise exception '% names cards up to %', kind_of.name, kind_of.rarity using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if catches is not null then
+    if kind_of.play is distinct from 'set' or kind_of.trap #>> '{trigger,on}' is distinct from 'cast' then
+      raise exception '% catches no card', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+    select * into caught_kind from card_kinds k where k.key = place_set.catches;
+    if caught_kind.key is null or caught_kind.play is distinct from 'cast' or not ('post' = any (caught_kind.reaches)) then
+      raise exception '% names a card that is cast on a post', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+    if rarity_rank(caught_kind.rarity) > rarity_rank(kind_of.rarity) then
+      raise exception '% names cards up to %', kind_of.name, kind_of.rarity using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+  end if;
+  if phrase is not null then
+    if kind_of.play is distinct from 'cast' then raise exception '% waits for no phrase', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if btrim(phrase) = '' then raise exception '% needs a phrase to wait for', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    -- The engine's bound (SET_PHRASE_MOST, engine/rules/cards.ts, which decideSet holds in the same words): phrase_pattern is one length for every back only up to it.
+    if char_length(phrase) > 100 then raise exception '% waits for a phrase of at most 100 characters', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  -- The conditions of a Move (design sections 3 and 4). A Gimmick takes none.
+  if passage is not null or named is not null or who_except is not null then
+    if kind_of.play is distinct from 'cast' then raise exception '% takes no conditions', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  if passage is not null then
+    if btrim(passage) = '' or phrase_norm(passage) = '' then raise exception 'the passage needs a letter or a digit' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if char_length(passage) > 100 then raise exception 'the passage is at most 100 characters' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  if (named is null) is distinct from (who_except is null) then
+    raise exception 'a list of characters comes with Only these or Anyone but these' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if named is not null then
+    if cardinality(named) not between 1 and 5 then raise exception 'a list names one to five characters' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    -- The same message for an id that is missing and one that has not debuted: what is read is the debut alone, as suggest_characters reads `characters`, never the owner.
+    select min(i) into off_board from generate_subscripts(named, 1) i
+    where named[i] is null or not exists (select 1 from characters c where c.id = named[i] and c.debuted_at is not null);
+    if off_board is not null then raise exception '% is not a character on the board', off_board using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if (select count(distinct x) from unnest(named) x) <> cardinality(named) then raise exception 'a character is named once in a list' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  select a.kind, a.character, a.thread into target_kind, author, in_thread from acts a where a.id = target for no key update;
+  if not coalesce(post_kind(target_kind), false) then raise exception 'a card is set face down on a post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if author is distinct from setter then raise exception 'a card is set face down on a post of your own character''s' using hint = 'kayfabb.refusal', errcode = '42501'; end if;
+  -- The passage must be in the post's current words (its latest edit's body, else its own), read as the probe reads them. The post is public, so the refusal reads nothing private.
+  if passage is not null then
+    select p.current_payload ->> 'body', act_forged(p.current_payload) into body, body_forged from acts_public p where p.id = target;
+    if not phrase_in(bbcode_plain(coalesce(body, ''), body_forged), passage) then raise exception 'that passage is not in this post''s words' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  -- Public, since the back is.
+  -- A back is live until it springs, is taken back or its time passes; the three are public.
+  if exists (select 1 from face_down f where f.post = target and f.ends_at > now()
+             and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)
+             and not exists (select 1 from acts s where s.kind = 'take_back' and (s.payload ->> 'set') = f.play::text)) then
+    raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
+  end if;
+  -- A post that holds a live No quote takes no back until it ends (public: the play is a face-up card on the post). The refusal names the card and its end, the same for every setter.
+  select n.name, n.ends into nq_name, nq_ends from no_quote_on(target) n order by n.ends desc limit 1;
+  if nq_name is not null then
+    raise exception 'this post''s % stops quotes until %, so no card is set face down here until then', nq_name, refusal_time(nq_ends) using hint = 'kayfabb.refusal', errcode = '23505';
+  end if;
+  select count(*) into rounds from face_down f where f.post = target;
+  insert into acts (character, kind, thread, target_act_id, payload) values (setter, 'set', in_thread, target, '{}') returning id into written;
+  begin
+    insert into face_down (play, account, card, config, post, thread, round, ends_at, catches, phrase, passage, who, who_except)
+    values (written, payer, card, coalesce(config, '{}'), target, in_thread, rounds + 1, now() + span_interval(setting('setLasts')), place_set.catches, place_set.phrase,
+            place_set.passage, place_set.named, place_set.who_except);
+  exception when unique_violation then
+    raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
+  end;
+  return act_projection(written);
+end $function$;
+
+-- spring_facts (0374)
+create or replace function public.spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text)
+ RETURNS spring_facts
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  f spring_facts;
+  k card_kinds%rowtype;
+  named text;
+  in_character integer;
+  in_thread integer;
+  in_board integer;
+  walked_plain text;
+  raw_body text;
+  raw_forged uuid[];
+  walked_excerpt text;
+  ic card_kinds%rowtype;
+  m jsonb;
+  ic_rank integer;
+  up_rank integer;
+  own_rank integer;
+  flavor_ok boolean;
+  matched boolean;
+begin
+  -- 1. The setter's character, and what decides whether it can act (retired, not debuted), who it belongs to and whether it is staff.
+  select a.character into f.setter_character from acts a where a.id = fd.play;
+  select c.retired_at, c.debuted_at, c.owner, c.staff is not null into f.setter_retired, f.setter_debuted, f.setter_owner, f.setter_staff from characters c where c.id = f.setter_character;
+  -- 2. The back's card kind.
+  select * into k from card_kinds x where x.key = fd.card;
+  f.kind_play := k.play; f.kind_trap := k.trap; f.kind_stack := k.stack; f.kind_seeded := k.seeded;
+  f.kind_skim := k.skim is not null; f.kind_scores := k.scores_as; f.kind_veil := k.veil;
+  f.reach := coalesce(k.reaches[1], 'post');
+  -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
+  -- or a visit by_act is not a post, or not yet written, and these find what they find.
+  select a.kind, a.character, a.thread, case when coalesce(version_hidden(a.id), false) then null else a.payload ->> 'body' end, act_forged(a.payload), t.board into f.by_kind, f.by_character, f.by_thread, raw_body, raw_forged, f.by_board
+  from acts a left join threads t on t.id = a.thread where a.id = by_act;
+  select a.id into f.first_post from acts a where a.thread = f.by_thread and a.seq = 1 and post_kind(a.kind);
+  f.announce_thread := setting_thread('systemAnnouncements');
+  -- 4. The stack at the would-be target and reach, for every reach: the plays of the card still up on the Act (a post's), the layer to go on from, and the plays of it still up on
+  -- the Act's character, thread and board (a play beyond a post's), counted as place_cast counts them. Which reach the card takes is then a choice among values already read.
+  f.target := case f.reach when 'post' then by_act when 'character' then f.by_character when 'thread' then f.by_thread else f.by_board end;
+  -- Each play found is asked whether an admin ended it, whatever card it is (card_ended is a read of its own, and the subquery cannot be flattened away, so it is made for every play found and not only
+  -- for the ones of this back's card): which card is counted is chosen after the reads.
+  select count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended),
+         greatest(coalesce(max(l.layer) filter (where l.card is not distinct from fd.card), 0), count(*) filter (where l.card is not distinct from fd.card)) + 1,
+         count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended and l.quadrant is not distinct from (fd.config ->> 'quadrant'))
+    into f.up, f.layer, f.quadrant_up
+  from (select k2.payload ->> 'card' as card, (k2.payload ->> 'ends')::timestamptz as ends, (k2.payload ->> 'layer')::integer as layer, card_ended(k2.id) as ended,
+               k2.payload #>> '{config,quadrant}' as quadrant
+        from acts k2 where k2.kind = 'card' and k2.target_act_id = by_act and not (k2.payload ? 'caught') and coalesce(k2.payload ->> 'reach', 'post') = 'post' offset 0) l;
+  f.quadrant_ok := (fd.config ->> 'quadrant') = any (array['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative']);
+  -- The window a scored-as play would name, and whether the quoting character already has a class named for it: a play of any scored-as card made at or after the last settled window's end, not ended.
+  select w.opens, w.closes, w.why into f.window_opens, f.window_closes, f.window_why from scored_as_window(now()) w;
+  f.class_ok := exists (select 1 from class_kinds ck where ck.key = fd.config ->> 'class');
+  select count(*) filter (where l.card = fd.card and not l.ended and l.character = f.by_character), count(*) filter (where l.card = fd.card and not l.ended and l.thread = f.by_thread),
+         count(*) filter (where l.card = fd.card and not l.ended and l.board = f.by_board),
+         count(*) filter (where l.scores and not l.ended and l.character = f.by_character and l.at >= (select max(x.ends_at) from settlements x)) > 0
+    into in_character, in_thread, in_board, f.class_taken
+  from (select k2.payload ->> 'card' as card, r.character, r.thread, r.board, card_ended(r.play) as ended, k2.created_at as at, coalesce(ck.scores_as, false) as scores
+        from play_reach r join acts k2 on k2.id = r.play left join card_kinds ck on ck.key = k2.payload ->> 'card'
+        where r.ends_at > now() and (r.character = f.by_character or r.thread = f.by_thread or r.board = f.by_board) offset 0) l;
+  f.reach_up := case f.reach when 'character' then in_character when 'thread' then in_thread else in_board end;
+  -- 4b. Whether a live ward Gimmick on the Act turns the card away: place_cast turns a cast away by the same test (ward_refusal), and a Move does not land through it either.
+  f.warded := ward_refusal('post', by_act, k) is not null;
+  -- 4c. What the card's landing refuses on the Act (land_refusal): the same reads, from public facts, for every back whatever it holds. A Move that is refused here does not land and its back stays set.
+  f.land_why := land_refusal(k, by_act, fd.config);
+  -- 5. A board's live card, whatever the card's reach.
+  select max(r.ends_at) into f.live_board from play_reach r where r.board = f.by_board and r.ends_at > now() and not card_ended(r.play);
+  -- 6. The named catch (a back with none reads its own card's row, so the read finds one row either way: a null key would be a read of nothing), compared with the incoming card.
+  select x.key into named from card_kinds x where x.key = coalesce(fd.catches, fd.card);
+  -- 6b. The back's match, and the incoming card's printed row, for every back whatever it holds (a back with no match reads the same row and asks the same questions of an empty one): the card's
+  -- flavor in the match's `flavors`, its rarity at or below the match's `upTo` and at or below the back's own card's. A cast back springs on the card it names or on one its match holds.
+  select * into ic from card_kinds x where x.key = incoming_card;
+  m := case when jsonb_typeof(k.trap -> 'match') = 'object' then k.trap -> 'match' else '{}'::jsonb end;
+  ic_rank := rarity_rank(ic.rarity); up_rank := rarity_rank(coalesce(m ->> 'upTo', 'legendary')); own_rank := rarity_rank(k.rarity);
+  flavor_ok := case when jsonb_typeof(m -> 'flavors') = 'array' then (m -> 'flavors') ? ic.alignment else true end;
+  matched := jsonb_typeof(k.trap -> 'match') = 'object' and ic.key is not null and flavor_ok and ic_rank <= up_rank and ic_rank <= own_rank;
+  f.caught := (fd.catches is not null and fd.catches = incoming_card and named is not null) or coalesce(matched, false);
+  -- 7. ONE walk of the Act's words for every back: its own visible words, and the excerpt of the quotes of the back's post (null for a cast or a visit, whose by_act holds no words). A function in a FROM
+  -- clause runs once however many columns are taken from it, and both are taken here, so the walk costs the same whatever the back holds.
+  select w.plain, w.excerpt, w.unquoted into walked_plain, walked_excerpt, f.by_body from bbcode_walk(raw_body, fd.post, raw_forged) w;
+  -- A quote of a post an admin hid carries its words, so the Quotes condition does not read them (the Act's own words, with every quote cut out, are all `by_body` and Says read).
+  if coalesce(quote_hidden(fd.post), false) then walked_excerpt := ''; end if;
+  if raw_body is null then f.by_body := null; end if;
+  -- 8. Both probes, for every back, whatever it holds: phrase_probe folds the text and compiles and runs a pattern of one shape (a back with no such condition has a pattern built around its own id, which
+  -- cannot match), the Says over the Act's own words and the Quotes, on a token of its own, over the excerpt. And the Who check, against an empty list for Anyone.
+  f.phrase_hit := coalesce(phrase_probe(walked_plain, fd.phrase, fd.play::text), false);
+  f.passage_hit := coalesce(phrase_probe(walked_excerpt, fd.passage, fd.play::text || 'p'), false);
+  f.who_hit := coalesce(f.by_character = any (coalesce(fd.who, '{}')), false);
+  return f;
+end $function$;

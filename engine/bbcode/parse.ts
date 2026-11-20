@@ -31,7 +31,8 @@
  *   `[/url]` costs nothing, and a properly nested pair costs only the outer link's stray closer,
  *   which stays text. A link that is text (bad target) is not a link and blocks nothing. An image
  *   inside a link is fine: it is a node of its own with a checked source.
- * - `[quote]` is a real quote only when its name is an Act's UUID. Any other name (at most
+ * - `[quote]` is a real quote only when its name is an Act's UUID, and not forged: `forged`, when given, is the Acts whose quotes in this body are doctored (the words are not in the post), and a quote of one is a
+ *   `counterfeit` that also names it (`act`), records no span and holds its words as the post's own. Any other name (at most
  *   `MAX_QUOTE_NAME` characters), a bare `[quote]` or `[quote user=<uuid>]` is a `counterfeit`: its
  *   words are the post's own and it names no Act, so the renderer must never draw one as an Act's
  *   words. A `user=` that is not a UUID, a longer name or an empty one makes the opener text.
@@ -81,7 +82,8 @@ export type BbNode =
   | { readonly type: 'quote'; readonly act: string; readonly children: readonly BbNode[] }
   /** Real quotes nested past `MAX_DEPTH`, not shown: the Acts they quote, the outermost first, in the order their openers stand. Nothing inside is kept. */
   | { readonly type: 'cut'; readonly acts: readonly string[] }
-  | { readonly type: 'counterfeit'; readonly name: string | null; readonly user: string | null; readonly children: readonly BbNode[] }
+  /** `act`: the post a forged real quote falsely names (`parse`'s `forged`), null for a counterfeit written as one. */
+  | { readonly type: 'counterfeit'; readonly name: string | null; readonly user: string | null; readonly act: string | null; readonly children: readonly BbNode[] }
   | { readonly type: 'spoiler'; readonly title: string; readonly children: readonly BbNode[] }
   | { readonly type: 'ispoiler'; readonly children: readonly BbNode[] }
   | { readonly type: 'code'; readonly text: string }
@@ -448,9 +450,9 @@ export interface QuoteSpan {
 
 /**
  * `spans`, when given, is filled with one entry for each real quote the parse builds, in the order they close, by the offsets the parser itself worked at, so a caller
- * can change the input without re-serializing the tree (engine/bbcode/conceal.ts). It changes nothing about the tree.
+ * can change the input without re-serializing the tree (engine/bbcode/conceal.ts). It changes nothing about the tree. `forged` is the Acts whose real quotes read as counterfeits (a forged quote records no span).
  */
-export function parse(input: string, spans?: QuoteSpan[]): BbNode[] {
+export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<string>): BbNode[] {
   const root: Frame = { kind: 'root', name: '', raw: '', home: null as never, parent: null, depth: 0, out: [] };
   root.home = root;
   const stack: Frame[] = [root];
@@ -710,10 +712,14 @@ export function parse(input: string, spans?: QuoteSpan[]): BbNode[] {
       if (head === null) literalOpen(name, raw);
       else if (head.kind === 'real') {
         const act = head.act;
-        openReal(name, raw, 'simple', { build: (children) => ({ type: 'quote', act, children }), quoteAct: act, contentFrom: close + 1 });
+        if (forged?.has(act)) {
+          /* A forged quote (an Act's verdict, docs/plans/2026-11-20-forged-quotes-design.md): its words are not in the post it names, so it is a counterfeit that says which post it falsely names. It records no span, so no layer
+             that empties what a post quotes reaches it, and past the cap it is text as any counterfeit is. */
+          openReal(name, raw, 'simple', { build: (children) => ({ type: 'counterfeit', name: null, user: null, act, children }) });
+        } else openReal(name, raw, 'simple', { build: (children) => ({ type: 'quote', act, children }), quoteAct: act, contentFrom: close + 1 });
       } else {
         const { name: typed, user } = head;
-        openReal(name, raw, 'simple', { build: (children) => ({ type: 'counterfeit', name: typed, user, children }) });
+        openReal(name, raw, 'simple', { build: (children) => ({ type: 'counterfeit', name: typed, user, act: null, children }) });
       }
     } else if (name === 'spoiler') {
       const title = value === undefined ? '' : value.trim();

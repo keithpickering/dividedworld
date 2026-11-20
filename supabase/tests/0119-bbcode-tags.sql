@@ -69,7 +69,7 @@ begin
   if has_function_privilege('authenticated', 'search_reindex()', 'execute') or has_function_privilege('anon', 'search_reindex()', 'execute') then
     raise exception 'an API role can run the reindex';
   end if;
-  if not has_function_privilege('authenticated', 'bbcode_plain(text)', 'execute') or has_function_privilege('anon', 'bbcode_plain(text)', 'execute') then
+  if not has_function_privilege('authenticated', 'bbcode_plain(text,uuid[])', 'execute') or has_function_privilege('anon', 'bbcode_plain(text,uuid[])', 'execute') then
     raise exception 'bbcode_plain is not granted as 0117 left it';
   end if;
   if has_function_privilege('anon', 'bbcode_plain_video_ok(text)', 'execute') or not has_function_privilege('authenticated', 'bbcode_plain_video_ok(text)', 'execute') then

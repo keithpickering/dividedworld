@@ -16,7 +16,7 @@ export interface PlainFixture {
   readonly name: string;
   readonly body: string;
   readonly plain: string;
-  /** An Act id: the excerpt of the quotes of that Act is held to `excerpt` (`excerptText(parse(body), excerptOf)`, and the database's `bbcode_walk(body, excerptOf)`). */
+  /** An Act id: the excerpt of the quotes of that Act is held to `excerpt` (`excerptText(parse(body), excerptOf)`, and the database's `bbcode_walk(body, excerptOf, forged)`). */
   readonly excerptOf?: string;
   /** The excerpt's words, whitespace collapsed; set with `excerptOf`, and '' for a body none of whose quotes count. */
   readonly excerpt?: string;
@@ -26,6 +26,8 @@ export interface PlainFixture {
   readonly held?: Readonly<Record<string, readonly (readonly string[])[]>>;
   /** The version source of the body: `quoteSource(parse(body))`, and the database's `bbcode_walk(body, null).source`. */
   readonly source?: string;
+  /** The posts whose quotes in the body are forged (an Act's verdict): `parse(body, undefined, new Set(forged))`, and the database's `bbcode_walk(body, quoted, forged)` and `bbcode_plain(body, forged)`. Every walk of the fixture reads the body with it; absent is none. */
+  readonly forged?: readonly string[];
 }
 
 /** Each run of whitespace (tab to carriage return, and space) becomes one space, and the ends are trimmed. */
@@ -2054,5 +2056,45 @@ export const PLAIN_FIXTURES: readonly PlainFixture[] = [
     "source": "﷐ late",
     "held": {"0f8fad5b-d9cb-469f-a165-70867728950e": [["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["late"]]},
     "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e", "6ba7b810-9dad-41d1-80b4-00c04fd430c8"]
+  },
+  {
+    "name": "forged: a forged quote's words are the post's own and not the excerpt's",
+    "body": "before [quote=0f8fad5b-d9cb-469f-a165-70867728950e]made up[/quote] after",
+    "plain": "before made up after",
+    "forged": ["0f8fad5b-d9cb-469f-a165-70867728950e"],
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "",
+    "source": "before made up after",
+    "held": {},
+    "quotes": []
+  },
+  {
+    "name": "forged: a forged quote beside an authentic one of another post",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]fake[/quote] [quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8]real[/quote]",
+    "plain": "fake",
+    "forged": ["0f8fad5b-d9cb-469f-a165-70867728950e"],
+    "excerptOf": "6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+    "excerpt": "real",
+    "source": "fake real",
+    "held": {"6ba7b810-9dad-41d1-80b4-00c04fd430c8": [["real"]]},
+    "quotes": ["6ba7b810-9dad-41d1-80b4-00c04fd430c8"]
+  },
+  {
+    "name": "forged: every quote of a forged post in the body is a counterfeit, whatever its letters",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]one[/quote] [quote=0F8FAD5B-D9CB-469F-A165-70867728950E]two[/quote] [quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8]three[/quote]",
+    "plain": "one two",
+    "forged": ["0f8fad5b-d9cb-469f-a165-70867728950e"],
+    "source": "one two three",
+    "held": {"6ba7b810-9dad-41d1-80b4-00c04fd430c8": [["three"]]},
+    "quotes": ["6ba7b810-9dad-41d1-80b4-00c04fd430c8"]
+  },
+  {
+    "name": "forged: a forged quote inside an authentic one is part of its words",
+    "body": "[quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8]outer [quote=0f8fad5b-d9cb-469f-a165-70867728950e]inner[/quote] end[/quote]",
+    "plain": "",
+    "forged": ["0f8fad5b-d9cb-469f-a165-70867728950e"],
+    "source": "outer inner end",
+    "held": {"6ba7b810-9dad-41d1-80b4-00c04fd430c8": [["outer inner end"]]},
+    "quotes": ["6ba7b810-9dad-41d1-80b4-00c04fd430c8"]
   }
 ];

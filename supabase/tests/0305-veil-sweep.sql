@@ -177,6 +177,7 @@ select 'function', n, m, w from (values
   ('shown_payload', 'no author', 'a pure function of its arguments'),
   ('post_kind', 'no author', 'a pure function of its argument: whether an Act''s kind is a post for a card'),
   ('version_hidden', 'no author', 'whether a version is hidden: a boolean'),
+  ('act_forged', 'no author', 'a pure function of its argument (an Act''s payload: the posts its quotes forge, 0379)'),
   ('admin_machine', 'no author', 'an admin''s screen of the machine'),
   ('admin_queue', 'no author', 'an admin''s queue: real moderation speaks plainly and admins see the true author by design (decided in planning); refused to a player'),
   ('alerts_page', 'swept', 'the caller''s alerts and the Acts they lead to'),
