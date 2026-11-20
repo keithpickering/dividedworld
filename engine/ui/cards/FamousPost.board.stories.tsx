@@ -39,10 +39,11 @@ const AGE = 3 * YEAR;
 
 /**
  * Each card played on the post, by key, how many times, and any settings its plays carry. A card with `lasts` runs its time and is
- * played again; Whoops! (`early`) was played to its stack of three in the post's first week and is still on it.
+ * played again; Whoops! (`early`) was played to its stack of three in the post's first week and is still on it. A card that `inks` is
+ * played in its own color, read from the instance's art for it (`CardArt.color`), since the engine names no color (tools/check-ui-tokens.mjs).
  */
-const PLAYED: readonly { readonly key: string; readonly times: number; readonly config?: Readonly<Record<string, unknown>>; readonly early?: boolean }[] = [
-  { key: 'whoops', times: 3, config: { color: '#ff2bd6', seed: 20231120 }, early: true },
+const PLAYED: readonly { readonly key: string; readonly times: number; readonly config?: Readonly<Record<string, unknown>>; readonly early?: boolean; readonly inks?: true }[] = [
+  { key: 'whoops', times: 3, early: true, inks: true },
   { key: 'sugar-coat', times: 14 },
   { key: 'last-word', times: 11 },
   { key: 'force-field', times: 9 },
@@ -81,7 +82,7 @@ function sequence(seed: number): () => number {
 }
 
 /** Writes the famous thread, three years old, and every play on its opening post. Returns the thread. */
-async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { readonly key: string; readonly lasts?: Parameters<typeof spanMs>[0] }[]): Promise<Id> {
+async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { readonly key: string; readonly lasts?: Parameters<typeof spanMs>[0] }[], looks: readonly { readonly key: string; readonly art?: { readonly color: string } }[]): Promise<Id> {
   const { seed } = fake;
   /* The page reads its own clock (onPageClock); the fake's is brought up to it, so a play up now is up on the page and an admin can end it. */
   if (fake.now() > fake.clock.now()) fake.clock.advance(fake.now() - fake.clock.now());
@@ -122,6 +123,9 @@ async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { reado
   for (const p of PLAYED) {
     const rules = cardOf(cards, p.key);
     const lasts = rules.lasts ? spanMs(rules.lasts) : null;
+    const ink = p.inks ? cardOf(looks, p.key).art?.color : undefined;
+    if (p.inks && ink === undefined) throw new Error(`the card "${p.key}" has no art to take its ink from`);
+    const config = ink === undefined ? p.config : { ...p.config, color: ink, seed: 20231120 };
     for (let i = 0; i < p.times; i++) {
       let at: number;
       if (p.early) at = born + HOUR * (2 + i * 30);
@@ -133,7 +137,7 @@ async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { reado
         at = born + year * YEAR + (near ? next() * 10 * DAY : next() * YEAR);
         at = Math.min(at, now - (lasts ?? DAY) - HOUR);
       }
-      plays.push({ at, key: p.key, ...(p.config ? { config: p.config } : {}) });
+      plays.push({ at, key: p.key, ...(config ? { config } : {}) });
     }
   }
   plays.sort((a, b) => a.at - b.at);
@@ -214,7 +218,7 @@ function Opener({ open }: { readonly open: Open }) {
 }
 
 function Famous({ open }: { readonly open: Open }) {
-  const { api, instance } = useKayfa();
+  const { api, instance, ui } = useKayfa();
   const navigate = useNavigate();
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
   const [famous, setFamous] = useState<Id | null>(null);
@@ -225,13 +229,13 @@ function Famous({ open }: { readonly open: Open }) {
       const fake = api as Fake;
       for (const c of instance.cards) await api.meetCard(c.key);
       const me = (await api.myCharacters()).map((c) => c.id);
-      const made = await seedFamous(fake, me, instance.cards);
+      const made = await seedFamous(fake, me, instance.cards, ui.cards);
       if (!live) return;
       setFamous(made);
       navigate(`/t/${made}`);
     })().catch((e: unknown) => { console.error('the famous post story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, instance, famous, navigate]);
+  }, [api, instance, ui, famous, navigate]);
   return (
     <Frame>
       {famous !== null && thread === famous ? <><Opener open={open} /><LoadedThread thread={famous} /></> : <div aria-busy="true" />}
