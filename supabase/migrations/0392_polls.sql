@@ -47,7 +47,7 @@
 --
 -- Lock order: POST, THEN visits_open, THEN CHARACTER (0357's header), in each function below that takes more than one. edit_post takes the post `for no key update` before it checks anything when it sets or removes a poll, and cast_ballot and
 -- the closes take the poll's post `for share` before they read the post's current poll or check the character, so an edit and a ballot meet at the post's row and never hold one row each and wait on the other: whichever
--- commits second is refused (a ballot on the replaced poll, or an edit of a poll that has a ballot), never a ballot that counts on a replaced poll (supabase/tests/0388-polls.sql, section 1). A close also takes the poll's own row
+-- commits second is refused (a ballot on the replaced poll, or an edit of a poll that has a ballot), never a ballot that counts on a replaced poll (supabase/tests/0392-polls.sql, section 1). A close also takes the poll's own row
 -- `for no key update`, which a ballot's foreign key (`for key share`) does not conflict with, so two closes are laid one at a time and the second is refused. No function here takes a character's row; the veil's advisory lock
 -- (veil_cover_lock) is taken by the triggers after every row lock, as 0371 has it.
 --
@@ -110,7 +110,7 @@ create index acts_polls on acts (target_act_id, created_at desc, id desc) where 
 create unique index acts_one_poll_close on acts (target_act_id) where kind = 'poll_close';
 
 -- ===================================================================================== 4. the settings ====
--- settings_held (0383), also holding the five poll settings: the most options a poll has (2 to 100), the longest question and option (characters, at least 1), and the least and most a poll may last (a span: a unit of hour, day, week or month
+-- settings_held (0391 debates' copy over crowd pay's 0383), also holding the five poll settings: the most options a poll has (2 to 100), the longest question and option (characters, at least 1), and the least and most a poll may last (a span: a unit of hour, day, week or month
 -- and a whole count from 1 to 1000; an hour is allowed here as a card's `lasts` allows it). Everything else as 0383 wrote it (the crowd pay's two keys included). engine/rules/instance.ts (SETTINGS) holds the same, and 0079-settings-held.sql lists a poison at each edge.
 create or replace function public.settings_held()
  RETURNS trigger
@@ -130,6 +130,8 @@ begin
     when 'vote' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
     when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and setting_positive(v) and (v #>> '{}')::numeric <= 1, false)
       then 'a fraction above 0 and at most 1' end
+    -- How many days a post's debate is followed (0391): a whole number of days, at least 1 and at most 365 (as digestBoardDays and movedStubDays are), so the `::integer` and the interval the inputs build from it cannot overflow.
+    when 'debateDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
     when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
     when 'crowdPayEach' then case when not setting_whole(v, 0) then 'a whole number of hundredths, at least 0' end
     when 'crowdPayMost' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
@@ -920,7 +922,7 @@ end $function$;
 -- a gift (a donation). Everything else as 0378 wrote it.
 create or replace function settlement_input(window_start timestamptz, window_end timestamptz) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
-  with
+  with recursive
   -- The plays an admin ended before the window's end (Task 3): out of this window, with the votes on them. `<` as every other bound
   -- here is, so a card_end written at the instant window_end is after the window, as a vote written then is.
   ended as (select e.target_act_id as id from acts e where e.kind = 'card_end' and e.created_at < window_end),
@@ -942,14 +944,94 @@ language sql stable security definer set search_path = public, pg_temp as $$
   win_reactions as (select * from reactions r where r.created_at >= window_start and r.created_at < window_end and r.act not in (select id from ended)
                     and not exists (select 1 from acts d where d.id = r.act and d.kind = 'donation')),
   reacted as (select distinct act from win_reactions),
+  -- ---- The debates the window reached (0390; docs/plans/2026-11-18-tweener-catalyst-design.md, section 1) ----
+  -- The earliest a spark may be made for its debate to be followed: `debateDays` before the window opens, as engine/rules/settle.ts reads it.
+  cutoff as (select window_start - make_interval(days => (setting('debateDays') #>> '{}')::integer) as at),
+  -- Walk up: from each window post or spin, through quote_refs (`act` to `quoted`, its primary key), to the posts it quotes and the posts those quote, none made before the cutoff, each earlier than the one that
+  -- quotes it. `anc` is false for the window's own Acts and true for one reached by a quote. A node is a post or a spin that is in the input's terms (no staff, no System, no donation, not ended by an admin).
+  -- Time-bounded below by the cutoff and above by the window's end (a window Act is made before it), and each step is a probe of quote_refs by `act` then of acts by its key: no step scans acts. The key probe is a lateral with `offset 0`, which fences it: left as a join, the planner read acts by time (acts_created) and filtered by key, 500 rows a step at 1,000 posts, a cost that grew as the square of a quote chain (the walks below do the same).
+  up as (
+    select a.id, a.created_at as at, a.kind, false as anc from win_acts a where a.kind in ('post', 'spin')
+    union
+    select b.id, b.created_at, b.kind, true
+    from up u cross join lateral (
+      select b.id, b.created_at, b.kind from quote_refs r cross join lateral (select * from acts where id = r.quoted offset 0) b
+      where r.act = u.id and b.kind in ('post', 'spin') and b.created_at >= (select at from cutoff) and b.created_at < window_end and (b.created_at, b.id) < (u.at, u.id)
+        and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
+      offset 0) b),
+  -- The sparks: a post made no earlier than the cutoff that a window Act quotes or sits under (a quote chain's ancestor; the origin of a spun thread with an Act in the window), or that a reaction reached in the window while it
+  -- has a debate by the window's end (a quote or another player's spin made before it; one made after is no debate yet), so that a nod that moves after the debate has gone quiet still moves the refund: engine/rules/settle.ts reads a spark whose vote moved. The origin is read through the thread's own row (threads_origin's key).
+  sparks as (
+    select b.id, b.created_at as at, b.character, c.owner
+    from (
+      select u.id from up u where u.anc and u.kind = 'post'
+      union select t.origin_act_id from win_acts a join threads t on t.id = a.thread where a.kind in ('post', 'spin') and t.origin_act_id is not null
+      union select x.act from reacted x join acts sa on sa.id = x.act join characters sc on sc.id = sa.character
+        where exists (select 1 from quote_refs q cross join lateral (select * from acts where id = q.act offset 0) a where q.quoted = x.act and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (sa.created_at, sa.id)
+                        and a.character is not null and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended))
+           or exists (select 1 from acts sp join characters pc on pc.id = sp.character where sp.target_act_id = x.act and sp.kind = 'spin' and sp.created_at < window_end and sp.created_at >= sa.created_at
+                        and pc.owner <> sc.owner and pc.staff is null and sp.id not in (select id from ended))
+    ) k cross join lateral (select b.* from acts b where b.id = k.id offset 0) b
+    cross join lateral (select c.owner from characters c where c.id = b.character offset 0) c
+    where b.kind = 'post' and b.created_at >= (select at from cutoff) and b.created_at < window_end
+      and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)),
+  -- Walk up again from every spark, by whatever branch reached it (a spark reached as the origin of a spun thread or by a reaction has no ancestor in `up`): the engine reads whether a spark is in an earlier post's debate by its own
+  -- player (inOwnDebate) from the edges above it, so each ancestor made no earlier than the cutoff, and the edges to it, are in the input. The same step and bounds as `up`, and it stops at a node `up` holds (its ancestors are in `up` already, so a chain of 2,000 posts is climbed once); a node reached from two sparks is held once.
+  ancestry as (
+    select s.id, s.at from sparks s
+    union
+    select b.id, b.created_at
+    from ancestry u cross join lateral (
+      select b.id, b.created_at from quote_refs r cross join lateral (select * from acts where id = r.quoted offset 0) b
+      where r.act = u.id and u.id not in (select id from up) and b.kind in ('post', 'spin') and b.created_at >= (select at from cutoff) and b.created_at < window_end and (b.created_at, b.id) < (u.at, u.id)
+        and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
+      offset 0) b),
+  -- Walk down: from each spark, through quote_refs_quoted (`quoted` to `act`), to every post or spin that quotes a member, made before the window's end and after what it quotes.
+  down as (
+    select s.id, s.at from sparks s
+    union
+    select a.id, a.created_at
+    from down d cross join lateral (
+      select a.id, a.created_at from quote_refs r cross join lateral (select * from acts where id = r.act offset 0) a
+      where r.quoted = d.id and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (d.at, d.id)
+        and a.character is not null and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)
+      offset 0) a),
+  -- And the spin and the posts of each thread another player spun from a spark: the spin through acts_target (the spark), the posts through the thread's own index.
+  spun_spins as (
+    select sp.id, sp.created_at as at, sp.thread
+    from sparks s cross join lateral (
+      select sp.id, sp.created_at, sp.thread from acts sp join characters c on c.id = sp.character
+      where sp.target_act_id = s.id and sp.kind = 'spin' and sp.created_at < window_end and sp.created_at >= s.at and c.owner <> s.owner and c.staff is null and sp.id not in (select id from ended)
+      offset 0) sp),
+  spun_posts as (
+    select p.id from spun_spins sp cross join lateral (
+      select p.id from acts p where p.thread = sp.thread and p.kind = 'post' and p.created_at < window_end and p.created_at >= sp.at
+        and p.character is not null and not is_staff_side(p.character, p.kind, p.target_act_id) and p.id not in (select id from ended)
+      offset 0) p),
+  members as (select id from down union select id from spun_spins union select id from spun_posts),
+  -- Each cushion play (Thick Skin) on a spark or on its character that ended after the spark was made, whether or not it is still up: the engine cuts the refund by the largest share that was ever up on the spark.
+  -- A play on the post is found by its key (acts_layers); one on the character by creation time through acts_card_created, a window of the longest cushion `lasts` before the earliest spark. A caught play is never in effect.
+  cushion_plays as (
+    select k.id from sparks s cross join lateral (
+      select k.id from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.gimmick ->> 'kind' = 'cushion'
+      where k.target_act_id = s.id and k.kind = 'card' and coalesce(k.payload ->> 'reach', 'post') = 'post'
+        and k.created_at < window_end and not (k.payload ? 'caught') and (k.payload ->> 'ends')::timestamptz > s.at and k.id not in (select id from ended)
+      offset 0) k
+    union
+    select k.id from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.gimmick ->> 'kind' = 'cushion'
+    join sparks s on s.character::text = k.payload ->> 'character'
+    where k.kind = 'card' and k.payload ->> 'reach' = 'character'
+      and k.created_at < window_end and k.created_at >= (select at from cutoff) - (select max(c.lasts) from card_kinds c where c.gimmick ->> 'kind' = 'cushion')
+      and not (k.payload ? 'caught') and (k.payload ->> 'ends')::timestamptz > s.at and k.id not in (select id from ended)),
   -- What each play of the window is scored against (0378): the Act a card or a spring lies on, and the cast a spring caught (`by`). A class's rule reads how the room took that Act (engine/rules/settle.ts, targetLean), and a
   -- reaction before the window counts as much as one inside it, so the Act's earlier reactions are sent whether or not a reaction reached it today. One probe by Act for each play of the window, never a scan of reactions.
   scored as (
     select a.target_act_id as id from win_acts a where a.kind in ('card', 'spring') and a.target_act_id is not null and coalesce(a.payload ->> 'reach', 'post') = 'post'
     union
     select (a.payload ->> 'by')::uuid from win_acts a where a.kind = 'spring' and a.payload ->> 'by' is not null),
-  -- Only what a reaction reached is paid (`paid`, below, still joins `reacted`): an earlier reaction on a scored Act is read for the lean and pays nothing.
-  earlier_reactions as (select r.* from reactions r join (select act from reacted union select id from scored where id not in (select id from ended)) x on x.act = r.act where r.created_at < window_start),
+  -- Only what a reaction reached is paid for a scored Act (`paid`, below, still joins `reacted`): an earlier reaction on a scored Act is read for the lean and pays nothing. A spark's (0390) are read and its paid rows sent, so
+  -- its standing votes are in the input in a window no reaction reached it; the vote math pays only a vote with a reaction in the window, so nothing is paid twice.
+  earlier_reactions as (select r.* from (select act from reacted union select id from scored where id not in (select id from ended) union select id from sparks) x cross join lateral (select r.* from reactions r where r.act = x.act and r.created_at < window_start offset 0) r),
   -- Every skim play made before the window and still up in it (a play inside it is a window Act already), as earn_up carries Earn plays: live is not ended by an admin, not caught, and ending after the window's start;
   -- found by creation time through acts_card_created, a window of the longest skim `lasts` before the window, and each comes with its post.
   skim_up as (
@@ -991,8 +1073,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
     union select id from skim_up union select post from skim_up
     union select id from ride_springs union select id from ride_gimmicks union select post from rc
     union select id from scored
+    union select id from ancestry union select id from members union select id from cushion_plays
   ),
-  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null and a.kind <> 'donation'
+  all_acts as (select a.* from touched t cross join lateral (select a.* from acts a where a.id = t.id offset 0) a where a.created_at < window_end and a.character is not null and a.kind <> 'donation'
                and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
   -- A staff post a window's card landed on (0054): named with its reactions, so the card is judged against it, and paid nobody. And, since 0378, a staff cast a window spring caught, which `scored` names, so the spring is
   -- judged against it as a card on a post is.
@@ -1000,7 +1083,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
                where c.staff is not null and (a.id in (select k.target_act_id from all_acts k where k.kind = 'card' and k.created_at >= window_start and coalesce(k.payload ->> 'reach', 'post') = 'post')
                                               or a.id in (select id from scored))),
   -- Named, never settled: settle.ts drops a reaction to one, and reads a spin from one as from another.
-  system_acts as (select a.id from acts a join touched t on t.id = a.id
+  system_acts as (select a.id from touched t cross join lateral (select a.* from acts a where a.id = t.id offset 0) a
                   where (a.character is null or is_staff_side(a.character, a.kind, a.target_act_id)) and a.id not in (select id from unscored)),
   all_reactions as (select * from win_reactions union all select * from earlier_reactions),
   named as (select character as id from all_acts union select reactor_character from all_reactions),
@@ -1041,13 +1124,20 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'),
     -- The plays that name a class for this window (scored_as_plays), each with its character, its class and the play.
     'scoredAs', coalesce((select jsonb_agg(jsonb_build_object('character', s.character, 'class', s.class_key, 'play', s.play) order by s.character) from scored_as_plays(window_start, window_end) s), '[]'),
-    -- What earlier windows paid for every player's vote on each Act this window's reactions touch (section 9).
+    -- Each quote with both ends among the input's Acts: `act` quotes `quoted`. The engine reads a post's debate from them (0390).
+    'quotes', coalesce((
+      select jsonb_agg(jsonb_build_object('act', r.act, 'quoted', r.quoted) order by r.act, r.quoted)
+      from all_acts a cross join lateral (select r.act, r.quoted from quote_refs r where r.act = a.id offset 0) r join all_acts q on q.id = r.quoted), '[]'),
+    -- What earlier windows paid for every player's vote on each Act this window's reactions touch (section 9), and, since 0390, on each spark.
     'paid', coalesce((
-      select jsonb_agg(jsonb_build_object('player', p.account, 'act', p.act, 'weight', p.weight, 'shares', p.shares) order by p.account, p.act)
-      from paid_votes p join reacted r on r.act = p.act), '[]'))
+      select jsonb_agg(jsonb_build_object('player', q.account, 'act', q.act, 'weight', q.weight, 'shares', q.shares) order by q.account, q.act)
+      from (select p.* from paid_votes p join reacted r on r.act = p.act
+            union all select p.* from (select s.id from sparks s where s.id not in (select act from reacted)) s cross join lateral (select p.* from paid_votes p where p.act = s.id offset 0) p) q), '[]'))
 $$;
 create or replace function estimate_input(account uuid, until timestamptz default now()) returns jsonb
-language plpgsql stable security definer set search_path = public, pg_temp as $$
+-- jit = off as every client read has it (0368): this plan costs above jit_above_cost, and a client read that compiled 878 functions spent about 6 s on a chain of two posts.
+-- No plan_cache_mode = force_generic_plan (0368's other half): that is for a client read a page calls many times, and this is called once per request, not in ALLOWED_RPCS, where a generic plan would forget the window's and the cutoff's values.
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off as $$
 declare
   salt text := gen_random_uuid()::text;
   window_start timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
@@ -1067,7 +1157,7 @@ begin
   window_end := least(until, coalesce(season_end, 'infinity'));
   if window_start >= window_end then return null; end if;
   return (
-  with
+  with recursive
   -- The plays an admin ended before the window's end (Task 3): out of this window, with the votes on them. `<` as every other bound
   -- here is, so a card_end written at the instant window_end is after the window, as a vote written then is.
   ended as (select e.target_act_id as id from acts e where e.kind = 'card_end' and e.created_at < window_end),
@@ -1117,6 +1207,99 @@ begin
                    where exists (select 1 from reactions r where r.act = a.id and r.created_at >= window_start and r.created_at < window_end)),
   -- The Acts the caller reacted to in the window, through reactions_reactor.
   reacted_by_me as (select distinct r.act from reactions r where r.reactor_account = account and r.created_at >= window_start and r.created_at < window_end),
+  -- ---- The caller's debates (0390) ----
+  cutoff as (select window_start - make_interval(days => (setting('debateDays') #>> '{}')::integer) as at),
+  -- The caller's own posts made no earlier than the cutoff, through acts_character: the only Acts a walk starts from. A bystander's posts lead nothing about anyone else's debate.
+  my_posts as (select a.id, a.created_at as at, a.character, a.kind from acts a join mine m on m.id = a.character
+               where a.kind = 'post' and a.created_at >= (select at from cutoff) and a.created_at < window_end and a.id not in (select id from ended)),
+  -- Walk down from the caller's posts (settlement_input's `down`) to find which have a member in the window. Another player's Acts, and the caller's own spun threads' (the same player), only; a staff Act is no member.
+  down1 as (
+    select p.id, p.at from my_posts p
+    union
+    select a.id, a.created_at from down1 d cross join lateral (
+      select a.id, a.created_at from quote_refs r cross join lateral (select * from acts where id = r.act offset 0) a
+      where r.quoted = d.id and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (d.at, d.id)
+        and a.character is not null and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)
+      offset 0) a),
+  spun1 as (
+    select sp.id, sp.created_at as at, sp.thread, s.id as spark
+    from my_posts s cross join lateral (
+      select sp.id, sp.created_at, sp.thread from acts sp
+      where sp.target_act_id = s.id and sp.kind = 'spin' and sp.created_at < window_end and sp.created_at >= s.at and sp.character not in (select id from mine)
+        and not is_staff_side(sp.character, sp.kind, sp.target_act_id) and sp.id not in (select id from ended)
+      offset 0) sp),
+  spun_in1 as (
+    select p.id, p.created_at as at, sp.spark from spun1 sp cross join lateral (
+      select p.id, p.created_at from acts p where p.thread = sp.thread and p.kind = 'post' and p.created_at < window_end and p.created_at >= sp.at
+        and p.character is not null and not is_staff_side(p.character, p.kind, p.target_act_id) and p.id not in (select id from ended)
+      offset 0) p),
+  -- Walk up from each member in the window, through quote_refs, to ancestors made no earlier than the cutoff (and earlier than what quotes them): the caller's posts among them have a member in the window.
+  up1 as (
+    select d.id, d.at from down1 d where d.at >= window_start
+    union
+    select b.id, b.created_at from up1 u cross join lateral (
+      select b.id, b.created_at from quote_refs r cross join lateral (select * from acts where id = r.quoted offset 0) b
+      where r.act = u.id and b.kind in ('post', 'spin') and b.created_at >= (select at from cutoff) and (b.created_at, b.id) < (u.at, u.id)
+        and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
+      offset 0) b),
+  -- Each is a join, so none is a subplan read once for every post of the caller's: a post with a member in the window by a quote (up1) or by a spun thread, and a post of the caller's a reaction reached in the window while it has
+  -- a debate by the window's end (a quote or another player's spin made before it), as settlement_input reads a spark whose vote moved.
+  sparks as (
+    select p.id, p.at, p.character from my_posts p join (
+      select id from up1
+      union select spark from spun_in1 where at >= window_start
+      union select spark from spun1 where at >= window_start
+      union select p.id from my_posts p join mine_reacted r on r.act = p.id
+        where exists (select 1 from quote_refs q cross join lateral (select * from acts where id = q.act offset 0) a where q.quoted = p.id and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (p.at, p.id)
+                        and a.character is not null and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended))
+           or exists (select 1 from acts sp where sp.target_act_id = p.id and sp.kind = 'spin' and sp.created_at < window_end and sp.created_at >= p.at and sp.character not in (select id from mine)
+                        and not is_staff_side(sp.character, sp.kind, sp.target_act_id) and sp.id not in (select id from ended))
+    ) k on k.id = p.id),
+  -- Walk up from every spark of the caller's (as settlement_input's `ancestry`), by whatever branch reached it: a spark reached through a spun thread or a reaction has no ancestor in `up1`, and the engine reads inOwnDebate from
+  -- the edges above a spark. Another player's post it quotes is a public Act, keyed under the salt like any other; a bystander has no spark, so none of this is in a bystander's input.
+  ancestry as (
+    select s.id, s.at from sparks s
+    union
+    select b.id, b.created_at from ancestry u cross join lateral (
+      select b.id, b.created_at from quote_refs r cross join lateral (select * from acts where id = r.quoted offset 0) b
+      where r.act = u.id and b.kind in ('post', 'spin') and b.created_at >= (select at from cutoff) and b.created_at < window_end and (b.created_at, b.id) < (u.at, u.id)
+        and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
+      offset 0) b),
+  -- The members of the sparks alone: walk down again from them, so the input holds nothing of the caller's posts that have no member in the window.
+  down as (
+    select s.id, s.at from sparks s
+    union
+    select a.id, a.created_at from down d cross join lateral (
+      select a.id, a.created_at from quote_refs r cross join lateral (select * from acts where id = r.act offset 0) a
+      where r.quoted = d.id and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (d.at, d.id)
+        and a.character is not null and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)
+      offset 0) a),
+  spun_spins as (
+    select sp.id, sp.created_at as at, sp.thread
+    from sparks s cross join lateral (
+      select sp.id, sp.created_at, sp.thread from acts sp
+      where sp.target_act_id = s.id and sp.kind = 'spin' and sp.created_at < window_end and sp.created_at >= s.at and sp.character not in (select id from mine)
+        and not is_staff_side(sp.character, sp.kind, sp.target_act_id) and sp.id not in (select id from ended)
+      offset 0) sp),
+  spun_posts as (
+    select p.id from spun_spins sp cross join lateral (
+      select p.id from acts p where p.thread = sp.thread and p.kind = 'post' and p.created_at < window_end and p.created_at >= sp.at
+        and p.character is not null and not is_staff_side(p.character, p.kind, p.target_act_id) and p.id not in (select id from ended)
+      offset 0) p),
+  members as (select id from down union select id from spun_spins union select id from spun_posts),
+  -- Each cushion play on a spark of the caller's, or on its character, that ended after the spark was made (settlement_input's `cushion_plays`); another player's play on the caller's post is public, as an earn's is.
+  cushion_plays as (
+    select k.id from sparks s cross join lateral (
+      select k.id from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.gimmick ->> 'kind' = 'cushion'
+      where k.target_act_id = s.id and k.kind = 'card' and coalesce(k.payload ->> 'reach', 'post') = 'post'
+        and k.created_at < window_end and not (k.payload ? 'caught') and (k.payload ->> 'ends')::timestamptz > s.at and k.id not in (select id from ended)
+      offset 0) k
+    union
+    select k.id from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.gimmick ->> 'kind' = 'cushion'
+    join sparks s on s.character::text = k.payload ->> 'character'
+    where k.kind = 'card' and k.payload ->> 'reach' = 'character'
+      and k.created_at < window_end and k.created_at >= (select at from cutoff) - (select max(c.lasts) from card_kinds c where c.gimmick ->> 'kind' = 'cushion')
+      and not (k.payload ? 'caught') and (k.payload ->> 'ends')::timestamptz > s.at and k.id not in (select id from ended)),
   targets as (select target_act_id as id from win_acts where kind in ('card', 'spin', 'spring') and target_act_id is not null and coalesce(payload ->> 'reach', 'post') = 'post'),
   -- The casts the caller's window springs caught (settlement_input's `scored`, 0378): a spring is scored against the cast it caught, so the cast's reactions are read. They go through `all_reactions`, `keyed` and
   -- `totals_withheld` as every other does, and nothing here is keyed by who owns the cast or its reactors.
@@ -1138,13 +1321,16 @@ begin
   ),
   -- The Acts whose reactions are read.
   voted as (select id from win_acts union select act from mine_reacted union select act from reacted_by_me union select id from targets
-            union select post from skim_up union select id from ride_casts union select id from spring_by),
+            union select post from skim_up union select id from ride_casts union select id from spring_by
+            -- The caller's own sparks (0390): their posts, whose reactions the caller's log already shows. Their members are never voted, so no reaction on one is read.
+            union select id from sparks),
   touched as (
     select id from voted union select id from my_cards_there union select id from landed union select id from spins
     union select id from earn_up union select post from earn_up where post is not null
     union select target_act_id from acts a join spins s on s.id = a.id where a.target_act_id is not null
     union select id from first_posts
     union select id from skim_up union select id from my_gimmicks union select spring from rode
+    union select id from ancestry union select id from members union select id from cushion_plays
     -- The post each card, spin or spring among the voted Acts points at (Task 1, #137): a card the caller only reacted to is
     -- judged against its post, and a spin the caller only reacted to is read with its origin (settle.ts reads every spin's), as
     -- settlement_input reads every window play's target.
@@ -1152,12 +1338,12 @@ begin
           where a.kind in ('card', 'spin', 'spring') and a.target_act_id is not null and coalesce(a.payload ->> 'reach', 'post') = 'post'
   ),
   -- As settlement_input (0004, as 0043 changed it): a staff character's Acts, and a card on one, are named and pay nobody.
-  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null and a.kind <> 'donation'
+  all_acts as (select a.* from touched t cross join lateral (select a.* from acts a where a.id = t.id offset 0) a where a.created_at < window_end and a.character is not null and a.kind <> 'donation'
                and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
   -- A staff post a window's card of the caller's landed on, as settlement_input names it (0054).
-  unscored as (select a.* from acts a join characters c on c.id = a.character join touched t on t.id = a.id
+  unscored as (select a.* from touched t cross join lateral (select a.* from acts a where a.id = t.id offset 0) a join characters c on c.id = a.character
                where c.staff is not null and a.id in (select k.target_act_id from all_acts k where k.kind = 'card' and k.created_at >= window_start and coalesce(k.payload ->> 'reach', 'post') = 'post')),
-  system_acts as (select a.id from acts a join touched t on t.id = a.id
+  system_acts as (select a.id from touched t cross join lateral (select a.* from acts a where a.id = t.id offset 0) a
                   where (a.character is null or is_staff_side(a.character, a.kind, a.target_act_id)) and a.id not in (select id from unscored)),
   -- Every reaction on an Act voted on, up to now, but the caller's own to the caller's own characters,
   -- and none on The System's own Acts: the tally every player reacts to would hand each caller who
@@ -1173,7 +1359,7 @@ begin
   -- counted under `keyed`'s per-mask keys, which the engine cannot tie to an author. The estimate can then
   -- say more than the settlement pays, as it says "up to"; the settled log is exact.
   all_reactions as (
-    select r.* from reactions r join voted v on v.id = r.act
+    select r.* from voted v cross join lateral (select r.* from reactions r where r.act = v.id and r.created_at < window_end offset 0) r
     join acts a on a.id = r.act join characters c on c.id = a.character
     where r.created_at < window_end and not (r.reactor_account = account and c.owner = account) and r.act not in (select id from ended) and a.kind <> 'donation'
       and not (r.reactor_account <> account and totals_withheld(r.act, account))
@@ -1232,7 +1418,12 @@ begin
         'player', k.player, 'character', k.character)
         || case when k.kind like 'x-%' then jsonb_build_object('quadrant', reaction_quadrant(k.act, k.kind)) else '{}'::jsonb end order by k.created_at, k.id)
       from keyed k), '[]'),
-    'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'))
+    'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'),
+    -- Each quote with both ends among the caller's sparks and their members, so a bystander's input holds none (0390).
+    'quotes', coalesce((
+      select jsonb_agg(jsonb_build_object('act', r.act, 'quoted', r.quoted) order by r.act, r.quoted)
+      from all_acts a cross join lateral (select r.act, r.quoted from quote_refs r where r.act = a.id offset 0) r join all_acts q on q.id = r.quoted
+      where a.id in (select id from ancestry union select id from members) and q.id in (select id from ancestry union select id from members)), '[]'))
   );
 end $$;
 

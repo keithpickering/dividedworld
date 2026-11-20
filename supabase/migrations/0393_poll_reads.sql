@@ -1,6 +1,6 @@
 -- Polls: the reads (docs/plans/2026-11-20-polls-design.md; plan docs/plans/2026-11-20-polls-plan.md, Task 2; models 0375_spun_thread_reads.sql, 0372_origin_in_page.sql and 0377_sealed_packs.sql).
 --
--- 0388 wrote the kinds, the writes and the guards. This reads them back, in the screens' own reads, and changes nothing 0388 wrote. Each function and view below is copied whole from its latest definition (named in the comment above it), changing only what is named.
+-- 0392 wrote the kinds, the writes and the guards. This reads them back, in the screens' own reads, and changes nothing 0392 wrote. Each function and view below is copied whole from its latest definition (named in the comment above it), changing only what is named.
 --
 --   1. poll_ballots    (poll, before, before_id): a public poll's every ballot, the changes included, newest first, 50 at a time paged by the keyset (at, act) of the last one, each with its character's public name and avatar; it refuses a secret poll in one sentence. And my_poll_closes, an
 --                       owner-rights view of an admin's closes of the polls the caller's characters wrote (as my_ballots is the caller's own ballots), which the log reads: the poll's character through acts_public may be the veil's stand-in.

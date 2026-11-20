@@ -30,7 +30,7 @@ export function seedDemo(fake: Fake): Demo {
   const { thread, act } = fake.seed.thread('general', spritey, 'Who keeps reacting with a thumbs up?', 'Every post I make, a single [b]👍[/b]. Show yourself.', { at: t0 + 3 * day });
   const confession = fake.seed.post(thread, pipewrench, 'It was me. It is always me.', { at: t0 + 3 * day + 3_600_000 });
   const knew = fake.seed.post(thread, spritey, 'I knew it.', { at: t0 + 3 * day + 7_200_000 });
-  /* The stories' polls (0388): one public, one secret, each open for a week from the clock and with a ballot or two. */
+  /* The stories' polls (0392): one public, one secret, each open for a week from the clock and with a ballot or two. */
   const verdict = fake.seed.poll(confession, { question: 'Should Pipewrench be forgiven?', options: ['Yes', 'No', 'Ask again tomorrow'], pick: 1, secret: false, lasts: { unit: 'day', count: 7 } });
   fake.seed.ballot(spritey, verdict, [1]);
   fake.seed.ballot(hooligan, verdict, [0]);

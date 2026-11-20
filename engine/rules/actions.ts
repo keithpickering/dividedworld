@@ -276,7 +276,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (typeof kind !== 'string' || !(reactions.some((k) => k.key === kind) || emojiOfKey(kind) !== null)) throw new Refused('kind', `there is no reaction ${JSON.stringify(kind)}`);
     return { rpc: 'react', args: { target: id(r, 'act'), through: id(r, 'character'), reaction: kind } };
   },
-  // A ballot, and the two closes of a poll (0388): the player's own calls, since the database reads the caller. Whose poll, which options and whether it is open are its to say.
+  // A ballot, and the two closes of a poll (0392): the player's own calls, since the database reads the caller. Whose poll, which options and whether it is open are its to say.
   castBallot: (r, { settings }) => ({ rpc: 'cast_ballot', args: { poll: id(r, 'poll'), through: id(r, 'character'), picks: picksOf(r, settings) } }),
   closePoll: (r) => ({ rpc: 'close_poll', args: { poll: id(r, 'poll'), through: id(r, 'character') } }),
   closePollAsAdmin: (r) => ({ rpc: 'close_poll_as_admin', args: { poll: id(r, 'poll') } }),

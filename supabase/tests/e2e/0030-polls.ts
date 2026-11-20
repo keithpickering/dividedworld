@@ -64,10 +64,12 @@ test('the masks of a secret poll hold in every read another account can make, an
   const asAnn = { player: psqlDb(ann.account), service };
   const asBob = { player: psqlDb(bob.account), service };
   const db = { cy: psqlDb(cy.account), ann: psqlDb(ann.account), bob: psqlDb(bob.account) };
+  // A board of its own: 0021-a-season-of-fangame, which runs before this file in the same scratch database, merges General away.
+  sql(`insert into boards (slug, name, description) values ('polls-e2e', '000 Polls', 'Where the polls are started.') on conflict (slug) do nothing`);
   const since = sql('select clock_timestamp()');
 
   const start = async (title: string, secret: boolean) => {
-    const made = await runAction(asCy, instance, { action: 'startThread', board: 'general', character: cy.characters[0], title, body: 'Vote, friends.',
+    const made = await runAction(asCy, instance, { action: 'startThread', board: 'polls-e2e', character: cy.characters[0], title, body: 'Vote, friends.',
       poll: { question: title, options: ['Pipe Frame', 'Badwagon', 'Mach Bike'], pick: 2, secret, lasts: '3 days' } });
     assert.equal(made.status, 200, JSON.stringify(made));
     const { thread, act } = made.body as { thread: { id: string }; act: { id: string } };
@@ -152,7 +154,7 @@ test('the masks of a secret poll hold in every read another account can make, an
     secret: ballotOf(secret.poll, voters[0]!.id),
   };
   const plant = (ballot: string, title: string) => {
-    const t = sql(`with t as (insert into threads (board, title, origin_act_id) select b.id, '${title}', '${ballot}' from boards b where b.slug = 'general' returning id)
+    const t = sql(`with t as (insert into threads (board, title, origin_act_id) select b.id, '${title}', '${ballot}' from boards b where b.slug = 'polls-e2e' returning id)
       insert into acts (character, kind, thread, target_act_id, payload) select '${voters[2]!.id}', 'spin', t.id, '${ballot}', jsonb_build_object('title', '${title}', 'body', 'Spun.') from t returning thread`);
     return t;
   };
@@ -239,6 +241,8 @@ test('the masks of a secret poll hold in every read another account can make, an
     begin
       ms := array_fill(0::double precision, array[4, tries]); rows := array_fill(0::bigint, array[4, tries]);
       perform tests.become(account);
+      -- Index reads only: a sequential scan of a small table (threads) stops at the row it wants, so its tuple count is where that row sits in the heap, which differs from one poll's thread to the next and says nothing of who owns a voter.
+      set local enable_seqscan = off;
       for i in 1..tries loop
         for k in 1..4 loop
           select coalesce(sum(coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), 0) into r0 from pg_stat_xact_user_tables;

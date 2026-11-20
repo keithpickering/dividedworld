@@ -28,7 +28,7 @@ export interface Landmark {
   readonly name: string;
   /** The build's accessible name where a decision makes it differ from the board's. */
   readonly buildName?: string;
-  /** The build's role where a decision makes it differ from the board's (the board draws a link where the build has a button). */
+  /** The build's role where a decision makes it differ from the board's (the board draws a link where the build has a button, or bare text where the build has a group: `text` on one side only is allowed). */
   readonly buildRole?: string;
   /** Another landmark's id: the search is made inside that one. */
   readonly within?: string;
