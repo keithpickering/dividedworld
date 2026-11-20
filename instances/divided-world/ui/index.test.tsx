@@ -639,7 +639,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('the Face\'s stolen thunder says when it is not charged: a booed post, or a card that answered a Salty play', () => {
     expect(instanceUi.reasonWords('face.stoleThunder', instance.settings.economy)).toBe('Stole the thunder: a card the character played on another\'s post drew more votes than the post this window. Not charged where the post\'s reactions are mostly negative, or where the card answered a Salty play');
-    expect(instanceUi.classLooks.face!.hurtsBy(instance.settings.economy, instance.settings.settlementLength)).toBe('Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.');
+    expect(instanceUi.classLooks.face!.hurtsBy(instance.settings.economy, instance.settings.settlementLength)).toBe('Hurt by bored reactions, and by stealing a non-Salty post\'s thunder.');
   });
   test('every pip style has images', () => {
     for (const p of instance.pipStyles) expect(instanceUi.pips[p.key], p.key).toBeDefined();

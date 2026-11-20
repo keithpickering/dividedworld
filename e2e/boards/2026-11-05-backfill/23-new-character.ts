@@ -57,7 +57,7 @@ const manifest: BoardManifest = {
     at('jabroni', 'text', 'Jabroni', { within: 'classes', box: 'none', type: false }),
     at('technician', 'text', 'Technician', { within: 'classes', box: 'none', type: false }),
     at('lurker', 'text', 'Lurker', { within: 'classes', box: 'none', type: false }),
-    at('face-hurt', 'text', 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', { buildName: 'Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.', within: 'classes', box: 'none', type: false }),
+    at('face-hurt', 'text', 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', { buildName: 'Hurt by bored reactions, and by stealing a non-Salty post\'s thunder.', within: 'classes', box: 'none', type: false }),
     at('note', 'text', 'Only you will know its class, unless you choose to reveal it.', { type: false, origin: 'classes', originEdge: 'bottom', buildShift: { y: 0 } }),
 
     at('when', 'group', 'When it debuts', { type: false, box: 'none' }),
@@ -133,7 +133,7 @@ export const phone: BoardManifest = {
   landmarks: [
     { id: 'class-label', role: 'text', name: 'CLASS', type: false, box: 'none' },
     held('class-label', 'count', 'text', '1 OF 5', { x: -20 }, { buildName: '1–1 of 6' }),
-    { id: 'face-hurt', role: 'text', name: 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', buildName: 'Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.', type: false, box: 'none' },
+    { id: 'face-hurt', role: 'text', name: 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', buildName: 'Hurt by bored reactions, and by stealing a non-Salty post\'s thunder.', type: false, box: 'none' },
     held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { y: 0 }, { origin: 'face-hurt', originEdge: 'bottom' }),
     held('class-label', 'when', 'text', 'WHEN IT DEBUTS', { y: 486.8 }, { origin: 'note', originEdge: 'bottom' }),
     held('class-label', 'drop-now', 'text', 'DROP NOW', { y: 477.8 }, { buildName: 'Drop now.', origin: 'note', originEdge: 'bottom' }),
