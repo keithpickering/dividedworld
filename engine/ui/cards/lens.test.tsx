@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } fro
 import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { viewProblems, wordsProblems } from './lens-words.ts';
-import type { Id } from '../data/api.ts';
+import type { Id, Visit } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
@@ -2856,5 +2856,80 @@ describe('a spent kind', () => {
     const second = strip([{ id: 'in', ends: 'past' }, { id: 'out', ends: 'older' }], { then: new Set(['in']) });
     await openMark();
     expect(endsLine()).toBe(`Ends ${dayAndTime(second.at.past)}`);
+  });
+});
+
+/* A card's icon on its tab (docs/plans/2026-11-20-spent-marks-design.md, section 5): the mark's own picture, in color, spent or not; decoration, so the tab's name is its label alone. */
+describe('a card\'s icon on its tab', () => {
+  const HOUR = 3_600_000;
+  const iconOf = (name: string | RegExp) => tab(name as string).querySelector<HTMLElement>('.kb-lens-tab-icon');
+  /** A post carrying the kinds' plays as the page would write them: a Use of k2 timed out, a back set face down and, where asked, sprung into k3. */
+  function laid(o: { ui?: readonly CardUi[]; spring?: boolean; use?: boolean; visit?: boolean } = {}) {
+    const w = world();
+    w.fake.clock.advance(60_000);
+    const past = new Date(w.fake.clock.now() - HOUR).toISOString();
+    const store = createPlays();
+    const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+    const act = (id: string, kind: 'card' | 'set' | 'spring', payload: Record<string, unknown>) => ({ ...base, id, kind, payload, currentPayload: payload });
+    const acts = [
+      ...(o.use === false ? [] : [act('u', 'card', { card: 'k2', ends: past })]),
+      act('b', 'set', {}),
+      ...(o.spring ? [act('sp', 'spring', { card: 'k3', trigger: 'cast', outcome: { do: 'payout' }, set: 'b', by: 'u' })] : []),
+    ];
+    store.add(acts);
+    store.setBilling(w.second, acts.filter((a) => a.kind !== 'spring').map((a) => a.id));
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.they });
+    const id = w.fake.seed.visit(clerk, w.second, { at: w.fake.clock.now(), endsInMs: 161 * 60_000, line: 'Routine inspection.' });
+    const visit = { id, post: w.second, mod: clerk, at: new Date(w.fake.clock.now()).toISOString(), endsAt: new Date(w.fake.clock.now() + 161 * 60_000).toISOString(), line: 'Routine inspection.', charges: [], challenge: { kind: 'none' }, end: null } as unknown as Visit;
+    renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={store} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} {...(o.visit ? { visit, author: w.spritey, thread: w.thread } : {})} /></LensProvider>, { path: '/', instance, cards: o.ui ?? cards });
+    return w;
+  }
+  const openFirst = async () => { await userEvent.click(await screen.findByRole('button', { name: /^Card 2, \d plays?/u })); };
+
+  test('a card tab shows the mark as decoration, and keeps it when the kind is spent; its name is its label alone', async () => {
+    width(false);
+    laid({ use: true });
+    await openFirst();
+    const icon = iconOf('Card 2')!;
+    expect(icon.tagName).toBe('IMG');
+    expect(icon).toHaveAttribute('alt', '');
+    expect(icon).toHaveAttribute('src', '/mark.svg');
+    expect(icon).toHaveAttribute('draggable', 'false');
+    expect(within(lens()).getByRole('tab', { name: 'Card 2' })).toBeInTheDocument();
+    expect(tab('Card 2').textContent).toBe('Card 2');
+  });
+
+  test('a sprung back\'s tab shows the card it became; a face-down back\'s shows none', async () => {
+    width(false);
+    laid({ spring: true });
+    await openFirst();
+    const sprung = within(lens()).getAllByRole('tab').find((t) => t.textContent === 'Card 3')!;
+    expect(sprung.querySelector('img.kb-lens-tab-icon')).toHaveAttribute('src', '/mark.svg');
+    cleanup();
+    laid({ spring: false });
+    await openFirst();
+    const back = within(lens()).getByRole('tab', { name: 'Card back' });
+    expect(back.querySelector('.kb-lens-tab-icon')).toBeNull();
+  });
+
+  test('art with no mark gets the swatch in its color; a card with no art gets nothing', async () => {
+    width(false);
+    laid({ ui: [cardUi('k1'), cardUi('k2', { art: { color: 'red', ink: 'white', canvas: '', mark: '', credit: 'Test' } }), { key: 'k3', describe: () => 'x', summary: 'x' } as unknown as CardUi] });
+    await openFirst();
+    const swatch = iconOf('Card 2')!;
+    expect(swatch.tagName).toBe('SPAN');
+    expect(swatch).toHaveClass('kb-lens-tab-swatch');
+    expect(swatch.style.background).toBe('red');
+    expect(tab('Card 2').querySelector('img')).toBeNull();
+  });
+
+  test('the visit\'s tab shows none, and a card tab beside it does', async () => {
+    width(false);
+    const w = laid({ visit: true });
+    expect(w).toBeDefined();
+    await userEvent.click(await screen.findByRole('button', { name: /Opens the visit\.$/u }));
+    const l = screen.getByRole('dialog', { name: /^Visit/u });
+    expect(within(l).getByRole('tab', { name: /^On a visit/u }).querySelector('.kb-lens-tab-icon')).toBeNull();
+    expect(within(l).getByRole('tab', { name: 'Card 2' }).querySelector('img.kb-lens-tab-icon')).not.toBeNull();
   });
 });

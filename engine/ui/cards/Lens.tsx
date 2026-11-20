@@ -52,7 +52,7 @@ import { olderWords, surfaceShare, surfaceWords } from './lens-words.ts';
 import { backWords, CAUGHT_STATE, caughtWords, ENDED_STATE, endedWords, endsWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
 import { disciplineNote, FALL_ENDS } from './discipline.ts';
 import { asThen, backOver, defaultView, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
-import type { CardPlay, CardView } from './types.ts';
+import type { CardPlay, CardUi, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
 import { useCaughtFate, useSprungWords } from './sprung.ts';
 import { ReportLink, type ReportTo } from '../conduct/Report.tsx';
@@ -705,6 +705,13 @@ export interface LensProps {
   readonly reportTo?: ReportTo | undefined;
 }
 
+/** A card's icon on its tab (spent-marks design, section 5): the mark in its own colors, a swatch where the art has no mark, nothing where there is no art. Decoration: the tab's name is its label. */
+function TabIcon({ art }: { readonly art: CardUi['art'] | undefined }) {
+  if (art === undefined) return null;
+  if (art.mark) return <img className="kb-lens-tab-icon" src={art.mark} alt="" draggable={false} />;
+  return <span className="kb-lens-tab-icon kb-lens-tab-swatch" style={{ background: art.color }} aria-hidden="true" />;
+}
+
 /** One tab of the Lens. A tab that reads before it shows is busy while its read is out, and a rest or focus on it starts the read early. */
 const PreparedTab = forwardRef<HTMLButtonElement, {
   readonly id: string; readonly kind: string; readonly selected: boolean; readonly controls: string | undefined; readonly children: ReactNode; readonly onChoose: () => void;
@@ -896,11 +903,18 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           {kinds.map((kind) => {
             const label = onForm ? formTabName(form) : kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
             const selected = kind === card;
+            /* A form's tab shows its card; a sprung back the card it became; a face-down back and the visit's tab none. */
+            const tabArt = (k: string) => {
+              if (onForm) return ui.cards.find((c) => c.key === form.kind)?.art;
+              if (k === VISIT_KIND) return undefined;
+              if (isBack(k)) { const sprung = here.plays.find((p) => p.card === k && p.revealed); return sprung ? ui.cards.find((c) => c.key === sprung.revealed!.card)?.art : undefined; }
+              return ui.cards.find((c) => c.key === k)?.art;
+            };
             return (
               <PreparedTab
                 key={kind} ref={(el) => { if (el) tabs.current.set(kind, el); else tabs.current.delete(kind); }}
                 id={tabId(kind)} kind={kind} selected={selected} controls={selected ? panelId : undefined} read={readOf(kind)} onChoose={() => choose(kind)}
-              >{label}</PreparedTab>
+              ><TabIcon art={tabArt(kind)} />{label}</PreparedTab>
             );
           })}
         </div>
