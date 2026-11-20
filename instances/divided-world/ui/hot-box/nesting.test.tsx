@@ -24,6 +24,13 @@ import { renderIn } from '../../../../engine/ui/test-world.tsx';
 import { instance } from '../../index.ts';
 import { cardsUi } from '../cards.ts';
 import { forgetScratch, resetFogLadder } from './Effect.tsx';
+/*
+ * The cards' effects are lazy (their `ui.ts`): a first draw imports the module, which takes real time, while `ready` waits in fake time
+ * (50 turns of the timers, each flushing what is due). Imported here, every effect this file draws is in the module cache before a test
+ * mounts, so its lazy import answers within a turn however loaded the run is; Hot Box's own module is imported above for its helpers.
+ */
+import '../../cards/whoops/Effect.tsx';
+import '../below-the-fold/Effect.tsx';
 
 /* The post's lines, as Hot Box reads them from Whoops!'s `readLines` (jsdom cannot measure a range): three lines of the box, so a sweep is 6 s. */
 vi.mock('../../cards/whoops/lines.ts', () => ({
