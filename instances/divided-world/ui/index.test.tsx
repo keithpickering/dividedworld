@@ -379,6 +379,15 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       for (const e of carried) expect(Object.keys(e.params ?? {}).sort(), reason).toEqual([...(wordsRead[reason] ?? []), ...(settingsRead[reason] ?? [])].sort());
     }
   });
+  test('the double the Heel and the Jabroni earn is said, and the Lurker\'s miss and the reveal perk are worded', () => {
+    expect(wordsRead['heel']).toContain('heel.heatVotes');
+    expect(wordsRead['jabroni']).toContain('jabroni.groanVotes');
+    expect(said('heel', economy)).toContain('double');
+    expect(said('jabroni', economy)).toContain('double');
+    expect(said('lurker', economy)).toContain('Hurt by early calls that go the other way');
+    expect(instanceUi.reasonWords('lurker.misread', economy)).toBe('Misread it: among the first to react to a post that then drew a crowd another way');
+    expect(instanceUi.reasonWords('reveal.perk', { share: 0.2 })).toBe('Playing it openly: a fifth more on what reactions earned while the character\'s reveal was current');
+  });
   test('the Tweener\'s catalyst lines say the numbers they were settled under, and its description says it earns from a debate', () => {
     expect(instanceUi.reasonWords('tweener.litTheFuse', { 'tweener.catalystVoices': 4, 'tweener.catalystReturned': 3, debateDays: 5 })).toBe(
       'Lit the fuse: within five days of the character\'s post, four or more other players were arguing under it, three of them more than once, in quotes of it and threads spun from it, and the character\'s player had not posted in it');
@@ -749,7 +758,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('every reason a class pays reads as a sentence of its own', () => {
     const reasons = ['face.cheered', 'face.liftedAPost', 'face.boredTheRoom', 'face.stoleThunder', 'heel.drewHeat', 'heel.stoleThunder', 'heel.shrugged',
-      'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch',
+      'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.misread', 'reveal.perk', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch',
       'technician.respected', 'technician.evergreen', 'technician.draggedIn',
       'tweener.splitTheRoom', 'tweener.stirredThePot', 'tweener.shrugged', 'tweener.litTheFuse', 'tweener.outvoted'];
     for (const r of reasons) expect(instanceUi.reasonWords(r, instance.settings.economy), r).not.toMatch(/^Settled under/);
@@ -781,7 +790,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
           standing: { before: [{ ...none, calmPositive: 1 }, { ...none, calmPositive: 1 }], now: [] }, cushioned: 0 },
       ],
       posts: Array.from({ length: eco('lurker.postsAllowed') + 1 }, (_, n) => ({ act: `q${n}`, at: n })),
-      held: [{ act: 'p9', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'excitedPositive' }],
+      held: [{ act: 'p9', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'excitedPositive' },
+        { act: 'p8', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'boredNegative' }],
       cardsPlayed: [played('sweet', 'k1'), played('salty', 'k2'), played('pepperoni', 'k3')],
       cardsLanded: [{ act: 'k4', card: 'whoops', alignment: 'salty', readsAs: 'salty', at: 5, on: 'p1' }],
       threadsSpun: [{ act: 'p9', thread: 't1', at: 5, fromOthers: true, repliersBefore: 0, repliersNow: eco('lurker.spunThreadRepliers') }],
@@ -793,6 +803,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     /* Losses no reaction's vote can be read from, with why: the cushion softens a loss from a reaction and a window's loss, and nothing else. */
     const named: Record<string, string> = {
       'lurker.postedTooMuch': 'no reaction causes it; the sheet says nothing lost for any other reason is given back',
+      'lurker.misread': 'a call that missed, charged for where the post ended up; no reaction\'s vote lost it',
       'tweener.splitTheRoom': 'a gain taken back as the room stops being split',
       'tweener.outvoted': 'a refund taken back as a calm or bored vote moves away; the shrug it answered was the loss, and the cushion read that',
     };
