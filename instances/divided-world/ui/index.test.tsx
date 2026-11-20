@@ -348,8 +348,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       : instanceUi.reasonWords(key, economy));
   const economy = instance.settings.economy;
   /* The settings beside the economy a reason states, each shifted by 17 too, so a default the economy shares (three days, three voices) is never read for the other's. */
-  const settingsNumbers = instance.settings as unknown as Readonly<Record<string, number>>;
-  const settingsShifted = (key: string) => Object.fromEntries((settingsRead[key] ?? []).map((r) => [r, settingsNumbers[r]! + 17]));
+  const settingsShifted = (key: string) => Object.fromEntries((settingsRead[key] ?? []).map((r) => [r, instance.settings[r] + 17]));
   test('each class\'s words say the numbers in force: shifted by 17, the shifted number is said and the default is not', () => {
     expect(Object.keys(wordsRead).length).toBeGreaterThan(0);
     for (const [key, reads] of Object.entries(wordsRead)) {
@@ -389,13 +388,13 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('a setting a reason states beside the economy is said as tuned: shifted by 17, the shifted number is said and the default is not', () => {
     expect(Object.keys(settingsRead).length).toBeGreaterThan(0);
-    const s = settingsNumbers;
+    const s = instance.settings;
     for (const [reason, reads] of Object.entries(settingsRead)) {
       const economyShifted = Object.fromEntries((wordsRead[reason] ?? []).map((r) => [r, economy[r]! + 17]));
       const text = instanceUi.reasonWords(reason, { ...economy, ...economyShifted, ...settingsShifted(reason) });
       for (const r of reads) {
-        expect(text, `${reason} says ${r} as tuned`).toMatch(new RegExp(`\\b${spelled(s[r]! + 17)}\\b`, 'u'));
-        expect(text, `${reason} never says ${r}'s default`).not.toMatch(new RegExp(`\\b${spelled(s[r]!)}\\b`, 'u'));
+        expect(text, `${reason} says ${r} as tuned`).toMatch(new RegExp(`\\b${spelled(s[r] + 17)}\\b`, 'u'));
+        expect(text, `${reason} never says ${r}'s default`).not.toMatch(new RegExp(`\\b${spelled(s[r])}\\b`, 'u'));
       }
     }
   });

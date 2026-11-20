@@ -6,6 +6,7 @@
  * the owner has not yet named (the web plan's brief, item 7); each is marked where it stands.
  */
 import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
+import type { Settings } from '../../../engine/rules/types.ts';
 import { spanWords } from '../../../engine/ui/characters/format.ts';
 import { fractionWords, shareWords } from '../../../engine/ui/copy-words.ts';
 import glassData from './glass.json';
@@ -147,7 +148,9 @@ export const wordsRead: Readonly<Record<string, readonly string[]>> = Object.fre
  * The settings beside the economy each reason states, by key in `Settings`: the earning carries each in its params, under the same key,
  * so a settled line is said with the number it was settled under, and a test can retune them as it does `wordsRead`'s.
  */
-export const settingsRead: Readonly<Record<string, readonly string[]>> = Object.freeze({
+/** A key of `Settings` whose value is a number: the only kind a reason's words can state. */
+type NumberSetting = { [K in keyof Settings]: Settings[K] extends number ? K : never }[keyof Settings];
+export const settingsRead: Readonly<Record<string, readonly NumberSetting[]>> = Object.freeze({
   'tweener.litTheFuse': ['debateDays'],
 });
 
