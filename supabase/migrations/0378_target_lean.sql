@@ -6,7 +6,7 @@
 --                        `earlier_reactions` joins `reacted` union `scored`, where it joined `reacted` alone: a card that outdraws a post nobody reacted to today is no longer handed a lean of 0 whatever the room said before.
 --                        `touched` gains `scored`. `unscored` gains the staff Acts in `scored` (a staff cast a spring caught), and `unscoredTargets` sends `card` for an Act that is a card's play, so the engine can tell a Salty
 --                        cast from other staff Acts. `paid` is not widened: it still joins `reacted`, and the vote math (engine/rules/votes.ts, payVotes) pays only a vote with a reaction in the window, so an earlier reaction
---                        alone pays nothing and no amount moves for any class but through the lean. A window settled again by a retry under 0377 therefore pays what it paid.
+--                        alone pays nothing and no amount moves for any class but through the lean. A window settled again by a retry under 0378 therefore pays what it paid.
 --   2. estimate_input    copied whole from 0376_cushion_kind.sql. A CTE `spring_by` names the casts the caller's own window springs caught, added to `voted` so their reactions to now are read, as the post a spring lies
 --                        on already is. They go through `all_reactions`, `keyed` and `totals_withheld` like every other reaction, so the lean the estimate reads leaves out only the caller's own reactions to the caller's own
 --                        Acts (0073) and nothing new is keyed by owner. A staff cast a spring caught is still left out of the estimate, whose `unscored` holds only
@@ -41,7 +41,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   win_reactions as (select * from reactions r where r.created_at >= window_start and r.created_at < window_end and r.act not in (select id from ended)
                     and not exists (select 1 from acts d where d.id = r.act and d.kind = 'donation')),
   reacted as (select distinct act from win_reactions),
-  -- What each play of the window is scored against (0377): the Act a card or a spring lies on, and the cast a spring caught (`by`). A class's rule reads how the room took that Act (engine/rules/settle.ts, targetLean), and a
+  -- What each play of the window is scored against (0378): the Act a card or a spring lies on, and the cast a spring caught (`by`). A class's rule reads how the room took that Act (engine/rules/settle.ts, targetLean), and a
   -- reaction before the window counts as much as one inside it, so the Act's earlier reactions are sent whether or not a reaction reached it today. One probe by Act for each play of the window, never a scan of reactions.
   scored as (
     select a.target_act_id as id from win_acts a where a.kind in ('card', 'spring') and a.target_act_id is not null and coalesce(a.payload ->> 'reach', 'post') = 'post'
@@ -93,7 +93,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   ),
   all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null and a.kind <> 'donation'
                and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
-  -- A staff post a window's card landed on (0054): named with its reactions, so the card is judged against it, and paid nobody. And, since 0377, a staff cast a window spring caught, which `scored` names, so the spring is
+  -- A staff post a window's card landed on (0054): named with its reactions, so the card is judged against it, and paid nobody. And, since 0378, a staff cast a window spring caught, which `scored` names, so the spring is
   -- judged against it as a card on a post is.
   unscored as (select a.* from acts a join characters c on c.id = a.character
                where c.staff is not null and (a.id in (select k.target_act_id from all_acts k where k.kind = 'card' and k.created_at >= window_start and coalesce(k.payload ->> 'reach', 'post') = 'post')
@@ -126,7 +126,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
                          when a.kind = 'spring' then a.payload ->> 'quadrant' end,
         'on', case when a.kind = 'card' and a.payload ->> 'reach' = 'character' then a.payload ->> 'character' end)) order by a.created_at, a.id)
       from all_acts a), '[]'),
-    -- A staff Act that is a card's play carries its `card` (0377), so a class's rule can tell a cast of a Salty card from any other Act the room reacted to.
+    -- A staff Act that is a card's play carries its `card` (0378), so a class's rule can tell a cast of a Salty card from any other Act the room reacted to.
     'unscoredTargets', coalesce((
       select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', a.id, 'kind', a.kind, 'at', (extract(epoch from a.created_at) * 1000)::bigint, 'thread', a.thread, 'staff', true,
         'card', case when a.kind = 'card' then a.payload ->> 'card' end)) order by a.created_at, a.id)
@@ -220,7 +220,7 @@ begin
   -- The Acts the caller reacted to in the window, through reactions_reactor.
   reacted_by_me as (select distinct r.act from reactions r where r.reactor_account = account and r.created_at >= window_start and r.created_at < window_end),
   targets as (select target_act_id as id from win_acts where kind in ('card', 'spin', 'spring') and target_act_id is not null and coalesce(payload ->> 'reach', 'post') = 'post'),
-  -- The casts the caller's window springs caught (settlement_input's `scored`, 0377): a spring is scored against the cast it caught, so the cast's reactions are read. They go through `all_reactions`, `keyed` and
+  -- The casts the caller's window springs caught (settlement_input's `scored`, 0378): a spring is scored against the cast it caught, so the cast's reactions are read. They go through `all_reactions`, `keyed` and
   -- `totals_withheld` as every other does, and nothing here is keyed by who owns the cast or its reactors.
   spring_by as (select (payload ->> 'by')::uuid as id from win_acts where kind = 'spring' and payload ->> 'by' is not null),
   -- Every card of the caller's on a post the caller's window cards point at: a vote counts for the earliest.
