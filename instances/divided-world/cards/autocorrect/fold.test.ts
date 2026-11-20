@@ -1,8 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { creaseAt, edgesAt, foldEnd, foldMatrix } from './fold.ts';
-import { endJags } from './paper.ts';
-import { seeded } from '../../ui/seeded.ts';
+import { endJags, tearJag } from './paper.ts';
 
 const apply = (m: readonly number[], [x, y]: readonly [number, number]): [number, number] => [m[0]! * x + m[2]! * y + m[4]!, m[1]! * x + m[3]! * y + m[5]!];
 const near = (a: number, b: number, why: string) => assert.ok(Math.abs(a - b) < 1e-9, `${why}: ${a} vs ${b}`);
@@ -55,18 +54,18 @@ describe('the end the fold comes from', () => {
     assert.notDeepEqual(left.map(([u]) => u), right.map(([u]) => u));
     const own = endJags(seed, W, H).right;
     assert.deepEqual(right.map(([u]) => u), own.map(([x]) => W - x));
+    assert.deepEqual(right.map(([, y]) => y), own.map(([, y]) => y));
     assert.ok(right.every(([u]) => u >= 0 && u <= 4.1), 'it runs into the tape from the end');
   });
 
   test('a tear inside the piece folds with the torn outline the body is cut by, and a peel line with a straight cut', () => {
     const torn = foldEnd('a', 40, 2 * 3 + 0, W, H, seed);
-    const r = seeded(`${seed}:tear:40`);
-    assert.deepEqual(torn.map(([u]) => u), torn.map(() => (r() - 0.5) * 3.2));
+    assert.deepEqual(torn, tearJag(seed, 40, H).map(([x, y]) => [x - 40, y]), 'the body\'s own cut, from its edge');
     assert.ok(torn.length > 4 && new Set(torn.map(([u]) => u)).size > 3, 'ragged');
     assert.notDeepEqual(torn.map(([u]) => u), foldEnd('a', 0, 0, W, H, seed).map(([u]) => u));
     const mirrored = foldEnd('b', 60, 0 * 3 + 2, W, H, seed);
-    const q = seeded(`${seed}:tear:60`);
-    assert.deepEqual(mirrored.map(([u]) => u), mirrored.map(() => -(q() - 0.5) * 3.2));
+    assert.deepEqual(mirrored, tearJag(seed, 60, H).map(([x, y]) => [-(x - 60), y]), 'the right end\'s tear, mirrored into the frame');
+    assert.notDeepEqual(mirrored.map(([u]) => u), foldEnd('a', 60, 2 * 3 + 0, W, H, seed).map(([u]) => u), 'not the left tear at the same place');
     assert.deepEqual(foldEnd('a', 40, 1 * 3 + 0, W, H, seed), [[0, 0], [0, H]]);
     assert.ok(Math.abs(mean(torn)) < 1.6);
   });

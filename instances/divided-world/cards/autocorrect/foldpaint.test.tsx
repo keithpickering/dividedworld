@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { foldEnd } from './fold.ts';
+import { endJags, tearJag } from './paper.ts';
 import { makeFaces, paintFold } from './foldpaint.ts';
 
 /** Every canvas made records its path points; the n-th canvas is the n-th made. */
@@ -35,6 +36,7 @@ describe('the fold comes from the end that was picked', () => {
     const points = paint('b', W, [[0, W, 0]]);
     const end = foldEnd('b', W, 0, W, H, SEED);
     expect(points.slice(0, end.length).map(([u]) => u)).toEqual(end.map(([u]) => u));
+    expect(end.map(([u]) => u)).toEqual(endJags(SEED, W, H).right.map(([x]) => W - x));
     expect(end.map(([u]) => u)).not.toEqual(foldEnd('a', 0, 0, W, H, SEED).map(([u]) => u));
   });
 
@@ -43,6 +45,7 @@ describe('the fold comes from the end that was picked', () => {
     const tear = foldEnd('a', 40, 6, W, H, SEED);
     expect(tear.length).toBeGreaterThan(4);
     expect(torn.slice(0, tear.length).map(([u]) => u)).toEqual(tear.map(([u]) => u));
+    expect(tear).toEqual(tearJag(SEED, 40, H).map(([x, y]) => [x - 40, y]));
     const cut = paint('a', 40, [[40, W, 1 * 3 + 0]]);
     expect(cut.slice(0, 2)).toEqual([[0, 0], [0, H]]);
   });

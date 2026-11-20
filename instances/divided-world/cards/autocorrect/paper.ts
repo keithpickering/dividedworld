@@ -22,6 +22,17 @@ export const PAPER = Object.freeze({ base: '#e1d3b2', ink: '#17150f' });
 /** One end's ragged outline, as [x, y] points from the top to the bottom. */
 export type Jag = ReadonlyArray<readonly [number, number]>;
 
+/**
+ * The ragged cut a tear makes at `at` (the piece's pixels) down a piece `h` tall, as absolute [x, y] points from the top to the
+ * bottom. The one definition of that cut: the body's outline (Effect.tsx's `tornPath`) and the corner fold's end (fold.ts's
+ * `foldEnd`) both take it from here, so the fold's edge is the edge it lifts.
+ */
+export function tearJag(seed: string, at: number, h: number): Jag {
+  const r = seeded(`${seed}:tear:${at.toFixed(0)}`);
+  const steps = Math.max(4, Math.round(h / 2.5));
+  return Array.from({ length: steps + 1 }, (_, i): [number, number] => [at + (r() - 0.5) * 3.2, (h * i) / steps]);
+}
+
 /** The tape's two torn ends, in CSS pixels. */
 export function endJags(seed: string, w: number, h: number): { left: Jag; right: Jag } {
   const r = seeded(`${seed}:ends`);

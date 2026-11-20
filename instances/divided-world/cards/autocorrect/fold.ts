@@ -9,8 +9,7 @@
  * Everything is for the LEFT end, in the piece's own pixels with y down; the right end is the same drawing mirrored, which the
  * caller does by flipping the context.
  */
-import { seeded } from '../../ui/seeded.ts';
-import { endJags, type Jag } from './paper.ts';
+import { endJags, tearJag, type Jag } from './paper.ts';
 
 export interface Crease {
   /** The crease's unit normal, pointing to the corner. */
@@ -43,7 +42,7 @@ export function foldMatrix({ n, A, angle }: Crease): [number, number, number, nu
  * The outline of the end being picked, in the fold's frame: `u` runs from the end into the tape (so the right end is the left one
  * mirrored) and `y` down, from the top to the bottom. It is the end's own shape, so the fold's edge matches the end it came from:
  * - a strip's own end (kind 0): the factory-torn jag `endJags` gives that end;
- * - a tear (kind 2): the ragged cut the body's outline makes there (Effect.tsx's `tornPath`, which seeds `<seed>:tear:<at>`);
+ * - a tear (kind 2): the ragged cut the body's outline makes there (`tearJag`, which Effect.tsx's `tornPath` cuts by too);
  * - a peel line (kind 1): a straight cut.
  * `edges` is the stretch's edge code (start kind * 3 + end kind) and `at` the picked edge in the piece's pixels.
  */
@@ -55,10 +54,8 @@ export function foldEnd(side: 'a' | 'b', at: number, edges: number, w: number, h
     return (side === 'a' ? ends.left : ends.right).map(([x, y]) => [dir * (x - (side === 'a' ? 0 : w)), y] as const);
   }
   if (kind === 1) return [[0, 0], [0, h]];
-  /* The same cut as tornPath's `jag`: its steps and its seeded wobble, so the fold's end is the torn edge it lifts. */
-  const r = seeded(`${seed}:tear:${at.toFixed(0)}`);
-  const steps = Math.max(4, Math.round(h / 2.5));
-  return Array.from({ length: steps + 1 }, (_, i) => [dir * (r() - 0.5) * 3.2, (h * i) / steps] as const);
+  /* The same cut as the body's outline, `tearJag`, taken from its own edge into the frame. */
+  return tearJag(seed, at, h).map(([x, y]) => [dir * (x - at), y] as const);
 }
 
 /** The edge code of the stretch whose picked edge is `at` on `side`; a whole strip's (0) when none matches. */

@@ -54,7 +54,7 @@ import { economyNow } from '../../../../engine/ui/economy.ts';
 import { heldUntil } from '../autocorrect.ts';
 import { dropRoll } from './drop.ts';
 import { Hands, type HandEvent, type HandSettings, type PieceSpec, type PieceView } from './hands.ts';
-import { drawPaper, PAPER, type PaperContext } from './paper.ts';
+import { drawPaper, PAPER, tearJag, type PaperContext } from './paper.ts';
 import { facesKey, FOLD_PAD, makeFaces, paintFold, type FoldFaces } from './foldpaint.ts';
 import { savedAfterPeel } from './peel.ts';
 import { fibersAt, filmAlpha, filmSize, GLOSS_ALPHA, GLOSS_STOPS, glossAt, RESIDUE_TINT, residueInk } from './residue.ts';
@@ -189,14 +189,10 @@ function maskOf(stuck: readonly Stretch[], w: number): string | undefined {
 /** A piece's outline where an end of a stretch is a tear: ragged, cut as the bench cuts it. Undefined when no end is torn. */
 function tornPath(stuck: readonly Stretch[], h: number, seed: string): string | undefined {
   if (!stuck.some((s) => Math.floor(s[2] / 3) === 2 || s[2] % 3 === 2)) return undefined;
-  const jag = (at: number): [number, number][] => {
-    const r = seeded(`${seed}:tear:${at.toFixed(0)}`);
-    const steps = Math.max(4, Math.round(h / 2.5));
-    return Array.from({ length: steps + 1 }, (_, i): [number, number] => [at + (r() - 0.5) * 3.2, (h * i) / steps]);
-  };
+  const jag = (at: number) => tearJag(seed, at, h);
   const shape = stuck.map(([lo, hi, edges]) => {
-    const left: [number, number][] = Math.floor(edges / 3) === 2 ? jag(lo) : [[lo, 0], [lo, h]];
-    const right: [number, number][] = edges % 3 === 2 ? jag(hi) : [[hi, 0], [hi, h]];
+    const left: readonly (readonly [number, number])[] = Math.floor(edges / 3) === 2 ? jag(lo) : [[lo, 0], [lo, h]];
+    const right: readonly (readonly [number, number])[] = edges % 3 === 2 ? jag(hi) : [[hi, 0], [hi, h]];
     return `M ${[...left, ...[...right].reverse()].map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L ')} Z`;
   });
   return `path('${shape.join(' ')}')`;
