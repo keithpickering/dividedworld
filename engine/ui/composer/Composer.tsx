@@ -27,7 +27,7 @@ import { BannedNote } from './BannedNote.tsx';
 import { BarredNote, useBar } from './BarredNote.tsx';
 import { useBannedUntil } from './ban.ts';
 import { draftKey, readDraft, useWhoPosts, writeDraft } from './draft.ts';
-import { PollEditor, problemOf } from '../polls/PollDraft.tsx';
+import { PollEditor, problemOf, samePoll } from '../polls/PollDraft.tsx';
 import type { PollDraft } from '../data/api.ts';
 import { Editor, type EditorHandle } from './Editor.tsx';
 import { framingArgs, quoteText } from './text.ts';
@@ -138,23 +138,24 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
     if (again) { setAgain(false); setRefusal(null); }
   };
   /* The reply is in the thread: what was sent leaves the box, and what was typed since stays. */
-  const landed = (act: Act, sent: string) => {
+  const landed = (act: Act, sent: string, sentPoll: PollDraft | null) => {
     setText((now) => (now === sent ? '' : now));
-    setPollNow(null);
+    /* A poll changed while the send was on its way stays, as the words do. */
+    setPollNow((now) => (samePoll(now, sentPoll) ? null : now));
     setAgain(false);
     setRefusal(null);
     void refresh();
     onPosted(act);
   };
   /* No answer came back: look for the reply before offering to send it again. */
-  const look = async (words: string | null, from: number, sent: string, character: Id) => {
+  const look = async (words: string | null, from: number, sent: string, character: Id, sentPoll: PollDraft | null) => {
     let found: Act | undefined;
     let looked = true;
     try {
       const acts = await api.acts(thread, from + 1, from + LOOK_AHEAD);
       found = acts.find((a) => a.kind === 'post' && a.character === character && textOf(a.payload.body) === sent);
     } catch { looked = false; }
-    if (found) { landed(found, sent); return; }
+    if (found) { landed(found, sent, sentPoll); return; }
     setAgain(true);
     setRefusal(`${words ?? 'No answer came back.'} ${looked ? 'Your reply is not in the thread yet.' : 'The thread could not be checked for it.'} Press “Send again anyway” to post it again.`);
   };
@@ -166,15 +167,16 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
     const problem = poll ? problemOf(poll, settings) : null;
     if (problem !== null) { setPollProblem(problem); return; }
     const sent = text;
+    const sentPoll = poll;
     const character = hudCharacter.id;
     const from = since();
     setBusy(true);
     setRefusal(null);
     try {
       let answer;
-      try { answer = poll ? await api.post(thread, character, sent, firstQuote(sent), framingArgs(sent)[0] ?? [], poll) : await api.post(thread, character, sent, firstQuote(sent), ...framingArgs(sent)); } catch { await look(null, from, sent, character); return; }
-      if (answer.ok) landed(answer.value, sent);
-      else if (answer.uncertain) await look(answer.error, from, sent, character);
+      try { answer = poll ? await api.post(thread, character, sent, firstQuote(sent), framingArgs(sent)[0] ?? [], poll) : await api.post(thread, character, sent, firstQuote(sent), ...framingArgs(sent)); } catch { await look(null, from, sent, character, sentPoll); return; }
+      if (answer.ok) landed(answer.value, sent, sentPoll);
+      else if (answer.uncertain) await look(answer.error, from, sent, character, sentPoll);
       else setRefusal(answer.error);
     } finally {
       setBusy(false);

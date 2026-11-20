@@ -359,6 +359,8 @@ export interface Poll {
   readonly endsAt: string;
   readonly closed: boolean;
   readonly close: Act | null;
+  /** Whether any ballot was ever cast on it, a withdrawn one too (thread_page's `balloted`): an edit cannot change a poll that has one, though its voters may be none. */
+  readonly balloted: boolean;
 }
 
 /** The live counts of a poll (the `poll` event, 0389's `poll_counts`): the same for every caller. */

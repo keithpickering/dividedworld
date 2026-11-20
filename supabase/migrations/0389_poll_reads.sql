@@ -6,7 +6,7 @@
 --                       owner-rights view of an admin's closes of the polls the caller's characters wrote (as my_ballots is the caller's own ballots), which the log reads: the poll's character through acts_public may be the veil's stand-in.
 --   2. thread_open     `origin_place` names a poll ({kind: 'poll', question, on}) and a public ballot ({kind: 'ballot', character: {id, name}, question, on}), `on` being the poll's post's `post` place ({kind: 'post', thread, title, seq}).
 --                       A secret ballot is named by no origin (acts_public gives it no character). thread_list is select * from it and follows.
---   3. thread_page     gains, for the current poll of each post it draws (the page's posts, the posts nested under a play, and the origin's post): `polls` ([{post, act, counts, voters, ends_at, closed, close}]: the poll Act as acts_public
+--   3. thread_page     gains, for the current poll of each post it draws (the page's posts, the posts nested under a play, and the origin's post): `polls` ([{post, act, counts, voters, ends_at, closed, close, balloted}]: the poll Act as acts_public
 --                       shows it, its poll_counts row and its close Act or null), `voters` ([{poll, act, character, picks, at}]: a public poll's counted ballots with picks, newest first, 50 at most for each poll), `votersMore` (the ids of the
 --                       polls whose voters are more than the 50 listed), `voterCast` (each voter's `{character, profile}` head, as the origin's `cast` holds them, never `people`) and `myBallots` ([{act, poll, character, picks, at}]: the
 --                       caller's own counted ballots on these polls, from my_ballots, a secret one's and a withdrawal's too). The polls' ids join `ids`, so `spun` holds the threads spun from each. Where the origin is a poll or a ballot,
@@ -613,7 +613,8 @@ begin
              k.voters,
              k.ends_at,
              k.closed,
-             cl.j AS close
+             cl.j AS close,
+             EXISTS (SELECT 1 FROM acts b WHERE b.kind = 'ballot'::text AND b.target_act_id = c.poll) AS balloted
             FROM ((pl_cur c
               CROSS JOIN LATERAL ( SELECT n.counts,
                      n.voters,
@@ -822,7 +823,7 @@ begin
                         FROM ids i))), 'mine', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('act', m.act, 'kind', m.kind, 'character', m."character")), '[]'::jsonb) AS "coalesce"
                 FROM my_reactions m
                WHERE (m.act IN ( SELECT i.id
-                        FROM ids i))), 'polls', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('post', p.post, 'act', p.act, 'counts', to_jsonb(p.counts), 'voters', p.voters, 'ends_at', p.ends_at, 'closed', p.closed, 'close', p.close) ORDER BY p.created_at, p.poll), '[]'::jsonb) AS "coalesce"
+                        FROM ids i))), 'polls', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('post', p.post, 'act', p.act, 'counts', to_jsonb(p.counts), 'voters', p.voters, 'ends_at', p.ends_at, 'closed', p.closed, 'close', p.close, 'balloted', p.balloted) ORDER BY p.created_at, p.poll), '[]'::jsonb) AS "coalesce"
                 FROM pl_polls p), 'voters', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('poll', v.poll, 'act', v.act, 'character', v."character", 'picks', v.picks, 'at', v.created_at) ORDER BY v.poll, v.created_at DESC, v.act DESC), '[]'::jsonb) AS "coalesce"
                 FROM pl_voters v), 'votersMore', ( SELECT COALESCE(jsonb_agg(p.poll ORDER BY p.created_at, p.poll), '[]'::jsonb) AS "coalesce"
                 FROM pl_polls p
@@ -879,7 +880,7 @@ begin
                      CASE
                          WHEN (EXISTS ( SELECT 1
                             FROM o_act a
-                           WHERE (a.kind = ANY (ARRAY['poll'::text, 'ballot'::text])))) THEN jsonb_build_object('polls', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('post', p.post, 'act', p.act, 'counts', to_jsonb(p.counts), 'voters', p.voters, 'ends_at', p.ends_at, 'closed', p.closed, 'close', p.close) ORDER BY p.created_at, p.poll), '[]'::jsonb) AS "coalesce"
+                           WHERE (a.kind = ANY (ARRAY['poll'::text, 'ballot'::text])))) THEN jsonb_build_object('polls', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('post', p.post, 'act', p.act, 'counts', to_jsonb(p.counts), 'voters', p.voters, 'ends_at', p.ends_at, 'closed', p.closed, 'close', p.close, 'balloted', p.balloted) ORDER BY p.created_at, p.poll), '[]'::jsonb) AS "coalesce"
                             FROM pl_polls p
                            WHERE (p.post IN ( SELECT op.id
                                     FROM o_post op))), 'voters', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('poll', v.poll, 'act', v.act, 'character', v."character", 'picks', v.picks, 'at', v.created_at) ORDER BY v.poll, v.created_at DESC, v.act DESC), '[]'::jsonb) AS "coalesce"

@@ -1569,7 +1569,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const polls = current.map((p): Poll => {
       const k = countsOf(p);
       const close = closeOf(p.id);
-      return { post: p.target!, act: publicAct(p), counts: k.counts, voters: k.voters, endsAt: k.endsAt, closed: k.closed, close: close === undefined ? null : publicAct(close) };
+      return { post: p.target!, act: publicAct(p), counts: k.counts, voters: k.voters, endsAt: k.endsAt, closed: k.closed, close: close === undefined ? null : publicAct(close), balloted: ballotsOn(p.id).length > 0 };
     });
     const open = current.filter((p) => p.payload.secret !== true);
     const voters = open.flatMap((p) => countedBallots(ballotsOn(p.id).map(asCounted), iso(pollEnd(p))).filter((b) => b.picks.length > 0)

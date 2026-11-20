@@ -30,7 +30,7 @@ export function EditPost({ act, seq, onDone, onSaved, start }: {
   const [text, setText] = useState(was);
   /* The post's poll, if it has one: with no ballot it opens filled and an edit may change or remove it; with one (or closed) it cannot change, and one plain line says so. */
   const view = usePoll(useContext(ThreadCtx)?.polls, act.id);
-  const locked = view !== undefined && (view.poll.voters > 0 || view.poll.closed || view.mine.length > 0 || view.poll.close !== null);
+  const locked = view !== undefined && (view.poll.balloted || view.poll.voters > 0 || view.poll.closed || view.mine.length > 0 || view.poll.close !== null);
   const [first] = useState<PollDraft | null>(() => (view === undefined || locked ? null : draftOfPoll(view.poll, settings)));
   const [poll, setPollNow] = useState<PollDraft | null>(first);
   const [pollProblem, setPollProblem] = useState<string | null>(null);

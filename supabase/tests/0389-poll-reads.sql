@@ -92,7 +92,8 @@ begin
      or (e ->> 'ends_at')::timestamptz is distinct from (e -> 'act' -> 'payload' ->> 'closes_at')::timestamptz then
     raise exception '1 the public poll''s part is not its Act with its counts and no close: %', e;
   end if;
-  if (select array_agg(k order by k) from jsonb_object_keys(e) k) is distinct from array['act', 'close', 'closed', 'counts', 'ends_at', 'post', 'voters'] then raise exception '1 a poll''s part carries other keys: %', e; end if;
+  if (select array_agg(k order by k) from jsonb_object_keys(e) k) is distinct from array['act', 'balloted', 'close', 'closed', 'counts', 'ends_at', 'post', 'voters'] then raise exception '1 a poll''s part carries other keys: %', e; end if;
+  if e ->> 'balloted' is distinct from 'true' then raise exception '1 a poll with ballots is not balloted: %', e; end if;
   select x into e from jsonb_array_elements(dd -> 'polls') x where (x ->> 'post')::uuid = ps;
   if e -> 'counts' is distinct from '[1, 2, 0]'::jsonb or (e ->> 'voters')::integer is distinct from 3 then raise exception '1 the secret poll''s tally: %', e; end if;
   -- Closed by its time: closed, counted up to its end. Closed by an admin: the close Act is carried, and the ballot after it counts for no one.
@@ -104,6 +105,7 @@ begin
   end if;
   select x into e from jsonb_array_elements(dd -> 'polls') x where (x ->> 'post')::uuid = pa;
   if (e -> 'close' ->> 'id')::uuid is distinct from aut_close or (e -> 'close' ->> 'character')::uuid is distinct from a1 then raise exception '1 the poll closed by its author: %', e; end if;
+  if e ->> 'balloted' is distinct from 'false' then raise exception '1 a poll with no ballot is balloted: %', e; end if;
   -- The voters of a public poll: the counted ballots with picks, newest first, as {poll, act, character, picks, at}; none for a secret poll or one with no ballot; nothing is more.
   select coalesce(jsonb_agg(x -> 'character' order by ord), '[]') into v from jsonb_array_elements(dd -> 'voters') with ordinality t(x, ord) where (x ->> 'poll')::uuid = pub;
   if v is distinct from to_jsonb(array[b1, b2]) then raise exception '1 the public poll''s voters are not b1 then b2: %', dd -> 'voters'; end if;

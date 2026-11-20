@@ -289,7 +289,7 @@ const toPollEvent = (r: Row): PollEvent | null => (typeof r['at'] === 'string' ?
 const toPollWritten = (r: Row): PollWritten => ({ act: toAct(r['act'] as Row), counts: toPollCounts(r) });
 /** thread_page's poll parts (0389), for the page and for the origin alike; a document without them reads as none. */
 const toPollParts = (d: Row) => ({
-  polls: rowsOf(d['polls']).map((p): Poll => ({ post: p['post'] as Id, act: toAct(p['act'] as Row), counts: toPicks(p['counts']), voters: num(p['voters']), endsAt: String(p['ends_at']), closed: p['closed'] === true, close: isObject(p['close']) ? toAct(p['close']) : null })),
+  polls: rowsOf(d['polls']).map((p): Poll => ({ post: p['post'] as Id, act: toAct(p['act'] as Row), counts: toPicks(p['counts']), voters: num(p['voters']), endsAt: String(p['ends_at']), closed: p['closed'] === true, close: isObject(p['close']) ? toAct(p['close']) : null, balloted: p['balloted'] === true })),
   voters: rowsOf(d['voters']).map((v): PollVoter => ({ poll: v['poll'] as Id, act: v['act'] as Id, character: v['character'] as Id, picks: toPicks(v['picks']), at: String(v['at']) })),
   votersMore: (Array.isArray(d['votersMore']) ? d['votersMore'] : []).filter((x): x is Id => typeof x === 'string'),
   myBallots: rowsOf(d['myBallots']).map((b): Ballot => ({ act: b['act'] as Id, poll: b['poll'] as Id, character: b['character'] as Id, picks: toPicks(b['picks']), at: String(b['at']) })),

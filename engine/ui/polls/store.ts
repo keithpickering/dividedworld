@@ -181,7 +181,7 @@ export function createPolls(clock: () => number = () => 0): Polls {
       removed.delete(post);
       const options = Array.isArray(act.payload.options) ? act.payload.options : [];
       set(post, {
-        poll: { post, act, counts: options.map(() => 0), voters: 0, endsAt: String(act.payload.closes_at), closed: false, close: null },
+        poll: { post, act, counts: options.map(() => 0), voters: 0, endsAt: String(act.payload.closes_at), closed: false, close: null, balloted: false },
         voters: [], more: false, mine: [],
       });
     },

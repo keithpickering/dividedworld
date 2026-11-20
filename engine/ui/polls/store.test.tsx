@@ -11,7 +11,7 @@ const act = (id: string, payload: Record<string, unknown>, at: string, extra: Pa
 });
 const POLL: Poll = {
   post: 'post1', act: act('poll1', { question: 'Q?', options: ['A', 'B'], pick: 1, secret: false, closes_at: '2026-12-01T00:00:00.000Z' }, '2026-11-20T00:00:00.000Z'),
-  counts: [0, 0], voters: 0, endsAt: '2026-12-01T00:00:00.000Z', closed: false, close: null,
+  counts: [0, 0], voters: 0, endsAt: '2026-12-01T00:00:00.000Z', closed: false, close: null, balloted: false,
 };
 const page = (polls: Poll[], voters: PollVoter[] = [], myBallots: Ballot[] = []) => ({ polls, voters, votersMore: [], myBallots, voterCast: [] });
 

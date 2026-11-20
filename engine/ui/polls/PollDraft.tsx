@@ -5,7 +5,7 @@
  *
  * `problem` is the first predicate `pollDraftProblems` found, in the database's own words; the editor says it under the field it names (`fieldOf`), as an alert, and the parent clears it when the draft changes.
  */
-import { useId } from 'react';
+import { useId, type KeyboardEvent } from 'react';
 import { lastsHours, pollDraftProblems, spanWords, type PollDraft, type PollSettings } from '../../rules/polls.ts';
 import type { Span } from '../../rules/types.ts';
 import type { Poll } from '../data/api.ts';
@@ -71,6 +71,11 @@ export interface PollDraftProps {
   readonly disabled?: boolean;
 }
 
+/** Enter in a text field of the poll is the field's own, never a Send of the post it is under. */
+const noEnter = (e: KeyboardEvent<HTMLFieldSetElement>) => {
+  if (e.key === 'Enter' && e.target instanceof HTMLInputElement && e.target.type === 'text') e.preventDefault();
+};
+
 export function PollEditor({ value, onChange, settings, problem = null, disabled = false }: PollDraftProps) {
   const id = useId();
   if (value === null) {
@@ -89,7 +94,7 @@ export function PollEditor({ value, onChange, settings, problem = null, disabled
   const listed = choices.some((c) => spanWords(c) === choice);
 
   return (
-    <fieldset className="kb-poll-draft">
+    <fieldset className="kb-poll-draft" onKeyDown={noEnter}>
       <legend>Poll</legend>
       <div className="kb-field">
         <label htmlFor={`${id}-question`}>Question</label>
