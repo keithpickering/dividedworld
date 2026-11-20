@@ -1,7 +1,7 @@
 /**
  * Whodunnit?'s effect on a post (card notes Part 3, Task 11). The veil itself is the engine's: while it is up every read gives the post's
- * author as the instance's stand-in, so this draws nothing over the words. It tells the Lens the three views (hidden for everyone, the
- * author told it is their post, and the name back), and once the play's `ends` has passed it draws one line under the words, in the board's
+ * author as the instance's stand-in, so this draws nothing over the words. It tells the Lens its two views while the card is up (hidden for everyone, and
+ * the author told it is their post); once it is over it gives none, and the engine's heading for a spent kind stands. Once the play's `ends` has passed it draws one line under the words, in the board's
  * small text, saying the card wore off and whose post it was all along: the page's post carries its true character again by then, so the
  * name is `nameOf(post.character)`. An admin's end reverses the play and the effect is gone, so it draws no line.
  *
@@ -38,18 +38,16 @@ export function WhodunnitEffect({ post, plays, reader, show, met, moment, nameOf
 
   /* The Lens's tab: what the card is doing to this reader now. The author is told, plainly, what the stand-in is. */
   useEffect(() => {
-    if (!there) { show(null); return; }
-    const view: CardView = over
-      ? { progress: null, state: 'The name is back', yours: false, controls: [], notes: {} }
-      : {
-        progress: null,
-        state: 'Author hidden from everyone',
-        ...(ends !== undefined ? { ends: `${endsWords(ends, now)} The author's name comes back then.` } : {}),
-        yours: false,
-        controls: [],
-        notes: {},
-        ...(author ? { report: 'This is your post. Everyone else sees the stand-in in your place, and so does this page.' } : {}),
-      };
+    if (!there || over) { show(null); return; }
+    const view: CardView = {
+      progress: null,
+      state: 'Author hidden from everyone',
+      ...(ends !== undefined ? { ends: `${endsWords(ends, now)} The author's name comes back then.` } : {}),
+      yours: false,
+      controls: [],
+      notes: {},
+      ...(author ? { report: 'This is your post. Everyone else sees the stand-in in your place, and so does this page.' } : {}),
+    };
     show(view);
   }, [show, there, over, ends, author]);
   useEffect(() => () => show(null), [show]);

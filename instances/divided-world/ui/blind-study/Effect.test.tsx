@@ -54,17 +54,16 @@ describe('Blind Study', () => {
     }
   });
 
-  test('once the play\'s end has passed the totals are showing', () => {
+  test('once the play\'s end has passed it gives no view: the engine says a spent kind\'s heading', () => {
     for (const reader of [{ author: false, caster: false }, { author: true, caster: false }]) {
       const { show, unmount } = setup({ reader, plays: [play({ ends: '2026-11-10T12:00:00Z' })] });
-      expect(last(show).state).toBe('Totals are showing');
-      expect(last(show).ends).toBeUndefined();
+      expect(show.mock.calls.at(-1)![0]).toBeNull();
       unmount();
     }
   });
 
   test('the Lens\'s word rules pass for every state', () => {
-    const states = [{ reader: { author: false, caster: false } }, { reader: { author: true, caster: false } }, { reader: { author: false, caster: true } }, { plays: [play({ ends: '2026-11-10T12:00:00Z' })] }];
+    const states = [{ reader: { author: false, caster: false } }, { reader: { author: true, caster: false } }, { reader: { author: false, caster: true } }];
     for (const over of states) {
       const { show, unmount } = setup(over);
       expect(viewProblems(last(show), { holds: false, covers: false })).toEqual([]);
@@ -92,7 +91,7 @@ describe('Blind Study', () => {
 
   test('on a live post with the same clock the totals are showing, whatever a stale `still` flag says', () => {
     const { show } = setup({ still: true, moment: null, plays: [play({ ends: '2026-11-10T12:00:00Z' })] });
-    expect(last(show).state).toBe('Totals are showing');
+    expect(show.mock.calls.at(-1)![0]).toBeNull();
     cleanup();
     const met = vi.fn();
     setup({ still: true, moment: null, met });

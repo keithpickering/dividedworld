@@ -2480,6 +2480,30 @@ describe('the discipline cards\' Lens', () => {
     expect(await markNamed(2, 'T Fall')).toHaveAccessibleName(/Took the fall/u);
   });
 
+  /* An effect that keeps saying it is live: once the kind is spent the engine's heading wins (spent-marks design, section 3). */
+  function Smoky({ show, children }: EffectProps) {
+    useEffect(() => { show({ progress: null, state: 'Smoke over the words', ends: 'Ends in the smoke.', yours: false, controls: [], notes: {} }); }, [show]);
+    return <>{children}</>;
+  }
+  const smoky = faces.map((f) => (f.key === 't-fall' || f.key === 't-heart' ? { ...f, Effect: Smoky } : f));
+
+  test('a spent fall says Took the fall and an instant heart its own status, whatever view their effect gives', async () => {
+    width(false);
+    const w = disciplined();
+    w.filed(1, 3 * DAY);
+    await w.play(w.third, 't-heart', w.gloomba, w.spritey);
+    await w.play(w.me, 't-fall', w.pipe, w.second, 'post');
+    w.filed(2, 1000);
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: shop, cards: smoky, copy: { modRole: 'A Moderator' } });
+    await lensOf(2, 'T Fall');
+    expect(heading()).toBe('Took the fall');
+    expect(here().querySelector('.kb-lens-ends')).toBeNull();
+    await userEvent.click(await markNamed(2, 'T Fall'));
+    await userEvent.click(await markNamed(2, 'T Heart'));
+    expect(heading()).toBe('Took points off');
+    expect(here()).not.toHaveTextContent('Smoke over the words');
+  });
+
   test('a fall an admin ended is simply ended, never "Took the fall", and says nothing of a filing', async () => {
     width(false);
     const w = disciplined();
@@ -2649,5 +2673,132 @@ describe('the discipline cards\' Lens', () => {
       const v = await axeViolations(l);
       expect(v, describeViolations(v)).toEqual([]);
     });
+  });
+});
+
+/* The Lens's view of a spent kind (docs/plans/2026-11-20-spent-marks-design.md, section 3): once every play is over, the engine's heading and way out are said, never the effect's. */
+describe('a spent kind', () => {
+  const HOUR = 3_600_000;
+  const heading = () => lens().querySelector('.kb-lens-line')!.textContent;
+  const endsLine = () => lens().querySelector('.kb-lens-ends')?.textContent ?? null;
+  const problems = () => viewProblems({ progress: null, state: heading()!, ends: endsLine() ?? 'never', yours: false, controls: [], notes: {} }, { holds: false, covers: false });
+  const rowOf = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
+  /** The view a kind's effect last gave, as the page holds it: it keeps saying so after its plays end. */
+  const smoking = { progress: null, state: 'Smoke over the words', ends: 'Ends in the smoke.', yours: false, controls: [], notes: {} };
+  type Spec = { readonly id: string; readonly ends?: 'past' | 'older' | 'ahead' };
+  const gimmicked = { ...instance, cards: instance.cards.map((c) => (c.key === 'k2' ? { ...c, play: 'use' as const, gimmick: { kind: 'noQuote' as const }, lasts: { unit: 'day' as const, count: 7 } } : c)) };
+  const keeper = { ...instance, cards: instance.cards.map((c) => (c.key === 'k2' ? { ...c, keeps: true as const } : c)) };
+  /** The kind's plays drawn by the marks, from Acts as the page would write them, each end 'past' (an hour ago), 'older' (two hours ago) or 'ahead'; the stub view set on the kind when asked. */
+  function strip(specs: readonly Spec[], opts: { then?: ReadonlySet<Id>; view?: boolean; instance?: typeof instance } = {}) {
+    const w = world();
+    w.fake.clock.advance(60_000);
+    const at = { past: new Date(w.fake.clock.now() - HOUR).toISOString(), older: new Date(w.fake.clock.now() - 2 * HOUR).toISOString(), ahead: new Date(w.fake.clock.now() + HOUR).toISOString() };
+    const store = createPlays();
+    const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+    store.add(specs.map((p) => {
+      const payload = { card: 'k2', ...(p.ends ? { ends: at[p.ends] } : {}) };
+      return { ...base, id: p.id, kind: 'card' as const, payload, currentPayload: payload };
+    }));
+    store.setBilling(w.second, specs.map((p) => p.id));
+    if (opts.view) store.setView(w.second, 'k2', smoking);
+    const inst = opts.instance ?? instance;
+    renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={store} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} {...(opts.then ? { then: opts.then } : {})} /></LensProvider>, { path: '/', instance: inst, cards });
+    return { w, at };
+  }
+  const openMark = async () => { await userEvent.click(await screen.findByRole('button', { name: /^Card 2, \d plays?/u })); };
+
+  test('a card with no effect whose single Use timed out says Ended, and when', async () => {
+    width(false);
+    const w = world();
+    w.fake.clock.advance(60_000);
+    const ended = new Date(w.fake.clock.now() - HOUR).toISOString();
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: ended });
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    expect(heading()).toBe('Ended');
+    expect(endsLine()).toBe(`Ended ${dayAndTime(ended)}`);
+    expect(problems()).toEqual([]);
+  });
+
+  test('an effect that keeps giving a live view does not outlive its plays: every play timed out says Ended', async () => {
+    width(false);
+    strip([{ id: 'a', ends: 'past' }, { id: 'b', ends: 'older' }], { view: true });
+    await openMark();
+    expect(heading()).toBe('Ended');
+    expect(within(lens()).queryByText('Smoke over the words')).toBeNull();
+    expect(within(lens()).queryByText('Ends in the smoke.')).toBeNull();
+    expect(problems()).toEqual([]);
+  });
+
+  test('a gimmick timed out says Ended, not "Ended, changing nothing"', async () => {
+    width(false);
+    const { at } = strip([{ id: 'g', ends: 'past' }], { instance: gimmicked });
+    await openMark();
+    expect(heading()).toBe('Ended');
+    expect(endsLine()).toBe(`Ended ${dayAndTime(at.past)}`);
+    expect(problems()).toEqual([]);
+  });
+
+  test('a gimmick in then whose end has passed says what it did while it was up, and Ends', async () => {
+    width(false);
+    const { at } = strip([{ id: 'g', ends: 'past' }], { instance: gimmicked, then: new Set(['g']) });
+    await openMark();
+    expect(heading()).toBe('Cannot be quoted');
+    expect(endsLine()).toBe(`Ends ${dayAndTime(at.past)}`);
+  });
+
+  test('one timed out and one caught says Over, with when it ended', async () => {
+    width(false);
+    const w = world();
+    w.fake.clock.advance(60_000);
+    const ended = new Date(w.fake.clock.now() - HOUR).toISOString();
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: ended });
+    w.fake.seed.card(w.spritey, w.second, 'k2', { caught: w.third });
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    expect(heading()).toBe('Over');
+    expect(endsLine()).toBe(`Ended ${dayAndTime(ended)}`);
+    expect(problems()).toEqual([]);
+  });
+
+  test('one timed out and one live shows the live view, and the timed-out play\'s row says when it ended', async () => {
+    width(false);
+    const { at } = strip([{ id: 'gone', ends: 'past' }, { id: 'live', ends: 'ahead' }], { view: true });
+    await openMark();
+    await userEvent.click(whoButton());
+    expect(heading()).toBe('Smoke over the words');
+    expect(within(rowOf('gone')).getByText(`Ended ${dayAndTime(at.past)}.`)).toBeInTheDocument();
+    expect(within(rowOf('live')).queryByText(/^Ended /u)).toBeNull();
+    expect(problems()).toEqual([]);
+  });
+
+  test('a card that keeps, timed out, still says its kept words, and is not the plain Ended', async () => {
+    width(false);
+    const { at } = strip([{ id: 'k', ends: 'past' }], { instance: keeper });
+    await openMark();
+    expect(endsLine()).toBe(`Ended ${dayAndTime(at.past)}. Posts written while it was up keep it.`);
+    expect(heading()).not.toBe('Ended');
+  });
+
+  test('a timed-out play in then is judged as it stood: the live view, and Ends', async () => {
+    width(false);
+    const { at } = strip([{ id: 'then-timed', ends: 'past' }], { view: true, then: new Set(['then-timed']) });
+    await openMark();
+    expect(heading()).toBe('Smoke over the words');
+    expect(within(lens()).queryByText(/^Ended /u)).toBeNull();
+    void at;
+  });
+
+  test('a kind of a play in then and one outside it: each end is worded by its own play, the way out the latest', async () => {
+    width(false);
+    /* The newer end is the one outside then, already gone: Ended. */
+    const first = strip([{ id: 'in', ends: 'older' }, { id: 'out', ends: 'past' }], { then: new Set(['in']) });
+    await openMark();
+    expect(endsLine()).toBe(`Ended ${dayAndTime(first.at.past)}`);
+    cleanup();
+    /* The newer end is the one in then, as it stood: Ends. */
+    const second = strip([{ id: 'in', ends: 'past' }, { id: 'out', ends: 'older' }], { then: new Set(['in']) });
+    await openMark();
+    expect(endsLine()).toBe(`Ends ${dayAndTime(second.at.past)}`);
   });
 });

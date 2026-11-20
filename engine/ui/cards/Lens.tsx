@@ -49,9 +49,9 @@ import { inkOf, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
 import { olderWords, surfaceShare, surfaceWords } from './lens-words.ts';
-import { backWords, CAUGHT_STATE, caughtWords, endedWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
+import { backWords, CAUGHT_STATE, caughtWords, ENDED_STATE, endedWords, endsWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
 import { disciplineNote, FALL_ENDS } from './discipline.ts';
-import { asThen, backOver, defaultView, inPlayOrder, isBack, keepingKeys, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
+import { asThen, backOver, defaultView, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
 import { useCaughtFate, useSprungWords } from './sprung.ts';
@@ -193,6 +193,9 @@ export function useLensFor(store: LensStore, owner: string): LensOpen | null {
   return useSyncExternalStore(store.subscribe, snapshot, () => null);
 }
 
+/** A clock before every end, for a play shown as it stood (`then`): its timed end has not come, and its words say "Ends". It is a valid Date too. */
+const BEFORE_EVERY_END = -8.64e15;
+
 /**
  * A card's view on a post: the one its effect gave, else the engine's default for the card (its `summary`, no edge, no controls).
  * The card mechanic's kinds are the engine's to say (docs/plans/2026-11-01-card-plays-plan.md, Task 7): a card back says who set it
@@ -217,36 +220,39 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     const marked = new Set(markedPlays(shownPlays(h.billed, now), now, keeping, postAt).map((p) => p.id));
     const dropped = new Set(shownPlays(h.billed, now).filter((p) => !marked.has(p.id)).map((p) => p.id));
     return JSON.stringify(h.plays.filter((p) => p.card === kind && !dropped.has(p.id)).map((p) => [p.id, p.caster, p.playedAt, p.caught ?? null, p.ends ?? null, p.revealed ?? null, h.faces[p.id] ?? null,
-      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null, p.takenBack ?? null, p.config, p.starts ?? null, p.endsAt ?? null, p.spent ?? null]));
+      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null, p.takenBack ?? null, p.config, p.starts ?? null, p.endsAt ?? null, p.spent ?? null, p.instant ?? null]));
   });
   const here = useMemo(() => {
-    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null, CardPlay['takenBack'] | null, CardPlay['config'], string | null, string | null, true | null][];
+    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null, CardPlay['takenBack'] | null, CardPlay['config'], string | null, string | null, true | null, true | null][];
     return {
-      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken, takenBack, config, starts, endsAt, spent]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config, playedAt, post, ...(starts ? { starts } : {}), ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}), ...(takenBack ? { takenBack } : {}), ...(endsAt ? { endsAt } : {}), ...(spent ? { spent: true as const } : {}) })),
+      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken, takenBack, config, starts, endsAt, spent, instant]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config, playedAt, post, ...(starts ? { starts } : {}), ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}), ...(takenBack ? { takenBack } : {}), ...(endsAt ? { endsAt } : {}), ...(spent ? { spent: true as const } : {}), ...(instant ? { instant: true as const } : {}) })),
       faces: Object.fromEntries(rows.filter((r) => r[6] !== null).map((r) => [r[0], r[6]!])) as Record<Id, string>,
       traps: Object.fromEntries(rows.filter((r) => r[7] !== null).map((r) => [r[0], r[7]!])) as Record<Id, string>,
     };
   }, [signature, kind, post]);
   const economy = useMemo(() => withCardEconomy(instance.settings, settings.cardEconomy), [instance.settings, settings.cardEconomy]);
+  /* A kind is spent when every play of it is over (spent-marks design, section 1): the engine's view is then the only one, so an effect's last view, or an effect that forgot its own end, is never shown. */
+  const spent = !isBack(kind) && kindSpent(here.plays, now, keeping, then);
   const fallback = useMemo(() => {
     const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
     const ofKind = here.plays.filter((p) => p.card === kind);
-    /* A play in `then` is judged as it stood (as `playOver` does): its timed end does not count, so its way out says "Ends" and never "Ended". No moment time reaches the Lens, so the clock that says so is one before every end. */
-    const clock = ofKind.some((p) => then?.has(p.id)) ? Number.NEGATIVE_INFINITY : api.now();
+    /* One clock, judged per play as `playOver` does: a play in `then` is as it stood, so its timed end does not count and its way out says "Ends" and never "Ended". No moment time reaches the Lens, so the clock that says so is one before every end. */
+    const clockOf = (p: CardPlay) => (then?.has(p.id) ? BEFORE_EVERY_END : now);
     if (isBack(kind) && ofKind.length > 0) {
-      const say = (p: CardPlay) => backWords(p, nameOf?.(p.caster) ?? 'someone', cardName, clock);
+      const say = (p: CardPlay) => backWords(p, nameOf?.(p.caster) ?? 'someone', cardName, clockOf(p));
       const yours = (p: CardPlay) => (here.faces[p.id] ? `Yours: ${cardName(here.faces[p.id]!)}, which nobody else can see.` : '');
       const first = say(ofKind[0]!);
       return { progress: null, state: first.state, ends: first.ends, yours: false, controls: [], notes: Object.fromEntries(ofKind.map((p) => [p.id, [say(p).note, yours(p)].filter((w) => w !== '').join(' ')])) };
     }
     const rules = instance.cards.find((c) => c.key === kind);
-    /* Any play with `ends` (a play beyond a post, a skim, a cast earn) ends on its timer: the view's way out says when, the latest of the kind's (each is drawn until its own). */
-    const latestEnd = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken && p.ends !== undefined).map((p) => p.ends!).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+    const byEnd = (a: CardPlay, b: CardPlay) => Date.parse(b.ends!) - Date.parse(a.ends!);
+    /* Any play with `ends` (a play beyond a post, a skim, a cast earn) ends on its timer: the view's way out says when, the latest of the kind's (each is drawn until its own), in the tense of the play it came from. */
+    const latestPlay = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken && p.ends !== undefined).sort(byEnd)[0];
     /* The plays the card's status is given are the live ones that no filing has spent: a status that is a function of them (a fall's) reads "waiting" from a live play and "took it" from none, and a play an admin ended
        never reaches it (it is simply ended, below), so "took it" is said only of a fall a filing spent (`CardPlay.spent`, from the page). */
     const waiting = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.spent);
     const base = {
-      ...defaultView({ name: rules?.name ?? kind, ...(rules?.keeps ? { keeps: true as const } : {}) }, ui.cards.find((c) => c.key === kind), economy, latestEnd, waiting, clock),
+      ...defaultView({ name: rules?.name ?? kind, ...(rules?.keeps ? { keeps: true as const } : {}) }, ui.cards.find((c) => c.key === kind), economy, latestPlay?.ends, waiting, latestPlay ? clockOf(latestPlay) : now),
       /* A fall waiting has no time up: its way out is a filing or an admin. */
       ...(rules?.discipline?.kind === 'fall' && waiting.length > 0 ? { ends: FALL_ENDS } : {}),
     };
@@ -258,24 +264,29 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     for (const p of ofKind) if (p.reversed) caught[p.id] = endedWords();
     /* A play that did not take says so in plain words: its text never arrived, so it is not in effect (`untakenWords`). */
     for (const p of ofKind) if (p.untaken && !p.reversed) caught[p.id] = untakenWords();
-    const live = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken);
-    if (live.length === 0 && ofKind.length > 0 && ofKind.every((p) => p.reversed || p.untaken)) {
-      const state = ofKind.every((p) => p.untaken) ? UNTAKEN_STATE : ofKind.every((p) => p.reversed) ? endedWords() : OVER_STATE;
-      return { ...base, progress: null, controls: [], state, notes: caught };
+    /* A play whose time ran out (not caught, ended, untaken, instant or spent, not in `then`, and its card does not keep) is over by its timer. */
+    const timedOut = (p: CardPlay) => !p.caught && !p.reversed && !p.untaken && !p.instant && !p.spent && !p.revealed && playOver(p, now, keeping, then);
+    const timed = ofKind.filter(timedOut);
+    if (spent) {
+      /* The heading follows the table of the spent-marks design, section 3; the way out is the latest timed end, past tense, and none where nothing timed out. */
+      const all = (test: (p: CardPlay) => boolean) => ofKind.every(test);
+      const state = all(timedOut) ? ENDED_STATE : all((p) => p.reversed === true) ? endedWords() : all((p) => p.untaken === true && !p.reversed) ? UNTAKEN_STATE : all((p) => p.caught !== undefined && !p.reversed && !p.untaken) ? CAUGHT_STATE : all((p) => p.instant === true || p.spent === true) ? base.state : OVER_STATE;
+      const latestTimed = [...timed].sort(byEnd)[0];
+      const { ends: _drop, ...rest } = base;
+      return { ...rest, progress: null, controls: [], yours: false, state, ...(latestTimed ? { ends: endsWords(latestTimed.ends!, now) } : {}), notes: caught };
     }
-    if (live.length === 0 && ofKind.length > 0) {
-      return { ...base, state: CAUGHT_STATE, notes: caught };
-    }
-    if (rules?.gimmick && live.length > 0) {
-      const latest = [...live].sort((a, b) => Date.parse(b.ends ?? '') - Date.parse(a.ends ?? ''))[0]!;
-      const gimmick = gimmickWords(rules.gimmick, latest.ends, new Date(api.now()), cardName);
-      return { ...base, state: gimmick.state, ...(gimmick.ends ? { ends: gimmick.ends } : {}), ...(gimmick.report ? { report: gimmick.report } : {}), notes: caught };
+    for (const p of timed) caught[p.id] = `${endsWords(p.ends!, now)}.`;
+    if (rules?.gimmick) {
+      const live = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken);
+      if (live.length > 0) {
+        const latest = [...live].sort((a, b) => Date.parse(b.ends ?? '') - Date.parse(a.ends ?? ''))[0]!;
+        const gimmick = gimmickWords(rules.gimmick, latest.ends, new Date(clockOf(latest)), cardName);
+        return { ...base, state: gimmick.state, ...(gimmick.ends ? { ends: gimmick.ends } : {}), ...(gimmick.report ? { report: gimmick.report } : {}), notes: caught };
+      }
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
-  }, [api, instance.cards, ui.cards, kind, economy, here, nameOf, now, then]);
-  /* Every play of the kind over (ended by an admin, or it did not take): its effect draws nothing, so whatever view it last gave is stale. */
-  const allEnded = here.plays.length > 0 && here.plays.every((p) => p.reversed || p.untaken);
-  if (!given || allEnded) return fallback;
+  }, [instance.cards, ui.cards, kind, economy, here, nameOf, now, then, keeping, spent]);
+  if (!given || spent) return fallback;
   /* An effect's own view, with the catches the engine knows of beside its notes. */
   return Object.keys(fallback.notes).length > 0 && !isBack(kind) ? { ...given, notes: { ...fallback.notes, ...given.notes } } : given;
 }

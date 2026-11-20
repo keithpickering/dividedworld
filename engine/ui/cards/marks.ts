@@ -91,10 +91,9 @@ const list = (words: readonly string[]): string => (words.length <= 2 ? words.jo
  * A use card's words, as the Lens's status for a live one: what it does while it is up, and when it ends (or ended), the end in the
  * reader's zone. They are read from the effect's own numbers: a ward says everything it turns away (a card by the name `nameOf` gives), a price what a cast
  * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%) or pays (its `flat` is a share of a vote), a cushion the share of a loss it gives back, a ride the share of a vote's price it pays its
- * author for a card another player casts there, and a no-quote only that the post cannot be quoted.
+ * author for a card another player casts there, and a no-quote only that the post cannot be quoted. It is said only of a live gimmick: a spent one is the Lens's `ENDED_STATE`, and `now` only says "Ends" or "Ended" of the end (`endsWords`).
  */
 export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date, nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string; readonly report?: string } {
-  if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime(ends)}` };
   const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends, now.getTime()) } : {}), ...(report !== undefined ? { report } : {}) });
   if (effect.kind === 'price') return finish(`${list(effect.flavors.map(capital))} cards cost ${orbs(effect.add)} more here`);
   if (effect.kind === 'earn') {
@@ -138,6 +137,8 @@ export const endedWords = (): string => 'Ended by an admin';
  */
 export const UNTAKEN_STATE = 'Didn\'t take';
 export const untakenWords = (): string => 'Didn\'t take. Its text never arrived, so it is not in effect on this post.';
+/** The Lens's heading for a kind whose every play ran out of time (spent-marks design, section 3): plain words, the same for every card, so a spent gimmick, a ward or an effect that forgot its own end all read it. */
+export const ENDED_STATE = 'Ended';
 /** The state for a kind whose plays are all over, some ended by an admin and some not taken: true of both. */
 export const OVER_STATE = 'Over';
 /** The Lens's heading for a kind whose plays a trap caught: a short status, the same for every kind; what caught it is each play's note (`caughtWords`). */
