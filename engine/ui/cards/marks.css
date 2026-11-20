@@ -333,6 +333,11 @@
   filter: grayscale(1);
   opacity: 0.6;
 }
+/* A hover lifts a spent mark the way the shared hover lifts any tile: the glass's white border, and the ground lifted a little toward the text. */
+.kb-mark.kb-meta-tile[data-kb-spent='true']:hover:not([aria-disabled="true"]) {
+  border-color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-glass-text) 10%, var(--kb-glass-ground));
+}
 /* A spent mark's Lens open: a faint fill, as the ground lifted toward the text. */
 .kb-mark.kb-meta-tile[data-kb-spent='true'][aria-expanded="true"],
 .kb-mark.kb-meta-tile[data-kb-spent='true'][aria-expanded="true"]:hover:not([aria-disabled="true"]) {
