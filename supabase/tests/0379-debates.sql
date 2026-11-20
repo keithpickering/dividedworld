@@ -1,7 +1,7 @@
 -- The debates the inputs carry (supabase/migrations/0379_debates.sql; docs/plans/2026-11-18-tweener-catalyst-plan.md, Task 2; models: 0378-target-lean.sql and 0376-cushion.sql).
 -- settlement_input holds each spark a window reached (a post made no earlier than `debateDays` before the window that a window Act quotes or sits under), every member of its debate made before the window's end, the quote
 -- edges among the input's Acts, the votes standing on the spark (reactions and paid rows, even where none reached it in the window) and each cushion play that was up on the spark or its character after it was made.
--- estimate_input holds the same for the caller's own sparks alone, with no reaction on a member and no edge in a bystander's. The 2,000-post chain at the end measures both walks and reads their plans.
+-- estimate_input holds the same for the caller's own sparks alone, with no reaction on a member and no edge in a bystander's. The 2,000-post chain at the end measures both walks (the count of edges and Acts, and the time taken).
 -- The posts and cards are this file's own (db...).
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
@@ -233,7 +233,66 @@ begin
   if pg_temp.entry(estimate_input(ann, w0 + interval '2 hours'), gone) is null then raise exception 'the author''s estimate lacks the cushion'; end if;
 end $$;
 
--- ---- A chain of 2,000 posts, each quoting the one before: both walks hold their bound, and neither reads acts as a whole ----
+-- ---- A spark a reaction reached, whose only quote was made after the window's end, is no spark: the cushion play on its character is not in either input ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('db-ann8'); bob uuid := tests.account('db-bob8'); cat uuid := tests.account('db-cat8');
+  a uuid := tests.character(ann, 'Db Ann Eight'); a2 uuid := tests.character(ann, 'Db Ann Eight Too'); b uuid := tests.character(bob, 'Db Bob Eight'); c uuid := tests.character(cat, 'Db Cat Eight');
+  w0 timestamptz := pg_temp.first_window(); w1 timestamptz;
+  t uuid := tests.thread('Db late thread'); late_spark uuid; early_spark uuid; late_q uuid; early_q uuid; late_play uuid; early_play uuid; input jsonb;
+begin
+  w1 := w0 + interval '1 day';
+  insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values
+    ('dbthick', 'Db Thick', 'sweet', 'uncommon', 'use', interval '3 days', '{character,post}', '{"kind": "cushion", "share": 0.5}')
+  on conflict (key) do nothing;
+  late_spark := tests.post(a, t, 'Quoted only after the window.', w0 - interval '20 hours');
+  early_spark := tests.post(a2, t, 'Quoted before the window.', w0 - interval '19 hours');
+  late_play := tests.act(a, 'card', t, jsonb_build_object('card', 'dbthick', 'message', '', 'config', '{}'::jsonb, 'reach', 'character', 'character', a, 'ends', w0 - interval '2 hours', 'targetName', 'Db Ann Eight'), late_spark, w0 - interval '3 days');
+  insert into play_reach (play, reach, character, ends_at) values (late_play, 'character', a, w0 - interval '2 hours');
+  early_play := tests.act(a2, 'card', t, jsonb_build_object('card', 'dbthick', 'message', '', 'config', '{}'::jsonb, 'reach', 'character', 'character', a2, 'ends', w0 - interval '2 hours', 'targetName', 'Db Ann Eight Too'), early_spark, w0 - interval '3 days');
+  insert into play_reach (play, reach, character, ends_at) values (early_play, 'character', a2, w0 - interval '2 hours');
+  early_q := tests.post(c, t, pg_temp.q(early_spark), w0 - interval '10 hours');
+  late_q := tests.post(c, t, pg_temp.q(late_spark), w1 + interval '1 hour');
+  insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
+    (late_spark, b, bob, 'up', 1, w0 + interval '1 hour'), (early_spark, b, bob, 'up', 1, w0 + interval '1 hour');
+  input := settlement_input(w0, w1);
+  if pg_temp.entry(input, early_play) is null then raise exception 'the cushion on the character of a spark a reaction reached, quoted before the window''s end, is not in the input'; end if;
+  if pg_temp.entry(input, late_play) is not null then raise exception 'the cushion on the character of a post whose only quote came after the window''s end is in the input (a spark)'; end if;
+  input := estimate_input(ann, w0 + interval '8 hours');
+  if pg_temp.entry(input, early_play) is null then raise exception 'the estimate lacks the cushion on the character of a spark quoted before the window''s end'; end if;
+  if pg_temp.entry(input, late_play) is not null then raise exception 'the estimate holds the cushion on the character of a post whose only quote came after the window''s end'; end if;
+end $$;
+
+-- ---- A quote chain through a staff post is no chain in the estimate, as in the settlement: a member that quotes a real spark and a staff post that quotes another of the author's posts makes only the first a spark ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('db-ann9'); bob uuid := tests.account('db-bob9');
+  a uuid := tests.character(ann, 'Db Ann Nine'); a2 uuid := tests.character(ann, 'Db Ann Nine Too'); b uuid := tests.character(bob, 'Db Bob Nine');
+  w0 timestamptz := pg_temp.first_window(); w1 timestamptz;
+  t uuid := tests.thread('Db staff chain thread'); real_spark uuid; bridged uuid; staffq uuid; member uuid; boss uuid; play uuid; est jsonb;
+begin
+  w1 := w0 + interval '1 day';
+  insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values
+    ('dbthick', 'Db Thick', 'sweet', 'uncommon', 'use', interval '3 days', '{character,post}', '{"kind": "cushion", "share": 0.5}')
+  on conflict (key) do nothing;
+  real_spark := tests.post(a, t, 'A spark a member quotes.', w0 - interval '2 days');
+  bridged := tests.post(a2, t, 'A post only a staff post quotes.', w0 - interval '2 days');
+  play := tests.act(a2, 'card', t, jsonb_build_object('card', 'dbthick', 'message', '', 'config', '{}'::jsonb, 'reach', 'character', 'character', a2, 'ends', w0 - interval '2 hours', 'targetName', 'Db Ann Nine Too'), bridged, w0 - interval '3 days');
+  insert into play_reach (play, reach, character, ends_at) values (play, 'character', a2, w0 - interval '2 hours');
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Db Boss Nine', 'db-bot9', 'persona', now()) returning id into boss;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  staffq := tests.act(boss, 'post', t, jsonb_build_object('body', pg_temp.q(bridged)), null, w0 - interval '1 day');
+  perform set_config('kayfabb.staff_writer', '', true);
+  member := tests.post(b, t, pg_temp.q(real_spark) || pg_temp.q(staffq), w0 + interval '1 hour');
+  est := estimate_input(ann, w0 + interval '8 hours');
+  if pg_temp.entry(est, member) is null then raise exception 'the estimate lacks the member of the real spark'; end if;
+  if pg_temp.entry(est, play) is not null then raise exception 'the estimate climbed a quote chain through a staff post to a spark (its cushion is in)'; end if;
+  if pg_temp.entry(settlement_input(w0, w1), play) is not null then raise exception 'the settlement climbed a quote chain through a staff post to a spark'; end if;
+end $$;
+
+-- ---- A chain of 2,000 posts, each quoting the one before: both inputs hold the whole chain and each is built within a time bound (this asserts counts and time, not the plans) ----
 select tests.unbecome();
 do $$
 declare
@@ -241,7 +300,7 @@ declare
   a uuid := tests.character(ann, 'Db Ann Seven'); b uuid := tests.character(bob, 'Db Bob Seven');
   w0 timestamptz := pg_temp.first_window(); w1 timestamptz;
   t uuid := tests.thread('Db chain thread');
-  ids uuid[]; n constant integer := 2000; i integer; input jsonb; est jsonb; started timestamptz; took numeric; plan text; ln record; edges integer;
+  ids uuid[]; n constant integer := 2000; i integer; input jsonb; est jsonb; started timestamptz; took numeric; edges integer;
 begin
   w1 := w0 + interval '1 day';
   ids := array(select gen_random_uuid() from generate_series(1, n));
