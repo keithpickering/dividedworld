@@ -2840,12 +2840,15 @@ describe('a reply cut in under its post', () => {
     /* The tap is of the broadcast's own order: the answer's echo of the reply (the adapter's) would deliver it first. */
     fake.broadcast.echoAnswers(false);
     const kept: Parameters<NonNullable<ThreadListener['onUnder']>>[] = [];
+    let joined = false;
     const real = fake.subscribeThread.bind(fake);
     fake.subscribeThread = (t, l) => {
       listener = l;
-      return real(t, { ...l, onUnder: (...a) => { kept.push(a); if (!holding) l.onUnder?.(...a); } });
+      return real(t, { ...l, onJoined: () => { joined = true; l.onJoined?.(); }, onUnder: (...a) => { kept.push(a); if (!holding) l.onUnder?.(...a); } });
     };
-    return { kept, hold: (on: boolean) => { holding = on; }, send: (a: Parameters<NonNullable<ThreadListener['onUnder']>>) => deliver(() => listener!.onUnder!(...a)) };
+    /* The screen subscribes in an effect and the fake's listener joins a microtask later, so an event sent before that is lost: a test waits for the join first (with joins held, it releases them). */
+    const listening = async () => { await act(async () => { fake.broadcast.join(); }); await waitFor(() => expect(joined).toBe(true)); };
+    return { kept, listening, hold: (on: boolean) => { holding = on; }, send: (a: Parameters<NonNullable<ThreadListener['onUnder']>>) => deliver(() => listener!.onUnder!(...a)) };
   }
   const order = () => [...document.querySelectorAll('.kb-acts > article.kb-act')].map((a) => a.id);
 
@@ -2982,8 +2985,10 @@ describe('a reply cut in under its post', () => {
   test('an under event heard before the post\'s page is loaded nests the reply once when that page is', async () => {
     const w = await cutWorld(45, null);
     const heard = underTap(w.fake);
+    w.fake.broadcast.holdJoins();
     openCut(w, '', '?page=3');
     await screen.findByRole('article', { name: /^Post 45 /u });
+    await heard.listening();
     await act(async () => { must(await w.cast(w.ids[2]!, 'Excuse me.')); });
     expect(heard.kept).toHaveLength(1);
     expect(document.getElementById('post-46')).toBeNull();
@@ -3012,8 +3017,10 @@ describe('a reply cut in under its post', () => {
   test('an under event heard twice nests the reply once', async () => {
     const w = await cutWorld(10, null);
     const heard = underTap(w.fake);
+    w.fake.broadcast.holdJoins();
     openCut(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    await heard.listening();
     await act(async () => { must(await w.cast(w.ids[2]!, 'Cut in.')); });
     await screen.findByRole('article', { name: 'Post 11 by Pipewrench, cut in under post 3' });
     heard.send(heard.kept[0]!);
@@ -3026,9 +3033,11 @@ describe('a reply cut in under its post', () => {
   test('the end of a play heard before its under event keeps the reply out from under its post: it is at its number', async () => {
     const w = await cutWorld(10, null);
     const heard = underTap(w.fake);
+    w.fake.broadcast.holdJoins();
     heard.hold(true);
     openCut(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    await heard.listening();
     const play = must(await w.cast(w.ids[2]!, 'Cut in.'));
     w.fake.signInAs(w.root);
     await act(async () => { must(await w.fake.reverseCard(play.id)); await pause(20); });
