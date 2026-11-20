@@ -23,6 +23,8 @@ export interface PollView {
 export interface Polls {
   get(post: Id): PollView | undefined;
   subscribe(post: Id, listener: () => void): () => void;
+  /** The post a poll held here is on, or undefined where the store holds no such poll. */
+  postOf(poll: Id): Id | undefined;
   /** A voter's name as the poll knows it, or undefined where it was never read. */
   name(character: Id): string | undefined;
   /**
@@ -131,6 +133,7 @@ export function createPolls(clock: () => number = () => 0): Polls {
 
   return {
     get: (post) => views.get(post),
+    postOf: (poll) => postOf.get(poll),
     subscribe(post, listener) {
       const l = listeners.get(post) ?? new Set();
       listeners.set(post, l.add(listener));

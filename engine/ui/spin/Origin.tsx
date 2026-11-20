@@ -74,7 +74,9 @@ export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: 
 
 /** The origin's poll parts into a store of polls: the poll of the origin's post (a removed poll leaves none), with the voters' heads in `cast` as the page's voters are named. */
 function takeInPolls(origin: PageOrigin, polls: Polls, ticket: number): void {
-  const spun = origin.act?.kind === 'poll' ? origin.act.targetActId : null;
+  /* The poll's post, so a poll taken away is dropped on a read again: a poll origin names it; a ballot origin names the poll, whose post the store knows. */
+  const target = origin.act?.kind === 'poll' || origin.act?.kind === 'ballot' ? origin.act.targetActId : null;
+  const spun = target === null ? null : origin.act!.kind === 'poll' ? target : polls.postOf(target) ?? null;
   polls.take({ polls: origin.polls, voters: origin.voters, votersMore: origin.votersMore, myBallots: origin.myBallots, voterCast: origin.cast }, ticket, [...origin.polls.map((p) => p.post), ...(spun === null ? [] : [spun])]);
 }
 

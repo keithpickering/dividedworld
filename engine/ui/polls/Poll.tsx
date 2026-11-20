@@ -278,7 +278,7 @@ function PollBody({ view, store, board }: { readonly view: PollView; readonly st
                     <li key={b.act}>
                       {ballotLine(b.character.name, b.picks.map((p) => options[p] ?? ''), earlier === undefined ? (history.more ? null : false) : earlier.picks.length > 0, b.at)}
                       {' '}
-                      <button type="button" className="kb-link-button" aria-label={`Spin from ${b.character.name}'s ballot`} aria-expanded={spinningBallot?.act === b.act} onClick={(e) => { setSpinningBallot((s) => (s?.act === b.act ? null : { act: b.act, name: b.character.name })); }}>Spin</button>
+                      <button type="button" className="kb-link-button" aria-label={`Spin from ${b.character.name}'s ballot`} aria-expanded={spinningBallot?.act === b.act} onClick={() => { setSpinningBallot((s) => (s?.act === b.act ? null : { act: b.act, name: b.character.name })); }}>Spin</button>
                     </li>
                   );
                 })}

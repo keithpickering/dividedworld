@@ -6,7 +6,11 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { threadWorld } from '../composer/support.tsx';
-import type { Id, ThreadListener } from '../data/api.ts';
+import type { Act, Id, PageOrigin, Poll, ThreadListener } from '../data/api.ts';
+import { createPlays } from '../cards/plays.ts';
+import { createTallies } from '../thread/tallies.ts';
+import { createPolls, type Polls } from '../polls/store.ts';
+import { takeInOrigin } from './Origin.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { renderIn } from '../test-world.tsx';
 
@@ -148,5 +152,21 @@ describe('the Ballots list of a poll', () => {
     const poll = await screen.findByRole('group', { name: /^Best kart in the series\?/u });
     expect(within(poll).queryByRole('button', { name: 'Ballots' })).toBeNull();
     expect(within(poll).getAllByRole('button', { name: 'Spin' })).toHaveLength(1);
+  });
+});
+
+describe('a page read again after the poll was removed from its post', () => {
+  const act = (kind: 'poll' | 'ballot', target: Id): Act => ({ id: `${kind}-1`, character: 'c1', kind, thread: 't1', targetActId: target, seq: null, createdAt: '2026-11-20T10:00:00.000Z', payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null });
+  const poll = (): Poll => ({ post: 'post-1', act: { ...act('poll', 'post-1'), id: 'poll-1', payload: { question: 'Q?', options: ['A', 'B'], pick: 1, secret: false, closes_at: '2026-11-22T10:00:00.000Z' } }, counts: [0, 0], voters: 0, endsAt: '2026-11-22T10:00:00.000Z', closed: false, close: null });
+  const origin = (from: Act, polls: readonly Poll[]): PageOrigin => ({ act: from, plays: [], more: false, moment: null, at: null, cast: [], polls, voters: [], votersMore: [], myBallots: [] });
+  const take = (o: PageOrigin, store: Polls) => takeInOrigin(o, 'x', createPlays(), createTallies(), new Map(), store);
+
+  test.each([['poll origin', 'poll', 'post-1'], ['ballot origin', 'ballot', 'poll-1']] as const)('a %s drops the removed poll\'s view', (_, kind, target) => {
+    const store = createPolls();
+    const from = act(kind, target);
+    take(origin(from, [poll()]), store);
+    expect(store.get('post-1')).toBeDefined();
+    take(origin(from, []), store);
+    expect(store.get('post-1')).toBeUndefined();
   });
 });
