@@ -94,24 +94,25 @@ begin
 
   hid_quoted := tests.post(ch_author, th, 'the hidden secret quietly and slowly spoken aloud in many words x', base + interval '8 minutes 30 seconds');
   loud := tests.post(ch_author, th, format('I AM SHOUTING AT EVERYONE HERE[quote=%s]the hidden secret quietly and slowly spoken aloud in many words[/quote]', hid_quoted), base + interval '9 minutes');
-  select count(*) into n from rule_breaks(loud);
-  if n is distinct from 1 or (select predicate from rule_breaks(loud)) is distinct from 'noAllCaps' then raise exception 'a shouting post that quotes a hidden one is immune to noAllCaps, or breaks another rule: % (%)', n, (select string_agg(predicate, ',') from rule_breaks(loud)); end if;
   long_reply := tests.post(ch_author, th, format('This reply has plenty of words of its own[quote=%s]x[/quote]', hid_quoted), base + interval '10 minutes');
-  select count(*) into n from rule_breaks(long_reply);
-  if n is distinct from 0 then raise exception 'a long reply that quotes a hidden post breaks % rules (minLength judged the withheld form?): %', n, (select string_agg(predicate, ',') from rule_breaks(long_reply)); end if;
   short_reply := tests.post(ch_author, th, format('ok[quote=%s]a long long long long long long quote[/quote]', plain_q), base + interval '11 minutes');
-  select count(*) into n from rule_breaks(short_reply);
-  if n is distinct from 1 or (select predicate from rule_breaks(short_reply)) is distinct from 'minLength' then raise exception 'a short reply is not short because it quotes a long post: % (%)', n, (select string_agg(predicate, ',') from rule_breaks(short_reply)); end if;
-  -- no word of a quote, hidden or not, is read by a rule: bannedWord 'secret' is in the quoted words and nowhere else
   secret_quote := tests.post(ch_author, th, format('Fine words of my own here[quote=%s]the hidden secret quietly[/quote]', hid_quoted), base + interval '12 minutes');
-  select count(*) into n from rule_breaks(secret_quote);
-  if n is distinct from 0 then raise exception 'a rule read the words of a hidden post through a quote (%)', (select string_agg(predicate, ',') from rule_breaks(secret_quote)); end if;
   open_quote := tests.post(ch_author, th, format('Fine words of my own here[quote=%s]a secret nobody hid[/quote]', tests.post(ch_author, th, 'Nobody hid it: a secret nobody hid.', base + interval '12 minutes 30 seconds')), base + interval '13 minutes');
-  select count(*) into n from rule_breaks(open_quote);
-  if n is distinct from 0 then raise exception 'a rule read the quoted words of a post nobody hid (%)', (select string_agg(predicate, ',') from rule_breaks(open_quote)); end if;
+  -- the quotes are written; now the post is hidden, and every check below judges a quote of a hidden post
   perform tests.become(admin_a);
   perform decide(null, hid_quoted, 'hide', null, 'quoted');
   perform tests.unbecome();
+  select count(*) into n from rule_breaks(loud);
+  if n is distinct from 1 or (select predicate from rule_breaks(loud)) is distinct from 'noAllCaps' then raise exception 'a shouting post that quotes a hidden one is immune to noAllCaps, or breaks another rule: % (%)', n, (select string_agg(predicate, ',') from rule_breaks(loud)); end if;
+  select count(*) into n from rule_breaks(long_reply);
+  if n is distinct from 0 then raise exception 'a long reply that quotes a hidden post breaks % rules (minLength judged the withheld form?): %', n, (select string_agg(predicate, ',') from rule_breaks(long_reply)); end if;
+  select count(*) into n from rule_breaks(short_reply);
+  if n is distinct from 1 or (select predicate from rule_breaks(short_reply)) is distinct from 'minLength' then raise exception 'a short reply is not short because it quotes a long post: % (%)', n, (select string_agg(predicate, ',') from rule_breaks(short_reply)); end if;
+  -- no word of a quote, hidden or not, is read by a rule: bannedWord 'secret' is in the quoted words and nowhere else
+  select count(*) into n from rule_breaks(secret_quote);
+  if n is distinct from 0 then raise exception 'a rule read the words of a hidden post through a quote (%)', (select string_agg(predicate, ',') from rule_breaks(secret_quote)); end if;
+  select count(*) into n from rule_breaks(open_quote);
+  if n is distinct from 0 then raise exception 'a rule read the quoted words of a post nobody hid (%)', (select string_agg(predicate, ',') from rule_breaks(open_quote)); end if;
   -- a card's condition reads the same: nothing of the hidden words, and the post's own words whole
   f := spring_facts(null::face_down, 'quote', secret_quote, null);
   if f.by_body like '%secret%' or f.by_body is distinct from 'Fine words of my own here' then raise exception 'spring_facts reads % of a post that quotes a hidden one (before its layer)', f.by_body; end if;

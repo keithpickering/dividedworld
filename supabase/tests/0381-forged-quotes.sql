@@ -312,15 +312,14 @@ begin
   e := tests.said(ch2, th, 'Plain edit', base + interval '7 minutes', 'edit', p.id, jsonb_build_object('forged', jsonb_build_array(q)));
   if e.payload ? 'forged' then raise exception 'a client''s forged survives on an edit: %', e.payload; end if;
 
-  -- a spin: the verdict is written, and its target (the origin) is never nulled
-  begin
-    s := tests.said(ch2, th, format('[quote=%s]Words never said.[/quote]', q), base + interval '8 minutes', 'spin', p.id);
-    if act_forged(s.payload) is distinct from array[q] then raise exception 'a spin''s verdict: %', s.payload; end if;
-    if s.target_act_id is distinct from p.id then raise exception 'a spin lost its origin'; end if;
-  exception when others then
-    if sqlerrm like 'a spin%' then raise; end if;
-    raise notice 'a spin cannot be written bare in this fixture (%): its verdict is checked by the trigger''s kinds below', sqlerrm;
-  end;
+  -- a spin (written with the origin post as its target, as a spin is): the verdict is written for a doctored quote and absent for an honest one, and its target (the origin) is never nulled,
+  -- even when the origin is the forged post
+  s := tests.said(ch2, th, format('[quote=%s]Words never said.[/quote]', q), base + interval '8 minutes', 'spin', q);
+  if s.kind is distinct from 'spin' or act_forged(s.payload) is distinct from array[q] then raise exception 'a spin''s verdict: %', s; end if;
+  if s.target_act_id is distinct from q then raise exception 'a spin whose origin is forged lost its origin: %', s.target_act_id; end if;
+  s := tests.said(ch2, th, format('[quote=%s]The quoted words.[/quote]', q), base + interval '8 minutes', 'spin', q);
+  if s.kind is distinct from 'spin' or s.payload ? 'forged' or s.target_act_id is distinct from q then raise exception 'an honest spin: %', s; end if;
+  if not exists (select 1 from quote_sources x where x.act = s.id) then raise exception 'a spin has no source'; end if;
   -- the trigger's kinds, and its place: before acts_quote_guard, an ordinary trigger (not `always`)
   if (select count(*) from pg_trigger t where t.tgrelid = 'acts'::regclass and t.tgname = 'acts_forged_quotes' and t.tgenabled = 'O' and (t.tgtype & 2) = 2 and (t.tgtype & 4) = 4) is distinct from 1::bigint then
     raise exception 'acts_forged_quotes is not an ordinary before-insert trigger';
