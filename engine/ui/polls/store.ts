@@ -81,6 +81,11 @@ export function createPolls(clock: () => number = () => 0): Polls {
     const view = post === undefined ? undefined : views.get(post);
     return post === undefined || view === undefined ? undefined : { post, view };
   };
+  /* A ballot was cast on this poll: it has a ballot for good (`Poll.balloted`), whatever the counts say. */
+  const balloted = (poll: Id) => {
+    const here = viewOf(poll);
+    if (here !== undefined && !here.view.poll.balloted) set(here.post, { ...here.view, poll: { ...here.view.poll, balloted: true } });
+  };
   const secret = (poll: Poll) => poll.act.payload.secret === true;
   /* A name that arrives redraws every poll listed: a voter is named wherever it is shown. */
   /* Cost: a new name redraws every post that lists polls on the page (one copy of its view each), once per name that arrives; a page holds at most a page of posts, so that is a page's worth of cheap redraws, and a voter's name arrives once. */
@@ -188,6 +193,8 @@ export function createPolls(clock: () => number = () => 0): Polls {
     closeAct,
     ballotAct(act, own) {
       const poll = act.targetActId;
+      /* Any ballot, a withdrawal's and a secret one's too, means the poll can no longer change. */
+      if (act.kind === 'ballot' && poll !== null) balloted(poll);
       if (act.kind !== 'ballot' || poll === null || act.character === null) return null;
       const here = viewOf(poll);
       if (here === undefined || secret(here.view.poll)) return null;
@@ -198,6 +205,7 @@ export function createPolls(clock: () => number = () => 0): Polls {
       return act.character;
     },
     cast(poll, character, picks, written) {
+      balloted(poll);
       ballot(poll, character, picks, written.act.id, written.act.createdAt, true);
       heard({ ...written.counts, at: written.act.createdAt });
     },

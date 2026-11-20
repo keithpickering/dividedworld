@@ -65,3 +65,20 @@ describe('a secret poll', () => {
     expect(w.polls.get('post1')!.voters).toEqual([]);
   });
 });
+
+describe('balloted', () => {
+  const ballot = (id: string, picks: number[], extra: object = {}) => act(id, { picks }, '2026-11-20T02:00:00.000Z', { kind: 'ballot', targetActId: 'poll1', character: 'c9', ...extra });
+  test('a ballot heard live, a withdrawal too, sets it', () => {
+    const w = world();
+    w.polls.take(page([POLL]), 0, ['post1']);
+    expect(w.polls.get('post1')!.poll.balloted).toBe(false);
+    w.polls.ballotAct(ballot('b1', []), new Set());
+    expect(w.polls.get('post1')!.poll.balloted).toBe(true);
+  });
+  test('a secret ballot, which has no character, sets it', () => {
+    const w = world();
+    w.polls.take(page([POLL]), 0, ['post1']);
+    w.polls.ballotAct(ballot('b2', [], { character: null }), new Set());
+    expect(w.polls.get('post1')!.poll.balloted).toBe(true);
+  });
+});
