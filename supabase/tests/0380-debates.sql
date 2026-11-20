@@ -458,17 +458,23 @@ begin
   if pg_temp.entry(est, earlier) is null or not pg_temp.edge(est, later, earlier) then raise exception 'the estimate lacks the post quoted by the author''s own window post: %', est -> 'quotes'; end if;
 end $$;
 
--- ---- A chain of posts, each quoting the one before: both inputs hold the whole chain, and the time to build them grows in step with the chain (this asserts counts and time, not the plans) ----
+-- ---- A chain of posts, each quoting the one before: both inputs hold the whole chain, and the rows they read grow in step with the chain (this asserts counts and rows read, not the plans) ----
 -- A quadratic walk is no slower than a linear one at a few hundred posts, so a cap on 2,000 alone passes a cost that grows as the square (an earlier plan probed acts by time and filtered by key,
--- 500 rows a step, 14.5 s at 2,000). So the same chain is built at 1,000 and at 2,000 posts, each in a window of its own, and doubling it may not more than triple either input's time; the cap stays as a floor on the whole.
+-- 500 rows a step, 14.5 s at 2,000), and a ratio of two timings passes it on a machine fast enough that both are noise. So the same chain is built at 1,000 and at 2,000 posts, each in a window of its own, and
+-- what is compared is the rows of acts each input reads (the transaction's own counters: rows a sequential scan returned plus rows fetched through an index), which do not depend on the machine's speed: doubling
+-- the chain may not more than triple either input's reads (a linear walk reads twice as many, a quadratic one four times). The time stays as a cap on the whole.
 select tests.unbecome();
-create function pg_temp.chain(n integer, tag text, win timestamptz, out edges integer, out whole boolean, out ends boolean, out settle numeric, out est numeric) language plpgsql as $$
+-- Rows of acts read so far by this transaction: returned by sequential scans plus fetched through indexes.
+create function pg_temp.acts_rows_read() returns bigint language sql as $$
+  select coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0) from pg_stat_xact_user_tables where relid = 'public.acts'::regclass
+$$;
+create function pg_temp.chain(n integer, tag text, win timestamptz, out edges integer, out whole boolean, out ends boolean, out settle numeric, out est numeric, out settle_rows bigint, out est_rows bigint) language plpgsql as $$
 declare
   ann uuid := tests.account('db-ann7' || tag); bob uuid := tests.account('db-bob7' || tag);
   a uuid := tests.character(ann, 'Db Ann Seven ' || tag); b uuid := tests.character(bob, 'Db Bob Seven ' || tag);
   w1 timestamptz := win + interval '1 day';
   t uuid := tests.thread('Db chain thread ' || tag);
-  ids uuid[] := array(select gen_random_uuid() from generate_series(1, n)); i integer; input jsonb; estimate jsonb; started timestamptz;
+  ids uuid[] := array(select gen_random_uuid() from generate_series(1, n)); i integer; input jsonb; estimate jsonb; started timestamptz; r0 bigint;
 begin
   -- The chain alternates two players; the first is made two days before the window, the rest inside it.
   for i in 1..n loop
@@ -478,16 +484,20 @@ begin
             case when i = 1 then win - interval '2 days' else win + (i * interval '1 second') end);
   end loop;
   analyze acts; analyze quote_refs;
+  r0 := pg_temp.acts_rows_read();
   started := clock_timestamp();
   input := settlement_input(win, w1);
   settle := extract(epoch from clock_timestamp() - started);
+  settle_rows := pg_temp.acts_rows_read() - r0;
   edges := (select count(*) from jsonb_array_elements(input -> 'quotes') e where (e ->> 'act')::uuid = any (ids));
   whole := (select count(*) from jsonb_array_elements(input -> 'acts') e where (e ->> 'id')::uuid = any (ids)) = n;
+  r0 := pg_temp.acts_rows_read();
   started := clock_timestamp();
   estimate := estimate_input(ann, w1);
   est := extract(epoch from clock_timestamp() - started);
+  est_rows := pg_temp.acts_rows_read() - r0;
   ends := pg_temp.entry(estimate, ids[1]) is not null and pg_temp.entry(estimate, ids[n]) is not null and jsonb_array_length(estimate -> 'quotes') = n - 1;
-  raise notice 'chain of %: settlement_input % s, estimate_input % s, % edges', n, settle, est, edges;
+  raise notice 'chain of %: settlement_input % s (% acts rows), estimate_input % s (% acts rows), % edges', n, settle, settle_rows, est, est_rows, edges;
 end $$;
 do $$
 declare w0 timestamptz := pg_temp.first_window(); small record; big record; n constant integer := 1000;
@@ -496,8 +506,10 @@ begin
   select * into big from pg_temp.chain(2 * n, 'b', w0 + interval '30 days');
   if small.edges <> n - 1 or big.edges <> 2 * n - 1 or not small.whole or not big.whole then raise exception 'the chain is not whole in the input: % and % edges', small.edges, big.edges; end if;
   if not small.ends or not big.ends then raise exception 'the author''s estimate lacks the chain''s ends or its edges'; end if;
+  -- Doubling the chain may not more than triple the rows read: a floor of one read per post keeps a build that reads nothing from passing (it would not have built the input).
+  if small.settle_rows < n or small.est_rows < n then raise exception 'the chain read too few rows of acts to measure: % / % at % posts', small.settle_rows, small.est_rows, n; end if;
+  if big.settle_rows > 3 * small.settle_rows then raise exception 'settlement_input does not scale with the chain: % acts rows at % posts, % at %', small.settle_rows, n, big.settle_rows, 2 * n; end if;
+  if big.est_rows > 3 * small.est_rows then raise exception 'estimate_input does not scale with the chain: % acts rows at % posts, % at %', small.est_rows, n, big.est_rows, 2 * n; end if;
+  -- The cap on the whole, after the comparison so that a cost that grows as the square is named as that.
   if big.settle > 3 or big.est > 3 then raise exception 'an input took % / % seconds (settlement / estimate) over a 2,000-post chain', big.settle, big.est; end if;
-  -- Doubling the chain may not more than triple the time; a floor under the smaller time keeps a very fast build from failing on noise.
-  if big.settle > 3 * greatest(small.settle, 0.3) then raise exception 'settlement_input does not scale with the chain: % s at % posts, % s at %', small.settle, n, big.settle, 2 * n; end if;
-  if big.est > 3 * greatest(small.est, 0.3) then raise exception 'estimate_input does not scale with the chain: % s at % posts, % s at %', small.est, n, big.est, 2 * n; end if;
 end $$;

@@ -201,7 +201,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
       select u.id from up u where u.anc and u.kind = 'post'
       union select t.origin_act_id from win_acts a join threads t on t.id = a.thread where a.kind in ('post', 'spin') and t.origin_act_id is not null
       union select x.act from reacted x join acts sa on sa.id = x.act join characters sc on sc.id = sa.character
-        where exists (select 1 from quote_refs q join acts a on a.id = q.act where q.quoted = x.act and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (sa.created_at, sa.id)
+        where exists (select 1 from quote_refs q cross join lateral (select * from acts where id = q.act offset 0) a where q.quoted = x.act and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (sa.created_at, sa.id)
                         and a.character is not null and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended))
            or exists (select 1 from acts sp join characters pc on pc.id = sp.character where sp.target_act_id = x.act and sp.kind = 'spin' and sp.created_at < window_end and sp.created_at >= sa.created_at
                         and pc.owner <> sc.owner and pc.staff is null and sp.id not in (select id from ended))
@@ -373,6 +373,7 @@ $$;
 
 create or replace function estimate_input(account uuid, until timestamptz default now()) returns jsonb
 -- jit = off as every client read has it (0368): this plan costs above jit_above_cost, and a client read that compiled 878 functions spent about 6 s on a chain of two posts.
+-- No plan_cache_mode = force_generic_plan (0368's other half): that is for a client read a page calls many times, and this is called once per request, not in ALLOWED_RPCS, where a generic plan would forget the window's and the cutoff's values.
 language plpgsql stable security definer set search_path = public, pg_temp set jit = off as $$
 declare
   salt text := gen_random_uuid()::text;
@@ -486,7 +487,7 @@ begin
       union select spark from spun_in1 where at >= window_start
       union select spark from spun1 where at >= window_start
       union select p.id from my_posts p join mine_reacted r on r.act = p.id
-        where exists (select 1 from quote_refs q join acts a on a.id = q.act where q.quoted = p.id and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (p.at, p.id)
+        where exists (select 1 from quote_refs q cross join lateral (select * from acts where id = q.act offset 0) a where q.quoted = p.id and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (p.at, p.id)
                         and a.character is not null and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended))
            or exists (select 1 from acts sp where sp.target_act_id = p.id and sp.kind = 'spin' and sp.created_at < window_end and sp.created_at >= p.at and sp.character not in (select id from mine)
                         and not is_staff_side(sp.character, sp.kind, sp.target_act_id) and sp.id not in (select id from ended))
