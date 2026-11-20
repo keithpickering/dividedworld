@@ -7,7 +7,7 @@ import { decidePlay, decideUse } from '../../../engine/rules/cards.ts';
 import { instanceProblems } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
 import { instance } from '../index.ts';
-import { settle } from '../../../engine/rules/settle.ts';
+import { estimateForOwner, settle } from '../../../engine/rules/settle.ts';
 import type { InputAct, InputReaction, SettlementInput } from '../../../engine/rules/types.ts';
 import { thickSkin, price } from './thick-skin.ts';
 
@@ -95,4 +95,48 @@ test("Thick Skin and Heat Magnet both up on a Technician's heat vote: -10, a cus
   assert.equal(sum('card.boost'), 8, '7.5, rounded');
   assert.deepEqual(r.entries.find((e) => e.reason === 'card.cushion')!.params, { card: 'thick-skin', share: 0.5 });
   assert.deepEqual(r.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'heat-magnet', flat: 0.75 });
+});
+
+/* ---- a card outdrawn: a loss of the whole window, read at the window's end (#805) ---- */
+/** A Thick Skin still up when the window ends, used at `at`. */
+const useLate = (id: string, at = W_FROM + 2 * HR): InputAct => ({ id, character: 'tom-1', kind: 'card', at, thread: 't1', card: 'thick-skin', reach: 'character', on: 'tom-1', ends: W_TO + 20 * HR });
+/** Tom's card on Bob's post, which nobody reacted to, and Bob's one tomato on the card: the card outdraws the post. */
+const outdrawn = (cls: string, extra: InputAct[]): SettlementInput => board(cls, [
+  { id: 'bp1', character: 'bob-1', kind: 'post', at: W_FROM + 2 * HR, thread: 't1' },
+  { id: 'k1', character: 'tom-1', kind: 'card', at: W_FROM + 3 * HR, thread: 't1', card: 'whoops', target: 'bp1' },
+  ...extra,
+], [heat('k1')]);
+const toms = (i: SettlementInput, reason: string) => settle(i, instance).entries.filter((e) => e.character === 'tom-1' && e.reason === reason);
+
+test("Thick Skin still up when the window ends gives back half of a Face's outdrawn loss", () => {
+  const i = outdrawn('face', [useLate('g1')]);
+  assert.deepEqual(toms(i, 'face.stoleThunder').map((e) => e.amount), [-20]);
+  assert.deepEqual(toms(i, 'card.cushion').map((e) => [e.amount, e.params]), [[10, { card: 'thick-skin', share: 0.5 }]]);
+});
+
+test("Thick Skin that ended before the window did gives back none of a Face's outdrawn loss", () => {
+  const i = outdrawn('face', [use('g1', 'thick-skin')]);
+  assert.deepEqual(toms(i, 'face.stoleThunder').map((e) => e.amount), [-20]);
+  assert.deepEqual(toms(i, 'card.cushion'), []);
+});
+
+test("Thick Skin used after the card and after the reaction, still up at the window's end, gives back half", () => {
+  const i = outdrawn('face', [useLate('g1', W_FROM + 10 * HR)]);
+  assert.deepEqual(toms(i, 'face.stoleThunder').map((e) => e.amount), [-20]);
+  assert.deepEqual(toms(i, 'card.cushion').map((e) => e.amount), [10]);
+});
+
+test("Thick Skin leaves a Heel's stolen thunder alone: a gain, and no cushion", () => {
+  const i = outdrawn('heel', [useLate('g1')]);
+  assert.deepEqual(toms(i, 'heel.stoleThunder').map((e) => e.amount), [20]);
+  assert.deepEqual(toms(i, 'card.cushion'), []);
+});
+
+test("the estimate shows the outdrawn loss's cushion on the card's Act with no time, and its lines add up to its entries", () => {
+  const e = estimateForOwner(outdrawn('face', [useLate('g1')]), instance, 'tom');
+  const cushion = e.lines.filter((l) => l.reason === 'card.cushion');
+  assert.deepEqual(cushion.map((l) => [l.act, l.amount, 'at' in l]), [['k1', 10, false]]);
+  const sum = (xs: readonly { amount: number }[]) => xs.reduce((t, x) => t + x.amount, 0);
+  assert.equal(sum(e.lines), sum(e.entries));
+  assert.equal(sum(e.entries), -10);
 });

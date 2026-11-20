@@ -23,6 +23,6 @@ export const face: ClassRules = {
     ...perVote(input, settings, 'boredNegative', -1, 'face.boredTheRoom'),
     ...input.cardsPlayed
       .filter((c) => c.onOthers && outdraws(c) && hadThunder(c))
-      .map((c): Earning => ({ reason: 'face.stoleThunder', amount: economyOf(settings, 'face.cardOutdraws'), act: c.act })),
+      .map((c): Earning => ({ reason: 'face.stoleThunder', amount: economyOf(settings, 'face.cardOutdraws'), act: c.act, ofWindow: true })),
   ],
 };

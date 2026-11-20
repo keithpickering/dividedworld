@@ -707,8 +707,14 @@ export interface Earning {
   readonly quadrant?: Quadrant;
   /** The kind of the one reaction it pays for, where it pays for one: an earn gimmick that names reactions boosts by it. */
   readonly kind?: string;
-  /** The signed votes of the one reaction it pays for, where it pays per vote: with a negative amount on positive votes it is a loss from a reaction, which a cushion softens; an earning without it is never cushioned. */
+  /** The signed votes of the one reaction it pays for, where it pays per vote: with a negative amount on positive votes it is a loss from a reaction, which a cushion softens; an earning without it is cushioned only as a window's loss (`ofWindow`). */
   readonly votes?: number;
+  /**
+   * A loss the window's reactions caused together on `act`, with no one reaction to name (a card outdrawn): it is charged as the window
+   * settles, so a cushion softens it where it is up at the window's end. A class sets it on such a loss and on nothing else; with a
+   * positive amount it is read by nothing.
+   */
+  readonly ofWindow?: true;
   /**
    * The reactions it pays for, where they are not on `act`: on this Act, after this time (a card's
    * lift is the votes on its target after it). The live estimate hangs its lines on them, and
