@@ -259,7 +259,7 @@ declare
   ch2 uuid := tests.character(au, 'Fq Trigger Two');
   th uuid := tests.thread('Forged trigger');
   base timestamptz := now() - interval '1 day';
-  q uuid; q2 uuid; w acts; e acts; p acts; s acts;
+  q uuid; q2 uuid; w acts; e acts; p acts; s acts; v uuid[];
   stranger uuid := gen_random_uuid();
 begin
   q := tests.post(ch, th, 'The quoted words.', base);
@@ -320,6 +320,12 @@ begin
   s := tests.said(ch2, th, format('[quote=%s]The quoted words.[/quote]', q), base + interval '8 minutes', 'spin', q);
   if s.kind is distinct from 'spin' or s.payload ? 'forged' or s.target_act_id is distinct from q then raise exception 'an honest spin: %', s; end if;
   if not exists (select 1 from quote_sources x where x.act = s.id) then raise exception 'a spin has no source'; end if;
+  -- a spin is a version too: quoted, its body is what an honest quote stands in
+  s := tests.said(ch2, th, 'Spun words of the origin.', base + interval '9 minutes', 'spin', q);
+  v := quote_forged(format('[quote=%s]Spun words of the origin.[/quote]', s.id), base + interval '10 minutes');
+  if v is distinct from '{}'::uuid[] then raise exception 'an honest quote of a spin is forged: %', v; end if;
+  v := quote_forged(format('[quote=%s]Spun words never said.[/quote]', s.id), base + interval '10 minutes');
+  if v is distinct from array[s.id] then raise exception 'a doctored quote of a spin is not forged: %', v; end if;
   -- the trigger's kinds, and its place: before acts_quote_guard, an ordinary trigger (not `always`)
   if (select count(*) from pg_trigger t where t.tgrelid = 'acts'::regclass and t.tgname = 'acts_forged_quotes' and t.tgenabled = 'O' and (t.tgtype & 2) = 2 and (t.tgtype & 4) = 4) is distinct from 1::bigint then
     raise exception 'acts_forged_quotes is not an ordinary before-insert trigger';

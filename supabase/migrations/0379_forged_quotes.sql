@@ -1488,7 +1488,7 @@ begin
     sources := '{}';
     seen := '{}';
     for v in
-      select x.id, s.source, s.digest
+      select x.id, s.digest
       from (
         select a.id, a.created_at from acts a where a.id = k::uuid and a.kind in ('post', 'spin') and a.created_at <= at
         union all
@@ -1499,7 +1499,8 @@ begin
     loop
       continue when v.digest = any (seen) or version_hidden(v.id, k::uuid);
       seen := seen || v.digest;
-      sources := sources || v.source;
+      -- The text is read only now, for a version that is not hidden.
+      sources := sources || (select s.source from quote_sources s where s.act = v.id);
     end loop;
     -- Each quote is judged on its own against any one version (design, section 2); one that stands in none forges the post (section 5). No version at all: forged.
     doctored := cardinality(sources) = 0;
