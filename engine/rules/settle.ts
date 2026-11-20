@@ -93,15 +93,16 @@
  *   one, which has no room in the input to read it by.
  * - A spun thread's repliers are the distinct other players who posted in it, counted before
  *   the window and by its end, so a class can pay the window in which a threshold is crossed.
- * - A post's debate is every post that quotes it, transitively, and the spin and posts of each thread another player
- *   spun from it, up to the window's end. The walk follows threads spun "from the spark" only: a thread spun from a post
- *   inside the debate is not followed. Only `quotes` and the Acts in the input count (a staff post or one of The System's
- *   is not in the input, so it is no member). A character's
- *   class is handed a `SparkedDebate` for each of its posts made no earlier than `debateDays` before the window with a member inside the window,
- *   or with a member and a vote that moved on it inside the window: the members as times and voices that name no one (0 the author's player, then
- *   1, 2... by first post, a character each with the shared vote off), whether the post is itself in an earlier post's debate by its own player,
- *   every other player's vote on it at the stretch's start and end, and the largest cushion share up on it or its character since it was made.
- *   It is placed in a stretch by its latest member's time (or its latest moved vote's); a spark costs its debate's size, with quotes indexed once.
+ * - A post's debate is every post that quotes it, transitively, and the spin and posts of each thread another
+ *   player spun from it, up to the window's end. The walk follows threads spun "from the spark" only: a thread spun
+ *   from a post inside the debate is not followed. Only `quotes` and the Acts in the input count (a staff post or one
+ *   of The System's is not in the input, so it is no member). A character's class is handed a `SparkedDebate` for
+ *   each of its posts made no earlier than `debateDays` before the window with a member inside the window, or with a
+ *   member and a vote that moved on it inside the window: the members as times and voices that name no one (0 the
+ *   author's player, then 1, 2... by first post, a character each with the shared vote off), whether the post is
+ *   itself in an earlier post's debate by its own player, every other player's vote on it at the stretch's start and
+ *   end, and the largest cushion share up on it or its character since it was made. It is placed in a stretch by its
+ *   latest member's time (or its latest moved vote's); a spark costs its debate's size, with quotes indexed once.
  * - A character that Turned inside the window is settled under each class it held, each for
  *   its own stretch; a reaction belongs to the class its target held when it landed.
  * - Input is read in a canonical order and amounts are summed before they are rounded, so the
