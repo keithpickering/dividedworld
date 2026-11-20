@@ -496,7 +496,7 @@ $$;
 revoke execute on function bbcode_plain(text, uuid[]) from public, anon;
 grant execute on function bbcode_plain(text, uuid[]) to authenticated, service_role;
 
--- search_words (0117): the verdict is a fourth argument; the three-argument function is dropped for the same reason as bbcode_plain's, and the two-argument one (a body with no verdict) stays as it was.
+-- search_words (0117): the verdict is a fourth argument; the three-argument function is dropped for the same reason as bbcode_plain's, and the two-argument one is kept as a verdict-free wrapper: it now resolves to the four-argument function with `forged` empty, and no reader of an Act's words calls it (only tests 0190 and 0191 do).
 drop function search_words(text, text, regconfig);
 create function search_words(body text, title text, lang regconfig, forged uuid[] default '{}') returns tsvector
 language sql stable set search_path = public, pg_temp as $$
@@ -1110,92 +1110,6 @@ begin
     if broken is null then raise exception 'no check for predicate %', r.predicate using errcode = '0A000'; end if;
     if broken then return next r; end if;
   end loop;
-end $$;
-
-create or replace function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
-language plpgsql security definer set search_path = public, pg_temp as $$
-declare
-  f spring_facts;
-  k card_kinds%rowtype;
-  named text;
-  in_character integer;
-  in_thread integer;
-  in_board integer;
-  walked_plain text;
-  raw_body text;
-  walked_excerpt text;
-  ic card_kinds%rowtype;
-  m jsonb;
-  ic_rank integer;
-  up_rank integer;
-  own_rank integer;
-  flavor_ok boolean;
-  matched boolean;
-begin
-  -- 1. The setter's character, and what decides whether it can act (retired, not debuted), who it belongs to and whether it is staff.
-  select a.character into f.setter_character from acts a where a.id = fd.play;
-  select c.retired_at, c.debuted_at, c.owner, c.staff is not null into f.setter_retired, f.setter_debuted, f.setter_owner, f.setter_staff from characters c where c.id = f.setter_character;
-  -- 2. The back's card kind.
-  select * into k from card_kinds x where x.key = fd.card;
-  f.kind_play := k.play; f.kind_trap := k.trap; f.kind_stack := k.stack; f.kind_seeded := k.seeded;
-  f.kind_skim := k.skim is not null; f.kind_scores := k.scores_as;
-  f.reach := coalesce(k.reaches[1], 'post');
-  -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
-  -- or a visit by_act is not a post, or not yet written, and these find what they find.
-  select a.kind, a.character, a.thread, case when coalesce(version_hidden(a.id), false) then null else a.payload ->> 'body' end, t.board into f.by_kind, f.by_character, f.by_thread, raw_body, f.by_board
-  from acts a left join threads t on t.id = a.thread where a.id = by_act;
-  select a.id into f.first_post from acts a where a.thread = f.by_thread and a.seq = 1 and a.kind = 'post';
-  select t.id into f.announce_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
-  -- 4. The stack at the would-be target and reach, for every reach: the plays of the card still up on the Act (a post's), the layer to go on from, and the plays of it still up on
-  -- the Act's character, thread and board (a play beyond a post's), counted as place_cast counts them. Which reach the card takes is then a choice among values already read.
-  f.target := case f.reach when 'post' then by_act when 'character' then f.by_character when 'thread' then f.by_thread else f.by_board end;
-  -- Each play found is asked whether an admin ended it, whatever card it is (card_ended is a read of its own, and the subquery cannot be flattened away, so it is made for every play found and not only
-  -- for the ones of this back's card): which card is counted is chosen after the reads.
-  select count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended),
-         greatest(coalesce(max(l.layer) filter (where l.card is not distinct from fd.card), 0), count(*) filter (where l.card is not distinct from fd.card)) + 1,
-         count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended and l.quadrant is not distinct from (fd.config ->> 'quadrant'))
-    into f.up, f.layer, f.quadrant_up
-  from (select k2.payload ->> 'card' as card, (k2.payload ->> 'ends')::timestamptz as ends, (k2.payload ->> 'layer')::integer as layer, card_ended(k2.id) as ended,
-               k2.payload #>> '{config,quadrant}' as quadrant
-        from acts k2 where k2.kind = 'card' and k2.target_act_id = by_act and not (k2.payload ? 'caught') and coalesce(k2.payload ->> 'reach', 'post') = 'post' offset 0) l;
-  f.quadrant_ok := (fd.config ->> 'quadrant') = any (array['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative']);
-  -- The window a scored-as play would name, and whether the quoting character already has a class named for it: a play of any scored-as card made at or after the last settled window's end, not ended.
-  select w.opens, w.closes, w.why into f.window_opens, f.window_closes, f.window_why from scored_as_window(now()) w;
-  f.class_ok := exists (select 1 from class_kinds ck where ck.key = fd.config ->> 'class');
-  select count(*) filter (where l.card = fd.card and not l.ended and l.character = f.by_character), count(*) filter (where l.card = fd.card and not l.ended and l.thread = f.by_thread),
-         count(*) filter (where l.card = fd.card and not l.ended and l.board = f.by_board),
-         count(*) filter (where l.scores and not l.ended and l.character = f.by_character and l.at >= (select max(x.ends_at) from settlements x)) > 0
-    into in_character, in_thread, in_board, f.class_taken
-  from (select k2.payload ->> 'card' as card, r.character, r.thread, r.board, card_ended(r.play) as ended, k2.created_at as at, coalesce(ck.scores_as, false) as scores
-        from play_reach r join acts k2 on k2.id = r.play left join card_kinds ck on ck.key = k2.payload ->> 'card'
-        where r.ends_at > now() and (r.character = f.by_character or r.thread = f.by_thread or r.board = f.by_board) offset 0) l;
-  f.reach_up := case f.reach when 'character' then in_character when 'thread' then in_thread else in_board end;
-  -- 4b. Whether a live ward Gimmick on the Act turns the card away: place_cast turns a cast away by the same test (ward_refusal), and a Move does not land through it either.
-  f.warded := ward_refusal('post', by_act, k) is not null;
-  -- 5. A board's live card, whatever the card's reach.
-  select max(r.ends_at) into f.live_board from play_reach r where r.board = f.by_board and r.ends_at > now() and not card_ended(r.play);
-  -- 6. The named catch (a back with none reads its own card's row, so the read finds one row either way: a null key would be a read of nothing), compared with the incoming card.
-  select x.key into named from card_kinds x where x.key = coalesce(fd.catches, fd.card);
-  -- 6b. The back's match, and the incoming card's printed row, for every back whatever it holds (a back with no match reads the same row and asks the same questions of an empty one): the card's
-  -- flavor in the match's `flavors`, its rarity at or below the match's `upTo` and at or below the back's own card's. A cast back springs on the card it names or on one its match holds.
-  select * into ic from card_kinds x where x.key = incoming_card;
-  m := case when jsonb_typeof(k.trap -> 'match') = 'object' then k.trap -> 'match' else '{}'::jsonb end;
-  ic_rank := rarity_rank(ic.rarity); up_rank := rarity_rank(coalesce(m ->> 'upTo', 'legendary')); own_rank := rarity_rank(k.rarity);
-  flavor_ok := case when jsonb_typeof(m -> 'flavors') = 'array' then (m -> 'flavors') ? ic.alignment else true end;
-  matched := jsonb_typeof(k.trap -> 'match') = 'object' and ic.key is not null and flavor_ok and ic_rank <= up_rank and ic_rank <= own_rank;
-  f.caught := (fd.catches is not null and fd.catches = incoming_card and named is not null) or coalesce(matched, false);
-  -- 7. ONE walk of the Act's words for every back: its own visible words, and the excerpt of the quotes of the back's post (null for a cast or a visit, whose by_act holds no words). A function in a FROM
-  -- clause runs once however many columns are taken from it, and both are taken here, so the walk costs the same whatever the back holds.
-  select w.plain, w.excerpt, w.unquoted into walked_plain, walked_excerpt, f.by_body from bbcode_walk(raw_body, fd.post) w;
-  -- A quote of a post an admin hid carries its words, so the Quotes condition does not read them (the Act's own words, with every quote cut out, are all `by_body` and Says read).
-  if coalesce(quote_hidden(fd.post), false) then walked_excerpt := ''; end if;
-  if raw_body is null then f.by_body := null; end if;
-  -- 8. Both probes, for every back, whatever it holds: phrase_probe folds the text and compiles and runs a pattern of one shape (a back with no such condition has a pattern built around its own id, which
-  -- cannot match), the Says over the Act's own words and the Quotes, on a token of its own, over the excerpt. And the Who check, against an empty list for Anyone.
-  f.phrase_hit := coalesce(phrase_probe(walked_plain, fd.phrase, fd.play::text), false);
-  f.passage_hit := coalesce(phrase_probe(walked_excerpt, fd.passage, fd.play::text || 'p'), false);
-  f.who_hit := coalesce(f.by_character = any (coalesce(fd.who, '{}')), false);
-  return f;
 end $$;
 
 -- own_words (0340): the body of a version and that version's verdict. The one-argument function is dropped for the same reason as bbcode_plain's.
