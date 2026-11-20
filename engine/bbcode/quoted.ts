@@ -139,3 +139,16 @@ export function quoteHeld(nodes: readonly BbNode[]): Map<string, string[][]> {
 
 /** The source of a version: the words of its whole body, normalized, the cut marks kept as separators. */
 export const quoteSource = (nodes: readonly BbNode[]): string => quoteNorm(walk(nodes).text);
+
+/**
+ * The verdict an Act's payload carries (`forged`, the quoted posts whose quotes in the Act's words are doctored; the database writes it when the Act is written): the list, or undefined where the payload has none.
+ * Every reader of an Act's words hands it to `parse` (as a set) so a forged quote is a counterfeit in the screen, the cards and the search alike. The list is the payload's own, so it is the same array each time the
+ * Act is read and a component that holds it as a prop is not drawn again for it.
+ */
+export function forgedList(payload: Readonly<Record<string, unknown>> | null | undefined): readonly string[] | undefined {
+  const list = payload?.['forged'];
+  return Array.isArray(list) && list.length > 0 && list.every((x) => typeof x === 'string') ? (list as readonly string[]) : undefined;
+}
+
+/** A verdict as `parse` takes it, or undefined for none. */
+export const forgedSet = (list: readonly string[] | undefined): ReadonlySet<string> | undefined => (list && list.length > 0 ? new Set(list) : undefined);

@@ -2,6 +2,8 @@ import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { parse } from '../../bbcode/parse.ts';
+import { PLAIN_FIXTURES } from '../../bbcode/plain.fixtures.ts';
+import { holds, quoteHeld, quoteSource, quoteWords } from '../../bbcode/quoted.ts';
 import { openThread, replyBox, threadWorld } from '../composer/support.tsx';
 import { quoteText } from '../composer/text.ts';
 import { readRange } from './SelectionQuote.tsx';
@@ -304,5 +306,84 @@ describe('the Quote button on the thread', () => {
     expect(value).toContain(`[quote=${id}]`);
     expect(value).not.toContain('butler');
     expect(value).toContain('all along');
+  });
+});
+
+
+/* The Quote button never makes a forged quote (docs/plans/2026-11-20-forged-quotes-design.md, section 4): whatever words of a post it quotes, those words are in the post. Random posts are built from the
+   fixtures' bodies (the plain-words fixtures, one list for both languages), with a seeded generator so a failure reproduces. A run inside a shut spoiler, an image's alt and a Lens layer are not read, and a fixture that nests eight tags or more is left out: wrapping such a post in one more quote can push a counterfeit past the parser's cap, where it reads as text (reported with this task). */
+describe('the Quote button\'s text is never forged (a property)', () => {
+  const POST = '2a8fad5b-d9cb-469f-a165-70867728950e';
+  const pool = PLAIN_FIXTURES.filter((f) => f.forged === undefined && !/\[(i?spoiler|img|video|noparse|code)/iu.test(f.body) && !/(\[[a-z]+[^\]]*\]){8}/iu.test(f.body)).map((f) => f.body);
+  /** mulberry32: a small seeded generator, so the same seed builds the same posts. */
+  const generator = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const posts = (seed: number, count: number) => {
+    const rand = generator(seed);
+    const pick = (n: number) => Math.floor(rand() * n);
+    return Array.from({ length: count }, () => Array.from({ length: 1 + pick(3) }, () => pool[pick(pool.length)]!).join(pick(2) === 0 ? ' ' : '\n'));
+  };
+  /** Whether the quote `quoteText` made, read back as the server reads it, stands in the post's source. */
+  const forged = (body: string, made: string): boolean => {
+    const held = quoteHeld(parse(made)).get(POST) ?? [];
+    const source = quoteSource(parse(body));
+    return held.some((pieces) => !holds(source, pieces));
+  };
+
+  /** The offsets a person can select between: a pointer lands between grapheme clusters, never inside a letter and its accent. */
+  const edges = (text: string): number[] => [0, ...[...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((g) => g.index + g.segment.length)];
+  const at = (rand: () => number, list: readonly number[]): number => list[Math.floor(rand() * list.length)]!;
+
+  test('the pool is not empty', () => expect(pool.length).toBeGreaterThan(20));
+
+  test('quoting a whole post, or any run of its shown words, is never forged', () => {
+    const rand = generator(7);
+    let runs = 0;
+    for (const body of posts(11, 150)) {
+      expect(forged(body, quoteText('', POST, body)), `whole: ${JSON.stringify(body)}`).toBe(false);
+      const shown = quoteWords(parse(body));
+      const stops = edges(shown);
+      for (let i = 0; i < 4; i++) {
+        const a = at(rand, stops);
+        const b = at(rand, stops);
+        const run = shown.slice(Math.min(a, b), Math.max(a, b));
+        runs += 1;
+        expect(forged(body, quoteText('', POST, run, true)), `run ${JSON.stringify(run)} of ${JSON.stringify(body)}`).toBe(false);
+      }
+    }
+    expect(runs).toBeGreaterThan(500);
+  });
+
+  test('a highlight of any run of a post\'s shown words, drawn by the real renderer, is never forged', () => {
+    const rand = generator(23);
+    let read = 0;
+    for (const body of posts(31, 60)) {
+      const view = render(<RouterProvider><article className="kb-act" data-kb-seq="1"><BbCode text={body} /></article></RouterProvider>);
+      const box = view.container.querySelector('.kb-bb')!;
+      const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+      const texts: Text[] = [];
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (!(n.parentElement?.closest('[data-kb-quotable="hidden"], .kb-quote-from, [hidden], [aria-hidden="true"]')) && (n.textContent ?? '') !== '') texts.push(n as Text);
+      for (let i = 0; i < 4 && texts.length > 0; i++) {
+        const x = Math.floor(rand() * texts.length);
+        const y = x + Math.floor(rand() * (texts.length - x));
+        const from = texts[x]!;
+        const to = texts[y]!;
+        const a = at(rand, edges(from.data));
+        const b = at(rand, edges(to.data));
+        const r = document.createRange();
+        r.setStart(from, x === y ? Math.min(a, b) : a);
+        r.setEnd(to, x === y ? Math.max(a, b) : b);
+        const got = readRange(r);
+        if (!got) continue;
+        read += 1;
+        expect(forged(body, quoteText('', POST, got.text, true)), `highlight ${JSON.stringify(got.text)} of ${JSON.stringify(body)}`).toBe(false);
+      }
+      view.unmount();
+    }
+    expect(read).toBeGreaterThan(50);
   });
 });

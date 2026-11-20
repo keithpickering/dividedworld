@@ -4,6 +4,7 @@
  */
 import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BbCode, type QuoteOf } from '../bbcode/render.tsx';
+import { forgedList } from '../../bbcode/quoted.ts';
 import { words, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, Tail } from '../data/api.ts';
@@ -48,6 +49,17 @@ function RealHead({ act }: { readonly act: Id }) {
   return <><Byline character={author ?? undefined} link id={read.character} />{' '}{post}</>;
 }
 
+/**
+ * The head of a forged quote (a real quote whose words are not in the post it names): the author of that post as the post shows its author (so the stand-in under a live veil), as a name with no link, and no post
+ * number; "Someone" where there is no such post or its author cannot be found. Nothing is drawn while the post is being found.
+ */
+function ForgedHead({ act }: { readonly act: Id }) {
+  const read = useKnownAct(act);
+  const author = useCharacter(read?.seq != null ? read.character : null);
+  if (read === undefined || author === undefined) return null;
+  return author ? <Byline character={author} link={false} id={author.id} /> : <>Someone</>;
+}
+
 /** The head of a counterfeit: the `user`'s character when it can be found, else the typed name; never a link. */
 function CounterfeitHead({ user, name }: { readonly user: Id | null; readonly name: string | null }) {
   const character = useCharacter(user);
@@ -58,7 +70,8 @@ function CounterfeitHead({ user, name }: { readonly user: Id | null; readonly na
 
 /** The head a quote carries, by the quote's kind. */
 export function QuoteHead({ of }: { readonly of: QuoteOf }) {
-  return of.kind === 'real' ? <RealHead act={of.act} /> : <CounterfeitHead user={of.user} name={of.name} />;
+  if (of.kind === 'real') return <RealHead act={of.act} />;
+  return of.act === null ? <CounterfeitHead user={of.user} name={of.name} /> : <ForgedHead act={of.act} />;
 }
 export const quoteHead = (q: QuoteOf): ReactNode => <QuoteHead of={q} />;
 
@@ -124,7 +137,7 @@ function Versions({ post, about }: { readonly post: Id; readonly about: PostAbou
         const last = i === versions.length - 1;
         const which = i === 0 ? 'Original' : `Edit ${i}`;
         const hidden = versionHidden(v);
-        const words = <BbCode text={text(v.payload.body)} quoteHead={quoteHead} />;
+        const words = <BbCode text={text(v.payload.body)} quoteHead={quoteHead} forged={forgedList(v.payload)} />;
         /* Only the version's own rows are drawn: a version with none for a play draws none for it. */
         const written = tails ? resolveWritten(tails.rows, ids, v.id, 'version') : null;
         return (

@@ -410,6 +410,10 @@ export interface Act {
    */
   readonly seq: number | null;
   readonly createdAt: string;
+  /**
+   * `payload.forged`, on a post, spin or edit that quotes: the verdict, the posts whose quotes in its words are doctored (lowercase ids, sorted, each once), written once when the Act was and absent when
+   * there is none. A version in History carries its own. `forgedList` (engine/bbcode/quoted.ts) reads it as a list; every screen that draws an Act's words hands it to `BbCode` and to `parse`.
+   */
   readonly payload: Readonly<Record<string, unknown>>;
   readonly currentPayload: Readonly<Record<string, unknown>>;
   readonly editedAt: string | null;

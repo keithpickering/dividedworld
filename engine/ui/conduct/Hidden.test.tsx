@@ -139,8 +139,9 @@ describe('a hidden version in History', () => {
 describe('a quote of a hidden version', () => {
   test('shows the note inside the quote\'s frame and keeps the cite and its links', async () => {
     const w = world();
-    w.fake.seed.hide(w.theirs, 'hide');
     const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    /* Quoted while the post showed (a quote of a post already hidden is forged: no version of it can be read), and hidden after: the case the conceal layer is for. */
+    w.fake.seed.hide(w.theirs, 'hide');
     expect(quoting).toBeDefined();
     open(w);
     const art = await article(4);
@@ -158,8 +159,8 @@ describe('a quote of a hidden version', () => {
     w.fake.clock.advance(10 * 60_000);
     await w.fake.edit(w.theirs, w.spritey, 'a fix');
     w.fake.signInAs(w.me);
-    w.fake.seed.hide(w.theirs, 'hide');
     w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.hide(w.theirs, 'hide');
     open(w);
     const art = await article(4);
     expect(await within(art.querySelector('.kb-quote-body') as HTMLElement).findByRole('note')).toHaveTextContent(NOTE);
@@ -192,8 +193,8 @@ describe('a post that quotes a hidden post, before the conceal job has written i
 
   test('shows the plain note in place of its words, which is not the hidden note, and none of the hidden words', async () => {
     const w = world();
-    w.fake.seed.hide(w.theirs, 'hide');
     const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.hide(w.theirs, 'hide');
     w.fake.seed.concealing(quoting);
     open(w);
     const art = await article(4);
@@ -208,8 +209,8 @@ describe('a post that quotes a hidden post, before the conceal job has written i
 
   test('shows the words, with the hidden quote emptied, once the job has run (the note ends by itself)', async () => {
     const w = world();
-    w.fake.seed.hide(w.theirs, 'hide');
     const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.hide(w.theirs, 'hide');
     w.fake.seed.concealing(quoting);
     w.fake.seed.concealed(quoting);
     open(w);
@@ -249,8 +250,8 @@ describe('a post that quotes a hidden post, before the conceal job has written i
 
   test('an original that quotes a hidden post, under a current edit that does not, is the plain note in History, never "hidden by an admin"', async () => {
     const w = world();
-    w.fake.seed.hide(w.theirs, 'hide');
     const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.hide(w.theirs, 'hide');
     w.fake.seed.concealing(quoting);
     w.fake.seed.edit(quoting, w.pipe, 'a clean rewrite', { at: Date.now() + 10 * 60_000 });
     open(w);
@@ -265,8 +266,8 @@ describe('a post that quotes a hidden post, before the conceal job has written i
 
   test('has no axe violations', async () => {
     const w = world();
-    w.fake.seed.hide(w.theirs, 'hide');
     const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.hide(w.theirs, 'hide');
     w.fake.seed.concealing(quoting);
     open(w);
     expect(describeViolations(await axeViolations(await article(4)))).toBe('');
@@ -404,8 +405,9 @@ describe('a post that quotes a hidden post, nested at any depth', () => {
     test(`depth ${label}: a non-author's document holds none of the hidden words`, async () => {
       // The fake's default postMaxLength is 200; the real instance's limit is 20,000 (instances/divided-world/settings.ts), and a pyramid 200 deep is about 10,000 characters.
       const w = world({ postMaxLength: 20_000 });
+      /* The wrappers' words are not the first post's, so a judged body would be forged: this is the conceal layer's case for an Act written before the verdict, which is not judged. */
+      w.fake.seed.post(w.thread, w.pipe, body(w), { unjudged: true });
       w.fake.seed.hide(w.theirs, 'hide');
-      w.fake.seed.post(w.thread, w.pipe, body(w));
       open(w);
       const art = await article(4);
       if (holds === 'words') await waitFor(() => expect(art).toHaveTextContent('I answer that.'));
