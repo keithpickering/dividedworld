@@ -157,6 +157,8 @@ export interface Settings {
   readonly vote: Hundredths;
   /** Each further Act by one character a player votes on in a window weighs this times the one before. */
   readonly halving: number;
+  /** How many days after a post the settlement follows the debate it sparked. Whole, at least 1. */
+  readonly debateDays: number;
   /** The most distinct reactions one player leaves on one Act, across all their characters. */
   readonly reactionCap: number;
   /** What each Act a player reacts to pays their wallet at the settlement (crowd pay), in hundredths; 0 switches crowd pay off. */
@@ -530,6 +532,8 @@ export interface SettlementInput {
    * the character earns that class's reasons in every stretch of the window, whatever class it holds. `play` is the Act that named it.
    */
   readonly scoredAs?: readonly { readonly character: string; readonly class: string; readonly play: string }[];
+  /** Each quote among the input's Acts: `act` quotes `quoted`. */
+  readonly quotes?: readonly { readonly act: string; readonly quoted: string }[];
   /**
    * What earlier windows paid for each player's vote on each Act this window's reactions touch
    * (engine/rules/votes.ts's payVotes): its weight, and each quadrant's share at it.
@@ -675,6 +679,25 @@ export interface SpunThread {
 }
 
 /**
+ * One of the character's posts and the debate under it: every post that quotes it, or quotes a post that does, and the
+ * spin and posts of each thread another player spun from it, up to the window's end, in time order. A voice is a number
+ * that names no one: 0 for the post's author's player, and 1, 2, and so on for each other player in the order they
+ * first posted in it. With the shared vote off a voice is a character, and 0 only the author's player's own.
+ */
+export interface SparkedDebate {
+  readonly act: string;
+  /** When the post itself was made. The debate is placed in the window by its latest member, or by the latest vote that moved on it. */
+  readonly at: number;
+  readonly posts: readonly { readonly at: number; readonly voice: number }[];
+  /** The post is itself in the debate of an earlier post by its author's player. */
+  readonly inOwnDebate: boolean;
+  /** Every other player's vote on the post at the stretch's start and at its end, as `ActStanding` lists them. */
+  readonly standing: { readonly before: readonly Standing[]; readonly now: readonly Standing[] };
+  /** The largest share of a cushion play that has been up on the post or on its character at any time since the post was made; 0 with none. */
+  readonly cushioned: number;
+}
+
+/**
  * What a class's rules read: only Acts, things anyone could see happen. A character that
  * Turned inside the window is given one input per class it held, each covering its stretch.
  */
@@ -691,6 +714,8 @@ export interface ClassInput {
   readonly threadsSpun: readonly SpunThread[];
   /** The character's own Acts with a vote moved in the window, each with every other player's vote there. */
   readonly standings: readonly ActStanding[];
+  /** The character's posts whose debate a post reached in this stretch, or on which a vote moved in it while the debate is followed, each with its debate. */
+  readonly debates: readonly SparkedDebate[];
 }
 
 /**
