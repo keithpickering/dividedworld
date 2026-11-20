@@ -2617,6 +2617,11 @@ export interface KayfaApi {
    */
   myApologies(character: Id): Promise<readonly Apology[]>;
   /**
+   * The posts a draft's real quotes falsely name (`quote_check`, forged-quotes design section 8): the save's own check run on the words, so the composer can say so before the post is written. The same answer
+   * for every caller, computed from versions anyone can read; it never refuses a post. Rejects when it cannot be read.
+   */
+  quoteCheck(body: string): Promise<readonly string[]>;
+  /**
    * The group moves of one of the player's characters that an appeal was made on and not refunded for a failed judgment (`my_appeals`): each is appealed once, so the barred box stops
    * offering Appeal on them. A character that is not the player's, or an id that is no one's, reads none. Rejects when it cannot be read.
    */

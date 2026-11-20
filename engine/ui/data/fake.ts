@@ -3383,6 +3383,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!a || a.kind !== 'move') return null;
       return buildMoveNotice(publicAct(a), tallyOf(id), progressOf(a));
     },
+    quoteCheck: (body) => forgedQuotes(body, now()),
     myApologies(character) {
       const account = me();
       if (!account || characters.get(character)?.owner !== account.id) return [];

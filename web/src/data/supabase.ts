@@ -1331,6 +1331,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       for (const r of counts) tally[r['kind']] = num(r['count']);
       return buildMoveNotice(toAct(a), tally, progress);
     },
+    async quoteCheck(body) {
+      const r = await read(() => client.rpc('quote_check', { body }));
+      return Array.isArray(r.data) ? r.data.filter((x): x is string => typeof x === 'string') : [];
+    },
     async myApologies(character) {
       if (!idOk(character)) return [];
       const rows = await list(() => client.rpc('my_apologies', { in_character: character }));

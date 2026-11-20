@@ -5,6 +5,8 @@
  */
 import { useEffect, useId, useLayoutEffect, useImperativeHandle, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
+import { useKayfaIfAny } from '../context.tsx';
+import { quotedActs } from '../../bbcode/visible.ts';
 import { quoteHead } from '../thread/lines.tsx';
 import { Toolbar } from './Toolbar.tsx';
 import { videoOf } from '../../bbcode/video.ts';
@@ -65,6 +67,47 @@ const onMac = () => {
     return /mac|iphone|ipad/iu.test(nav.userAgentData?.platform ?? navigator.platform ?? '');
   } catch { return false; }
 };
+
+/** How long a draft sits unchanged before its real quotes are checked. */
+const CHECK_AFTER_MS = 600;
+const NONE: readonly string[] = [];
+
+/**
+ * The posts a draft's real quotes falsely name, asked of `quote_check` once the draft has sat still for CHECK_AFTER_MS and only while it holds a real quote. One call is in flight at a time: a draft that
+ * changed meanwhile has its answer dropped and is asked again when the call ends. A failed call answers nothing, and nothing here ever refuses a post.
+ */
+function useQuoteCheck(value: string, check: ((body: string) => Promise<readonly string[]>) | undefined): readonly string[] {
+  const [forged, setForged] = useState<readonly string[]>(NONE);
+  const real = useMemo(() => check !== undefined && quotedActs(parse(value)).length > 0, [value, check]);
+  const latest = useRef(value);
+  const inFlight = useRef(false);
+  const due = useRef(false);
+  const alive = useRef(true);
+  const asker = useRef(check);
+  useEffect(() => { latest.current = value; asker.current = check; });
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const ask = useRef((body: string) => {
+    const call = asker.current;
+    if (!call) return;
+    inFlight.current = true;
+    due.current = false;
+    const done = (answer: readonly string[]) => {
+      inFlight.current = false;
+      if (!alive.current) return;
+      if (latest.current === body) setForged(answer.length === 0 ? NONE : answer);
+      if (due.current) ask.current(latest.current);
+    };
+    let called: Promise<readonly string[]>;
+    try { called = Promise.resolve(call(body)); } catch { called = Promise.reject(new Error('quote check')); }
+    called.then(done, () => done(NONE));
+  });
+  useEffect(() => {
+    if (!real) { setForged(NONE); return; }
+    const timer = setTimeout(() => { if (inFlight.current) due.current = true; else ask.current(value); }, CHECK_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [value, real]);
+  return real ? forged : NONE;
+}
 
 const SHORTCUTS: Record<string, Tool> = { b: 'bold', i: 'italic', u: 'underline', k: 'link' };
 
@@ -198,6 +241,9 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
 
   /* One parse per change of the text; every place a post's draft is written shows the notice, and saving is never refused for it. */
   const cut = useMemo(() => hasCut(parse(value)), [value]);
+  const api = useKayfaIfAny()?.api;
+  const check = useMemo(() => (api ? (body: string) => api.quoteCheck(body) : undefined), [api]);
+  const forged = useQuoteCheck(value, check);
   const n = count(value);
   const over = n - max;
   return (
@@ -233,12 +279,13 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
       </div>
       <div role="status">
         {cut && <p className="kb-notice">Some quotes in this post are nested too deep to show. A note will take their place.</p>}
+        {forged.length > 0 && <p className="kb-notice">A quote here isn't in the post it names, so it will show as a counterfeit.</p>}
       </div>
       {someone && <QuoteSomeone onChoose={closeSomeone} onClose={() => closeSomeone(null)} returnFocusTo={() => box.current} />}
       <div id={previewId}>
         {preview && (
           <section className="kb-editor-preview" aria-label="Preview">
-            {value.trim() === '' ? <p className="kb-muted">Nothing to preview yet.</p> : <BbCode text={value} quoteHead={quoteHead} />}
+            {value.trim() === '' ? <p className="kb-muted">Nothing to preview yet.</p> : <BbCode text={value} quoteHead={quoteHead} forged={forged} />}
           </section>
         )}
       </div>

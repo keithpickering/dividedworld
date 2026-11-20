@@ -730,3 +730,86 @@ describe('the notice about quotes nested too deep, in an edit', () => {
     expect(within(form).getByText(NOTICE)).toBeInTheDocument();
   });
 });
+
+describe('the line about a quote that is not in the post it names', () => {
+  const LINE = "A quote here isn't in the post it names, so it will show as a counterfeit.";
+  const WAIT = 600;
+  afterEach(() => { vi.useRealTimers(); });
+
+  const open = async (w: ReturnType<typeof threadWorld>) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    openThread(w);
+    const box = await replyBox();
+    const type = (v: string) => { fireEvent.change(box, { target: { value: v } }); };
+    const wait = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    return { type, wait };
+  };
+  const shaky = () => document.querySelector('.kb-editor-preview blockquote[data-kb-counterfeit]');
+
+  test('a doctored quote shows the line, in a live region, and a shaky preview; fixing the quote clears both', async () => {
+    const w = threadWorld(2);
+    const { type, wait } = await open(w);
+    type(`[quote=${w.ids[0]}]words nobody wrote[/quote]`);
+    expect(screen.queryByText(LINE)).toBeNull();
+    await wait(WAIT);
+    const line = await screen.findByText(LINE);
+    expect(line.closest('[role="status"]')).not.toBeNull();
+    expect(line).toHaveClass('kb-notice');
+    expect(shaky()).not.toBeNull();
+    type(`[quote=${w.ids[0]}]post 1[/quote]`);
+    await wait(WAIT);
+    await waitFor(() => expect(screen.queryByText(LINE)).toBeNull());
+    expect(shaky()).toBeNull();
+  });
+
+  test('a draft with no real quote asks nothing, and a quote taken out clears the line at once', async () => {
+    const w = threadWorld(2);
+    const ask = vi.spyOn(w.fake, 'quoteCheck');
+    const { type, wait } = await open(w);
+    type('plain words');
+    await wait(WAIT * 2);
+    type('[quote=Someone]a counterfeit[/quote]');
+    await wait(WAIT * 2);
+    expect(ask).not.toHaveBeenCalled();
+    type(`[quote=${w.ids[0]}]words nobody wrote[/quote]`);
+    await wait(WAIT);
+    await screen.findByText(LINE);
+    type('plain again');
+    await waitFor(() => expect(screen.queryByText(LINE)).toBeNull());
+  });
+
+  test('a stale answer never overwrites a newer one, and only one call is in flight', async () => {
+    const w = threadWorld(2);
+    const answers: ((v: readonly string[]) => void)[] = [];
+    const asked: string[] = [];
+    vi.spyOn(w.fake, 'quoteCheck').mockImplementation((body: string) => { asked.push(body); return new Promise<readonly string[]>((resolve) => { answers.push(resolve); }) as never; });
+    const { type, wait } = await open(w);
+    const first = `[quote=${w.ids[0]}]one[/quote]`;
+    const second = `[quote=${w.ids[0]}]two[/quote]`;
+    type(first);
+    await wait(WAIT);
+    expect(asked).toEqual([first]);
+    type(second);
+    await wait(WAIT);
+    expect(asked).toEqual([first]);
+    await act(async () => { answers[0]!([w.ids[0]!]); });
+    expect(screen.queryByText(LINE)).toBeNull();
+    await waitFor(() => expect(asked).toEqual([first, second]));
+    await act(async () => { answers[1]!([]); });
+    expect(screen.queryByText(LINE)).toBeNull();
+    expect(shaky()).toBeNull();
+  });
+
+  test('a failed call shows nothing and the post still posts', async () => {
+    const w = threadWorld(2);
+    vi.spyOn(w.fake, 'quoteCheck').mockRejectedValue(new Error('down'));
+    const posted = vi.spyOn(w.fake, 'post');
+    const { type, wait } = await open(w);
+    type(`[quote=${w.ids[0]}]post 1[/quote]`);
+    await wait(WAIT);
+    expect(screen.queryByText(LINE)).toBeNull();
+    fireEvent.click(send());
+    await waitFor(() => expect(posted).toHaveBeenCalledTimes(1));
+  });
+});
