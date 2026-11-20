@@ -36,7 +36,7 @@ const instance: Instance = {
     { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },
   ],
   settings: {
-    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
+    walletCap: 600, vote: 10, halving: 0.5, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
   ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
@@ -2384,6 +2384,199 @@ test('with the vote unshared and unhalved and the window ending mid-day, the cus
   const none = settle(cushionBoard([play], [], [], { window }), cushionWorld, options);
   assert.equal(amountOf(none, 'ted-1', 'tallied.outdrawn'), 0);
   assert.equal(cushionsOf(none).length, 0);
+});
+
+/* ---- a post's debate (the Tweener catalyst plan, Task 1) ---- */
+
+const DAY = 24 * H;
+const debateCast = [['ann', 2], ['bob', 2], ['cat', 1], ['dee', 1], ['eve', 1]] as const;
+/** Ann plays ann-1 and ann-2, Bob plays bob-1 and bob-2, and Cat, Dee and Eve one each; every character holds the recording class. */
+const debateBoard = (acts: InputAct[], quotes: { act: string; quoted: string }[], reactions: InputReaction[] = [], over: Partial<SettlementInput> = {}): SettlementInput => ({
+  window: { id: 'w1', from: FROM, to: TO },
+  characters: debateCast.flatMap(([p, n]) => Array.from({ length: n }, (_, i) => ({ id: `${p}-${i + 1}`, player: p, classes: [{ class: 'quiet', from: 0 }] }))),
+  acts, reactions, quotes, ...over,
+});
+const debateWorld = (rules: ClassRules): Instance => ({ ...withClasses(rules), cards: [...instance.cards, sugar, { ...sugar, key: 'half', gimmick: { kind: 'cushion' as const, share: 0.5 } }] });
+const debatesOf = (inputs: readonly ClassInput[], act?: string) => inputs.flatMap((i) => i.debates).filter((d) => act === undefined || d.act === act);
+const voicesOf = (d: { posts: readonly { voice: number }[] } | undefined) => d?.posts.map((p) => p.voice);
+const quote = (act: string, quoted: string) => ({ act, quoted });
+const spin = (id: string, character: string, at: number, thread: string, target: string): InputAct => ({ id, character, kind: 'spin', at, thread, target });
+
+test('a debate is every post that quotes the spark, transitively, and the spin and posts of a thread another player spun from it, each by a numbered voice', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), post('b', 'cat-1', FROM + 3 * H), spin('s', 'cat-1', FROM + 4 * H, 'sp', 'p1'), post('c', 'dee-1', FROM + 5 * H, 'sp'), post('x', 'eve-1', FROM + 6 * H, 'unrelated')],
+    [quote('a', 'p1'), quote('b', 'a')],
+  ), debateWorld(rules));
+  const d = debatesOf(inputs, 'p1');
+  assert.equal(d.length, 1);
+  assert.deepEqual(d[0]!.posts, [{ at: FROM + 2 * H, voice: 1 }, { at: FROM + 3 * H, voice: 2 }, { at: FROM + 4 * H, voice: 2 }, { at: FROM + 5 * H, voice: 3 }]);
+  assert.equal(d[0]!.at, FROM + 1 * H, 'the post\'s own time');
+  assert.equal(d[0]!.inOwnDebate, false);
+  assert.equal(JSON.stringify(d).includes('bob'), false, 'a voice names no one');
+});
+
+test('two masks of one player are one voice with the shared vote on, and two voices with it off', () => {
+  const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), post('b', 'bob-2', FROM + 3 * H), post('c', 'cat-1', FROM + 4 * H)], [quote('a', 'p1'), quote('b', 'p1'), quote('c', 'p1')]);
+  const on = spy();
+  settle(b, debateWorld(on.rules));
+  assert.deepEqual(voicesOf(debatesOf(on.inputs, 'p1')[0]), [1, 1, 2]);
+  const off = spy();
+  settle(b, debateWorld(off.rules), { sharedVote: false });
+  assert.deepEqual(voicesOf(debatesOf(off.inputs, 'p1')[0]), [1, 2, 3]);
+});
+
+test('the author\'s other mask quoting the spark is voice 0, with the shared vote off as on', () => {
+  const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'ann-2', FROM + 2 * H), post('b', 'bob-1', FROM + 3 * H)], [quote('a', 'p1'), quote('b', 'p1')]);
+  for (const options of [{}, { sharedVote: false }]) {
+    const { rules, inputs } = spy();
+    settle(b, debateWorld(rules), options);
+    assert.deepEqual(voicesOf(debatesOf(inputs, 'p1')[0]), [0, 1]);
+  }
+});
+
+test('a thread the author\'s own player spun from the spark adds nothing, its posts included', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), spin('s', 'ann-2', FROM + 3 * H, 'sp', 'p1'), post('c', 'dee-1', FROM + 4 * H, 'sp')],
+    [quote('a', 'p1')],
+  ), debateWorld(rules));
+  assert.deepEqual(voicesOf(debatesOf(inputs, 'p1')[0]), [1]);
+});
+
+test('a post that quotes the spark at or after the window\'s end is no member', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', TO - 1), post('b', 'cat-1', TO), post('c', 'dee-1', TO + H)],
+    [quote('a', 'p1'), quote('b', 'p1'), quote('c', 'a')],
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: TO - 1, voice: 1 }]);
+});
+
+test('a quote that does not name an earlier post in the input is read as none: a cycle, a self-quote, a later post, an unknown Act and a tie by id', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), post('b', 'cat-1', FROM + 3 * H), post('m1', 'dee-1', FROM + 5 * H), post('m2', 'eve-1', FROM + 5 * H)],
+    [quote('a', 'p1'), quote('b', 'a'), quote('a', 'b'), quote('b', 'b'), quote('p1', 'b'), quote('a', 'ghost'), quote('m1', 'm2')],
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs).map((d) => d.act).sort(), ['a', 'p1'], 'no post is a spark of a quote from an earlier or equal one');
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: FROM + 2 * H, voice: 1 }, { at: FROM + 3 * H, voice: 2 }]);
+  assert.deepEqual(debatesOf(inputs, 'a')[0]?.posts, [{ at: FROM + 3 * H, voice: 1 }]);
+});
+
+test('a spark with no member in the window is not handed over, and neither is one older than debateDays before it', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('old', 'ann-1', FROM - 2 * DAY), post('earlier', 'bob-1', FROM - 2 * DAY + H), post('stale', 'ann-1', FROM - 4 * DAY), post('quoted', 'bob-1', FROM + H), post('edge', 'ann-1', FROM - 3 * DAY), post('quotedEdge', 'bob-1', FROM + 2 * H)],
+    [quote('earlier', 'old'), quote('quoted', 'stale'), quote('quotedEdge', 'edge')],
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs).map((d) => d.act), ['edge'], 'only the one made exactly debateDays before the window\'s start, with a member inside it');
+});
+
+test('the author\'s second post, quoting a reply to the first, is in its own debate; a first post quoting another player\'s post is not', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('a1', 'ann-1', FROM + 1 * H), post('b1', 'bob-1', FROM + 2 * H), post('a2', 'ann-2', FROM + 3 * H), post('c1', 'cat-1', FROM + 4 * H)],
+    [quote('b1', 'a1'), quote('a2', 'b1'), quote('c1', 'a2')],
+  ), debateWorld(rules));
+  assert.equal(debatesOf(inputs, 'a1')[0]?.inOwnDebate, false);
+  assert.equal(debatesOf(inputs, 'b1')[0]?.inOwnDebate, false, 'Bob\'s first post quotes Ann\'s');
+  assert.equal(debatesOf(inputs, 'a2')[0]?.inOwnDebate, true);
+});
+
+test('a post inside a thread spun from an earlier post by the same player is in its own debate', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), spin('s', 'bob-1', FROM + 2 * H, 'sp', 'p1'), post('a2', 'ann-2', FROM + 3 * H, 'sp'), post('c1', 'cat-1', FROM + 4 * H)],
+    [quote('c1', 'a2')],
+  ), debateWorld(rules));
+  assert.equal(debatesOf(inputs, 'a2')[0]?.inOwnDebate, true);
+  assert.deepEqual(voicesOf(debatesOf(inputs, 'p1')[0]), [1, 0], 'the author took part in the thread');
+});
+
+test('an Act that is not in the input (a staff post, one of The System\'s) is no member', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H)],
+    [quote('a', 'p1'), quote('staff1', 'p1'), quote('a', 'sys1')],
+    [], { systemActs: ['sys1'] },
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: FROM + 2 * H, voice: 1 }]);
+});
+
+test('a card or a reaction is no member: only posts and spins are', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), { id: 'k', character: 'cat-1', kind: 'card', at: FROM + 3 * H, thread: 't1', target: 'p1', card: 'sugar' }],
+    [quote('a', 'p1'), quote('k', 'p1')],
+  ), debateWorld(rules));
+  assert.deepEqual(voicesOf(debatesOf(inputs, 'p1')[0]), [1]);
+});
+
+test('a spark with two calm votes from an earlier window and none in this one has them before and now; one a fire joined has calm before and half calm, half hype now', () => {
+  const { rules, inputs } = spy();
+  const calm = { ...noVote, calmPositive: 1 };
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM - 5 * H), post('q1', 'bob-1', FROM + 1 * H), post('p2', 'ann-1', FROM - 4 * H), post('q2', 'bob-1', FROM + 2 * H)],
+    [quote('q1', 'p1'), quote('q2', 'p2')],
+    [react('p1', 'cat', 'cat-1', 'tea', FROM - 3 * H), react('p1', 'dee', 'dee-1', 'tea', FROM - 2 * H), react('p2', 'cat', 'cat-1', 'tea', FROM - 3 * H), react('p2', 'cat', 'cat-1', 'fire', FROM + 3 * H)],
+    { paid: [{ player: 'cat', act: 'p1', weight: 1, shares: { ...noVote, calmPositive: 1 } }, { player: 'dee', act: 'p1', weight: 1, shares: { ...noVote, calmPositive: 1 } }, { player: 'cat', act: 'p2', weight: 1, shares: { ...noVote, calmPositive: 1 } }] },
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.standing, { before: [calm, calm], now: [calm, calm] });
+  assert.deepEqual(debatesOf(inputs, 'p2')[0]?.standing, { before: [calm], now: [{ ...noVote, calmPositive: 0.5, excitedPositive: 0.5 }] }, 'a fire beside the calm splits the one vote');
+});
+
+test('the estimate\'s standing is each earlier reaction as a voter of its own, for a spark no vote moved on', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM - 5 * H), post('q1', 'bob-1', FROM + 1 * H)],
+    [quote('q1', 'p1')],
+    [react('p1', 'cat', 'cat-1', 'tea', FROM - 3 * H), react('p1', 'cat', 'cat-1', 'fire', FROM - 2 * H)],
+  ), debateWorld(rules), { sharedVote: false, halving: false });
+  assert.deepEqual(bySize(debatesOf(inputs, 'p1')[0]!.standing.now), bySize([{ ...noVote, calmPositive: 1 }, { ...noVote, excitedPositive: 1 }]));
+});
+
+test('a spark with a debate and a vote in the window but no member in it is handed over, placed by the vote; one with no member at all is not', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM - 3 * H), post('a', 'bob-1', FROM - 2 * H), post('p2', 'ann-1', FROM - 3 * H)],
+    [quote('a', 'p1')],
+    [react('p1', 'cat', 'cat-1', 'fire', FROM + 2 * H), react('p2', 'cat', 'cat-1', 'fire', FROM + 2 * H)],
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs).map((d) => d.act), ['p1']);
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: FROM - 2 * H, voice: 1 }]);
+});
+
+test('a debate is handed to the stretch its latest member or vote falls in, once', () => {
+  const { rules, inputs } = spy();
+  const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), post('b', 'cat-1', FROM + 9 * H)], [quote('a', 'p1'), quote('b', 'p1')]);
+  settle({ ...b, characters: b.characters.map((c) => (c.id === 'ann-1' ? { ...c, classes: [{ class: 'quiet', from: 0 }, { class: 'quiet', from: FROM + 5 * H }] } : c)) }, debateWorld(rules));
+  const mine = inputs.filter((i) => i.character === 'ann-1');
+  assert.equal(debatesOf(mine).length, 1);
+  assert.ok(mine.find((i) => i.debates.length)!.from === FROM + 5 * H, 'placed by Cat\'s post at +9H, in the later stretch');
+});
+
+test('a half cushion on the spark\'s character that ended before the window but after the spark is 0.5; one that ended before the spark is 0; two plays give the larger', () => {
+  const play = (id: string, card: string, at: number, ends: number, target: string): InputAct => ({ id, character: 'cat-1', kind: 'card', at, thread: 't1', target, card, ends });
+  const run = (plays: InputAct[]) => {
+    const { rules, inputs } = spy();
+    settle(debateBoard([post('p1', 'ann-1', FROM - 10 * H), post('q1', 'bob-1', FROM + 1 * H), ...plays], [quote('q1', 'p1')]), debateWorld(rules));
+    return debatesOf(inputs, 'p1')[0]?.cushioned;
+  };
+  assert.equal(run([]), 0);
+  assert.equal(run([play('g1', 'half', FROM - 12 * H, FROM - 5 * H, 'p1')]), 0.5, 'on the post, ended before the window, after the spark');
+  assert.equal(run([play('g1', 'half', FROM - 20 * H, FROM - 11 * H, 'p1')]), 0, 'ended before the spark');
+  const quarter = { ...sugar, key: 'quarterC', gimmick: { kind: 'cushion' as const, share: 0.25 } };
+  const { rules, inputs } = spy();
+  const world = { ...debateWorld(rules), cards: [...debateWorld(rules).cards, quarter] };
+  settle(debateBoard([post('p1', 'ann-1', FROM - 10 * H), post('q1', 'bob-1', FROM + 1 * H), play('g1', 'quarterC', FROM - 12 * H, FROM - 5 * H, 'p1'), { ...play('g2', 'half', FROM - 9 * H, FROM - 4 * H, 'ann-1'), reach: 'character' as const, on: 'ann-1', target: undefined } as InputAct], [quote('q1', 'p1')]), world);
+  assert.equal(debatesOf(inputs, 'p1')[0]?.cushioned, 0.5, 'two plays: the larger');
+});
+
+test('a class is given no debates for a window post that quotes nothing and sits in no spun thread', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('p2', 'bob-1', FROM + 2 * H)], []), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs), []);
 });
 
 /* ---- crowd pay (docs/plans/2026-11-20-crowd-pay-design.md): a flat sum for each Act of another player a player first reacts to in the window ---- */

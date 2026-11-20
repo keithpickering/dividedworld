@@ -28,6 +28,7 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
   assert.equal(defaults.walletCap, 600);
   assert.equal(defaults.vote, 10);
   assert.equal(defaults.halving, 0.5);
+  assert.equal(defaults.debateDays, 3);
   assert.equal(defaults.reactionCap, 3);
   assert.equal(defaults.crowdPayEach, 2);
   assert.equal(defaults.crowdPayMost, 10);
@@ -49,6 +50,7 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
   assert.deepEqual(defaults.economy, {
     'lurker.earlyPlayers': 3, 'lurker.earlyMatch': 10, 'lurker.crowd': 3, 'lurker.spunThreadRepliers': 3, 'lurker.spunThread': 20,
     'lurker.postsAllowed': 3, 'lurker.overPosting': -10,
+    'tweener.catalyst': 20, 'tweener.catalystVoices': 3, 'tweener.catalystReturned': 2,
     'heel.saltyOutdraws': 20,
     'face.cardOutdraws': -20,
     'jabroni.saltyLanded': 20,
