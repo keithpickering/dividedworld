@@ -192,7 +192,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
         and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
       offset 0) b),
   -- The sparks: a post made no earlier than the cutoff that a window Act quotes or sits under (a quote chain's ancestor; the origin of a spun thread with an Act in the window), or that a reaction reached in the window while it
-  -- has a debate by the window's end (a quote or another player's spin made before it; one made after is no debate yet) (a nod that moves after the debate has gone quiet moves the refund, engine/rules/settle.ts reads a spark whose vote moved). The origin is read through the thread's own row (threads_origin's key).
+  -- has a debate by the window's end (a quote or another player's spin made before it; one made after is no debate yet), so that a nod that moves after the debate has gone quiet still moves the refund: engine/rules/settle.ts reads a spark whose vote moved. The origin is read through the thread's own row (threads_origin's key).
   sparks as (
     select b.id, b.created_at as at, b.character, c.owner
     from (
@@ -465,7 +465,7 @@ begin
         and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
       offset 0) b),
   -- Each is a join, so none is a subplan read once for every post of the caller's: a post with a member in the window by a quote (up1) or by a spun thread, and a post of the caller's a reaction reached in the window while it has
-  -- a debate at all (as settlement_input reads a spark whose vote moved).
+  -- a debate by the window's end (a quote or another player's spin made before it), as settlement_input reads a spark whose vote moved.
   sparks as (
     select p.id, p.at, p.character from my_posts p join (
       select id from up1
