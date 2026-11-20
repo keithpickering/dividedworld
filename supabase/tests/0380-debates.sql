@@ -458,39 +458,46 @@ begin
   if pg_temp.entry(est, earlier) is null or not pg_temp.edge(est, later, earlier) then raise exception 'the estimate lacks the post quoted by the author''s own window post: %', est -> 'quotes'; end if;
 end $$;
 
--- ---- A chain of 2,000 posts, each quoting the one before: both inputs hold the whole chain and each is built within a time bound (this asserts counts and time, not the plans) ----
+-- ---- A chain of posts, each quoting the one before: both inputs hold the whole chain, and the time to build them grows in step with the chain (this asserts counts and time, not the plans) ----
+-- A quadratic walk is no slower than a linear one at a few hundred posts, so a cap on 2,000 alone passes a cost that grows as the square (an earlier plan probed acts by time and filtered by key,
+-- 500 rows a step, 14.5 s at 2,000). So the same chain is built at 1,000 and at 2,000 posts, each in a window of its own, and doubling it may not more than triple either input's time; the cap stays as a floor on the whole.
 select tests.unbecome();
-do $$
+create function pg_temp.chain(n integer, tag text, win timestamptz, out edges integer, out whole boolean, out ends boolean, out settle numeric, out est numeric) language plpgsql as $$
 declare
-  ann uuid := tests.account('db-ann7'); bob uuid := tests.account('db-bob7');
-  a uuid := tests.character(ann, 'Db Ann Seven'); b uuid := tests.character(bob, 'Db Bob Seven');
-  w0 timestamptz := pg_temp.first_window(); w1 timestamptz;
-  t uuid := tests.thread('Db chain thread');
-  ids uuid[]; n constant integer := 2000; i integer; input jsonb; est jsonb; started timestamptz; took numeric; edges integer;
+  ann uuid := tests.account('db-ann7' || tag); bob uuid := tests.account('db-bob7' || tag);
+  a uuid := tests.character(ann, 'Db Ann Seven ' || tag); b uuid := tests.character(bob, 'Db Bob Seven ' || tag);
+  w1 timestamptz := win + interval '1 day';
+  t uuid := tests.thread('Db chain thread ' || tag);
+  ids uuid[] := array(select gen_random_uuid() from generate_series(1, n)); i integer; input jsonb; estimate jsonb; started timestamptz;
 begin
-  w1 := w0 + interval '1 day';
-  ids := array(select gen_random_uuid() from generate_series(1, n));
   -- The chain alternates two players; the first is made two days before the window, the rest inside it.
   for i in 1..n loop
     insert into acts (id, character, kind, thread, payload, created_at)
     values (ids[i], case when i % 2 = 1 then a else b end, 'post', t,
             jsonb_build_object('body', case when i = 1 then 'The root.' else pg_temp.q(ids[i - 1]) end),
-            case when i = 1 then w0 - interval '2 days' else w0 + (i * interval '1 second') end);
+            case when i = 1 then win - interval '2 days' else win + (i * interval '1 second') end);
   end loop;
   analyze acts; analyze quote_refs;
   started := clock_timestamp();
-  input := settlement_input(w0, w1);
-  took := extract(epoch from clock_timestamp() - started);
-  -- Earlier blocks of this file wrote into the same window, so the chain is counted by its own ids.
-  select count(*) into edges from jsonb_array_elements(input -> 'quotes') e where (e ->> 'act')::uuid = any (ids);
-  raise notice 'settlement_input over a 2,000-post chain: % edges in % seconds', edges, took;
-  if edges <> n - 1 then raise exception 'the chain is not whole in the input: % edges', edges; end if;
-  if (select count(*) from jsonb_array_elements(input -> 'acts') e where (e ->> 'id')::uuid = any (ids)) is distinct from n then raise exception 'the chain is not whole in the input'; end if;
-  if took > 20 then raise exception 'settlement_input took % seconds over a 2,000-post chain', took; end if;
+  input := settlement_input(win, w1);
+  settle := extract(epoch from clock_timestamp() - started);
+  edges := (select count(*) from jsonb_array_elements(input -> 'quotes') e where (e ->> 'act')::uuid = any (ids));
+  whole := (select count(*) from jsonb_array_elements(input -> 'acts') e where (e ->> 'id')::uuid = any (ids)) = n;
   started := clock_timestamp();
-  est := estimate_input(ann, w1);
-  took := extract(epoch from clock_timestamp() - started);
-  raise notice 'estimate_input over the same chain: % seconds, % edges', took, jsonb_array_length(est -> 'quotes');
-  if took > 20 then raise exception 'estimate_input took % seconds over a 2,000-post chain', took; end if;
-  if pg_temp.entry(est, ids[1]) is null or pg_temp.entry(est, ids[n]) is null then raise exception 'the author''s estimate lacks the chain''s ends'; end if;
+  estimate := estimate_input(ann, w1);
+  est := extract(epoch from clock_timestamp() - started);
+  ends := pg_temp.entry(estimate, ids[1]) is not null and pg_temp.entry(estimate, ids[n]) is not null and jsonb_array_length(estimate -> 'quotes') = n - 1;
+  raise notice 'chain of %: settlement_input % s, estimate_input % s, % edges', n, settle, est, edges;
+end $$;
+do $$
+declare w0 timestamptz := pg_temp.first_window(); small record; big record; n constant integer := 1000;
+begin
+  select * into small from pg_temp.chain(n, 'a', w0 + interval '20 days');
+  select * into big from pg_temp.chain(2 * n, 'b', w0 + interval '30 days');
+  if small.edges <> n - 1 or big.edges <> 2 * n - 1 or not small.whole or not big.whole then raise exception 'the chain is not whole in the input: % and % edges', small.edges, big.edges; end if;
+  if not small.ends or not big.ends then raise exception 'the author''s estimate lacks the chain''s ends or its edges'; end if;
+  if big.settle > 3 or big.est > 3 then raise exception 'an input took % / % seconds (settlement / estimate) over a 2,000-post chain', big.settle, big.est; end if;
+  -- Doubling the chain may not more than triple the time; a floor under the smaller time keeps a very fast build from failing on noise.
+  if big.settle > 3 * greatest(small.settle, 0.3) then raise exception 'settlement_input does not scale with the chain: % s at % posts, % s at %', small.settle, n, big.settle, 2 * n; end if;
+  if big.est > 3 * greatest(small.est, 0.3) then raise exception 'estimate_input does not scale with the chain: % s at % posts, % s at %', small.est, n, big.est, 2 * n; end if;
 end $$;

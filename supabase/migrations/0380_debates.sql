@@ -183,13 +183,13 @@ language sql stable security definer set search_path = public, pg_temp as $$
   cutoff as (select window_start - make_interval(days => (setting('debateDays') #>> '{}')::integer) as at),
   -- Walk up: from each window post or spin, through quote_refs (`act` to `quoted`, its primary key), to the posts it quotes and the posts those quote, none made before the cutoff, each earlier than the one that
   -- quotes it. `anc` is false for the window's own Acts and true for one reached by a quote. A node is a post or a spin that is in the input's terms (no staff, no System, no donation, not ended by an admin).
-  -- Time-bounded below by the cutoff and above by the window's end (a window Act is made before it), and each step is a probe of quote_refs by `act` then of acts by its key: no step scans acts.
+  -- Time-bounded below by the cutoff and above by the window's end (a window Act is made before it), and each step is a probe of quote_refs by `act` then of acts by its key: no step scans acts. The key probe is a lateral with `offset 0`, which fences it: left as a join, the planner read acts by time (acts_created) and filtered by key, 500 rows a step at 1,000 posts, a cost that grew as the square of a quote chain (the walks below do the same).
   up as (
     select a.id, a.created_at as at, a.kind, false as anc from win_acts a where a.kind in ('post', 'spin')
     union
     select b.id, b.created_at, b.kind, true
     from up u cross join lateral (
-      select b.id, b.created_at, b.kind from quote_refs r join acts b on b.id = r.quoted
+      select b.id, b.created_at, b.kind from quote_refs r cross join lateral (select * from acts where id = r.quoted offset 0) b
       where r.act = u.id and b.kind in ('post', 'spin') and b.created_at >= (select at from cutoff) and b.created_at < window_end and (b.created_at, b.id) < (u.at, u.id)
         and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
       offset 0) b),
@@ -216,7 +216,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     union
     select b.id, b.created_at
     from ancestry u cross join lateral (
-      select b.id, b.created_at from quote_refs r join acts b on b.id = r.quoted
+      select b.id, b.created_at from quote_refs r cross join lateral (select * from acts where id = r.quoted offset 0) b
       where r.act = u.id and u.id not in (select id from up) and b.kind in ('post', 'spin') and b.created_at >= (select at from cutoff) and b.created_at < window_end and (b.created_at, b.id) < (u.at, u.id)
         and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
       offset 0) b),
@@ -226,7 +226,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     union
     select a.id, a.created_at
     from down d cross join lateral (
-      select a.id, a.created_at from quote_refs r join acts a on a.id = r.act
+      select a.id, a.created_at from quote_refs r cross join lateral (select * from acts where id = r.act offset 0) a
       where r.quoted = d.id and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (d.at, d.id)
         and a.character is not null and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)
       offset 0) a),
@@ -372,7 +372,8 @@ $$;
 -- ---- 3. estimate_input ----
 
 create or replace function estimate_input(account uuid, until timestamptz default now()) returns jsonb
-language plpgsql stable security definer set search_path = public, pg_temp as $$
+-- jit = off as every client read has it (0368): this plan costs above jit_above_cost, and a client read that compiled 878 functions spent about 6 s on a chain of two posts.
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off as $$
 declare
   salt text := gen_random_uuid()::text;
   window_start timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
@@ -452,7 +453,7 @@ begin
     select p.id, p.at from my_posts p
     union
     select a.id, a.created_at from down1 d cross join lateral (
-      select a.id, a.created_at from quote_refs r join acts a on a.id = r.act
+      select a.id, a.created_at from quote_refs r cross join lateral (select * from acts where id = r.act offset 0) a
       where r.quoted = d.id and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (d.at, d.id)
         and a.character is not null and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)
       offset 0) a),
@@ -473,7 +474,7 @@ begin
     select d.id, d.at from down1 d where d.at >= window_start
     union
     select b.id, b.created_at from up1 u cross join lateral (
-      select b.id, b.created_at from quote_refs r join acts b on b.id = r.quoted
+      select b.id, b.created_at from quote_refs r cross join lateral (select * from acts where id = r.quoted offset 0) b
       where r.act = u.id and b.kind in ('post', 'spin') and b.created_at >= (select at from cutoff) and (b.created_at, b.id) < (u.at, u.id)
         and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
       offset 0) b),
@@ -496,7 +497,7 @@ begin
     select s.id, s.at from sparks s
     union
     select b.id, b.created_at from ancestry u cross join lateral (
-      select b.id, b.created_at from quote_refs r join acts b on b.id = r.quoted
+      select b.id, b.created_at from quote_refs r cross join lateral (select * from acts where id = r.quoted offset 0) b
       where r.act = u.id and b.kind in ('post', 'spin') and b.created_at >= (select at from cutoff) and b.created_at < window_end and (b.created_at, b.id) < (u.at, u.id)
         and b.character is not null and not is_staff_side(b.character, b.kind, b.target_act_id) and b.id not in (select id from ended)
       offset 0) b),
@@ -505,7 +506,7 @@ begin
     select s.id, s.at from sparks s
     union
     select a.id, a.created_at from down d cross join lateral (
-      select a.id, a.created_at from quote_refs r join acts a on a.id = r.act
+      select a.id, a.created_at from quote_refs r cross join lateral (select * from acts where id = r.act offset 0) a
       where r.quoted = d.id and a.kind in ('post', 'spin') and a.created_at < window_end and (a.created_at, a.id) > (d.at, d.id)
         and a.character is not null and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)
       offset 0) a),
