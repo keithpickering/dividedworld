@@ -76,7 +76,7 @@ test('asked again within the hold, the kept estimate is the answer, and the wind
 
 test('a session with no account is answered as nobody; no window yet is an empty estimate', async () => {
   assert.equal((await runEstimate(dbs({ whoami: null }).dbs, instance)).status, 401);
-  assert.deepEqual(await runEstimate(dbs({ whoami: me, estimate_kept: null, estimate_input: null }).dbs, instance), { status: 200, body: { entries: [], lines: [], asOf: null, freshAfter: null } });
+  assert.deepEqual(await runEstimate(dbs({ whoami: me, estimate_kept: null, estimate_input: null }).dbs, instance), { status: 200, body: { entries: [], lines: [], crowd: null, asOf: null, freshAfter: null } });
 });
 
 test('an estimate that could not be kept is still the answer, which says to ask again whenever', async () => {

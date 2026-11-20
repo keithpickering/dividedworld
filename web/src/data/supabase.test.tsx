@@ -1539,6 +1539,15 @@ describe('the estimate', () => {
     const h = harness((r) => (r.url.pathname === '/functions/v1/estimate' ? json(kept) : undefined));
     expect((await h.api.estimate()).crowd).toBeNull();
   });
+  it('reads a malformed crowd as none, and keeps only the string Acts of a well-formed one', async () => {
+    const base = { entries: [], lines: [], asOf: '2026-10-29T12:00:00Z', freshAfter: '2026-10-29T12:00:30Z' };
+    for (const crowd of [{ acts: 'x', amount: 2 }, { acts: [A], amount: '2' }, null]) {
+      const h = harness((r) => (r.url.pathname === '/functions/v1/estimate' ? json({ ...base, crowd }) : undefined));
+      expect((await h.api.estimate()).crowd).toBeNull();
+    }
+    const h = harness((r) => (r.url.pathname === '/functions/v1/estimate' ? json({ ...base, crowd: { acts: [A, 1, null], amount: 2 } }) : undefined));
+    expect((await h.api.estimate()).crowd).toEqual({ acts: [A], amount: 2 });
+  });
   it('asks with the bearer, and answers an ask before freshAfter from the last answer without a request', async () => {
     let now = Date.parse('2026-10-29T12:00:00Z');
     vi.spyOn(Date, 'now').mockImplementation(() => now);
