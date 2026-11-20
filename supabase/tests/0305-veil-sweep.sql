@@ -106,6 +106,7 @@ select 'relation', n, m, w from (values
   ('my_infractions', 'no author', 'the caller''s own infractions'),
   ('my_invites', 'no author', 'the caller''s own invitations'),
   ('my_ledger', 'no author', 'the caller''s own ledger'),
+  ('my_crowd_paid', 'no author', 'the caller''s own crowd pay: the settlement and the Act, by id'),
   ('my_ledger_shares', 'no author', 'the caller''s own ledger shares'),
   ('my_packs', 'no author', 'the caller''s own packs'),
   ('my_posts_played_on', 'no author', 'plays on the caller''s own posts: the character played on is the caller''s own'),

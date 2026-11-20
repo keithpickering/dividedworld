@@ -95,13 +95,15 @@
  *   the window and by its end, so a class can pay the window in which a threshold is crossed.
  * - A character that Turned inside the window is settled under each class it held, each for
  *   its own stretch; a reaction belongs to the class its target held when it landed.
+ * - Crowd pay (`crowdPay`, docs/plans/2026-11-20-crowd-pay-design.md) is each player's flat sum for each Act of another player's that they
+ *   first reacted to in the window, up to a cap; it is a wallet's alone, in no entry, no standing and no class's total.
  * - Input is read in a canonical order and amounts are summed before they are rounded, so the
  *   result is the same whatever order the rows arrive in.
  */
 import { payVotes, shareVotes, type PaidVote } from './votes.ts';
 import type {
   ActKind, ActStanding, Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
-  LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing, UnscoredTarget,
+  LandedCard, PlayedCard, Quadrant, ReceivedReaction, Settings, SettlementInput, SpunThread, Standing, UnscoredTarget,
 } from './types.ts';
 import { QUADRANTS, isPost } from './types.ts';
 import type { GimmickEffect } from './cards.ts';
@@ -156,6 +158,11 @@ export interface Settlement {
   readonly byClass: Readonly<Record<string, number>>;
   /** Each vote this window touched, as now paid: stored with the settlement, read by the next. */
   readonly paid: readonly PaidVote[];
+  /**
+   * Each player's crowd pay for the window (docs/plans/2026-11-20-crowd-pay-design.md): the Acts paid, in the order paid, and the amount.
+   * A wallet's alone: in no entry, no standing and no class's total.
+   */
+  readonly crowd: readonly { readonly player: string; readonly acts: readonly string[]; readonly amount: number }[];
 }
 
 /** A reason's shape, as the ledger holds it (supabase/migrations/0003_aura.sql): `class.what`. */
@@ -197,6 +204,37 @@ function apportion(target: number, parts: readonly { readonly key: string; reado
 export interface SettleOptions {
   readonly sharedVote?: boolean;
   readonly halving?: boolean;
+}
+
+/**
+ * Crowd pay (docs/plans/2026-11-20-crowd-pay-design.md): for each player, a flat sum for each Act of another player's character
+ * that the player first reacted to inside the window, up to `crowdPayMost` Acts, the earliest first reactions and then the smaller
+ * Act id. It reads only the reacting player's own reactions, and neither their quadrant, kind nor character, and it is no vote's:
+ * the shared vote, the halving and `SettleOptions` do not touch it. The Acts it can count are those in `input.acts`, so none of
+ * The System's, no unscored staff post and no gift or admin-ended play, which `settlement_input` does not send.
+ */
+export function crowdPay(input: SettlementInput, settings: Pick<Settings, 'crowdPayEach' | 'crowdPayMost'>): Settlement['crowd'] {
+  if (settings.crowdPayEach <= 0) return [];
+  const { window } = input;
+  const ownerOf = new Map(input.characters.map((c) => [c.id, c.player]));
+  const authorOf = new Map<string, string | undefined>();
+  for (const a of input.acts) if (a.at < window.to) authorOf.set(a.id, ownerOf.get(a.character));
+  /* Each player's earliest reaction on each Act, over every reaction the input holds. */
+  const first = new Map<string, Map<string, number>>();
+  for (const r of input.reactions) {
+    if (!authorOf.has(r.act) || authorOf.get(r.act) === r.player) continue;
+    const mine = first.get(r.player) ?? new Map<string, number>();
+    const seen = mine.get(r.act);
+    if (seen === undefined || r.at < seen) mine.set(r.act, r.at);
+    first.set(r.player, mine);
+  }
+  const rows: { player: string; acts: string[]; amount: number }[] = [];
+  for (const [player, mine] of first) {
+    const acts = [...mine].filter(([, at]) => at >= window.from && at < window.to)
+      .sort((a, b) => a[1] - b[1] || cmp(a[0], b[0])).slice(0, settings.crowdPayMost).map(([act]) => act);
+    if (acts.length > 0) rows.push({ player, acts, amount: acts.length * settings.crowdPayEach });
+  }
+  return rows.sort((a, b) => cmp(a.player, b.player));
 }
 
 export function settle(input: SettlementInput, instance: Instance, options: SettleOptions = {}): Settlement {
@@ -764,6 +802,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     standings: [...standing].sort((a, b) => cmp(a[0], b[0])).map(([character, amount]) => ({ character, amount })),
     byClass,
     paid,
+    crowd: crowdPay(input, settings),
   };
 }
 
@@ -868,10 +907,12 @@ export interface EstimateLine {
  *   vote's own amount;
  * - any other is one line with no time.
  *
+ * `crowd` is the caller's row of `crowdPay` over the same input, or null: the crowd pay so far, exact for the caller.
+ *
  * The lines add up to the entries. Run on the server, from estimate_input()
  * (supabase/migrations/0017_estimate.sql), which reads only what this player's estimate needs.
  */
-export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number; params?: Readonly<Record<string, number | string>> }[]; lines: EstimateLine[] } {
+export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number; params?: Readonly<Record<string, number | string>> }[]; lines: EstimateLine[]; crowd: { acts: string[]; amount: number } | null } {
   const s = settle(input, instance, { sharedVote: false, halving: false });
   const mine = new Set(input.characters.filter((c) => c.player === player).map((c) => c.id));
   const playerOf = new Map(input.characters.map((c) => [c.id, c.player]));
@@ -898,5 +939,8 @@ export function estimateForOwner(input: SettlementInput, instance: Instance, pla
       lines.push({ ...line, at, amount: each + step });
     }
   }
-  return { entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount, params }) => ({ character, reason, amount, ...(typeof params?.card === 'string' ? { params: { card: params.card } } : {}) })), lines: lines.filter((l) => l.amount !== 0) };
+  // The crowd pay so far: the caller's own row of the window's, which is the open one when this runs on estimate_input.
+  const row = s.crowd.find((c) => c.player === player);
+  const crowd = row ? { acts: [...row.acts], amount: row.amount } : null;
+  return { crowd, entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount, params }) => ({ character, reason, amount, ...(typeof params?.card === 'string' ? { params: { card: params.card } } : {}) })), lines: lines.filter((l) => l.amount !== 0) };
 }

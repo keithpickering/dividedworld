@@ -17,6 +17,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   vote: 10,
   halving: 0.5,
   reactionCap: 3,
+  /** Minus World's ratio: giving a reaction paid a fifth of getting one, and a vote is 10. */
+  crowdPayEach: 2,
+  /** At most 0.20 orb a day, about a common card a week from reacting alone. */
+  crowdPayMost: 10,
   charactersPerPlayer: 6,
   /** Daily, at 08:17 UTC: the small hours across the Americas, when the board is quietest. */
   settlementCron: '17 8 * * *',

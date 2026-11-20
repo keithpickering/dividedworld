@@ -103,6 +103,8 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
       entries: result.entries.map((e) => ({ player: e.player, character: e.character, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}) })),
       class_totals: result.byClass,
       paid: result.paid,
+      // Each player's crowd pay as the Acts alone: apply_settlement checks each against the window and prices them from the setting, so an amount is never sent.
+      crowd: result.crowd.map(({ player, acts }) => ({ player, acts })),
       shares: shares.map((s) => ({ character: s.character, reason: s.reason, ...(typeof s.params?.card === 'string' ? { card: s.params.card } : {}), act: s.act, ...(s.quadrant ? { quadrant: s.quadrant } : {}), amount: s.amount })),
     });
     // A tally or a reveal that could not be written leaves what waited for the next settlement;

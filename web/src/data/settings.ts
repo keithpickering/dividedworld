@@ -16,6 +16,8 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   hotReplies: defaults.hotReplies,
   editGrace: defaults.editGrace,
   reactionCap: defaults.reactionCap,
+  crowdPayEach: defaults.crowdPayEach,
+  crowdPayMost: defaults.crowdPayMost,
   charactersPerPlayer: defaults.charactersPerPlayer,
   invitesPerPlayer: defaults.invitesPerPlayer,
   inviteLifetime: defaults.inviteLifetime,
