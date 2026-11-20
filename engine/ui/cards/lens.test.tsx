@@ -90,6 +90,11 @@ const open = (w: { fake: Fake; thread: Id }, ui: readonly CardUi[] = cards) =>
 const article = (seq: number) => screen.findByRole('article', { name: new RegExp(`^Post ${seq} `, 'u') });
 const markOf = async (seq: number, card: string) => within(await article(seq)).findByRole('button', { name: new RegExp(`^${card}, \\d plays?`, 'u') });
 const lens = () => screen.getByRole('dialog', { name: 'Cards on this post' });
+/* The Lens keeps its resolved view to itself (no hook or seam reaches it), so viewProblems runs on a view built from everything the dialog renders: heading, way out, and each row's notes. */
+const lensProblems = (dialog: HTMLElement) => {
+  const notes = Object.fromEntries([...dialog.querySelectorAll<HTMLElement>('[data-kb-play]')].map((row) => [row.dataset.kbPlay!, [...row.querySelectorAll('.kb-lens-note')].map((n) => n.textContent ?? '').join(' ')]));
+  return viewProblems({ progress: null, state: dialog.querySelector('.kb-lens-line')!.textContent!, ends: dialog.querySelector('.kb-lens-ends')?.textContent ?? 'never', yours: false, controls: [], notes }, { holds: false, covers: false });
+};
 const tab = (name: string) => within(lens()).getByRole('tab', { name });
 const whoButton = () => within(lens()).getByRole('button', { name: /^\d+ plays? · / });
 const rows = () => [...lens().querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play')!);
@@ -2502,6 +2507,7 @@ describe('the discipline cards\' Lens', () => {
     await userEvent.click(await markNamed(2, 'T Heart'));
     expect(heading()).toBe('Took points off');
     expect(here()).not.toHaveTextContent('Smoke over the words');
+    expect(lensProblems(here())).toEqual([]);
   });
 
   test('a fall an admin ended is simply ended, never "Took the fall", and says nothing of a filing', async () => {
@@ -2681,7 +2687,7 @@ describe('a spent kind', () => {
   const HOUR = 3_600_000;
   const heading = () => lens().querySelector('.kb-lens-line')!.textContent;
   const endsLine = () => lens().querySelector('.kb-lens-ends')?.textContent ?? null;
-  const problems = () => viewProblems({ progress: null, state: heading()!, ends: endsLine() ?? 'never', yours: false, controls: [], notes: {} }, { holds: false, covers: false });
+  const problems = () => lensProblems(lens());
   const rowOf = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
   /** The view a kind's effect last gave, as the page holds it: it keeps saying so after its plays end. */
   const smoking = { progress: null, state: 'Smoke over the words', ends: 'Ends in the smoke.', yours: false, controls: [], notes: {} };
@@ -2778,6 +2784,7 @@ describe('a spent kind', () => {
     await openMark();
     expect(endsLine()).toBe(`Ended ${dayAndTime(at.past)}. Posts written while it was up keep it.`);
     expect(heading()).not.toBe('Ended');
+    expect(problems()).toEqual([]);
   });
 
   test('a timed-out play in then is judged as it stood: the live view, and Ends', async () => {
@@ -2786,6 +2793,7 @@ describe('a spent kind', () => {
     await openMark();
     expect(heading()).toBe('Smoke over the words');
     expect(within(lens()).queryByText(/^Ended /u)).toBeNull();
+    expect(problems()).toEqual([]);
     void at;
   });
 

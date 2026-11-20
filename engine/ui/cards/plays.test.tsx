@@ -815,19 +815,22 @@ describe('the discipline plays', () => {
   });
 });
 
-describe('playOver', () => {
-  const NOW_MS = Date.parse('2026-10-30T12:00:00.000Z');
-  const NO_KEEPS: ReadonlySet<string> = new Set();
-  const at = (ms: number): string => new Date(ms).toISOString();
-  const play = (over: Partial<CardPlay> = {}): CardPlay => ({ ...playOf(card({ payload: { card: 'whoops', message: '', config: {} } }))!, ...over });
+const NOW_MS = Date.parse('2026-10-30T12:00:00.000Z');
+const NO_KEEPS: ReadonlySet<string> = new Set();
+const play = (over: Partial<CardPlay> = {}): CardPlay => ({ ...playOf(card({ payload: { card: 'whoops', message: '', config: {} } }))!, ...over });
 
-  test('caught, reversed, untaken, instant, spent and revealed are over', () => {
-    expect(playOver(play({ caught: POST }), NOW_MS, NO_KEEPS)).toBe(true);
-    expect(playOver(play({ reversed: true }), NOW_MS, NO_KEEPS)).toBe(true);
-    expect(playOver(play({ untaken: true }), NOW_MS, NO_KEEPS)).toBe(true);
-    expect(playOver(play({ instant: true }), NOW_MS, NO_KEEPS)).toBe(true);
-    expect(playOver(play({ spent: true }), NOW_MS, NO_KEEPS)).toBe(true);
-    expect(playOver(play({ revealed: { card: 'whoops', spring: POST, at: at(NOW_MS) } }), NOW_MS, NO_KEEPS)).toBe(true);
+describe('playOver', () => {
+  const at = (ms: number): string => new Date(ms).toISOString();
+
+  test.each<[string, Partial<CardPlay>]>([
+    ['caught', { caught: POST }],
+    ['reversed', { reversed: true }],
+    ['untaken', { untaken: true }],
+    ['instant', { instant: true }],
+    ['spent', { spent: true }],
+    ['revealed', { revealed: { card: 'whoops', spring: POST, at: at(NOW_MS) } }],
+  ])('a %s play is over', (_name, over) => {
+    expect(playOver(play(over), NOW_MS, NO_KEEPS)).toBe(true);
   });
 
   test('a play whose ends is one ms ahead is not over, and at its end it is', () => {
@@ -858,10 +861,6 @@ describe('playOver', () => {
 });
 
 describe('kindSpent', () => {
-  const NOW_MS = Date.parse('2026-10-30T12:00:00.000Z');
-  const NO_KEEPS: ReadonlySet<string> = new Set();
-  const play = (over: Partial<CardPlay> = {}): CardPlay => ({ ...playOf(card({ payload: { card: 'whoops', message: '', config: {} } }))!, ...over });
-
   test('is false for a kind with no plays', () => {
     expect(kindSpent([], NOW_MS, NO_KEEPS)).toBe(false);
   });
