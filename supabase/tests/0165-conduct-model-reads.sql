@@ -70,7 +70,7 @@ begin
   perform tests.unbecome();
   f := spring_facts(null::face_down, 'quote', quoting, null);
   if f.by_body is not null then raise exception 'spring_facts reads the words of a hidden post: %', f.by_body; end if;
-  -- A post that quotes a hidden one: the quoted words are emptied. (The quote is written before the hide: a quote of a version an admin has already hidden is a counterfeit, its words the quoter's own, 0379.)
+  -- A post that quotes a hidden one: the quoted words are emptied. (The quote is written before the hide: a quote of a version an admin has already hidden is a counterfeit, its words the quoter's own, 0387.)
   quoting := tests.post(ch_author, th, format('Mine [quote=%s]The hidden secret.[/quote] end', hid_post), base + interval '5 minutes');
   perform tests.become(admin_a);
   perform decide(null, hid_post, 'hide', null, 'condition');
@@ -80,7 +80,7 @@ begin
 
   -- ---- A post that quotes a hidden one is judged on its own words, as soon as it is written and after its layer: the quote is neither a way out of a rule nor a way in ----
   -- (rules and traps run in the posting transaction, before the conceal job has made the layer, when the public form of such a post is withheld.) hid_quoted is written, quoted, and then hidden: a quote of a version
-  -- already hidden is a counterfeit (0379), so the quotes are written first, and an admin's hide leaves them to the conceal job.
+  -- already hidden is a counterfeit (0387), so the quotes are written first, and an admin's hide leaves them to the conceal job.
   perform set_config('kayfabb.staff_writer', 'on', true);
   perform tests.act((select id from characters where staff = 'rp-boss'), 'move', (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'),
     jsonb_build_object('kind', 'setRule', 'body', 'A rule.', 'params', jsonb_build_object('board', null, 'predicate', 'minLength', 'param', 20, 'band', 'minor')), null, base + interval '6 minutes');
@@ -180,7 +180,7 @@ begin
   secret := tests.post(ch_author, th, 'The hidden secret words.', base);
   earlier := tests.post(ch_author, th, format('Earlier own words [quote=%s]hidden secret words[/quote] done', secret), base + interval '1 minute');
   qpost := tests.post(ch_author, th, format('Own words of the quoting post [quote=%s]The hidden secret words.[/quote] and the end', secret), base + interval '2 minutes');
-  -- the hide comes after the quotes are written: a quote of a version already hidden is a counterfeit, its words the quoter's own (0379)
+  -- the hide comes after the quotes are written: a quote of a version already hidden is a counterfeit, its words the quoter's own (0387)
   perform tests.become(admin_a);
   perform decide(null, secret, 'hide', null, 'quoted');
   perform tests.unbecome();

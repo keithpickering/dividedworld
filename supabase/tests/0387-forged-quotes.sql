@@ -1,4 +1,4 @@
--- The verdict (supabase/migrations/0379_forged_quotes.sql, section 3; docs/plans/2026-11-20-forged-quotes-plan.md, Task 3; docs/plans/2026-11-20-forged-quotes-design.md, sections 2, 3, 5, 6 and 11).
+-- The verdict (supabase/migrations/0387_forged_quotes.sql, section 3; docs/plans/2026-11-20-forged-quotes-plan.md, Task 3; docs/plans/2026-11-20-forged-quotes-design.md, sections 2, 3, 5, 6 and 11).
 -- A real quote whose words do not stand, in order, in one eligible version of the post it names (the post itself or one of its edits, written at or before the quoting Act, not hidden) makes that post
 -- forged in the Act: the trigger writes the sorted list into the payload's `forged`, a post whose target is forged is written with no target, and quote_check answers the same from a draft.
 -- Each negative has a twin that must pass, so a check that always says "forged" or never does fails one of the two.

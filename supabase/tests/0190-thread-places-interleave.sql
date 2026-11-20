@@ -471,7 +471,7 @@ begin
     delete from character_post_counts_base where character in ('7ace0000-0190-4000-8000-0000000000b1', '7ace0000-0190-4000-8000-0000000000b2', '7ace0000-0190-4000-8000-0000000000f1');
     delete from open_moves where move_act in (select a.id from acts a where a.thread in (select id from threads where title like 'Il %') and a.kind = 'move');
     delete from move_dependencies where act in (select a.id from acts a where a.thread in (select id from threads where title like 'Il %'));
-    -- a source of each version (0379), insert-only like the Acts it names, so its guard is off with theirs
+    -- a source of each version (0387), insert-only like the Acts it names, so its guard is off with theirs
     alter table quote_sources disable trigger quote_sources_no_update;
     delete from quote_sources where act in (select a.id from acts a where a.thread in (select id from threads where title like 'Il %') or a.character in ('7ace0000-0190-4000-8000-0000000000b1', '7ace0000-0190-4000-8000-0000000000b2', '7ace0000-0190-4000-8000-0000000000f1'));
     alter table quote_sources enable always trigger quote_sources_no_update;
