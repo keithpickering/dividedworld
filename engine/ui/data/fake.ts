@@ -39,6 +39,7 @@ import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
 import { quotedActs, visibleText } from '../../bbcode/visible.ts';
+import { forgedList, forgedSet, holds, quoteHeld, quoteSource } from '../../bbcode/quoted.ts';
 import { parse } from '../../bbcode/parse.ts';
 import { concealQuotes } from '../../bbcode/conceal.ts';
 import { pageOf } from '../thread/pages.ts';
@@ -378,6 +379,8 @@ interface SeedAct {
   /** For The System's Acts: `tally` (default), `reveal`, or `post` (an Act written with no character, a post the staff's word names). */
   readonly kind?: 'tally' | 'reveal' | 'post';
   readonly payload?: Readonly<Record<string, unknown>>;
+  /** An Act written as one from before the verdict existed (0379 backfills no verdict): it is not judged, so its quotes are real quotes whatever their words. For a test of what the conceal layer does to such quotes. */
+  readonly unjudged?: boolean;
 }
 
 export interface Fake extends KayfaApi {
@@ -807,9 +810,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const concealingActs = new Set<Id>();
   /** The posts with a hidden version, whose quotes the conceal job empties. */
   const hiddenPosts = (): Set<string> => new Set([...hiddenVersions.keys()].map((v) => (acts.get(v)?.kind === 'edit' ? acts.get(v)!.target : v)).filter((p): p is Id => p !== null));
-  /** A payload as a player reads it (`shown_payload`): a hidden version's body is null, and so is a body awaiting its layer; any other has its quotes of hidden posts emptied by the engine's own concealQuotes, as the job does. */
-  const publicPayload = (payload: Readonly<Record<string, unknown>>, hidden: boolean, version: Id): Readonly<Record<string, unknown>> =>
-    typeof payload['body'] !== 'string' ? payload : hidden || concealingActs.has(version) ? { ...payload, body: null } : { ...payload, body: concealQuotes(payload['body'], hiddenPosts()) };
+  /**
+   * A payload as a player reads it (`shown_payload`): a hidden version's body is null, and so is a body awaiting its layer; any other has its quotes of hidden posts emptied by the engine's own concealQuotes, as the job does.
+   * The job is asked for the hidden posts the Act quotes without a verdict against them (`hidden_refs` leaves its forged posts out), so a forged quote of a hidden post keeps its words: they are the poster's own.
+   */
+  const publicPayload = (payload: Readonly<Record<string, unknown>>, hidden: boolean, version: Id): Readonly<Record<string, unknown>> => {
+    if (typeof payload['body'] !== 'string') return payload;
+    if (hidden || concealingActs.has(version)) return { ...payload, body: null };
+    const asked = hiddenPosts();
+    for (const f of forgedList(payload) ?? []) asked.delete(f);
+    return { ...payload, body: concealQuotes(payload['body'], asked) };
+  };
 
   function publicAct(a: ActRec): Act {
     const latest = a.kind === 'post' ? edits(a).at(-1) : undefined;
@@ -1315,15 +1326,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /* -------------------------------------------------------------------- writing ---- */
   let order = 0;
+  /** Whether the verdict is worked out as an Act is written: off only while the seed writes an Act that predates it. */
+  let judging = true;
   /** The time a seeded player's Act is dated, while the seed runs it through the action (the clock otherwise). */
   let stamp: number | null = null;
   function write(a: { id?: Id; character: Id | null; kind: ActKind; thread: Id; target?: Id | null; payload: Record<string, unknown>; at?: number }): ActRec {
     const t = threads.get(a.thread)!;
+    /* acts_forged_quotes (Task 3), before the insert: a client's `forged` is dropped, the verdict is written when there is one, and a post whose target is forged is written with no target (so no back springs and no quote alert is written). */
+    let payload = a.payload;
+    let target = a.target ?? null;
+    if ((a.kind === 'post' || a.kind === 'spin' || a.kind === 'edit') && typeof payload['body'] === 'string') {
+      const { forged: _client, ...rest } = payload;
+      const verdict = forgedQuotes(payload['body'], a.at ?? stamp ?? now());
+      payload = verdict.length > 0 ? { ...rest, forged: verdict } : rest;
+      if (a.kind === 'post' && target !== null && verdict.includes(target)) target = null;
+    }
     /* An edit is a version of its post and a card is a tag on its post: neither takes a place in the thread (0035_card_takes_no_seq.sql). */
     const placedAct = !UNPLACED.has(a.kind);
     const rec: ActRec = {
-      id: a.id ?? uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target: a.target ?? null, seq: placedAct ? t.nextSeq++ : null,
-      at: a.at ?? stamp ?? now(), payload: a.payload,
+      id: a.id ?? uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target, seq: placedAct ? t.nextSeq++ : null,
+      at: a.at ?? stamp ?? now(), payload,
     };
     acts.set(rec.id, rec);
     if (rec.kind === 'card_end' && rec.target !== null) reversedPlays.add(rec.target);
@@ -1392,17 +1414,63 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * write_framed (0118): for each distinct id among the first 5 of `framing`, a debuted character whose id the body holds as `user=<id>` (case ignored)
    * is told through write_alert's rules, which skip a staff character (no owner) and the acting account's own masks. Any other id is skipped silently.
    */
-  function writeFramed(body: string, framing: readonly Id[] | undefined, act: ActRec) {
+  function writeFramed(body: string, framing: readonly Id[] | undefined, act: ActRec): { readonly counted: number; readonly told: ReadonlySet<Id>; readonly named: ReadonlySet<Id> } {
     const mine = me()?.id;
     const lowered = body.toLowerCase();
-    for (const named of new Set((framing ?? []).slice(0, 5))) {
+    const ids = new Set((framing ?? []).slice(0, 5));
+    const told = new Set<Id>();
+    for (const named of ids) {
       const c = characters.get(named);
       if (!c || c.debutedAt === null || !lowered.includes(`user=${named.toLowerCase()}`)) continue;
       if (!c.owner || c.owner === mine) continue;
-      seededAlerts.push({ account: c.owner, kind: 'framed', sub: null, act: act.id, character: named, at: act.at });
-      const live = { id: crypto.randomUUID(), kind: 'framed' as const, sub: null, act: act.id, character: named, at: iso(act.at) };
-      send(`account:${c.owner}`, 'alert', () => { for (const l of [...(accountListeners.get(c.owner) ?? [])]) l.onAlert?.(live); });
+      frame(c.owner, named, act);
+      told.add(named);
     }
+    return { counted: ids.size, told, named: ids };
+  }
+  /** One framed alert, written and heard live by the character's owner. */
+  function frame(owner: Id, character: Id, act: ActRec) {
+    seededAlerts.push({ account: owner, kind: 'framed', sub: null, act: act.id, character, at: act.at });
+    const live = { id: crypto.randomUUID(), kind: 'framed' as const, sub: null, act: act.id, character, at: iso(act.at) };
+    send(`account:${owner}`, 'alert', () => { for (const l of [...(accountListeners.get(owner) ?? [])]) l.onAlert?.(live); });
+  }
+  /**
+   * write_forged_framed (Task 4): the author of each post a forged quote names in the Act (its verdict, `payload.forged`) is told, as write_framed tells a character a counterfeit names, and the two lists count
+   * together toward the most 5: `framed` is what write_framed returned (the ids it counted, the characters it told), each character is told once, and an author who has not debuted, has no owner or is the acting
+   * account's own is skipped as there. Called for a post, a thread start and a spin, never an edit or a pool post.
+   */
+  function writeForgedFramed(act: ActRec, framed: { readonly counted: number; readonly told: ReadonlySet<Id>; readonly named: ReadonlySet<Id> }) {
+    const mine = me()?.id;
+    let counted = framed.counted;
+    const told = new Set(framed.told);
+    for (const quoted of forgedList(act.payload) ?? []) {
+      const rec = acts.get(quoted);
+      if (!rec || (rec.kind !== 'post' && rec.kind !== 'spin') || rec.character === null || told.has(rec.character) || framed.named.has(rec.character)) continue;
+      if (counted >= 5) break;
+      counted += 1;
+      const c = characters.get(rec.character);
+      if (!c || c.debutedAt === null || !c.owner || c.owner === mine) continue;
+      frame(c.owner, rec.character, act);
+      told.add(rec.character);
+    }
+  }
+
+  /**
+   * quote_forged (Task 3): the posts a body's real quotes name whose words do not stand in any eligible version, for an Act written at `at`: the post itself if it is a post or a spin, and its edits written at or before
+   * `at`, none of them hidden. A quote stands when every piece of its text is in a version's source in order (an empty quote of a real post stands); a post with one quote that stands in none is forged, and so is an id
+   * that is no post or has no version to read. Each version is read with its own verdict, as the database's sources are. Sorted, each once, as the database writes it.
+   */
+  function forgedQuotes(body: unknown, at: number): string[] {
+    if (!judging || typeof body !== 'string' || !/\[quote=/i.test(body)) return [];
+    const out: string[] = [];
+    for (const [id, quotes] of quoteHeld(parse(body))) {
+      const rec = acts.get(id);
+      const versions = rec === undefined ? [] : [...((rec.kind === 'post' || rec.kind === 'spin') && rec.at <= at ? [rec] : []), ...edits(rec).filter((e) => e.at <= at)];
+      const sources = versions.filter((v) => !hiddenVersions.has(v.id) && typeof v.payload.body === 'string')
+        .map((v) => quoteSource(parse(v.payload.body as string, undefined, forgedSet(forgedList(v.payload)))));
+      if (sources.length === 0 || quotes.some((pieces) => !sources.some((s) => holds(s, pieces)))) out.push(id);
+    }
+    return out.sort();
   }
 
   /**
@@ -1410,10 +1478,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The quoted Acts are the target (a post's `quoting`) and every real quote the body holds, less those the edited post's current body already held. `thread` is where the
    * Act is written (null for a thread not yet made), so a quote from another thread says so.
    */
-  function stoppedQuote(thread: Id | null, target: Id | null, body: string, already: string = ''): string | null {
+  function stoppedQuote(thread: Id | null, target: Id | null, body: string, already: string = '', forged: readonly Id[] = []): string | null {
     // As the guard on acts does, a body is walked only where it holds a quote tag, and the current body only where the first list holds an Act.
     const inBody = (text: string): string[] => (/\[quote=/i.test(text) ? quotedActs(parse(text)) : []);
-    const named = [...new Set([...(target === null ? [] : [target]), ...inBody(body)])];
+    /* acts_quote_guard leaves out the Act's forged posts, the target and the body's quotes alike: a doctored quote is a counterfeit, which No-quote never refused. */
+    const named = [...new Set([...(target === null ? [] : [target]), ...inBody(body)])].filter((q) => !forged.includes(q));
     if (named.length === 0) return null;
     const held = new Set(inBody(already));
     const quoted = named.filter((q) => !held.has(q));
@@ -1435,11 +1504,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(found)) return found;
     if (found.board.isSystem) return refuse(SYSTEM_BOARD);
     if (quote !== null && !acts.has(quote)) return refuse('there is no such Act to quote');
-    const stopped = stoppedQuote(thread, quote, body);
+    const verdict = forgedQuotes(body, stamp ?? now());
+    const stopped = stoppedQuote(thread, quote !== null && verdict.includes(quote) ? null : quote, body, '', verdict);
     if (stopped) return refuse(stopped);
     const written = write({ character, kind: 'post', thread, target: quote, payload: { body } });
     sendAct(written);
-    writeFramed(body, framing, written);
+    writeForgedFramed(written, writeFramed(body, framing, written));
     return ok(publicAct(written));
   }
 
@@ -1458,13 +1528,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ? `this board was merged into ${went ? boardNow(went).name : 'another board'}${openEnd(board.id) !== closed.mergedInto && openEnd(board.id) !== null ? `, which was closed too; its threads are in ${boardNow(boards.find((b) => b.id === openEnd(board.id))!).name}, so start your thread there instead` : ', and its threads are there; start your thread there instead'}`
         : `this board was closed, and its threads are in ${boardNow(boards.find((b) => b.id === (openEnd(board.id) ?? closed.fallback))!).name}; start your thread there instead`);
     }
-    const stopped = stoppedQuote(null, null, body);
+    const stopped = stoppedQuote(null, null, body, '', forgedQuotes(body, stamp ?? now()));
     if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, null);
     const written = write({ character, kind: 'post', thread: t.id, payload: { body } });
     sendThread(t);
     sendAct(written);
-    writeFramed(body, framing, written);
+    writeForgedFramed(written, writeFramed(body, framing, written));
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
@@ -1485,13 +1555,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         && reach.endsAt > now() && !reversedPlays.has(origin);
       if (!there) return refuse('that card is not on that post');
     }
-    const stopped = stoppedQuote(null, null, body);
+    const stopped = stoppedQuote(null, null, body, '', forgedQuotes(body, stamp ?? now()));
     if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, origin);
     const written = write({ character, kind: 'spin', thread: t.id, target: origin, payload: { title, body, ...(at === undefined ? {} : { at }) } });
     sendThread(t);
     sendAct(written);
-    writeFramed(body, framing, written);
+    writeForgedFramed(written, writeFramed(body, framing, written));
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
@@ -2073,9 +2143,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A card that replies carries its reply; its words and their length are the act function's, above, and the rest of the reply's refusals are play_card's, below (0348). */
     const carries = rules.replies === true;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
+    const forgedNow = forgedList(publicAct(on).currentPayload);
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, shownAuthor(on, false) ?? undefined), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first, caster: character });
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, shownAuthor(on, false) ?? undefined, forgedNow), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first, caster: character });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
     if (decided.value.draw) {
@@ -2436,7 +2507,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, when ?? {}, new Date(now()));
+    const forgedNow = forgedList(publicAct(on).currentPayload);
+    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, undefined, undefined, forgedNow), effectsOn(target), config, instance.cards, when ?? {}, new Date(now()));
     if (!decided.ok) return refuse(decided.why, 'config');
     /* As set_card (0144) says it: a named id that is not a debuted character, one message for a missing and an undebuted one, by its place in the list. */
     const unknown = (decided.value.who?.characters ?? []).findIndex((id) => characters.get(id)?.debutedAt == null);
@@ -2490,7 +2562,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideUse(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, message, { now: new Date(now()) });
+    const forgedNow = forgedList(publicAct(on).currentPayload);
+    const decided = decideUse(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, undefined, undefined, forgedNow), effectsOn(target), config, message, { now: new Date(now()) });
     if (!decided.ok) return refuse(decided.why, 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -2517,7 +2590,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(c)) return c;
     const original = acts.get(target);
     if (!original || original.kind !== 'post' || original.character !== character) return refuse('that is not a post of this character\'s');
-    const stopped = stoppedQuote(original.thread, null, body, String(edits(original).at(-1)?.payload.body ?? original.payload.body ?? ''));
+    const stopped = stoppedQuote(original.thread, null, body, String(edits(original).at(-1)?.payload.body ?? original.payload.body ?? ''), forgedQuotes(body, stamp ?? now()));
     if (stopped) return refuse(stopped);
     write({ character, kind: 'edit', thread: original.thread, target, payload: { body } });
     sendAct(original);
@@ -3101,7 +3174,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (a.at < from || a.at >= to) continue;
       if (q.titlesOnly && a.seq !== 1) continue;
       const raw = (latest.get(a.id)?.payload ?? a.payload).body;
-      const body = visibleText(parse(typeof raw === 'string' ? raw : '')).replace(/\s+/g, ' ').trim();
+      const body = visibleText(parse(typeof raw === 'string' ? raw : '', undefined, forgedSet(forgedList(latest.get(a.id)?.payload ?? a.payload)))).replace(/\s+/g, ' ').trim();
       /* A thread's first post carries its title at the heaviest weight, so a title and a post match in one index. */
       const title = a.seq === 1 ? wordsOf(thread.title) : [];
       const here = q.titlesOnly ? title : [...title, ...wordsOf(body)];
@@ -4375,8 +4448,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p === undefined || p.kind !== 'post' || owner === undefined || owner === null || owner !== me()?.id) return null;
       const cur = edits(p).at(-1) ?? p;
       const how = hiddenVersions.get(cur.id);
-      if (how === 'hideUntilEdited') return { status: 'hiddenUntilEdited', version: cur.id, words: String(cur.payload['body'] ?? '') };
-      return how === 'waiting' ? { status: 'waiting', version: cur.id, words: String(cur.payload['body'] ?? '') } : null;
+      const forged = forgedList(cur.payload);
+      if (how === 'hideUntilEdited') return { status: 'hiddenUntilEdited', version: cur.id, words: String(cur.payload['body'] ?? ''), ...(forged ? { forged } : {}) };
+      return how === 'waiting' ? { status: 'waiting', version: cur.id, words: String(cur.payload['body'] ?? ''), ...(forged ? { forged } : {}) } : null;
     },
     decideReport(report, outcomes) {
       if (!me()?.admin) return refuse('only an admin decides a report');
@@ -4977,8 +5051,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     post(thread, character, body, o = {}) {
       if (character === null) return systemAct(thread, o, body).id;
-      const made = accepted(asAt(ownerOf(character), o.at, () => post(thread, character, body, o.quote ?? null)));
-      return made.id;
+      judging = o.unjudged !== true;
+      try {
+        return accepted(asAt(ownerOf(character), o.at, () => post(thread, character, body, o.quote ?? null))).id;
+      } finally { judging = true; }
     },
     edit(post, character, body, o = {}) {
       accepted(asAt(ownerOf(character), o.at, () => edit(post, character, body)));

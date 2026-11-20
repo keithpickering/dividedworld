@@ -40,6 +40,7 @@ import { GroupMoveLine, RulingTag, rulingOf } from './GroupMove.tsx';
 import { ConcealingNote, HiddenNote, HiddenOwn, useMyHidden } from '../conduct/Hidden.tsx';
 import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteHead, text, useHistory, when, type PostAbout } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
+import { forgedList } from '../../bbcode/quoted.ts';
 import { FoldBar } from './FoldBar.tsx';
 import { RowFoldCtx, useFoldMotion } from './fold.tsx';
 
@@ -86,7 +87,7 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
         <>
           <MoveTag kind={text(act.payload.kind)} office={moveOffice(act.payload)} />
           <GroupMoveLine act={act} office={moveOffice(act.payload)} />
-          <BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} />
+          <BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} />
           <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
         </>
@@ -120,10 +121,10 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
               ? (
                 <>
                   <HiddenNote />
-                  {own && <HiddenOwn own={own} onEdit={onEdit}><BbCode text={own.words} quoteHead={quoteHead} /></HiddenOwn>}
+                  {own && <HiddenOwn own={own} onEdit={onEdit}><BbCode text={own.words} quoteHead={quoteHead} forged={own.forged} /></HiddenOwn>}
                 </>
               )
-              : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>}
+              : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={by} authorName={spoken} tallies={tallies} mine={mine} plays={plays} />
           {person && <Signature text={person.character.signature} />}

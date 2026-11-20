@@ -38,6 +38,7 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
+import { forgedList, forgedSet } from '../../../../engine/bbcode/quoted.ts';
 import { visibleText } from '../../../../engine/bbcode/visible.ts';
 import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
@@ -580,7 +581,9 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   /* Only a live post's author peels for good and holds the tape on: in a moment, whoever the reader is, a hand is a peek that lays back. */
   const author = reader.author && moment === null;
   const body = typeof post.currentPayload.body === 'string' ? post.currentPayload.body : '';
-  const text = useMemo(() => visibleText(parse(body)), [body]);
+  /* A forged quote (the Act's verdict) is a counterfeit, so its words are the poster's own and count (forged-quotes design, section 1). */
+  const forged = forgedList(post.currentPayload);
+  const text = useMemo(() => visibleText(parse(body, undefined, forgedSet(forged))), [body, forged]);
   /* The author's changes on their way to being saved; a refused save's words, by play; what the last peel uncovered or the last press said. */
   const [local, setLocal] = useState<Local>({});
   const [refusals, setRefusals] = useState<Readonly<Record<string, string>>>({});
