@@ -3383,6 +3383,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!a || a.kind !== 'move') return null;
       return buildMoveNotice(publicAct(a), tallyOf(id), progressOf(a));
     },
+    quoteCheck(body) {
+      /* quote_check refuses a body over the longest post, as post does (`within`); the composer takes a refusal as no answer. */
+      const bad = within('body', body, settings.postMaxLength);
+      if (bad) throw new Error(bad);
+      return forgedQuotes(body, now());
+    },
     myApologies(character) {
       const account = me();
       if (!account || characters.get(character)?.owner !== account.id) return [];
