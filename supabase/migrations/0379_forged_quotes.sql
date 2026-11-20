@@ -1390,3 +1390,148 @@ begin
   f.who_hit := coalesce(f.by_character = any (coalesce(fd.who, '{}')), false);
   return f;
 end $function$;
+
+-- ===================================================================================== 3. the verdict: sources, the trigger and quote_check ====
+-- (docs/plans/2026-11-20-forged-quotes-plan.md, Task 3; docs/plans/2026-11-20-forged-quotes-design.md, sections 3, 5, 6, 11 and 12.)
+-- A post is forged in an Act when some real quote of it in the Act's body has words that do not stand, in order, in one eligible version of it: the post's own Act (a post or a spin) or one of its
+-- edits, written at or before the Act, and not hidden by an admin at the Act's writing (version_hidden). The verdict is the sorted list of those posts, written once, by a trigger before the Act is
+-- inserted, into its payload's `forged` (replacing whatever the writer sent), and a post whose target is forged is written with no target, so the springs and the `quote` alert that read the target
+-- from the row never see it. Nothing ever updates it ("Append-only"), and a hide or an unhide later changes nothing already written.
+--
+-- quote_sources (act, source, digest): the walked text of every version (bbcode_walk's `source`, with the version's own verdict, and its md5), written by an after-insert trigger the moment the version
+-- is, so a check is string searches and never a walk of every version. Insert-only by the repository's append-only trigger pair, enabled always (as quote_refs, 0340), read by no client role: RLS on and
+-- no policy, every grant revoked. The export reads it as it reads every table of `public`, and a restore with triggers off keeps the rows it is handed. It is backfilled for the Acts already written:
+-- a source is a row of its own and not an Act's content; the verdict is not backfilled (that would be an update of an Act's content), so an Act written before this reads as it always did.
+--
+-- quote_holds(source, pieces): engine/bbcode/quoted.ts's holds, in PL/pgSQL: every piece in order, each found by strpos at or after the end of the last, empty pieces skipped, no pieces holds.
+-- quote_forged(body, at): one walk of the body; for each Act it quotes, its eligible versions newest first, a text seen already (by digest) not searched twice, the first version in which every quote of the
+--   Act holds ends the search; no version at all (an id that is no Act, an Act with no text body, every version hidden or written after `at`) is forged. Security definer, no client grant.
+-- quote_check(body): within postMaxLength, then quote_forged(body, now()): the composer's preview asks it of a draft. It reads only public facts (versions that are not hidden now, which the History shows
+--   everyone), nothing about the caller or who owns anything, so a guess at a hidden post's words comes back forged for its author and for anyone alike.
+-- Security: invoker, no table is read in quote_holds; the others pin search_path ending in pg_temp.
+
+create table quote_sources (
+  act uuid primary key references acts (id),
+  source text not null,
+  digest text not null
+);
+alter table quote_sources enable row level security;
+revoke all on quote_sources from public, anon, authenticated;
+
+create function quote_sources_append_only() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  raise exception 'a quote source is never edited or removed (%); an Act''s words do not change', tg_op using errcode = 'P0001';
+end $$;
+create trigger quote_sources_no_update before update or delete on quote_sources for each row execute function quote_sources_append_only();
+create trigger quote_sources_no_truncate before truncate on quote_sources for each statement execute function quote_sources_append_only();
+-- Always: a session in replica mode, as a restore with triggers disabled runs, fires them too.
+alter table quote_sources enable always trigger quote_sources_no_update;
+alter table quote_sources enable always trigger quote_sources_no_truncate;
+revoke execute on function quote_sources_append_only() from public, anon, authenticated;
+
+-- Backfill: a source for each version already written (no verdict: act_forged of an old payload is empty).
+insert into quote_sources (act, source, digest)
+select a.id, w.source, md5(w.source)
+from acts a, lateral bbcode_walk(a.payload ->> 'body', null, act_forged(a.payload)) w
+where a.kind in ('post', 'spin', 'edit') and jsonb_typeof(a.payload -> 'body') = 'string'
+on conflict do nothing;
+
+create function acts_quote_sources() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare s text;
+begin
+  select w.source into s from bbcode_walk(new.payload ->> 'body', null, act_forged(new.payload)) w;
+  insert into quote_sources (act, source, digest) values (new.id, s, md5(s)) on conflict do nothing;
+  return null;
+end $$;
+revoke execute on function acts_quote_sources() from public, anon, authenticated;
+create trigger acts_quote_sources after insert on acts for each row
+  when (new.kind in ('post', 'spin', 'edit') and jsonb_typeof(new.payload -> 'body') = 'string') execute function acts_quote_sources();
+
+create function quote_holds(source text, pieces jsonb) returns boolean
+language plpgsql immutable parallel safe set search_path = public, pg_temp as $$
+declare
+  p text;
+  from_at integer := 1;
+  found_at integer;
+begin
+  for p in select jsonb_array_elements_text(pieces) loop
+    continue when p = '';
+    found_at := case when from_at = 1 then strpos(source, p) else strpos(substr(source, from_at), p) end;
+    if found_at = 0 then return false; end if;
+    from_at := from_at + found_at - 1 + char_length(p);
+  end loop;
+  return true;
+end $$;
+revoke execute on function quote_holds(text, jsonb) from public, anon, authenticated;
+
+create function quote_forged(body text, at timestamptz) returns uuid[]
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  walked jsonb;
+  k text;
+  quotes jsonb;
+  forged uuid[] := '{}';
+  authentic boolean;
+  seen text[];
+  v record;
+begin
+  if body is null or body !~* '\[quote=' then return '{}'::uuid[]; end if;
+  select w.held into walked from bbcode_walk(body, null) w;
+  for k, quotes in select e.key, e.value from jsonb_each(coalesce(walked, '{}'::jsonb)) e loop
+    authentic := false;
+    seen := '{}';
+    for v in
+      select x.id, s.source, s.digest
+      from (
+        select a.id, a.created_at from acts a where a.id = k::uuid and a.kind in ('post', 'spin') and a.created_at <= at
+        union all
+        select e.id, e.created_at from acts e where e.kind = 'edit' and e.target_act_id = k::uuid and e.created_at <= at
+      ) x
+      join quote_sources s on s.act = x.id
+      order by x.created_at desc, x.id desc
+    loop
+      -- A hidden version is never read; a text seen already is not searched twice (hidden is asked first, so a hidden copy of a text does not hide a visible one).
+      continue when v.digest = any (seen) or version_hidden(v.id, k::uuid);
+      seen := seen || v.digest;
+      if not exists (select 1 from jsonb_array_elements(quotes) q where not quote_holds(v.source, q)) then
+        authentic := true;
+        exit;
+      end if;
+    end loop;
+    if not authentic then forged := forged || k::uuid; end if;
+  end loop;
+  return coalesce((select array_agg(f order by f) from unnest(forged) f), '{}'::uuid[]);
+end $$;
+revoke execute on function quote_forged(text, timestamptz) from public, anon, authenticated;
+
+create function quote_check(body text) returns uuid[]
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  perform within('body', body, 'postMaxLength');
+  return quote_forged(body, now());
+end $$;
+revoke execute on function quote_check(text) from public, anon;
+grant execute on function quote_check(text) to authenticated;
+
+-- The verdict. Before the Act is inserted, and (its name sorting before acts_quote_guard's) before No-quote reads the Act: a client's `forged` is dropped whatever it holds, the verdict is written when there is
+-- one, and a post whose target is forged is written with no target. An ordinary trigger, not `always`, so a restore with triggers disabled keeps what was written at the save.
+create function acts_forged_quotes() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  body text := new.payload ->> 'body';
+  verdict uuid[] := '{}';
+begin
+  new.payload := new.payload - 'forged';
+  if jsonb_typeof(new.payload -> 'body') = 'string' and body ~* '\[quote=' then
+    verdict := quote_forged(body, new.created_at);
+  end if;
+  if cardinality(verdict) > 0 then
+    new.payload := new.payload || jsonb_build_object('forged', to_jsonb(verdict));
+    if new.kind = 'post' and new.target_act_id = any (verdict) then new.target_act_id := null; end if;
+  end if;
+  return new;
+end $$;
+revoke execute on function acts_forged_quotes() from public, anon, authenticated;
+create trigger acts_forged_quotes before insert on acts for each row when (new.kind in ('post', 'spin', 'edit')) execute function acts_forged_quotes();

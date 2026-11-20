@@ -268,6 +268,7 @@ select 'function', n, m, w from (values
   ('profile_page', 'swept', 'a profile and its newest Acts'),
   ('pronouns_hold', 'no author', 'a pure function of its argument'),
   ('punishment_words', 'no author', 'the words of the caller''s own punishment'),
+  ('quote_check', 'no author', 'answers which posts a draft''s real quotes doctor (0379): ids the draft itself names, judged against versions an admin has not hidden, which the History shows everyone, and nothing of an owner, a class or a reader'),
   ('queue_page', 'no author', 'an admin''s queue'),
   ('reaches_hold', 'no author', 'a pure function of its argument'),
   ('react', 'no author', 'a write: answers the tally of an Act, no character'),

@@ -675,7 +675,8 @@ declare
   ann uuid := tests.account('sp-auto-ann'); bob uuid := tests.account('sp-auto-bob');
   a uuid := tests.character(ann, 'Sp Auto Ann'); b uuid := tests.character(bob, 'Sp Auto Bob');
   t uuid := tests.thread('Phrases');
-  p uuid := tests.post(a, t, 'A post with a phrase under it.');
+  -- The post holds the words quoted from it, so that quote is an authentic one (a doctored quote is a counterfeit, its words the quoter's own: supabase/migrations/0379_forged_quotes.sql).
+  p uuid := tests.post(a, t, 'A post with a phrase under it. come to heel');
   the_set uuid;
   made jsonb;
 begin

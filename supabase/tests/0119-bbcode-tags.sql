@@ -26,7 +26,8 @@ declare
   cur_ctid tid;
 begin
   -- 1. A post written now.
-  spoiled := tests.post(a, t1, 'before [spoiler=Twist]hidden words[/spoiler] after');
+  -- The post that is quoted holds the quote's words, so the quote is an authentic one (a doctored one reads as the quoter's own words: supabase/migrations/0379_forged_quotes.sql).
+  spoiled := tests.post(a, t1, 'before [spoiler=Twist]hidden words[/spoiler] after real quoted words');
   countered := tests.post(a, t1, '[quote=Geno Wario user=0f8fad5b-d9cb-469f-a165-70867728950e]forged words[/quote]');
   real_quoted := tests.post(a, t1, '[quote=' || spoiled || ']real quoted words[/quote]mine');
   if not pg_temp.matches(spoiled, 'hidden') or not pg_temp.matches(spoiled, 'before') then raise exception 'a spoiler''s words are not indexed'; end if;

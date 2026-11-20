@@ -57,7 +57,6 @@ test('a hidden post\'s words are in no response a non-author reads, at any depth
   const asAdmin = psqlDb(admin);
   const asAuthor = psqlDb(author);
   const asReader = psqlDb(reader);
-  await asAdmin.rpc('decide', { account: null, version_act: post, outcome: 'hideUntilEdited', until: null, note: 'Mind the person.' });
 
   // one card kind to play on each quoting post, whose moment (play_moment) carries the post's words
   sql(`insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values ('qchook', 'Qc Hook', 'salty', 'uncommon', 'cast', null, '{post}', null) on conflict (key) do nothing`);
@@ -72,6 +71,9 @@ test('a hidden post\'s words are in no response a non-author reads, at any depth
     quoting.push({ shape, act, play });
   }
   const ours = new Set(quoting.map((q) => q.act));
+  // The hide comes after the quotes are written: a quote of a version an admin has already hidden is a counterfeit, its words the quoter's own (supabase/migrations/0379_forged_quotes.sql), so the quoted words
+  // are the post's, hidden, only when the quote was written before.
+  await asAdmin.rpc('decide', { account: null, version_act: post, outcome: 'hideUntilEdited', until: null, note: 'Mind the person.' });
 
   // the conceal job, with the engine's real concealQuotes, over these Acts
   const conceal: ConcealDb = {

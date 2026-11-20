@@ -31,7 +31,8 @@ declare
   hits uuid[];
   p jsonb;
 begin
-  q := tests.post(ch, th, 'The quoted post.', base);
+  -- The quoted post holds the honest twin's words, so that quote is authentic as the trigger judges it; the forged one's words are in no version.
+  q := tests.post(ch, th, 'The quoted post. zqxhonest words', base);
   forged_post := tests.act(ch, 'post', th, jsonb_build_object('body', format('Own words [quote=%s]zqxforged words[/quote] end', q), 'forged', jsonb_build_array(q)), null, base + interval '1 minute');
   honest_post := tests.post(ch, th, format('Own words [quote=%s]zqxhonest words[/quote] end', q), base + interval '2 minutes');
 
@@ -51,7 +52,7 @@ begin
   if hits is distinct from array[forged_post] then raise exception 'search_posts does not find a post by a forged quote''s words: %', hits; end if;
   if (search_posts('zqxforged', null, null, null, null, false, null, null, null) -> 'results' -> 0 ->> 'snippet') not like '%zqxforged%' then raise exception 'search_posts'' snippet leaves out a forged quote''s words'; end if;
   select coalesce(array_agg((r ->> 'act')::uuid), '{}') into hits from jsonb_array_elements(search_posts('zqxhonest', null, null, null, null, false, null, null, null) -> 'results') r;
-  if cardinality(hits) <> 0 then raise exception 'search_posts finds a post by an authentic quote''s words: %', hits; end if;
+  if honest_post = any (hits) then raise exception 'search_posts finds a post by an authentic quote''s words: %', hits; end if;
 
   -- an edit whose own payload carries the verdict: the trigger, current_payload and the snippet read it
   edited := tests.post(ch, th, 'Oldword before the edit.', base + interval '3 minutes');
@@ -99,13 +100,13 @@ begin
   perform tests.act((select id from characters where staff = 'rp-boss'), 'move', (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'),
     jsonb_build_object('kind', 'setRule', 'body', 'A rule.', 'params', jsonb_build_object('board', null, 'predicate', 'bannedWord', 'param', 'zqxbanned', 'band', 'minor')), null, base);
   perform set_config('kayfabb.staff_writer', '', true);
-  q := tests.post(ch, th, 'The quoted post.', base + interval '1 minute');
+  q := tests.post(ch, th, 'The quoted post. zqxbanned words', base + interval '1 minute');
   edited := tests.post(ch, th, 'Oldword before the edit.', base + interval '1 minute 10 seconds');
   perform tests.act(ch, 'edit', th, jsonb_build_object('body', format('Newword [quote=%s]zqxedit words[/quote] end', q), 'forged', jsonb_build_array(q)), edited, base + interval '1 minute 20 seconds');
-  forged_post := tests.act(ch, 'post', th, jsonb_build_object('body', format('Fine words [quote=%s]zqxbanned words[/quote] end', q), 'forged', jsonb_build_array(q)), null, base + interval '2 minutes');
+  forged_post := tests.act(ch, 'post', th, jsonb_build_object('body', format('Fine words [quote=%s]zqxbanned elsewhere[/quote] end', q), 'forged', jsonb_build_array(q)), null, base + interval '2 minutes');
   honest_post := tests.post(ch, th, format('Fine words [quote=%s]zqxbanned words[/quote] end', q), base + interval '3 minutes');
-  if (select count(*) from rule_breaks(forged_post)) <> 1 then raise exception 'rule_breaks does not judge a forged quote''s words as the author''s (% rows)', (select count(*) from rule_breaks(forged_post)); end if;
-  if (select count(*) from rule_breaks(honest_post)) <> 0 then raise exception 'rule_breaks judges an authentic quote''s words (% rows)', (select count(*) from rule_breaks(honest_post)); end if;
+  if (select count(*) from rule_breaks(forged_post)) is distinct from 1::bigint then raise exception 'rule_breaks does not judge a forged quote''s words as the author''s (% rows)', (select count(*) from rule_breaks(forged_post)); end if;
+  if (select count(*) from rule_breaks(honest_post)) is distinct from 0::bigint then raise exception 'rule_breaks judges an authentic quote''s words (% rows)', (select count(*) from rule_breaks(honest_post)); end if;
 
   -- a card that writes on a post: the version's own words, and the posts shown before it (the latest edit's verdict, else the post's own)
   insert into settings (key, value) values ('oldVoice', 'true') on conflict (key) do update set value = excluded.value;

@@ -16,6 +16,7 @@ declare
   f spring_facts;
   quoting uuid;
   hid_post uuid;
+  hid_quoted uuid;
   plain_q uuid;
   loud uuid; long_reply uuid; short_reply uuid; secret_quote uuid; open_quote uuid;
   r1 integer; r2 integer;
@@ -69,16 +70,17 @@ begin
   perform tests.unbecome();
   f := spring_facts(null::face_down, 'quote', quoting, null);
   if f.by_body is not null then raise exception 'spring_facts reads the words of a hidden post: %', f.by_body; end if;
-  -- A post that quotes a hidden one: the quoted words are emptied.
+  -- A post that quotes a hidden one: the quoted words are emptied. (The quote is written before the hide: a quote of a version an admin has already hidden is a counterfeit, its words the quoter's own, 0379.)
+  quoting := tests.post(ch_author, th, format('Mine [quote=%s]The hidden secret.[/quote] end', hid_post), base + interval '5 minutes');
   perform tests.become(admin_a);
   perform decide(null, hid_post, 'hide', null, 'condition');
   perform tests.unbecome();
-  quoting := tests.post(ch_author, th, format('Mine [quote=%s]The hidden secret.[/quote] end', hid_post), base + interval '5 minutes');
   f := spring_facts(null::face_down, 'quote', quoting, null);
   if f.by_body like '%secret%' then raise exception 'spring_facts reads a hidden post''s words through a quote: %', f.by_body; end if;
 
   -- ---- A post that quotes a hidden one is judged on its own words, as soon as it is written and after its layer: the quote is neither a way out of a rule nor a way in ----
-  -- (rules and traps run in the posting transaction, before the conceal job has made the layer, when the public form of such a post is withheld.) hid_post is hidden here.
+  -- (rules and traps run in the posting transaction, before the conceal job has made the layer, when the public form of such a post is withheld.) hid_quoted is written, quoted, and then hidden: a quote of a version
+  -- already hidden is a counterfeit (0379), so the quotes are written first, and an admin's hide leaves them to the conceal job.
   perform set_config('kayfabb.staff_writer', 'on', true);
   perform tests.act((select id from characters where staff = 'rp-boss'), 'move', (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'),
     jsonb_build_object('kind', 'setRule', 'body', 'A rule.', 'params', jsonb_build_object('board', null, 'predicate', 'minLength', 'param', 20, 'band', 'minor')), null, base + interval '6 minutes');
@@ -86,33 +88,37 @@ begin
     jsonb_build_object('kind', 'setRule', 'body', 'A rule.', 'params', jsonb_build_object('board', null, 'predicate', 'bannedWord', 'param', 'secret', 'band', 'minor')), null, base + interval '7 minutes');
   perform set_config('kayfabb.staff_writer', '', true);
   -- the rules are those, and a post of its own words that breaks none breaks none
-  plain_q := tests.post(ch_author, th, 'A calm post with enough words of its own.', base + interval '8 minutes');
+  plain_q := tests.post(ch_author, th, 'A calm post with enough words of its own. a long long long long long long quote', base + interval '8 minutes');
   select count(*) into n from rule_breaks(plain_q);
   if n is distinct from 0 then raise exception 'a calm post of 40 characters breaks % rules, so the tests below prove nothing', n; end if;
 
-  loud := tests.post(ch_author, th, format('I AM SHOUTING AT EVERYONE HERE[quote=%s]the hidden secret quietly and slowly spoken aloud in many words[/quote]', hid_post), base + interval '9 minutes');
+  hid_quoted := tests.post(ch_author, th, 'the hidden secret quietly and slowly spoken aloud in many words x', base + interval '8 minutes 30 seconds');
+  loud := tests.post(ch_author, th, format('I AM SHOUTING AT EVERYONE HERE[quote=%s]the hidden secret quietly and slowly spoken aloud in many words[/quote]', hid_quoted), base + interval '9 minutes');
   select count(*) into n from rule_breaks(loud);
   if n is distinct from 1 or (select predicate from rule_breaks(loud)) is distinct from 'noAllCaps' then raise exception 'a shouting post that quotes a hidden one is immune to noAllCaps, or breaks another rule: % (%)', n, (select string_agg(predicate, ',') from rule_breaks(loud)); end if;
-  long_reply := tests.post(ch_author, th, format('This reply has plenty of words of its own[quote=%s]x[/quote]', hid_post), base + interval '10 minutes');
+  long_reply := tests.post(ch_author, th, format('This reply has plenty of words of its own[quote=%s]x[/quote]', hid_quoted), base + interval '10 minutes');
   select count(*) into n from rule_breaks(long_reply);
   if n is distinct from 0 then raise exception 'a long reply that quotes a hidden post breaks % rules (minLength judged the withheld form?): %', n, (select string_agg(predicate, ',') from rule_breaks(long_reply)); end if;
   short_reply := tests.post(ch_author, th, format('ok[quote=%s]a long long long long long long quote[/quote]', plain_q), base + interval '11 minutes');
   select count(*) into n from rule_breaks(short_reply);
   if n is distinct from 1 or (select predicate from rule_breaks(short_reply)) is distinct from 'minLength' then raise exception 'a short reply is not short because it quotes a long post: % (%)', n, (select string_agg(predicate, ',') from rule_breaks(short_reply)); end if;
   -- no word of a quote, hidden or not, is read by a rule: bannedWord 'secret' is in the quoted words and nowhere else
-  secret_quote := tests.post(ch_author, th, format('Fine words of my own here[quote=%s]the hidden secret quietly[/quote]', hid_post), base + interval '12 minutes');
+  secret_quote := tests.post(ch_author, th, format('Fine words of my own here[quote=%s]the hidden secret quietly[/quote]', hid_quoted), base + interval '12 minutes');
   select count(*) into n from rule_breaks(secret_quote);
   if n is distinct from 0 then raise exception 'a rule read the words of a hidden post through a quote (%)', (select string_agg(predicate, ',') from rule_breaks(secret_quote)); end if;
-  open_quote := tests.post(ch_author, th, format('Fine words of my own here[quote=%s]a secret nobody hid[/quote]', plain_q), base + interval '13 minutes');
+  open_quote := tests.post(ch_author, th, format('Fine words of my own here[quote=%s]a secret nobody hid[/quote]', tests.post(ch_author, th, 'Nobody hid it: a secret nobody hid.', base + interval '12 minutes 30 seconds')), base + interval '13 minutes');
   select count(*) into n from rule_breaks(open_quote);
   if n is distinct from 0 then raise exception 'a rule read the quoted words of a post nobody hid (%)', (select string_agg(predicate, ',') from rule_breaks(open_quote)); end if;
+  perform tests.become(admin_a);
+  perform decide(null, hid_quoted, 'hide', null, 'quoted');
+  perform tests.unbecome();
   -- a card's condition reads the same: nothing of the hidden words, and the post's own words whole
   f := spring_facts(null::face_down, 'quote', secret_quote, null);
   if f.by_body like '%secret%' or f.by_body is distinct from 'Fine words of my own here' then raise exception 'spring_facts reads % of a post that quotes a hidden one (before its layer)', f.by_body; end if;
   -- after the layer the answers are the same
   perform tests.become_service();
-  perform record_layer(loud, array[hid_post], format('I AM SHOUTING AT EVERYONE HERE[quote=%s][/quote]', hid_post));
-  perform record_layer(secret_quote, array[hid_post], format('Fine words of my own here[quote=%s][/quote]', hid_post));
+  perform record_layer(loud, array[hid_quoted], format('I AM SHOUTING AT EVERYONE HERE[quote=%s][/quote]', hid_quoted));
+  perform record_layer(secret_quote, array[hid_quoted], format('Fine words of my own here[quote=%s][/quote]', hid_quoted));
   perform tests.unbecome();
   select count(*) into n from rule_breaks(loud);
   select count(*) into r1 from rule_breaks(secret_quote);
@@ -171,11 +177,12 @@ begin
   insert into settings (key, value) values ('cardWriteSettleSeconds', '0') on conflict (key) do update set value = excluded.value;
   insert into card_kinds (key, name, alignment, rarity, play, stack, writes) values ('mr-scribe-q', 'Scribe Q', 'salty', 'uncommon', 'cast', 3, true) on conflict do nothing;
   secret := tests.post(ch_author, th, 'The hidden secret words.', base);
+  earlier := tests.post(ch_author, th, format('Earlier own words [quote=%s]hidden secret words[/quote] done', secret), base + interval '1 minute');
+  qpost := tests.post(ch_author, th, format('Own words of the quoting post [quote=%s]The hidden secret words.[/quote] and the end', secret), base + interval '2 minutes');
+  -- the hide comes after the quotes are written: a quote of a version already hidden is a counterfeit, its words the quoter's own (0379)
   perform tests.become(admin_a);
   perform decide(null, secret, 'hide', null, 'quoted');
   perform tests.unbecome();
-  earlier := tests.post(ch_author, th, format('Earlier own words [quote=%s]hidden secret words[/quote] done', secret), base + interval '1 minute');
-  qpost := tests.post(ch_author, th, format('Own words of the quoting post [quote=%s]The hidden secret words.[/quote] and the end', secret), base + interval '2 minutes');
   perform tests.act(caster, 'card', th, jsonb_build_object('card', 'mr-scribe-q', 'message', '', 'config', '{}'::jsonb, 'layer', 1), qpost, base + interval '3 minutes');
   if (select concealing from acts_public where id = qpost) is not true then raise exception 'the quoting post is not concealing before its layer, so the test below proves nothing'; end if;
   perform tests.become_service();
