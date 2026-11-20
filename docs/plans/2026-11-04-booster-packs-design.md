@@ -318,9 +318,6 @@ before.
    it lies; the next turn, a tap or a swipe, sends the turned card off the pile toward the swipe's side (left by
    default; a drag follows the finger and commits past a third of the card's width) and flips the next. The exit flies
    the cards toward the Your hand link, or toward the viewport's top edge where the link has scrolled away.
-   **Decided** (the owner, 2026-11-20, after the last card was left where a drag dropped it): once every card is
-   turned, a swipe past a third sends the last card off the same way and closes the reveal as Done does; a shorter
-   drag springs back, and a tap closes nothing.
 
 **Where it lives.** The flight to the hand, the lift, the turn, the deal and the hit's beat are presets in
 `engine/ui/glass/motion.ts` beside Phase 3's, pure functions of the feel that are empty under Off, so the machine, the
@@ -333,3 +330,12 @@ should either do a more detailed 'pack opens, cards come out, pack slides up', o
 foil doesn't fade out and suddenly come back further up." **Decided** (the owner chose the recommendation): the pack
 opens, the cards come out of it, and the emptied pack slides up and parks as the head (E3 to E5 above). Weighed: no
 decoration at the head, with the pack fading once the cards are dealt.
+
+## Amended 2026-11-20: a swipe on the last card
+
+On a phone, once every card was turned, a drag on the last card followed the finger and its release did nothing, so the
+card was left where the finger let go. Item 7 of "The reveal's motion" said what a swipe does while a card is still to
+turn and nothing about the last one. **Decided** (the owner, of three: send it off and close, send it off and leave the
+pile empty, or always spring back): once every card is turned, a swipe past a third of the card's width sends the last
+card off toward its side as the turns before it did, and the reveal closes as Done does; the exit flies the other cards
+to the hand and leaves that one gone. A shorter drag springs back, and a tap closes nothing.
