@@ -3,7 +3,7 @@
 -- holds (engine/rules/settle.ts, SparkedDebate), so the input has to hold, for each spark the window reached, the spark, every member made before the window's end, the edges among them, the votes standing on the spark and
 -- the cushion plays that were ever up on it.
 --
---   1. settings_held     copied whole from 0377_sealed_packs.sql, gaining `debateDays`: a whole number of days from 1 to 365 (0, a fraction, text, null and a boolean are refused), as engine/rules/instance.ts holds it.
+--   1. settings_held     is not here: it gains `debateDays` (a whole number of days from 1 to 365) in 0391_debates_crowd_settings.sql, over crowd pay's 0383 copy, so the one definition that replays last holds both.
 --   2. settlement_input  copied whole from 0378_target_lean.sql. Two walks of recursive CTEs, each bounded by time at both ends and each a probe of an index at every step. `up` starts at every post or spin of the window
 --                        and climbs quote_refs (act to quoted, its primary key) to ancestors made no earlier than `debateDays` before the window's start; the origin of a spun thread with an Act in the window joins them, and so
 --                        does a post a reaction reached in the window that has a debate by then (a quote, or a spin of another player's, made before the window's end by an Act that is a node of the walks; a quote made after the window's end is no debate yet, so no spark; a nod that moves late still moves the refund, and the engine reads such a spark). Those are `sparks`. `down` starts at the sparks and
@@ -23,134 +23,6 @@
 -- time through acts_card_created over the longest cushion `lasts` and the debate window, and those on a post through acts_layers.
 -- Ways out: no state is added. Masks: the settlement counts a debate's voices by player inside The System's scoring (a settled sum is all that shows); the estimate reads only the caller's own sparks, keys every other author
 -- by character under the per-request salt, and sends the Acts of the caller's debates, which are public. Nothing here is computed from a private fact that a response shows, and no response, event or timing is added.
-
--- ---- 1. settings_held ----
-
--- settings_held (0377's), also holding `debateDays`; everything else as 0377 wrote it.
-create or replace function public.settings_held()
- RETURNS trigger
- LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_temp'
-AS $function$
-declare
-  v jsonb := new.value;
-  why text;
-  shape text;
-  phase text;
-  pkey text;
-  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'];
-begin
-  why := case new.key
-    when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
-    when 'vote' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
-    when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and setting_positive(v) and (v #>> '{}')::numeric <= 1, false)
-      then 'a fraction above 0 and at most 1' end
-    -- How many days a post's debate is followed (0380): a whole number of days, at least 1 and at most 365 (as digestBoardDays and movedStubDays are), so the `::integer` and the interval the inputs build from it cannot overflow.
-    when 'debateDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
-    when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
-    when 'charactersPerPlayer' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
-    when 'settlementCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
-    when 'viewCountCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
-    when 'meetingCron' then case when not setting_cron(v) then 'a five-field cron expression, each field inside its range' end
-    -- The spans the earlier triggers hold, but let through with a field missing.
-    when 'settlementLength' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
-    when 'seasonLength' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
-    when 'turnCooldown' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
-    when 'inviteLifetime' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
-    when 'setLasts' then case when not setting_span(v, array['day', 'week', 'month']) then 'a span: a unit of day, week or month and a whole count from 1 to 1000' end
-    when 'editGrace' then case when not setting_span(v, array['minute', 'day', 'week', 'month']) then 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000' end
-    when 'presenceWindow' then case when not setting_span(v, array['minute', 'day', 'week', 'month']) then 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000' end
-    when 'registrationMode' then case when v not in ('"open"', '"invite"', '"closed"') then '"open", "invite" or "closed"' end
-    when 'postMaxLength' then case when not setting_whole(v, 1) then 'a whole number of characters, at least 1' end
-    when 'titleMaxLength' then case when not setting_whole(v, 1) then 'a whole number of characters, at least 1' end
-    when 'postsPerPage' then case when not setting_whole(v, 1) then 'a whole number of posts, at least 1' end
-    when 'hotReplies' then case when not setting_whole(v, 1) then 'a whole number of replies, at least 1' end
-    when 'presenceNames' then case when not setting_whole(v, 1) then 'a whole number of names, at least 1' end
-    when 'presencePollSeconds' then case when not setting_whole(v, 10, 300) then 'a whole number of seconds from 10 to 300' end
-    when 'cardSettings' then case when not setting_named_numbers(v) then 'an object of named numbers' end
-    when 'systemEnabled' then case when jsonb_typeof(v) is distinct from 'boolean' then 'true or false' end
-    when 'oldVoice' then case when jsonb_typeof(v) is distinct from 'boolean' then 'true or false' end
-    when 'cardWriteSettleSeconds' then case when not setting_whole(v, 0, 600) then 'a whole number of seconds, at least 0 and at most 600' end
-    -- The old voice's window (§4 of docs/plans/2026-11-12-old-voice-window-design.md), in the words engine/rules/instance.ts gives each.
-    when 'oldVoiceWindow' then case when not setting_whole(v, 64, 1000000) then 'a whole number of tokens from 64 to 1,000,000' end
-    when 'oldVoiceTokenizer' then case when v not in ('"gpt2"', '"bytes"') then '"gpt2" or "bytes"' end
-    when 'oldVoicePromptFloor' then case when not setting_whole(v, 1) then 'a whole number of tokens, at least 1' end
-    when 'cardWriteFullShare' then case when not coalesce(case when jsonb_typeof(v) = 'number' then (v #>> '{}')::numeric between 0 and 1 end, false) then 'a number from 0 to 1' end
-    when 'cardWriteTopUps' then case when not setting_whole(v, 0, 5) then 'a whole number from 0 to 5' end
-    when 'hints' then case when not coalesce(jsonb_typeof(v) = 'object'
-        and setting_whole(v -> 'least', 1)
-        and jsonb_typeof(v -> 'share') = 'number' and (v ->> 'share')::numeric > 0.5 and (v ->> 'share')::numeric <= 1
-        and jsonb_typeof(v -> 'split') = 'number' and setting_positive(v -> 'split') and (v ->> 'split')::numeric <= 0.5
-        and setting_span(v -> 'window', array['minute', 'day', 'week', 'month']), false)
-      then 'an object giving least (a whole number of reactions, at least 1), share (above 0.5, at most 1), split (above 0, at most 0.5) and window (a span: a unit of minute, day, week or month and a whole count from 1 to 1000)' end
-    when 'toastDefaults' then case when not coalesce(jsonb_typeof(v) = 'array'
-        and not exists (select 1 from jsonb_array_elements(v) e where jsonb_typeof(e) <> 'string' or (e #>> '{}') <> all (kinds))
-        and (select count(*) = count(distinct e) from jsonb_array_elements(v) e), false)
-      then 'a list of the kinds of alert that toast (' || array_to_string(kinds, ', ') || '), each named once' end
-    when 'phases' then null  -- below: it needs a loop
-    when 'inheritanceGraceDays' then case when not setting_whole(v, 0) then 'a whole number of days, at least 0' end
-    when 'rosterRecentExcluded' then case when not setting_whole(v, 0) then 'a whole number of Bosses, at least 0' end
-    when 'structuralHoldHours' then case when not setting_whole(v, 1) then 'a whole number of hours, at least 1' end
-    when 'microEventDailyCalls' then case when not setting_whole(v, 0) then 'a whole number of calls, at least 0' end
-    when 'digestThreads' then case when not setting_whole(v, 1, 25) then 'a whole number of threads, at least 1 and at most 25' end
-    when 'digestExcerpts' then case when not setting_whole(v, 1, 20) then 'a whole number of posts, at least 1 and at most 20' end
-    when 'digestBoards' then case when not setting_whole(v, 1, 30) then 'a whole number of boards, at least 1 and at most 30' end
-    when 'digestBoardDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
-    when 'movedStubDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
-    when 'bundleMostParts' then case when not setting_whole(v, 1, 16) then 'a whole number of parts, at least 1 and at most 16' end
-    when 'bundleAuthoredMostParts' then case when not setting_whole(v, 1, 16) then 'a whole number of parts, at least 1 and at most 16' end
-    when 'farewellWindowHours' then case when not setting_whole(v, 1, 720) then 'a whole number of hours, at least 1 and at most 720' end
-    when 'digestExcerptChars' then case when not setting_whole(v, 1, 1000) then 'a whole number of characters, at least 1 and at most 1000' end
-    when 'memoryOpinions' then case when not setting_whole(v, 1) then 'a whole number of opinions, at least 1' end
-    when 'memoryGrudges' then case when not setting_whole(v, 1) then 'a whole number of grudges, at least 1' end
-    when 'memoryWheelhouse' then case when not setting_whole(v, 1) then 'a whole number of subjects, at least 1' end
-    when 'memoryRealWorld' then case when not setting_whole(v, 1) then 'a whole number of subjects, at least 1' end
-    when 'boardNameMaxLength' then case when not setting_whole(v, 1) then 'a whole number of characters, at least 1' end
-    when 'moveExpiryMostDays' then case when not setting_whole(v, 1) then 'a whole number of days, at least 1' end
-    when 'moveExpiryLeastHours' then case when not setting_whole(v, 1) then 'a whole number of hours, at least 1' end
-    when 'demandCheckMinutes' then case when not setting_whole(v, 1, 1440) then 'a whole number of minutes, at least 1 and at most 1440' end
-    when 'demandChecksPerTick' then case when not setting_whole(v, 1, 1000) then 'a whole number of moves, at least 1 and at most 1000' end
-    when 'searchLanguage' then case when not coalesce(jsonb_typeof(v) = 'string' and exists (select 1 from pg_ts_config c where c.cfgname = v #>> '{}'), false)
-      then 'the name of a text search configuration this database holds (english or simple, for example)' end
-    when 'searchRankPool' then case when not setting_whole(v, 100, 100000) then 'a whole number of matches from 100 to 100,000' end
-    when 'pool' then setting_pool(v)
-    when 'modBots' then setting_modbots(v)
-    when 'warnBar' then setting_warnbar(v)
-    when 'pronouns' then case when not pronouns_hold(pronouns_lowered(v)) then 'an object of five words of 1 to 12 letters each (an apostrophe or a hyphen between two letters is allowed) and a plural, true or false' end
-    when 'apology' then setting_apology(v)
-    when 'conduct' then setting_conduct(v)
-    when 'conductVersion' then case when not setting_whole(v, 1) then 'a whole number, at least 1 (the version of the code of conduct)' end
-    when 'conductSections' then case when not coalesce(jsonb_typeof(v) = 'array'
-        and not exists (select 1 from jsonb_array_elements(v) e where jsonb_typeof(e) is distinct from 'string' or btrim(e #>> '{}', E' \t\n\r\f\v') = ''), false)
-      then 'an array of section keys, each a non-blank string' end
-    when 'cosmetics' then setting_cosmetics(v)
-    -- The pack an account's first character is given (0377): the key of a pack, or null for none. That it names a fixed pack of the instance is the instance check's (engine/rules/instance.ts) and
-    -- welcome_pack_kind's: a name that is no fixed pack grants nothing.
-    when 'startingPack' then case when not (jsonb_typeof(v) = 'null' or (jsonb_typeof(v) = 'string' and btrim(v #>> '{}', E' \t\n\r\f\v') <> '')) then 'the key of a fixed pack, or null for none' end
-    when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
-        and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
-        and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)
-      then 'an object naming a model id for "strong" and for "light"' end
-    else null
-  end;
-  if new.key = 'phases' then
-    shape := 'an object of honeymoon, reign and meltdown, each holding its numbers (honeymoon and meltdown also their days) as whole numbers, at least 1';
-    if jsonb_typeof(v) <> 'object' then raise exception 'phases is %', shape using errcode = '23514'; end if;
-    foreach phase in array array['honeymoon', 'reign', 'meltdown'] loop
-      if jsonb_typeof(v -> phase) is distinct from 'object' then raise exception 'phases is %; "%" is missing', shape, phase using errcode = '23514'; end if;
-      foreach pkey in array case when phase = 'reign' then array['weeklyMoves', 'bankCap', 'moveExpiryMostDays']
-                                 else array['days', 'weeklyMoves', 'bankCap', 'moveExpiryMostDays'] end loop
-        if not setting_whole(v -> phase -> pkey, 1) then raise exception 'phases is %; "%.%" is not', shape, phase, pkey using errcode = '23514'; end if;
-      end loop;
-      select k into pkey from jsonb_object_keys(v -> phase) k
-        where k <> all (case when phase = 'reign' then array['weeklyMoves', 'bankCap', 'moveExpiryMostDays']
-                             else array['days', 'weeklyMoves', 'bankCap', 'moveExpiryMostDays'] end) limit 1;
-      if pkey is not null then raise exception 'phases is %; "%.%" is not a number a phase holds', shape, phase, pkey using errcode = '23514'; end if;
-    end loop;
-  end if;
-  if why is not null then raise exception '% is %', new.key, why using errcode = '23514'; end if;
-  return new;
-end $function$;
 
 -- ---- 2. settlement_input ----
 
@@ -178,7 +50,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   win_reactions as (select * from reactions r where r.created_at >= window_start and r.created_at < window_end and r.act not in (select id from ended)
                     and not exists (select 1 from acts d where d.id = r.act and d.kind = 'donation')),
   reacted as (select distinct act from win_reactions),
-  -- ---- The debates the window reached (0380; docs/plans/2026-11-18-tweener-catalyst-design.md, section 1) ----
+  -- ---- The debates the window reached (0390; docs/plans/2026-11-18-tweener-catalyst-design.md, section 1) ----
   -- The earliest a spark may be made for its debate to be followed: `debateDays` before the window opens, as engine/rules/settle.ts reads it.
   cutoff as (select window_start - make_interval(days => (setting('debateDays') #>> '{}')::integer) as at),
   -- Walk up: from each window post or spin, through quote_refs (`act` to `quoted`, its primary key), to the posts it quotes and the posts those quote, none made before the cutoff, each earlier than the one that
@@ -263,7 +135,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     select a.target_act_id as id from win_acts a where a.kind in ('card', 'spring') and a.target_act_id is not null and coalesce(a.payload ->> 'reach', 'post') = 'post'
     union
     select (a.payload ->> 'by')::uuid from win_acts a where a.kind = 'spring' and a.payload ->> 'by' is not null),
-  -- Only what a reaction reached is paid for a scored Act (`paid`, below, still joins `reacted`): an earlier reaction on a scored Act is read for the lean and pays nothing. A spark's (0380) are read and its paid rows sent, so
+  -- Only what a reaction reached is paid for a scored Act (`paid`, below, still joins `reacted`): an earlier reaction on a scored Act is read for the lean and pays nothing. A spark's (0390) are read and its paid rows sent, so
   -- its standing votes are in the input in a window no reaction reached it; the vote math pays only a vote with a reaction in the window, so nothing is paid twice.
   earlier_reactions as (select r.* from (select act from reacted union select id from scored where id not in (select id from ended) union select id from sparks) x cross join lateral (select r.* from reactions r where r.act = x.act and r.created_at < window_start offset 0) r),
   -- Every skim play made before the window and still up in it (a play inside it is a window Act already), as earn_up carries Earn plays: live is not ended by an admin, not caught, and ending after the window's start;
@@ -358,11 +230,11 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'),
     -- The plays that name a class for this window (scored_as_plays), each with its character, its class and the play.
     'scoredAs', coalesce((select jsonb_agg(jsonb_build_object('character', s.character, 'class', s.class_key, 'play', s.play) order by s.character) from scored_as_plays(window_start, window_end) s), '[]'),
-    -- Each quote with both ends among the input's Acts: `act` quotes `quoted`. The engine reads a post's debate from them (0380).
+    -- Each quote with both ends among the input's Acts: `act` quotes `quoted`. The engine reads a post's debate from them (0390).
     'quotes', coalesce((
       select jsonb_agg(jsonb_build_object('act', r.act, 'quoted', r.quoted) order by r.act, r.quoted)
       from all_acts a cross join lateral (select r.act, r.quoted from quote_refs r where r.act = a.id offset 0) r join all_acts q on q.id = r.quoted), '[]'),
-    -- What earlier windows paid for every player's vote on each Act this window's reactions touch (section 9), and, since 0380, on each spark.
+    -- What earlier windows paid for every player's vote on each Act this window's reactions touch (section 9), and, since 0390, on each spark.
     'paid', coalesce((
       select jsonb_agg(jsonb_build_object('player', q.account, 'act', q.act, 'weight', q.weight, 'shares', q.shares) order by q.account, q.act)
       from (select p.* from paid_votes p join reacted r on r.act = p.act
@@ -444,7 +316,7 @@ begin
                    where exists (select 1 from reactions r where r.act = a.id and r.created_at >= window_start and r.created_at < window_end)),
   -- The Acts the caller reacted to in the window, through reactions_reactor.
   reacted_by_me as (select distinct r.act from reactions r where r.reactor_account = account and r.created_at >= window_start and r.created_at < window_end),
-  -- ---- The caller's debates (0380) ----
+  -- ---- The caller's debates (0390) ----
   cutoff as (select window_start - make_interval(days => (setting('debateDays') #>> '{}')::integer) as at),
   -- The caller's own posts made no earlier than the cutoff, through acts_character: the only Acts a walk starts from. A bystander's posts lead nothing about anyone else's debate.
   my_posts as (select a.id, a.created_at as at, a.character, a.kind from acts a join mine m on m.id = a.character
@@ -559,7 +431,7 @@ begin
   -- The Acts whose reactions are read.
   voted as (select id from win_acts union select act from mine_reacted union select act from reacted_by_me union select id from targets
             union select post from skim_up union select id from ride_casts union select id from spring_by
-            -- The caller's own sparks (0380): their posts, whose reactions the caller's log already shows. Their members are never voted, so no reaction on one is read.
+            -- The caller's own sparks (0390): their posts, whose reactions the caller's log already shows. Their members are never voted, so no reaction on one is read.
             union select id from sparks),
   touched as (
     select id from voted union select id from my_cards_there union select id from landed union select id from spins
@@ -656,7 +528,7 @@ begin
         || case when k.kind like 'x-%' then jsonb_build_object('quadrant', reaction_quadrant(k.act, k.kind)) else '{}'::jsonb end order by k.created_at, k.id)
       from keyed k), '[]'),
     'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'),
-    -- Each quote with both ends among the caller's sparks and their members, so a bystander's input holds none (0380).
+    -- Each quote with both ends among the caller's sparks and their members, so a bystander's input holds none (0390).
     'quotes', coalesce((
       select jsonb_agg(jsonb_build_object('act', r.act, 'quoted', r.quoted) order by r.act, r.quoted)
       from all_acts a cross join lateral (select r.act, r.quoted from quote_refs r where r.act = a.id offset 0) r join all_acts q on q.id = r.quoted

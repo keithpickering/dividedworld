@@ -1,11 +1,14 @@
--- settings_held held both features again (docs/plans/2026-11-18-tweener-catalyst-plan.md; docs/plans/2026-11-20-crowd-pay-plan.md).
--- 0380_debates.sql and 0383_crowd_pay_setting.sql were written on two branches at once, and each copied settings_held whole from 0377_sealed_packs.sql: 0380 to add `debateDays`, 0383 to add `crowdPayEach` and
--- `crowdPayMost`. Replayed in number order, 0383's copy replaces 0380's and drops `debateDays`, so the setting took 0, a fraction, text, null or a boolean and the `::integer` and the interval settlement_input and
--- estimate_input build from it could fail at a settlement. A merge of the two raised no conflict, since the files differ; supabase/tests/0079-settings-held.sql and 0380-debates.sql went red on it.
---   settings_held    0383's, with 0380's `debateDays` clause back where 0380 put it; everything else as 0383 wrote it. Its grants are as before.
--- Nothing else overlaps: 0383 to 0386 redefine settings_held, screen_settings, apply_settlement, log_page and boot, and 0380 redefines settings_held, settlement_input and estimate_input, so 0380's two inputs stand as
--- they are. apply_settlement (0384) re-reads each crowd pay Act from the tables and not from settlement_input, and every Act 0380 adds to the input passes the same filters (`all_acts`) and every reaction it adds is
--- before the window on an Act whose reactions were already sent, so the engine's crowd pay over 0380's input is what 0384 accepts.
+-- settings_held holds both features (docs/plans/2026-11-18-tweener-catalyst-plan.md, Task 2; docs/plans/2026-11-20-crowd-pay-plan.md).
+-- The Tweener catalyst adds `debateDays`, the number of days a post's debate is followed; crowd pay's 0383_crowd_pay_setting.sql added `crowdPayEach`
+-- and `crowdPayMost`. Each branch copied settings_held whole from 0377_sealed_packs.sql, so the one definition here is 0383's with the `debateDays`
+-- clause, and it is numbered after crowd pay's (and after 0390_debates.sql, whose inputs read the setting) so that it replays last.
+--   settings_held    0383's, gaining `debateDays`: a whole number of days from 1 to 365 (as digestBoardDays and movedStubDays are), so the `::integer`
+--                    and the interval settlement_input and estimate_input build from it are always in range. Everything else as 0383 wrote it; its
+--                    grants are as before.
+-- Nothing else overlaps: 0383 to 0386 redefine settings_held, screen_settings, apply_settlement, log_page and boot, and 0390 redefines settlement_input
+-- and estimate_input. apply_settlement (0384) re-reads each crowd pay Act from the tables and not from settlement_input, every Act 0390 adds to the input
+-- passes the same filters (`all_acts`), and every reaction it adds is from before the window on an Act whose reactions were already sent, so the engine's
+-- crowd pay over 0390's input is what 0384 accepts.
 -- Ways out: no state is added. Masks: a setting is the instance's own number, read by no response that could show a private fact.
 
 create or replace function public.settings_held()
@@ -26,7 +29,7 @@ begin
     when 'vote' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
     when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and setting_positive(v) and (v #>> '{}')::numeric <= 1, false)
       then 'a fraction above 0 and at most 1' end
-    -- How many days a post's debate is followed (0380): a whole number of days, at least 1 and at most 365 (as digestBoardDays and movedStubDays are), so the `::integer` and the interval the inputs build from it cannot overflow.
+    -- How many days a post's debate is followed (0391): a whole number of days, at least 1 and at most 365 (as digestBoardDays and movedStubDays are), so the `::integer` and the interval the inputs build from it cannot overflow.
     when 'debateDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
     when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
     when 'crowdPayEach' then case when not setting_whole(v, 0) then 'a whole number of hundredths, at least 0' end

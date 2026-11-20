@@ -1,4 +1,4 @@
--- settings_held holds both features at once (supabase/migrations/0390_debates_crowd_settings.sql): `debateDays` (0380) and `crowdPayEach` and `crowdPayMost` (0383), each copied from 0377 on its own branch, so the
+-- settings_held holds both features at once (supabase/migrations/0391_debates_crowd_settings.sql): `debateDays` (0391) and `crowdPayEach` and `crowdPayMost` (0383), each copied from 0377 on its own branch, so the
 -- later copy replayed over the earlier one and dropped `debateDays`. Each key here is refused a poisoned value with 23514 and takes a good one, in one replay, so a later copy that drops any of the three goes red here.
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
