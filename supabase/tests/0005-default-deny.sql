@@ -37,11 +37,15 @@ declare
                            -- The admins' re-review list (0340): the versions brought back by an author's edit, read by admins alone (the view is empty for anyone else).
                            'reviews_due',
                            -- Polls (0381): every poll's counts, the same for every caller (characters counted, no owner read), and the caller's own ballots, a secret one's character and picks included.
-                           'poll_counts', 'my_ballots'];
+                           'poll_counts', 'my_ballots',
+                           -- The poll reads (0382): the caller's own ballots' sibling, an admin's closes of the caller's own polls, read by the log alone.
+                           'my_poll_closes'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[],jsonb)', 'post(uuid,uuid,text,uuid,uuid[],jsonb)',
                            'edit_post(uuid,uuid,text,jsonb)',
                            -- A ballot and a poll's two closes (0381): the player's doors, which verify the caller plays the character; an admin's close checks the caller inside. The poll's draft is written inside post, start_thread and edit_post.
                            'cast_ballot(uuid,uuid,integer[])', 'close_poll(uuid,uuid)', 'close_poll_as_admin(uuid)',
+                           -- A public poll's ballots, every one and 50 at a time (0382): an invoker over acts_public, the same for every caller; a secret poll is refused whatever the caller.
+                           'poll_ballots(uuid,timestampwithtimezone)',
                            -- Whether a poll is secret (0381): a column of acts_public's projection of a ballot, whose reader executes it (a view's functions run as its reader); a public fact of any poll id, naming no one.
                            'ballot_secret(uuid)', 'spin(uuid,uuid,text,text,uuid[],uuid)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'play_landed_at(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text,integer)', 'create_character(text,text,text,text,jsonb)', 'set_debut(uuid,text,text)',
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'origin_moment(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer,text,text,text,integer,text,integer,text,text[],boolean)', 'meet_card(text)', 'see_welcome()', 'see_tip(text)', 'skip_tips()', 'restore_tips()', 'resume_tips()', 'replay_tour()', 'my_account_opened()', 'see_alerts(timestampwithtimezone)', 'see_settlement(timestampwithtimezone)', 'follow_thread(uuid,boolean)', 'following_thread(uuid)', 'my_alerts(timestampwithtimezone,integer)', 'my_alerts_unread()', 'my_settlement_moved(bigint)', 'set_profile(uuid,text,text,text,jsonb)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',

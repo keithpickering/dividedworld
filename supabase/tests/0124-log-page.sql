@@ -121,7 +121,7 @@ begin
   perform tests.become(ann);
   doc := log_page(null);
 
-  -- ---- The twenty sources: each its view's rows, newest first, at most 200, the same columns ----
+  -- ---- The twenty-two sources: each its view's rows, newest first, at most 200, the same columns ----
   if doc -> 'sources' -> 'ledger' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select settlement, starts_at, ends_at, character, reason, amount, shares_kept, params from my_ledger order by ends_at desc, settlement, character, reason limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'ledger') is distinct from 2 then raise exception 'ledger: %', doc -> 'sources' -> 'ledger'; end if;
@@ -163,7 +163,9 @@ begin
   -- The packs (0139): this caller bought none here, so the source is the view's empty read; 0139-machine.sql holds a bought pack's row.
   if doc -> 'sources' -> 'packs' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select id, pack, price, repriced, contents, bought_at, source from my_packs order by bought_at desc, id limit 200) r)) then raise exception 'packs: %', doc -> 'sources' -> 'packs'; end if;
-  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 20 then raise exception 'twenty sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
+  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 22 then raise exception 'twenty-two sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
+  -- The polls' two sources (0382) are this caller's own and empty here (0382-poll-reads.sql holds their rows).
+  if doc -> 'sources' -> 'ballots' is distinct from '[]'::jsonb or doc -> 'sources' -> 'pollCloses' is distinct from '[]'::jsonb then raise exception 'ballots and pollCloses: %, %', doc -> 'sources' -> 'ballots', doc -> 'sources' -> 'pollCloses'; end if;
   if doc::text like '%' || b1::text || '"%' and exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'ledger') x where x ->> 'character' = b1::text) then raise exception 'another player''s ledger line is in the page'; end if;
   if exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'wallet') x where (x ->> 'change')::integer = 9) then raise exception 'another player''s wallet event is in the page'; end if;
 
@@ -232,7 +234,7 @@ begin
   -- A signed-in caller with nothing: empty sources, no error.
   perform tests.become(nobody);
   doc := log_page(null);
-  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 20 or exists (select 1 from jsonb_each(doc -> 'sources') e where e.value is distinct from '[]'::jsonb) then raise exception 'a caller with nothing reads twenty empty sources: %', doc -> 'sources'; end if;
+  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 22 or exists (select 1 from jsonb_each(doc -> 'sources') e where e.value is distinct from '[]'::jsonb) then raise exception 'a caller with nothing reads twenty-two empty sources: %', doc -> 'sources'; end if;
   perform tests.unbecome();
 
   -- A visitor is refused.

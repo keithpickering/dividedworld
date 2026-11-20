@@ -142,3 +142,75 @@ begin
   -- The meter sees an origin: the same nodes on page 1 did run, so a zero above is a read that did not happen and not a blind meter.
   if pg_temp.origin_relation_loops(plan) < 1 then raise exception '2 the meter sees no read of the origin on the page that holds it: it cannot tell a read that did not happen'; end if;
 end $$;
+
+-- ---- 3. The polls of a page (supabase/migrations/0382_poll_reads.sql, Task 2 of docs/plans/2026-11-20-polls-plan.md) ----
+-- thread_page now carries the current poll of each post it draws, with its counts and the voters of a public poll. The reads (pl_cur, pl_polls, pl_voters, pl_cast, pl_mine, and o_post that finds the origin's post) must cost what a page's
+-- polls cost, bounded by the 50 voters each poll lists and by acts_ballots, never by the instance's Acts: a page of 20 posts, each with a public poll of 200 characters' ballots and 3 changes each (800 ballots a poll, 16,000 in all), among
+-- the 12,000 other posts and 6,000 plays above. The plan is read as case 1 reads it: the generic plan under explain (analyze, format json), the nodes under the poll CTEs counted.
+--  3. The page of 20 posts with polls: no sequential scan of `acts` under the poll CTEs; the voters handed on are 50 a poll (1,000 in all) and `votersMore` names each of the 20 polls; the rows of `acts` the poll CTEs read stay within five
+--     passes over the 16,000 ballots (through acts_ballots) and never grow with the instance's other Acts; the time is recorded in the notice and held to 5 s. Recorded 2026-11-20 on Postgres 16, localhost: 80,060 rows read, 1,000 voters handed on, the plan's own
+--     time about 490 ms and the document's call about the same, for 20 polls of 800 ballots; the other cases above hold row counts (origin 423 rows for 400 plays) and no time, so these are the first.
+
+create function pg_temp.poll_nodes(plan jsonb) returns setof jsonb language sql as $$
+  select d from jsonb_path_query(plan, '$.**') c, jsonb_path_query(c, '$.**') d
+  where jsonb_typeof(c) = 'object' and c ->> 'Subplan Name' in ('CTE o_post', 'CTE pl_post', 'CTE pl_cur', 'CTE pl_polls', 'CTE pl_voters', 'CTE pl_cast', 'CTE pl_mine')
+    and jsonb_typeof(d) = 'object' and d ? 'Node Type'
+$$;
+
+create function pg_temp.poll_rows_read(plan jsonb) returns numeric language sql as $$
+  select coalesce(sum(((n ->> 'Actual Rows')::numeric + coalesce((n ->> 'Rows Removed by Filter')::numeric, 0) + coalesce((n ->> 'Rows Removed by Index Recheck')::numeric, 0)) * (n ->> 'Actual Loops')::numeric), 0)
+  from pg_temp.poll_nodes(plan) n
+  where n ->> 'Relation Name' = 'acts' and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan')
+$$;
+
+do $$
+declare
+  ann uuid := tests.account('ps-ann'); rdr uuid := tests.account('ps-rdr');
+  oa uuid := tests.character(ann, 'Ps Author'); rd uuid := tests.character(rdr, 'Ps Reader');
+  voters uuid[] := '{}'; owners uuid[] := '{}'; t uuid := tests.thread('Ps polls'); other uuid := tests.thread('Ps other thread');
+  p uuid; k integer; plan jsonb; doc jsonb; read_rows numeric; voters_out numeric; started timestamptz; took numeric;
+begin
+  for k in 0..39 loop owners := owners || tests.account('ps-voter-' || k); end loop;
+  for k in 1..200 loop voters := voters || tests.character(owners[k % 40 + 1], 'Ps Voter ' || k); end loop;
+  -- 20 posts, each with a poll (a page of 20); a poll is a public one of three options.
+  for k in 1..20 loop p := tests.post(oa, t, 'Poll post ' || k, now() - interval '3 days' + k * interval '1 minute'); end loop;
+  alter table acts disable trigger user;
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  select oa, 'poll', t, a.id, jsonb_build_object('question', 'Best kart ' || a.seq || '?', 'options', '["Pipe Frame", "Badwagon", "Mach Bike"]'::jsonb, 'pick', 1, 'secret', false, 'closes_at', now() + interval '10 days'), a.created_at + interval '1 second'
+  from acts a where a.thread = t and a.kind = 'post';
+  -- 200 characters' ballots on each poll, and 3 changes each.
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  select voters[c], 'ballot', t, l.id, jsonb_build_object('picks', jsonb_build_array((c + g + l.n) % 3)), now() - interval '2 days' + (g * 1000 + c) * interval '1 second' + l.n * interval '1 millisecond'
+  from (select a.id, row_number() over (order by a.created_at) as n from acts a where a.thread = t and a.kind = 'poll') l, generate_series(1, 200) c, generate_series(1, 4) g;
+  -- 12,000 other posts and 6,000 plays on them, which the page's polls must never touch.
+  insert into acts (character, kind, thread, payload, seq, created_at)
+  select oa, 'post', other, jsonb_build_object('body', 'Other ' || g), g, now() - interval '19 days' + g * interval '1 second' from generate_series(1, 12000) g;
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  select a.character, 'card', a.thread, a.id, jsonb_build_object('card', 'orplain', 'message', '', 'config', '{}'::jsonb, 'layer', 1), a.created_at + interval '1 minute'
+  from acts a where a.kind = 'post' and a.thread = other and a.seq <= 6000;
+  alter table acts enable trigger user;
+  analyze acts;
+  if (select count(*) from acts where kind = 'ballot' and thread = t) is distinct from 16000::bigint then raise exception '3 the fixture holds 16,000 ballots'; end if;
+
+  plan := pg_temp.generic_plan(rdr, t, 1, 20);
+  if (select count(*) from pg_temp.poll_nodes(plan)) < 5 then raise exception '3 the plan holds no nodes under the poll CTEs, so the test reads nothing: %', plan; end if;
+  read_rows := pg_temp.poll_rows_read(plan);
+  voters_out := coalesce((select max((c ->> 'Actual Rows')::numeric) from jsonb_path_query(plan, '$.**') c where jsonb_typeof(c) = 'object' and c ->> 'Subplan Name' = 'CTE pl_voters'), -1);
+  raise notice '3 a page of 20 polls of 800 ballots read % rows of acts under the poll CTEs and handed on % voters, in % ms (the plan''s own time), among 16,000 ballots and 18,000 other Acts', read_rows, voters_out, round((plan -> 0 ->> 'Execution Time')::numeric, 1);
+  if (select count(*) from pg_temp.poll_nodes(plan) n where n ->> 'Node Type' = 'Seq Scan' and n ->> 'Relation Name' = 'acts') > 0 then raise exception '3 the polls'' reads scan acts: %', plan; end if;
+  if plan::text not like '%acts_ballots%' or plan::text not like '%acts_polls%' then raise exception '3 the polls'' reads do not go through acts_polls and acts_ballots: %', plan; end if;
+  if voters_out is distinct from 1000::numeric then raise exception '3 the voters handed on are % for 20 polls of 200 voters: they are bounded by 50 a poll', voters_out; end if;
+  -- Five passes over the 16,000 ballots, each through acts_ballots by poll: poll_counts' one, the voters' three (acts_public is three selects over `acts`, and each reads a poll's ballots to take or to pass them, as the origin's plays are read above), and my_ballots' one
+  -- by the caller's characters (few). It is the polls' own ballots and never the instance's 18,000 other Acts: a read that follows those is far above this.
+  if read_rows > 5 * 16000 + 2000 then raise exception '3 the poll CTEs read % rows of acts for 16,000 ballots: five passes at most, they must be those of the polls'' own ballots and not the instance''s Acts', read_rows; end if;
+  perform tests.become(rdr);
+  started := clock_timestamp();
+  doc := thread_page(t, 1, null, 20, '{}');
+  took := extract(epoch from clock_timestamp() - started) * 1000;
+  perform tests.unbecome();
+  raise notice '3 the page of 20 polls took % ms in the document''s own call', round(took, 1);
+  if jsonb_array_length(doc -> 'polls') is distinct from 20 or jsonb_array_length(doc -> 'voters') is distinct from 1000 or jsonb_array_length(doc -> 'votersMore') is distinct from 20 or jsonb_array_length(doc -> 'voterCast') is distinct from 50 then
+    raise exception '3 the document holds % polls, % voters, % polls with more, % heads: 20, 1,000, 20 and 50 are those of 20 polls of 200 voters (the 50 newest characters are the same on each poll, so 50 heads)', jsonb_array_length(doc -> 'polls'), jsonb_array_length(doc -> 'voters'), jsonb_array_length(doc -> 'votersMore'), jsonb_array_length(doc -> 'voterCast');
+  end if;
+  if took > 5000 then raise exception '3 a page of 20 polls of 800 ballots took % ms', took; end if;
+end $$;
