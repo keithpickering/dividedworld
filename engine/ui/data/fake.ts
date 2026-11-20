@@ -20,7 +20,7 @@
  *  - A card's seeded settings are not drawn (a play carries no `seed`); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
  */
 import { isPost, type Instance, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
-import { pollHeard } from './api.ts';
+import { pollHeard, type LogBallot, type LogPlace, type LogPollClose } from './api.ts';
 import { decide } from '../../rules/actions.ts';
 import { countedBallots, lastsHours, pickRefusal, pollCounts, pollDraftProblems, type PollDraft } from '../../rules/polls.ts';
 import { isFixed, rollPack } from '../../rules/packs.ts';
@@ -1458,6 +1458,29 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const pollEnd = (p: ActRec): number => Math.min(Date.parse(String(p.payload.closes_at)), closeOf(p.id)?.at ?? Infinity);
   const ballotsOn = (poll: Id): ActRec[] => [...acts.values()].filter((a) => a.kind === 'ballot' && a.target === poll).sort(byTime);
   const asCounted = (b: ActRec) => ({ act: b.id, character: b.character, picks: b.payload.picks as readonly number[], at: iso(b.at) });
+  /** The poll's post as log_page names it ({thread, title, seq}), or null where the poll's post is not there. */
+  const pollPlace = (p: ActRec): LogPlace | null => {
+    const post = p.target === null ? undefined : acts.get(p.target);
+    return post === undefined || post.seq === null ? null : { thread: post.thread, title: threads.get(post.thread)?.title ?? '', seq: post.seq };
+  };
+  /** The caller's own ballots and the admin closes of their polls (my_ballots, my_poll_closes), each with the poll's words and place, in the rows log_page's sources hold. */
+  function pollLog(account: Id): { readonly ballots: { readonly ms: number; readonly order: number; readonly r: LogBallot }[]; readonly closes: { readonly ms: number; readonly order: number; readonly r: LogPollClose }[] } {
+    const ownedBy = (c: Id | null) => c !== null && characters.get(c)?.owner === account;
+    const ballots = [...acts.values()].filter((a) => a.kind === 'ballot' && ownedBy(a.character)).flatMap((a) => {
+      const p = pollOf(a.target ?? '');
+      const place = p === undefined ? null : pollPlace(p);
+      if (p === undefined || place === null) return [];
+      const changed = ballotsOn(p.id).some((o) => o.character === a.character && (o.at < a.at || (o.at === a.at && o.order < a.order)));
+      return [{ ms: a.at, order: a.order, r: { act: a.id, poll: p.id, character: a.character!, picks: a.payload.picks as readonly number[], at: iso(a.at), question: String(p.payload.question), secret: p.payload.secret === true, options: p.payload.options as readonly string[], changed, place } }];
+    });
+    const closes = [...acts.values()].filter((a) => a.kind === 'poll_close' && a.payload.by === 'admin').flatMap((a) => {
+      const p = pollOf(a.target ?? '');
+      const place = p === undefined ? null : pollPlace(p);
+      if (p === undefined || place === null || !ownedBy(p.character)) return [];
+      return [{ ms: a.at, order: a.order, r: { act: a.id, poll: p.id, character: p.character!, at: iso(a.at), question: String(p.payload.question), place } }];
+    });
+    return { ballots, closes };
+  }
   /** poll_counts: characters counted, the same for every caller. */
   function countsOf(p: ActRec): PollCounts {
     const endsAt = iso(pollEnd(p));
@@ -3949,6 +3972,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             draws: newest(surfaces.draws.filter((x) => fits(x.ms))).map(({ r }) => r),
             wallsDrawn: newest(surfaces.walls.filter((x) => fits(x.ms))).map(({ r }) => r),
           }))(account === undefined ? { draws: [], walls: [] } : surfaceLog(account)),
+          /* my_ballots and my_poll_closes (0388, 0389), as log_page's `ballots` and `pollCloses` read them: the caller's own ballots (a secret one's character and picks too, a withdrawal's picks empty, `changed` where the character had an earlier ballot on the poll) and an admin's closes of the polls their characters wrote. */
+          ...((rows) => ({
+            ballots: newest(rows.ballots.filter((x) => fits(x.ms))).map(({ r }) => r),
+            pollCloses: newest(rows.closes.filter((x) => fits(x.ms))).map(({ r }) => r),
+          }))(account === undefined ? { ballots: [], closes: [] } : pollLog(account)),
           /* my_posts_written_on (0149): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
           writes: newest(texts.flatMap((t) => {
             const play = acts.get(t.play);

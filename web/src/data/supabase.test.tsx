@@ -3294,6 +3294,20 @@ describe('a screen in one call', () => {
       sources, shares: [], acts: [], states: [], people: [], threads: [], boards: [], standings: [], turns: [], season: null, ...rest,
     });
 
+    it('maps log_page\'s ballots and pollCloses (options, changed, place, a withdrawal\'s empty picks), and an older payload without them reads as none', async () => {
+      const place = { kind: 'post', thread: T, title: 'Best kart?', seq: 12 };
+      const ballot = { act: A, poll: C, character: B, picks: [1], at: '2026-10-30T09:00:00+00:00', question: 'Best part?', secret: true, options: ['Wheel', 'Pipe Frame'], changed: true, place };
+      const close = { act: SET, poll: C, character: B, at: '2026-10-30T10:00:00+00:00', question: 'Best part?', place };
+      const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW], ballots: [ballot, { ...ballot, act: C, picks: [], changed: false, secret: false }], pollCloses: [close] }))).api.logPage(null);
+      expect(page.log.ballots).toEqual([
+        { act: A, poll: C, character: B, picks: [1], at: ballot.at, question: 'Best part?', secret: true, options: ['Wheel', 'Pipe Frame'], changed: true, place: { thread: T, title: 'Best kart?', seq: 12 } },
+        expect.objectContaining({ act: C, picks: [], secret: false, changed: false }),
+      ]);
+      expect(page.log.pollCloses).toEqual([{ act: SET, poll: C, character: B, at: close.at, question: 'Best part?', place: { thread: T, title: 'Best kart?', seq: 12 } }]);
+      const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
+      expect(older.log.ballots ?? []).toEqual([]);
+    });
+
     it('maps the top-level scoredAs rows (named_class to classKey), and an older payload without them reads as none', async () => {
       const row = { settlement: 9, character: B, named_class: 'heel', play: C, card: 'offday', starts_at: '2026-10-29T08:17:00+00:00', ends_at: '2026-10-30T08:17:00+00:00' };
       const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }), { scoredAs: [row] })).api.logPage(null);

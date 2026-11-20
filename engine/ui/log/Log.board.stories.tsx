@@ -80,6 +80,42 @@ function LogEmptyView({ doc }: { readonly doc: LogDoc }) {
   return <Log data={bare} tab={tab !== undefined ? tab : hooligan} onTab={setTab} open={new Set()} onToggle={() => {}} />;
 }
 
+/** The poll lines (the polls plan, Task 8): the player's own ballots (cast, changed, withdrawn, secret) and an admin's close of their poll, on the log of the 12-log moment with its other lines taken away. */
+function LogPolls() {
+  const doc = useDoc();
+  return doc === null ? <div className="kb-log" aria-busy="true" /> : <LogPollsView doc={doc} />;
+}
+
+function LogPollsView({ doc }: { readonly doc: LogDoc }) {
+  const { api } = useKayfa();
+  const { characters } = usePlayer();
+  const { data } = useLog(api, doc, characters, null);
+  const [tab, setTab] = useState<string | null | undefined>(undefined);
+  const [a, b] = data.mine;
+  if (a === undefined || b === undefined) return <div className="kb-log" aria-busy="true" />;
+  const place = { thread: 'story-thread', title: 'Best kart part?', seq: 12 };
+  const minutes = (n: number) => new Date(Date.parse('2026-11-20T12:00:00.000Z') - n * 60_000).toISOString();
+  const ballot = (act: string, who: string, at: number, picks: number[], over: { secret?: boolean; changed?: boolean } = {}) =>
+    ({ act, poll: 'p1', character: who, picks, at: minutes(at), question: 'Best kart part?', secret: over.secret ?? false, options: ['Wheel', 'Pipe Frame', 'Engine'], changed: over.changed ?? false, place });
+  const shown: LogData = {
+    ...data,
+    log: {
+      settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], cosmetics: [], falls: [], before: null,
+      ballots: [
+        ballot('b5', a.id, 5, [0, 2], { changed: true }), ballot('b4', b.id, 20, [], { secret: true, changed: true }), ballot('b3', b.id, 40, [1], { secret: true }),
+        ballot('b2', a.id, 90, [2], { changed: true }), ballot('b1', a.id, 150, [1]),
+      ],
+      pollCloses: [{ act: 'k1', poll: 'p1', character: a.id, at: minutes(1), question: 'Best kart part?', place }],
+    },
+    estimate: null, turns: [], nextSettlement: null,
+  };
+  return <Log data={shown} tab={tab !== undefined ? tab : null} onTab={setTab} open={new Set()} onToggle={() => {}} />;
+}
+
+function LogPollsStory() {
+  return <Page surface="log"><LogPolls /></Page>;
+}
+
 function LogEmptyStory() {
   return <Page surface="log"><LogEmpty /></Page>;
 }
@@ -112,3 +148,6 @@ export const EmptyPhone: StoryObj<typeof LogEmptyStory> = {
   name: '12 Log, empty, phone 390 × 844', render: () => <LogEmptyStory />,
   globals: { viewport: { value: 'glassPhone390', isRotated: false } },
 };
+
+/** The log's poll lines: a ballot cast, changed, withdrawn and secret, and an admin's close of the player's poll, on All. */
+export const Polls: StoryObj<typeof LogPollsStory> = { name: '12 Log, poll lines', render: () => <LogPollsStory /> };
