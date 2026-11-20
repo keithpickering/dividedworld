@@ -365,6 +365,12 @@ export function settingsProblems(settings: Settings): string[] {
     const why = rule(settings[key]);
     if (why) out.push(`setting "${key}" is ${JSON.stringify(settings[key])}; it must be ${why}`);
   }
+  // The least a poll may last is no longer than the most (SQL's settings_held holds the same, against the other's row).
+  const hours = { minute: 1 / 60, hour: 1, day: 24, week: 168, month: 720 } as const;
+  if (isSpan(settings.pollLastsMin, LASTS_UNITS) && isSpan(settings.pollLastsMax, LASTS_UNITS)
+      && settings.pollLastsMin.count * hours[settings.pollLastsMin.unit] > settings.pollLastsMax.count * hours[settings.pollLastsMax.unit]) {
+    out.push(`setting "pollLastsMin" is ${JSON.stringify(settings.pollLastsMin)}; it must be a span no longer than pollLastsMax`);
+  }
   // No sentence relates the window to the floor: SQL's settings_held checks each row alone, and writeTokensMost computes the most from the pair, never
   // below 1, so no pair of valid rows stops the instance (design section 4; the owner's answer on #582).
   return out;

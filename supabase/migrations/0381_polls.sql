@@ -236,6 +236,15 @@ begin
       if pkey is not null then raise exception 'phases is %; "%.%" is not a number a phase holds', shape, phase, pkey using errcode = '23514'; end if;
     end loop;
   end if;
+  -- The least a poll may last is held against the most, whichever is written (the other's row is read as it stands; a row that is not a span is that row's own refusal, never this one).
+  if why is null and new.key = 'pollLastsMin' and setting_span((select g.value from settings g where g.key = 'pollLastsMax'), array['hour', 'day', 'week', 'month'])
+     and span_interval(v) > span_interval((select g.value from settings g where g.key = 'pollLastsMax')) then
+    why := 'a span no longer than pollLastsMax';
+  end if;
+  if why is null and new.key = 'pollLastsMax' and setting_span((select g.value from settings g where g.key = 'pollLastsMin'), array['hour', 'day', 'week', 'month'])
+     and span_interval(v) < span_interval((select g.value from settings g where g.key = 'pollLastsMin')) then
+    why := 'a span no shorter than pollLastsMin';
+  end if;
   if why is not null then raise exception '% is %', new.key, why using errcode = '23514'; end if;
   return new;
 end $function$;
@@ -548,7 +557,7 @@ grant execute on function start_thread(text, uuid, text, text, uuid[], jsonb) to
 
 -- edit_post (0130), also taking `poll`: null keeps the post's poll, an object sets one (a new poll Act, which replaces the old), {"removed": true} removes it. Setting or removing takes the post `for no key update` before
 -- anything else is read, so the edit meets a ballot's `for share` at the post, and is refused, in one sentence, when the post's current poll has any ballot (a poll cannot change once a ballot is cast; the words still edit, and
--- the poll can still be closed). A removal on a post with no poll writes nothing. Everything else as 0130 wrote it.
+-- the poll can still be closed), and when the current poll is closed ('a closed poll cannot change'). A removal on a post with no poll writes nothing. Everything else as 0130 wrote it.
 drop function edit_post(uuid, uuid, text);
 CREATE OR REPLACE FUNCTION public.edit_post(target uuid, through uuid, body text, poll jsonb DEFAULT NULL::jsonb)
  RETURNS jsonb
@@ -572,6 +581,12 @@ begin
     current_poll := latest_poll(target);
     if current_poll is not null and exists (select 1 from acts b where b.kind = 'ballot' and b.target_act_id = current_poll) then
       raise exception 'a poll cannot change once a ballot is cast; you can still close it' using hint = 'kayfabb.refusal', errcode = '55000';
+    end if;
+    -- A closed poll is final, with ballots or none: its time has passed or it was closed, and it can no longer be replaced or removed (a post whose poll was removed, or never had one, takes a new poll as before).
+    if current_poll is not null and exists (
+         select 1 from acts p where p.id = current_poll and not (p.payload ? 'removed')
+           and now() >= least((p.payload ->> 'closes_at')::timestamptz, coalesce((select min(x.created_at) from acts x where x.kind = 'poll_close' and x.target_act_id = p.id), 'infinity'))) then
+      raise exception 'a closed poll cannot change' using hint = 'kayfabb.refusal', errcode = '55000';
     end if;
   end if;
   insert into acts (character, kind, thread, target_act_id, payload) values (through, 'edit', in_thread, target, jsonb_build_object('body', body));

@@ -891,6 +891,7 @@ insert into poisons (key, value) values
   ('pollLastsMin', '"hour"'),
   ('pollLastsMin', 'null'),
   ('pollLastsMin', '[]'),
+  ('pollLastsMin', '{"unit": "month", "count": 1000}'),
   ('pollLastsMax', '{"unit": "minute", "count": 30}'),
   ('pollLastsMax', '{"unit": "day", "count": 0}'),
   ('pollLastsMax', '{"unit": "day", "count": 1001}'),
@@ -1087,12 +1088,12 @@ insert into goods (key, value) values
   ('pollOptionMax', '100'),
   ('pollOptionMax', '1'),
   ('pollLastsMin', '{"unit": "hour", "count": 1}'),
-  ('pollLastsMin', '{"unit": "day", "count": 1}'),
-  ('pollLastsMin', '{"unit": "month", "count": 1000}'),
+  ('pollLastsMin', '{"unit": "hour", "count": 2}'),
+  ('pollLastsMin', '{"unit": "day", "count": 13}'),
   ('pollLastsMax', '{"unit": "day", "count": 14}'),
-  ('pollLastsMax', '{"unit": "hour", "count": 1}'),
   ('pollLastsMax', '{"unit": "week", "count": 2}'),
-  ('pollLastsMax', '{"unit": "month", "count": 1000}');
+  ('pollLastsMax', '{"unit": "month", "count": 1000}'),
+  ('pollLastsMax', '{"unit": "day", "count": 14}');
 
 do $$
 declare r record; refused boolean; seen integer; first_good text;

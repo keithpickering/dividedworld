@@ -319,7 +319,7 @@ declare
   a1 uuid := tests.character(ann, 'Pl Four Ann'); b1 uuid := tests.character(bob, 'Pl Four Bob');
   t uuid := tests.thread('Pl edit');
   p_keep uuid := tests.post(a1, t, 'Keep.', now() - interval '3 hours'); p_set uuid := tests.post(a1, t, 'Set.', now() - interval '3 hours'); p_rm uuid := tests.post(a1, t, 'Remove.', now() - interval '3 hours');
-  p_ballot uuid := tests.post(a1, t, 'Ballot.', now() - interval '3 hours'); p_none uuid := tests.post(a1, t, 'None.', now() - interval '3 hours'); p_again uuid := tests.post(a1, t, 'Again.', now() - interval '3 hours');
+  p_ballot uuid := tests.post(a1, t, 'Ballot.', now() - interval '3 hours'); p_late uuid := tests.post(a1, t, 'Late.', now() - interval '3 hours'); p_shut uuid := tests.post(a1, t, 'Shut.', now() - interval '3 hours'); p_none uuid := tests.post(a1, t, 'None.', now() - interval '3 hours'); p_again uuid := tests.post(a1, t, 'Again.', now() - interval '3 hours');
   k uuid; s uuid; r uuid; v uuid; n uuid; w uuid; got text; before_polls integer; fresh jsonb := pg_temp.draft(question => 'Edited poll?', options => '["Yes", "No"]');
   cur uuid;
 begin
@@ -329,6 +329,8 @@ begin
   v := pg_temp.mkpoll(t, p_ballot, a1, at => now() - interval '2 hours');
   perform pg_temp.vote(v, b1, '[0]', now() - interval '1 hour');
   w := tests.act(a1, 'poll', t, '{"removed": true}', p_again, now() - interval '2 hours');
+  perform pg_temp.mkpoll(t, p_late, a1, closes => now() - interval '1 minute', at => now() - interval '2 hours');
+  perform tests.act(a1, 'poll_close', t, '{"by": "author"}', pg_temp.mkpoll(t, p_shut, a1, at => now() - interval '2 hours'), now() - interval '1 hour');
   perform tests.become(ann);
   -- null keeps the poll: an edit of the words writes an edit and no poll.
   perform edit_post(p_keep, a1, 'Keep, edited.');
@@ -357,6 +359,17 @@ begin
   got := pg_temp.say(format('select edit_post(%L, %L, ''Ballot, edited.'', ''{"removed": true}''::jsonb)', p_ballot, a1));
   if got is distinct from 'a poll cannot change once a ballot is cast; you can still close it' then raise exception 'removing a poll that has a ballot: %', got; end if;
   if pg_temp.edits_on(p_ballot) is distinct from 0 or pg_temp.polls_on(p_ballot) is distinct from 1 then raise exception 'a refused edit wrote an Act'; end if;
+  -- A closed poll is final, with no ballot on it too: one past its time and one its author closed can be neither replaced nor removed, and the words still edit.
+  got := pg_temp.say(format('select edit_post(%L, %L, ''Late, edited.'', %L::jsonb)', p_late, a1, fresh));
+  if got is distinct from 'a closed poll cannot change' then raise exception 'setting a poll over one past its time: %', got; end if;
+  got := pg_temp.say(format('select edit_post(%L, %L, ''Late, edited.'', ''{"removed": true}''::jsonb)', p_late, a1));
+  if got is distinct from 'a closed poll cannot change' then raise exception 'removing a poll past its time: %', got; end if;
+  got := pg_temp.say(format('select edit_post(%L, %L, ''Shut, edited.'', %L::jsonb)', p_shut, a1, fresh));
+  if got is distinct from 'a closed poll cannot change' then raise exception 'setting a poll over one its author closed: %', got; end if;
+  got := pg_temp.say(format('select edit_post(%L, %L, ''Shut, edited.'', ''{"removed": true}''::jsonb)', p_shut, a1));
+  if got is distinct from 'a closed poll cannot change' then raise exception 'removing a poll its author closed: %', got; end if;
+  if pg_temp.polls_on(p_late) is distinct from 1 or pg_temp.polls_on(p_shut) is distinct from 1 or pg_temp.edits_on(p_late) is distinct from 0 then raise exception 'a refused edit of a closed poll wrote an Act'; end if;
+  perform edit_post(p_late, a1, 'Late, words only.');
   -- The words still edit, with the poll left alone; a poll can still be closed.
   perform edit_post(p_ballot, a1, 'Ballot, words only.');
   perform edit_post(p_ballot, a1, 'Ballot, words only, again.', null);
@@ -505,6 +518,20 @@ begin
   if got is distinct from want then raise exception 'a ballot by a barred character: got %, wanted %', got, want; end if;
   perform tests.unbecome();
   if pg_temp.polls_on(p) is distinct from 1 or exists (select 1 from acts a where a.kind = 'ballot' and a.target_act_id = pl) then raise exception 'a refused ballot left an Act behind'; end if;
+end $$;
+
+-- 5c. The least a poll may last is held against the most, whichever is written (settings_held): a least past the most, and a most under the least, are refused; the pair is taken in either order when it is whole.
+select tests.unbecome();
+do $$
+declare got text;
+begin
+  got := pg_temp.say('update settings set value = ''{"unit": "month", "count": 1000}'' where key = ''pollLastsMin''');
+  if got is distinct from 'pollLastsMin is a span no longer than pollLastsMax' then raise exception 'a least past the most: %', got; end if;
+  update settings set value = '{"unit": "day", "count": 5}' where key = 'pollLastsMin';
+  got := pg_temp.say('update settings set value = ''{"unit": "hour", "count": 2}'' where key = ''pollLastsMax''');
+  if got is distinct from 'pollLastsMax is a span no shorter than pollLastsMin' then raise exception 'a most under the least: %', got; end if;
+  update settings set value = '{"unit": "day", "count": 5}' where key = 'pollLastsMax';
+  update settings set value = '{"unit": "week", "count": 2}' where key = 'pollLastsMax';
 end $$;
 
 -- ---- 6. What a poll counts ----
