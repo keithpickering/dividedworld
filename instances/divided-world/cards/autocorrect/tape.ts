@@ -141,6 +141,8 @@ export function dealWords(replacement: string, capacities: readonly number[], me
 export interface SavedTape {
   readonly peeled: readonly number[];
   readonly stuck?: Readonly<Record<string, readonly Stretch[]>>;
+  /** Where rolls last fell, in shares, for the places in `stuck`. */
+  readonly drops?: Readonly<Record<string, readonly number[]>>;
 }
 
 /** The stretches of a strip still stuck: its saved ones, none if the author peeled it whole, the whole strip if it was never touched. */
@@ -179,6 +181,27 @@ export function piecesOf(stretches: readonly Stretch[], widths: readonly number[
       const lo = startsHere ? Math.max(0, a - base) : 0;
       const hi = endsHere ? Math.min(w, b - base) : w;
       out.push([lo, hi, (startsHere ? Math.floor(edges / 3) : 0) * 3 + (endsHere ? edges % 3 : 0)]);
+    }
+    return out;
+  });
+}
+
+/**
+ * Maps a strip's drops (shares, as the card saves them) onto a screen's pieces in each piece's local pixels, so a roll can be taken
+ * back to where it last fell. A drop on the boundary between two pieces (within the sliver `piecesOf` ignores) is given to both, as
+ * the end of the first and the start of the second: a roll on either piece stops at its own edge, and the hands' `dropsOf` joins the
+ * two back into one share.
+ */
+export function dropsInPieces(drops: readonly number[], widths: readonly number[]): number[][] {
+  const length = total(widths);
+  let off = 0;
+  return widths.map((w) => {
+    const base = off;
+    off += w;
+    const out: number[] = [];
+    for (const share of drops) {
+      const x = share * length;
+      if (x >= base - SLIVER && x <= base + w + SLIVER) out.push(Math.min(w, Math.max(0, x - base)));
     }
     return out;
   });

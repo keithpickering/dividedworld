@@ -10,6 +10,7 @@ import { act, fireEvent, screen } from '@testing-library/react';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useState } from 'react';
+import { autocorrect } from '../autocorrect.ts';
 import type { Act, EffectState } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { BbCode } from '../../../../engine/ui/bbcode/render.tsx';
@@ -774,10 +775,49 @@ describe('Autocorrect: the hands on a piece', () => {
     move(piece, torn + 20, 2);
     await pass(200);
     expect(stuckOnPage()[0]).toBe(after);
-    await pass(PICK);
+    up(piece, 2);
+    await pass(500);
+    /* A new pick: the hand holds still at the torn end until the pick is up (moving past the slop first would be a peek), then pulls. */
+    down(piece, torn + 3, 2);
+    await pass(PICK + 20);
     for (let i = 0; i < 10; i++) { move(piece, Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!) + 12, 2); await pass(16); }
     expect(Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!)).toBeGreaterThan(torn + 5);
     up(piece, 2);
+  });
+
+  test('a saved state with drops reaches the pieces: an unroll back from a waiting roll stops at the drop, not at the strip\'s end', async () => {
+    vi.useFakeTimers();
+    const body = { author: true, body: 'Mario', plays: [playOf(1, 'mario', 'Mr. Mario Mario')] };
+    for (const [drops, from] of [[{ '0': [0.2] }, 0.2], [undefined, 0]] as const) {
+      document.body.innerHTML = '';
+      mount({ ...body, states: { k1: savedOf({ peeled: [], stuck: { '0': [[0.6, 1, 3]] }, ...(drops ? { drops } : {}) }) } });
+      const piece = pieces()[0]!;
+      const w = wide(piece);
+      expect(w).toBeGreaterThan(50);
+      down(piece, 0.6 * w + 3);
+      await pass(50);
+      move(piece, 0);
+      await pass(4000);
+      const start = Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!);
+      expect(start / w).toBeCloseTo(from, 1);
+      up(piece);
+    }
+  });
+
+  test('a tear\'s save carries the drop where the roll fell, keyed by its place, and the card accepts it', async () => {
+    vi.useFakeTimers();
+    const m = mount({ author: true, body: 'Mario', plays: [playOf(1, 'mario', 'Mr. Mario Mario')] });
+    const piece = pieces()[0]!;
+    down(piece, 3);
+    await pass(PICK + 20);
+    move(piece, wide(piece) - 4);
+    await pass(3000);
+    up(piece);
+    await pass(500);
+    const state = m.save.mock.calls[0]![1] as { stuck: Record<string, unknown>; drops?: Record<string, number[]> };
+    expect(state.drops?.['0']?.length).toBeGreaterThan(0);
+    expect(Object.keys(state.drops!).every((k) => k in state.stuck)).toBe(true);
+    expect(autocorrect.validateState!(state).ok).toBe(true);
   });
 
   const rafSteps = () => vi.spyOn(globalThis, 'requestAnimationFrame');
@@ -867,7 +907,7 @@ describe('Autocorrect: the hands on a piece', () => {
     expect(fireEvent.click(link)).toBe(true);
   });
 
-  test('a press that is not taken (covered, or not at an end) is not prevented, and a covered one still says its line', async () => {
+  test('a press that is not taken (covered, or a second pointer) is not prevented, a covered one still says its line, and an author\'s press away from an end peeks', async () => {
     vi.useFakeTimers();
     mount({ author: true, body: 'Mario Kart', plays: [playOf(1, 'mario kart', 'Wii Sports'), playOf(2, 'mario', 'Luigi')] });
     const under = pieces().find((p) => p.getAttribute('data-kb-ac-piece') === 'k1:0')!;
@@ -877,8 +917,9 @@ describe('Autocorrect: the hands on a piece', () => {
     document.body.innerHTML = '';
     mount({ author: true, body: 'Mario', plays: [playOf(1, 'mario', 'Mr. Mario Mario')] });
     const wideOne = pieces()[0]!;
-    expect(down(wideOne, wide(wideOne) / 2, 2)).toBe(true);
-    expect(down(wideOne, 3, 3)).toBe(false);
+    /* An author's press away from an end on an open piece peeks, so it is taken (prevented); a second pointer while one is in hand is not. */
+    expect(down(wideOne, wide(wideOne) / 2, 2)).toBe(false);
+    expect(down(wideOne, 3, 3)).toBe(true);
   });
 
   test('a peel in hand redoes only the strip in hand, not every strip on the post, and the Lens is not told every frame', async () => {

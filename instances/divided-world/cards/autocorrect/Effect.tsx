@@ -26,8 +26,10 @@
  * Only the pieces in hand are redrawn: a piece is memoized on its own mask and view, and the residue's films are kept by region and
  * masked to what is peeled as they are laid, so the host is registered once however often what is peeled changes.
  *
- * **Saving.** On every change to an author's stuck model, debounced, the card's state is saved as `{ peeled, clean?, stuck }` built
- * from the strips' stretches (`sharesOf`, through `fromPieces`): a strip with no stretch left is in `peeled`. One save is in flight
+ * **Saving.** On every change to an author's stuck model, debounced, the card's state is saved as `{ peeled, clean?, stuck, drops? }` built
+ * from the strips' stretches (`sharesOf`, through `fromPieces`): a strip with no stretch left is in `peeled`, and a strip restored whole is in
+ * neither. `drops` is where rolls last fell (`dropsOf`), by place, only for the places in `stuck`, and left out when there are none; each screen
+ * cuts those shares at its own line breaks (`dropsInPieces`), so an unroll stops where the roll fell. One save is in flight
  * per play, a save that got no answer is sent again, and a refusal puts back only the change it carried.
  *
  * **A play's moment** (`moment` is not null) is the live effect for a reader who is nobody: the tape starts as the author had saved it,
@@ -55,7 +57,7 @@ import { Hands, type HandEvent, type HandSettings, type PieceSpec, type PieceVie
 import { drawPaper, PAPER, type PaperContext } from './paper.ts';
 import { savedAfterPeel } from './peel.ts';
 import { fibersAt, filmAlpha, filmSize, GLOSS_ALPHA, residueInk } from './residue.ts';
-import { dealWords, exposed, flapOf, piecesOf, rollDiameter, roomOf, stripsOf, stuckOf, type Measure, type SavedTape, type TapeStrip } from './tape.ts';
+import { dealWords, dropsInPieces, exposed, flapOf, piecesOf, rollDiameter, roomOf, stripsOf, stuckOf, type Measure, type SavedTape, type TapeStrip } from './tape.ts';
 import './autocorrect.css';
 
 /** The numbers the hands read from the card's settings when the instance has not set them (autocorrect.ts `screenReads`). */
@@ -92,9 +94,9 @@ function left(ms: number): string {
   return h > 0 ? `${h}h ${minutes % 60}m` : `${minutes}m`;
 }
 
-/** What a saved state names: the places peeled whole, and the stretches still stuck of those half peeled. Anything else is none. */
+/** What a saved state names: the places peeled whole, the stretches still stuck of those half peeled, and where rolls fell on those. Anything else is none. */
 function savedOf(state: unknown): SavedTape {
-  const own = state as { peeled?: unknown; stuck?: unknown } | null | undefined;
+  const own = state as { peeled?: unknown; stuck?: unknown; drops?: unknown } | null | undefined;
   const peeled = Array.isArray(own?.peeled) ? own.peeled.filter((n): n is number => Number.isSafeInteger(n) && n >= 0) : [];
   const stuck: Record<string, Stretch[]> = {};
   if (own?.stuck && typeof own.stuck === 'object') {
@@ -104,7 +106,15 @@ function savedOf(state: unknown): SavedTape {
       if (kept.length) stuck[place] = kept;
     }
   }
-  return Object.keys(stuck).length ? { peeled, stuck } : { peeled };
+  const drops: Record<string, number[]> = {};
+  if (own?.drops && typeof own.drops === 'object') {
+    for (const [place, list] of Object.entries(own.drops as Record<string, unknown>)) {
+      if (!Object.hasOwn(stuck, place) || !Array.isArray(list)) continue;
+      const kept = list.filter((n): n is number => typeof n === 'number' && n >= 0 && n <= 1);
+      if (kept.length) drops[place] = kept;
+    }
+  }
+  return Object.keys(stuck).length ? { peeled, stuck, ...(Object.keys(drops).length ? { drops } : {}) } : { peeled };
 }
 
 /** A box in CSS pixels, from the post's top left. */
@@ -198,6 +208,7 @@ const isWhole = (stuck: readonly Stretch[]) => stuck.length === 1 && stuck[0]![0
 
 /** A piece with nothing in hand: no rolls, no strain, no corner, no flap. */
 const NONE: readonly Stretch[] = [];
+const NONE_DROPS: readonly number[] = [];
 const IDLE: PieceView = { stuck: [], shown: [], rolls: [], strain: null, corner: null, lift: null };
 
 interface AnchorProps {
@@ -360,6 +371,7 @@ interface DrawnPiece { readonly own: readonly Stretch[]; readonly mask: string |
 /** What a strip's drawing and hands need, made for one set of stretches, one layout and one set of live strips. */
 interface Drawn {
   readonly src: readonly Stretch[];
+  readonly drops: readonly number[];
   readonly laid: Layout;
   readonly live: readonly TapeStrip[];
   readonly held: boolean;
@@ -515,8 +527,9 @@ function Residue({ regions, span, width, host }: ResidueProps) {
   return <canvas ref={canvas} className="dw-ac-residue" style={{ top, width, height }} />;
 }
 
-/** The author's changes on their way to being saved, by play and place: the stretches still stuck, none once the strip is peeled. */
-type Local = Readonly<Record<string, Readonly<Record<string, readonly Stretch[]>>>>;
+/** The author's changes on their way to being saved, by play and place: the stretches still stuck and where rolls fell, none once the strip is peeled. */
+interface Entry { readonly shares: readonly Stretch[]; readonly drops: readonly number[] }
+type Local = Readonly<Record<string, Readonly<Record<string, Entry>>>>;
 
 export function AutocorrectEffect({ post, plays, states, reader, moment, save, show, met, children }: EffectProps) {
   const { settings, instance } = useKayfa();
@@ -555,7 +568,17 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     return out;
   }, [configs, states, strips]);
   /* A strip's stretches still stuck: the author's change on its way if there is one, else the saved ones. The array is the same while the strip is. */
-  const stuckFor = (s: TapeStrip): readonly Stretch[] => local[s.play]?.[s.index] ?? savedStuck.get(s.key) ?? NONE;
+  const stuckFor = (s: TapeStrip): readonly Stretch[] => local[s.play]?.[s.index]?.shares ?? savedStuck.get(s.key) ?? NONE;
+  /* Where a strip's rolls last fell, in shares: the author's change on its way if there is one, else the saved ones. */
+  const savedDrops = useMemo(() => {
+    const out = new Map<string, readonly number[]>();
+    for (const c of configs) {
+      const saved = savedOf(states[c.id]?.state);
+      for (const s of strips) if (s.play === c.id && !saved.peeled.includes(s.index)) { const d = saved.drops?.[String(s.index)]; if (d) out.set(s.key, d); }
+    }
+    return out;
+  }, [configs, states, strips]);
+  const dropsFor = (s: TapeStrip): readonly number[] => local[s.play]?.[s.index]?.drops ?? savedDrops.get(s.key) ?? NONE_DROPS;
   /* The strips with tape left, by key, so a peel in hand (which changes a strip's stretches every frame) does not change what is live. */
   const liveKey = strips.filter((s) => stuckFor(s).length > 0).map((s) => s.key).join('|');
   const live = useMemo(() => { const keys = new Set(liveKey ? liveKey.split('|') : []); return strips.filter((s) => keys.has(s.key)); }, [strips, liveKey]);
@@ -604,16 +627,20 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     const held = savedOf(now.current.states[play]?.state);
     const places = new Set(held.peeled);
     const stuck: Record<string, readonly Stretch[]> = { ...(held.stuck ?? {}) };
-    for (const [key, shares] of Object.entries(batch)) {
+    const drops: Record<string, readonly number[]> = { ...(held.drops ?? {}) };
+    for (const [key, { shares, drops: fell }] of Object.entries(batch)) {
       if (held.peeled.includes(Number(key))) continue;
+      delete drops[key];
       if (!shares.length) { places.add(Number(key)); delete stuck[key]; }
       else if (isWhole(shares)) delete stuck[key];
-      else stuck[key] = shares;
+      else { stuck[key] = shares; if (fell.length) drops[key] = fell; }
     }
+    /* Drops are kept only for the places still in `stuck` (the card refuses any other). */
+    for (const key of Object.keys(drops)) if (!Object.hasOwn(stuck, key)) delete drops[key];
     const peeled = [...places].sort((a, b) => a - b);
     if (!peeled.length && !Object.keys(stuck).length) return;
     const kept = peeled.length ? savedAfterPeel(peeled, peeled[peeled.length - 1]!, now.current.total[play] ?? 0) : { peeled };
-    const state = Object.keys(stuck).length ? { ...kept, stuck } : kept;
+    const state = Object.keys(stuck).length ? { ...kept, stuck, ...(Object.keys(drops).length ? { drops } : {}) } : kept;
     inFlight.current.add(play);
     let answer: Answer<unknown>;
     try {
@@ -637,7 +664,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     /* Only what this save carried comes back; a strip changed since waits for its own save. */
     setLocal((was) => {
       const mine = { ...(was[play] ?? {}) };
-      for (const [key, shares] of Object.entries(batch)) if (sameJson(mine[key], shares)) delete mine[key];
+      for (const [key, entry] of Object.entries(batch)) if (sameJson(mine[key], entry)) delete mine[key];
       const next = { ...was, [play]: mine };
       now.current.local = next;
       return next;
@@ -658,11 +685,11 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     timers.current.set(play, setTimeout(() => { void flush(play); }, SAVE_AFTER_MS));
   }, [flush]);
   /* Sets (or, with null, clears) the author's change to one strip, at once in the ref the flush reads and in the state the screen draws. */
-  const putLocal = useCallback((play: string, place: number, shares: readonly Stretch[] | null) => {
+  const putLocal = useCallback((play: string, place: number, entry: Entry | null) => {
     const was = now.current.local;
     const mine = { ...(was[play] ?? {}) };
-    if (shares === null ? !(String(place) in mine) : sameJson(mine[place], shares)) return;
-    if (shares === null) delete mine[place]; else mine[place] = shares;
+    if (entry === null ? !(String(place) in mine) : sameJson(mine[place], entry)) return;
+    if (entry === null) delete mine[place]; else mine[place] = entry;
     const next = { ...was, [play]: mine };
     now.current.local = next;
     setLocal(next);
@@ -672,13 +699,13 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   useEffect(() => {
     setLocal((was) => {
       let changed = false;
-      const next: Record<string, Record<string, readonly Stretch[]>> = {};
+      const next: Record<string, Record<string, Entry>> = {};
       for (const [play, mine] of Object.entries(was)) {
         const held = savedOf(states[play]?.state);
-        const kept: Record<string, readonly Stretch[]> = {};
-        for (const [key, shares] of Object.entries(mine)) {
-          if (held.peeled.includes(Number(key)) || sameJson(stuckOf(held, Number(key)), shares)) changed = true;
-          else kept[key] = shares;
+        const kept: Record<string, Entry> = {};
+        for (const [key, entry] of Object.entries(mine)) {
+          if (held.peeled.includes(Number(key)) || (sameJson(stuckOf(held, Number(key)), entry.shares) && sameJson(held.drops?.[key] ?? [], entry.drops))) changed = true;
+          else kept[key] = entry;
         }
         next[play] = kept;
       }
@@ -724,7 +751,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
       const strip = ev.kind === 'change' || ev.kind === 'off' ? model.current.strips.find((s) => s.key === ev.strip) : undefined;
       if (ev.kind === 'covered') say(COVERED);
       else if (ev.kind === 'change' && strip && model.current.author) {
-        putLocal(strip.play, strip.index, handsNow().sharesOf(strip.key));
+        putLocal(strip.play, strip.index, { shares: handsNow().sharesOf(strip.key), drops: handsNow().dropsOf(strip.key) });
         queue(strip.play);
       } else if (ev.kind === 'off' && strip) {
         say(`Peeled. Under it: “${model.current.text.slice(strip.from, strip.to)}”.`);
@@ -1033,10 +1060,12 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     const at = laid?.strips[s.key];
     if (!laid || !at) return null;
     const src = stuckFor(s);
+    const dropSrc = dropsFor(s);
     const isHeld = heldAt(s) !== undefined;
     const was = drawn.current.get(s.key);
-    if (was && was.src === src && was.laid === laid && was.live === live && was.held === isHeld) return was;
+    if (was && was.src === src && was.laid === laid && was.live === live && was.held === isHeld && was.drops === dropSrc) return was;
     const px = piecesOf(src, at.boxes.map((b) => b.w));
+    const dropped = dropsInPieces(dropSrc, at.boxes.map((b) => b.w));
     const open = openKeys.has(s.key);
     const lower = (stackOf.get(s.key) ?? []).filter((q) => q.z < s.z && liveKeys.has(q.key)).sort((x, y) => y.z - x.z);
     const pieces: DrawnPiece[] = [];
@@ -1058,9 +1087,9 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
         const line = Math.min(b.y + b.h, qb.y + qb.h) - Math.max(b.y, qb.y) > 0.5 * Math.min(b.h, qb.h);
         return line && qb.x < b.x + b.w && qb.x + qb.w > b.x ? [`${q.key}:${j}`] : [];
       }));
-      specs.push({ id, strip: s.key, index: i, w: b.w, h: b.h, stuck: own, open, under, held: isHeld });
+      specs.push({ id, strip: s.key, index: i, w: b.w, h: b.h, stuck: own, open, under, held: isHeld, ...(dropped[i]?.length ? { drops: dropped[i] } : {}) });
     });
-    const made: Drawn = { src, laid, live, held: isHeld, pieces, regions, specs };
+    const made: Drawn = { src, drops: dropSrc, laid, live, held: isHeld, pieces, regions, specs };
     drawn.current.set(s.key, made);
     return made;
   };
