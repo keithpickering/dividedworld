@@ -22,6 +22,10 @@ export interface PlainFixture {
   readonly excerpt?: string;
   /** Every real quote's Act in the body, lowercase, in the order they open, each once: `quotedActs(parse(body))`, and the database's list (Task 3 of the Part 4 plan holds it to the same). */
   readonly quotes?: readonly string[];
+  /** For each Act a real quote in the body names (not a cut's Acts), the pieces of each of its quotes in the order their openers stand: `quoteHeld(parse(body))` (engine/bbcode/quoted.ts), and the database's `bbcode_walk(body, null).held`. */
+  readonly held?: Readonly<Record<string, readonly (readonly string[])[]>>;
+  /** The version source of the body: `quoteSource(parse(body))`, and the database's `bbcode_walk(body, null).source`. */
+  readonly source?: string;
 }
 
 /** Each run of whitespace (tab to carriage return, and space) becomes one space, and the ends are trimmed. */
@@ -1921,6 +1925,126 @@ export const PLAIN_FIXTURES: readonly PlainFixture[] = [
     "plain": "",
     "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
     "excerpt": "shown words",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: a plain quote",
+    "body": "before [quote=0f8fad5b-d9cb-469f-a165-70867728950e]I do not like Mario[/quote] after",
+    "plain": "before after",
+    "source": "before I do not like Mario after",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["I do not like Mario"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: formatting, a link, code, noparse, a list and a spoiler inside one",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e][b]bold[/b] and [i]it[/i] [url=http://a.example/x]a link[/url] [url]http://b.example/y[/url] [code]x < 1[/code] [noparse][b]raw[/b][/noparse] [list][*]one[*]two[/list] [spoiler=Hint]hidden[/spoiler] http://c.example/z[/quote]",
+    "plain": "",
+    "source": "bold and it a link http://b.example/y x < 1 [b]raw[/b] one two Hint hidden http://c.example/z",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["bold and it a link http://b.example/y x < 1 [b]raw[/b] one two Hint hidden http://c.example/z"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: a quote nested in a quote: the outer text holds the inner words",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]outer one [quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8]inner[/quote] outer two[/quote]",
+    "plain": "",
+    "source": "outer one inner outer two",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["outer one inner outer two"]],"6ba7b810-9dad-41d1-80b4-00c04fd430c8":[["inner"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e","6ba7b810-9dad-41d1-80b4-00c04fd430c8"]
+  },
+  {
+    "name": "quoted: two quotes of one Act",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]first[/quote] mid [quote=0f8fad5b-d9cb-469f-a165-70867728950e]second[/quote]",
+    "plain": "mid",
+    "source": "first mid second",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["first"],["second"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: an unclosed quote",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]never closed",
+    "plain": "",
+    "source": "never closed",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["never closed"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: a counterfeit is not in held",
+    "body": "[quote=Geno]fake words[/quote] real",
+    "plain": "fake words real",
+    "source": "fake words real",
+    "held": {},
+    "quotes": []
+  },
+  {
+    "name": "quoted: a quote in code is not in held",
+    "body": "[code][quote=0f8fad5b-d9cb-469f-a165-70867728950e]x[/quote][/code]",
+    "plain": "",
+    "source": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]x[/quote]",
+    "held": {},
+    "quotes": []
+  },
+  {
+    "name": "quoted: a quote holding a cut has two pieces (MAX_DEPTH + 2 deep)",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e]before [quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8][quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8]deep[/quote][/quote] after[/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote]",
+    "plain": "",
+    "source": "before ﷐ after",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"],["before","after"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e","6ba7b810-9dad-41d1-80b4-00c04fd430c8"]
+  },
+  {
+    "name": "quoted: a leading and a trailing ellipsis go and a middle one stays",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]... and then ... so it goes …[/quote]",
+    "plain": "",
+    "source": "and then ... so it goes",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["and then ... so it goes"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: spacing and line breaks are one space",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]  spaced \n\n  out\t words  [/quote]",
+    "plain": "",
+    "source": "spaced out words",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["spaced out words"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: a decomposed letter is composed (NFC)",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]café[/quote]",
+    "plain": "",
+    "source": "café",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["café"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: a run of twelve letters is eight",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]noooooooooooo![/quote]",
+    "plain": "",
+    "source": "noooooooo!",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["noooooooo!"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: whitespace of other scripts is one space",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]a　b c[/quote]",
+    "plain": "",
+    "source": "a b c",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["a b c"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: an empty quote has no pieces",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e][/quote]",
+    "plain": "",
+    "source": "",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[[]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: a spoiler with no title shows the default one, and a link that is no link stays as written",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e][spoiler]x[/spoiler] [url]not a link[/url] [quote=Geno]fake[/quote][/quote]",
+    "plain": "",
+    "source": "Spoiler x [url]not a link[/url] fake",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["Spoiler x [url]not a link[/url] fake"]]},
     "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
   }
 ];

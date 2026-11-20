@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { collapse, PLAIN_FIXTURES } from './plain.fixtures.ts';
 import { MAX_DEPTH, parse } from './parse.ts';
 import { excerptText, quotedActs, visibleText } from './visible.ts';
+import { quoteHeld, quoteSource } from './quoted.ts';
 
 test('the fixtures that spell out the nesting cap were written for the cap of 16', () => {
   // plain.fixtures.ts is JSON (tools/bbcode-plain.mjs reads it without a loader), so a body past the cap spells out its levels: change MAX_DEPTH and write them again
@@ -52,6 +53,23 @@ for (const f of PLAIN_FIXTURES) {
     assert.deepEqual(quotedActs(parse(f.body)), f.quotes);
   });
 }
+
+for (const f of PLAIN_FIXTURES) {
+  if (f.held === undefined && f.source === undefined) continue;
+  test(`held and source: ${f.name}`, () => {
+    if (f.held !== undefined) assert.deepEqual(Object.fromEntries(quoteHeld(parse(f.body))), f.held);
+    if (f.source !== undefined) assert.equal(quoteSource(parse(f.body)), f.source);
+  });
+}
+
+test('the fixture of a quote holding a cut is written from MAX_DEPTH: the outermost quotes fill the cap and two more stand past it', () => {
+  const f = PLAIN_FIXTURES.find((x) => x.name === 'quoted: a quote holding a cut has two pieces (MAX_DEPTH + 2 deep)');
+  assert.ok(f);
+  const a = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const b = '6ba7b810-9dad-41d1-80b4-00c04fd430c8';
+  assert.equal(f.body, `[quote=${a}]`.repeat(MAX_DEPTH) + 'before ' + `[quote=${b}]`.repeat(2) + 'deep' + '[/quote]'.repeat(2) + ' after' + '[/quote]'.repeat(MAX_DEPTH));
+  assert.equal(f.held?.[a]?.length, MAX_DEPTH);
+});
 
 test('a fixture names an excerpt and the Act it is of together, and some are of an Act', () => {
   for (const f of PLAIN_FIXTURES) assert.equal(f.excerptOf === undefined, f.excerpt === undefined, f.name);

@@ -123,7 +123,7 @@ declare
                            -- 0118: the helpers bbcode_plain calls for the tags it learned (quote heads, video addresses); each reads nothing but its arguments.
                            'bbcode_plain_trim(text)', 'bbcode_plain_quote_head(text)', 'bbcode_plain_pct(text)', 'bbcode_plain_query_v(text)', 'bbcode_plain_ipv4_number(text)', 'bbcode_plain_punycode_ok(text)', 'bbcode_plain_host_ok(text)', 'bbcode_plain_video_ok(text)',
                            -- 0142: the phrase matcher a face-down Move's spring asks of a post's plain words, and the case fold it reads them through; each reads nothing but its arguments.
-                           'phrase_in(text,text)', 'phrase_fold(text)', 'phrase_norm(text)', 'bbcode_walk(text,uuid)', 'bbcode_plain_quote_act(text)', 'phrase_word_class()',
+                           'phrase_in(text,text)', 'phrase_fold(text)', 'phrase_norm(text)', 'bbcode_walk(text,uuid,uuid[])', 'quote_norm(text)', 'quote_run_cap(text)', 'bbcode_plain_quote_act(text)', 'phrase_word_class()',
                            -- The cosmetics log's rows (0213): my_cosmetic_log runs it as the caller, and it reads only the caller's own characters' rows by auth.uid().
                            'cosmetic_log_rows(timestampwithtimezone,integer)',
                            'search_lang()', 'search_words(text,text)', 'search_words(text,text,regconfig)',

@@ -199,6 +199,8 @@ select 'function', n, m, w from (values
   ('bbcode_plain_url_ok', 'no author', 'a pure function of its argument'),
   ('bbcode_plain_video_ok', 'no author', 'a pure function of its argument'),
   ('bbcode_walk', 'no author', 'a pure function of its arguments'),
+  ('quote_norm', 'no author', 'a pure function of its argument'),
+  ('quote_run_cap', 'no author', 'a pure function of its argument'),
   ('beat_mod_name', 'no author', 'a Mod Bot''s name for a board'),
   ('board_page', 'swept', 'a board''s page: its threads'' first and last posters'),
   ('board_closed_to', 'no author', 'a closed board''s ways out: boards by name'),

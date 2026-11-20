@@ -181,10 +181,10 @@ begin
   foreach one in array posts loop
     select * into fd from face_down f where f.post = one;
     before := pg_temp.reads();
-    b_walk := pg_temp.calls('bbcode_walk(text, uuid)'::regprocedure); b_probe := pg_temp.calls('phrase_probe(text, text, text)'::regprocedure); b_norm := pg_temp.calls('phrase_norm(text)'::regprocedure);
+    b_walk := pg_temp.calls('bbcode_walk(text, uuid, uuid[])'::regprocedure); b_probe := pg_temp.calls('phrase_probe(text, text, text)'::regprocedure); b_norm := pg_temp.calls('phrase_norm(text)'::regprocedure);
     perform spring_facts(fd, 'quote', quoting, null);
     facts_reads := facts_reads || pg_temp.since(before);
-    walks := walks || (pg_temp.calls('bbcode_walk(text, uuid)'::regprocedure) - b_walk);
+    walks := walks || (pg_temp.calls('bbcode_walk(text, uuid, uuid[])'::regprocedure) - b_walk);
     probes := probes || (pg_temp.calls('phrase_probe(text, text, text)'::regprocedure) - b_probe);
     norms := norms || (pg_temp.calls('phrase_norm(text)'::regprocedure) - b_norm);
   end loop;
