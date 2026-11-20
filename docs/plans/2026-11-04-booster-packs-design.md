@@ -330,3 +330,12 @@ should either do a more detailed 'pack opens, cards come out, pack slides up', o
 foil doesn't fade out and suddenly come back further up." **Decided** (the owner chose the recommendation): the pack
 opens, the cards come out of it, and the emptied pack slides up and parks as the head (E3 to E5 above). Weighed: no
 decoration at the head, with the pack fading once the cards are dealt.
+
+## Amended 2026-11-20: a swipe on the last card
+
+On a phone, once every card was turned, a drag on the last card followed the finger and its release did nothing, so the
+card was left where the finger let go. Item 7 of "The reveal's motion" said what a swipe does while a card is still to
+turn and nothing about the last one. **Decided** (the owner, of three: send it off and close, send it off and leave the
+pile empty, or always spring back): once every card is turned, a swipe past a third of the card's width sends the last
+card off toward its side as the turns before it did, and the reveal closes as Done does; the exit flies the other cards
+to the hand and leaves that one gone. A shorter drag springs back, and a tap closes nothing.

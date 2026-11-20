@@ -32,7 +32,7 @@
  *  - On a phone the entrance is the 1440's (the pack rises from its slot, or from the window's edge nearest it, tears, and lets the cards out, not drawn until the
  *    tear), but the deal stacks the cards into the pile (`deal` toward the stage's place) and not into a row. The exit and turns below follow.
  *  - On a phone the cards are a pile: a turned card is sent off toward the swipe's side (a drag follows the finger and commits past a third of the card's
- *    width) as the next is flipped, and the exit flies the cards (the turned card on top and the backs under it) toward the hand link, or the window's top edge where the link is out of view.
+ *    width) as the next is flipped; once all are turned, a swipe sends the last card off the same way and closes the reveal as Done does, and the exit flies the cards (the turned card on top and the backs under it) toward the hand link, or the window's top edge where the link is out of view.
  *  - With `hit` false (a fixed pack, the Starter Pack's six) no card is the hit: no gold back, beat, halo, sparks or tag, and the count is the pack's own length.
  *  - `from` is where the pack rises from (the sealed pack it was opened from); with none it rises from `returnFocusTo`'s element, the slot.
  *  - Under Off nothing moves: no wrapper, no rotation, no second piece of the pack. Each beat's end state is drawn at once.
@@ -130,6 +130,8 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
   const turnedAt = useRef(0);
   const spotAt = useRef(-1);
   const flipped = useRef(new Set<number>());
+  /* On a phone: the last card, once a swipe has sent it off the pile. The exit leaves it where it went; the cards before it left the spot for the hidden row, where the exit passes them by. */
+  const sentOff = useRef(-1);
   const run = useRef<Run | null>(null);
   const mounted = useRef(true);
   const beats = useRef(new Map<Element, Values>());
@@ -193,6 +195,10 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
     void seq().then(() => { if (run.current === r) run.current = null; }, (e: unknown) => { if (!(e instanceof Stop)) throw e; });
   }
 
+  /** On a phone: card `i` sent off the pile toward the swipe's side. */
+  function sendOff(r: Run, f: NonNullable<ActiveFeel>, i: number, dir: -1 | 1): Promise<void> {
+    return go(r, cardNode(i), { x: dir * window.innerWidth, rotate: dir * 14, opacity: 0 }, eased(f, f.exit) as Beat);
+  }
   /** The turn of card `i`, from the moment it stands in the spotlight: the hit pulses first; the card turns; the hit's halo, sparks and tag follow. */
   async function turnOver(r: Run, f: NonNullable<ActiveFeel>, i: number) {
     if (hasHit && i === count - 1) await go(r, cardNode(i), split(beat(f)).target, split(beat(f)).transition);
@@ -226,7 +232,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
       if (prev !== at) {
         if (isPhone()) {
           /* A turned card on top of the pile is sent off toward the swipe's side. */
-          if (prev >= 0 && flipped.current.has(prev)) await go(r, cardNode(prev), { x: dir * window.innerWidth, rotate: dir * 14, opacity: 0 }, eased(f, f.exit) as Beat);
+          if (prev >= 0 && flipped.current.has(prev)) await sendOff(r, f, prev, dir);
           putInSpot(at);
         } else {
           /* T1: the card shown settles into its slot as this one lifts out of its own. */
@@ -266,7 +272,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
       }
       /* The hit lifts last, with its beat. */
       if (spotAt.current !== last) {
-        if (isPhone() && spotAt.current >= 0) await go(r, cardNode(spotAt.current), { x: -window.innerWidth, rotate: -14, opacity: 0 }, eased(f, f.exit) as Beat);
+        if (isPhone() && spotAt.current >= 0) await sendOff(r, f, spotAt.current, -1);
         putInSpot(last);
         if (!isPhone()) await wait(r, f.enter);
       }
@@ -384,6 +390,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
       const to: Rect = linkRect && linkRect.width > 0 ? rect(linkRect) : { x: vw / 2, y: -1, width: 0, height: 0 };
       const d = stagger(f, count);
       const flights = Array.from({ length: count }, (_, i) => {
+        if (i === sentOff.current) return Promise.resolve();
         const el = cardNode(i);
         const box_ = el?.getBoundingClientRect();
         if (!el || !box_ || box_.width === 0) return Promise.resolve();
@@ -455,15 +462,35 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
   const onPileUp = (e: ReactPointerEvent) => {
     const from = drag.current;
     drag.current = null;
-    if (from === null || all || !isPhone()) return;
+    if (from === null || !isPhone()) return;
     const moved = e.clientX - from;
     const width = box.current?.querySelector('.kb-opening-spot')?.getBoundingClientRect().width || 276;
+    if (all) {
+      /* Every card is turned: a swipe past a third sends the last one off toward its side and closes the reveal as Done does; anything shorter, a tap included, springs back and closes nothing. */
+      if (Math.abs(moved) >= width / 3) sendOffLast(moved > 0 ? 1 : -1);
+      else springBack();
+      return;
+    }
     if (Math.abs(moved) < 10 || Math.abs(moved) >= width / 3) {
       pointerTurnAt.current = performance.now();
       turnNext(moved > 0 ? 1 : -1);
       return;
     }
     springBack();
+  };
+  /** The last card sent off the pile toward `dir`, as a turn sends the one before it, and then the reveal closes. Done or Esc pressed during the send-off finishes it at once. */
+  const sendOffLast = (dir: -1 | 1) => {
+    if (!feel) { onClose(); return; }
+    const f = feel;
+    finishRun();
+    const i = spotAt.current;
+    sentOff.current = i;
+    /* Finished by an input (Done or Esc): the send-off's end state is drawn by the settle, and the exit that input starts leaves the card there. */
+    const r = begin(() => {});
+    play(r, async () => {
+      await sendOff(r, f, i, dir);
+      onClose();
+    });
   };
   const springBack = () => {
     const top = spotAt.current >= 0 ? cardNode(spotAt.current) : null;
