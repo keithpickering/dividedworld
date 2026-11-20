@@ -28,7 +28,7 @@ begin
   end loop;
 
   -- Every row the update reached: a key the fixtures do not hold would be no test at all.
-  if (select count(*) from settings where key in ('debateDays', 'crowdPayEach', 'crowdPayMost')) <> 3 then
+  if (select count(*) from settings where key in ('debateDays', 'crowdPayEach', 'crowdPayMost')) is distinct from 3 then
     raise exception 'the fixtures do not hold all three settings, so nothing above was tested';
   end if;
 end $$;
