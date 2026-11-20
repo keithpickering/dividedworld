@@ -907,7 +907,7 @@ const fuseActs = [
 ];
 const fuseQuotes = fuseActs.slice(1).map((a) => ({ act: a.id, quoted: 'sp' }));
 const fuseNods = ['a', 'b', 'c', 'd'].map((id) => ({ act: 'sp', player: `p-${id}`, character: id, kind: 'folded-hands', at: 2 * H }));
-test('settled whole, with a half cushion up when the nods landed: the spark\'s shrugs, cushion and outvoted sum to no more than nothing', () => {
+test('settled whole, with a half cushion up when the nods landed: the spark\'s shrugs, cushion and outvoted sum to no more than nothing in one window (#860 for several)', () => {
   const r = settle({
     window: { id: 'w1', from: 0, to: 24 * H }, characters: fuseCharacters, quotes: fuseQuotes, reactions: fuseNods,
     acts: [...fuseActs, { id: 'g1', character: 'k', kind: 'card', at: 0.5 * H, thread: 't', target: 'sp', card: 'half', ends: 100 * H }],
@@ -927,7 +927,7 @@ const cushioned = (share: number, nods: number) => {
   return (reason: string) => r.entries.filter((e) => e.character === 'tw' && e.reason === reason).reduce((t, e) => t + e.amount, 0);
 };
 for (const nods of [1, 3]) for (const share of [0.3, 0.5, 0.7]) {
-  test(`settled whole: ${nods} nod${nods > 1 ? 's' : ''} under a ${share} cushion, the spark's shrugs, cushion and outvoted never sum above nothing`, () => {
+  test(`settled whole: ${nods} nod${nods > 1 ? 's' : ''} under a ${share} cushion, the spark's shrugs, cushion and outvoted never sum above nothing in one window (#860 for several)`, () => {
     const of = cushioned(share, nods);
     const sum = of('tweener.shrugged') + of('card.cushion') + of('tweener.outvoted');
     assert.ok(sum <= 0, `shrugged ${of('tweener.shrugged')}, cushion ${of('card.cushion')}, outvoted ${of('tweener.outvoted')} sum to ${sum}`);

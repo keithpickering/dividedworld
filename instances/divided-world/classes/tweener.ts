@@ -73,7 +73,9 @@ export function refundAt(debate: SparkedDebate, upTo: number, standing: readonly
   if (paid === null || paid >= upTo) return 0;
   const voices = new Set(debate.posts.filter((p) => p.voice !== 0 && p.at <= upTo && p.at - debate.at < settings.debateDays * DAY).map((p) => p.voice)).size;
   /* Floored to a whole ledger unit (`settle` rounds each line to a whole unit): a cushion's line rounds up by at most a half, and the floor here
-     gives that back, so a window's cushion, refund and shrugs never sum past the loss. Tidied first, so 10.499999 of float noise is not 10. */
+     gives that back, so within one window the cushion, refund and shrugs never sum past the loss. Across windows a cushion rounds up in each,
+     and one played after the refund paid recuts the start's standing, so the sum can drift up by a unit a window: #860 asks the owner.
+     Tidied first, so 10.499999 of float noise is not 10. */
   const standingNow = (1 - debate.cushioned) * Math.min(shrugLoss(standing, settings), voices * HALF * settings.vote);
   return Math.floor(Math.round(standingNow * 1e6) / 1e6);
 }
