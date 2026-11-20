@@ -51,7 +51,7 @@ function RealHead({ act }: { readonly act: Id }) {
 
 /**
  * The head of a forged quote (a real quote whose words are not in the post it names): the author of that post as the post shows its author (so the stand-in under a live veil), as a name with no link, and no post
- * number; "Someone" where there is no such post or its author cannot be found. Nothing is drawn while the post is being found.
+ * number; "Someone" where there is no such post or its author cannot be found. Nothing is drawn while the post is being found, and a head keyed to another post starts again from nothing (`QuoteHead` keys it by the post), so it never shows "Someone" for a real author mid-load.
  */
 function ForgedHead({ act }: { readonly act: Id }) {
   const read = useKnownAct(act);
@@ -71,7 +71,7 @@ function CounterfeitHead({ user, name }: { readonly user: Id | null; readonly na
 /** The head a quote carries, by the quote's kind. */
 export function QuoteHead({ of }: { readonly of: QuoteOf }) {
   if (of.kind === 'real') return <RealHead act={of.act} />;
-  return of.act === null ? <CounterfeitHead user={of.user} name={of.name} /> : <ForgedHead act={of.act} />;
+  return of.act === null ? <CounterfeitHead user={of.user} name={of.name} /> : <ForgedHead key={of.act} act={of.act} />;
 }
 export const quoteHead = (q: QuoteOf): ReactNode => <QuoteHead of={q} />;
 

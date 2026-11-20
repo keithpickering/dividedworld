@@ -208,6 +208,10 @@ describe('what the adapter may request', () => {
     expect(h.to('rpc/my_hidden_version')[0]?.body).toEqual({ act: B });
     answer = { status: 'waiting', version: A, words: 'My edit.' };
     expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'waiting', version: A, words: 'My edit.' });
+    answer = { status: 'hiddenUntilEdited', version: B, words: 'My words.', forged: [A] };
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'hiddenUntilEdited', version: B, words: 'My words.', forged: [A] });
+    answer = { status: 'waiting', version: A, words: 'My edit.', forged: [] };
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'waiting', version: A, words: 'My edit.' });
     answer = null;
     expect(await h.api.myHiddenVersion(B)).toBeNull();
     answer = { status: 'something', version: A };
