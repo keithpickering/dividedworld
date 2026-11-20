@@ -127,6 +127,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
    */
   const originPlays = useMemo(() => createPlays(), []);
   const originTicket = useRef(-1);
+  /* A post's `now` at its first billing in this page's life: a re-read or a catch-up judges spent at that time, so a clock never moves a mark (cards/billing.ts). */
+  const billedAt = useRef(new Map<Id, number>());
   const [origin, setOrigin] = useState<PageOrigin | null>(() => doc.origin);
   const effects = useMemo(() => effectCards(ui), [ui]);
   const effectList = useMemo(() => [...effects], [effects]);
@@ -315,7 +317,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     for (const t of page.spun) if (t.originActId !== null) from.set(t.originActId, [...(from.get(t.originActId) ?? []), t]);
     const spun = new Map<Id, Spun>();
     for (const id of ids) { loader.seed(id, from.get(id) ?? []); spun.set(id, loader.peek(id)!); }
-    const over = { now: api.now(), keeps: keepingKeys(instance.cards) };
+    const over = { now: api.now(), keeps: keepingKeys(instance.cards), billedAt: billedAt.current };
     /* The origin's plays join the box's store and are billed here, once for this read and outside any render, from the tallies and spins this page just put in the thread's stores. */
     if (tookOrigin && page.thread.originActId) takeInOrigin(tookOrigin, page.thread.originActId, originPlays, tallies, spun, over);
     for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);

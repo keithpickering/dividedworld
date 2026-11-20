@@ -193,6 +193,31 @@ describe('spent kinds go last when the page is read', () => {
     await waitFor(() => expect(marks(post)[0]).toHaveAttribute('data-kb-spent', 'true'));
     expect(order(post)).toEqual(['Card 2', 'Card 1']);
   });
+
+  test('a clock never moves a mark on a re-read: a catch-up after a kind timed out leaves the order as it was', async () => {
+    width(false);
+    const w = world();
+    const joined: (() => void)[] = [];
+    const real = w.fake.subscribeThread.bind(w.fake);
+    w.fake.subscribeThread = (t, l) => { if (l.onJoined) joined.push(() => l.onJoined!()); return real(t, l); };
+    const page = vi.spyOn(w.fake, 'threadPage');
+    w.fake.seed.card(w.spritey, w.second, 'k1', { message: '', ends: new Date(w.fake.clock.now() + 24 * HOUR).toISOString() });
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.second, 'k2', { message: '', ends: new Date(w.fake.clock.now() + 3 * HOUR).toISOString() });
+    open(w);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(2));
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
+    await act(async () => { await page.mock.results[1]!.value; });
+    expect(order(post)).toEqual(['Card 2', 'Card 1']);
+    /* Card 2's play times out after the read; a catch-up reads the page again. */
+    w.fake.clock.advance(4 * HOUR);
+    const reads = page.mock.calls.length;
+    act(() => { for (const fn of joined) fn(); });
+    await waitFor(() => expect(page.mock.calls.length).toBeGreaterThan(reads));
+    await act(async () => { await page.mock.results.at(-1)!.value; });
+    expect(order(post)).toEqual(['Card 2', 'Card 1']);
+  });
 });
 
 describe('the corner sign', () => {
