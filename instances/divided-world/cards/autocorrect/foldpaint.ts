@@ -8,7 +8,7 @@
  * own region is left open so the post's words show through it, as they do under a peek.
  *
  * The two faces (the paper with its words, and the sticky side) are made once for a pick and kept, so a frame of the pick costs two
- * image draws and not a redrawn paper. Everything is seeded: the faces are the strip's own, drawn the same on every screen.
+ * image draws and not a redrawn paper. The scratch the fold is laid on is made with them and cleared per frame, so a frame makes no canvas. Everything is seeded: the faces are the strip's own, drawn the same on every screen.
  */
 import { creaseAt, edgesAt, foldEnd, foldMatrix } from './fold.ts';
 import { drawPaper, drawUnderside, endJags, PAPER, tapePath, type Jag, type PaperContext } from './paper.ts';
@@ -20,15 +20,19 @@ export interface FoldFaces {
   readonly key: string;
   readonly spec: FaceSpec;
   readonly top: HTMLCanvasElement;
+  /** The canvas the fold is laid on so its shadow is not clipped: the top's size, made with the faces and cleared for each frame. */
+  readonly scratch: HTMLCanvasElement;
   /** The sticky side, drawn with the picked end's own outline (fold.ts `foldEnd`): made on the first paint and again when the picked end changes. */
   under: HTMLCanvasElement | null;
   underKey: string;
   readonly ends: { left: Jag; right: Jag };
 }
 
-export interface FaceSpec { readonly w: number; readonly h: number; readonly seed: string; readonly words: string; readonly fontPx: number; readonly pad: number; readonly dpr: number }
+export interface FaceSpec { readonly w: number; readonly h: number; readonly seed: string; readonly words: string; readonly fontPx: number; readonly pad: number; readonly dpr: number;
+  /** Whether the marker's font is loaded: the words are drawn in it, so faces made before it arrived are made again. */
+  readonly font: boolean }
 
-export const facesKey = (s: FaceSpec) => `${s.w}x${s.h}|${s.seed}|${s.words}|${s.fontPx}|${s.pad}|${s.dpr}`;
+export const facesKey = (s: FaceSpec) => `${s.w}x${s.h}|${s.seed}|${s.words}|${s.fontPx}|${s.pad}|${s.dpr}|${s.font ? 'f' : 'n'}`;
 
 /** A face on its own canvas, `w` by `h` with PAD around it, or null where there is no 2D context. */
 function faceCanvas(s: FaceSpec, draw: (c: CanvasRenderingContext2D) => void): HTMLCanvasElement | null {
@@ -60,7 +64,11 @@ export function makeFaces(s: FaceSpec): FoldFaces | null {
     c.fillText(s.words, s.pad, s.h / 2 - 0.02 * s.fontPx);
     c.restore();
   });
-  return top ? { key: facesKey(s), spec: s, top, under: null, underKey: '', ends: endJags(s.seed, s.w, s.h) } : null;
+  if (!top) return null;
+  const scratch = document.createElement('canvas');
+  scratch.width = top.width;
+  scratch.height = top.height;
+  return { key: facesKey(s), spec: s, top, scratch, under: null, underKey: '', ends: endJags(s.seed, s.w, s.h) };
 }
 
 export interface FoldPaint {
@@ -79,9 +87,7 @@ export interface FoldPaint {
 /** Paints one frame of the pick on `cv`, which is sized (w + 2 PAD) by (h + 2 PAD) times dpr. */
 export function paintFold(cv: HTMLCanvasElement, faces: FoldFaces, o: FoldPaint): boolean {
   const c = cv.getContext('2d');
-  const f = document.createElement('canvas');
-  f.width = cv.width;
-  f.height = cv.height;
+  const f = faces.scratch;
   const fc = f.getContext('2d');
   if (!c || !fc) return false;
   const { w, h, dpr, side } = o;
@@ -132,7 +138,10 @@ export function paintFold(cv: HTMLCanvasElement, faces: FoldFaces, o: FoldPaint)
   stuck(c);
   blit(c, faces.top);
   c.restore();
-  /* The fold, on its own canvas so its shadow is not clipped: p' = p - q n (n.p - n.A). */
+  /* The fold, on the scratch so its shadow is not clipped: p' = p - q n (n.p - n.A). */
+  fc.setTransform(1, 0, 0, 1, 0, 0);
+  fc.globalCompositeOperation = 'source-over';
+  fc.clearRect(0, 0, f.width, f.height);
   frame(fc);
   fc.transform(...foldMatrix(crease));
   fc.save();

@@ -21,7 +21,7 @@ import css from './autocorrect.css?raw';
 import { piecesOf } from './tape.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { AutocorrectEffect, LENS } from './Effect.tsx';
-import { GLOSS_ALPHA, RESIDUE_TINT } from './residue.ts';
+import { GLOSS_ALPHA, GLOSS_RADIUS, glossAt, RESIDUE_TINT, residueInk } from './residue.ts';
 import { readRange } from '../../../../engine/ui/thread/SelectionQuote.tsx';
 import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 
@@ -103,7 +103,7 @@ const rectOf = (el: Element) => {
   const host = el.closest('.dw-ac')!;
   let left = 0;
   for (const e of host.querySelectorAll('[data-kb-ac-seg], .dw-ac-room')) {
-    const width = (e.textContent ?? '').length * (e.classList.contains('dw-ac-room') ? 8 : 10);
+    const width = (e.textContent ?? '').length * (e.classList.contains('dw-ac-room') ? 8 : 10) * grow;
     if (e === el) return { left, right: left + width, top: 0, bottom: 20, width, height: 20, x: left, y: 0, toJSON: () => ({}) };
     left += width;
   }
@@ -112,6 +112,8 @@ const rectOf = (el: Element) => {
 const sizeOf = (el: Element) => { for (let e: Element | null = el; e; e = e.parentElement) { const n = /kb-bb-size-(\d)/u.exec(e.className)?.[1]; if (n) return 16 * 2; } return 16; };
 /* A phone's narrow column: when set, every room breaks onto a second line. */
 let phone: number | null = null;
+/* How much wider every segment is than its text says: a resize that changes a piece's width without changing the line. */
+let grow = 1;
 let measures: ReturnType<typeof vi.spyOn>;
 let laid: number[] = [];
 let resizes: { cb: () => void; watching: Set<Element> }[] = [];
@@ -122,6 +124,10 @@ class FakeResize {
   unobserve(el: Element) { this.entry.watching.delete(el); }
   disconnect() { this.entry.watching.clear(); }
 }
+/* A fold's paint that fails after it has cleared its canvas, and every clear and failure in order. */
+let paintFails = false;
+const clears: string[] = [];
+const radials: { args: number[]; stops: [number, string][] }[] = [];
 const resize = () => act(() => { for (const r of resizes) r.cb(); });
 
 beforeEach(() => {
@@ -129,7 +135,11 @@ beforeEach(() => {
   registrations.register.mockClear();
   registrations.unregister.mockClear();
   phone = null;
+  grow = 1;
   laid = [];
+  radials.length = 0;
+  paintFails = false;
+  clears.length = 0;
   document.documentElement.removeAttribute('data-kb-motion');
   resizes = [];
   vi.stubGlobal('ResizeObserver', FakeResize);
@@ -138,9 +148,10 @@ beforeEach(() => {
     measureText(text: string) { return { width: text.length * 0.5 * Number(/(\d+(?:\.\d+)?)px/u.exec(String(ctx.font))?.[1] ?? 16) }; },
     createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
     createLinearGradient: () => ({ addColorStop: () => {} }),
-    createRadialGradient: (...a: number[]) => { const g = { args: a, stops: [] as [number, string][], addColorStop(o: number, c: string) { g.stops.push([o, c]); } }; return g; },
+    createRadialGradient: (...a: number[]) => { const g = { args: a, stops: [] as [number, string][], addColorStop(o: number, c: string) { g.stops.push([o, c]); } }; radials.push(g); return g; },
     /* A piece laid on the residue's canvas (five arguments) is told with the alpha it was drawn at; a film copied to the scratch is not. */
-    drawImage: (...a: unknown[]) => { if (a.length === 5) laid.push(Number(ctx.globalAlpha)); },
+    drawImage: (...a: unknown[]) => { if (a.length === 5) laid.push(Number(ctx.globalAlpha)); if (a.length === 3 && paintFails) { clears.push('threw'); throw new Error('no canvas'); } },
+    clearRect: () => { clears.push('clear'); },
   };
   const canvas = new Proxy(ctx, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => { t[k] = v; return true; } });
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => canvas) as never);
@@ -865,7 +876,7 @@ describe('Autocorrect: the hands on a piece', () => {
     expect(stepsOf(spy)).toBeGreaterThan(0);
   });
 
-  test('while the fold shows the body\'s paper is hidden, and letting go or a resize brings it back', async () => {
+  test('while the fold shows the body\'s paper is hidden, and letting go or a resize that lays the line out again brings it back', async () => {
     vi.useFakeTimers();
     mount({ author: true, body: 'Mario' });
     const piece = pieces()[0]!;
@@ -882,14 +893,33 @@ describe('Autocorrect: the hands on a piece', () => {
     down(piece, 3, 2);
     await pass(200);
     expect(body().style.visibility).toBe('hidden');
+    const widthOf = () => Number(/-(\d+(?:\.\d+)?)$/u.exec(pieces()[0]!.getAttribute('data-kb-ac-stuck') ?? '')?.[1]);
+    /* A resize mid-pick lays the line out again at its new width, and the pick in hand is let go: the fold goes and the paper is back, at the new width. */
+    grow = 2;
     resize();
     await pass(50);
-    /* A resize mid-pick redraws the piece; whatever the hand is doing, the paper is either hidden under a drawn fold or showing. */
-    const folded = piece.querySelector('[data-kb-ac-fold]') !== null;
-    expect(body().style.visibility).toBe(folded ? 'hidden' : '');
+    expect(widthOf()).toBe(100);
+    expect(document.querySelector('[data-kb-ac-fold]')).toBeNull();
+    expect(body().style.visibility).toBe('');
     fireEvent.pointerUp(window, { pointerId: 2 });
     await pass(50);
     expect(body().style.visibility).toBe('');
+  });
+
+  test('a fold whose paint fails leaves the paper showing and its canvas cleared', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario' });
+    const piece = pieces()[0]!;
+    const body = () => piece.querySelector<HTMLElement>('.dw-ac-body')!;
+    paintFails = true;
+    clears.length = 0;
+    down(piece, 3);
+    await pass(200);
+    expect(clears).toContain('threw');
+    expect(body().style.visibility).toBe('');
+    /* The last thing done to the fold's canvas is the clear, after the failure. */
+    expect(clears.at(-1)).toBe('clear');
+    expect(clears.lastIndexOf('clear')).toBeGreaterThan(clears.lastIndexOf('threw'));
   });
 
   test('a pointerup or pointercancel anywhere in the window lets a held hand go', async () => {
@@ -1267,6 +1297,30 @@ describe('Autocorrect: the glue and the buzz', () => {
     mount({ body: 'Mario', states: { k1: savedOf({ peeled: [0] }) } });
     await pass(100);
     expect(laid.slice(0, 2)).toEqual([RESIDUE_TINT.light, GLOSS_ALPHA.light]);
+  });
+
+  test('the gloss is a radial gradient at glossAt for the light, of the stated reach and stops, in the gloss color', async () => {
+    vi.useFakeTimers();
+    const seen: { light: { x: number; y: number }; size: { w: number; h: number } }[] = [];
+    const real = await vi.importActual<typeof import('../../../../engine/ui/shine/loop.ts')>('../../../../engine/ui/shine/loop.ts');
+    registrations.register.mockImplementation(((host, cv, size, density, draw, options) => real.register(host, cv, size, density, (frame) => { seen.push({ light: frame.light, size }); return draw(frame); }, options)) as typeof real.register);
+    mount({ body: 'Mario', states: { k1: savedOf({ peeled: [0] }) } });
+    await pass(100);
+    expect(radials.length).toBeGreaterThan(0);
+    const g = radials[0]!;
+    const { light, size } = seen[0]!;
+    const at = glossAt(light as never, size);
+    const ink = residueInk({ lo: 0.55, hi: 1, board: 'light', bright: false }, light as never);
+    const sx = g.args[5]! / GLOSS_RADIUS;
+    const [r, gr, b] = [1, 3, 5].map((i) => parseInt(ink.gloss.slice(i, i + 2), 16));
+    /* The test's one piece sits at the post's origin, so its film pixels are the post's at the film's scale. */
+    expect(g.args[0]).toBeCloseTo(at.x * sx, 6);
+    expect(g.args[1]).toBeCloseTo(at.y * sx, 6);
+    expect(sx).toBe(2);
+    expect(g.args[2]).toBe(0);
+    expect(g.args[0]).toBe(g.args[3]);
+    expect(g.args[1]).toBe(g.args[4]);
+    expect(g.stops).toEqual([[0, `rgba(${r},${gr},${b},0.9)`], [0.38, `rgba(${r},${gr},${b},0.22)`], [0.72, `rgba(${r},${gr},${b},0)`]]);
   });
 
   test('a held pick buzzes the author\'s phone once', async () => {

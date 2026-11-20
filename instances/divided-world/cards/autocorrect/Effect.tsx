@@ -311,13 +311,19 @@ const Piece = memo(function Piece({ strip, index, box, words, fontPx, pad, own, 
     if (!corner || !cv) { faces.current = null; setFolded(false); return; }
     try {
       const dpr = Math.min(3, window.devicePixelRatio || 1);
-      const spec = { w: box.w, h: box.h, seed, words, fontPx, pad, dpr };
+      const spec = { w: box.w, h: box.h, seed, words, fontPx, pad, dpr, font: document.fonts?.check?.('1em "Gochi Hand"') ?? true };
       if (faces.current?.key !== facesKey(spec)) faces.current = makeFaces(spec);
-      cv.width = Math.ceil((box.w + 2 * FOLD_PAD) * dpr);
-      cv.height = Math.ceil((box.h + 2 * FOLD_PAD) * dpr);
+      /* Sized only when its size changes: assigning a canvas's size reallocates its backing store, and a pick repaints on every tick. */
+      const [cw, ch] = [Math.ceil((box.w + 2 * FOLD_PAD) * dpr), Math.ceil((box.h + 2 * FOLD_PAD) * dpr)];
+      if (cv.width !== cw) cv.width = cw;
+      if (cv.height !== ch) cv.height = ch;
       /* The body's paper goes only once a fold is on its canvas, so a piece that cannot draw one keeps its paper. */
       setFolded(faces.current !== null && paintFold(cv, faces.current, { w: box.w, h: box.h, side: corner.side, at: corner.at, t: corner.t, stuck: own, dpr }));
-    } catch { setFolded(false); }
+    } catch {
+      /* A paint that threw may have left half a fold: clear it, so the body shown again is not under one. */
+      try { cv.getContext('2d')?.clearRect(0, 0, cv.width, cv.height); } catch { /* nothing more to clear */ }
+      setFolded(false);
+    }
   }, [corner, box.w, box.h, seed, words, fontPx, pad, own]);
   const strain = view.strain;
   const at = strain ? (strain.side === 'a' ? (strain.at / box.w) * 100 : 100 - (strain.at / box.w) * 100) : 0;
