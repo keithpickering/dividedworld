@@ -19,7 +19,7 @@ import { ThreadScreen } from '../thread/Thread.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { asThen, createPlays } from './plays.ts';
 import { PostMarks } from './Marks.tsx';
-import { endsWords } from './marks.ts';
+import { endedWords, endsWords, UNTAKEN_STATE } from './marks.ts';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine } from '../reactions/mine.ts';
 import { fadeOf, Lens, LensProvider, moreBelow, scrolledPast, useLensFor, useLensStore } from './Lens.tsx';
@@ -2503,6 +2503,7 @@ describe('the discipline cards\' Lens', () => {
     await lensOf(2, 'T Fall');
     expect(heading()).toBe('Took the fall');
     expect(here().querySelector('.kb-lens-ends')).toBeNull();
+    expect(lensProblems(here())).toEqual([]);
     await userEvent.click(await markNamed(2, 'T Fall'));
     await userEvent.click(await markNamed(2, 'T Heart'));
     expect(heading()).toBe('Took points off');
@@ -2691,7 +2692,7 @@ describe('a spent kind', () => {
   const rowOf = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
   /** The view a kind's effect last gave, as the page holds it: it keeps saying so after its plays end. */
   const smoking = { progress: null, state: 'Smoke over the words', ends: 'Ends in the smoke.', yours: false, controls: [], notes: {} };
-  type Spec = { readonly id: string; readonly ends?: 'past' | 'older' | 'ahead' };
+  type Spec = { readonly id: string; readonly ends?: 'past' | 'older' | 'ahead'; readonly reversed?: true; readonly untaken?: true };
   const gimmicked = { ...instance, cards: instance.cards.map((c) => (c.key === 'k2' ? { ...c, play: 'use' as const, gimmick: { kind: 'noQuote' as const }, lasts: { unit: 'day' as const, count: 7 } } : c)) };
   const keeper = { ...instance, cards: instance.cards.map((c) => (c.key === 'k2' ? { ...c, keeps: true as const } : c)) };
   /** The kind's plays drawn by the marks, from Acts as the page would write them, each end 'past' (an hour ago), 'older' (two hours ago) or 'ahead'; the stub view set on the kind when asked. */
@@ -2703,8 +2704,9 @@ describe('a spent kind', () => {
     const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
     store.add(specs.map((p) => {
       const payload = { card: 'k2', ...(p.ends ? { ends: at[p.ends] } : {}) };
-      return { ...base, id: p.id, kind: 'card' as const, payload, currentPayload: payload };
+      return { ...base, id: p.id, kind: 'card' as const, payload, currentPayload: payload, ...(p.untaken ? { untaken: true } : {}) };
     }));
+    store.add(specs.filter((p) => p.reversed).map((p) => ({ ...base, id: `${p.id}-end`, kind: 'card_end' as const, targetActId: p.id, payload: { why: 'reversed', by: 'admin' }, currentPayload: {} })));
     store.setBilling(w.second, specs.map((p) => p.id));
     if (opts.view) store.setView(w.second, 'k2', smoking);
     const inst = opts.instance ?? instance;
@@ -2751,6 +2753,53 @@ describe('a spent kind', () => {
     await openMark();
     expect(heading()).toBe('Cannot be quoted');
     expect(endsLine()).toBe(`Ends ${dayAndTime(at.past)}`);
+    expect(problems()).toEqual([]);
+  });
+
+  test('a gimmick of two plays, one in then and ended earlier and one outside it ended later: the live heading, and Ends from the one in then', async () => {
+    width(false);
+    const { at } = strip([{ id: 'a', ends: 'older' }, { id: 'b', ends: 'past' }], { instance: gimmicked, then: new Set(['a']) });
+    await openMark();
+    expect(heading()).toBe('Cannot be quoted');
+    expect(endsLine()).toBe(`Ends ${dayAndTime(at.older)}`);
+    expect(problems()).toEqual([]);
+  });
+
+  test('a kind whose plays were all ended by an admin says so in its heading, with no way out', async () => {
+    width(false);
+    strip([{ id: 'r', reversed: true }]);
+    await openMark();
+    expect(heading()).toBe(endedWords());
+    expect(endsLine()).toBeNull();
+    expect(problems()).toEqual([]);
+  });
+
+  test('a kind whose plays all did not take says so in its heading, with no way out', async () => {
+    width(false);
+    strip([{ id: 'u', untaken: true }]);
+    await openMark();
+    expect(heading()).toBe(UNTAKEN_STATE);
+    expect(endsLine()).toBeNull();
+    expect(problems()).toEqual([]);
+  });
+
+  test('a Lens left open turns past a play\'s end by itself: Ends becomes Ended, with no re-read and no re-open', async () => {
+    width(false);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true });
+    try {
+      const w = world();
+      w.fake.clock.advance(60_000);
+      const ends = new Date(w.fake.clock.now() + 60_000).toISOString();
+      w.fake.seed.card(w.spritey, w.second, 'k2', { ends });
+      open(w);
+      await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(await markOf(2, 'Card 2'));
+      expect(endsLine()).toBe(`Ends ${dayAndTime(ends)}`);
+      expect(heading()).not.toBe('Ended');
+      w.fake.clock.advance(2 * 60_000);
+      await act(async () => { vi.advanceTimersByTime(2 * 60_000); });
+      expect(heading()).toBe('Ended');
+      expect(endsLine()).toBe(`Ended ${dayAndTime(ends)}`);
+    } finally { vi.useRealTimers(); }
   });
 
   test('one timed out and one caught says Over, with when it ended', async () => {
@@ -2789,12 +2838,11 @@ describe('a spent kind', () => {
 
   test('a timed-out play in then is judged as it stood: the live view, and Ends', async () => {
     width(false);
-    const { at } = strip([{ id: 'then-timed', ends: 'past' }], { view: true, then: new Set(['then-timed']) });
+    strip([{ id: 'then-timed', ends: 'past' }], { view: true, then: new Set(['then-timed']) });
     await openMark();
     expect(heading()).toBe('Smoke over the words');
     expect(within(lens()).queryByText(/^Ended /u)).toBeNull();
     expect(problems()).toEqual([]);
-    void at;
   });
 
   test('a kind of a play in then and one outside it: each end is worded by its own play, the way out the latest', async () => {

@@ -277,7 +277,8 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     }
     for (const p of timed) caught[p.id] = `${endsWords(p.ends!, now)}.`;
     if (rules?.gimmick) {
-      const live = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken);
+      /* The gimmick is live while a play of it is not over (a timed-out one is ended, and says so in its own row), and its way out is the latest of those. */
+      const live = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken && !playOver(p, now, keeping, then));
       if (live.length > 0) {
         const latest = [...live].sort((a, b) => Date.parse(b.ends ?? '') - Date.parse(a.ends ?? ''))[0]!;
         const gimmick = gimmickWords(rules.gimmick, latest.ends, new Date(clockOf(latest)), cardName);
