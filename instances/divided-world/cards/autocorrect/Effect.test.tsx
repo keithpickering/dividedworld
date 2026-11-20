@@ -26,9 +26,10 @@ import { readRange } from '../../../../engine/ui/thread/SelectionQuote.tsx';
 import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 
 /* The board's tokens are not in jsdom: the residue's band is a light board's. */
+const boardOf = vi.hoisted(() => ({ now: 'light' as 'light' | 'dark' }));
 vi.mock('../../../../engine/ui/shine/band.ts', async (original) => ({
   ...(await original<typeof import('../../../../engine/ui/shine/band.ts')>()),
-  bandFor: () => ({ lo: 0.55, hi: 1, board: 'light', bright: false }),
+  bandFor: () => ({ lo: 0.55, hi: 1, board: boardOf.now, bright: false }),
 }));
 
 /* The shine loop as it is, with its registrations counted: a peel in hand must not register the residue host again. */
@@ -139,6 +140,7 @@ beforeEach(() => {
   laid = [];
   radials.length = 0;
   paintFails = false;
+  boardOf.now = 'light';
   clears.length = 0;
   document.documentElement.removeAttribute('data-kb-motion');
   resizes = [];
@@ -1285,7 +1287,7 @@ describe('Autocorrect under another effect standing trail', () => {
 });
 
 describe('Autocorrect: the glue and the buzz', () => {
-  const down = (el: Element, x: number) => fireEvent.pointerDown(el, { clientX: x, clientY: 5, pointerId: 1, pointerType: 'mouse', button: 0, isPrimary: true });
+  const down = (el: Element, x: number, id = 1) => fireEvent.pointerDown(el, { clientX: x, clientY: 5, pointerId: id, pointerType: 'mouse', button: 0, isPrimary: true });
   const move = (el: Element, x: number) => fireEvent.pointerMove(el, { clientX: x, clientY: 5, pointerId: 1, pointerType: 'mouse' });
   const vibrate = vi.fn();
   beforeEach(() => { vibrate.mockReset(); Object.defineProperty(navigator, 'vibrate', { configurable: true, value: vibrate }); });
@@ -1297,6 +1299,14 @@ describe('Autocorrect: the glue and the buzz', () => {
     mount({ body: 'Mario', states: { k1: savedOf({ peeled: [0] }) } });
     await pass(100);
     expect(laid.slice(0, 2)).toEqual([RESIDUE_TINT.light, GLOSS_ALPHA.light]);
+  });
+
+  test('on the dark board the tint and the gloss are laid at the dark board\'s strengths', async () => {
+    vi.useFakeTimers();
+    boardOf.now = 'dark';
+    mount({ body: 'Mario', states: { k1: savedOf({ peeled: [0] }) } });
+    await pass(100);
+    expect(laid.slice(0, 2)).toEqual([0.3, 0.12]);
   });
 
   test('the gloss is a radial gradient at glossAt for the light, of the stated reach and stops, in the gloss color', async () => {
@@ -1368,5 +1378,43 @@ describe('Autocorrect: the glue and the buzz', () => {
     expect(status()).toBe('Picked. Keep holding to peel.');
     expect(vibrate).not.toHaveBeenCalled();
     letGo(buttons()[0]!);
+  });
+
+  test('a pointer pick does not say the key pick\'s words', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario' });
+    down(pieces()[0]!, 3);
+    await pass(PICK + 100);
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    expect(status()).not.toContain('Picked.');
+  });
+
+  test('a key press that begins nothing and is never released (no key-up, no blur) does not silence the next pointer pick or make it say its words', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario' });
+    const piece = pieces()[0]!;
+    /* A key-down while a pointer hand is held begins nothing, and its key-up may never come (its strip is gone). */
+    down(piece, 3);
+    fireEvent.keyDown(buttons()[0]!, { key: 'Enter' });
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    await pass(100);
+    vibrate.mockClear();
+    down(pieces()[0]!, 3, 2);
+    await pass(PICK + 100);
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    expect(vibrate).toHaveBeenCalledWith([10, 40, 10]);
+    expect(status()).not.toContain('Picked.');
+  });
+
+  test('with no vibrate on the device a pointer pick still completes', async () => {
+    vi.useFakeTimers();
+    delete (navigator as { vibrate?: unknown }).vibrate;
+    mount({ author: true, body: 'Mario' });
+    const piece = pieces()[0]!;
+    down(piece, 3);
+    await pass(PICK + 100);
+    const before = Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!);
+    for (let i = 0; i < 20; i++) { move(piece, Math.min(wide(piece) - 3, Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!) + 12)); await pass(16); }
+    expect(Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!)).toBeGreaterThan(before);
   });
 });

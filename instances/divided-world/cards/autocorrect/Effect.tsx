@@ -843,6 +843,8 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   const onDown = useCallback<PieceHandler>((e, id) => {
     if ((e.pointerType === 'mouse' && e.button !== 0) || e.isPrimary === false) return;
     const hs = handsNow();
+    /* A pointer pick is not a key's: a key hold whose strip went without a key-up or a blur must not leave its words and its silence on this one. */
+    byKey.current = false;
     onMeet();
     const did = hs.press(id, placeOf(e), e.pointerId ?? 0);
     if (did === 'pending' || did === 'peeling' || did === 'peeking') {
