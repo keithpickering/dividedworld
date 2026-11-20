@@ -58,7 +58,7 @@ begin
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and has_table_privilege('kayfabb_digest', oid, 'insert,update,delete,truncate,references,trigger');
   if bad is not null then raise exception 'the digest role writes %', bad; end if;
   -- The role's reach, whole: it cannot create in the schema (the owner change takes the grant and gives it back), no client
-  -- role can become it, and the functions it may execute are exactly the twenty-two reviewed here: a new grant fails this.
+  -- role can become it, and the functions it may execute are exactly the twenty-three reviewed here: a new grant fails this.
   if has_schema_privilege('kayfabb_digest', 'public', 'create') then raise exception 'the digest role can create in public'; end if;
   foreach t in array array['anon', 'authenticated', 'service_role'] loop
     if pg_has_role(t, 'kayfabb_digest', 'member') then raise exception '% is a member of the digest role', t; end if;
@@ -84,8 +84,10 @@ begin
       -- The same kind for a pack's pulls (0139): pure, reading no table.
       'pack_pulls_problem(jsonb)',
       -- What acts_public calls as its reader (0340): whether a version is hidden, what its quoting body's layer comes to and what a payload shows of it, so a digest never reads a hidden version's words.
-      'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'conceal_layer(uuid)', 'shown_payload(jsonb,boolean,boolean,boolean,text)']) x) then
-    raise exception 'the functions the digest role may execute are not the reviewed twenty-two: %', fns;
+      'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'conceal_layer(uuid)', 'shown_payload(jsonb,boolean,boolean,boolean,text)',
+      -- And whether a ballot's poll is secret (0381): acts_public withholds a secret ballot's character and picks, and the digest reads it through the view.
+      'ballot_secret(uuid)']) x) then
+    raise exception 'the functions the digest role may execute are not the reviewed twenty-three: %', fns;
   end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;
 

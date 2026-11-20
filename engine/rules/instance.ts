@@ -27,7 +27,7 @@ import type { EventLine } from './cosmetics.ts';
 export const BRIBE_BOUNDS = { least: 25, most: 500 } as const;
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
-/** A card's time up may count hours: a use card for a day and a half. No setting does. */
+/** A card's time up may count hours: a use card for a day and a half. So may how long a poll lasts (`pollLastsMin`, `pollLastsMax`); no other setting does. */
 const LASTS_UNITS: readonly Span['unit'][] = ['hour', ...SPAN_UNITS];
 /** A grace may be minutes long (editGrace), and so may presence's window; nothing else is. */
 const GRACE_UNITS: readonly Span['unit'][] = ['minute', ...SPAN_UNITS];
@@ -282,6 +282,12 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   inviteLifetime: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
   editGrace: (v) => (isSpan(v, GRACE_UNITS) ? null : 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000'),
   postMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
+  // As SQL's settings_held holds them (0381): a poll has at least two options, and a span here may count hours.
+  pollOptionsMax: whole(2, 'options', 100),
+  pollQuestionMax: whole(1, 'characters'),
+  pollOptionMax: whole(1, 'characters'),
+  pollLastsMin: (v) => (isSpan(v, LASTS_UNITS) ? null : 'a span: a unit of hour, day, week or month and a whole count from 1 to 1000'),
+  pollLastsMax: (v) => (isSpan(v, LASTS_UNITS) ? null : 'a span: a unit of hour, day, week or month and a whole count from 1 to 1000'),
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   postsPerPage: (v) => (isWhole(v, 1) ? null : 'a whole number of posts, at least 1'),
   hotReplies: (v) => (isWhole(v, 1) ? null : 'a whole number of replies, at least 1'),

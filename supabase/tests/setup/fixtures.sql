@@ -26,6 +26,12 @@ insert into settings (key, value) values
   ('inviteLifetime', '{"unit": "day", "count": 7}'),
   ('editGrace', '{"unit": "minute", "count": 2}'),
   ('postMaxLength', '20000'),
+  -- A poll (0381): the most options, the longest question and option, and the least and most a poll may last (spans may count hours).
+  ('pollOptionsMax', '10'),
+  ('pollQuestionMax', '200'),
+  ('pollOptionMax', '100'),
+  ('pollLastsMin', '{"unit": "hour", "count": 1}'),
+  ('pollLastsMax', '{"unit": "day", "count": 14}'),
   -- The code of conduct (0340): its version, its sections' keys, and the most open reports an account holds.
   ('conductVersion', '1'),
   ('conductSections', '["mask", "hate", "outing"]'),
