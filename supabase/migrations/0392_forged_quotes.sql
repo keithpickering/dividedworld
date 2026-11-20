@@ -1408,8 +1408,11 @@ end $function$;
 -- a source is a row of its own and not an Act's content; the verdict is not backfilled (that would be an update of an Act's content), so an Act written before this reads as it always did.
 --
 -- quote_holds(source, pieces): engine/bbcode/quoted.ts's holds, in PL/pgSQL: every piece in order, each found by strpos at or after the end of the last, empty pieces skipped, no pieces holds.
--- quote_forged(body, at): one walk of the body; for each Act it quotes, its eligible versions newest first, a text seen already (by digest) once; each quote of the Act is judged on its own against any one
---   version (design, section 2), and one that stands in none forges the Act (section 5); no version at all (an id that is no Act, an Act with no text body, every version hidden or written after `at`) is forged. Security definer, no client grant.
+-- quote_forged(body, at): one walk of the body; for each Act it quotes, its eligible versions newest first (a text seen already, by digest, once; a hidden one skipped before its text is read; one written after `at`
+--   left out), each version's text read once and tested against every quote of the Act not yet matched, until all are matched or the versions run out (design, sections 2 and 12). A quote that stands in no
+--   eligible version forges the Act (section 5); no version at all (an id that is no Act, an Act with no text body, every version hidden or written after `at`) is forged. The work is budgeted
+--   (quote_work_budget, below): past it every Act with an unmatched quote is forged. Security definer, no client grant.
+-- forged_verdict_stage and acts_forged_quotes: post() works the verdict out before it takes the thread's lock and hands it to the trigger (bound to the transaction, the body and the instant).
 -- quote_check(body): within postMaxLength, then quote_forged(body, now()): the composer's preview asks it of a draft. It reads only public facts (versions that are not hidden now, which the History shows
 --   everyone), nothing about the caller or who owns anything, so a guess at a hidden post's words comes back forged for its author and for anyone alike.
 -- Security: invoker, no table is read in quote_holds; the others pin search_path ending in pg_temp.
@@ -1470,27 +1473,49 @@ begin
 end $$;
 revoke execute on function quote_holds(text, jsonb) from public, anon, authenticated;
 
+-- The work budget of one check (quote_work_budget, written once, here): the most characters one quote_forged call searches. Each time a version's text is tested against a quote that is still unmatched, the text's
+-- length is added, and every version looked at adds quote_version_cost besides (a row found, its hiding asked, its text read), so a history of very many small versions cannot cost without bound. Past the budget the
+-- search stops, and every post of the body that still has an unmatched quote is forged, the posts after it without a read: a body that asks for that much work is not an honest quote of posts as they were. The
+-- constants are the same for every caller and every body (nothing about who asks, who owns anything or how long a history is can move them), so the verdict never depends on a private fact, and the same body
+-- against the same posts is forged or not forged for everyone alike. 30,000,000 characters is about a tenth of a second of string search at most (about 2 ns a character, measured in
+-- supabase/tests/0392-forged-quotes-scale.sql), under the 250 ms budget with the body's walk and the insert beside it; the plan's honest busy case (300 posts, one quote each, three versions of about a hundred
+-- characters) uses 4,500,000 of it, nearly all of that version costs (15%); a post of 20,000 characters edited fifty times, quoted by twenty distinct quotes, is within it too.
+create function quote_work_budget() returns bigint language sql immutable parallel safe as $$ select 30000000::bigint $$;
+create function quote_version_cost() returns bigint language sql immutable parallel safe as $$ select 5000::bigint $$;
+revoke execute on function quote_work_budget() from public, anon, authenticated;
+revoke execute on function quote_version_cost() from public, anon, authenticated;
+
 create function quote_forged(body text, at timestamptz) returns uuid[]
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   walked jsonb;
   k text;
   quotes jsonb;
-  q jsonb;
   forged uuid[] := '{}';
-  sources text[];
-  seen text[];
+  pending jsonb[];
+  left_over jsonb[];
+  q jsonb;
   v record;
-  held boolean;
-  doctored boolean;
-  i integer;
+  src text;
+  len bigint;
+  work bigint := 0;
+  budget constant bigint := quote_work_budget();
+  version_cost constant bigint := quote_version_cost();
+  any_version boolean;
+  spent boolean := false;
+  seen_digests text[];
 begin
   if body is null or body !~* '\[quote=' then return '{}'::uuid[]; end if;
   select w.held into walked from bbcode_walk(body, null, '{}', true) w;
   for k, quotes in select e.key, e.value from jsonb_each(coalesce(walked, '{}'::jsonb)) e loop
-    -- The eligible versions' texts, newest first, a text seen already (by digest) once; a hidden version is never read (hidden is asked first, so a hidden copy of a text does not hide a visible one).
-    sources := '{}';
-    seen := '{}';
+    -- Once the budget is spent every post that is left has unmatched quotes, and is forged without a read.
+    if spent then forged := forged || k::uuid; continue; end if;
+    -- The quotes of the post, each distinct one once, none matched yet. Each version's text is read once and every pending quote is tested against it; the rule is as before: the post is forged when
+    -- some quote of it stands in no eligible version (design, section 2 and 5), and no version at all (an id that is no Act, an Act with no text body, every version hidden or after `at`) is forged.
+    pending := array(select distinct j from jsonb_array_elements(quotes) j);
+    any_version := false;
+    seen_digests := '{}';
+    -- The eligible versions, newest first, a text seen already (by digest) once, a hidden one skipped before its text is read (hidden is asked first, so a hidden copy of a text does not hide a visible one).
     for v in
       select x.id, s.digest
       from (
@@ -1501,23 +1526,25 @@ begin
       join quote_sources s on s.act = x.id
       order by x.created_at desc, x.id desc
     loop
-      continue when v.digest = any (seen) or version_hidden(v.id, k::uuid);
-      seen := seen || v.digest;
-      -- The text is read only now, for a version that is not hidden.
-      sources := sources || (select s.source from quote_sources s where s.act = v.id);
-    end loop;
-    -- Each quote is judged on its own against any one version (design, section 2); one that stands in none forges the post (section 5). No version at all: forged.
-    doctored := cardinality(sources) = 0;
-    if not doctored then
-      for q in select jsonb_array_elements(quotes) loop
-        held := false;
-        for i in 1..cardinality(sources) loop
-          if quote_holds(sources[i], q) then held := true; exit; end if;
-        end loop;
-        if not held then doctored := true; exit; end if;
+      exit when cardinality(pending) = 0;
+      -- Every version looked at costs a flat QUOTE_VERSION_COST (a hidden one, and a text seen already, included: the row is found and its hiding asked), so a long history of small versions is bounded as well.
+      work := work + version_cost;
+      if work > budget then spent := true; exit; end if;
+      continue when v.digest = any (seen_digests) or version_hidden(v.id, k::uuid);
+      seen_digests := seen_digests || v.digest;
+      any_version := true;
+      -- The text is read only now, once, for a version that is not hidden.
+      select s.source into src from quote_sources s where s.act = v.id;
+      len := char_length(src);
+      work := work + len * cardinality(pending);
+      if work > budget then spent := true; exit; end if;
+      left_over := '{}';
+      foreach q in array pending loop
+        if not quote_holds(src, q) then left_over := left_over || q; end if;
       end loop;
-    end if;
-    if doctored then forged := forged || k::uuid; end if;
+      pending := left_over;
+    end loop;
+    if not any_version or cardinality(pending) > 0 then forged := forged || k::uuid; end if;
   end loop;
   return coalesce((select array_agg(f order by f) from unnest(forged) f), '{}'::uuid[]);
 end $$;
@@ -1533,17 +1560,47 @@ end $$;
 revoke execute on function quote_check(text) from public, anon;
 grant execute on function quote_check(text) to authenticated;
 
+-- forged_verdict_stage(body): the verdict of a body that is about to be written as a post by post(), worked out now and left for acts_forged_quotes (above, which says how it is bound). `at` is now(), the
+-- transaction's start, which is what the insert's created_at will be: a version written at or before it is eligible in both places. Callable by no API role.
+create function forged_verdict_stage(body text) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  at timestamptz := now();
+  verdict uuid[];
+begin
+  if body is null or body !~* '\[quote=' then return; end if;
+  verdict := quote_forged(body, at);
+  perform set_config('kayfabb.forged_verdict', format('%s|%s|%s|%s', txid_current(), md5(body), extract(epoch from at), array_to_string(verdict, ',')), true);
+end $$;
+revoke execute on function forged_verdict_stage(text) from public, anon, authenticated;
+
 -- The verdict. Before the Act is inserted, and (its name sorting before acts_quote_guard's) before No-quote reads the Act: a client's `forged` is dropped whatever it holds, the verdict is written when there is
 -- one, and a post whose target is forged is written with no target. An ordinary trigger, not `always`, so a restore with triggers disabled keeps what was written at the save.
+--
+-- A verdict worked out beforehand (forged_verdict_stage, called by post() before lock_for_quote, so that the search never runs while the thread row is held): staged in the transaction-local setting
+-- `kayfabb.forged_verdict` as `<txid>|<md5 of the body>|<epoch of the instant>|<comma-separated posts>`, and used here only when all three of its keys match this insert: the same transaction (txid_current()), the
+-- same body (md5), and the same instant (new.created_at, which post() leaves to its default, the transaction's now(), the very `at` the staging searched with; one instant for the check and the write). Otherwise
+-- the trigger searches itself, as it does for every other writer (an edit, a spin, a staff post, a restore). A used verdict is cleared. A client cannot set the setting at all (the API exposes public functions, not
+-- set_config), so the binding is defense in depth: a value that is not for this transaction, this body and this instant is ignored, never believed.
 create function acts_forged_quotes() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   body text := new.payload ->> 'body';
   verdict uuid[] := '{}';
+  staged text;
+  parts text[];
 begin
   new.payload := new.payload - 'forged';
   if jsonb_typeof(new.payload -> 'body') = 'string' and body ~* '\[quote=' then
-    verdict := quote_forged(body, new.created_at);
+    staged := nullif(current_setting('kayfabb.forged_verdict', true), '');
+    parts := string_to_array(staged, '|');
+    if staged is not null and cardinality(parts) = 4
+       and parts[1] = txid_current()::text and parts[2] = md5(body) and parts[3] = extract(epoch from new.created_at)::text then
+      verdict := case when parts[4] = '' then '{}'::uuid[] else string_to_array(parts[4], ',')::uuid[] end;
+      perform set_config('kayfabb.forged_verdict', '', true);
+    else
+      verdict := quote_forged(body, new.created_at);
+    end if;
   end if;
   if cardinality(verdict) > 0 then
     new.payload := new.payload || jsonb_build_object('forged', to_jsonb(verdict));
@@ -1621,6 +1678,8 @@ begin
   perform not_the_systems(on_board);
   perform not_barred(through, on_board);
   if quoting is not null and not exists (select 1 from acts where id = quoting) then raise exception 'there is no such Act to quote' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The quotes' verdict, before any lock (the search may take a tenth of a second, and a thread's row held for it would stop every other post of the thread): staged for acts_forged_quotes to use.
+  perform forged_verdict_stage(body);
   -- Steps 3 to 5 of the lock order, for the quoted post's back (lock_for_quote).
   locked := lock_for_quote(through, in_thread, quoting);
   insert into acts (character, kind, thread, target_act_id, payload)

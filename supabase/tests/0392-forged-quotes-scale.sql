@@ -70,3 +70,74 @@ begin
   if cardinality(v) is distinct from 0::bigint then raise exception 'busy: % authentic quotes are forged', cardinality(v); end if;
   if spent > BUSY_BUDGET then raise exception 'busy, authentic: quote_forged took %, over the budget of %', spent, BUSY_BUDGET; end if;
 end $$;
+
+-- many versions (final review, F1): one post of about 20,000 characters with VERSIONS_MANY distinct versions, the words searched for only in the oldest, quoted by a body of about 370 quotes. Every version
+-- newer than the oldest is searched and misses, so a search that fetched the text once for each quote and version (370 x 50 reads of 20 KB) took seconds. quote_forged, and a post() insert (the verdict is
+-- worked out in post(), before the thread lock, and handed to the trigger), are each under MANY_BUDGET. Three shapes of body: the reviewer's (the same quote 370 times), 350 distinct quotes that all hold in
+-- the oldest version (so the budget, not the search, decides: the work is over QUOTE_WORK_BUDGET and the post is forged, in time), and 20 distinct quotes (the same search, within the budget: authentic).
+create function pg_temp.noise(n integer) returns text language sql as $$
+  select left(string_agg(md5(random()::text || g::text), ' '), n) from generate_series(1, n / 32 + 1) g
+$$;
+do $$
+declare
+  MANY_BUDGET constant interval := interval '250 milliseconds';
+  VERSIONS_MANY constant integer := 50;
+  BODY_CHARS constant integer := 20000;
+
+  au uuid := tests.account('fqm-author');
+  ch uuid := tests.character(au, 'Fqm Author');
+  th uuid := tests.thread('Forged many versions');
+  base timestamptz := now() - interval '1 day';
+  post_id uuid; qbody text; v uuid[]; t0 timestamptz; spent interval; i integer; parts text[]; oldest text; r jsonb; new_id uuid;
+begin
+  -- the oldest version holds the words `zq` and `w000` ... `w369`; the newer ones hold none of them (noise that does not compress, so a read of one pays its full detoast, distinct by a suffix)
+  oldest := 'zq ' || (select string_agg(format('w%s', lpad(n::text, 3, '0')), ' ') from generate_series(0, 369) n);
+  oldest := oldest || ' ' || pg_temp.noise(BODY_CHARS - char_length(oldest) - 20) || ' version 0';
+  post_id := tests.post(ch, th, oldest, base);
+  for i in 1..VERSIONS_MANY - 1 loop
+    perform tests.act(ch, 'edit', th, jsonb_build_object('body', pg_temp.noise(BODY_CHARS - 20) || ' version ' || i), post_id, base + make_interval(mins => i));
+  end loop;
+  if (select count(distinct s2.digest) from quote_sources s2 where s2.act = post_id or s2.act in (select e.id from acts e where e.kind = 'edit' and e.target_act_id = post_id)) is distinct from VERSIONS_MANY::bigint then
+    raise exception 'many: the versions are not % distinct sources', VERSIONS_MANY;
+  end if;
+
+  -- the reviewer's body: the same quote, about 370 times
+  parts := '{}';
+  for i in 1..370 loop parts := parts || format('[quote=%s]zq[/quote]', post_id); end loop;
+  qbody := array_to_string(parts, '');
+  t0 := clock_timestamp(); v := quote_forged(qbody, now()); spent := clock_timestamp() - t0;
+  raise notice 'many, the same quote 370 times: body % chars, quote_forged %', char_length(qbody), spent;
+  if cardinality(v) <> 0 then raise exception 'many: a quote that holds in the oldest version is forged: %', v; end if;
+  if spent > MANY_BUDGET then raise exception 'many: quote_forged took %, over the budget of %', spent, MANY_BUDGET; end if;
+  perform tests.become(au);
+  t0 := clock_timestamp(); r := post(th, ch, qbody); spent := clock_timestamp() - t0; new_id := (r ->> 'id')::uuid;
+  perform tests.unbecome();
+  raise notice 'many, the same quote 370 times: post() %', spent;
+  if jsonb_typeof(r) is distinct from 'object' then raise exception 'many: post returned %', r; end if;
+  if spent > MANY_BUDGET then raise exception 'many: the post insert took %, over the budget of %', spent, MANY_BUDGET; end if;
+  if (select a.payload ? 'forged' from acts a where a.character = ch and a.kind = 'post' and a.payload ->> 'body' = qbody) then raise exception 'many: the authentic post was written forged'; end if;
+
+  -- the hostile body: 350 distinct quotes, each holds in the oldest version only; 350 x 50 x 20,000 is over the budget
+  parts := '{}';
+  for i in 0..349 loop parts := parts || format('[quote=%s]w%s[/quote]', post_id, lpad(i::text, 3, '0')); end loop;
+  qbody := array_to_string(parts, '');
+  t0 := clock_timestamp(); v := quote_forged(qbody, now()); spent := clock_timestamp() - t0;
+  raise notice 'many, 350 distinct quotes: body % chars, quote_forged %', char_length(qbody), spent;
+  if v is distinct from array[post_id] then raise exception 'many: a body over the work budget is not forged: %', v; end if;
+  if spent > MANY_BUDGET then raise exception 'many: the hostile body took %, over the budget of %', spent, MANY_BUDGET; end if;
+  perform tests.become(au);
+  t0 := clock_timestamp(); r := post(th, ch, qbody); spent := clock_timestamp() - t0;
+  perform tests.unbecome();
+  raise notice 'many, 350 distinct quotes: post() %', spent;
+  if spent > MANY_BUDGET then raise exception 'many: the hostile post insert took %, over the budget of %', spent, MANY_BUDGET; end if;
+  if (select not coalesce(a.payload -> 'forged' @> to_jsonb(array[post_id]), false) from acts a where a.character = ch and a.kind = 'post' and a.payload ->> 'body' = qbody) then raise exception 'many: the hostile post was not written forged'; end if;
+
+  -- 20 distinct quotes: 20 x 50 x 20,000 is under the budget, and every one holds in the oldest version
+  parts := '{}';
+  for i in 0..19 loop parts := parts || format('[quote=%s]w%s[/quote]', post_id, lpad(i::text, 3, '0')); end loop;
+  qbody := array_to_string(parts, '');
+  t0 := clock_timestamp(); v := quote_forged(qbody, now()); spent := clock_timestamp() - t0;
+  raise notice 'many, 20 distinct quotes: quote_forged %', spent;
+  if cardinality(v) <> 0 then raise exception 'many: 20 quotes within the budget are forged: %', v; end if;
+  if spent > MANY_BUDGET then raise exception 'many: 20 quotes took %, over the budget of %', spent, MANY_BUDGET; end if;
+end $$;
