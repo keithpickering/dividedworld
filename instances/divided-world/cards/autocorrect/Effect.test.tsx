@@ -21,6 +21,7 @@ import css from './autocorrect.css?raw';
 import { piecesOf } from './tape.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { AutocorrectEffect, LENS } from './Effect.tsx';
+import { GLOSS_ALPHA, RESIDUE_TINT } from './residue.ts';
 import { readRange } from '../../../../engine/ui/thread/SelectionQuote.tsx';
 import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 
@@ -112,6 +113,7 @@ const sizeOf = (el: Element) => { for (let e: Element | null = el; e; e = e.pare
 /* A phone's narrow column: when set, every room breaks onto a second line. */
 let phone: number | null = null;
 let measures: ReturnType<typeof vi.spyOn>;
+let laid: number[] = [];
 let resizes: { cb: () => void; watching: Set<Element> }[] = [];
 class FakeResize {
   readonly entry = { cb: undefined as unknown as () => void, watching: new Set<Element>() };
@@ -127,6 +129,7 @@ beforeEach(() => {
   registrations.register.mockClear();
   registrations.unregister.mockClear();
   phone = null;
+  laid = [];
   document.documentElement.removeAttribute('data-kb-motion');
   resizes = [];
   vi.stubGlobal('ResizeObserver', FakeResize);
@@ -135,6 +138,9 @@ beforeEach(() => {
     measureText(text: string) { return { width: text.length * 0.5 * Number(/(\d+(?:\.\d+)?)px/u.exec(String(ctx.font))?.[1] ?? 16) }; },
     createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
     createLinearGradient: () => ({ addColorStop: () => {} }),
+    createRadialGradient: (...a: number[]) => { const g = { args: a, stops: [] as [number, string][], addColorStop(o: number, c: string) { g.stops.push([o, c]); } }; return g; },
+    /* A piece laid on the residue's canvas (five arguments) is told with the alpha it was drawn at; a film copied to the scratch is not. */
+    drawImage: (...a: unknown[]) => { if (a.length === 5) laid.push(Number(ctx.globalAlpha)); },
   };
   const canvas = new Proxy(ctx, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => { t[k] = v; return true; } });
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => canvas) as never);
@@ -1245,5 +1251,68 @@ describe('Autocorrect under another effect standing trail', () => {
     mount({ body: BODY });
     expect(a.length).toBeGreaterThan(0);
     expect(a).toEqual(laid());
+  });
+});
+
+describe('Autocorrect: the glue and the buzz', () => {
+  const down = (el: Element, x: number) => fireEvent.pointerDown(el, { clientX: x, clientY: 5, pointerId: 1, pointerType: 'mouse', button: 0, isPrimary: true });
+  const move = (el: Element, x: number) => fireEvent.pointerMove(el, { clientX: x, clientY: 5, pointerId: 1, pointerType: 'mouse' });
+  const vibrate = vi.fn();
+  beforeEach(() => { vibrate.mockReset(); Object.defineProperty(navigator, 'vibrate', { configurable: true, value: vibrate }); });
+  afterEach(() => { delete (navigator as { vibrate?: unknown }).vibrate; });
+  const status = () => document.querySelector('[data-kb-report]')!.textContent ?? '';
+
+  test('a residue paint lays the tint at RESIDUE_TINT and the gloss at its own strength', async () => {
+    vi.useFakeTimers();
+    mount({ body: 'Mario', states: { k1: savedOf({ peeled: [0] }) } });
+    await pass(100);
+    expect(laid.slice(0, 2)).toEqual([RESIDUE_TINT.light, GLOSS_ALPHA.light]);
+  });
+
+  test('a held pick buzzes the author\'s phone once', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario' });
+    const piece = pieces()[0]!;
+    down(piece, 3);
+    await pass(PICK / 2);
+    expect(vibrate).not.toHaveBeenCalled();
+    await pass(PICK / 2 + 200);
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    expect(vibrate).toHaveBeenCalledWith([10, 40, 10]);
+    await pass(500);
+    expect(vibrate).toHaveBeenCalledTimes(1);
+  });
+
+  test('a drag into a peek never buzzes', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario' });
+    const piece = pieces()[0]!;
+    down(piece, 3);
+    move(piece, 40);
+    await pass(PICK + 500);
+    expect(vibrate).not.toHaveBeenCalled();
+  });
+
+  test('a device that refuses to vibrate does not stop the pick', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario' });
+    vibrate.mockImplementation(() => { throw new Error('not allowed'); });
+    const piece = pieces()[0]!;
+    down(piece, 3);
+    await pass(PICK + 100);
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    const before = Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!);
+    for (let i = 0; i < 20; i++) { move(piece, Math.min(wide(piece) - 3, Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!) + 12)); await pass(16); }
+    expect(Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!)).toBeGreaterThan(before);
+  });
+
+  test('a key pick says so in the status region and does not buzz', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario' });
+    expect(status()).not.toContain('Picked.');
+    await hold(buttons()[0]!, PICK + 100);
+    expect(status()).toBe('Picked. Keep holding to peel.');
+    expect(vibrate).not.toHaveBeenCalled();
+    letGo(buttons()[0]!);
   });
 });

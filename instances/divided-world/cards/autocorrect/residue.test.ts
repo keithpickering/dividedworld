@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { tokensOf, type Mode, type Tokens } from '../../../../engine/ui/contrast.ts';
 import { bandOf, shineIsReadable, toHex, toLinear, type Band, type Light } from '../../../../engine/ui/shine/band.ts';
 import { endJags } from './paper.ts';
-import { EDGE_HALF, FILM_PEAK, GLOSS_ALPHA, filmAlpha, fibersAt, residueInk, type ResidueInk } from './residue.ts';
+import { EDGE_HALF, FILM_PEAK, GLOSS_ALPHA, GLOSS_PEAK, RESIDUE_TINT, filmAlpha, fibersAt, glossAt, residueInk, type ResidueInk } from './residue.ts';
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
 /* Both boards' tokens: the engine's, then Divided World's theme over them. */
@@ -23,9 +23,10 @@ const over = (under: string, top: string, alpha: number) => {
 function composite(mode: Mode, light: Light, inkOf: (band: Band, light: Light) => ResidueInk): string[] {
   const t: Tokens = tokens[mode];
   const ground = toHex(toLinear(t['--kb-bg']!));
-  const ink = inkOf(bandOf(t), light);
-  const film = over(ground, ink.tint, FILM_PEAK);
-  return [film, over(film, ink.gloss, GLOSS_ALPHA), over(film, ink.gloss, 1)];
+  const band = bandOf(t);
+  const ink = inkOf(band, light);
+  const film = over(ground, ink.tint, RESIDUE_TINT[band.board] * FILM_PEAK);
+  return [film, over(film, ink.gloss, GLOSS_ALPHA[band.board] * GLOSS_PEAK)];
 }
 
 describe('the residue stays readable', () => {
@@ -53,6 +54,18 @@ describe('the residue stays readable', () => {
       assert.ok(hi === r && Math.abs(hue - 41) < 8, `${mode}: the tint ${a.tint} is at hue ${hue.toFixed(1)}, not amber`);
       assert.ok((hi - lo) / hi > 0.3, `${mode}: the tint ${a.tint} went grey`);
     }
+  });
+
+  test('the tint is laid at the approved bench\'s strength, not full', () => {
+    assert.ok(RESIDUE_TINT.light <= 0.48, `light ${RESIDUE_TINT.light}`);
+    assert.ok(RESIDUE_TINT.dark <= 0.3, `dark ${RESIDUE_TINT.dark}`);
+  });
+
+  test('the gloss\'s gradient sits at the light\'s place over the box, with the same radius at every light', () => {
+    const box = { w: 400, h: 100 };
+    assert.deepEqual(glossAt({ x: 0, y: 0 }, box), { x: 200, y: 50, r: 150 });
+    const a = glossAt({ x: 1, y: -1 }, box);
+    assert.ok(a.x > 200 && a.y < 50 && a.r === 150);
   });
 
   test('the gloss moves with the light', () => {

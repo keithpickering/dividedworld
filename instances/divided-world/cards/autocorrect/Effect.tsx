@@ -57,17 +57,21 @@ import { Hands, type HandEvent, type HandSettings, type PieceSpec, type PieceVie
 import { drawPaper, PAPER, type PaperContext } from './paper.ts';
 import { facesKey, FOLD_PAD, makeFaces, paintFold, type FoldFaces } from './foldpaint.ts';
 import { savedAfterPeel } from './peel.ts';
-import { fibersAt, filmAlpha, filmSize, GLOSS_ALPHA, residueInk } from './residue.ts';
+import { fibersAt, filmAlpha, filmSize, GLOSS_ALPHA, GLOSS_STOPS, glossAt, RESIDUE_TINT, residueInk } from './residue.ts';
 import { dealWords, dropsInPieces, exposed, flapOf, piecesOf, rollDiameter, roomOf, stripsOf, stuckOf, type Measure, type SavedTape, type TapeStrip } from './tape.ts';
 import './autocorrect.css';
 
-/** The numbers the hands read from the card's settings when the instance has not set them (autocorrect.ts `screenReads`). */
 /** A pending pick's hand moves past this many px and the press is a peek instead; the corner waits this long into a still hold (feel design, section 1). */
 const SLOP = 8;
 const CORNER_DELAY_MS = 150;
+/** The numbers the hands read from the card's settings when the instance has not set them (autocorrect.ts `screenReads`). */
 const DEFAULTS = { pace: 90, pickMs: 1000, give: 34, peekStayMs: 300, peekSettle: 300 } as const;
 /** What a screen reader hears when a strip is pressed under another. */
 const COVERED = 'Another strip is stuck over this one. That one comes off first.';
+/** The buzz of a pick that is up, on the author's own phone: two short pulses (the owner's pick). */
+const BUZZ = [10, 40, 10];
+/** What a key pick says, where a hand feels the buzz. */
+const PICKED = 'Picked. Keep holding to peel.';
 const SAVE_AFTER_MS = 400;
 const RETRY_AFTER_MS = 1500;
 const MAX_SAVE_RETRIES = 3;
@@ -419,7 +423,7 @@ function buildFilm(r: Region): HTMLCanvasElement | null {
 }
 
 /** A film in one color, masked to what is peeled, drawn onto `ctx` at its region's place (`top` is the canvas's top in the post). */
-function lay(ctx: CanvasRenderingContext2D, film: HTMLCanvasElement, color: string, alpha: number, r: Region, top: number): void {
+function lay(ctx: CanvasRenderingContext2D, film: HTMLCanvasElement, color: string | ((s: CanvasRenderingContext2D, sx: number) => CanvasGradient), alpha: number, r: Region, top: number): void {
   scratch ??= document.createElement('canvas');
   scratch.width = film.width;
   scratch.height = film.height;
@@ -427,15 +431,28 @@ function lay(ctx: CanvasRenderingContext2D, film: HTMLCanvasElement, color: stri
   if (!s) return;
   s.drawImage(film, 0, 0);
   s.globalCompositeOperation = 'source-in';
-  s.fillStyle = color;
-  s.fillRect(0, 0, film.width, film.height);
   const sx = film.width / Math.max(1, r.box.w);
+  s.fillStyle = typeof color === 'function' ? color(s, sx) : color;
+  s.fillRect(0, 0, film.width, film.height);
   s.globalCompositeOperation = 'destination-in';
   s.beginPath();
   for (const [lo, hi] of r.peeled) s.rect(lo * sx, 0, (hi - lo) * sx, film.height);
   s.fill();
   ctx.globalAlpha = alpha;
   ctx.drawImage(scratch, r.box.x, r.box.y - top, r.box.w, r.box.h);
+}
+
+/** `#rrggbb` at `alpha`, as a canvas color. */
+const withAlpha = (hex: string, alpha: number) => `rgba(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(',')},${alpha})`;
+
+/**
+ * The gloss as a radial gradient on the scratch: centered where the light is over the post, in the region's film pixels, bright at
+ * the middle and clear from 72% of its reach out. Filled `source-in`, so it shows only where the film is.
+ */
+function glossGradient(s: CanvasRenderingContext2D, at: { x: number; y: number; r: number }, color: string, r: Region, top: number, sx: number): CanvasGradient {
+  const g = s.createRadialGradient((at.x - r.box.x) * sx, (at.y - (r.box.y - top)) * sx, 0, (at.x - r.box.x) * sx, (at.y - (r.box.y - top)) * sx, at.r * sx);
+  for (const [at01, a] of GLOSS_STOPS) g.addColorStop(at01, withAlpha(color, a));
+  return g;
 }
 
 /** The torn fibers a tear leaves, as short pale strokes on the film (residue.ts `fibersAt`). */
@@ -523,8 +540,8 @@ function Residue({ regions, span, width, host }: ResidueProps) {
           if (!films.has(id)) films.set(id, buildFilm(r));
           const film = films.get(id);
           if (!film) continue;
-          lay(ctx, film, ink.tint, 1, r, top);
-          lay(ctx, film, ink.gloss, GLOSS_ALPHA, r, top);
+          lay(ctx, film, ink.tint, RESIDUE_TINT[band.board], r, top);
+          lay(ctx, film, (s, sx) => glossGradient(s, glossAt(light, { w: width, h: height }), ink.gloss, r, top, sx), GLOSS_ALPHA[band.board], r, top);
           layFibers(ctx, r, top, ink.gloss);
         }
       }
@@ -764,10 +781,17 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     const target = next ? box.current?.querySelector<HTMLElement>(`[data-kb-ac-anchor="${next.key}"]`) : null;
     (target ?? box.current)?.focus();
   }, []);
+  /* Whether the hold now in hand is a key's, so a pick says its words and does not buzz. */
+  const byKey = useRef(false);
   const apply = useCallback((events: readonly HandEvent[]) => {
     for (const ev of events) {
       const strip = ev.kind === 'change' || ev.kind === 'off' ? model.current.strips.find((s) => s.key === ev.strip) : undefined;
       if (ev.kind === 'covered') say(COVERED);
+      else if (ev.kind === 'picked') {
+        /* The author's own screen only: nothing is sent. A key pick has no hand to feel it, so it is said instead. */
+        if (byKey.current) say(PICKED);
+        else try { navigator.vibrate?.(BUZZ); } catch { /* not offered here */ }
+      }
       else if (ev.kind === 'change' && strip && model.current.author) {
         putLocal(strip.play, strip.index, { shares: handsNow().sharesOf(strip.key), drops: handsNow().dropsOf(strip.key) });
         queue(strip.play);
@@ -805,6 +829,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
 
   const onKey = useCallback((strip: TapeStrip, down: boolean) => {
     const hs = handsNow();
+    byKey.current = down;
     if (down) { onMeet(); hs.keyDown(strip.key, model.current.author && !drawn.current.get(strip.key)?.held ? 'peel' : 'peek'); } else hs.keyUp();
     after(hs);
   }, [handsNow, onMeet, after]);

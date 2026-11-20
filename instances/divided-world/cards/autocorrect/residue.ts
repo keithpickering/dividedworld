@@ -6,9 +6,10 @@
  * the effect lays it as a mask over a tint and a gloss.
  *
  * Seeded only, from the strip's key; `Math.random` is never read. The tint and the gloss are clamped into the board's
- * readable band (engine/ui/shine/band.ts), so every post ink holds 4.5:1 over them at every light.
+ * readable band (engine/ui/shine/band.ts), so every post ink holds 4.5:1 over them at every light. The tint is laid at
+ * `RESIDUE_TINT` (the bench's `--res-opacity`, which the first port dropped) and the gloss through a gradient that follows the light.
  */
-import { clampInto, toHex, toLinear, type Band, type Light, type Rgb } from '../../../../engine/ui/shine/band.ts';
+import { clampInto, LIGHT_SCALE, toHex, toLinear, type Band, type Light, type Rgb } from '../../../../engine/ui/shine/band.ts';
 import { seeded } from '../../ui/seeded.ts';
 import { crepeLines, endJags, type Jag } from './paper.ts';
 
@@ -16,7 +17,14 @@ import { crepeLines, endJags, type Jag } from './paper.ts';
 export const FILM_MIN = 0.05;
 export const FILM_MAX = 0.95;
 /** The gloss layer's strength where the light is brightest (the bench's `--res-gloss` on the light board). */
-export const GLOSS_ALPHA = 0.6;
+export const GLOSS_ALPHA: Record<Band['board'], number> = { light: 0.5, dark: 0.12 };
+/** The tint's strength on each board: the tape bench's `--res-opacity`, which the first port dropped (it laid the tint at 1). */
+export const RESIDUE_TINT: Record<Band['board'], number> = { light: 0.3, dark: 0.3 };
+/** The gradient's reach, in CSS pixels, and its alpha at the center (the gloss is drawn at `GLOSS_ALPHA` of it). */
+export const GLOSS_RADIUS = 150;
+export const GLOSS_PEAK = 0.9;
+/** The gloss's gradient stops: [offset of the radius, alpha of the gloss color there]; clear from 72% out. */
+export const GLOSS_STOPS: readonly (readonly [number, number])[] = [[0, GLOSS_PEAK], [0.38, 0.22], [0.72, 0]];
 /** The film is drawn at twice the CSS pixel density. */
 export const DENSITY = 2;
 /** The half-width, in CSS pixels, within which a pixel is on the edge line (the bench strokes it 0.9 wide). */
@@ -95,6 +103,14 @@ export function filmAlpha(w: number, h: number, seed: string): Float32Array {
     }
   }
   return out;
+}
+
+/**
+ * Where the gloss's gradient sits over a post of `box` pixels: its center at the light's place over the box, as the shine's relief
+ * maps `light * LIGHT_SCALE` over -1..1 (engine/ui/shine/relief.ts), and its radius.
+ */
+export function glossAt(light: Light, box: { readonly w: number; readonly h: number }): { x: number; y: number; r: number } {
+  return { x: ((light.x * LIGHT_SCALE + 1) / 2) * box.w, y: ((light.y * LIGHT_SCALE + 1) / 2) * box.h, r: GLOSS_RADIUS };
 }
 
 /** The residue's two colors, as `#rrggbb`: the film's tint, and the gloss the page's light lays over it. */
