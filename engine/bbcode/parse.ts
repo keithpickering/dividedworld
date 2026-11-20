@@ -453,6 +453,8 @@ export interface QuoteSpan {
  * can change the input without re-serializing the tree (engine/bbcode/conceal.ts). It changes nothing about the tree. `forged` is the Acts whose real quotes read as counterfeits (a forged quote records no span).
  */
 export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<string>): BbNode[] {
+  /* The ids as the parser reads a quote's: lowercase. */
+  const forgedLower = forged && forged.size > 0 ? new Set([...forged].map((a) => a.toLowerCase())) : undefined;
   const root: Frame = { kind: 'root', name: '', raw: '', home: null as never, parent: null, depth: 0, out: [] };
   root.home = root;
   const stack: Frame[] = [root];
@@ -712,7 +714,7 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
       if (head === null) literalOpen(name, raw);
       else if (head.kind === 'real') {
         const act = head.act;
-        if (forged?.has(act)) {
+        if (forgedLower?.has(act)) {
           /* A forged quote (an Act's verdict, docs/plans/2026-11-20-forged-quotes-design.md): its words are not in the post it names, so it is a counterfeit that says which post it falsely names. It records no span, so no layer
              that empties what a post quotes reaches it, and past the cap it is text as any counterfeit is. */
           openReal(name, raw, 'simple', { build: (children) => ({ type: 'counterfeit', name: null, user: null, act, children }) });

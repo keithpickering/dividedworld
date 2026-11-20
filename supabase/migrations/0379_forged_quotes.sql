@@ -481,8 +481,8 @@ grant execute on function bbcode_walk(text, uuid, uuid[]) to authenticated, serv
 
 create function act_forged(p jsonb) returns uuid[]
 language sql immutable parallel safe set search_path = public, pg_temp as $$
-  select coalesce((select array_agg(x.v::uuid order by x.o) from jsonb_array_elements_text(case when jsonb_typeof(p -> 'forged') = 'array' then p -> 'forged' else '[]'::jsonb end) with ordinality x (v, o)
-                   where x.v ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'), '{}'::uuid[])
+  select coalesce((select array_agg(lower(x.v)::uuid order by x.o) from jsonb_array_elements_text(case when jsonb_typeof(p -> 'forged') = 'array' then p -> 'forged' else '[]'::jsonb end) with ordinality x (v, o)
+                   where x.v ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'), '{}'::uuid[])
 $$;
 revoke execute on function act_forged(jsonb) from public, anon;
 grant execute on function act_forged(jsonb) to authenticated, service_role;

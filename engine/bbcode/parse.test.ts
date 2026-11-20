@@ -1070,3 +1070,8 @@ test('a forged quote inside an authentic one stays inside it, and a forged quote
   assert.equal(JSON.stringify(t).includes('"cut"'), false);
   assert.deepEqual(spans, []);
 });
+
+test('a forged set holds ids in any letters: the parser compares them with the id it read, lowercase', () => {
+  const tree = parse(`[quote=${ACT}]x[/quote]`, undefined, new Set([ACT.toUpperCase()]));
+  assert.deepEqual(tree.map((n) => n.type), ['counterfeit']);
+});
