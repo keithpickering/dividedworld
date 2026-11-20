@@ -1787,6 +1787,17 @@ describe('live', () => {
     expect(onPoll).toHaveBeenCalledTimes(1);
   });
 
+  it('drops a `poll` event with no time, so it cannot freeze the poll\'s later events', async () => {
+    const s = stub();
+    const onPoll = vi.fn();
+    s.api.subscribeThread(T, { onPoll });
+    await settle();
+    s.channels[0]?.handlers.get('poll')?.({ payload: { poll: A, counts: [9, 9], voters: 9, ends_at: '2026-10-02T09:00:00+00:00', closed: false } });
+    expect(onPoll).not.toHaveBeenCalled();
+    s.channels[0]?.handlers.get('poll')?.({ payload: { poll: A, counts: [1, 0], voters: 1, ends_at: '2026-10-02T09:00:00+00:00', closed: false, at: '2026-10-01T09:00:01+00:00' } });
+    expect(onPoll).toHaveBeenCalledTimes(1);
+  });
+
   it('hears a reply a play drew under a post as `under`: the parent, the play and the reply as an Act, and never as an act', async () => {
     const s = stub();
     const onAct = vi.fn();

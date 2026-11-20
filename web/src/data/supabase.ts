@@ -284,7 +284,8 @@ const toDriveGifts = (v: unknown): DriveGift[] => (Array.isArray(v) ? (v as Row[
 const toPicks = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : []);
 /** A poll's live numbers (`poll_counts`'s columns, as the `poll` event and cast_ballot's answer carry them). */
 const toPollCounts = (r: Row): PollCounts => ({ poll: r['poll'] as Id, counts: toPicks(r['counts']), voters: num(r['voters']), endsAt: String(r['ends_at']), closed: r['closed'] === true });
-const toPollEvent = (r: Row): PollEvent => ({ ...toPollCounts(r), at: String(r['at']) });
+/** A `poll` event with no time cannot be ordered against the others, so it is dropped rather than heard as the newest or the oldest. */
+const toPollEvent = (r: Row): PollEvent | null => (typeof r['at'] === 'string' ? { ...toPollCounts(r), at: r['at'] } : null);
 const toPollWritten = (r: Row): PollWritten => ({ act: toAct(r['act'] as Row), counts: toPollCounts(r) });
 /** thread_page's poll parts (0382), for the page and for the origin alike; a document without them reads as none. */
 const toPollParts = (d: Row) => ({
@@ -2405,7 +2406,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const onPoll = l.onPoll && pollHeard(l.onPoll);
       return join(`thread:${thread}`, ['act', 'tally', 'effect', 'surface', 'card_text', 'under', 'poll'], (event, p) => {
         if (event === 'act') l.onAct?.(toAct(p));
-        else if (event === 'poll') onPoll?.(toPollEvent(p));
+        else if (event === 'poll') { const e = toPollEvent(p); if (e) onPoll?.(e); }
         else if (event === 'under') l.onUnder?.(p['parent'], p['play'], toAct(p['act']));
         else if (event === 'surface') l.onSurface?.(p['play'], num(p['covered']));
         else if (event === 'tally') l.onTally?.(p['act'], (p['tally'] ?? {}) as Tally);
