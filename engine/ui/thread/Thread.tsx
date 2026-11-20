@@ -310,7 +310,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     const under = page.under.map((u) => u.act);
     const posts = [...page.acts, ...under].filter((a) => isPost(a.kind)).map((a) => a.id);
     /* The origin's Act and its plays are Acts of the page's document too: their reactions and spins are the page's, which the box reads from the same stores. */
-    const ids = [...new Set([...page.acts.map((a) => a.id), ...under.map((a) => a.id), ...played.map((a) => a.id), ...(page.origin?.act ? [page.origin.act.id] : []), ...(page.origin?.plays ?? []).filter((a) => a.kind !== 'card_end').map((a) => a.id)])];
+    const ids = [...new Set([...page.acts.map((a) => a.id), ...under.map((a) => a.id), ...played.map((a) => a.id), ...(page.origin?.act ? [page.origin.act.id] : []), ...page.polls.map((x) => x.act.id), ...(page.origin?.plays ?? []).filter((a) => a.kind !== 'card_end').map((a) => a.id)])];
     for (const [id, t] of Object.entries(page.tallies)) tallies.merge(id, t);
     polls.take(page);
     for (const id of ids) mine.merge(id, page.mine.filter((r) => r.act === id));
@@ -712,7 +712,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         if (a.kind === 'poll_close') { polls.closeAct(a); return; }
         if (a.kind === 'ballot') {
           const stranger = polls.ballotAct(a, own.current);
-          if (stranger !== null) void api.characters([stranger]).then((found) => polls.named(found), quietly);
+          if (stranger !== null && !people.current.has(stranger)) void api.characters([stranger]).then((found) => polls.named(found), quietly);
           return;
         }
         /* A card play is a tag on its post, never a place in the thread: it is added to the post it names, wherever that post is, once its caster is known. */

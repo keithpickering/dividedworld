@@ -533,7 +533,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap, crowdPayEach: settings.crowdPayEach, crowdPayMost: settings.crowdPayMost,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
-    registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, setLasts: settings.setLasts, oldVoiceWindow: settings.oldVoiceWindow, oldVoicePromptFloor: settings.oldVoicePromptFloor, cardSettings: settings.cardSettings,
+    pollOptionsMax: settings.pollOptionsMax, pollQuestionMax: settings.pollQuestionMax, pollOptionMax: settings.pollOptionMax, pollLastsMin: settings.pollLastsMin, pollLastsMax: settings.pollLastsMax, registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, setLasts: settings.setLasts, oldVoiceWindow: settings.oldVoiceWindow, oldVoicePromptFloor: settings.oldVoicePromptFloor, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
     /* What screen_settings's groups holds (0128): the ladder lowest first, then the groups a move confers. */
     groups: options.settings?.groups ?? [...options.instance.groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...options.instance.groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
@@ -4390,7 +4390,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         plays, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), veiled: myVeiled(posts.map((a) => a.id)),
         states: core.effectStates(wanted), releases: core.myReleases(wanted), spent: plays.filter((a) => spentPlays().has(a.id)).map((a) => a.id),
         visits,
-        tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
+        tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany([...ids, ...pagePolls.polls.map((x) => x.act.id)], SPUN_FROM_MAX), reading: core.reading([thread]),
         board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(), origin: originPoll,
         polls: pagePolls.polls, voters: pagePolls.voters, votersMore: pagePolls.votersMore, voterCast: core.characters(pagePolls.cast), myBallots: pagePolls.myBallots,
       };

@@ -24,6 +24,8 @@ import type { Id, PollBallot } from '../data/api.ts';
 import { useIsAdmin } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
+import { SpunInto } from '../spin/SpunInto.tsx';
+import { BannedNote } from '../composer/BannedNote.tsx';
 import { ThreadCtx } from '../thread/context.ts';
 import { usePoll, type PollView, type Polls } from './store.ts';
 import { ballotLine, closing } from './words.ts';
@@ -171,7 +173,7 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
   const lineOf = (): string | null => {
     if (closed) return 'This poll has closed, so no more ballots can be cast.';
     if (hud === null) return player.session.signedIn ? 'None of your characters can vote yet. Make a character, and vote as it.' : 'Sign in with a character to vote.';
-    if (bannedUntil !== null) return `${hud.name} is banned until ${dayAndTime(bannedUntil)}; the ban ends by itself, and it holds only this character.`;
+    if (bannedUntil !== null) return null;
     if (bar !== null) return `${hud.name} is barred from this board${bar.expiresAt === null ? '' : ` until ${dayAndTime(bar.expiresAt)}`}, so it cannot vote here.`;
     return null;
   };
@@ -232,6 +234,7 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
               {mine !== undefined && <button type="button" className="kb-button" data-kb-size="small" disabled={busy} onClick={() => void send([])}>Withdraw</button>}
             </>
           )}
+          {closed || hud === null || bannedUntil === null ? null : <BannedNote character={hud} until={bannedUntil} />}
           {line !== null && <span className="kb-poll-line">{line}</span>}
           <span>{poll.voters} {poll.voters === 1 ? 'character' : 'characters'} voted</span>
           <span className="kb-poll-links">
@@ -239,6 +242,7 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
             <button type="button" className="kb-link-button" aria-expanded={spinning} onClick={() => setSpinning((s) => !s)}>Spin</button>
             {canClose && <button type="button" className="kb-link-button" disabled={busy} onClick={() => void close()}>Close poll</button>}
           </span>
+          <SpunInto act={id} />
           <span className="kb-poll-said kb-visually-hidden" role="status" aria-live="polite">{said}</span>
           {refusal !== null && <p className="kb-poll-refusal" role="alert">{refusal}</p>}
         </div>
@@ -248,7 +252,7 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
               <ol aria-label="Ballots" className="kb-poll-ballots">
                 {history.ballots.map((b, i) => {
                   const earlier = history.ballots.slice(i + 1).find((x) => x.character.id === b.character.id);
-                  return <li key={b.act}>{ballotLine(b.character.name, b.picks.map((p) => options[p] ?? ''), earlier !== undefined && earlier.picks.length > 0, b.at)}</li>;
+                  return <li key={b.act}>{ballotLine(b.character.name, b.picks.map((p) => options[p] ?? ''), earlier === undefined ? (history.more ? null : false) : earlier.picks.length > 0, b.at)}</li>;
                 })}
               </ol>
             )}

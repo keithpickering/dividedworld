@@ -14,8 +14,10 @@ import type { Instance } from '../../rules/types.ts';
 
 const TITLE = 'Ranking every Mario Kart';
 const DAY = 86_400_000;
-type Scene = 'open' | 'voted' | 'closed' | 'secret' | 'three' | 'own' | 'no-mask' | 'whoops';
+type Scene = 'spun' | 'open' | 'voted' | 'closed' | 'secret' | 'three' | 'own' | 'no-mask' | 'whoops';
 
+/** The world's spin, done: a story's world is made before it renders, and the page is read after this. */
+let seeded: Promise<unknown> = Promise.resolve();
 const KARTS = ['Pipe Frame', 'Badwagon', 'Mr. Scooty'];
 const COURSES = ['Rainbow Road', 'Mute City', 'Moo Moo Meadows', 'Baby Park', 'Toad Harbor'];
 
@@ -46,19 +48,23 @@ const worldOf = (scene: Scene): World => (fake: Fake, instance: Instance) => {
   if (scene === 'whoops') {
     const caster = fake.seed.character(fake.seed.account('story-caster'), 'Gloomba', first!.key);
     const whoops = cardOf(instance.cards, 'whoops');
-    fake.seed.card(caster, made.act, whoops.key, { layer: 1, live: true, config: (whoops.staffConfigs?.[0] ?? {}) as Readonly<Record<string, unknown>>, message: 'Settled.' });
+    fake.seed.card(caster, made.act, whoops.key, { layer: 1, live: true, config: { ...(whoops.staffConfigs?.[0] ?? {}), seed: 2591 } as Readonly<Record<string, unknown>>, message: 'Settled.' });
   }
+  if (scene === 'spun') seeded = fake.spin(poll, mine, 'Karts, settled', 'Carrying on over here.');
   if (scene === 'closed') fake.clock.advance(3 * DAY);
   fake.signInAs(scene === 'no-mask' ? fake.seed.account('story-nobody', { seasoned: true }) : me);
 };
 
 /** The thread, drawn by the thread screen, found by its title. */
-function Seen() {
-  const { api } = useKayfa();
+function Seen({ scene }: { readonly scene?: Scene }) {
+  const { api, instance } = useKayfa();
   const [thread, setThread] = useState<string | null | 'missing'>(null);
   useEffect(() => {
     let live = true;
     void (async () => {
+      await seeded;
+      /* Every card met, so no one-line tip hangs off the ink's mark over the poll. */
+      if (scene === 'whoops') for (const c of instance.cards) await api.meetCard(c.key);
       for (const board of await api.boards()) {
         const found = (await api.threads(board.id, { offset: 0, limit: 200 })).threads.find((x) => x.title === TITLE);
         if (found) { if (live) setThread(found.id); return; }
@@ -66,7 +72,7 @@ function Seen() {
       if (live) setThread('missing');
     })();
     return () => { live = false; };
-  }, [api]);
+  }, [api, instance, scene]);
   if (thread === 'missing') return <p role="alert">The story's world has no thread titled for it.</p>;
   return thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />;
 }
@@ -82,6 +88,8 @@ type Story = StoryObj<typeof Seen>;
 
 /** A public poll, open, with two ballots counted and the mask not yet voted: the radios, the names under each option, and "Vote as Pipewrench" waiting for a pick. */
 export const Open: Story = { parameters: { world: worldOf('open') } };
+/** A thread was spun from the poll: its SpunInto stands in the foot. */
+export const Spun: Story = { parameters: { world: worldOf('spun') } };
 /** The mask has voted: its pick is checked, and the foot offers "Change ballot" and "Withdraw". */
 export const Voted: Story = { parameters: { world: worldOf('voted') } };
 /** A poll past its time: no inputs, "closed" in the head, and one plain line in the foot. */
@@ -95,4 +103,4 @@ export const Own: Story = { parameters: { world: worldOf('own') } };
 /** An account with no character that can vote: no inputs, and one plain line. */
 export const NoMask: Story = { parameters: { world: worldOf('no-mask') } };
 /** A Whoops! ink on the post: the ink fills the content area and paints under the poll, which stays readable and pressable. */
-export const UnderWhoops: Story = { parameters: { world: worldOf('whoops') } };
+export const UnderWhoops: Story = { args: { scene: 'whoops' }, parameters: { world: worldOf('whoops') } };

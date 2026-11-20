@@ -107,6 +107,14 @@
   font-size: var(--kb-size-fine);
 }
 
+.kb-poll-foot .kb-spun,
+.kb-poll-foot .kb-notice {
+  flex: 1 0 100%;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
 .kb-poll-links {
   display: flex;
   gap: 1em;

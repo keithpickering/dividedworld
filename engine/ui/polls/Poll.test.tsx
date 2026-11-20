@@ -12,6 +12,10 @@ import { tapThread } from '../test-world.tsx';
 import { openThread, threadWorld } from '../composer/support.tsx';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { bodyOf, liftedOver } from '../cards/body.ts';
+import type { CardUi } from '../cards/types.ts';
+import { renderIn } from '../test-world.tsx';
+import { LoadedThread } from '../loaded.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
 
 const DAY = 86_400_000;
@@ -225,7 +229,9 @@ describe('who can vote', () => {
     openThread(w);
     const poll = await group();
     expect(within(poll).queryAllByRole('radio')).toHaveLength(0);
-    expect(within(poll).getByText(/^Pipewrench is banned until .+; the ban ends by itself, and it holds only this character\.$/u)).toBeInTheDocument();
+    const note = within(poll).getByText(/is banned until/u).closest('p')!;
+    expect(note).toHaveTextContent(/^Pipewrench is banned until .+\. The ban ends by itself then, and it holds only this character: switch to another in the HUD to post as her\. Appeal to the Boss/u);
+    expect(within(note).getByRole('button', { name: /^Appeal to the Boss/u })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Switch to Zed' }));
     await waitFor(() => expect(within(poll).getAllByRole('radio')).toHaveLength(3));
   });
@@ -352,5 +358,100 @@ describe('the board\'s stylesheet', () => {
     expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgb|hsl/u);
     expect(css).toMatch(/@media \(max-width: 40em\)/u);
     expect(css).toMatch(/\.kb-poll-bar/u);
+  });
+});
+
+describe('what is drawn beside the poll', () => {
+  test('its SpunInto stands in the foot for a thread spun from the poll', async () => {
+    const w = world();
+    const made = await w.fake.spin(w.poll, w.pipe, 'Karts, settled', 'Carrying on over here.');
+    expect(made.ok).toBe(true);
+    openThread(w);
+    const poll = await group();
+    const spun = await within(poll).findByText(/Spun into:/u);
+    expect(within(spun.closest('p')!).getByRole('link', { name: 'Karts, settled' })).toBeInTheDocument();
+  });
+
+  test('a hidden post draws no poll', async () => {
+    const w = world();
+    w.fake.seed.hide(w.ids[0]!, 'hide');
+    openThread(w);
+    await screen.findByRole('article', { name: /^Post 1 /u });
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    expect(screen.queryByRole('group', { name: /^Best kart/u })).toBeNull();
+  });
+});
+
+describe('the ballots record across a page edge', () => {
+  test('words the oldest loaded line neutrally while an earlier ballot may be on the next page, and exactly once it is loaded', async () => {
+    const w = world();
+    const X = w.fake.seed.character(w.fake.seed.account('flipper'), 'Flipper', 'face');
+    /* 52 ballots of Flipper's, a second apart: the newest 50 of the record are all its. */
+    for (let n = 0; n < 52; n++) { later(w); w.fake.seed.ballot(X, w.poll, [n % 2]); }
+    openThread(w);
+    const poll = await group();
+    await userEvent.click(within(poll).getByRole('button', { name: 'Ballots' }));
+    const list = await within(poll).findByRole('list', { name: 'Ballots' });
+    const items = () => within(list).getAllByRole('listitem').map((li) => li.textContent!);
+    await waitFor(() => expect(items()).toHaveLength(50));
+    expect(items()[0]).toMatch(/^Flipper switched to /u);
+    expect(items()[49]).toMatch(/^Flipper voted for /u);
+    await userEvent.click(within(poll).getByRole('button', { name: 'Show older ballots' }));
+    await waitFor(() => expect(items()).toHaveLength(54));
+    expect(items()[53]).toMatch(/^Wario picked Pipe Frame/u);
+    expect(items().filter((t) => /^Flipper picked /u.test(t))).toHaveLength(1);
+    expect(items().filter((t) => /voted for/u.test(t))).toHaveLength(0);
+  });
+});
+
+describe('a voter the thread already knows', () => {
+  test('is named from the thread, never read again for the poll', async () => {
+    const w = world();
+    const tap = tapThread(w.fake);
+    openThread(w);
+    const poll = await group();
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    const read = vi.spyOn(w.fake, 'characters');
+    const t = new Date(w.fake.clock.now() + 1_000).toISOString();
+    act(() => tap().onAct?.({ id: 'b-known', character: w.pipe, kind: 'ballot', thread: w.thread, targetActId: w.poll, seq: null, createdAt: t, payload: { picks: [2] }, currentPayload: { picks: [2] }, editedAt: null, shownEditedAt: null }));
+    await waitFor(() => expect(row(poll, 'Mr. Scooty')).toHaveTextContent('Pipewrench'));
+    expect(read.mock.calls.filter(([ids]) => (ids as Id[]).includes(w.pipe))).toHaveLength(0);
+  });
+});
+
+describe('under a card\'s ink', () => {
+  /* An effect paints its ink under the words in the post's content area and takes a press in that area that is not on something lifted over the ink. */
+  const presses = { n: 0 };
+  const ink: CardUi = {
+    key: 'whoops', art: { color: 'var(--kb-fg)', ink: 'var(--kb-bg)', canvas: '', mark: '', credit: 'Test' }, describe: () => 'ink',
+    Effect: ({ children }) => (
+      <div
+        data-kb-effect-ink="" data-testid="ink"
+        ref={(el) => {
+          const body = el === null ? null : bodyOf(el);
+          if (body === null || body.dataset.kbWatched) return;
+          body.dataset.kbWatched = '1';
+          body.addEventListener('pointerdown', (e) => { if (!liftedOver(e.target, body)) presses.n++; });
+        }}
+      >{children}</div>
+    ),
+  };
+  test('the ink and the poll share the content area, and a press inside the poll starts nothing', async () => {
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[0]!, 'whoops', { message: 'ink', layer: 1, live: true });
+    presses.n = 0;
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, cards: [ink] });
+    const poll = await group();
+    const inkEl = await screen.findByTestId('ink');
+    const area = poll.closest('[data-kb-content-area]')!;
+    expect(area.contains(inkEl)).toBe(true);
+    expect(inkEl.contains(poll)).toBe(false);
+    expect(poll.closest('[data-kb-over-ink]')).not.toBeNull();
+    const user = userEvent.setup();
+    await user.click(within(poll).getByRole('radio', { name: 'Badwagon' }));
+    expect(presses.n).toBe(0);
+    expect(within(poll).getByRole('radio', { name: 'Badwagon' })).toBeChecked();
+    await user.click(within(inkEl).getByText('post 1'));
+    expect(presses.n).toBe(1);
   });
 });

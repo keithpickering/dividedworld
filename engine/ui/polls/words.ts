@@ -32,9 +32,10 @@ export function listed(names: readonly string[]): string {
 
 /**
  * One ballot of a public poll's record as a line: "Wario picked Badwagon, Nov 20, 3:12 PM", "Wario switched to Mr. Scooty, ...", "Wario withdrew, ...". It is a switch when the same
- * character's ballot before it picked something; `before` is that earlier ballot's picks (none where it has none, or where it was a withdrawal).
+ * character's ballot before it picked something; `before` is whether that earlier ballot picked something (false where it has none, or where it was a withdrawal), or null where it is not known.
  */
-export function ballotLine(name: string, picks: readonly string[], before: boolean, at: string): string {
-  const what = picks.length === 0 ? 'withdrew' : `${before ? 'switched to' : 'picked'} ${listed(picks)}`;
+export function ballotLine(name: string, picks: readonly string[], before: boolean | null, at: string): string {
+  /* `before` null: the earlier ballot may be on a page not read yet, so the line does not say whether it switched. */
+  const what = picks.length === 0 ? 'withdrew' : `${before === null ? 'voted for' : before ? 'switched to' : 'picked'} ${listed(picks)}`;
   return `${name} ${what}, ${dayAndTime(at)}`;
 }
