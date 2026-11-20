@@ -116,7 +116,7 @@ const held = (over: Partial<HeldVote>): HeldVote => ({ act: 'p1', quadrant: 'exc
 test('Lurker earns from reacting early in the direction a post ends up, once three other players have reacted', () => {
   assert.equal(total(lurker, input({ held: [held({ rank: 3 })] })), 10, 'third to react is early');
   assert.equal(total(lurker, input({ held: [held({ rank: 4 })] })), 0, 'fourth is not');
-  assert.equal(total(lurker, input({ held: [held({ endsUp: 'boredNegative' })] })), 0, 'the wrong direction pays nothing');
+  assert.equal(total(lurker, input({ held: [held({ endsUp: 'boredNegative' })] }), 'lurker.calledIt'), 0, 'the wrong direction pays nothing');
   assert.equal(total(lurker, input({ held: [held({ endsUp: null })] })), 0, 'a post with no direction pays nothing');
   assert.equal(total(lurker, input({ held: [held({ othersBefore: 1, othersNow: 2 })] })), 0, 'two other players are not yet a crowd');
   assert.equal(total(lurker, input({ held: [held({ othersBefore: 3, othersNow: 4 })] })), 0, 'a call is paid once, in the window its crowd arrives');
@@ -141,7 +141,29 @@ test('an override of the Lurker\'s call changes what a call pays, and the class 
 
 test('Lurker\'s early call is paid by its share, so hedging across quadrants pays a part', () => {
   const hedged = [held({ share: 1 / 3 }), held({ quadrant: 'boredNegative', share: 1 / 3 }), held({ quadrant: 'calmPositive', share: 1 / 3 })];
-  assert.ok(Math.abs(total(lurker, input({ held: hedged })) - 10 / 3) < 1e-9);
+  assert.ok(Math.abs(total(lurker, input({ held: hedged }), 'lurker.calledIt') - 10 / 3) < 1e-9);
+});
+test('Lurker\'s early call in another quadrant than where the post ends up costs what a right one pays', () => {
+  assert.equal(total(lurker, input({ held: [held({ endsUp: 'boredNegative' })] }), 'lurker.misread'), -10, 'a miss costs a hit\'s pay');
+  assert.equal(total(lurker, input({ held: [held({ endsUp: 'excitedPositive' })] }), 'lurker.misread'), 0, 'a hit costs nothing');
+  assert.equal(total(lurker, input({ held: [held({ endsUp: 'boredNegative', share: 0.5 })] })), -5, 'a miss is by its share');
+  const [e] = lurker.earn(input({ held: [held({ endsUp: 'boredNegative' })] }), settings);
+  assert.equal(e?.reason, 'lurker.misread');
+  assert.equal(e?.votes, undefined, 'not a reaction the character received, so no cushion reads it');
+});
+test('a post that ties costs the Lurker nothing', () => {
+  assert.equal(total(lurker, input({ held: [held({ endsUp: null })] })), 0);
+});
+test('a vote split over three quadrants, one of them right, nets minus a third of the early match', () => {
+  const split = [held({ share: 1 / 3 }), held({ quadrant: 'boredNegative', share: 1 / 3 }), held({ quadrant: 'calmPositive', share: 1 / 3 })];
+  assert.ok(Math.abs(total(lurker, input({ held: split })) - (-10 / 3)) < 1e-9);
+});
+test('a miss before the crowd arrives costs nothing yet, and costs in the window it arrives', () => {
+  const miss = { endsUp: 'boredNegative' as const };
+  assert.equal(total(lurker, input({ held: [held({ ...miss, othersBefore: 1, othersNow: 2 })] })), 0, 'two other players are not yet a crowd');
+  assert.equal(total(lurker, input({ held: [held({ ...miss, othersBefore: 2, othersNow: 3 })] })), -10, 'the window the crowd arrives');
+  assert.equal(total(lurker, input({ held: [held({ ...miss, othersBefore: 3, othersNow: 4 })] })), 0, 'and not again');
+  assert.equal(total(lurker, input({ held: [held({ ...miss, rank: 4 })] })), 0, 'a late vote is no early call');
 });
 const spin = (over: Partial<SpunThread>): SpunThread => ({ act: 's1', thread: 't', at: 10, fromOthers: true, repliersBefore: 0, repliersNow: 3, ...over });
 test('Lurker earns from a thread it spins from another\'s Act once three other players reply, in the window that happens', () => {
@@ -315,6 +337,22 @@ test('a hedged call is paid its exact share: a third of 7.5 is 2.5, which rounds
   assert.equal(called(settle(crowd(hedged), tuned)), 3);
 });
 
+test('a wrong early call costs in the window the crowd arrives, and a Thick Skin up on the Lurker gives nothing back', () => {
+  const lost = (s: ReturnType<typeof settle>) => s.entries.filter((e) => e.character === 'lu' && e.reason === 'lurker.misread').reduce((t, e) => t + e.amount, 0);
+  const day1 = [by('lu', 'fire', H), by('o1', 'facepalm', 2 * H), by('o2', 'facepalm', 3 * H)];
+  const w1 = settle(crowd(day1), world);
+  assert.equal(lost(w1), 0, 'two other players are not yet a crowd');
+  const day2 = [...day1, by('o3', 'facepalm', 25 * H)];
+  const w2 = settle(crowd(day2, D2, upTo(w1)), world);
+  assert.equal(lost(w2), -10, 'the third arrives: the post leans bored-negative without the Lurker');
+  const cushion = { ...world.cards[0]!, key: 'thick', reaches: ['character'] as const, gimmick: { kind: 'cushion' as const, share: 1 } };
+  const withCushion = { ...world, cards: [...world.cards, cushion] };
+  const up = { id: 'c1', character: 'lu', kind: 'card' as const, at: 24 * H + 1, thread: 't', card: 'thick', reach: 'character' as const, on: 'lu', ends: 40 * H };
+  const input2 = crowd(day2, D2, upTo(w1));
+  const w2c = settle({ ...input2, acts: [...input2.acts, up] }, withCushion);
+  assert.equal(lost(w2c), -10, 'the miss is whole under a cushion');
+  assert.equal(w2c.entries.filter((e) => e.reason === 'card.cushion').length, 0, 'nothing given back');
+});
 test('a Lurker reacting first to sixty fresh posts earns nothing from them alone', () => {
   const sixty = Array.from({ length: 60 }, (_, i) => by('lu', 'fire', 2 * H + i, `p${i + 1}`));
   assert.deepEqual(settle(crowd(sixty), world).entries.filter((e) => e.character === 'lu'), []);

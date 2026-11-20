@@ -8,7 +8,11 @@
  * have reacted, by where the post leans then without the Lurker's own vote (the owner's answer
  * 15, on #4), so a Lurker reacting first to sixty fresh posts earns nothing from that alone. It
  * is paid by its share of the Lurker's player's vote on the post, so a Lurker that hedges across
- * every quadrant is paid only the part that landed.
+ * every quadrant is paid only the part that landed. A call is a bet: one that misses (the post
+ * ends up in a quadrant other than the vote's) costs what a hit pays, by the same share, under
+ * `lurker.misread`, judged in the same window. A post that ties (no leading quadrant) costs
+ * nothing. A miss is not a reaction the character received, so it carries no `votes` and Thick
+ * Skin does not cushion it. Class balance design, section 5.
  */
 import type { ClassRules, EconomyRead, Earning } from '../../../engine/rules/types.ts';
 import { economyOf } from '../../../engine/rules/cards.ts';
@@ -31,6 +35,9 @@ export const lurker: ClassRules = {
     ...input.held
       .filter((h) => h.rank >= 1 && h.rank <= earlyPlayers && h.othersBefore < crowd && h.othersNow >= crowd && h.quadrant === h.endsUp)
       .map((h): Earning => ({ reason: 'lurker.calledIt', amount: earlyMatch * h.share, act: h.act, quadrant: h.quadrant, at: h.reactedAt })),
+    ...input.held
+      .filter((h) => h.rank >= 1 && h.rank <= earlyPlayers && h.othersBefore < crowd && h.othersNow >= crowd && h.endsUp !== null && h.quadrant !== h.endsUp)
+      .map((h): Earning => ({ reason: 'lurker.misread', amount: -earlyMatch * h.share, act: h.act, quadrant: h.quadrant, at: h.reactedAt })),
     ...input.threadsSpun
       .filter((t) => t.fromOthers && t.repliersBefore < spunThreadRepliers && t.repliersNow >= spunThreadRepliers)
       .map((t): Earning => ({ reason: 'lurker.spunAThread', amount: spunThread, act: t.act, params: { 'lurker.spunThreadRepliers': spunThreadRepliers } })),
