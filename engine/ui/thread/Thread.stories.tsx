@@ -88,3 +88,18 @@ export const TheSystemsTally: Story = {
     path: '/t/x',
   },
 };
+
+/** A post that threads were spun from: "Spun into" in its foot, under the action buttons, out of the content area. */
+export const SpunFromAPost: Story = {
+  args: { title: 'Who started this?' },
+  parameters: {
+    world: ((fake, instance) => {
+      const w = cast(fake, instance);
+      const t = fake.seed.thread(w.general, w.spritey, 'Who started this?', 'Somebody started this, and I mean to find out who.', { at: T0 });
+      fake.seed.post(t.thread, w.mine, 'Not me.', { at: T0 + MIN });
+      /* The fake does its work before it answers, so the spun threads are there when the story reads. */
+      for (const title of ['The culprit', 'Is it always you?', 'A third thread about it']) void fake.spin(t.act, w.mine, title, 'Over here.');
+    }) satisfies World,
+    path: '/t/x',
+  },
+};
