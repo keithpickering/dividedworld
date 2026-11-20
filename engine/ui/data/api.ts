@@ -209,6 +209,12 @@ export interface ScreenSettings {
   readonly walletCap: number;
   readonly postMaxLength: number;
   readonly titleMaxLength: number;
+  /** The poll editor's bounds (`pollOptionsMax`, `pollQuestionMax`, `pollOptionMax`, `pollLastsMin`, `pollLastsMax`, in `screen_settings` from 0390). */
+  readonly pollOptionsMax: number;
+  readonly pollQuestionMax: number;
+  readonly pollOptionMax: number;
+  readonly pollLastsMin: Span;
+  readonly pollLastsMax: Span;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
   /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0156): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */

@@ -27,6 +27,8 @@ import { BannedNote } from './BannedNote.tsx';
 import { BarredNote, useBar } from './BarredNote.tsx';
 import { useBannedUntil } from './ban.ts';
 import { draftKey, readDraft, useWhoPosts, writeDraft } from './draft.ts';
+import { PollEditor, problemOf } from '../polls/PollDraft.tsx';
+import type { PollDraft } from '../data/api.ts';
 import { Editor, type EditorHandle } from './Editor.tsx';
 import { framingArgs, quoteText } from './text.ts';
 
@@ -70,6 +72,10 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   /* The kept draft, read before the first frame so the box is drawn with the page, with the character it was being written as. */
   const [kept] = useState(() => readDraft(key));
   const [text, setText] = useState(kept?.text ?? '');
+  /* The poll being written with the reply, and the problem the last Send found in it. */
+  const [poll, setPollNow] = useState<PollDraft | null>(kept?.poll ?? null);
+  const [pollProblem, setPollProblem] = useState<string | null>(null);
+  const setPoll = (next: PollDraft | null) => { setPollNow(next); setPollProblem(null); };
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   /* The last send got no answer and the thread does not hold it: the next press sends anyway. */
@@ -84,7 +90,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
 
   const { adopt } = who;
   const as = who.as;
-  useEffect(() => { writeDraft(key, { text, as }); }, [key, text, as]);
+  useEffect(() => { writeDraft(key, { text, as, ...(poll ? { poll } : {}) }); }, [key, text, as, poll]);
 
   /* The same draft in another tab: what it keeps or clears here is kept or cleared. */
   useEffect(() => {
@@ -92,6 +98,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
       if (e.key !== key) return;
       const kept = readDraft(key);
       setText(kept?.text ?? '');
+      setPollNow(kept?.poll ?? null);
       if (kept) adopt(kept.as);
       setAgain(false);
     };
@@ -133,6 +140,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   /* The reply is in the thread: what was sent leaves the box, and what was typed since stays. */
   const landed = (act: Act, sent: string) => {
     setText((now) => (now === sent ? '' : now));
+    setPollNow(null);
     setAgain(false);
     setRefusal(null);
     void refresh();
@@ -155,6 +163,8 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
     e?.preventDefault();
     if (busy || blank || over || bannedUntil !== null) return;
     if (who.changed) { who.confirm(); return; }
+    const problem = poll ? problemOf(poll, settings) : null;
+    if (problem !== null) { setPollProblem(problem); return; }
     const sent = text;
     const character = hudCharacter.id;
     const from = since();
@@ -162,7 +172,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
     setRefusal(null);
     try {
       let answer;
-      try { answer = await api.post(thread, character, sent, firstQuote(sent), ...framingArgs(sent)); } catch { await look(null, from, sent, character); return; }
+      try { answer = poll ? await api.post(thread, character, sent, firstQuote(sent), framingArgs(sent)[0] ?? [], poll) : await api.post(thread, character, sent, firstQuote(sent), ...framingArgs(sent)); } catch { await look(null, from, sent, character); return; }
       if (answer.ok) landed(answer.value, sent);
       else if (answer.uncertain) await look(answer.error, from, sent, character);
       else setRefusal(answer.error);
@@ -198,6 +208,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Send again anyway' : 'Send'}
         </button>
       </Editor>
+      <PollEditor value={poll} onChange={setPoll} settings={settings} problem={pollProblem} />
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
     </form>
   );
