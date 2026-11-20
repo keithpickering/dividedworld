@@ -2046,5 +2046,13 @@ export const PLAIN_FIXTURES: readonly PlainFixture[] = [
     "source": "Spoiler x [url]not a link[/url] fake",
     "held": {"0f8fad5b-d9cb-469f-a165-70867728950e":[["Spoiler x [url]not a link[/url] fake"]]},
     "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quoted: a real quote after a cut is held and the cut's Act is not",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=0f8fad5b-d9cb-469f-a165-70867728950e][quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8]c[/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][/quote][quote=0f8fad5b-d9cb-469f-a165-70867728950e]late[/quote]",
+    "plain": "",
+    "source": "﷐ late",
+    "held": {"0f8fad5b-d9cb-469f-a165-70867728950e": [["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["", ""], ["late"]]},
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e", "6ba7b810-9dad-41d1-80b4-00c04fd430c8"]
   }
 ];

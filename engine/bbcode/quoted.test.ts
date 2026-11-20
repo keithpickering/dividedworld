@@ -70,3 +70,9 @@ test('quoteHeld lists each quote of an Act in the order the openers stand', () =
   const held = quoteHeld(parse(`[quote=${A}]one[/quote][quote=${A}]two[/quote]`));
   assert.deepEqual([...held], [[A, [['one'], ['two']]]]);
 });
+
+test('quoteNorm reads every member of the whitespace class as a space (the SQL class in quote_norm is the same list)', () => {
+  const members = [0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0xa0, 0x1680, ...Array.from({ length: 11 }, (_, i) => 0x2000 + i), 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff];
+  for (const cp of members) assert.equal(quoteNorm(`a${String.fromCodePoint(cp)}b`), 'a b', `U+${cp.toString(16)}`);
+  assert.equal(quoteNorm('a\u200bb'), 'a\u200bb', 'a zero width space is not whitespace');
+});

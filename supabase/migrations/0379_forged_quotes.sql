@@ -456,7 +456,7 @@ begin
   -- Each Act once, at the place it first opens.
   quotes := coalesce((select array_agg(d.x order by d.o) from (select distinct on (u.x) u.x, u.o from unnest(qs[1 : qc]) with ordinality u(x, o) order by u.x, u.o) d), '{}');
   source := quote_norm(array_to_string(sr[1 : sc], ''));
-  -- Each Act's quotes, in the order their openers stand; a cut's Acts are not shown and have no pieces.
+  -- Each Act's quotes, in the order their openers stand. A cut's Acts are not shown and have no pieces: its slot in hq stays null (a gap, when a real quote opens after it), and the filter drops it.
   held := coalesce((select jsonb_object_agg(g.a, g.q) from (
     select u.a, jsonb_agg(h.p order by u.o) q from unnest(qs[1 : qc]) with ordinality u(a, o) join unnest(hq) with ordinality h(p, o) on h.o = u.o where h.p is not null group by u.a
   ) g), '{}'::jsonb);

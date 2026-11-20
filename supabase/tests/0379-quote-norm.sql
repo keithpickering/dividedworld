@@ -14,6 +14,11 @@ begin
   if quote_norm('... a ...') is distinct from 'a' or quote_norm(chr(8230) || 'a' || chr(8230)) is distinct from 'a' or quote_norm('...... x ... y ......') is distinct from 'x ... y' or quote_norm('.. a ..') is distinct from '.. a ..' then raise exception 'quote_norm: ellipses'; end if;
   if quote_norm('cafe' || chr(769)) is distinct from 'caf' || chr(233) then raise exception 'quote_norm: NFC'; end if;
   if quote_norm('') is distinct from '' then raise exception 'quote_norm: empty'; end if;
+  -- every member of the whitespace class is one space between two letters (quoteNorm's list in engine/bbcode/quoted.ts; a member dropped from either language goes red)
+  for c in select t.cp from unnest(array[9, 10, 11, 12, 13, 32, 160, 5760, 8232, 8233, 8239, 8287, 12288, 65279] || array(select generate_series(8192, 8202))) as t (cp) loop
+    if quote_norm('a' || chr(c.cp) || 'b') is distinct from 'a b' then raise exception 'quote_norm: U+% is not read as whitespace', to_hex(c.cp); end if;
+  end loop;
+  if quote_norm('a' || chr(8203) || 'b') is distinct from 'a' || chr(8203) || 'b' then raise exception 'quote_norm: a zero width space is not whitespace'; end if;
   for c in
     select * from (values
       ('[b=1] x 4000', repeat('[b=1]', 4000)),
