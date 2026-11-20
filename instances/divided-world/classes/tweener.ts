@@ -23,6 +23,12 @@ import { economyOf } from '../../../engine/rules/cards.ts';
 
 /** The Tweener's catalyst numbers, in the order its rule reads them: one list, which its `reads` is too. The floor of 3 on the voices is the design's section 7: no result names a pair of characters. */
 const READS: readonly EconomyRead[] = ['tweener.catalyst', { key: 'tweener.catalystVoices', whole: true, min: 3 }, { key: 'tweener.catalystReturned', whole: true, min: 1 }];
+const keyOf = (r: EconomyRead) => (typeof r === 'string' ? r : r.key);
+/** The catalyst numbers in force, read from `READS` in its order. */
+const catalystOf = (settings: Settings) => {
+  const [catalyst, voices, returned] = READS.map((r) => economyOf(settings, keyOf(r))) as [number, number, number];
+  return { catalyst, voices, returned };
+};
 const DAY = 86_400_000;
 /** What a calm-positive or bored-negative vote costs the Tweener, as a share of a vote: `tweener.shrugged` charges it and the refund counts the allowance in it. */
 const HALF = 0.5;
@@ -57,7 +63,7 @@ export function crossedAt(debate: SparkedDebate, voices: number, returned: numbe
 /** The time a spark pays at, by its debate alone, or null where it never does: crossed in time, kept out of by the author's player, and in no earlier debate of theirs. */
 function paysAt(debate: SparkedDebate, settings: Settings): number | null {
   if (debate.inOwnDebate) return null;
-  const [, voices, returned] = READS.map((r) => economyOf(settings, typeof r === 'string' ? r : r.key)) as [number, number, number];
+  const { voices, returned } = catalystOf(settings);
   const at = crossedAt(debate, voices, returned);
   if (at === null || at - debate.at >= settings.debateDays * DAY) return null;
   return debate.posts.some((p) => p.voice === 0 && p.at <= at) ? null : at;
@@ -100,7 +106,7 @@ export const tweener: ClassRules = {
 };
 
 function fuse(input: ClassInput, settings: Settings): Earning[] {
-  const [catalyst, voices, returned] = READS.map((r) => economyOf(settings, typeof r === 'string' ? r : r.key)) as [number, number, number];
+  const { catalyst, voices, returned } = catalystOf(settings);
   const lit = input.debates
     .map((debate) => ({ debate, at: paysAt(debate, settings) }))
     .filter((x): x is { debate: SparkedDebate; at: number } => x.at !== null && x.at >= input.from && x.at < input.to)

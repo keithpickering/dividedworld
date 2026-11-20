@@ -826,7 +826,7 @@ test('a post inside the debate of an earlier post of its own player is never a s
 });
 test('a character\'s sparks crossing in one window pay 20, 10, 5, in the order they crossed', () => {
   const late = spark([1, 2, 1, 2, 3], { act: 'c' });
-  const early = spark([1, 2, 1, 2, 3].map((v) => v) , { act: 'a', posts: [1, 2, 1, 2, 3].map((voice, i) => ({ at: (i + 1) * 0.5 * H, voice })) });
+  const early = spark([1, 2, 1, 2, 3], { act: 'a', posts: [1, 2, 1, 2, 3].map((voice, i) => ({ at: (i + 1) * 0.5 * H, voice })) });
   const tie = spark([1, 2, 1, 2, 3], { act: 'b' });
   const paid = fuse([late, tie, early]);
   assert.deepEqual(paid.map((e) => [e.act, e.amount]), [['a', 20], ['b', 10], ['c', 5]]);
