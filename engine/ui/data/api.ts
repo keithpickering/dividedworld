@@ -200,6 +200,8 @@ export interface ScreenSettings {
   readonly hotReplies: number;
   readonly editGrace: Span;
   readonly reactionCap: number;
+  readonly crowdPayEach: number;
+  readonly crowdPayMost: number;
   readonly charactersPerPlayer: number;
   readonly invitesPerPlayer: number;
   readonly inviteLifetime: Span;

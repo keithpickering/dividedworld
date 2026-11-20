@@ -25,6 +25,8 @@ const FALLBACK: ScreenSettings = {
   hotReplies: 5,
   editGrace: { unit: 'minute', count: 2 },
   reactionCap: 3,
+  crowdPayEach: 2,
+  crowdPayMost: 10,
   charactersPerPlayer: 6,
   invitesPerPlayer: 3,
   inviteLifetime: { unit: 'day', count: 7 },
