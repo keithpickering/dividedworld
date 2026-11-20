@@ -78,7 +78,8 @@ export const CANVASES = {
   'engine/ui/shine/flakes.ts': { count: 3, why: 'the loose flakes\' star sprite (an OffscreenCanvas, or a canvas where there is none) and the one window-sized canvas the loop draws them on', until: 'step 4' },
   'engine/ui/shine/landing.ts': { count: 1, why: 'a landed-glitter tile, at most TILE_W by TILE_H, made where a flake first lands in its cell', until: 'step 4' },
   /* ---- wait: step 5 ---- */
-  'instances/divided-world/cards/autocorrect/Effect.tsx': { count: 5, why: 'five. Four stay: the text ruler for measureText, each line\'s own paper (a line\'s size), and the film and the scratch the residue is colored on. The residue canvas, sized to the strips\' whole footprint, leaves for the layer at step 5, which lowers this count to 4 and drops `until`', until: 'step 5' },
+  'instances/divided-world/cards/autocorrect/Effect.tsx': { count: 6, why: 'six. Five stay: the text ruler for measureText, each line\'s own paper (a line\'s size), the corner fold (one piece\'s size, only while its end is picked) and the film and the scratch the residue is colored on. The residue canvas, sized to the strips\' whole footprint, leaves for the layer at step 5, which lowers this count to 5 and drops `until`', until: 'step 5' },
+  'instances/divided-world/cards/autocorrect/foldpaint.ts': { count: 2, why: 'two, each one piece\'s size and only while its end is picked: a face of the tape (its paper and its sticky side) and the scratch the fold is laid on, so its shadow is not clipped' },
 };
 
 const kindOf = (file) => (file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);

@@ -695,10 +695,11 @@ describe('Autocorrect: the hands on a piece', () => {
     const w = wide(piece);
     down(piece, 3);
     await pass(PICK - 100);
-    expect(document.querySelector('.dw-ac-corner')).not.toBeNull();
+    expect(document.querySelector('[data-kb-ac-fold]')).not.toBeNull();
+    expect(document.querySelector('.dw-ac-corner')).toBeNull();
     expect(stuckOnPage()).toEqual([`0.0-${w.toFixed(1)}`]);
     await pass(200);
-    expect(document.querySelector('.dw-ac-corner')).toBeNull();
+    expect(document.querySelector('[data-kb-ac-fold]')).toBeNull();
     /* A hand a little ahead of the line takes the tape at the pace: about 90px in a second would be the whole piece, so go half a second. */
     for (let i = 0; i < 30; i++) { move(piece, Math.min(w - 3, Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!) + 12)); await pass(16); }
     up(piece);
@@ -719,7 +720,7 @@ describe('Autocorrect: the hands on a piece', () => {
     expect(w).toBeGreaterThan(80);
     down(piece, w / 2);
     await pass(2000);
-    expect(document.querySelector('.dw-ac-corner')).toBeNull();
+    expect(document.querySelector('[data-kb-ac-fold]')).toBeNull();
     expect(stuckOnPage()).toEqual([`0.0-${w.toFixed(1)}`]);
     expect(m.save).not.toHaveBeenCalled();
   });
@@ -733,7 +734,7 @@ describe('Autocorrect: the hands on a piece', () => {
     await pass(2000);
     expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Another strip is stuck over this one. That one comes off first.');
     expect(stuckOnPage()).toEqual(before);
-    expect(document.querySelector('.dw-ac-corner')).toBeNull();
+    expect(document.querySelector('[data-kb-ac-fold]')).toBeNull();
     expect(m.save).not.toHaveBeenCalled();
     up(under);
   });
@@ -858,22 +859,51 @@ describe('Autocorrect: the hands on a piece', () => {
     expect(stepsOf(spy)).toBeGreaterThan(0);
   });
 
+  test('while the fold shows the body\'s paper is hidden, and letting go or a resize brings it back', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario' });
+    const piece = pieces()[0]!;
+    const body = () => piece.querySelector<HTMLElement>('.dw-ac-body')!;
+    expect(body().style.visibility).toBe('');
+    down(piece, 3);
+    await pass(200);
+    expect(piece.querySelector('[data-kb-ac-fold]')).not.toBeNull();
+    expect(body().style.visibility).toBe('hidden');
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    await pass(50);
+    expect(piece.querySelector('[data-kb-ac-fold]')).toBeNull();
+    expect(body().style.visibility).toBe('');
+    down(piece, 3, 2);
+    await pass(200);
+    expect(body().style.visibility).toBe('hidden');
+    resize();
+    await pass(50);
+    /* A resize mid-pick redraws the piece; whatever the hand is doing, the paper is either hidden under a drawn fold or showing. */
+    const folded = piece.querySelector('[data-kb-ac-fold]') !== null;
+    expect(body().style.visibility).toBe(folded ? 'hidden' : '');
+    fireEvent.pointerUp(window, { pointerId: 2 });
+    await pass(50);
+    expect(body().style.visibility).toBe('');
+  });
+
   test('a pointerup or pointercancel anywhere in the window lets a held hand go', async () => {
     vi.useFakeTimers();
     mount({ author: true, body: 'Mario' });
     const piece = pieces()[0]!;
     down(piece, 3);
     await pass(200);
-    expect(document.querySelector('.dw-ac-corner')).not.toBeNull();
+    expect(document.querySelector('[data-kb-ac-fold]')).not.toBeNull();
+    expect(document.querySelector('.dw-ac-corner')).toBeNull();
     fireEvent.pointerUp(window, { pointerId: 1 });
     await pass(50);
-    expect(document.querySelector('.dw-ac-corner')).toBeNull();
+    expect(document.querySelector('[data-kb-ac-fold]')).toBeNull();
     down(piece, 3, 2);
     await pass(200);
-    expect(document.querySelector('.dw-ac-corner')).not.toBeNull();
+    expect(document.querySelector('[data-kb-ac-fold]')).not.toBeNull();
+    expect(document.querySelector('.dw-ac-corner')).toBeNull();
     fireEvent.pointerCancel(window, { pointerId: 2 });
     await pass(50);
-    expect(document.querySelector('.dw-ac-corner')).toBeNull();
+    expect(document.querySelector('[data-kb-ac-fold]')).toBeNull();
   });
 
   test('the window stops listening once the held hand is let go', async () => {

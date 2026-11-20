@@ -28,6 +28,7 @@
     "instances/*/cards/**/drop.ts",
     "instances/*/cards/autocorrect/residue.ts",
     "instances/*/cards/autocorrect/residue.test.ts",
+    "instances/*/cards/autocorrect/foldpaint.ts",
     "web/**/*.ts",
     "web/**/*.tsx",
     ".storybook/**/*.ts",

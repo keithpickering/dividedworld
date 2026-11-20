@@ -11,7 +11,9 @@
  * the moment's own player, who wrote the post and may peel for good. The plays come from #42's author, who is not the post's. Each
  * case has a Light, a Dark, an Author (light) and a Phone twin at 390 by 844 (the others at 1440 by 1120); `OneAuthorHeld` is the author on a play that landed an hour ago, inside its hold (the plays of every other case landed two days ago); `Still*` is reduced motion
  * (the peel is instant; the strip still lifts and the tape still comes off). Peel with a drag, or focus a strip's anchor and hold
- * Enter or Space. (The story lives under ui/, where Storybook looks; the card's screens are in cards/autocorrect/.)
+ * Enter or Space. `Picking*` hold a pick at 0.6 on the author's first strip, the corner folded back (docs/plans/2026-11-20-autocorrect-feel-plan.md,
+ * Task 4): the play presses its left end and, once the hold has run to 0.6, stops the animation frames so the hand's clock stands there (the
+ * story's `beforeEach` gives them back); nothing in the card is changed for it. (The story lives under ui/, where Storybook looks; the card's screens are in cards/autocorrect/.)
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
@@ -109,6 +111,31 @@ export default meta;
 
 type Story = StoryObj<typeof Autocorrected>;
 const phone = { parameters: { moment: '02-phone' } } as const;
+/** The pick the `Picking*` stories hold, 0..1 of the hold between the corner showing (150 ms) and the peel (the card's `pickMs`, 1000 by default). */
+const PICK = 0.6;
+const CORNER_DELAY_MS = 150;
+const PICK_MS = 1000;
+const wait = (ms: number) => new Promise<void>((done) => { setTimeout(done, ms); });
+
+/** The author presses the first strip's left end and holds it to `PICK`, then stops the frames so the hold stays there. */
+const holdPick: Story['play'] = async ({ canvasElement }) => {
+  let piece: HTMLElement | null = null;
+  for (let i = 0; i < 200 && !piece; i++) {
+    piece = canvasElement.querySelector<HTMLElement>('[data-kb-ac-piece]');
+    if (!piece) await wait(50);
+  }
+  if (!piece) throw new Error('no piece of tape was drawn to pick');
+  const r = piece.getBoundingClientRect();
+  piece.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: r.left + 3, clientY: r.top + r.height / 2, pointerId: 1, pointerType: 'mouse', button: 0, isPrimary: true }));
+  await wait(CORNER_DELAY_MS + PICK * (PICK_MS - CORNER_DELAY_MS));
+  window.requestAnimationFrame = () => 0;
+};
+/** Gives the animation frames back when the story is left. */
+const keepFrames: NonNullable<Story['beforeEach']> = () => {
+  const raf = window.requestAnimationFrame;
+  return () => { window.requestAnimationFrame = raf; };
+};
+
 export const OneLight: Story = { args: { shown: 'one', viewer: 'reader', mode: 'light' } };
 export const OneDark: Story = { args: { shown: 'one', viewer: 'reader', mode: 'dark' } };
 export const OneAuthor: Story = { args: { shown: 'one', viewer: 'author', mode: 'light' } };
@@ -151,3 +178,7 @@ export const ReloadedDark: Story = { args: { shown: 'reloaded', viewer: 'reader'
 export const ReloadedPhone: Story = { args: { shown: 'reloaded', viewer: 'reader', mode: 'light' }, ...phone };
 export const StillLight: Story = { args: { shown: 'one', viewer: 'author', reduced: true } };
 export const StillPhone: Story = { args: { shown: 'stack', viewer: 'reader', reduced: true }, ...phone };
+
+export const PickingAuthor: Story = { args: { shown: 'one', viewer: 'author', mode: 'light' }, beforeEach: keepFrames, play: holdPick };
+export const PickingAuthorDark: Story = { args: { shown: 'one', viewer: 'author', mode: 'dark' }, beforeEach: keepFrames, play: holdPick };
+export const PickingPhone: Story = { args: { shown: 'one', viewer: 'author', mode: 'light' }, beforeEach: keepFrames, play: holdPick, ...phone };

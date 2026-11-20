@@ -55,6 +55,7 @@ import { heldUntil } from '../autocorrect.ts';
 import { dropRoll } from './drop.ts';
 import { Hands, type HandEvent, type HandSettings, type PieceSpec, type PieceView } from './hands.ts';
 import { drawPaper, PAPER, type PaperContext } from './paper.ts';
+import { facesKey, FOLD_PAD, makeFaces, paintFold, type FoldFaces } from './foldpaint.ts';
 import { savedAfterPeel } from './peel.ts';
 import { fibersAt, filmAlpha, filmSize, GLOSS_ALPHA, residueInk } from './residue.ts';
 import { dealWords, dropsInPieces, exposed, flapOf, piecesOf, rollDiameter, roomOf, stripsOf, stuckOf, type Measure, type SavedTape, type TapeStrip } from './tape.ts';
@@ -300,11 +301,30 @@ const Piece = memo(function Piece({ strip, index, box, words, fontPx, pad, own, 
     return () => { stop(); div.current?.removeAttribute('data-kb-ac-drawn'); };
   }, [box.w, box.h, seed]);
   const style = { left: box.x, top: box.y, width: box.w, height: box.h, zIndex: strip.z + 1, '--dw-ac-tilt': `${tilt}deg` } as CSSProperties;
+  /* The corner's fold: its two faces are made when a pick is first shown and kept while it is held, so a frame of the pick is two image draws. */
+  const foldCanvas = useRef<HTMLCanvasElement>(null);
+  const faces = useRef<FoldFaces | null>(null);
+  const [folded, setFolded] = useState(false);
+  const corner = view.corner;
+  useLayoutEffect(() => {
+    const cv = foldCanvas.current;
+    if (!corner || !cv) { faces.current = null; setFolded(false); return; }
+    try {
+      const dpr = Math.min(3, window.devicePixelRatio || 1);
+      const spec = { w: box.w, h: box.h, seed, words, fontPx, pad, dpr };
+      if (faces.current?.key !== facesKey(spec)) faces.current = makeFaces(spec);
+      cv.width = Math.ceil((box.w + 2 * FOLD_PAD) * dpr);
+      cv.height = Math.ceil((box.h + 2 * FOLD_PAD) * dpr);
+      /* The body's paper goes only once a fold is on its canvas, so a piece that cannot draw one keeps its paper. */
+      setFolded(faces.current !== null && paintFold(cv, faces.current, { w: box.w, h: box.h, side: corner.side, at: corner.at, t: corner.t, stuck: own, dpr }));
+    } catch { setFolded(false); }
+  }, [corner, box.w, box.h, seed, words, fontPx, pad, own]);
   const strain = view.strain;
   const at = strain ? (strain.side === 'a' ? (strain.at / box.w) * 100 : 100 - (strain.at / box.w) * 100) : 0;
   const body = {
     ...(mask ? { maskImage: mask, WebkitMaskImage: mask } : null),
     ...(clip ? { clipPath: clip } : null),
+    ...(folded && corner ? { visibility: 'hidden' } : null),
     ...(strain ? { '--dw-ac-stretch': `linear-gradient(${strain.side === 'a' ? 90 : 270}deg, transparent ${(at - 0.1).toFixed(1)}%, rgb(255 255 255 / ${(strain.amount * 0.6).toFixed(2)}) ${at.toFixed(1)}%, transparent ${(at + 22).toFixed(1)}%)` } : null),
   } as CSSProperties;
   const flap = view.lift && view.lift.lift > 0.5 ? view.lift : null;
@@ -338,10 +358,7 @@ const Piece = memo(function Piece({ strip, index, box, words, fontPx, pad, own, 
           />
         );
       })}
-      {view.corner ? (() => {
-        const size = (0.25 + 0.6 * view.corner.t) * box.h;
-        return <div className="dw-ac-corner" style={{ left: view.corner.side === 'a' ? view.corner.at : view.corner.at - size, width: size, height: size, clipPath: view.corner.side === 'a' ? 'polygon(0 0, 100% 0, 0 100%)' : 'polygon(0 0, 100% 0, 100% 100%)' }} />;
-      })() : null}
+      {view.corner ? <canvas ref={foldCanvas} className="dw-ac-fold" data-kb-ac-fold="" style={{ left: -FOLD_PAD, top: -FOLD_PAD, width: box.w + 2 * FOLD_PAD, height: box.h + 2 * FOLD_PAD }} /> : null}
       {flap && hinge ? (
         <div
           className="dw-ac-flap" data-kb-ac-flap={flap.side}
