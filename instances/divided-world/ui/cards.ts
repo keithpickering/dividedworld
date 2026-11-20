@@ -52,6 +52,7 @@ import { ui as thisUi } from './cards/this/ui.ts';
 import { ui as tollUi } from './cards/toll/ui.ts';
 import { ui as ultraHappyHeartUi } from './cards/ultra-happy-heart/ui.ts';
 import { ui as whodunnitUi } from './cards/whodunnit/ui.ts';
+import { ui as whoopeeCushionUi } from './cards/whoopee-cushion/ui.ts';
 import { ui as whoopsUi } from './cards/whoops/ui.ts';
 import { ui as youWereSayingUi } from './cards/you-were-saying/ui.ts';
 
@@ -99,6 +100,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   tollUi,
   ultraHappyHeartUi,
   whodunnitUi,
+  whoopeeCushionUi,
   whoopsUi,
   youWereSayingUi,
 ] satisfies CardUi[]);
