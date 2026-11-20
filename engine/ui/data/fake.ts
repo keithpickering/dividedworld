@@ -202,7 +202,7 @@ export interface Seed {
   /** A character's Turn asked by its player, waiting for the next settlement; refused in the server's words like any other. */
   turn(character: Id, to: string, options?: { loudness?: 'silent' | 'announced'; showFrom?: boolean; showTo?: boolean }): void;
   /** What the account's next estimate holds; its times are the ask's. */
-  estimate(account: Id, estimate: { entries?: Estimate['entries']; lines?: readonly EstimateLine[] }): void;
+  estimate(account: Id, estimate: { entries?: Estimate['entries']; lines?: readonly EstimateLine[]; crowd?: Estimate['crowd'] }): void;
   /** A character's unmask Act in a thread, as its player's reveal (`via` 'act') or a debut's or a Turn's. */
   reveal(character: Id, thread: Id, options?: { via?: ClassReveal['via']; class?: string; at?: number; message?: string }): Id;
   /**
@@ -483,7 +483,7 @@ interface AccountRec {
   reading: Map<Id, number>;
   /** The account's follow choices over the default (thread_follows, 0059). */
   follows: Map<Id, boolean>;
-  estimate: { entries: Estimate['entries']; lines: readonly EstimateLine[] };
+  estimate: { entries: Estimate['entries']; lines: readonly EstimateLine[]; crowd: Estimate['crowd'] };
   asked: Estimate | null;
 }
 interface InviteRec { readonly id: number; readonly owner: Id; code: string; readonly createdAt: number; issuedAt: number; usedBy: Id | null }
@@ -530,7 +530,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const instance: Instance = { ...options.instance, settings };
   const screen: ScreenSettings = {
     pronouns: settings.pronouns,
-    postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap,
+    postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap, crowdPayEach: settings.crowdPayEach, crowdPayMost: settings.crowdPayMost,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, setLasts: settings.setLasts, oldVoiceWindow: settings.oldVoiceWindow, oldVoicePromptFloor: settings.oldVoicePromptFloor, cardSettings: settings.cardSettings,
@@ -2994,7 +2994,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function addAccount(email: string, createdAt = now()): AccountRec {
     const a: AccountRec = {
       id: uuid(), email, createdAt, admin: false, prefs: DEFAULT_PREFERENCES, wallet: 0, cards: {}, gear: {}, rolledAt: null, eventsAt: [], reading: new Map(), follows: new Map(),
-      estimate: { entries: [], lines: [] }, asked: null,
+      estimate: { entries: [], lines: [], crowd: null }, asked: null,
     };
     accounts.set(a.id, a);
     byEmail.set(email, a.id);
@@ -4747,7 +4747,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const account = me();
       if (!account) throw new Error('sign in to see your estimate');
       if (account.asked && now() < Date.parse(account.asked.freshAfter!)) return account.asked;
-      account.asked = { entries: account.estimate.entries, lines: account.estimate.lines, asOf: iso(now()), freshAfter: iso(now() + 30_000) };
+      account.asked = { entries: account.estimate.entries, lines: account.estimate.lines, crowd: account.estimate.crowd, asOf: iso(now()), freshAfter: iso(now() + 30_000) };
       return account.asked;
     },
     invites() {
@@ -5232,7 +5232,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
     estimate(account, e) {
       const a = accounts.get(account)!;
-      a.estimate = { entries: e.entries ?? [], lines: e.lines ?? [] };
+      a.estimate = { entries: e.entries ?? [], lines: e.lines ?? [], crowd: e.crowd ?? null };
     },
     reveal(character, thread, o = {}) {
       const c = characters.get(character)!;

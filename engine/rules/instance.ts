@@ -271,6 +271,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   vote: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
   halving: (v) => (typeof v === 'number' && v > 0 && v <= 1 ? null : 'a fraction above 0 and at most 1'),
   reactionCap: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
+  crowdPayEach: (v) => (isWhole(v, 0) ? null : 'a whole number of hundredths, at least 0'),
+  crowdPayMost: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   charactersPerPlayer: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   settlementCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   viewCountCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),

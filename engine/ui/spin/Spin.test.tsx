@@ -1234,8 +1234,11 @@ describe('Spun into', () => {
     const article = await screen.findByRole('article', { name: /^Post 2 /u });
     const line = await within(article).findByText(/Spun into:/u);
     expect(line.closest('p')).toHaveTextContent('↳ Spun into: Crimson Incident (1 reply) · Is Pipewrench a Heel? (0 replies)');
-    /* Lifted over a card's ink, and marked so that an effect starts no stroke on it (the Whoops! refinements design's section 5). */
-    expect(line.closest('p')).toHaveAttribute('data-kb-over-ink');
+    /* In the post's foot, under its action buttons: out of the content area, so an effect drawn on the post neither covers it nor is sized around it. */
+    const foot = line.closest('.kb-act-foot')!;
+    expect(foot).not.toBeNull();
+    expect(line.closest('[data-kb-content-area]')).toBeNull();
+    expect(within(foot as HTMLElement).getByRole('button', { name: 'Spin thread' }).compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(article).getByRole('link', { name: 'Crimson Incident' })).toHaveAttribute('href', `/t/${first}`);
     expect(many).not.toHaveBeenCalled();
     expect(one).not.toHaveBeenCalled();
