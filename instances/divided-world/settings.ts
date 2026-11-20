@@ -225,6 +225,10 @@ export const defaults: Settings = deepFreeze<Settings>({
     /** Posts in a window before each further one costs. */
     'lurker.postsAllowed': 3,
     'lurker.overPosting': -10,
+    /** A spark pays this once, in the window its debate first holds `tweener.catalystVoices` other players, `tweener.catalystReturned` of them posting twice or more. */
+    'tweener.catalyst': 20,
+    'tweener.catalystVoices': 3,
+    'tweener.catalystReturned': 2,
     'heel.saltyOutdraws': 20,
     'face.cardOutdraws': -20,
     'jabroni.saltyLanded': 20,

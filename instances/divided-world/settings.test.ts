@@ -48,6 +48,7 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
   assert.deepEqual(defaults.economy, {
     'lurker.earlyPlayers': 3, 'lurker.earlyMatch': 10, 'lurker.crowd': 3, 'lurker.spunThreadRepliers': 3, 'lurker.spunThread': 20,
     'lurker.postsAllowed': 3, 'lurker.overPosting': -10,
+    'tweener.catalyst': 20, 'tweener.catalystVoices': 3, 'tweener.catalystReturned': 2,
     'heel.saltyOutdraws': 20,
     'face.cardOutdraws': -20,
     'jabroni.saltyLanded': 20,

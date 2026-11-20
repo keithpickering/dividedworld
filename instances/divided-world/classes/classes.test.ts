@@ -10,7 +10,7 @@ import { heel } from './heel.ts';
 import { lurker } from './lurker.ts';
 import { jabroni } from './jabroni.ts';
 import { technician } from './technician.ts';
-import { tweener } from './tweener.ts';
+import { tweener, crossedAt, refundAt } from './tweener.ts';
 import { classes } from './index.ts';
 import { instance } from '../index.ts';
 import { defaults as settings } from '../settings.ts';
@@ -18,7 +18,7 @@ import { estimateForOwner, settle } from '../../../engine/rules/settle.ts';
 import { economyOf } from '../../../engine/rules/cards.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import type {
-  ClassInput, ClassRules, HeldVote, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing,
+  ClassInput, ClassRules, HeldVote, SparkedDebate, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing,
 } from '../../../engine/rules/types.ts';
 
 const none: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
@@ -778,6 +778,149 @@ test('settled whole: a Tweener\'s card pays twice the smaller side of the player
     ],
   }, world);
   assert.equal(twPaid(r, 'tweener.stirredThePot'), 2 * settings.vote);
+});
+
+/* ---- Tweener: lit the fuse, and outvoted (docs/plans/2026-11-18-tweener-catalyst-plan.md, Task 3) ---- */
+const spark = (voices: readonly number[], over: Partial<SparkedDebate> = {}): SparkedDebate => ({
+  act: 's1', at: 0, posts: voices.map((voice, i) => ({ at: (i + 1) * H, voice })), inOwnDebate: false,
+  standing: { before: [], now: [] }, cushioned: 0, ...over,
+});
+const calm = (n: number, weight = 1): Standing[] => Array.from({ length: n }, () => ({ ...none, calmPositive: weight }));
+const fuse = (debates: readonly SparkedDebate[], over: Partial<ClassInput> = {}, s = settings) =>
+  tweener.earn(input({ from: 0, to: 100 * H, debates, ...over }), s).filter((e) => e.reason === 'tweener.litTheFuse');
+const outvoted = (debates: readonly SparkedDebate[], over: Partial<ClassInput> = {}, s = settings) =>
+  tweener.earn(input({ from: 0, to: 100 * H, debates, ...over }), s).filter((e) => e.reason === 'tweener.outvoted');
+const sumOf = (es: readonly { amount: number }[]) => es.reduce((t, e) => t + e.amount, 0);
+
+test('a spark pays when it holds three other players, two of them back, at the time that happened', () => {
+  const [e, ...more] = fuse([spark([1, 2, 1, 2, 3])]);
+  assert.equal(more.length, 0);
+  assert.equal(e?.amount, 20);
+  assert.equal(e?.at, 5 * H);
+  assert.equal(e?.act, 's1');
+  assert.deepEqual(e?.params, { 'tweener.catalystVoices': 3, 'tweener.catalystReturned': 2, debateDays: 3 });
+  assert.equal(crossedAt(spark([1, 2, 1, 2, 3]), 3, 2), 5 * H);
+  assert.equal(crossedAt(spark([1, 2, 3]), 3, 2), null);
+});
+test('three players and nobody back, or two back and no third player, pays nothing', () => {
+  assert.equal(sumOf(fuse([spark([1, 2, 3])])), 0);
+  assert.equal(sumOf(fuse([spark([1, 2, 1, 2])])), 0);
+});
+test('the author\'s player posting in the debate before it crossed voids the spark for good; after it, nothing is taken back', () => {
+  assert.equal(sumOf(fuse([spark([1, 2, 1, 0, 2, 3])])), 0);
+  assert.equal(sumOf(fuse([spark([1, 2, 1, 2, 3, 0])])), 20);
+  assert.equal(sumOf(fuse([spark([0, 1, 2, 1, 2, 3])])), 0);
+});
+test('a spark crossing three days and a second after it was posted pays nothing; a second before, it pays', () => {
+  const at = (late: number) => spark([1, 2, 1, 2, 3], { posts: [1, 2, 1, 2, 3].map((voice, i) => ({ at: i < 4 ? (i + 1) * H : 3 * DAY + late, voice })) });
+  assert.equal(sumOf(fuse([at(1000)])), 0);
+  assert.equal(sumOf(fuse([at(-1000)])), 20);
+});
+test('a spark that crossed before the stretch pays nothing in it: it paid in its own window', () => {
+  assert.equal(sumOf(fuse([spark([1, 2, 1, 2, 3, 3])], { from: 5.5 * H })), 0);
+  assert.equal(sumOf(fuse([spark([1, 2, 1, 2, 3, 3])], { from: 5 * H })), 20, 'a stretch is open at its start');
+  assert.equal(sumOf(fuse([spark([1, 2, 1, 2, 3, 3])], { to: 5 * H })), 0, 'and closed at its end');
+});
+test('a post inside the debate of an earlier post of its own player is never a spark', () => {
+  assert.equal(sumOf(fuse([spark([1, 2, 1, 2, 3], { inOwnDebate: true })])), 0);
+});
+test('a character\'s sparks crossing in one window pay 20, 10, 5, in the order they crossed', () => {
+  const late = spark([1, 2, 1, 2, 3], { act: 'c' });
+  const early = spark([1, 2, 1, 2, 3].map((v) => v) , { act: 'a', posts: [1, 2, 1, 2, 3].map((voice, i) => ({ at: (i + 1) * 0.5 * H, voice })) });
+  const tie = spark([1, 2, 1, 2, 3], { act: 'b' });
+  const paid = fuse([late, tie, early]);
+  assert.deepEqual(paid.map((e) => [e.act, e.amount]), [['a', 20], ['b', 10], ['c', 5]]);
+  assert.equal(sumOf(fuse([late, tie, early], {}, { ...settings, halving: 0.25 })), 20 + 5 + 1.25);
+});
+test('Lit the fuse reads its numbers from the settings and says the ones it used', () => {
+  const tuned = withOverrides({ ...settings, debateDays: 1 }, { economy: { 'tweener.catalyst': 30, 'tweener.catalystVoices': 2, 'tweener.catalystReturned': 1 } });
+  const [e] = fuse([spark([1, 2, 1])], {}, tuned);
+  assert.equal(e?.amount, 30);
+  assert.equal(e?.at, 3 * H);
+  assert.deepEqual(e?.params, { 'tweener.catalystVoices': 2, 'tweener.catalystReturned': 1, debateDays: 1 });
+  assert.equal(sumOf(fuse([spark([1, 2, 1], { posts: [{ at: DAY, voice: 1 }, { at: DAY, voice: 2 }, { at: DAY, voice: 1 }] })], {}, tuned)), 0, 'a day is debateDays: too late');
+  assert.equal(tweener.reads?.length, 3);
+});
+
+test('Outvoted: in the window the spark pays, the players arguing give back the nods, one for one', () => {
+  const four = outvoted([spark([1, 2, 1, 2, 3], { standing: { before: [], now: calm(4) } })]);
+  assert.equal(sumOf(four), 15, 'four calm votes cost 20, three voices allow 15');
+  assert.equal(four[0]?.reason, 'tweener.outvoted');
+  assert.equal(four[0]?.act, 's1');
+  assert.equal('votes' in four[0]!, false, 'it carries no votes, so no cushion reads it');
+  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3, 4], { standing: { before: [], now: calm(2) } })])), 10, 'two calm cost 10, four voices allow 20');
+  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2], { standing: { before: [], now: calm(4) } })])), 0, 'a spark that never paid');
+  assert.equal(sumOf(outvoted([spark([1, 2, 1, 0, 2, 3], { standing: { before: [], now: calm(4) } })])), 0, 'voided');
+  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3], { inOwnDebate: true, standing: { before: [], now: calm(4) } })])), 0);
+});
+test('Outvoted moves with the debate and the nods in a later window, and takes back what a nod that moved away had given', () => {
+  const later = (voices: number[], before: Standing[], now: Standing[], over: Partial<SparkedDebate> = {}) =>
+    sumOf(outvoted([spark(voices, { standing: { before, now }, ...over })], { from: 24 * H }));
+  const withFourth = [1, 2, 1, 2, 3, 4].map((v, i) => ({ at: i < 5 ? (i + 1) * H : 30 * H, voice: v }));
+  assert.equal(later([], calm(4), calm(4), { posts: withFourth }), 5, 'a fourth voice with four nods standing');
+  assert.equal(later([1, 2, 1, 2, 3, 4], calm(2), calm(3)), 5, 'a third nod with four voices');
+  assert.equal(later([1, 2, 1, 2, 3, 4], calm(4), [...calm(3), { ...none, excitedPositive: 1 }]), -5, 'a nod that moved to hype');
+  assert.equal(outvoted([spark([1, 2, 1, 2, 3, 4], { standing: { before: calm(4), now: calm(4) } })], { from: 24 * H }).length, 0, 'nothing changing gives nothing');
+});
+test('a voice whose only post is after debateDays adds no allowance', () => {
+  const d = spark([1, 2, 1, 2, 3, 4], { posts: [1, 2, 1, 2, 3, 4].map((voice, i) => ({ at: i < 5 ? (i + 1) * H : 3 * DAY + H, voice })) });
+  assert.equal(refundAt(d, 100 * H, calm(4), settings), 15);
+  assert.equal(refundAt(spark([1, 2, 1, 2, 3, 4]), 100 * H, calm(4), settings), 20);
+});
+test('refundAt is nothing before the spark has paid, and the shrugs on a halved vote cost, and give back, half as much', () => {
+  const d = spark([1, 2, 1, 2, 3, 4]);
+  assert.equal(refundAt(d, 4 * H, calm(4), settings), 0, 'it crosses at 5H');
+  assert.equal(refundAt(d, 5 * H, calm(4), settings), 0, 'a stretch is open at its start: not paid at its start');
+  assert.equal(refundAt(d, 6 * H, calm(4), settings), 20);
+  assert.equal(refundAt(d, 100 * H, calm(4, 0.5), settings), 10);
+  assert.equal(refundAt(d, 100 * H, [{ ...none, boredNegative: 1 }, { ...none, excitedPositive: 1 }], settings), 5);
+});
+test('a cushion halves each refund', () => {
+  const half = (over: Partial<SparkedDebate>) => ({ ...over, cushioned: 0.5 });
+  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3], half({ standing: { before: [], now: calm(4) } }))])), 7.5);
+  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3, 4], half({ standing: { before: calm(2), now: calm(3) } }))], { from: 24 * H })), 2.5);
+  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3, 4], half({ standing: { before: calm(4), now: [...calm(3), { ...none, excitedPositive: 1 }] } }))], { from: 24 * H })), -2.5);
+});
+
+const cushionCard = { key: 'half', name: 'Half', alignment: 'sweet' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), gimmick: { kind: 'cushion' as const, share: 0.5 } };
+const fuseWorld = { ...instance, cards: [...instance.cards, cushionCard] };
+const fuseCharacters = [
+  { id: 'tw', player: 'pt', classes: [{ class: 'tweener', from: -1 }] },
+  { id: 'k', player: 'pk', classes: [{ class: 'face', from: -1 }] },
+  ...['a', 'b', 'c', 'd'].map((id) => ({ id, player: `p-${id}`, classes: [{ class: 'face', from: -1 }] })),
+];
+const fuseActs = [
+  { id: 'sp', character: 'tw', kind: 'post' as const, at: 1 * H, thread: 't' },
+  ...['a', 'b', 'c'].flatMap((id, i) => [0, 1].map((n) => ({ id: `${id}${n}`, character: id, kind: 'post' as const, at: (3 + i * 2 + n) * H, thread: 't' }))),
+];
+const fuseQuotes = fuseActs.slice(1).map((a) => ({ act: a.id, quoted: 'sp' }));
+const fuseNods = ['a', 'b', 'c', 'd'].map((id) => ({ act: 'sp', player: `p-${id}`, character: id, kind: 'folded-hands', at: 2 * H }));
+test('settled whole, with a half cushion up when the nods landed: the spark\'s shrugs, cushion and outvoted sum to no more than nothing', () => {
+  const r = settle({
+    window: { id: 'w1', from: 0, to: 24 * H }, characters: fuseCharacters, quotes: fuseQuotes, reactions: fuseNods,
+    acts: [...fuseActs, { id: 'g1', character: 'k', kind: 'card', at: 0.5 * H, thread: 't', target: 'sp', card: 'half', ends: 100 * H }],
+  }, fuseWorld);
+  const of = (reason: string) => r.entries.filter((e) => e.character === 'tw' && e.reason === reason).reduce((t, e) => t + e.amount, 0);
+  assert.equal(of('tweener.litTheFuse'), 20);
+  assert.equal(of('tweener.shrugged'), -20);
+  assert.equal(of('card.cushion'), 10);
+  assert.equal(of('tweener.outvoted'), 8, 'a ledger line is whole hundredths: 7.5 rounds up');
+  assert.ok(of('tweener.shrugged') + of('card.cushion') + of('tweener.outvoted') <= 0);
+});
+test('settled whole: two masks of one player and one other player, each back twice, are two voices and pay nothing; estimated by character they are three', () => {
+  const characters = [
+    { id: 'tw', player: 'pt', classes: [{ class: 'tweener', from: -1 }] },
+    { id: 'a1', player: 'pa', classes: [{ class: 'face', from: -1 }] }, { id: 'a2', player: 'pa', classes: [{ class: 'face', from: -1 }] },
+    { id: 'b', player: 'pb', classes: [{ class: 'face', from: -1 }] },
+  ];
+  const acts = [
+    { id: 'sp', character: 'tw', kind: 'post' as const, at: 1 * H, thread: 't' },
+    ...['a1', 'a2', 'b'].flatMap((id, i) => [0, 1].map((n) => ({ id: `${id}-${n}`, character: id, kind: 'post' as const, at: (3 + i * 2 + n) * H, thread: 't' }))),
+  ];
+  const b: SettlementInput = { window: { id: 'w1', from: 0, to: 24 * H }, characters, acts, quotes: acts.slice(1).map((a) => ({ act: a.id, quoted: 'sp' })), reactions: [] };
+  const fuseOf = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.reason === 'tweener.litTheFuse').reduce((t, e) => t + e.amount, 0);
+  assert.equal(fuseOf(settle(b, world)), 0);
+  assert.equal(fuseOf(settle(b, world, { sharedVote: false, halving: false })), 20);
 });
 
 test('every earning a class builds from a single reaction names that reaction\'s kind, for an Earn Gimmick that names reactions', () => {
