@@ -21,7 +21,10 @@
  *   which every reader loads, and `clean` once none is left. A reader's own peels are never saved. `stuck` is what the author
  *   half-peeled: for a strip's place (a decimal string), the stretches of it still stuck, each `[from, to, edges]` in shares of
  *   the strip's length (to 4 places) with `edges` = `startKind * 3 + endKind`, a kind being 0 the strip's own end (only at share
- *   0 or 1), 1 a peel line where the roll waits, 2 a tear. A place is in `peeled` or in `stuck`, never both.
+ *   0 or 1), 1 a peel line where the roll waits, 2 a tear. A place is in `peeled` or in `stuck`, never both. `drops` is where
+ *   the author's rolls fell: for a place in `stuck`, the shares of the strip's length (to 4 places, in order) where a rolled-up
+ *   end was dropped, none strictly inside a stuck stretch of that place; it is kept only when some place holds one, and drops
+ *   and stretches together are at most `STUCK.most`.
  *   The author's saves are held for `autocorrect.holdHours` after the play lands (`stateHeldUntil`; the act function refuses them
  *   before then, and the screens show the author the tape as a reader sees it); 0 holds none.
  */
@@ -36,7 +39,7 @@ export const REPLACEMENT = { most: 100 } as const;
  * shortest phrase with a space after each, and this leaves room above it. Its largest save fits effect_state's bound (cards.test.ts).
  */
 export const PEELS = { most: 5000 } as const;
-/** The most stretches a save holds across all its strips; the largest save fits effect_state's bound (cards.test.ts). */
+/** The most stretches and drops a save holds across all its strips; the largest save fits effect_state's bound (cards.test.ts). */
 export const STUCK = { most: 2000 } as const;
 
 /** A stretch of a strip still stuck: [from, to, edges], shares of its length to 4 places, edges = startKind * 3 + endKind (0 the strip's own end, 1 a peel line, 2 a tear). */
@@ -95,7 +98,7 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
   stateHeldUntil: (settings, landed) => holdEnds(economyOf(settings, 'autocorrect.holdHours'), landed),
   stateHeldWords: (until) => `This tape is stuck on until ${until}. It can be peeled after that.`,
   validateState: (state) => {
-    const { peeled, clean, stuck } = typeof state === 'object' && state !== null ? (state as { peeled?: unknown; clean?: unknown; stuck?: unknown }) : {};
+    const { peeled, clean, stuck, drops } = typeof state === 'object' && state !== null ? (state as { peeled?: unknown; clean?: unknown; stuck?: unknown; drops?: unknown }) : {};
     if (!Array.isArray(peeled)) return refuse('peeled is a list of places');
     if (clean !== undefined && typeof clean !== 'boolean') return refuse('clean is true or false');
     if (!peeled.every((n) => Number.isSafeInteger(n) && n >= 0 && n < PEELS.most)) return refuse(`a place is a whole number from 0 to ${PEELS.most - 1}`);
@@ -113,7 +116,7 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
         if (!Array.isArray(stretches)) return refuse('stuck holds a list of stretches for each place');
         if (!stretches.length) return refuse('a place in stuck holds at least one stretch');
         total += stretches.length;
-        if (total > STUCK.most) return refuse(`a save holds at most ${STUCK.most} stretches`);
+        if (total > STUCK.most) return refuse(`a save holds at most ${STUCK.most} stretches and drops`);
         const rounded: Stretch[] = [];
         for (const s of stretches) {
           if (!Array.isArray(s) || s.length !== 3 || !s.every((n) => typeof n === 'number')) return refuse('a stretch is [from, to, edges], three numbers');
@@ -132,7 +135,30 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
       }
       if (total) keptStuck = out;
     }
-    return ok({ peeled: kept, ...(clean === undefined ? {} : { clean }), ...(keptStuck ? { stuck: keptStuck } : {}) });
+    let keptDrops: Record<string, number[]> | undefined;
+    if (drops !== undefined) {
+      if (typeof drops !== 'object' || drops === null || Array.isArray(drops)) return refuse('drops is a list of shares for each place');
+      const out: Record<string, number[]> = {};
+      let total = Object.values(keptStuck ?? {}).reduce((n, list) => n + list.length, 0);
+      for (const [key, shares] of Object.entries(drops)) {
+        const held = keptStuck?.[key];
+        if (!held) return refuse('a place in drops is in stuck');
+        if (!Array.isArray(shares)) return refuse('drops holds a list of shares for each place');
+        total += shares.length;
+        if (total > STUCK.most) return refuse(`a save holds at most ${STUCK.most} stretches and drops`);
+        let last = -1;
+        for (const share of shares) {
+          if (typeof share !== 'number' || !(share >= 0 && share <= 1)) return refuse('a share is from 0 to 1');
+          if (Math.round(share * 10_000) / 10_000 !== share) return refuse('a share is given to 4 places');
+          if (!(share > last)) return refuse("a place's drops are in order, each after the one before");
+          if (held.some(([from, to]) => from < share && share < to)) return refuse('a drop is not inside a stretch that is still stuck');
+          last = share;
+        }
+        if (shares.length) out[key] = [...shares] as number[];
+      }
+      if (Object.keys(out).length) keptDrops = out;
+    }
+    return ok({ peeled: kept, ...(clean === undefined ? {} : { clean }), ...(keptStuck ? { stuck: keptStuck } : {}), ...(keptDrops ? { drops: keptDrops } : {}) });
   },
 };
 
