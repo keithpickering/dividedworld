@@ -11,7 +11,7 @@ import type { Alignment, ClassInput, Earning, Quadrant, Settings } from '../../.
 export function perVote(input: ClassInput, settings: Settings, quadrant: Quadrant, sign: 1 | -1, reason: string, weight = 1): Earning[] {
   return input.received
     .filter((r) => r.quadrant === quadrant)
-    .map((r) => ({ reason, amount: sign * weight * settings.vote * r.votes, act: r.act, quadrant, at: r.at, kind: r.kind, votes: r.votes }));
+    .map((r) => ({ reason, amount: sign * weight * settings.vote * r.votes, act: r.act, quadrant, at: r.at, kind: r.kind, votes: r.votes, ...(sign > 0 ? { fromReactions: true as const } : {}) }));
 }
 
 /** A card outdraws the post it landed on when it drew more votes than the post in the window. */

@@ -94,7 +94,7 @@ export const tweener: ClassRules = {
   reads: READS,
   earn: (input, settings) => [
     ...input.standings
-      .map((s): Earning => ({ reason: 'tweener.splitTheRoom', amount: settings.vote * 2 * (smallerSide(s.now) - smallerSide(s.before)), act: s.act, at: s.at }))
+      .map((s): Earning => ({ reason: 'tweener.splitTheRoom', amount: settings.vote * 2 * (smallerSide(s.now) - smallerSide(s.before)), act: s.act, at: s.at, fromReactions: true }))
       .filter((e) => !nothing(e.amount)),
     ...input.cardsPlayed
       .flatMap((c) => (c.onOthers && c.drawnAfter ? [{ card: c, drawn: c.drawnAfter }] : []))

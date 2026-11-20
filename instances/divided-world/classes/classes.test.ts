@@ -4,6 +4,7 @@
  * how Acts reach a class run the whole settlement.
  */
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { face } from './face.ts';
 import { heel } from './heel.ts';
@@ -234,7 +235,7 @@ test('a calm vote withdrawn from an old post takes the bonus back; from a young 
 });
 test('Evergreen names the Act, the quadrant and the reaction\'s time, for the log and the estimate', () => {
   const e = technician.earn(input({ received: [calmAged(4 * DAY)] }), settings).find((x) => x.reason === 'technician.evergreen');
-  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10, kind: 'reaction', votes: 1 });
+  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10, kind: 'reaction', votes: 1, fromReactions: true });
 });
 test('an override of the Technician\'s numbers changes the age and the amount', () => {
   const sooner = withOverrides(settings, { economy: { 'technician.evergreenDays': 1 } });
@@ -1062,4 +1063,57 @@ test('a Tweener\'s stirs in a window halve in the order played; a stir that draw
   assert.deepEqual(stirs([stir('k1', 10, 2, 2), stir('k2', 20, 3, 0), stir('k3', 30, 2, 2)]), [['k1', 4 * v], ['k3', 2 * v]]);
   assert.equal(total(tweener, input({ cardsPlayed: [stir('k1', 10, 2, 2)], from: 0, to: 50 }), 'tweener.stirredThePot'), 4 * v);
   assert.equal(total(tweener, input({ cardsPlayed: [stir('k2', 60, 2, 2)], from: 50, to: 100 }), 'tweener.stirredThePot'), 4 * v);
+});
+
+/* ---- Which earnings the reveal perk reads (class balance design, section 2; plan Task 7) ---- */
+/*
+ * The perk is a fifth more on what reactions earned. An earning carries `fromReactions` when a reaction to the character's own Acts,
+ * or its own early call, caused it. This list is the design's section 2: a new reason is a decision, so a reason a class emits that
+ * is not here fails the test until someone chooses whether it is read.
+ */
+const PERK_READS: Readonly<Record<string, boolean>> = {
+  'face.cheered': true, 'face.liftedAPost': false, 'face.boredTheRoom': false, 'face.stoleThunder': false,
+  'heel.drewHeat': true, 'heel.stoleThunder': false, 'heel.shrugged': false,
+  'jabroni.drewTheGroan': true, 'jabroni.soldTheL': false, 'jabroni.takenSincerely': false,
+  'technician.respected': true, 'technician.evergreen': true, 'technician.draggedIn': false,
+  'tweener.splitTheRoom': true, 'tweener.stirredThePot': false, 'tweener.shrugged': false, 'tweener.litTheFuse': false, 'tweener.outvoted': false,
+  'lurker.calledIt': true, 'lurker.misread': false, 'lurker.spunAThread': false, 'lurker.cardDrew': true, 'lurker.postedTooMuch': false,
+};
+test('the earnings the reveal perk reads are exactly the design\'s list, and every reason a class has is in the fixture', () => {
+  const sweetCard = card({ act: 'k1', alignment: 'sweet', votes: 3, targetVotes: 2, targetLean: 1, targetAfter: { ...none, excitedPositive: 2 }, drawnAfter: { at: 8, now: room(3, 3) } });
+  const saltyCard = card({ act: 'k2', alignment: 'salty', votes: 3, targetVotes: 1, drawnAfter: { at: 9, now: room(3, 3) } });
+  const everything = input({
+    from: 0, to: 100 * H,
+    posts: [1, 2, 3, 4].map((n) => ({ act: `post${n}`, at: n })),
+    received: [
+      got('excitedPositive'), got('excitedNegative'), got('boredNegative'), got('calmPositive'),
+      got('calmPositive', 1, 'post', 'old', 0, 'reaction'), { ...got('calmPositive', 1, 'post', 'old'), at: 4 * DAY },
+      got('excitedPositive', 1, 'card', 'k1'),
+    ],
+    cardsPlayed: [sweetCard, saltyCard],
+    cardsLanded: [landed('salty')],
+    held: [held({ act: 'h1' }), held({ act: 'h2', endsUp: 'excitedNegative' })],
+    threadsSpun: [spin({})],
+    standings: [standing([], room(6, 6))],
+    debates: [spark([1, 2, 1, 2, 3], { standing: { before: [], now: calm(4) } })],
+  });
+  const seen: Record<string, boolean> = {};
+  for (const rules of classes) {
+    for (const e of rules.earn(everything, settings)) {
+      const flag = e.fromReactions === true;
+      assert.ok(seen[e.reason] === undefined || seen[e.reason] === flag, `${e.reason} is flagged on some lines and not others`);
+      seen[e.reason] = flag;
+    }
+  }
+  assert.deepEqual(Object.keys(seen).sort(), Object.keys(PERK_READS).sort(), 'the fixture makes every reason, and the list names every one');
+  assert.deepEqual(seen, PERK_READS);
+  const negatives = classes.flatMap((r) => r.earn(everything, settings)).filter((e) => e.fromReactions && e.amount < 0);
+  assert.deepEqual(negatives.map((e) => e.reason), [], 'a loss is never read by the perk');
+  /* Against the source: a reason a class file names that this list does not is a decision nobody made. */
+  const named = new Set<string>();
+  for (const f of ['face', 'heel', 'jabroni', 'technician', 'tweener', 'lurker']) {
+    const text = readFileSync(new URL(`./${f}.ts`, import.meta.url), 'utf8');
+    for (const m of text.matchAll(/reason: '([a-z]+\.[A-Za-z]+)'|perVote\([^\n]*?'([a-z]+\.[A-Za-z]+)'/g)) named.add((m[1] ?? m[2])!);
+  }
+  assert.deepEqual([...named].sort(), Object.keys(PERK_READS).sort());
 });
