@@ -31,6 +31,7 @@ const bare = (t: unknown): unknown => {
   const { transformOrigin: _origin, ...rest } = t as Values;
   return rest;
 };
+/** A preset with its targets `bare`; its other props, its kept layer's mark among them (motion.ts `KEPT`), are spread as they are, so the mark reaches the box. */
 const trimmed = (p: MotionProps): MotionProps => ({ ...p, initial: bare(p.initial), animate: bare(p.animate), exit: bare(p.exit) }) as MotionProps;
 
 /** What marks a layer that is leaving, from the first render of its exit. */

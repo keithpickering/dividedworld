@@ -162,3 +162,18 @@ describe('a layer\'s exit origin', () => {
   });
 });
 
+/* The kept layer (docs/plans/2026-11-20-kept-layers-design.md): the dialog's box carries its preset's mark, so it keeps its compositor layer for its life. */
+describe.each(KINDS)('an open %s', (kind, name) => {
+  test('marks its box to keep its layer at full motion', async () => {
+    renderInWorld(<Opener kind={kind} />, { path: '/characters' });
+    await userEvent.click(screen.getByRole('button', { name: 'Open it' }));
+    expect(screen.getByRole('dialog', { name })).toHaveAttribute('data-kb-layer', 'kept');
+  });
+
+  test('marks nothing under Off', async () => {
+    at('reduce');
+    renderInWorld(<Opener kind={kind} />, { path: '/characters' });
+    await userEvent.click(screen.getByRole('button', { name: 'Open it' }));
+    expect(screen.getByRole('dialog', { name })).not.toHaveAttribute('data-kb-layer');
+  });
+});

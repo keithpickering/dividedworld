@@ -94,6 +94,17 @@
 
 :root[data-kb-motion='reduce'] .kb-smoke-layer { animation: none; transition: none; will-change: auto; }
 
+/*
+ * A whole surface a motion preset enters (an overlay's, a float's, a tooltip's or a modal's box, a screen, a swap's panel) keeps its compositor layer for its
+ * life (motion.ts, `KEPT`; docs/plans/2026-11-20-kept-layers-design.md). Without it, the layer its entrance gave it is destroyed when the entrance
+ * ends, and what it held is made into new layers, which Chrome on Android drew blank for a frame or two. Only `transform` stopped that regrouping.
+ * It makes the surface a stacking context and the containing block of any `position: fixed` inside it, so nothing fixed is drawn inside one.
+ * Under Off the presets mark nothing, so nothing is kept.
+ */
+[data-kb-layer='kept'] {
+  will-change: transform;
+}
+
 /* ---- the shapes ---- */
 
 :root {
