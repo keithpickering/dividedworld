@@ -10,7 +10,9 @@
  * `tweener.litTheFuse`, in the window in which its debate first holds `tweener.catalystVoices` other players of whom
  * `tweener.catalystReturned` posted twice or more, if that moment is within `debateDays` of the spark, the author's player has no post in
  * the debate up to that moment, and the spark is in no debate of an earlier post by the same player. A character's further paying sparks
- * in a window each pay `settings.halving` of the one before, in the order they crossed.
+ * in a window each pay `settings.halving` of the one before, in the order they crossed. Its stirs halve the same way: in a window the stirs
+ * that pay (`tweener.stirredThePot`) are taken in the order played, and the n-th pays `settings.halving ** n` of its full amount; a stir
+ * that pays nothing is not in the chain. Class balance design, section 6.
  *
  * And the debate outvotes the nods. For a spark that has paid, while it is handed to the class, the refund standing is `(1 - cushioned)`
  * times the smaller of what the votes standing on the spark cost in shrugs (half a vote's worth for each calm or bored vote, at its
@@ -96,8 +98,9 @@ export const tweener: ClassRules = {
       .filter((e) => !nothing(e.amount)),
     ...input.cardsPlayed
       .flatMap((c) => (c.onOthers && c.drawnAfter ? [{ card: c, drawn: c.drawnAfter }] : []))
-      .map(({ card, drawn }): Earning => ({ reason: 'tweener.stirredThePot', amount: settings.vote * 2 * smallerSide(drawn.now), act: card.act, at: drawn.at }))
-      .filter((e) => !nothing(e.amount)),
+      .filter(({ drawn }) => !nothing(smallerSide(drawn.now)))
+      .sort((a, b) => a.card.at - b.card.at)
+      .map(({ card, drawn }, n): Earning => ({ reason: 'tweener.stirredThePot', amount: settings.vote * 2 * smallerSide(drawn.now) * settings.halving ** n, act: card.act, at: drawn.at })),
     ...input.received
       .filter((r) => SHRUG.includes(r.quadrant))
       .map((r): Earning => ({ reason: 'tweener.shrugged', amount: -HALF * settings.vote * r.votes, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind, votes: r.votes })),

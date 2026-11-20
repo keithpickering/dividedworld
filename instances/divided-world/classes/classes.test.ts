@@ -1044,3 +1044,22 @@ test('an earning carries its reaction\'s votes signed, so a vote that moved away
     }
   }
 });
+
+test('a Face\'s lifts in a window halve in the order played: 2v, v, v/2; a dud Fab between them does not halve the next', () => {
+  const v = settings.vote;
+  const fab = (act: string, at: number, hype: number) => card({ act, at, alignment: 'sweet', targetAfter: { ...none, excitedPositive: hype } });
+  const lifts = (cards: PlayedCard[]) => face.earn(input({ cardsPlayed: cards }), settings).filter((e) => e.reason === 'face.liftedAPost').map((e) => [e.act, e.amount]);
+  assert.deepEqual(lifts([fab('k3', 30, 2), fab('k1', 10, 2), fab('k2', 20, 2)]), [['k1', 2 * v], ['k2', v], ['k3', v / 2]]);
+  assert.deepEqual(lifts([fab('k1', 10, 2), fab('k2', 20, 0), fab('k3', 30, 2)]), [['k1', 2 * v], ['k3', v]]);
+  assert.equal(total(face, input({ cardsPlayed: [fab('k1', 10, 2)], from: 0, to: 50 }), 'face.liftedAPost'), 2 * v);
+  assert.equal(total(face, input({ cardsPlayed: [fab('k2', 60, 2)], from: 50, to: 100 }), 'face.liftedAPost'), 2 * v);
+});
+test('a Tweener\'s stirs in a window halve in the order played; a stir that draws nothing does not halve the next; one stir per window pays in full', () => {
+  const v = settings.vote;
+  const stir = (act: string, at: number, hype: number, heat: number) => card({ act, at, drawnAfter: { at: at + 1, now: room(hype, heat) } });
+  const stirs = (cards: PlayedCard[]) => tweener.earn(input({ cardsPlayed: cards }), settings).filter((e) => e.reason === 'tweener.stirredThePot').map((e) => [e.act, e.amount]);
+  assert.deepEqual(stirs([stir('k3', 30, 2, 2), stir('k1', 10, 2, 2), stir('k2', 20, 2, 2)]), [['k1', 4 * v], ['k2', 2 * v], ['k3', v]]);
+  assert.deepEqual(stirs([stir('k1', 10, 2, 2), stir('k2', 20, 3, 0), stir('k3', 30, 2, 2)]), [['k1', 4 * v], ['k3', 2 * v]]);
+  assert.equal(total(tweener, input({ cardsPlayed: [stir('k1', 10, 2, 2)], from: 0, to: 50 }), 'tweener.stirredThePot'), 4 * v);
+  assert.equal(total(tweener, input({ cardsPlayed: [stir('k2', 60, 2, 2)], from: 50, to: 100 }), 'tweener.stirredThePot'), 4 * v);
+});
