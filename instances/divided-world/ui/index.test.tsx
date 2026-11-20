@@ -379,6 +379,21 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       for (const e of carried) expect(Object.keys(e.params ?? {}).sort(), reason).toEqual([...(wordsRead[reason] ?? []), ...(settingsRead[reason] ?? [])].sort());
     }
   });
+  test('the Heel\'s multiple reads true at every value the setting allows', () => {
+    const at = (v: number) => said('heel', { ...economy, 'heel.heatVotes': v });
+    expect(at(0)).toContain('which pay nothing');
+    expect(at(0)).not.toMatch(/times over|zero|each paid/);
+    expect(at(1)).toContain('each paid as one vote');
+    expect(at(1)).not.toMatch(/times over|one times/);
+    expect(at(2)).toContain('each paid double');
+    expect(at(3)).toContain('each paid triple');
+    expect(at(4)).toContain('each paid four times over');
+    expect(at(25)).toContain('each paid 25 times over');
+    expect(at(1.5)).toContain('each paid one and a half times over');
+    expect(at(2.5)).toContain('each paid two and a half times over');
+    expect(at(1.25)).toContain('each paid 1.25 times over');
+    expect(at(1.5)).not.toMatch(/\d/);
+  });
   test('the double the Heel and the Jabroni earn is said, and the Lurker\'s miss and the reveal perk are worded', () => {
     expect(wordsRead['heel']).toContain('heel.heatVotes');
     expect(wordsRead['jabroni']).toContain('jabroni.groanVotes');

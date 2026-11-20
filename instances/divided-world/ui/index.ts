@@ -66,8 +66,17 @@ const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', '
 const count = (n: number) => (Number.isInteger(n) && n >= 0 && n <= 20 ? COUNTS[n]! : String(n));
 /* A number the words state, from the numbers they are told, or the compiled default where they are told none. */
 const num = (n: Readonly<Record<string, number | string>>, key: string) => { const v = n[key]; return typeof v === 'number' ? v : defaults.economy[key]!; };
-/* A reward's multiple, in words: "double" for two, and a count of times over for any other. */
-const multiple = (n: number) => (n === 2 ? 'double' : n === 3 ? 'triple' : `${count(n)} times over`);
+/* A reward's multiple, as the clause that follows what is paid: nothing for 0, one vote's worth for 1, "double" and "triple", and a count
+ * of times over for the rest, a half said in words ("one and a half") and any other fraction in figures. True at every value `min: 0` allows. */
+const multiple = (n: number) => {
+  if (n === 0) return 'which pay nothing';
+  if (n === 1) return 'each paid as one vote';
+  if (n === 2) return 'each paid double';
+  if (n === 3) return 'each paid triple';
+  if (Number.isInteger(n)) return `each paid ${count(n)} times over`;
+  if (Number.isInteger(n - 0.5) && n > 0 && n < 20) return `each paid ${count(n - 0.5)} and a half times over`;
+  return `each paid ${n} times over`;
+};
 const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${count(n)} times`);
 
 /** Each ledger reason, as the log says it: what the character did or drew, plainly, with the numbers it was settled under. */
@@ -186,8 +195,8 @@ export const instanceUi: InstanceUi = Object.freeze({
   // Written in the classes' order (classes/index.ts).
   classLooks: Object.freeze<Record<string, ClassLook>>({
     face: { color: '#2e86de', description: () => 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there.', hurtsBy: () => 'Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } },
-    heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: (e) => `Earns heat: excited, negative reactions, each paid ${multiple(num(e, 'heel.heatVotes'))}, and a Salty card that outdraws the post it lands on.`, hurtsBy: () => 'Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
-    jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: (e) => `Anti-comedy: posts built to bomb. Earns from bored, negative reactions, each paid ${multiple(num(e, 'jabroni.groanVotes'))}, and from Salty cards others land on the character's posts.`, hurtsBy: () => 'Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
+    heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: (e) => `Earns heat: excited, negative reactions, ${multiple(num(e, 'heel.heatVotes'))}, and a Salty card that outdraws the post it lands on.`, hurtsBy: () => 'Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
+    jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: (e) => `Anti-comedy: posts built to bomb. Earns from bored, negative reactions, ${multiple(num(e, 'jabroni.groanVotes'))}, and from Salty cards others land on the character's posts.`, hurtsBy: () => 'Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
     technician: { color: '#1e8449', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'The respected regular. Earns from calm, positive reactions to the character\'s posts and cards, and more when an old post still draws them.', hurtsBy: () => 'Hurt by heat: excited, negative reactions.', marks: { label: 'Earns from the calm, hurt by heat', earns: ['calmPositive'], hurts: ['excitedNegative'] } },
     tweener: { color: '#d63ab8', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Splits the room. Earns when a post or card draws hype and heat in equal measure, and when the character\'s card sets someone else\'s post arguing. Also earns when its post sets others debating and it stays out, and the debate cancels that post\'s shrugs.', hurtsBy: () => 'Hurt by the shrug: calm or bored reactions.', marks: { label: 'Earns from a room split between hype and heat, hurt by the shrug', splits: ['excitedNegative', 'excitedPositive'], hurts: ['boredNegative', 'calmPositive'] } },
     lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: () => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to the character's cards.`, hurtsBy: (e, span) => `Hurt by early calls that go the other way, and by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${times(num(e, 'lurker.postsAllowed'))} in one settlement window (${spanWords(span)})`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
