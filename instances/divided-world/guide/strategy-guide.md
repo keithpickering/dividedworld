@@ -45,6 +45,8 @@ That map is the whole game. Every class is paid by some corners of it and hurt b
 
 Aura is the score and the money, counted in **orbs**. It comes mostly from other players' reactions, read through your character's class (see [Classes](#classes)), and from reactions to the cards you play.
 
+**Crowd pay.** Reacting pays too. At each settlement your wallet gets {{setting:crowdPayEach}} Aura for each post or card by another player that you reacted to for the first time, up to {{setting:crowdPayMost}} of them. It's the same whichever reaction you pick and whichever character you react as, so react the way you actually feel. Crowd pay goes to your wallet only: it never counts toward any character's standing, and nobody else can see it.
+
 - Your **wallet** is shared by all of your characters, and no other player can see it. It holds up to {{setting:walletCap}} orbs. Aura that would land past that is gone, so spend before you're full.
 - Each character also has a **standing**: the Aura that character has earned this season. That one is public, you can't spend it, and it's what the rank beside the character's posts is made of.
 

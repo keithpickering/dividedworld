@@ -204,7 +204,7 @@ export interface LogDoc {
 }
 
 /** The Acts an estimate's lines name beyond those held. */
-export const estimateActIds = (estimate: Estimate, held: ReadonlySet<Id>): Id[] => [...new Set(estimate.lines.flatMap((l) => (l.act && !held.has(l.act) ? [l.act] : [])))];
+export const estimateActIds = (estimate: Estimate, held: ReadonlySet<Id>): Id[] => [...new Set([...estimate.lines.flatMap((l) => (l.act ? [l.act] : [])), ...(estimate.crowd?.acts ?? [])].filter((id) => !held.has(id)))];
 
 /** My log and the settlement summary are one document, so a move between them loads nothing. */
 export const logKey = (): string => '/log';

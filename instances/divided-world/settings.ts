@@ -19,6 +19,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   /** A post's debate is followed for three days: long enough for a thread to catch fire over a weekend, short enough that a stale post is not a spark. */
   debateDays: 3,
   reactionCap: 3,
+  /** Minus World's ratio: giving a reaction paid a fifth of getting one, and a vote is 10. */
+  crowdPayEach: 2,
+  /** At most 0.20 orb a day, about a common card a week from reacting alone. */
+  crowdPayMost: 10,
   charactersPerPlayer: 6,
   /** Daily, at 08:17 UTC: the small hours across the Americas, when the board is quietest. */
   settlementCron: '17 8 * * *',

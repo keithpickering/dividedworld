@@ -161,6 +161,10 @@ export interface Settings {
   readonly debateDays: number;
   /** The most distinct reactions one player leaves on one Act, across all their characters. */
   readonly reactionCap: number;
+  /** What each Act a player reacts to pays their wallet at the settlement (crowd pay), in hundredths; 0 switches crowd pay off. */
+  readonly crowdPayEach: Hundredths;
+  /** The most Acts one player is paid crowd pay for in one settlement window, across all their characters. */
+  readonly crowdPayMost: number;
   /** The most characters one player runs. */
   readonly charactersPerPlayer: number;
   /** When The System settles, as a five-field cron expression in UTC. */
