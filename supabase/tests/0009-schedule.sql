@@ -181,7 +181,7 @@ begin
     raise exception 'a spun thread brings each character''s first post and the window''s own, no more';
   end if;
   if (select x ->> 'card' from jsonb_array_elements(input -> 'acts') x where x ->> 'id' = card::text) is distinct from 'splat' then raise exception 'a card Act carries its card'; end if;
-  -- `untouched` is the origin of a thread spun from it with a post in the window: a spark (0379), so the vote standing on it, the earlier reaction, is read as well.
+  -- `untouched` is the origin of a thread spun from it with a post in the window: a spark (0380), so the vote standing on it, the earlier reaction, is read as well.
   if (select count(*) from jsonb_array_elements(input -> 'reactions')) is distinct from 3 then
     raise exception 'the input should hold the window''s reaction, the earlier one on the same Act and the earlier one on the spark, only: %', input -> 'reactions';
   end if;

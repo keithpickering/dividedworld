@@ -45,7 +45,7 @@ begin
     when 'vote' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
     when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and setting_positive(v) and (v #>> '{}')::numeric <= 1, false)
       then 'a fraction above 0 and at most 1' end
-    -- How many days a post's debate is followed (0379): a whole number of days, at least 1 and at most 365 (as digestBoardDays and movedStubDays are), so the `::integer` and the interval the inputs build from it cannot overflow.
+    -- How many days a post's debate is followed (0380): a whole number of days, at least 1 and at most 365 (as digestBoardDays and movedStubDays are), so the `::integer` and the interval the inputs build from it cannot overflow.
     when 'debateDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
     when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
     when 'charactersPerPlayer' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
@@ -178,7 +178,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   win_reactions as (select * from reactions r where r.created_at >= window_start and r.created_at < window_end and r.act not in (select id from ended)
                     and not exists (select 1 from acts d where d.id = r.act and d.kind = 'donation')),
   reacted as (select distinct act from win_reactions),
-  -- ---- The debates the window reached (0379; docs/plans/2026-11-18-tweener-catalyst-design.md, section 1) ----
+  -- ---- The debates the window reached (0380; docs/plans/2026-11-18-tweener-catalyst-design.md, section 1) ----
   -- The earliest a spark may be made for its debate to be followed: `debateDays` before the window opens, as engine/rules/settle.ts reads it.
   cutoff as (select window_start - make_interval(days => (setting('debateDays') #>> '{}')::integer) as at),
   -- Walk up: from each window post or spin, through quote_refs (`act` to `quoted`, its primary key), to the posts it quotes and the posts those quote, none made before the cutoff, each earlier than the one that
@@ -263,7 +263,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     select a.target_act_id as id from win_acts a where a.kind in ('card', 'spring') and a.target_act_id is not null and coalesce(a.payload ->> 'reach', 'post') = 'post'
     union
     select (a.payload ->> 'by')::uuid from win_acts a where a.kind = 'spring' and a.payload ->> 'by' is not null),
-  -- Only what a reaction reached is paid for a scored Act (`paid`, below, still joins `reacted`): an earlier reaction on a scored Act is read for the lean and pays nothing. A spark's (0379) are read and its paid rows sent, so
+  -- Only what a reaction reached is paid for a scored Act (`paid`, below, still joins `reacted`): an earlier reaction on a scored Act is read for the lean and pays nothing. A spark's (0380) are read and its paid rows sent, so
   -- its standing votes are in the input in a window no reaction reached it; the vote math pays only a vote with a reaction in the window, so nothing is paid twice.
   earlier_reactions as (select r.* from (select act from reacted union select id from scored where id not in (select id from ended) union select id from sparks) x cross join lateral (select r.* from reactions r where r.act = x.act and r.created_at < window_start offset 0) r),
   -- Every skim play made before the window and still up in it (a play inside it is a window Act already), as earn_up carries Earn plays: live is not ended by an admin, not caught, and ending after the window's start;
@@ -358,11 +358,11 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'),
     -- The plays that name a class for this window (scored_as_plays), each with its character, its class and the play.
     'scoredAs', coalesce((select jsonb_agg(jsonb_build_object('character', s.character, 'class', s.class_key, 'play', s.play) order by s.character) from scored_as_plays(window_start, window_end) s), '[]'),
-    -- Each quote with both ends among the input's Acts: `act` quotes `quoted`. The engine reads a post's debate from them (0379).
+    -- Each quote with both ends among the input's Acts: `act` quotes `quoted`. The engine reads a post's debate from them (0380).
     'quotes', coalesce((
       select jsonb_agg(jsonb_build_object('act', r.act, 'quoted', r.quoted) order by r.act, r.quoted)
       from all_acts a cross join lateral (select r.act, r.quoted from quote_refs r where r.act = a.id offset 0) r join all_acts q on q.id = r.quoted), '[]'),
-    -- What earlier windows paid for every player's vote on each Act this window's reactions touch (section 9), and, since 0379, on each spark.
+    -- What earlier windows paid for every player's vote on each Act this window's reactions touch (section 9), and, since 0380, on each spark.
     'paid', coalesce((
       select jsonb_agg(jsonb_build_object('player', q.account, 'act', q.act, 'weight', q.weight, 'shares', q.shares) order by q.account, q.act)
       from (select p.* from paid_votes p join reacted r on r.act = p.act
@@ -442,7 +442,7 @@ begin
                    where exists (select 1 from reactions r where r.act = a.id and r.created_at >= window_start and r.created_at < window_end)),
   -- The Acts the caller reacted to in the window, through reactions_reactor.
   reacted_by_me as (select distinct r.act from reactions r where r.reactor_account = account and r.created_at >= window_start and r.created_at < window_end),
-  -- ---- The caller's debates (0379) ----
+  -- ---- The caller's debates (0380) ----
   cutoff as (select window_start - make_interval(days => (setting('debateDays') #>> '{}')::integer) as at),
   -- The caller's own posts made no earlier than the cutoff, through acts_character: the only Acts a walk starts from. A bystander's posts lead nothing about anyone else's debate.
   my_posts as (select a.id, a.created_at as at, a.character, a.kind from acts a join mine m on m.id = a.character
@@ -557,7 +557,7 @@ begin
   -- The Acts whose reactions are read.
   voted as (select id from win_acts union select act from mine_reacted union select act from reacted_by_me union select id from targets
             union select post from skim_up union select id from ride_casts union select id from spring_by
-            -- The caller's own sparks (0379): their posts, whose reactions the caller's log already shows. Their members are never voted, so no reaction on one is read.
+            -- The caller's own sparks (0380): their posts, whose reactions the caller's log already shows. Their members are never voted, so no reaction on one is read.
             union select id from sparks),
   touched as (
     select id from voted union select id from my_cards_there union select id from landed union select id from spins
@@ -654,7 +654,7 @@ begin
         || case when k.kind like 'x-%' then jsonb_build_object('quadrant', reaction_quadrant(k.act, k.kind)) else '{}'::jsonb end order by k.created_at, k.id)
       from keyed k), '[]'),
     'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'),
-    -- Each quote with both ends among the caller's sparks and their members, so a bystander's input holds none (0379).
+    -- Each quote with both ends among the caller's sparks and their members, so a bystander's input holds none (0380).
     'quotes', coalesce((
       select jsonb_agg(jsonb_build_object('act', r.act, 'quoted', r.quoted) order by r.act, r.quoted)
       from all_acts a cross join lateral (select r.act, r.quoted from quote_refs r where r.act = a.id offset 0) r join all_acts q on q.id = r.quoted
