@@ -43,13 +43,13 @@ describe('Blind Study', () => {
   });
 
   test('a reader who is neither the author nor the caster: the totals are hidden from you', () => {
-    expect(last(setup().show)).toMatchObject({ progress: null, state: 'Totals hidden from you', ends: `${endsWords(UP)} The totals show then.`, controls: [], yours: false, notes: {} });
+    expect(last(setup().show)).toMatchObject({ progress: null, state: 'Totals hidden from you', ends: `${endsWords(UP, NOW)} The totals show then.`, controls: [], yours: false, notes: {} });
   });
 
   test('the post\'s author and the caster see the totals', () => {
     for (const reader of [{ author: true, caster: false }, { author: false, caster: true }]) {
       const { show, unmount } = setup({ reader });
-      expect(last(show)).toMatchObject({ state: 'Totals shown to you', ends: `${endsWords(UP)} The totals show then.` });
+      expect(last(show)).toMatchObject({ state: 'Totals shown to you', ends: `${endsWords(UP, NOW)} The totals show then.` });
       unmount();
     }
   });

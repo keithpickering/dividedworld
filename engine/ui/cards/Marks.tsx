@@ -92,7 +92,7 @@ interface MarkProps {
 }
 
 const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf, where, postAt, then }: MarkProps) {
-  const { instance, ui } = useKayfa();
+  const { api, instance, ui } = useKayfa();
   const back = isBack(kind);
   /* A card back that sprang shows the card it was, in its place: no mark moves (the card mechanic's design, section 4). */
   const revealed = back ? plays.find((p) => p.revealed)?.revealed?.card : undefined;
@@ -101,7 +101,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const cardUi = ui.cards.find((c) => c.key === shownKind);
   const view = useResolvedView(store, post, kind, nameOf, postAt, then);
   const more = useOutdrawing(tallies, plays, postTotal, compare);
-  const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
+  const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', (k) => instance.cards.find((c) => c.key === k)?.name ?? k, api.now()).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
   const icon = art?.mark;
   const caught = plays.every((p) => p.caught || p.reversed || p.untaken);

@@ -271,7 +271,7 @@ describe('the default view', () => {
   });
   test('gives a play that ends on a timer an ends, "Ends Nov 7, 9:14 PM", in the reader\'s zone', () => {
     expect(process.env.TZ).toBe('America/Los_Angeles');
-    const view = defaultView(rules, { status: 'Pinned', describe: () => 'x' }, settings, '2026-11-08T05:14:00.000Z');
+    const view = defaultView(rules, { status: 'Pinned', describe: () => 'x' }, settings, '2026-11-08T05:14:00.000Z', [], Date.parse('2026-11-01T00:00:00.000Z'));
     expect(view.ends).toMatch(/^Ends Nov 7, 9:14\sPM$/u);
     expect(defaultView(rules, { status: 'Pinned', describe: () => 'x' }, settings).ends).toBeUndefined();
   });
@@ -714,11 +714,11 @@ describe('a play of a card that keeps, once its time is up', () => {
   });
 
   test('the Lens says how an ended keeping play ends, in the words of a live one\'s end', () => {
-    const live = defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS).ends!;
+    const live = defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS, [], Date.parse('2026-11-02T00:00:00.000Z')).ends!;
     expect(live).toMatch(/^Ends /u);
     expect(defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS, [], AFTER).ends).toBe(`${live.replace(/^Ends /u, 'Ended ')}. Posts written while it was up keep it.`);
     expect(defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS, [], Date.parse('2026-11-02T00:00:00.000Z')).ends, 'still up: the live words').toBe(live);
-    expect(defaultView({ name: 'Plain' }, undefined, undefined, ENDS, [], AFTER).ends, 'a card that does not keep says no such thing').toBe(live);
+    expect(defaultView({ name: 'Plain' }, undefined, undefined, ENDS, [], AFTER).ends, 'a card that does not keep says it ended, and no such thing').toBe(live.replace(/^Ends /u, 'Ended '));
   });
 });
 

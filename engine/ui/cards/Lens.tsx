@@ -232,7 +232,7 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
     const ofKind = here.plays.filter((p) => p.card === kind);
     if (isBack(kind) && ofKind.length > 0) {
-      const say = (p: CardPlay) => backWords(p, nameOf?.(p.caster) ?? 'someone', cardName);
+      const say = (p: CardPlay) => backWords(p, nameOf?.(p.caster) ?? 'someone', cardName, api.now());
       const yours = (p: CardPlay) => (here.faces[p.id] ? `Yours: ${cardName(here.faces[p.id]!)}, which nobody else can see.` : '');
       const first = say(ofKind[0]!);
       return { progress: null, state: first.state, ends: first.ends, yours: false, controls: [], notes: Object.fromEntries(ofKind.map((p) => [p.id, [say(p).note, yours(p)].filter((w) => w !== '').join(' ')])) };

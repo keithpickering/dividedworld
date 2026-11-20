@@ -1704,7 +1704,7 @@ describe('what it tells the Lens', () => {
     const s = setup();
     expect(last(s)).toMatchObject({
       state: 'Smoke over the words',
-      ends: `Point at the words, or hold Wave the smoke, to read. ${endsWords(iso(ENDS))}.`,
+      ends: `Point at the words, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), NOW)}.`,
       yours: true,
       notes: {},
     });

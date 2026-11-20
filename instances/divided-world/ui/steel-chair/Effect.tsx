@@ -243,7 +243,7 @@ export function SteelChairEffect(props: EffectProps) {
   /* What holds for the life of the effect on the page, not of one stretch of live plays (the chairs component below unmounts when the last
      play ends and mounts again when a new one lands): whether the card has been met. */
   const memory = useRef<Memory>({ met: false });
-  return live.length > 0 ? <Chairs {...props} live={live} memory={memory.current} /> : <Bare show={show}>{children}</Bare>;
+  return live.length > 0 ? <Chairs {...props} live={live} memory={memory.current} now={now} /> : <Bare show={show}>{children}</Bare>;
 }
 
 /** No live play: the words alone, and nothing to show. */
@@ -252,8 +252,8 @@ function Bare({ show, children }: { show: EffectProps['show']; children: EffectP
   return <>{children}</>;
 }
 
-function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory }) {
-  const { live, show, met, children, memory } = props;
+function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory; now: number }) {
+  const { live, show, met, children, memory, now } = props;
   const inMoment = props.moment !== null;
   const reduced = useMotionReduced();
   const sound = useSound();
@@ -657,7 +657,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   const view = useMemo<CardView>(() => {
     const at = soonest === null ? null : new Date(soonest).toISOString();
     const ends = at === null ? undefined
-      : n === 1 ? endsWords(at)
+      : n === 1 ? endsWords(at, now)
       : `The first chair is gone ${dayAndTime(at)}; each lasts ${spanWords(STEEL_CHAIR_LASTS)}.`;
     return {
       progress: null,
@@ -670,7 +670,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       ],
       notes: {},
     };
-  }, [n, soonest, replay, gameSound.on, gameSound.set]);
+  }, [n, soonest, now, replay, gameSound.on, gameSound.set]);
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 

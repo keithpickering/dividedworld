@@ -74,13 +74,13 @@ const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${nam
  * The end is the one the server stored when the card was set (`back.endsAt`), the same span for every Set, so it names no card either; a back
  * with none (a read from before 0156 carried no end) says only that its end is not shown, which is true where nothing else is known. `cardName` is asked only of a back that sprang.
  */
-export function backWords(back: CardPlay, setter: string, cardName: (key: string) => string): { readonly name: string; readonly state: string; readonly note: string; readonly ends: string } {
+export function backWords(back: CardPlay, setter: string, cardName: (key: string) => string, now: number): { readonly name: string; readonly state: string; readonly note: string; readonly ends: string } {
   if (back.revealed) {
     const card = cardName(back.revealed.card);
     return { name: `${card}, set face down by ${setter}`, state: `Sprang on ${localDate(back.revealed.at)}`, note: `${article(card).replace(/^a/u, 'A')} set face down by ${setter}.`, ends: 'It has sprung, and ended.' };
   }
   if (back.takenBack) return { name: `A card set face down by ${setter}`, state: `Taken back on ${localDate(back.takenBack.at)}`, note: `Set face down by ${setter} on ${localDate(back.playedAt)}, and taken back.`, ends: 'It was taken back, and ended.' };
-  const ends = back.endsAt ? `${endsWords(back.endsAt)}, unless it springs first.` : 'Its end is not shown here.';
+  const ends = back.endsAt ? `${endsWords(back.endsAt, now)}, unless it springs first.` : 'Its end is not shown here.';
   return { name: `A card set face down by ${setter}`, state: 'Face down on this post', note: `Set face down by ${setter} on ${localDate(back.playedAt)}.`, ends };
 }
 
@@ -95,7 +95,7 @@ const list = (words: readonly string[]): string => (words.length <= 2 ? words.jo
  */
 export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date, nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string; readonly report?: string } {
   if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime(ends)}` };
-  const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}), ...(report !== undefined ? { report } : {}) });
+  const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends, now.getTime()) } : {}), ...(report !== undefined ? { report } : {}) });
   if (effect.kind === 'price') return finish(`${list(effect.flavors.map(capital))} cards cost ${orbs(effect.add)} more here`);
   if (effect.kind === 'earn') {
     /* A flat earn pays a share of a vote for each vote it names, to any class: the heading is the short status, and the report says the size. */
@@ -112,11 +112,15 @@ export function gimmickWords(effect: GimmickEffect, ends: string | undefined, no
   return full.split(/\s+/u).length <= STATUS_MAX_WORDS ? finish(full) : finish('Turns away some cards', `${full}.`);
 }
 
-/** When a play beyond a post ends, as its Lens line says it: on its timer, in the reader's zone ("Ends Nov 7, 9:14 PM"). */
-export const endsWords = (ends: string): string => `Ends ${dayAndTime(ends)}`;
+/**
+ * When a play beyond a post ends, as its Lens line says it: on its timer, in the reader's zone. It is "Ends Nov 7, 9:14 PM" while the end is ahead
+ * of `now` (ms) and "Ended Nov 7, 9:14 PM" at it and after. `now` is required so that a caller cannot forget the tense: a line that says
+ * "Ends" of a time already gone is a lie the reader can see.
+ */
+export const endsWords = (ends: string, now: number): string => `${Date.parse(ends) > now ? 'Ends' : 'Ended'} ${dayAndTime(ends)}`;
 
 /** The way out of a card that keeps, once its time is up: the posts written while it was up keep what it did (`CardRules.keeps`), in the reader's zone. */
-export const keptEndedWords = (ends: string): string => `Ended ${dayAndTime(ends)}. Posts written while it was up keep it.`;
+export const keptEndedWords = (ends: string, now: number): string => `${endsWords(ends, now)}. Posts written while it was up keep it.`;
 
 /**
  * A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). The card is spent unless the spring says

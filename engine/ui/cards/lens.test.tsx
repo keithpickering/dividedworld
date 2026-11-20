@@ -1229,6 +1229,17 @@ describe('End this card', () => {
     expect(endButton()).toBeNull();
   });
 
+  test('says Ended, not Ends, of a Use on a post whose end has passed', async () => {
+    width(false);
+    const w = world();
+    w.fake.clock.advance(60_000);
+    const ended = new Date(w.fake.clock.now() - 3_600_000).toISOString();
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: ended });
+    open(w);
+    await openKind(2, 'Card 2');
+    expect(lens().querySelector('.kb-lens-ends')!.textContent).toBe(`Ended ${dayAndTime(ended)}`);
+  });
+
   test('is offered on a Use still ahead of its end, which the worn-off one beside it is not', async () => {
     width(false);
     const w = world();
@@ -2176,7 +2187,7 @@ describe('taking a back back', () => {
     open(w);
     await openBack(4);
     expect(takeButton()).not.toBeNull();
-    expect(lens().querySelector('.kb-lens-ends')!.textContent).toBe(`${endsWords(set!.endsAt!)}, unless it springs first.`);
+    expect(lens().querySelector('.kb-lens-ends')!.textContent).toBe(`${endsWords(set!.endsAt!, w.fake.clock.now())}, unless it springs first.`);
   });
 
   test('a back whose stored end has passed is gone and cannot be taken back, though the setting would still give it days', async () => {

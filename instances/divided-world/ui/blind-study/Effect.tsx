@@ -28,7 +28,7 @@ export function BlindStudyEffect({ plays, reader, show, met, moment, children }:
     show({
       progress: null,
       state: over ? 'Totals are showing' : sees ? 'Totals shown to you' : 'Totals hidden from you',
-      ...(!over && ends !== undefined ? { ends: `${endsWords(ends)} The totals show then.` } : {}),
+      ...(!over && ends !== undefined ? { ends: `${endsWords(ends, now)} The totals show then.` } : {}),
       yours: false,
       controls: [],
       notes: {},

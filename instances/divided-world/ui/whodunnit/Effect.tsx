@@ -44,7 +44,7 @@ export function WhodunnitEffect({ post, plays, reader, show, met, moment, nameOf
       : {
         progress: null,
         state: 'Author hidden from everyone',
-        ...(ends !== undefined ? { ends: `${endsWords(ends)} The author's name comes back then.` } : {}),
+        ...(ends !== undefined ? { ends: `${endsWords(ends, now)} The author's name comes back then.` } : {}),
         yours: false,
         controls: [],
         notes: {},

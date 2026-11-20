@@ -56,7 +56,7 @@ describe('Whodunnit? while it is up', () => {
   test('says the reader\'s view: the author is hidden from everyone, and when the name comes back', () => {
     const { show } = setup();
     const view = last(show);
-    expect(view).toMatchObject({ progress: null, state: 'Author hidden from everyone', ends: `${endsWords(UP)} The author's name comes back then.`, yours: false, notes: {} });
+    expect(view).toMatchObject({ progress: null, state: 'Author hidden from everyone', ends: `${endsWords(UP, NOW)} The author's name comes back then.`, yours: false, notes: {} });
     expect(view.report).toBeUndefined();
   });
 
