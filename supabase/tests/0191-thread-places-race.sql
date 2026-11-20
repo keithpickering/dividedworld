@@ -158,7 +158,7 @@ begin
     set local session_replication_role = replica;
     delete from post_search where thread in (select id from threads where title like 'Race thread %');
     delete from open_moves where move_act = '7ace0000-0189-4000-8000-0000000000d1';
-    -- a source of each version (0387), insert-only like the Acts it names, so its guard is off with theirs
+    -- a source of each version (0392), insert-only like the Acts it names, so its guard is off with theirs
     alter table quote_sources disable trigger quote_sources_no_update;
     delete from quote_sources where act in (select a.id from acts a where a.thread in (select id from threads where title like 'Race thread %'));
     alter table quote_sources enable always trigger quote_sources_no_update;

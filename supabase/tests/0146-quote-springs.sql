@@ -24,7 +24,7 @@ insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts
 create function pg_temp.meet(setter_account uuid, setter uuid, in_thread uuid, quoter uuid, says text, quoted text,
                              phrase text default null, passage text default null, named uuid[] default null, but boolean default null, old boolean default false) returns jsonb language plpgsql as $$
 declare
-  -- The trapped post holds the words quoted from it, so the quote is an authentic one (a doctored quote is a counterfeit and springs nothing: supabase/migrations/0387_forged_quotes.sql).
+  -- The trapped post holds the words quoted from it, so the quote is an authentic one (a doctored quote is a counterfeit and springs nothing: supabase/migrations/0392_forged_quotes.sql).
   p uuid := tests.post(setter, in_thread, 'The trapped post: the punchline, and zebra stripes. ' || quoted);
   the_set uuid;
   quoting uuid;

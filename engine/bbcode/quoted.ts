@@ -1,7 +1,7 @@
 /**
  * The text of a quote and the source of a version, for the forged-quote verdict (docs/plans/2026-11-20-forged-quotes-design.md, sections 1 and 2). A real quote is forged when
  * its words do not stand in the post it names; this file reads the two sides of that question from a parsed body, and the database's `bbcode_walk` (supabase/migrations/
- * 0387_forged_quotes.sql, its `held` and `source` columns) reads them from the same text in one pass, held to the same fixtures (plain.fixtures.ts).
+ * 0392_forged_quotes.sql, its `held` and `source` columns) reads them from the same text in one pass, held to the same fixtures (plain.fixtures.ts).
  *
  * What a reader sees. `quoteWords` is the walk of a body's words, in the order the renderer draws them: text, `noparse`, a bare address, a link's words, code's text, list items, a
  * spoiler's title and its words, and the children of every quote, real or counterfeit. A block edge (a quote, code, a list item, a spoiler, an alignment, a marquee, a rule) and an

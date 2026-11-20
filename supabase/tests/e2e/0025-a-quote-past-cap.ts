@@ -71,7 +71,7 @@ test('a hidden post\'s words are in no response a non-author reads, at any depth
     quoting.push({ shape, act, play });
   }
   const ours = new Set(quoting.map((q) => q.act));
-  // The hide comes after the quotes are written: a quote of a version an admin has already hidden is a counterfeit, its words the quoter's own (supabase/migrations/0387_forged_quotes.sql), so the quoted words
+  // The hide comes after the quotes are written: a quote of a version an admin has already hidden is a counterfeit, its words the quoter's own (supabase/migrations/0392_forged_quotes.sql), so the quoted words
   // are the post's, hidden, only when the quote was written before.
   await asAdmin.rpc('decide', { account: null, version_act: post, outcome: 'hideUntilEdited', until: null, note: 'Mind the person.' });
 

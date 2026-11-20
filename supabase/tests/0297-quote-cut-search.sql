@@ -65,7 +65,7 @@ begin
   perform tests.unbecome();
   perform tests.act(ch_qu, 'edit', th, jsonb_build_object('body', 'Huenew zqxhue ' || pg_temp.deep(20, hid, 'Hidden words zqxmarker.')), hue, base + interval '12 minutes');
   perform pg_temp.old_row(hue, 'huebase zqxmarker');
-  -- the hide comes last: the quotes above are written while the post is not hidden, since a quote of a version already hidden is a counterfeit (0387)
+  -- the hide comes last: the quotes above are written while the post is not hidden, since a quote of a version already hidden is a counterfeit (0392)
   perform tests.become(adm);
   perform decide(null, hid, 'hide', null, 'cqs');
   perform tests.unbecome();

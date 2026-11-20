@@ -1,4 +1,4 @@
--- The verdict's cost (supabase/migrations/0387_forged_quotes.sql, section 3; docs/plans/2026-11-20-forged-quotes-design.md, section 12). The budgets and the sizes are written once, here, at the top of the block:
+-- The verdict's cost (supabase/migrations/0392_forged_quotes.sql, section 3; docs/plans/2026-11-20-forged-quotes-design.md, section 12). The budgets and the sizes are written once, here, at the top of the block:
 --   hostile: a 20,000-character body quotes one post that has 20 distinct 20,000-character versions, in each of four shapes that make a string search slow (a run of one letter, `ab...`, `aaaaaaaab...`,
 --     `abcdefgh...`), the quote a near-miss of 10,000 characters (the shape's own words, then a letter the post never has), so every version is searched and none holds: quote_forged under SHAPE_BUDGET each.
 --   busy: 300 quotes of 300 posts with 3 versions each, doctored (all three versions searched for each) and authentic of the oldest version (the last one tried): under BUSY_BUDGET each.

@@ -1,4 +1,4 @@
--- quote_norm (0387_forged_quotes.sql) is engine/bbcode/quoted.ts quoteNorm, and linear. The run cap was a backreference regex first, which is quadratic in Postgres (the `[b=1]` x 1600 shape took 1.3 s, 144,000 characters
+-- quote_norm (0392_forged_quotes.sql) is engine/bbcode/quoted.ts quoteNorm, and linear. The run cap was a backreference regex first, which is quadratic in Postgres (the `[b=1]` x 1600 shape took 1.3 s, 144,000 characters
 -- over two minutes); each long shape here would show it. The bound is generous (a slow machine passes) and far under what the quadratic one took at these sizes.
 do $test$
 declare
