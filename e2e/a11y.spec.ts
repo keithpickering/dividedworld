@@ -106,6 +106,8 @@ async function openStory(page: Page, id: string) {
   await page.goto(`/?fixture=boards&story=${id}`);
   await expect(page.locator('#root > *').first()).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
+  /* A story's frame enters as a page's does (the HUD's Aura fades in from 0.4), and contrast read mid-entrance is of text the player sees only for a moment: it is read once the story has settled. */
+  await settled(page, { loops: true });
 }
 
 test('every board story the route serves is one the axe case reads', async ({ page }) => {
