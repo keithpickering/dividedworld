@@ -1,4 +1,4 @@
--- A ride that pays on every quadrant (supabase/migrations/0387_ride_every.sql; docs/plans/2026-11-20-whoopee-cushion-plan.md, Task 2): a set card with a match (`up to common`) and a ride outcome whose `every` is true. It takes no
+-- A ride that pays on every quadrant (supabase/migrations/0392_ride_every.sql; docs/plans/2026-11-20-whoopee-cushion-plan.md, Task 2): a set card with a match (`up to common`) and a ride outcome whose `every` is true. It takes no
 -- configuration and names no card to catch; the first card it matches cast on its post springs it, the cast lands as usual carrying `rode` and its layer and no `caught`, and the spring is `did: rode` with no `quadrant`
 -- (the pay is read in every quadrant, the settlement's). A card it does not match passes over it and the back stays live. The spring's constraint takes a rode spring with no quadrant and still refuses a caught one that names
 -- one; the seed's check takes the card and refuses an `every` that is not true. The cards are this file's own (rw...).

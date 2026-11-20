@@ -123,7 +123,7 @@ declare
 begin
   sset := tests.act(a, 'set', t, '{}', p);
   why := pg_temp.coded(format($q$select tests.act(%L, 'spring', %L, jsonb_build_object('card', 'rdchess', 'trigger', 'cast', 'did', 'rode', 'set', %L, 'by', %L), %L)$q$, a, t, sset::text, gen_random_uuid()::text, p));
-  -- Since 0387 a rode spring may name none: a ride that pays on every quadrant (supabase/tests/0387-ride-every.sql holds that); it is the quadrant that is checked, never its absence.
+  -- Since 0392 a rode spring may name none: a ride that pays on every quadrant (supabase/tests/0392-ride-every.sql holds that); it is the quadrant that is checked, never its absence.
   if why is not null then raise exception 'a rode spring with no quadrant was refused: %', why; end if;
   why := pg_temp.coded(format($q$select tests.act(%L, 'spring', %L, jsonb_build_object('card', 'rdchess', 'trigger', 'cast', 'did', 'rode', 'set', %L, 'by', %L, 'quadrant', 'wide'), %L)$q$, a, t, sset::text, gen_random_uuid()::text, p));
   if why is null or why not like '23514%acts_spring_payload%' then raise exception 'a rode spring with a quadrant that is none was let in: %', why; end if;
