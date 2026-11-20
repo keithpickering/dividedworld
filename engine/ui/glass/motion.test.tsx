@@ -387,3 +387,33 @@ describe('the machine\'s presets', () => {
     expect((beat(smooth).animate as { transition: unknown }).transition).toMatchObject({ duration: 0.42, ease: [0.22, 1, 0.36, 1] });
   });
 });
+
+/*
+ * The kept layer (docs/plans/2026-11-20-kept-layers-design.md): a whole surface keeps its compositor layer for its life, so Chromium does not rebuild
+ * what it holds when its entrance ends (the blank frames on Android). The presets that enter a surface say so; the crossing, the dim, a stagger's
+ * entrant and a card's motion do not.
+ */
+describe('the kept layer', () => {
+  const KEPT = { 'data-kb-layer': 'kept' };
+
+  it('marks an overlay, a modal, a screen and a swap under both feels', () => {
+    for (const f of [smooth, snappy]) {
+      for (const p of [overlay(f), overlay(f, { x: 4, y: 8 }), modal(f), screen(f), swap(f)]) expect(p).toMatchObject(KEPT);
+    }
+  });
+
+  it('marks neither the crossing, the dim, a stagger\'s entrant nor a card\'s motion', () => {
+    for (const f of [smooth, snappy]) {
+      const delays = stagger(f, 5);
+      const unmarked = [
+        crossing(f, { tab: rect, within }), crossingPinned(f, { tab: rect, within }), backdrop(f), staggerItem(f, delays, 2),
+        lift(f), toHand(f, rect, rect, 0), deal(f, 1, delays), fanDeal(f, 1, delays, { x: 0, y: 0 }), turn(f), beat(f),
+      ];
+      for (const p of unmarked) expect(p).not.toHaveProperty('data-kb-layer');
+    }
+  });
+
+  it('marks nothing under Off', () => {
+    for (const p of [overlay(null), modal(null), screen(null), swap(null)]) expect(p).toEqual({});
+  });
+});

@@ -25,7 +25,7 @@ export function Layers({ children }: { readonly children?: ReactNode }) {
 }
 
 type Values = Record<string, unknown>;
-/** A preset's target without the origin, which the box's placement decides (see `useLayer`). */
+/** A preset's target without the origin, which the box's placement decides (see `useLayer`). The preset's other props, its kept layer's mark among them (motion.ts), are spread as they are. */
 const bare = (t: unknown): unknown => {
   if (!t || typeof t !== 'object') return t;
   const { transformOrigin: _origin, ...rest } = t as Values;

@@ -26,6 +26,14 @@
  * owner of the `AnimatePresence` knows which (`useRest`, Held.tsx: set when the resting definition completes, cleared when a new child starts to
  * enter) and passes it as `custom` with the scroll offset: `{ scrollY, rested }`. A filter needs none of this: Motion takes `none` -> `blur(8px)`
  * from `blur(0px)`.
+ *
+ * A whole surface keeps its layer (docs/plans/2026-11-20-kept-layers-design.md). While an entrance runs, the element it moves has a compositor
+ * layer of its own; when it ends and Motion cancels it, Chromium destroys that layer and regroups what it held (the smoke's layers, the words
+ * over them) into new ones, and Chrome on Android draws a frame or two before their tiles are drawn: the Lens showed its ground with nothing on
+ * it. So `overlay`, `modal`, `screen` and `swap` mark the surface they move (`data-kb-layer="kept"`), and base.css keeps its layer for its life
+ * with `will-change: transform`, the one property that stopped the regrouping. A stagger's entrant is not marked (a log would keep a layer per
+ * row), nor a card's motion, nor the dim. Nor the crossing: its world holds the page's fixed smoke and the HUD, which a kept transform would
+ * take as their containing block, and its blur rebuilds the smoke's layer when it lands whatever is kept (#835).
  */
 import { useMemo, useSyncExternalStore } from 'react';
 import type { TargetAndTransition, Transition, Variants } from 'motion/react';
@@ -44,7 +52,12 @@ export interface MotionProps {
   readonly transition?: Transition;
   /** A shared layout (`lift`): the element is moved between places by the layout system, on `transition`. */
   readonly layout?: boolean;
+  /** A whole surface that keeps its compositor layer for its life (`KEPT`, see the header): base.css gives it `will-change: transform`. */
+  readonly 'data-kb-layer'?: 'kept';
 }
+
+/** The mark of a surface that keeps its layer (see the header): spread with the motion of `overlay`, `modal`, `screen` and `swap`. */
+const KEPT = { 'data-kb-layer': 'kept' } as const;
 
 /** The feel in force: the resolved feel's tokens (with the instance's overrides), or `null` under Off. */
 export type ActiveFeel = (FeelTokens & { readonly name: Feel }) | null;
@@ -203,7 +216,7 @@ export function screen(feel: ActiveFeel): MotionProps {
         center: { x: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.screen), transitionEnd: { filter: 'none' } },
         exit: (d: Dir) => ({ x: -d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transition: eased(feel, feel.screen) }),
       };
-  return { variants, initial: 'enter', animate: 'center', exit: 'exit' };
+  return { variants, initial: 'enter', animate: 'center', exit: 'exit', ...KEPT };
 }
 
 type Dir = 1 | -1;
@@ -217,12 +230,14 @@ export function overlay(feel: ActiveFeel, anchor?: { readonly x: number; readonl
       initial: { ...masked(MASK_HIDDEN), y: feel.distance / 2, transformOrigin },
       animate: { ...masked(MASK_SHOWN), y: 0, transformOrigin, transition: landing(feel, feel.enter), transitionEnd: MASK_REST },
       exit: { ...masked([MASK_SHOWN, MASK_HIDDEN]), opacity: 0, transformOrigin, transition: eased(feel) },
+      ...KEPT,
     };
   }
   return {
     initial: { opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transformOrigin },
     animate: { opacity: 1, scale: 1, filter: BLUR(0), transformOrigin, transition: landing(feel, feel.enter), transitionEnd: { filter: 'none' } },
     exit: { opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transformOrigin, transition: eased(feel) },
+    ...KEPT,
   };
 }
 
@@ -234,12 +249,14 @@ export function modal(feel: ActiveFeel): MotionProps {
       initial: { ...masked(MASK_HIDDEN), y: feel.distance },
       animate: { ...masked(MASK_SHOWN), y: 0, transition: landing(feel, feel.enter), transitionEnd: MASK_REST },
       exit: { ...masked([MASK_SHOWN, MASK_HIDDEN]), opacity: 0, y: feel.distance / 2, transition: eased(feel) },
+      ...KEPT,
     };
   }
   return {
     initial: { opacity: 0, y: feel.distance, scale: feel.scale, filter: BLUR(feel.blur) },
     animate: { opacity: 1, y: 0, scale: 1, filter: BLUR(0), transition: landing(feel, feel.enter), transitionEnd: { filter: 'none' } },
     exit: { opacity: 0, y: feel.distance / 2, scale: feel.scale, filter: BLUR(feel.blur), transition: eased(feel) },
+    ...KEPT,
   };
 }
 
@@ -289,7 +306,7 @@ export function swap(feel: ActiveFeel): MotionProps {
         center: { y: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.enter), transitionEnd: { filter: 'none' } },
         exit: (d: Dir) => ({ y: -d * feel.distance / 2, opacity: 0, filter: BLUR(feel.blur), transition: eased(feel) }),
       };
-  return { variants, initial: 'enter', animate: 'center', exit: 'exit' };
+  return { variants, initial: 'enter', animate: 'center', exit: 'exit', ...KEPT };
 }
 
 /*
