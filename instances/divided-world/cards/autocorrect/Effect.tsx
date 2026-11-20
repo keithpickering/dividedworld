@@ -663,6 +663,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   /* Once the post has gone nothing is set and nothing retried, as Whoops! does; a change still waiting on its debounce is sent at once. */
   const gone = useRef(false);
+  const sentStuck = useRef(new Set<string>());
   const flush = useCallback(async (play: string, attempt = 0): Promise<void> => {
     if (inFlight.current.has(play)) { dirty.current.add(play); return; }
     dirty.current.delete(play);
@@ -683,9 +684,11 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     for (const key of Object.keys(drops)) if (!Object.hasOwn(stuck, key)) delete drops[key];
     const peeled = [...places].sort((a, b) => a - b);
     /* Nothing peeled and nothing stuck: a play never touched saves nothing, but one saved half-peeled and unrolled whole is the play as it landed, and says so. */
-    if (!peeled.length && !Object.keys(stuck).length && !Object.keys(held.stuck ?? {}).length) return;
+    if (!peeled.length && !Object.keys(stuck).length && !Object.keys(held.stuck ?? {}).length && !sentStuck.current.has(play)) return;
     const kept = peeled.length ? savedAfterPeel(peeled, peeled[peeled.length - 1]!, now.current.total[play] ?? 0) : { peeled };
     const state = Object.keys(stuck).length ? { ...kept, stuck, ...(Object.keys(drops).length ? { drops } : {}) } : kept;
+    /* What this session has sent for the play, so a whole result after a half peel still goes out while that save's state has not come back. */
+    if (Object.keys(stuck).length) sentStuck.current.add(play); else sentStuck.current.delete(play);
     inFlight.current.add(play);
     let answer: Answer<unknown>;
     try {
@@ -843,7 +846,7 @@ export function AutocorrectEffect({ post, plays, states, reader, moment, save, s
     if (down) {
       onMeet();
       /* A refusal says why; a covered strip's own words, if the hands have them, come after and stand. */
-      if (!hs.keyDown(strip.key, mode) && mode === 'unroll') say(NOTHING_BACK);
+      if (!hs.keyDown(strip.key, mode) && mode === 'unroll' && !hs.rollWaiting(strip.key)) say(NOTHING_BACK);
     } else hs.keyUp();
     after(hs);
   }, [handsNow, onMeet, after, say]);

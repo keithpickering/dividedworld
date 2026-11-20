@@ -392,19 +392,31 @@ export class Hands {
     return true;
   }
 
-  /** Takes the first waiting roll in reading order, if it has any tape to give back. */
-  private keyUnroll(mine: readonly Piece[]): boolean {
+  /** The first waiting roll in reading order that has tape to give back, if any. */
+  private waitingRoll(mine: readonly Piece[]): { p: Piece; k: number; side: Side } | null {
     for (const p of mine) {
       for (let k = 0; k < p.stuck.length; k++) {
         for (const side of ['a', 'b'] as const) {
           const kind = side === 'a' ? startKind(p.stuck[k]!) : endKind(p.stuck[k]!);
           if (kind !== 1 || this.rollOf(p, k, side) < EPS) continue;
-          this.begin(p, k, side, true);
-          return true;
+          return { p, k, side };
         }
       }
     }
-    return false;
+    return null;
+  }
+
+  /** Whether a strip has a roll waiting that an unroll could take, whatever the hands are doing now. */
+  rollWaiting(strip: string): boolean {
+    return this.waitingRoll([...this.pieces.values()].filter((p) => p.spec.strip === strip).sort((a, b) => a.spec.index - b.spec.index)) !== null;
+  }
+
+  /** Takes the first waiting roll in reading order, if it has any tape to give back. */
+  private keyUnroll(mine: readonly Piece[]): boolean {
+    const r = this.waitingRoll(mine);
+    if (!r) return false;
+    this.begin(r.p, r.k, r.side, true);
+    return true;
   }
 
   keyUp(): void {

@@ -329,6 +329,37 @@ describe('Autocorrect: the anchors', () => {
       expect(m.save).not.toHaveBeenCalled();
     });
 
+    test('an unroll key while a pointer hand holds the strip does not say there is nothing to press down', async () => {
+      vi.useFakeTimers();
+      await waiting();
+      const w = wide(pieces()[0]!);
+      fireEvent.pointerDown(pieces()[0]!, { clientX: w / 2, clientY: 5, pointerId: 1, pointerType: 'mouse', button: 0, isPrimary: true });
+      fireEvent.keyDown(buttons()[0]!, { key: 'Backspace' });
+      await pass(100);
+      expect(document.querySelector('[data-kb-report]')!.textContent?.trim()).not.toBe('Nothing to press back down.');
+    });
+
+    test('a whole result after a half peel whose save has not come back still saves { peeled: [] }', async () => {
+      vi.useFakeTimers();
+      const answers: Array<(a: Awaited<ReturnType<EffectProps['save']>>) => void> = [];
+      const save = vi.fn(() => new Promise<Awaited<ReturnType<EffectProps['save']>>>((r) => { answers.push(r); }));
+      mount({ author: true, body: 'Mario', save: save as unknown as EffectProps['save'] });
+      const w = wide(pieces()[0]!);
+      await hold(buttons()[0]!, PICK + (w / 2 / PACE) * 1000);
+      letGo(buttons()[0]!);
+      await pass(500);
+      expect(save).toHaveBeenCalledTimes(1);
+      /* The roll goes all the way back down while the first save is still out. */
+      fireEvent.keyDown(buttons()[0]!, { key: 'Backspace' });
+      await pass(5000);
+      fireEvent.keyUp(buttons()[0]!, { key: 'Backspace' });
+      await pass(500);
+      await act(async () => { answers[0]!({ ok: true } as never); });
+      await pass(500);
+      expect(save).toHaveBeenCalledTimes(2);
+      expect(save).toHaveBeenLastCalledWith('k1', { peeled: [] });
+    });
+
     test('a reader\'s Backspace does nothing, and the key is not prevented', async () => {
       vi.useFakeTimers();
       const m = mount({ body: 'Mario' });
