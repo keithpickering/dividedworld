@@ -190,6 +190,14 @@ begin
   if why is null or why not like '42501 %' then raise exception 'a visitor read my_crowd_paid: %', why; end if;
   perform tests.unbecome();
 
+  -- Append-only, as the ledger's rows are: no edit, no delete, no truncate.
+  why := pg_temp.refusal('update crowd_paid set act = act');
+  if why is null or why not like '% a ledger row is never edited or removed%' then raise exception 'crowd_paid was updated: %', why; end if;
+  why := pg_temp.refusal('delete from crowd_paid');
+  if why is null or why not like '% a ledger row is never edited or removed%' then raise exception 'crowd_paid was deleted from: %', why; end if;
+  why := pg_temp.refusal('truncate crowd_paid');
+  if why is null or why not like '% a ledger row is never edited or removed%' then raise exception 'crowd_paid was truncated: %', why; end if;
+
   -- ---- A retried window answers `already settled` before any of it, whatever it carries; an old call with no crowd on a new window pays none ----
   before_it := pg_temp.kept();
   said := apply_settlement(w1, w2, '[]', '{}', '[]', '[]', '[{"player": "nobody", "acts": []}]');
@@ -202,6 +210,9 @@ begin
      or exists (select 1 from wallet_events where settlement = (said ->> 'settlement')::bigint) then
     raise exception 'a window called as before the change pays no crowd pay: %', said;
   end if;
+  -- An Act is paid to a player once, as a fact of the table, not of one settlement: the same (account, act) under another settlement is refused too.
+  why := pg_temp.refusal(format('insert into crowd_paid (settlement, account, act) values (%L, %L, %L)', (said ->> 'settlement')::bigint, cat, pb1));
+  if why is null or why not like '23505 %crowd_paid_account%' then raise exception 'an Act paid to a player twice, under another settlement: %', why; end if;
 
   -- An Act already paid to the player in an earlier settlement is refused, though its first reaction reads inside this window (a state the settlement itself never writes, held against all the same).
   insert into crowd_paid (settlement, account, act) values (s1, eve, pb4);

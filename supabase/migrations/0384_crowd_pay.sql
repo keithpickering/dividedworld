@@ -2,7 +2,7 @@
 --
 --   1. wallet_events_kind_check   (0153's) also admits 'crowd', a wallet move of its own kind: no character's, so no ledger row and no standing.
 --   2. crowd_paid                 each Act a player was paid crowd pay for in a settlement. Private: RLS on, no grant to anon or authenticated, and append-only as the rows it sits beside are. It is read through
---                                 my_crowd_paid, the player's own, as my_ledger_shares (0034) is: the settlement and the Act, never the account. Its index (account, act) serves the check that an Act is paid to a player once
+--                                 my_crowd_paid, the player's own, as my_ledger_shares (0034) is: the settlement and the Act, never the account. Its unique index (account, act) makes an Act a player is paid once a fact of the table, and serves the check that an Act is paid to a player once
 --                                 (apply_settlement below) and the log's read of a player's own rows; the primary key (settlement, account, act) serves a settlement's. reactions needs none: its unique (act, reactor_account, kind)
 --                                 is the one probe for a player's reactions to an Act, whose first one is the earliest of those.
 --   3. apply_settlement           (0151's, whole) gains a last parameter `crowd jsonb default '[]'`. A new parameter is a new overload, so the old signature is dropped and the new one created, its grants stated again
@@ -18,7 +18,7 @@ create table crowd_paid (
   act uuid not null references acts (id),
   primary key (settlement, account, act)
 );
-create index crowd_paid_account on crowd_paid (account, act);
+create unique index crowd_paid_account on crowd_paid (account, act);
 create trigger crowd_paid_no_update before update or delete on crowd_paid for each row execute function ledger_append_only();
 create trigger crowd_paid_no_truncate before truncate on crowd_paid for each statement execute function ledger_append_only();
 alter table crowd_paid enable always trigger crowd_paid_no_update;
