@@ -74,8 +74,9 @@ export function NewCharacter() {
       const answer = await api.createCharacter(name, cls, timing, loudness, pronouns);
       if (!answer.ok) { setRefusal(answer.error); return; }
       await refresh();
-      /* My characters opens on the new one, carried in history.state, never in the address. */
-      navigate('/characters', { state: { character: answer.value.id }, source });
+      /* My characters opens on the new one, carried in history.state, never in the address. Its roster is read afresh: one read ahead
+         (a rest on Cancel, which links there) was read before the character was made and would show the roster without it. */
+      navigate('/characters', { state: { character: answer.value.id }, source, fresh: true });
     } catch {
       setRefusal('The character could not be made. Check your connection and try again.');
     } finally {

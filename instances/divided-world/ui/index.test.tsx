@@ -637,6 +637,10 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('"Stole the thunder" names what it counted and when: votes, this window (#111)', () => {
     for (const reason of ['face.stoleThunder', 'heel.stoleThunder']) expect(instanceUi.reasonWords(reason, instance.settings.economy)).toContain('more votes than the post this window');
   });
+  test('the Face\'s stolen thunder says when it is not charged: a booed post, or a card that answered a Salty play', () => {
+    expect(instanceUi.reasonWords('face.stoleThunder', instance.settings.economy)).toBe('Stole the thunder: a card the character played on another\'s post drew more votes than the post this window. Not charged where the post\'s reactions are mostly negative, or where the card answered a Salty play');
+    expect(instanceUi.classLooks.face!.hurtsBy(instance.settings.economy, instance.settings.settlementLength)).toBe('Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.');
+  });
   test('every pip style has images', () => {
     for (const p of instance.pipStyles) expect(instanceUi.pips[p.key], p.key).toBeDefined();
   });
@@ -734,9 +738,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       { act: 'p1', actKind: 'post' as const, quadrant, at: 10 * DAY, actAt: 0, kind: 'reaction', votes },
       { act: 'k1', actKind: 'card' as const, quadrant, at: 10 * DAY, actAt: 9 * DAY, kind: 'reaction', votes },
     ]));
-    /* Sweet, Salty and Pepperoni cards that outdraw a post of another player's, each with what it drew after it. */
+    /* Sweet, Salty and Pepperoni cards that outdraw a post of another player's that the room cheered, each with what it drew after it. */
     const played = (alignment: 'sweet' | 'salty' | 'pepperoni', act: string) => ({
-      act, card: 'whoops', alignment, readsAs: alignment, at: 5, target: 'p9', onOthers: true, votes: 3, targetVotes: 1,
+      act, card: 'whoops', alignment, readsAs: alignment, at: 5, target: 'p9', onOthers: true, votes: 3, targetVotes: 1, targetLean: 1,
       targetAfter: { ...none, excitedPositive: 2 }, drawnAfter: { at: 6, now: [hype, heat] },
     });
     const i: ClassInput = {
@@ -826,14 +830,14 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
   const purchase = (price: number, balanceAfter: number): Log['wallet'][number] => ({ settlement: null, kind: 'purchase', change: -price, overflow: 0, floored: 0, balanceAfter, ref: null, at });
 
   test('five pulled rows and their purchase read as one line, in pull order, with the price and the wallet', () => {
-    const rows = lines({ cards: pulled, packs: [{ pack: 'pk1', kind: 'booster', price: 300, repriced: false, contents, at }] }, [purchase(300, 1200)]);
+    const rows = lines({ cards: pulled, packs: [{ pack: 'pk1', kind: 'booster', price: 300, repriced: false, contents, at, source: 'bought' as const, openedAt: at }] }, [purchase(300, 1200)]);
     expect(rows.map((r) => r.kind)).toEqual(['pack']);
     expect(rows[0]!.what).toBe('You bought a Booster');
     expect(said(rows[0]!)).toBe('Whoops!, Glitter Bomb, Feelin\' Fab, Stick Around and Card Collector. From the Vending Machine, for 3.00.');
     expect([rows[0]!.aura, rows[0]!.wallet]).toEqual([-300, 1200]);
   });
   test('a purchase at a price the Boss moved says so, for a pack and for a card', () => {
-    const pack = lines({ cards: pulled, packs: [{ pack: 'pk1', kind: 'booster', price: 450, repriced: true, contents, at }] }, [purchase(450, 1050)]);
+    const pack = lines({ cards: pulled, packs: [{ pack: 'pk1', kind: 'booster', price: 450, repriced: true, contents, at, source: 'bought' as const, openedAt: at }] }, [purchase(450, 1050)]);
     expect(said(pack[0]!)).toBe('Whoops!, Glitter Bomb, Feelin\' Fab, Stick Around and Card Collector. From the Vending Machine, for 4.50. The Boss had repriced it.');
     const card = lines({ cards: [{ card: 'whoops', kind: 'bought', act: null, price: 150, repriced: true, at }] }, [purchase(150, 100)]);
     expect(said(card[0]!)).toBe('From the Vending Machine, for 1.50. The Boss had repriced it.');
@@ -844,7 +848,7 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
     const second = ['glitter-bomb', 'glitter-bomb', 'glitter-bomb', 'glitter-bomb', 'glitter-bomb'];
     const rows = lines({
       cards: [...pulled, ...second.map((card) => ({ card, kind: 'pulled' as const, act: null, pack: 'pk2', price: 0, at }))],
-      packs: [{ pack: 'pk1', kind: 'booster', price: 300, repriced: false, contents, at }, { pack: 'pk2', kind: 'booster', price: 300, repriced: false, contents: second, at }],
+      packs: [{ pack: 'pk1', kind: 'booster', price: 300, repriced: false, contents, at, source: 'bought' as const, openedAt: at }, { pack: 'pk2', kind: 'booster', price: 300, repriced: false, contents: second, at, source: 'bought' as const, openedAt: at }],
     }, [purchase(300, 900), purchase(300, 600)]);
     expect(rows.map((r) => r.kind)).toEqual(['pack', 'pack']);
     expect(new Set(rows.map((r) => r.wallet))).toEqual(new Set([900, 600]));

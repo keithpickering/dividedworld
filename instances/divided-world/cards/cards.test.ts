@@ -22,6 +22,7 @@ import { defaults as settings } from '../settings.ts';
 import { reactions } from '../reactions.ts';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
+import type { PullPack } from '../../../engine/rules/packs.ts';
 import { by, jimmy, on, post, surf } from './test-kit.ts';
 
 /** What the machine sells a card for: its slot's price. */
@@ -397,8 +398,8 @@ test('Autocorrect\'s phrase is its set phrase', () => {
 });
 
 test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared evenly within a rarity', async () => {
-  const { packOdds } = await import('../../../engine/rules/packs.ts');
-  const booster = instance.packs.find((p) => p.key === 'booster')!;
+  const { packOdds, isFixed } = await import('../../../engine/rules/packs.ts');
+  const booster = instance.packs.find((p): p is PullPack => p.key === 'booster' && !isFixed(p))!;
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));

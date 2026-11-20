@@ -3,11 +3,14 @@
  * `Boards/00 Random Event` (engine/ui/events/RandomEvent.board.stories.tsx), the instance's cap in its own line for Pipewrench. The title, Wear it and OK are held from the dialog's corner.
  *
  * Departures by decision:
- *  - The dialog is the glass's overlay, standing in the middle of the window (250px lower than the board's, which hangs it 150px from the top over a forum), 51px taller for the bar's Close
- *    and the glass's spacing, and the title, the buttons and the line are the glass's type (type: false, position only; Wear it is a link to the wardrobe, and OK carries no Esc key cap).
+ *  - The dialog is the glass's overlay, standing in the middle of the window (298px lower than the board's, which hangs it 150px from the top over a forum), and the title, the buttons
+ *    and the line are the glass's type (type: false, position only; Wear it is a link to the wardrobe, and OK carries no Esc key cap).
+ *  - The dialog is 48px shorter than the board's, and its buttons 53px higher in it (the owner, 2026-11-18: polish and distill it, in the manner of the pet sites' "Something has
+ *    happened!"): the title stands over the picture and the line, where the board sets the picture beside them all, the picture is bare (no 150px box), and the board's note is the
+ *    rarity's words under the line and a lock's "Only you see this" in the buttons' row. It names no mask, and OK is its one control for closing, so the bar has no Close.
  *  - The forum under the dialog is the board's illustration of a page; the story's page is the glass's shell, so it is not held. The two smaller states the board insets (a line alone,
  *    a found card) are drawn as the stories `Glass/Random Event` (RandomEvent.stories.tsx) in the dialog's own frame, not as the board's mini cards, so they are not held.
- *  - The picture is the instance's art at 120 by 80 in the 150px box.
+ *  - The picture is the instance's art at 120 by 80.
  */
 import type { BoardManifest } from '../../board-match.ts';
 const manifest: BoardManifest = {
@@ -15,11 +18,10 @@ const manifest: BoardManifest = {
   size: { width: 1440, height: 1080 },
   build: { story: 'boards-00-random-event--gear-found' },
   landmarks: [
-    { id: 'dialog', role: 'dialog', name: 'SOMETHING HAPPENED!', buildName: 'Something happened!', type: false, buildShift: { y: 250, height: 51 } },
-    /* The title stands on Close's middle line (the owner, 2026-11-17: the bar's parts share one middle line, glass/shell.css), 10.4px lower than it did. */
-    { id: 'title', role: 'heading', name: 'SOMETHING HAPPENED!', buildName: 'Something happened!', type: false, box: 'position', origin: 'dialog', buildShift: { x: -163, y: 13 + 10.4 } },
-    { id: 'wear', role: 'button', name: 'WEAR IT', buildName: 'Wear it', buildRole: 'link', type: false, box: 'position', origin: 'dialog', buildShift: { x: -162, y: 46 } },
-    { id: 'ok', role: 'button', name: 'ESC OK', buildName: 'OK', type: false, box: 'position', origin: 'dialog', buildShift: { x: -177, y: 46 } },
+    { id: 'dialog', role: 'dialog', name: 'SOMETHING HAPPENED!', buildName: 'Something happened!', type: false, buildShift: { y: 298, height: -48 } },
+    { id: 'title', role: 'heading', name: 'SOMETHING HAPPENED!', buildName: 'Something happened!', type: false, box: 'position', origin: 'dialog', buildShift: { x: -163, y: 13 } },
+    { id: 'wear', role: 'button', name: 'WEAR IT', buildName: 'Wear it', buildRole: 'link', type: false, box: 'position', origin: 'dialog', buildShift: { x: -162, y: -53 } },
+    { id: 'ok', role: 'button', name: 'ESC OK', buildName: 'OK', type: false, box: 'position', origin: 'dialog', buildShift: { x: -177, y: -53 } },
   ],
 };
 export default manifest;

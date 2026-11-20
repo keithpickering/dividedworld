@@ -16,4 +16,6 @@ export const packs: readonly PackRules[] = deepFreeze<PackRules[]>([
       { weights: { uncommon: 74, rare: 24, legendary: 2 } },
     ],
   },
+  // The Starter Pack (docs/plans/2026-11-18-starter-pack-design.md): a fixed pack, the same six commons for everyone, two of each flavor.
+  { key: 'starter', contents: ['feelin-fab', 'rope-break', 'steel-chair', 'whoops', 'this', 'autocorrect'] },
 ]);

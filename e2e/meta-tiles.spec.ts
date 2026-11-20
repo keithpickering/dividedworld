@@ -182,6 +182,8 @@ test.describe('a reaction tile that is a button', () => {
   const MOMENT = '/?fixture=boards&moment=03-react';
 
   test('the first free tile on another\'s post answers a hover, and pressing it raises its count by one and keeps focus', async ({ page }) => {
+    /* A press is held for the grace before it is sent (REACTION_GRACE_MS); the clock is installed before the page loads so it can be run forward past it. */
+    await page.clock.install();
     await page.goto(MOMENT);
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' });
     const tile = page.locator('#post-41 button.kb-reaction:not([aria-disabled="true"]):not(.kb-react-button)').first();
@@ -198,9 +200,11 @@ test.describe('a reaction tile that is a button', () => {
     /* The tile is free until pressed, so it is held by its kind from here. */
     const key = (await tile.getAttribute('data-kb-reaction'))!;
     const same = page.locator(`#post-41 [data-kb-reaction="${key}"]`);
-    const count = async () => Number((await same.locator('.kb-meta-tile-in').textContent())!.trim().split(/\s+/).pop());
+    /* The tile's count, read from its own span: under reduced motion a pending tile also carries its seconds left as text. */
+    const count = async () => Number((await same.locator('.kb-reaction-count').textContent())!.trim());
     const n = await count();
     await same.click();
+    await page.clock.runFor(5000);
     await expect.poll(count).toBe(n + 1);
     await expect(same).toBeFocused();
   });

@@ -1388,6 +1388,23 @@ export interface Opened {
   readonly balance: number;
 }
 
+/**
+ * A sealed pack opened by the player (`open_pack`'s answer): its id, its kind and the cards it gave in the pack's order. Its own type rather than
+ * an `Opened` with an optional balance, because opening moves no Aura, and a balance that is sometimes there would make every purchase screen check it.
+ */
+export interface Unsealed {
+  readonly pack: Id;
+  readonly kind: string;
+  readonly contents: readonly string[];
+}
+
+/** A pack the account holds and has not opened (`my_packs` where `opened_at` is null): its kind and when it was given. Its cards are not readable until it is open. */
+export interface SealedPack {
+  readonly pack: Id;
+  readonly kind: string;
+  readonly at: string;
+}
+
 /* ------------------------------------------------------------------ the log ---- */
 
 /**
@@ -1454,6 +1471,9 @@ export interface CardEvent {
   readonly act: Id | null;
   /** The pack a pulled card came from; absent on any other row. */
   readonly pack?: Id;
+  /** For a pulled card: its pack's kind and where the pack came from, read with the card, since the pack's own row is windowed by the day it was given and can be on another page than the opening. */
+  readonly packKind?: string;
+  readonly packSource?: 'bought' | 'welcome';
   /** For a purchase: true when the Boss had moved the price it was bought at. Absent otherwise, and on any other row. */
   readonly repriced?: boolean;
   readonly price: number;
@@ -1471,7 +1491,10 @@ export interface CardEvent {
   readonly whoExcept?: boolean;
 }
 
-/** A pack the player bought (`my_packs`): its kind, its price, whether the Boss had moved that price, and the cards it gave in pull order. */
+/**
+ * A pack the player bought or was given (`my_packs`): its kind, its price, whether the Boss had moved that price, and the cards it gave in pull order.
+ * `source` says where it came from (a `welcome` pack costs nothing); `openedAt` is when it was opened, null while it is sealed, and `contents` is empty then.
+ */
 export interface PackEvent {
   readonly pack: Id;
   /** The pack kind's key, which `InstanceUi.packs` names. */
@@ -1479,7 +1502,10 @@ export interface PackEvent {
   readonly price: number;
   readonly repriced: boolean;
   readonly contents: readonly string[];
+  /** When it was bought or given. */
   readonly at: string;
+  readonly source: 'bought' | 'welcome';
+  readonly openedAt: string | null;
 }
 
 /**
@@ -2909,6 +2935,13 @@ export interface KayfaApi {
    * the hand. Private.
    */
   buyPack(slot: Slot): Promise<Answer<Opened>>;
+  /** The packs the account was given and has not opened, newest first (`my_packs`): a sealed pack's cards are readable by no one. Private. */
+  sealedPacks(): Promise<readonly SealedPack[]>;
+  /**
+   * Open one of the account's own sealed packs (`open_pack`): its cards, in the pack's order, are in the hand. Moves no Aura, so no balance comes back. A pack
+   * that does not exist and one that is another account's are refused in the same words, and so is one already open. Private.
+   */
+  openPack(pack: Id): Promise<Answer<Unsealed>>;
   /**
    * Play a card the player holds on a post, as one of their characters: the card's own settings (`config`), the caster's message (plain
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.
@@ -2955,8 +2988,8 @@ export interface KayfaApi {
   wash(play: Id, character: Id, input: unknown): Promise<Answer<SurfaceWritten>>;
   /** A surface play's live draws and washes, oldest first (`surface_acts`); null where the play has no surface. */
   surfaceActs(play: Id): Promise<SurfaceActs | null>;
-  /** Leave a reaction: an instance's kind, or a post-local one (key `x-…`) its post offers. The tally is null where the post's totals are hidden (a blind post), for everyone alike. */
-  react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
+  /** Leave a reaction: an instance's kind, or a post-local one (key `x-…`) its post offers. The tally is null where the post's totals are hidden (a blind post), for everyone alike. `keepalive` asks the request to outlive the page (a tab closing). */
+  react(act: Id, character: Id, kind: string, opts?: { readonly keepalive?: boolean }): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
   unmask(character: Id, thread: Id, message: string): Promise<Answer<Act>>;

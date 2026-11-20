@@ -79,3 +79,23 @@ export const OwnPost: Story = {
     }) satisfies World,
   },
 };
+
+/** A reaction just pressed: its chip counts one more, in the pending style, with the ring draining over the grace before it is sent. */
+export const Pending: Story = {
+  parameters: { world: hot },
+  play: async ({ canvasElement }) => { await userEvent.click((await within(canvasElement).findAllByRole('button', { name: /\. React as/u }))[0]!); },
+};
+
+/** The same under reduced motion: no ring moves, and the tile shows the seconds left as text. */
+export const PendingReducedMotion: Story = {
+  name: 'Pending, reduced motion',
+  parameters: { world: hot },
+  decorators: [(Story) => {
+    useEffect(() => {
+      document.documentElement.setAttribute('data-kb-motion', 'reduce');
+      return () => document.documentElement.removeAttribute('data-kb-motion');
+    }, []);
+    return <Story />;
+  }],
+  play: async ({ canvasElement }) => { await userEvent.click((await within(canvasElement).findAllByRole('button', { name: /\. React as/u }))[0]!); },
+};

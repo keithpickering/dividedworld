@@ -563,6 +563,22 @@ describe('the router loads before it moves', () => {
     expect(load).toHaveBeenCalledTimes(1);
     expect(await screen.findByText('thread a: P1')).toBeInTheDocument();
   });
+  test('a fresh move reads its page again: an answer read ahead before an action, or one still out, is not what it shows', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => prefetch('/t/a'));
+    await answer(calls[0], 'before');
+    act(() => nav('/t/a', { fresh: true }));
+    expect(load).toHaveBeenCalledTimes(2);
+    await answer(calls[1], 'after');
+    expect(screen.getByText('thread a: after')).toBeInTheDocument();
+    act(() => prefetch('/t/b'));
+    act(() => nav('/t/b', { fresh: true }));
+    expect(load).toHaveBeenCalledTimes(4);
+    expect(calls[2]!.signal.aborted).toBe(true);
+    await answer(calls[3], 'B2');
+    expect(screen.getByText('thread b: B2')).toBeInTheDocument();
+  });
   test('a click while a prefetch is still out joins it', async () => {
     const { load, calls } = manualLoader();
     mount(load);

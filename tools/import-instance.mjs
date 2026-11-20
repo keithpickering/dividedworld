@@ -113,7 +113,12 @@ async function load(db, dir, manifest) {
     await write(`do $$ declare n bigint := (select count(*) from import_rows); begin
       if n <> ${t.rows} then raise exception '%: the export says % row(s), and its file holds %', ${literal(t.name)}, ${t.rows}, n; end if;
     end $$;\n`);
-    await write(`insert into ${t.name} (${columns}) overriding system value select ${t.columns.map(([c]) => `r.${c}`).join(', ')} from import_rows, jsonb_populate_record(null::${t.name}, import_rows.j) r;\n`);
+    // jsonb_populate_record reads a JSON null in a jsonb column as a SQL null. In a column that is NOT NULL that can only have been a JSON null (a settings row whose value is null), so it is
+    // put back; in a nullable column the two are the same in the export and stay a SQL null.
+    const value = ([c, type]) => type === 'jsonb'
+      ? `case when r.${c} is null and import_rows.j -> ${literal(c.replace(/^"(.*)"$/, '$1'))} = 'null'::jsonb and (select a.attnotnull from pg_attribute a where a.attrelid = ${literal(t.name)}::regclass and quote_ident(a.attname) = ${literal(c)}) then 'null'::jsonb else r.${c} end`
+      : `r.${c}`;
+    await write(`insert into ${t.name} (${columns}) overriding system value select ${t.columns.map(value).join(', ')} from import_rows, jsonb_populate_record(null::${t.name}, import_rows.j) r;\n`);
   }
   await write(foreignKeys(manifest.tables.map((t) => t.name)));
   // The kind of a reaction and of a tally has no foreign key (0359: a post-local kind is not in reaction_kinds), so the sweep above cannot see it, and the trigger that holds it (reaction_kind_known) does not run on a

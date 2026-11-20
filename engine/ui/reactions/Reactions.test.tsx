@@ -14,8 +14,8 @@ import { POPOVER_ROOM, POPOVER_WIDTH } from './Picker.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { usePlayer } from '../player.tsx';
 import { createTallies } from '../thread/tallies.ts';
-import { createMine } from './mine.ts';
-import { Reactions, readable } from './Reactions.tsx';
+import { createMine, REACTION_GRACE_MS } from './mine.ts';
+import { CANT_TAKE_BACK, Reactions, readable } from './Reactions.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { StagedCtx } from '../staged.ts';
 
@@ -26,9 +26,11 @@ vi.mock('../player.tsx', async (original) => {
   return { ...m, usePlayer: () => ({ ...m.usePlayer(), reactionLanded: landed }) };
 });
 
-beforeEach(() => { landed.mockClear(); });
+/* A press holds its reaction for REACTION_GRACE_MS before it is sent (reaction-grace design): every test runs on a fake clock, which still follows real time so the screen settles, and a test that expects the send advances it by `afterGrace`. */
+beforeEach(() => { landed.mockClear(); vi.useFakeTimers({ shouldAdvanceTime: true }); });
 /* The HUD's chosen character is kept in the browser (player.tsx): a test that swaps it must not leave the choice for the next. */
-afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); localStorage.clear(); });
+const afterGrace = () => act(async () => { await vi.advanceTimersByTimeAsync(REACTION_GRACE_MS); });
 
 /** A phone's window, narrower than the popover's room, where the picker is the sheet (jsdom's own window is 1024px wide). */
 function onAPhone() {
@@ -59,6 +61,9 @@ function show(w: ReturnType<typeof world>, act: Id, author: Id | null) {
 }
 
 /* Named as the React board names it (glass Task 2.1; it was "React as" the HUD's character, which is now its description). */
+/* The row's own polite status (the glass tooltip beside it has one of its own), and the picker's count status. */
+const rowStatus = () => document.querySelector<HTMLElement>('[data-kb-row-status]')!;
+const leftStatus = (p: ReturnType<typeof within>) => p.getAllByRole('status').find((x: HTMLElement) => x.classList.contains('kb-picker-left'))!;
 const picker = () => screen.getByRole('dialog', { name: /^React to / });
 const open = async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'React' }));
@@ -104,7 +109,7 @@ describe('the chips', () => {
       const w = world();
       const v = show(w, w.theirs, w.spritey);
       act(() => { v.tallies.merge(w.theirs, { fire: 2, tea: 1 }); v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
-      const own = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+      const own = await screen.findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
       expect(own).toHaveAttribute('aria-disabled', 'true');
       expect(own).toHaveAttribute('data-kb-own', '');
       expect(tile('Tea, 1. React as Mrs. Hooligan')).not.toHaveAttribute('aria-disabled');
@@ -112,7 +117,7 @@ describe('the chips', () => {
       const capped = tile('Tea, 1. You have left all 3 of your reactions on this post');
       expect(capped).toHaveAttribute('aria-disabled', 'true');
       expect(capped).not.toHaveAttribute('data-kb-own');
-      expect(tile('Fire, 2, including yours')).toHaveAttribute('aria-disabled', 'true');
+      expect(tile('Fire, 2, including yours, can\'t be taken back')).toHaveAttribute('aria-disabled', 'true');
     });
 
     test('pressing a free tile reacts as the HUD character, raises its count, marks it yours, keeps focus and says so in the row', async () => {
@@ -124,15 +129,16 @@ describe('the chips', () => {
       act(() => { v.tallies.merge(w.theirs, { fire: 1 }); });
       const react = vi.spyOn(w.fake, 'react');
       await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
-      const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+      await afterGrace();
+      const done = await screen.findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
       expect(react).toHaveBeenCalledTimes(1);
       expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, 'fire');
       expect(v.mine.get(w.theirs)).toEqual([{ act: w.theirs, kind: 'fire', character: w.hooligan }]);
       expect(done).toHaveAttribute('data-kb-own', '');
       expect(done).toHaveAttribute('aria-disabled', 'true');
       expect(done).toHaveFocus();
-      expect(screen.getByRole('status')).toHaveTextContent('Reacted with Fire as Mrs. Hooligan');
-      expect(screen.getByRole('status')).toHaveClass('kb-visually-hidden');
+      expect(rowStatus()).toHaveTextContent('Reacted with Fire as Mrs. Hooligan');
+      expect(rowStatus()).toHaveClass('kb-visually-hidden');
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(landed).toHaveBeenCalledTimes(1);
     });
@@ -144,9 +150,10 @@ describe('the chips', () => {
       renderIn(w.fake, <><Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={createMine()} /><Swap /></>);
       act(() => { tallies.merge(w.theirs, { fire: 2 }); });
       await userEvent.click(await screen.findByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' }));
-      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Reacted with Fire'));
+      await afterGrace();
+      await waitFor(() => expect(rowStatus()).toHaveTextContent('Reacted with Fire'));
       await userEvent.click(screen.getByRole('button', { name: 'Swap mask' }));
-      await waitFor(() => expect(screen.getByRole('status')).toBeEmptyDOMElement());
+      await waitFor(() => expect(rowStatus()).toBeEmptyDOMElement());
     });
 
     test('pressing a disabled tile sends nothing', async () => {
@@ -154,27 +161,26 @@ describe('the chips', () => {
       const v = show(w, w.theirs, w.spritey);
       act(() => { v.tallies.merge(w.theirs, { fire: 2 }); v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
       const react = vi.spyOn(w.fake, 'react');
-      await userEvent.click(await screen.findByRole('button', { name: 'Fire, 2, including yours' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' }));
       await new Promise((r) => setTimeout(r, 30));
       expect(react).not.toHaveBeenCalled();
       expect(screen.queryByRole('dialog')).toBeNull();
     });
 
-    test('a refusal opens the picker with the refusal in its alert, and its Close returns focus to React', async () => {
+    test('a refusal at the send is the row\'s alert under it, and opens no picker', async () => {
       const w = world();
       const v = show(w, w.theirs, w.spritey);
       act(() => { v.tallies.merge(w.theirs, { fire: 2 }); });
       w.fake.react = async () => ({ ok: false as const, error: 'you have left 3 reactions here, the most there are' });
       await userEvent.click(await screen.findByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' }));
+      await afterGrace();
       const alert = await screen.findByRole('alert');
       expect(alert).toHaveTextContent('you have left 3 reactions here, the most there are');
-      expect(picker()).toContainElement(alert);
-      await userEvent.click(within(picker()).getByRole('button', { name: 'Close' }));
+      expect(v.container.querySelector('.kb-reactions')).toContainElement(alert);
       expect(screen.queryByRole('dialog')).toBeNull();
-      await waitFor(() => expect(screen.getByRole('button', { name: 'React' })).toHaveFocus());
     });
 
-    test('a refusal that arrives after the HUD character changed opens no picker and says nothing', async () => {
+    test('a refusal that arrives after the HUD character changed is still the row\'s alert, and opens no picker', async () => {
       const w = world();
       const tallies = createTallies();
       const Swap = () => { const p = usePlayer(); return <button type="button" onClick={() => p.setHudCharacter(w.pipe)}>Swap mask</button>; };
@@ -185,10 +191,13 @@ describe('the chips', () => {
       w.fake.react = async () => { await gate; return { ok: false as const, error: 'too late to matter' }; };
       await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
       await userEvent.click(screen.getByRole('button', { name: 'Swap mask' }));
+      await afterGrace();
       release();
       await new Promise((r) => setTimeout(r, 50));
+      /* The pressed reaction is still the first mask's and is still refused; the words are plain, and nothing opens or stamps. */
+      expect(await screen.findByRole('alert')).toHaveTextContent('too late to matter');
       expect(screen.queryByRole('dialog')).toBeNull();
-      expect(screen.queryByRole('alert')).toBeNull();
+      expect(document.querySelector('[data-kb-landed]')).toBeNull();
     });
 
     test('a refusal clears the sentence of the reaction before it', async () => {
@@ -196,14 +205,16 @@ describe('the chips', () => {
       const v = show(w, w.theirs, w.spritey);
       act(() => { v.tallies.merge(w.theirs, { fire: 1, tea: 1 }); });
       await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
-      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Reacted with Fire'));
+      await afterGrace();
+      await waitFor(() => expect(rowStatus()).toHaveTextContent('Reacted with Fire'));
       w.fake.react = async () => ({ ok: false as const, error: 'no more for you' });
       await userEvent.click(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
+      await afterGrace();
       await screen.findByRole('alert');
-      expect(screen.getAllByRole('status').some((x) => /Reacted with/u.test(x.textContent ?? ''))).toBe(false);
+      expect(rowStatus().textContent).not.toMatch(/Reacted with/u);
     });
 
-    test('a second press while one is in flight sends once, and the row is busy meanwhile', async () => {
+    test('a second kind pressed while the first is in flight is held, not dropped: it is sent after it, and the row is busy meanwhile', async () => {
       const w = world();
       const v = show(w, w.theirs, w.spritey);
       const fan = w.fake.seed.account('fan');
@@ -217,10 +228,14 @@ describe('the chips', () => {
       const fire = await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' });
       await userEvent.click(fire);
       await userEvent.click(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
+      expect(react).not.toHaveBeenCalled();
+      await afterGrace();
       expect(react).toHaveBeenCalledTimes(1);
       expect(screen.getByRole('list', { name: 'Reactions' }).closest('.kb-reactions')).toHaveAttribute('aria-busy', 'true');
       release();
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Fire, 2, including yours' })).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' })).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Tea, 1, including yours, can\'t be taken back' })).toBeInTheDocument());
+      expect(react).toHaveBeenCalledTimes(2);
       expect(screen.getByRole('list', { name: 'Reactions' }).closest('.kb-reactions')).not.toHaveAttribute('aria-busy');
     });
 
@@ -284,10 +299,10 @@ describe('the chips', () => {
     const v = show(w, w.theirs, w.spritey);
     await screen.findByRole('button', { name: 'React' });
     act(() => { v.tallies.merge(w.theirs, { fire: 2, tea: 1 }); v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
-    expect(screen.getByRole('button', { name: 'Fire, 2, including yours' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' })).toBeInTheDocument();
     expect(screen.queryByText(/Tomato/u)).toBeNull();
-    const own = screen.getByRole('button', { name: 'Fire, 2, including yours' });
+    const own = screen.getByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
     expect(own).toHaveAttribute('data-kb-own', '');
     expect(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' })).not.toHaveAttribute('data-kb-own');
   });
@@ -324,10 +339,11 @@ describe('the stamp', () => {
     return { w, v };
   };
 
-  test('a pressed tile lands at once, in its quadrant\'s class color, with its seal, its wave and eight shards', async () => {
+  test('a pressed tile lands when it is sent, in its quadrant\'s class color, with its seal, its wave and eight shards', async () => {
     fanned('fire');
     await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
-    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+    await afterGrace();
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
     expect(done).toHaveAttribute('data-kb-landed', 'now');
     expect(done.style.getPropertyValue('--kb-reaction-hue')).toBe('var(--kb-glass-class-face-large)');
     const stamp = done.querySelector('.kb-reaction-stamp')!;
@@ -341,7 +357,8 @@ describe('the stamp', () => {
   test('a kind whose quadrant has no class takes no color of its own (the stylesheet gives it the gold)', async () => {
     fanned('tea');
     await userEvent.click(await screen.findByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
-    const done = await screen.findByRole('button', { name: 'Tea, 2, including yours' });
+    await afterGrace();
+    const done = await screen.findByRole('button', { name: 'Tea, 2, including yours, can\'t be taken back' });
     expect(done).toHaveAttribute('data-kb-landed', 'now');
     expect(done.style.getPropertyValue('--kb-reaction-hue')).toBe('');
   });
@@ -357,18 +374,22 @@ describe('the stamp', () => {
     expect(document.querySelector('.kb-reaction-stamp')).toBeNull();
   });
 
-  test('a kind chosen in the picker lands on the row after the picker has gone', async () => {
+  test('a kind chosen in the picker leaves the picker at the press, and lands on the row at the send', async () => {
     fanned('fire');
     const p = await open();
     await userEvent.click(p.getByRole('button', { name: /^Fire/u }));
-    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
-    expect(done).toHaveAttribute('data-kb-landed', 'after');
+    /* The picker leaves at the press, five seconds before the send, so the stamp has no exit to wait for. */
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await afterGrace();
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
+    expect(done).toHaveAttribute('data-kb-landed', 'now');
   });
 
   test('the stamp leaves the tile once it has played', async () => {
     fanned('fire');
     await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
-    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+    await afterGrace();
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
     await waitFor(() => expect(done).not.toHaveAttribute('data-kb-landed'), { timeout: 2500 });
     expect(done.querySelector('.kb-reaction-stamp')).toBeNull();
   });
@@ -377,12 +398,13 @@ describe('the stamp', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     fanned('fire');
     await userEvent.click(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
-    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+    await afterGrace();
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
     expect(done).toHaveAttribute('data-kb-own', '');
     expect(done.querySelector('.kb-reaction-stamp')).toBeNull();
   });
 
-  test('a press waiting on its answer is marked sending, and the mark goes with the answer', async () => {
+  test('a send waiting on its answer is marked sending (not before it), and the mark goes with the answer', async () => {
     const { w } = fanned('fire');
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
@@ -390,9 +412,12 @@ describe('the stamp', () => {
     w.fake.react = async (...args) => { await gate; return real(...args); };
     const fire = await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' });
     await userEvent.click(fire);
+    /* Held for the grace, then in flight: the mark is the send's, not the grace's. */
+    expect(fire).not.toHaveAttribute('data-kb-sending');
+    await afterGrace();
     expect(fire).toHaveAttribute('data-kb-sending', '');
     release();
-    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours' });
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
     expect(done).not.toHaveAttribute('data-kb-sending');
   });
 });
@@ -445,7 +470,7 @@ describe('the picker', () => {
     act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
     const p = await open();
     expect(p.getByText('2 of 3 left')).toBeInTheDocument();
-    expect(p.getByRole('button', { name: 'Fire, Hype, your reaction' })).toBeDisabled();
+    expect(p.getByRole('button', { name: 'Fire, Hype, your reaction' })).toHaveAttribute('aria-disabled', 'true');
     expect(p.getByRole('button', { name: 'Tea, Calm' })).toBeEnabled();
   });
 
@@ -545,13 +570,13 @@ describe('the picker', () => {
       expect(await press('ArrowLeft')).toBe('b4');
     });
 
-    test('Home and End go to the first and the last, and a kind already left is stepped over', async () => {
+    test('Home and End go to the first and the last, and a kind already left is reached like any other', async () => {
       await openBig(['c2']);
       await waitFor(() => expect(on()).toBe('e1'));
       expect(await press('End')).toBe('c4');
       expect(await press('Home')).toBe('e1');
       expect(await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowDown')).toBe('c1');
-      expect(await press('ArrowRight')).toBe('c3');
+      expect(await press('ArrowRight')).toBe('c2');
     });
 
     /* On the phone's sheet there is room for two across, so a quadrant's kinds are two rows of two (the grid before the glass). */
@@ -584,7 +609,7 @@ describe('the picker', () => {
         expect(await press('ArrowLeft')).toBe('b4');
       });
 
-      test('Home and End go to the first and the last, and a kind already left is stepped over', async () => {
+      test('Home and End go to the first and the last, and a kind already left is reached like any other', async () => {
         onAPhone();
         await openBig(['c2']);
         await waitFor(() => expect(on()).toBe('e1'));
@@ -592,7 +617,7 @@ describe('the picker', () => {
         expect(await press('Home')).toBe('e1');
         await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowDown');
         expect(on()).toBe('p4');
-        expect(await press('ArrowDown')).toBe('c4');
+        expect(await press('ArrowDown')).toBe('c2');
       });
     });
   });
@@ -616,7 +641,10 @@ describe('reacting', () => {
     const react = vi.spyOn(w.fake, 'react');
     const p = await open();
     await userEvent.click(p.getByRole('button', { name: 'Fire, Hype' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Fire, 1, including yours' })).toBeInTheDocument());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(react).not.toHaveBeenCalled();
+    await afterGrace();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Fire, 1, including yours, can\'t be taken back' })).toBeInTheDocument());
     expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, 'fire');
     expect(v.mine.get(w.theirs)).toEqual([{ act: w.theirs, kind: 'fire', character: w.hooligan }]);
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -624,15 +652,17 @@ describe('reacting', () => {
     expect(landed).toHaveBeenCalledTimes(1);
   });
 
-  test('shows a refusal in the server\'s words beside the picker, and keeps the picker open', async () => {
+  test('shows a refusal in the server\'s words under the row once the picker\'s choice is sent: the picker went at the choice', async () => {
     const w = world();
     show(w, w.theirs, w.spritey);
     w.fake.react = async () => ({ ok: false as const, error: 'you have left 3 reactions here, the most there are' });
     const p = await open();
     await userEvent.click(p.getByRole('button', { name: 'Tea, Calm' }));
+    await afterGrace();
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('you have left 3 reactions here, the most there are');
-    expect(picker()).toContainElement(alert);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(alert).toHaveClass('kb-reactions-refusal');
     expect(landed).not.toHaveBeenCalled();
   });
 
@@ -642,6 +672,7 @@ describe('reacting', () => {
     w.fake.react = async () => { throw new Error('offline'); };
     const p = await open();
     await userEvent.click(p.getByRole('button', { name: 'Tea, Calm' }));
+    await afterGrace();
     expect(await screen.findByRole('alert')).toHaveTextContent('The reaction could not be sent. Try again.');
   });
 });
@@ -653,7 +684,7 @@ describe('in a thread', () => {
     w.fake.seed.react(w.me, w.pipe, w.theirs, 'tea');
     w.fake.seed.react(w.other, w.spritey, w.mine, 'fire');
     renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}` });
-    expect(await screen.findByRole('button', { name: 'Tea, 1, including yours' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Tea, 1, including yours, can\'t be taken back' })).toBeInTheDocument();
     const own = screen.getByRole('article', { name: /^Post 2 /u });
     expect(within(own).getByText('Fire, 1')).toBeInTheDocument();
     expect(within(own).queryByRole('button', { name: 'React' })).toBeNull();
@@ -692,10 +723,10 @@ describe('from the Task 6 quality review', () => {
     const w = world();
     const v = show(w, w.theirs, w.spritey);
     const p = await open();
-    expect(p.getByRole('status')).toHaveTextContent('3 of 3 left');
+    expect(leftStatus(p)).toHaveTextContent('3 of 3 left');
     expect(picker()).toHaveAccessibleDescription('3 of 3 left, reacting as Mrs. Hooligan');
     act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
-    expect(p.getByRole('status')).toHaveTextContent('2 of 3 left');
+    expect(leftStatus(p)).toHaveTextContent('2 of 3 left');
   });
 
   test('after a refusal reads the player\'s own reactions again, so what another tab left is shown as left', async () => {
@@ -703,12 +734,15 @@ describe('from the Task 6 quality review', () => {
     show(w, w.theirs, w.spritey);
     w.fake.seed.react(w.me, w.pipe, w.theirs, 'tea');
     w.fake.react = async () => ({ ok: false as const, error: 'you have already left that reaction here' });
-    const p = await open();
-    expect(p.getByText('3 of 3 left')).toBeInTheDocument();
-    await userEvent.click(p.getByRole('button', { name: 'Tea, Calm' }));
+    const p0 = await open();
+    expect(p0.getByText('3 of 3 left')).toBeInTheDocument();
+    await userEvent.click(p0.getByRole('button', { name: 'Tea, Calm' }));
+    await afterGrace();
     expect(await screen.findByRole('alert')).toHaveTextContent('you have already left that reaction here');
+    /* The picker went at the choice; opened again it shows what the re-read found. */
+    const p = await open();
     await waitFor(() => expect(p.getByText('2 of 3 left')).toBeInTheDocument());
-    expect(p.getByRole('button', { name: /^Tea, Calm/u })).toBeDisabled();
+    expect(p.getByRole('button', { name: /^Tea, Calm/u })).toHaveAttribute('aria-disabled', 'true');
   });
 
   /* In the glass the page behind is inert, so the picker is closed by Esc, not by a click on the page; focus is back on React and the reaction landing moves it nowhere. */
@@ -722,25 +756,31 @@ describe('from the Task 6 quality review', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     await waitFor(() => expect(screen.getByRole('button', { name: 'React' })).toHaveFocus());
     act(() => screen.getByLabelText('before').focus());
+    await afterGrace();
     gate.release();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Fire, 1, including yours' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Fire, 1, including yours, can\'t be taken back' })).toBeInTheDocument());
     expect(v.mine.get(w.theirs)).toHaveLength(1);
     expect(landed).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('before')).toHaveFocus();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  test('sends one reaction at a time: a second click while the first is in flight is ignored', async () => {
+  test('sends one reaction at a time: a kind chosen while another is in flight waits for it, and is not dropped', async () => {
     const w = world();
     showAround(w);
     const gate = held(w);
     const p = await open();
     await userEvent.click(p.getByRole('button', { name: 'Fire, Hype' }));
-    await userEvent.click(p.getByRole('button', { name: 'Tea, Calm' }));
-    await userEvent.click(p.getByRole('button', { name: 'Fire, Hype' }));
-    gate.release();
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await afterGrace();
     expect(gate.react).toHaveBeenCalledTimes(1);
+    const again = await open();
+    await userEvent.click(again.getByRole('button', { name: 'Tea, Calm' }));
+    await afterGrace();
+    /* Fire is still in flight: Tea is on the queue behind it. */
+    expect(gate.react).toHaveBeenCalledTimes(1);
+    gate.release();
+    await waitFor(() => expect(gate.react).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   /* In the glass a press outside lands on the overlay's dimmed page, which closes it and gives focus back to React, as every overlay does. */
@@ -809,7 +849,7 @@ describe('from the Task 6 quality review', () => {
     act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
     const p = await open();
     const own = p.getByRole('button', { name: /^Fire, Hype/u });
-    expect(own).toBeDisabled();
+    expect(own).toHaveAttribute('aria-disabled', 'true');
     expect(getComputedStyle(own).opacity).toBe('1');
     expect(getComputedStyle(own.firstElementChild!).opacity).toBe('0.4');
   });
@@ -848,8 +888,8 @@ describe('in the glass', () => {
     show(w, w.theirs, w.spritey);
     const p = await open();
     expect(p.getByRole('heading', { name: 'React' })).toBeInTheDocument();
-    expect(picker().querySelector('.kb-glass-dialog-bar')).toContainElement(p.getByRole('status'));
-    expect(p.getByRole('status')).toHaveTextContent(/^3 of 3 left$/u);
+    expect(picker().querySelector('.kb-glass-dialog-bar')).toContainElement(leftStatus(p));
+    expect(leftStatus(p)).toHaveTextContent(/^3 of 3 left$/u);
     expect(p.getByText('Excited')).toBeInTheDocument();
     expect(p.getByText('Low-key')).toBeInTheDocument();
     expect(p.getByText('Arrow keys move, Enter reacts. Outlined: yours.')).toBeInTheDocument();
@@ -929,7 +969,8 @@ describe('on a staged page (the front door)', () => {
   test('a tile pressed grows its count and is the visitor\'s own, with no request and no estimate', async () => {
     const { called, tallies, mine } = staged();
     await userEvent.click(await screen.findByRole('button', { name: 'Fire, 2. React' }));
-    expect(await screen.findByRole('button', { name: 'Fire, 3, including yours' })).toBeInTheDocument();
+    await afterGrace();
+    expect(await screen.findByRole('button', { name: 'Fire, 3, including yours, can\'t be taken back' })).toBeInTheDocument();
     expect(tallies.get('front-door:0')).toEqual({ fire: 3 });
     expect(mine.get('front-door:0').map((r) => r.kind)).toEqual(['fire']);
     expect(called).toEqual([]);
@@ -942,6 +983,7 @@ describe('on a staged page (the front door)', () => {
     const tomato = screen.getByRole('button', { name: /^Tomato, 1/ });
     const tea = screen.getByRole('button', { name: /^Tea, 1/ });
     await act(async () => { fireEvent.click(tomato); fireEvent.click(tea); });
+    await afterGrace();
     expect(mine.get('front-door:0')).toHaveLength(3);
     expect((tallies.get('front-door:0').tomato ?? 0) + (tallies.get('front-door:0').tea ?? 0)).toBe(3);
   });
@@ -949,7 +991,11 @@ describe('on a staged page (the front door)', () => {
   test('a kind already the visitor\'s is not counted again', async () => {
     const { tallies, mine } = staged();
     const fire = screen.getByRole('button', { name: 'Fire, 2. React' });
-    await act(async () => { fireEvent.click(fire); fireEvent.click(fire); });
+    await act(async () => { fireEvent.click(fire); });
+    await afterGrace();
+    /* Pressed again once it is the visitor's own (a second press inside the grace is the undo, which a test of the grace holds). */
+    await act(async () => { fireEvent.click(fire); });
+    await afterGrace();
     expect(tallies.get('front-door:0')).toEqual({ fire: 3 });
     expect(mine.get('front-door:0')).toHaveLength(1);
   });
@@ -960,8 +1006,309 @@ describe('on a staged page (the front door)', () => {
     expect(picker()).toHaveAccessibleDescription('3 of 3 left');
     await userEvent.click(within(picker()).getByRole('button', { name: /^Tomato, / }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(screen.getByRole('button', { name: 'Tomato, 1, including yours' })).toBeInTheDocument();
+    await afterGrace();
+    expect(screen.getByRole('button', { name: 'Tomato, 1, including yours, can\'t be taken back' })).toBeInTheDocument();
     expect(called).toEqual([]);
+  });
+});
+
+/* The grace (reaction-grace design, sections 2 to 6): a press holds the reaction on this screen for REACTION_GRACE_MS, and only the end of it sends. */
+describe('the grace', () => {
+  afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); });
+  const wait = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  /* The press waits for the render's effects (the HUD's mask settles them) so one of them cannot clear what the press said. */
+  const press = async (el: HTMLElement) => { await act(async () => {}); act(() => { fireEvent.click(el); }); };
+  const PENDING_FIRE = /^Fire, sending in \d seconds? as Mrs\. Hooligan\. Press again to undo$/u;
+  const status = () => rowStatus();
+  /* One fire already on the post, as the server counts it: a press makes two. */
+  const fanned = () => {
+    const w = world();
+    const fan = w.fake.seed.account('fan');
+    w.fake.seed.react(fan, w.fake.seed.character(fan, 'Fan', 'face'), w.theirs, 'fire');
+    const v = show(w, w.theirs, w.spritey);
+    act(() => { v.tallies.merge(w.theirs, { fire: 1, tea: 1 }); });
+    return { w, v };
+  };
+
+  test('a tile press shows the pending chip with one more, in its pending style, and sends nothing', async () => {
+    const { w, v } = fanned();
+    const react = vi.spyOn(w.fake, 'react');
+    await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    const tile = screen.getByRole('button', { name: PENDING_FIRE });
+    expect(tile).toHaveAttribute('data-kb-pending', '');
+    expect(tile).not.toHaveAttribute('aria-disabled');
+    expect(tile).toHaveAccessibleName('Fire, sending in 5 seconds as Mrs. Hooligan. Press again to undo');
+    expect(tile.querySelector('.kb-reaction-count')).toHaveTextContent('2');
+    expect(tile.style.getPropertyValue('--kb-grace-due')).toBe(`${REACTION_GRACE_MS}ms`);
+    expect(tile.style.getPropertyValue('--kb-grace-ms')).toBe(`${REACTION_GRACE_MS}ms`);
+    expect(status()).toHaveTextContent('Reacting with Fire as Mrs. Hooligan in 5 seconds');
+    expect(v.mine.pending(w.theirs).map((p) => p.kind)).toEqual(['fire']);
+    expect(v.mine.get(w.theirs)).toEqual([]);
+    await wait(100);
+    expect(react).not.toHaveBeenCalled();
+    expect(landed).not.toHaveBeenCalled();
+  });
+
+  test('a kind with no chip yet gets one while it is pending', async () => {
+    const { w, v } = fanned();
+    await screen.findByRole('button', { name: 'React' });
+    act(() => { v.mine.hold({ act: w.theirs, kind: 'zzz', character: w.hooligan, due: Date.now() + 3000 }); });
+    const tile = screen.getByRole('button', { name: /^Zzz, sending in 3 seconds as Mrs\. Hooligan/u });
+    expect(tile).toHaveAttribute('data-kb-pending', '');
+    expect(tile.querySelector('.kb-reaction-count')).toHaveTextContent('1');
+    expect(tile.style.getPropertyValue('--kb-grace-due')).toBe('3000ms');
+  });
+
+  test('a second press within the grace undoes it: the count is back, nothing is ever sent, and the status says undone', async () => {
+    const { w, v } = fanned();
+    const react = vi.spyOn(w.fake, 'react');
+    await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    await wait(2000);
+    await press(screen.getByRole('button', { name: PENDING_FIRE }));
+    const back = screen.getByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' });
+    expect(back).not.toHaveAttribute('data-kb-pending');
+    expect(back.querySelector('.kb-reaction-count')).toHaveTextContent('1');
+    expect(status()).toHaveTextContent('Fire undone');
+    expect(v.mine.pending(w.theirs)).toEqual([]);
+    await wait(REACTION_GRACE_MS * 2);
+    expect(react).not.toHaveBeenCalled();
+  });
+
+  test('the grace\'s end sends once, and the stamp (and the "Reacted" status) comes then, not at the press', async () => {
+    const { w, v } = fanned();
+    const react = vi.spyOn(w.fake, 'react');
+    await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    /* No stamp at the press, nor within its own length (1400ms) after it, and the status is still the press's. */
+    expect(screen.getByRole('button', { name: PENDING_FIRE })).not.toHaveAttribute('data-kb-landed');
+    expect(document.querySelector('.kb-reaction-stamp')).toBeNull();
+    expect(status()).not.toHaveTextContent('Reacted');
+    await wait(1000);
+    expect(screen.getByRole('button', { name: /^Fire, sending/u })).not.toHaveAttribute('data-kb-landed');
+    expect(status()).not.toHaveTextContent('Reacted');
+    await wait(REACTION_GRACE_MS - 2000);
+    expect(react).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /^Fire, sending/u })).not.toHaveAttribute('data-kb-landed');
+    await wait(1000);
+    const done = await screen.findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
+    expect(react).toHaveBeenCalledTimes(1);
+    expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, 'fire');
+    expect(done).toHaveAttribute('data-kb-landed', 'now');
+    expect(done).not.toHaveAttribute('data-kb-pending');
+    expect(done).toHaveAttribute('data-kb-own', '');
+    expect(status()).toHaveTextContent('Reacted with Fire as Mrs. Hooligan');
+    expect(v.mine.get(w.theirs)).toEqual([{ act: w.theirs, kind: 'fire', character: w.hooligan }]);
+    expect(v.mine.pending(w.theirs)).toEqual([]);
+    expect(landed).toHaveBeenCalledTimes(1);
+  });
+
+  test('the name\'s seconds are the whole seconds left at render, rounded up', async () => {
+    fanned();
+    await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    await wait(1500);
+    expect(screen.getByRole('button', { name: /^Fire, sending in 4 seconds as/u })).toBeInTheDocument();
+    await wait(3000);
+    expect(screen.getByRole('button', { name: /^Fire, sending in 1 second as/u })).toBeInTheDocument();
+  });
+
+  test('the ring\'s start is set once for a pending kind: the once-a-second re-renders leave --kb-grace-due as it was', async () => {
+    fanned();
+    await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    const due = () => screen.getByRole('button', { name: /^Fire, sending/u }).style.getPropertyValue('--kb-grace-due');
+    const first = due();
+    expect(first).toBe(`${REACTION_GRACE_MS}ms`);
+    await wait(1000);
+    /* The name has moved on (the row did re-render); the ring's delay must not, or a running animation would be pushed along. */
+    expect(screen.getByRole('button', { name: /^Fire, sending in 4 seconds/u })).toBeInTheDocument();
+    expect(due()).toBe(first);
+    await wait(1000);
+    expect(screen.getByRole('button', { name: /^Fire, sending in 3 seconds/u })).toBeInTheDocument();
+    expect(due()).toBe(first);
+  });
+
+  test('a row first drawn 2 seconds into the grace carries what is left, about 3000ms', async () => {
+    const { w, v } = fanned();
+    await screen.findByRole('button', { name: 'React' });
+    act(() => { v.mine.hold({ act: w.theirs, kind: 'tea', character: w.hooligan, due: Date.now() + REACTION_GRACE_MS }); });
+    await wait(2000);
+    const later = renderIn(w.fake, <Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={v.tallies} mine={v.mine} pickerAt="button" />);
+    const tile = await within(later.container).findByRole('button', { name: /^Tea, sending/u });
+    const left = Number.parseInt(tile.style.getPropertyValue('--kb-grace-due'), 10);
+    expect(left).toBeGreaterThan(2800);
+    expect(left).toBeLessThanOrEqual(3000);
+    /* The first row's own tile keeps its own start. */
+    expect(screen.getAllByRole('button', { name: /^Tea, sending/u })[0]!.style.getPropertyValue('--kb-grace-due')).toBe(`${REACTION_GRACE_MS}ms`);
+  });
+
+  test('the once-a-second re-render runs only while something is pending', async () => {
+    const { w } = fanned();
+    await screen.findByRole('button', { name: 'React' });
+    const idle = vi.getTimerCount();
+    await press(screen.getByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    /* The hook's send timer and the row's interval. */
+    expect(vi.getTimerCount()).toBeGreaterThanOrEqual(idle + 2);
+    await press(screen.getByRole('button', { name: /^Fire, sending/u }));
+    expect(vi.getTimerCount()).toBe(idle);
+    await press(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
+    await wait(REACTION_GRACE_MS);
+    await screen.findByRole('button', { name: /^Tea, 1, including yours/u });
+    await wait(1500);
+    expect(w.theirs).toBeTruthy();
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(idle + 1);
+  });
+
+  test('a pending kind counts toward the cap: with a cap of 2, one sent and one pending, a third tile is aria-disabled with the cap\'s words', async () => {
+    const w = world();
+    const tallies = createTallies();
+    const mine = createMine();
+    renderIn(w.fake, <Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={mine} />, { settings: { reactionCap: 2 } });
+    act(() => { tallies.merge(w.theirs, { fire: 1, tea: 1, zzz: 1 }); mine.add({ act: w.theirs, kind: 'zzz', character: w.pipe }); });
+    await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    const third = screen.getByRole('button', { name: 'Tea, 1. You have left all 2 of your reactions on this post' });
+    expect(third).toHaveAttribute('aria-disabled', 'true');
+    await press(third);
+    expect(mine.pending(w.theirs).map((p) => p.kind)).toEqual(['fire']);
+    /* Undoing the pending one frees its place. */
+    await press(screen.getByRole('button', { name: PENDING_FIRE }));
+    expect(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' })).not.toHaveAttribute('aria-disabled');
+  });
+
+  test('a refusal at the grace\'s end shows the row\'s alert, releases the pending look, and opens no picker', async () => {
+    const { w, v } = fanned();
+    w.fake.react = async () => ({ ok: false as const, error: 'you have left 3 reactions here, the most there are' });
+    await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    await wait(REACTION_GRACE_MS);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('you have left 3 reactions here, the most there are');
+    expect(alert).toHaveClass('kb-notice', 'kb-reactions-refusal');
+    expect(alert).toHaveAttribute('data-kb-tone', 'refusal');
+    expect(alert.closest('.kb-reactions')).not.toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' })).not.toHaveAttribute('data-kb-pending');
+    expect(v.mine.pending(w.theirs)).toEqual([]);
+    /* It goes at the next press on the row. */
+    await press(screen.getByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('under reduced motion the seconds left are drawn as text and count down, and the send is still at 5 seconds', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    const { w } = fanned();
+    const react = vi.spyOn(w.fake, 'react');
+    await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    const text = () => screen.getByRole('button', { name: /^Fire, sending/u }).querySelector('.kb-reaction-grace');
+    expect(text()).toHaveTextContent('5');
+    await wait(1500);
+    expect(text()).toHaveTextContent('4');
+    await wait(1000);
+    expect(text()).toHaveTextContent('3');
+    await wait(1500);
+    expect(react).not.toHaveBeenCalled();
+    expect(text()).toHaveTextContent('1');
+    await wait(1000);
+    await screen.findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
+    expect(react).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.kb-reaction-grace')).toBeNull();
+  });
+
+  test('with full motion the seconds-left text is not drawn (the ring is)', async () => {
+    fanned();
+    await press(await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    expect(document.querySelector('.kb-reaction-grace')).toBeNull();
+  });
+
+  test('the ring\'s duration is a property set from the constant: reactions.css holds no second literal for it', () => {
+    const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'reactions.css'), 'utf8');
+    const ring = /\.kb-reaction\[data-kb-pending\]::after\s*\{[^}]*\}/u.exec(css)?.[0] ?? '';
+    expect(ring).not.toBe('');
+    expect(ring).toMatch(/animation:[^;]*var\(--kb-grace-ms\)/u);
+    expect(ring).not.toMatch(/\b5000\b|\b5s\b/u);
+  });
+
+  test('the thread\'s row and another row for the same Act (the Lens\'s) both show the pending chip, and either can undo it', async () => {
+    const w = world();
+    const tallies = createTallies();
+    const mine = createMine();
+    renderIn(w.fake, (
+      <>
+        <div data-testid="thread"><Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={mine} /></div>
+        <div data-testid="lens"><Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={mine} pickerAt="button" /></div>
+      </>
+    ));
+    act(() => { tallies.merge(w.theirs, { fire: 1 }); });
+    const react = vi.spyOn(w.fake, 'react');
+    const thread = within(screen.getByTestId('thread'));
+    const lens = within(screen.getByTestId('lens'));
+    await press(await thread.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' }));
+    expect(thread.getByRole('button', { name: PENDING_FIRE })).toHaveAttribute('data-kb-pending', '');
+    expect(lens.getByRole('button', { name: PENDING_FIRE })).toHaveAttribute('data-kb-pending', '');
+    await press(lens.getByRole('button', { name: PENDING_FIRE }));
+    expect(thread.getByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' })).toBeInTheDocument();
+    await wait(REACTION_GRACE_MS * 2);
+    expect(react).not.toHaveBeenCalled();
+  });
+
+  describe('on the staged page', () => {
+    function stagedRow() {
+      const fake = buildWorld();
+      const called: string[] = [];
+      for (const key of ['react', 'myReactions'] as const) {
+        const real = fake[key].bind(fake) as (...x: unknown[]) => unknown;
+        (fake as unknown as Record<string, unknown>)[key] = (...a: unknown[]) => { called.push(key); return real(...a); };
+      }
+      const tallies = createTallies();
+      const mine = createMine();
+      tallies.merge('front-door:0', { fire: 2 });
+      const { unmount } = renderIn(fake, <StagedCtx.Provider value={true}><Reactions act="front-door:0" author="front-door:ann" authorName="Ann" tallies={tallies} mine={mine} /></StagedCtx.Provider>);
+      return { called, tallies, mine, unmount };
+    }
+
+    test('a press is pending with the same grace, an undo within it changes nothing, and nothing is called', async () => {
+      const { called, tallies, mine } = stagedRow();
+      await press(await screen.findByRole('button', { name: 'Fire, 2. React' }));
+      const tile = screen.getByRole('button', { name: 'Fire, sending in 5 seconds. Press again to undo' });
+      expect(tile).toHaveAttribute('data-kb-pending', '');
+      expect(tile.querySelector('.kb-reaction-count')).toHaveTextContent('3');
+      expect(status()).toHaveTextContent('Reacting with Fire in 5 seconds');
+      expect(tallies.get('front-door:0')).toEqual({ fire: 2 });
+      await wait(2000);
+      await press(tile);
+      expect(screen.getByRole('button', { name: 'Fire, 2. React' })).toBeInTheDocument();
+      expect(status()).toHaveTextContent('Fire undone');
+      await wait(REACTION_GRACE_MS * 2);
+      expect(tallies.get('front-door:0')).toEqual({ fire: 2 });
+      expect(mine.get('front-door:0')).toEqual([]);
+      expect(called).toEqual([]);
+    });
+
+    test('leaving the page ends the grace early and does not end the reaction: the held kind lands locally, with no request and no stamp', async () => {
+      const { called, tallies, mine, unmount } = stagedRow();
+      await press(await screen.findByRole('button', { name: 'Fire, 2. React' }));
+      expect(mine.pending('front-door:0').map((p) => p.kind)).toEqual(['fire']);
+      unmount();
+      expect(mine.pending('front-door:0')).toEqual([]);
+      expect(mine.get('front-door:0').map((r) => r.kind)).toEqual(['fire']);
+      expect(tallies.get('front-door:0')).toEqual({ fire: 3 });
+      await wait(REACTION_GRACE_MS * 2);
+      expect(tallies.get('front-door:0')).toEqual({ fire: 3 });
+      expect(called).toEqual([]);
+      expect(landed).not.toHaveBeenCalled();
+    });
+
+    test('at the grace\'s end the count grows and the kind is the visitor\'s, with the stamp then, and no request or estimate', async () => {
+      const { called, tallies, mine } = stagedRow();
+      await press(await screen.findByRole('button', { name: 'Fire, 2. React' }));
+      await wait(REACTION_GRACE_MS - 1000);
+      expect(tallies.get('front-door:0')).toEqual({ fire: 2 });
+      await wait(1000);
+      const done = await screen.findByRole('button', { name: 'Fire, 3, including yours, can\'t be taken back' });
+      expect(done).toHaveAttribute('data-kb-landed', 'now');
+      expect(tallies.get('front-door:0')).toEqual({ fire: 3 });
+      expect(mine.get('front-door:0').map((r) => r.kind)).toEqual(['fire']);
+      expect(mine.pending('front-door:0')).toEqual([]);
+      expect(status()).toHaveTextContent('Reacted with Fire');
+      expect(called).toEqual([]);
+      expect(landed).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -1028,6 +1375,7 @@ describe('a post-local reaction and a blind post', () => {
       act(() => { v.tallies.merge(w.theirs, { [skullKey]: 1 }); });
       const react = vi.spyOn(w.fake, 'react').mockResolvedValue({ ok: true, value: { act: w.theirs, tally: { [skullKey]: 2 } } });
       await userEvent.click(await screen.findByRole('button', { name: new RegExp(`^${SKULL}, added by a card, 1`, 'u') }));
+      await afterGrace();
       expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, skullKey);
     });
 
@@ -1071,6 +1419,7 @@ describe('a post-local reaction and a blind post', () => {
       const react = vi.spyOn(w.fake, 'react').mockResolvedValue({ ok: true, value: { act: w.theirs, tally: { [skullKey]: 1 } } });
       const grid = await open();
       await userEvent.click(grid.getByRole('button', { name: `${SKULL}, Groan, added by a card` }));
+      await afterGrace();
       expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, skullKey);
     });
 
@@ -1099,7 +1448,7 @@ describe('a post-local reaction and a blind post', () => {
       await screen.findByRole('button', { name: 'React' });
       const chips = within(list).getAllByRole('listitem');
       expect(chips).toHaveLength(1);
-      expect(within(list).getByRole('button', { name: 'Tea, yours' })).toBeInTheDocument();
+      expect(within(list).getByRole('button', { name: 'Tea, yours, can\'t be taken back' })).toBeInTheDocument();
       expect(chips[0]).toHaveTextContent(/^E$/u);
       expect(chips[0]!.querySelector('[data-kb-own]')).not.toBeNull();
       expect(screen.getByText(`Reaction totals are hidden on this post until ${until}.`)).toBeInTheDocument();
@@ -1162,6 +1511,200 @@ describe('a post-local reaction and a blind post', () => {
         expect(screen.queryByText(/^Reaction totals are hidden/u)).toBeNull();
         expect(screen.getByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' })).toBeInTheDocument();
       } finally { vi.useRealTimers(); }
+    });
+  });
+});
+
+/* Reaction grace, Task 6: "Reactions can't be taken back" (design section 7), the glass tooltip on a press of your own sent kind. */
+describe('the can\'t-be-taken-back tooltip', () => {
+  const wait = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  const press = async (el: HTMLElement) => { await act(async () => {}); act(() => { fireEvent.click(el); }); };
+  /* Fire is the player's own and sent (and counted twice); tea is another's. */
+  const sent = () => {
+    const w = world();
+    const v = show(w, w.theirs, w.spritey);
+    act(() => { v.tallies.merge(w.theirs, { fire: 2, tea: 1 }); v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
+    return { w, v };
+  };
+  const OWN = 'Fire, 2, including yours, can\'t be taken back';
+
+  test('the words are one constant', () => { expect(CANT_TAKE_BACK).toBe('Reactions can\'t be taken back.'); });
+
+  test('pressing your own sent tile shows the tooltip with the words and sends nothing', async () => {
+    const { w } = sent();
+    const react = vi.spyOn(w.fake, 'react');
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    await press(await screen.findByRole('button', { name: OWN }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent(CANT_TAKE_BACK);
+    await wait(REACTION_GRACE_MS * 2);
+    expect(react).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: OWN })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  test('a second press while it is open restarts its 3 seconds', async () => {
+    sent();
+    const own = await screen.findByRole('button', { name: OWN });
+    await press(own);
+    await wait(2000);
+    await press(screen.getByRole('button', { name: OWN }));
+    await wait(2000);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+    await wait(1100);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  test('pressing a different own tile while it is open moves the tooltip to that tile and gives it a fresh 3 seconds (no focus change)', async () => {
+    const { w, v } = sent();
+    act(() => { v.tallies.merge(w.theirs, { tomato: 1 }); v.mine.add({ act: w.theirs, kind: 'tomato', character: w.pipe }); });
+    const fire = await screen.findByRole('button', { name: OWN });
+    const tomato = screen.getByRole('button', { name: 'Tomato, 1, including yours, can\'t be taken back' });
+    await press(fire);
+    await wait(2000);
+    await press(tomato);
+    const tip = screen.getByRole('tooltip');
+    expect(tomato.getAttribute('aria-describedby') ?? '').toContain(tip.id);
+    expect(fire.getAttribute('aria-describedby') ?? '').not.toContain(tip.id);
+    await wait(2500);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+    await wait(600);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  test('under full motion the tooltip leaves with its exit after the 3 seconds, and a press after it closed opens and says it again', async () => {
+    sent();
+    expect(document.documentElement.getAttribute('data-kb-motion')).not.toBe('reduce');
+    await press(await screen.findByRole('button', { name: OWN }));
+    await wait(3050);
+    /* Just closed: the panel is still on the page, leaving (hidden from readers), for its exit. */
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(document.querySelector('.kb-tooltip-wrap[data-kb-exiting]')).not.toBeNull();
+    /* (That the leaving panel is removed once its exit ends is Layers' own, held in glass/layer tests: Motion's frame loop does not run reliably late in this file.) */
+    await press(screen.getByRole('button', { name: OWN }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent(CANT_TAKE_BACK);
+    await wait(200);
+    expect(screen.getAllByRole('status').some((x) => x.textContent === CANT_TAKE_BACK)).toBe(true);
+  });
+
+  test('the tooltip is said in the polite status when it opens', async () => {
+    sent();
+    await press(await screen.findByRole('button', { name: OWN }));
+    await wait(200);
+    expect(screen.getAllByRole('status').some((x) => x.textContent === CANT_TAKE_BACK)).toBe(true);
+  });
+
+  test('the tile\'s name says it can\'t be taken back (the totals-hidden wording is held in the blind post\'s test)', async () => {
+    sent();
+    expect(await screen.findByRole('button', { name: OWN })).toBeInTheDocument();
+  });
+
+  test('a pending tile shows no tooltip when pressed: it undoes', async () => {
+    const { w, v } = sent();
+    await press(await screen.findByRole('button', { name: 'Tea, 1. React as Mrs. Hooligan' }));
+    await press(screen.getByRole('button', { name: /^Tea, sending in/u }));
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(v.mine.pending(w.theirs)).toEqual([]);
+  });
+
+  describe('in the picker', () => {
+    test('your own kind is aria-disabled and not disabled; pressing it shows the tooltip and the picker stays open and sends nothing', async () => {
+      const { w } = sent();
+      const react = vi.spyOn(w.fake, 'react');
+      const p = await open();
+      const own = p.getByRole('button', { name: 'Fire, Hype, your reaction' });
+      expect(own).toHaveAttribute('aria-disabled', 'true');
+      expect(own).not.toBeDisabled();
+      expect(own).toHaveAttribute('data-kb-own', '');
+      own.focus();
+      await press(own);
+      expect(screen.getByRole('tooltip')).toHaveTextContent(CANT_TAKE_BACK);
+      expect(own).toHaveFocus();
+      expect(own.getAttribute('aria-describedby') ?? '').toContain(screen.getByRole('tooltip').id);
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      await wait(REACTION_GRACE_MS * 2);
+      expect(react).not.toHaveBeenCalled();
+    });
+
+    test('the arrow keys land on your own kind', async () => {
+      sent();
+      const p = await open();
+      await waitFor(() => expect(p.getByRole('button', { name: 'Tomato, Heat' })).toHaveFocus());
+      await userEvent.keyboard('{ArrowRight}');
+      expect(p.getByRole('button', { name: 'Fire, Hype, your reaction' })).toHaveFocus();
+    });
+
+    test('a second press while it is open restarts its 3 seconds', async () => {
+      sent();
+      const p = await open();
+      const own = p.getByRole('button', { name: 'Fire, Hype, your reaction' });
+      await press(own);
+      await wait(2000);
+      await press(p.getByRole('button', { name: 'Fire, Hype, your reaction' }));
+      await wait(2000);
+      expect(screen.getByRole('tooltip')).toBeInTheDocument();
+      await wait(1100);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    test('pressing a different own kind while it is open moves the tooltip to that kind and gives it a fresh 3 seconds', async () => {
+      const { w, v } = sent();
+      act(() => { v.mine.add({ act: w.theirs, kind: 'tomato', character: w.pipe }); });
+      const p = await open();
+      const fire = p.getByRole('button', { name: 'Fire, Hype, your reaction' });
+      const tomato = p.getByRole('button', { name: 'Tomato, Heat, your reaction' });
+      await press(fire);
+      await wait(2000);
+      await press(tomato);
+      const tip = screen.getByRole('tooltip');
+      expect(tomato.getAttribute('aria-describedby') ?? '').toContain(tip.id);
+      expect(fire.getAttribute('aria-describedby') ?? '').not.toContain(tip.id);
+      await wait(2500);
+      expect(screen.getByRole('tooltip')).toBeInTheDocument();
+      await wait(600);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    test('at the cap no grid is drawn, so no kind is offered to press', async () => {
+      const { w, v } = sent();
+      act(() => { v.mine.add({ act: w.theirs, kind: 'tomato', character: w.pipe }); v.mine.add({ act: w.theirs, kind: 'zzz', character: w.hooligan }); });
+      const p = await open();
+      /* At the cap no grid is drawn at all, so no kind is drawn disabled and none is an own kind button. */
+      expect(p.queryAllByRole('button', { name: /your reaction/u }).length).toBe(0);
+    });
+
+    test('with one slot left a free kind is enabled and another\'s own stays aria-disabled', async () => {
+      const { v, w } = sent();
+      act(() => { v.mine.add({ act: w.theirs, kind: 'tomato', character: w.pipe }); });
+      const p = await open();
+      expect(p.getByRole('button', { name: 'Tea, Calm' })).toBeEnabled();
+      expect(p.getByRole('button', { name: 'Tomato, Heat, your reaction' })).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    test('choosing a free kind closes the picker at once, the row shows it pending, and nothing is sent until the grace ends', async () => {
+      const { w, v } = sent();
+      const react = vi.spyOn(w.fake, 'react');
+      const p = await open();
+      await userEvent.click(p.getByRole('button', { name: 'Tea, Calm' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.getByRole('button', { name: /^Tea, sending in/u })).toHaveAttribute('data-kb-pending', '');
+      expect(react).not.toHaveBeenCalled();
+      expect(v.mine.pending(w.theirs).map((x) => x.kind)).toEqual(['tea']);
+      await afterGrace();
+      expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, 'tea');
+    });
+
+    test('a pending kind is drawn as yours and pending; pressing it undoes it', async () => {
+      const { w, v } = sent();
+      const react = vi.spyOn(w.fake, 'react');
+      act(() => { v.mine.hold({ act: w.theirs, kind: 'tea', character: w.hooligan, due: Date.now() + REACTION_GRACE_MS }); });
+      const p = await open();
+      const tea = p.getByRole('button', { name: /^Tea, Calm/u });
+      expect(tea).toHaveAttribute('data-kb-own', '');
+      expect(tea).toHaveAttribute('data-kb-pending', '');
+      await press(tea);
+      expect(v.mine.pending(w.theirs)).toEqual([]);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      await wait(REACTION_GRACE_MS * 2);
+      expect(react).not.toHaveBeenCalled();
     });
   });
 });

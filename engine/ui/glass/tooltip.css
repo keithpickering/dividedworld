@@ -1,0 +1,49 @@
+/*
+ * The glass tooltip (Tooltip.tsx): a small panel on the glass's tokens, fixed to the window at the place the component measured.
+ * It takes no pointer and no focus. The tokens carry light and dark and the high-contrast keys; forced colors gets system colors.
+ */
+.kb-tooltip-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background: none;
+}
+
+.kb-tooltip {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  width: max-content;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--kb-glass-sweet);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text-hi);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-phone-small);
+  font-weight: 700;
+  line-height: 1.25;
+  pointer-events: none;
+  user-select: none;
+}
+
+.kb-tooltip-mark {
+  flex: none;
+  color: var(--kb-glass-sweet);
+  font-weight: 800;
+}
+
+@media (forced-colors: active) {
+  .kb-tooltip {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}
+
+/* Nothing shows until the component has placed it. */
+.kb-tooltip:not([data-kb-place]) {
+  visibility: hidden;
+}

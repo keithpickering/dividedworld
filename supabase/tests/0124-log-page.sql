@@ -129,7 +129,7 @@ begin
        select settlement, kind, change, overflow, floored, balance_after, ref, at from my_wallet_events order by at desc, settlement, kind, ref, change, overflow, floored, balance_after limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'wallet') is distinct from 200 then raise exception 'wallet: % rows', jsonb_array_length(doc -> 'sources' -> 'wallet'); end if;
   if doc -> 'sources' -> 'cards' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select card, kind, act, price, at, springs, pack, repriced from my_card_ledger order by at desc, card, kind, act, price, pack limit 200) r))
+       select card, kind, act, price, at, springs, pack, repriced, pack_kind, pack_source from my_card_ledger order by at desc, card, kind, act, price, pack limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'cards') is distinct from 6 then raise exception 'cards: %', doc -> 'sources' -> 'cards'; end if;
   if doc -> 'sources' -> 'playsOnMine' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select play, post, at, reach, target_name, target_character from my_posts_played_on order by at desc, play limit 200) r))
@@ -162,7 +162,7 @@ begin
        from my_group_moves order by at desc, move limit 200) r)) then raise exception 'groupMoves: %', doc -> 'sources' -> 'groupMoves'; end if;
   -- The packs (0139): this caller bought none here, so the source is the view's empty read; 0139-machine.sql holds a bought pack's row.
   if doc -> 'sources' -> 'packs' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select id, pack, price, repriced, contents, bought_at from my_packs order by bought_at desc, id limit 200) r)) then raise exception 'packs: %', doc -> 'sources' -> 'packs'; end if;
+       select id, pack, price, repriced, contents, bought_at, source from my_packs order by bought_at desc, id limit 200) r)) then raise exception 'packs: %', doc -> 'sources' -> 'packs'; end if;
   if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 20 then raise exception 'twenty sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
   if doc::text like '%' || b1::text || '"%' and exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'ledger') x where x ->> 'character' = b1::text) then raise exception 'another player''s ledger line is in the page'; end if;
   if exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'wallet') x where (x ->> 'change')::integer = 9) then raise exception 'another player''s wallet event is in the page'; end if;

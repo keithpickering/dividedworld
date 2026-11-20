@@ -86,6 +86,11 @@
  * - A card "outdraws" its target when it drew more votes in the window than the target did.
  *   A vote total is the shares, unhalved: the halving prices a character's further Acts to the
  *   character, and a card and its target are judged on how many players each drew.
+ * - A play is handed how the room took what it is scored against (`targetLean`, `targetReadsAs`): the lean is the positive quadrants' vote shares
+ *   minus the negative ones' on that Act, over every reaction up to the window's end, unhalved, without the caster's own player's votes, as `readsAs`
+ *   leaves the caster out (a staff post's lean is read from its own reactions; a target nobody reacted to has none, 0). The flavor is, where the
+ *   target is itself a card's play, what that play reads as this window: a staff cast's is its card's own alignment, and absent for a Pepperoni
+ *   one, which has no room in the input to read it by.
  * - A spun thread's repliers are the distinct other players who posted in it, counted before
  *   the window and by its end, so a class can pay the window in which a threshold is crossed.
  * - A character that Turned inside the window is settled under each class it held, each for
@@ -307,6 +312,16 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     a.of.set(r.player, p);
     onAct.set(r.act, a);
   }
+  /* Each Act's signed lean, whole and by the player behind each vote: the positive quadrants' shares minus the negative ones', over
+     every reaction up to the window's end, a staff post's as any Act's. One pass over the reactions; a play reads its target's. */
+  const signed = new Map<string, { total: number; by: Map<string, number> }>();
+  for (const r of [...shared, ...shareVotes(unscoredReactions)]) {
+    const s = signed.get(r.act) ?? { total: 0, by: new Map() };
+    const v = (r.quadrant === 'excitedPositive' || r.quadrant === 'calmPositive' ? 1 : -1) * r.share;
+    s.total += v;
+    s.by.set(r.owner, (s.by.get(r.owner) ?? 0) + v);
+    signed.set(r.act, s);
+  }
   const direction = (lean: Record<Quadrant, number>): Quadrant | null => {
     const top = Math.max(...QUADRANTS.map((q) => tidy(lean[q])));
     const leaders = QUADRANTS.filter((q) => tidy(lean[q]) === top);
@@ -502,7 +517,16 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       }
     }
     const drawnAfter = drawnNow.length ? { at: drawnAt, now: byVote(drawnNow) } : null;
-    list.push({ act: a.id, card: a.card!, alignment, readsAs: readsAs(a), at: a.at, target: target.id, onOthers, votes: tidy(votesOn.get(a.id) ?? 0), targetVotes: tidy(votesOn.get(target.id) ?? 0), targetAfter: after, drawnAfter });
+    /* How the room took the target, without the caster's own player's votes; and, where the target is a card's play, what it reads as. */
+    const lean = signed.get(target.id);
+    const targetLean = tidy((lean?.total ?? 0) - (lean?.by.get(player) ?? 0));
+    const targetAct = acts.get(target.id);
+    const staffCard = unscored.get(target.id)?.card;
+    const staffFlavor = staffCard === undefined ? undefined : alignmentOf.get(staffCard);
+    const targetReadsAs = unscored.has(target.id)
+      ? (staffFlavor === 'pepperoni' ? undefined : staffFlavor)
+      : targetAct && isPlay(targetAct) && targetAct.card && alignmentOf.has(targetAct.card) ? readsAs(targetAct) : undefined;
+    list.push({ act: a.id, card: a.card!, alignment, readsAs: readsAs(a), at: a.at, target: target.id, onOthers, votes: tidy(votesOn.get(a.id) ?? 0), targetVotes: tidy(votesOn.get(target.id) ?? 0), targetAfter: after, drawnAfter, targetLean, ...(targetReadsAs ? { targetReadsAs } : {}) });
     played.set(a.character, list);
     if (onOthers && target.character !== null) {
       const on = landed.get(target.character) ?? [];

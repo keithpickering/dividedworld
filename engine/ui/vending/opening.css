@@ -1,9 +1,9 @@
 /*
  * The reveal after a pack is bought (PackOpening.tsx; boards 02, 03 and 04 in docs/research/2026-11-07-booster-packs/): a modal over the
  * machine, drawn in the glass's tokens. The emptied pack is parked at the top with only its foot in view, the pack's name and the count
- * under it, the card last turned large above the row of the five at the fan's size, and the buttons under them. The cards are
+ * under it, the card last turned large above the row of the pack's cards at the fan's size, and the buttons under them. The cards are
  * drawn by the card template (Postcard.tsx, postcard.css); this places them. On a phone the row is a pile (the spotlight is the pile, a
- * second back peeking behind it) and a row of five outlines counts down.
+ * second back peeking behind it) and a row of outlines counts down.
  *
  * Every motion is the feel's, read by PackOpening.tsx: nothing here is animated by a duration of its own, and under Off the card is shown
  * turned (no wrapper, no rotation).
@@ -124,7 +124,7 @@
   color: var(--kb-glass-pale);
 }
 
-/* The phone's five outlines: only there. */
+/* The phone's outlines: only there. */
 .kb-opening-outlines {
   display: none;
   justify-content: center;
@@ -356,7 +356,7 @@
   display: none;
 }
 
-/* ---- the Phone board's layout: a pile at the sheet's size, the next back behind it, and five outlines counting down ---- */
+/* ---- the Phone board's layout: a pile at the sheet's size, the next back behind it, and outlines counting down ---- */
 
 :where(:root[data-kb-layout='phone']) .kb-opening {
   padding-top: 38px;
@@ -407,7 +407,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-opening[data-kb-stage='entering'] .kb-opening-row {
-  /* While the entrance plays the five are drawn, collapsed to a point under the pile: the deal measures them there and stacks them into the pile. */
+  /* While the entrance plays the cards are drawn, collapsed to a point under the pile: the deal measures them there and stacks them into the pile. */
   position: relative;
   display: block;
   height: 0;

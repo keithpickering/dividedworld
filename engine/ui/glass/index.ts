@@ -4,3 +4,4 @@ export { DEFAULT_CONTROLS, applyGlass, classLargeText, glassVars, installGlassFo
 export type * from './types.ts';
 export { GlassButton, ButtonRow, type GlassButtonKind, type GlassButtonSize } from './Button.tsx';
 export { PageHead } from './PageHead.tsx';
+export { Tooltip, TOOLTIP_MS, type TooltipProps } from './Tooltip.tsx';

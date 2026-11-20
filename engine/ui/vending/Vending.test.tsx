@@ -964,3 +964,49 @@ describe('buying a pack opens the reveal', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
+
+describe('a fixed pack in the machine', () => {
+  const starter: Instance = {
+    ...stocked,
+    packs: [...stocked.packs, { key: 'starter', contents: ['whoops', 'stick', 'main', 'trap', 'stick', 'whoops'] }],
+    machine: [...stocked.machine, { item: { pack: 'starter' }, availability: 'onSale', price: 200 }],
+  };
+  const open = () => {
+    const fake = buildWorld(undefined, starter);
+    const account = fake.seed.account('ana');
+    fake.seed.character(account, 'Pipewrench', 'heel');
+    fake.seed.wallet(account, 562);
+    fake.signInAs(account);
+    renderIn(fake, <Vending />, { instance: starter, cards: stockedFaces, packs: { ...packsUi, starter: { name: 'Starter Pack', art: packsUi.booster.art } }, path: '/vending' });
+  };
+  const STARTER = 'Buy Starter Pack, 2.00 orbs, a pack of 6 postcards';
+
+  test('shows in the machine like any pack', async () => {
+    open();
+    expect(await screen.findByRole('button', { name: STARTER })).toBeInTheDocument();
+  });
+
+  test('its about panel lists its cards in order by name, with no odds, no percentage and no "equally likely"', async () => {
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'About Starter Pack' }));
+    const dialog = screen.getByRole('dialog', { name: 'Starter Pack' });
+    expect(within(dialog).getByRole('list', { name: 'Starter Pack contents' }).textContent).toBe('Whoops!Stick AroundMain EventCard CollectorStick AroundWhoops!');
+    expect(within(dialog).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Whoops!', 'Stick Around', 'Main Event', 'Card Collector', 'Stick Around', 'Whoops!']);
+    expect(within(dialog).queryByRole('table')).toBeNull();
+    expect(dialog.textContent).not.toMatch(/%|equally likely/u);
+    expect(dialog).toHaveTextContent('Six cards, always the same.');
+  });
+
+  test('selected, it shows six backs and its cards beside the machine, and buying it opens a six-card reveal with no hit', async () => {
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: STARTER }));
+    const aside = screen.getByRole('complementary', { name: 'About the Starter Pack' });
+    expect(within(aside).getAllByRole('listitem')).toHaveLength(6);
+    expect(aside.textContent).not.toMatch(/%|equally likely/u);
+    expect(screen.getByRole('region', { name: 'In this pack' }).querySelectorAll('.kb-postcard-back')).toHaveLength(6);
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Starter Pack · 2.00' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Opening a Starter Pack' });
+    expect(dialog.querySelector('.kb-opening-count')).toHaveTextContent('0 of 6 turned over');
+    expect(dialog.querySelector('[data-kb-hit]')).toBeNull();
+  });
+});

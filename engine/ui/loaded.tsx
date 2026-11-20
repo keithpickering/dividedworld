@@ -115,7 +115,7 @@ function Glass({ paths, io, now }: { readonly paths: readonly string[]; readonly
   return <Routes routes={routes} />;
 }
 
-const CHARACTERS = ['/characters', '/characters/edit'];
+const CHARACTERS = ['/characters', '/characters/new', '/characters/edit'];
 const SEASON = ['/season'];
 const CONTACT = ['/contact'];
 const CONDUCT = ['/conduct'];
@@ -126,7 +126,7 @@ const QUEUE = ['/admin/queue'];
 const REPORTS = ['/admin/reports'];
 const LOG = ['/log', '/log/settlement'];
 
-/** My characters at `/characters` and Edit profile at `/characters/edit`, one document: the page opens at the address it is given. */
+/** My characters at `/characters` and Edit profile at `/characters/edit`, one document, with New character at `/characters/new` beside them: the page opens at the address it is given. */
 export function LoadedCharacters({ io }: { readonly io?: PictureIo } = {}) { return <Glass paths={CHARACTERS} io={io} />; }
 export function LoadedSeason() { return <Glass paths={SEASON} />; }
 export function LoadedContact() { return <Glass paths={CONTACT} />; }
