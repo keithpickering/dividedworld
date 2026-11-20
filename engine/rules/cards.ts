@@ -287,8 +287,9 @@ export interface CardRules<Config = unknown> {
    * it springs on a quote, and the quote lands it. A cast trap names its card (`catches`) or has a `match`, never both.
    *
    * With an `outcome` the spring is a ride and not a catch: the cast that springs the trap lands as usual, and the setter is paid `share` of a
-   * vote for each vote that cast draws, in every quadrant where the outcome says `every`, and otherwise in the quadrant the set named (its
-   * checked configuration's `quadrant`). A ride may sit beside a `match` or a `catches`.
+   * vote for each vote that cast draws. Where the outcome says `every` it pays in all four quadrants and reads no quadrant from the
+   * configuration; otherwise it pays in the quadrant the set named (its checked configuration's `quadrant`). A ride may sit beside a `match`
+   * or a `catches`.
    */
   readonly trap?: { readonly trigger: Trigger; readonly match?: Match; readonly outcome?: { readonly kind: 'ride'; readonly share: number; readonly every?: true } };
   /** A cast trap's catch: the card it waits for, by key, from its checked configuration (a ride trap may name its card here too). Only a set card that springs on a cast and has no `match` has it. */

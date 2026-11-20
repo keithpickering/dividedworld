@@ -861,6 +861,8 @@ test('a trap outcome is a ride on a set card that springs on a cast and names it
   assert.doesNotMatch(set({ trigger: cast, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.25, every: true } }, {}), /card "splat"/);
   assert.match(everyRide('yes'), /card "splat" has an outcome whose every is "yes"; every is true or left out/);
   assert.match(everyRide(false), /card "splat" has an outcome whose every is false; every is true or left out/);
+  // An every left undefined is left out, as it is once the card is JSON in the database.
+  assert.doesNotMatch(everyRide(undefined), /card "splat"/);
   assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" springs on a cast and names no card to catch/);
   assert.match(instanceProblems(withCards({ trap: { trigger: cast, outcome: { kind: 'ride', share: 1 } } })).join('\n'), /card "splat" has a trap, and only a set card has one/);
 });
