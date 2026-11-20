@@ -124,7 +124,7 @@ test('a hidden post\'s words are in no response a non-author reads, at any depth
   assert.deepEqual(leaks, [], `the hidden words reached a non-author through: ${leaks.join('; ')}`);
 
   // the hidden post's author still reads their own words, and no one else does
-  assert.deepEqual(await asAuthor.rpc('my_hidden_version', { act: post }), { status: 'hiddenUntilEdited', version: post, words: HIDDEN_ORIGINAL });
+  assert.deepEqual(await asAuthor.rpc('my_hidden_version', { act: post }), { status: 'hiddenUntilEdited', version: post, words: HIDDEN_ORIGINAL, forged: [] });
   assert.equal(await asReader.rpc('my_hidden_version', { act: post }), null);
   // the quoting posts' Acts are as their authors wrote them: the layer is over the words, never in place of them
   for (const q of quoting) assert.equal(sql(`select a.payload ->> 'body' from acts a where a.id = '${q.act}'`, {}), q.shape.body(post, opener));

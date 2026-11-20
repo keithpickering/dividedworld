@@ -1832,3 +1832,81 @@ begin
   perform draw_visits(as_id);
   return as_id;
 end $$;
+
+-- card_target (0368): the post's current version's verdict (`forged`, [] where there is none) beside its body, so a card that works on the words (Autocorrect) reads a doctored quote as the post's own. card_target_reach (0361) adds to
+-- this answer and passes it through. It is acts_public's current_payload, the projected one: a version an admin hid has its body null and keeps the list of posts, which is public in History.
+create or replace function public.card_target(target uuid)
+ returns jsonb
+ language plpgsql
+ stable security definer
+ set search_path to 'public', 'pg_temp'
+ set plan_cache_mode = force_generic_plan
+ set jit = off
+as $function$
+#variable_conflict use_column
+begin
+  return (
+  select jsonb_build_object('reach', 'post', 'act', a.id, 'kind', a.kind, 'author', a.character,
+    'length', char_length(coalesce(a.current_payload ->> 'body', '')),
+    'body', coalesce(a.current_payload ->> 'body', ''),
+    'forged', coalesce(a.current_payload -> 'forged', '[]'::jsonb),
+    'version', post_version(a.id),
+    'effects', coalesce((select jsonb_agg(e.effect order by e.at, e.id) from (
+        select k.created_at as at, k.id, jsonb_strip_nulls(jsonb_build_object('card', k.payload ->> 'card', 'act', k.id,
+          'gimmick', ck.gimmick, 'ends', k.payload ->> 'ends', 'drive', dp.drive,
+          'covered', case when ck.surface then (select bit_count(sf.cover) from surfaces sf where sf.play = k.id) end, 'closes', to_jsonb(dp.closes),
+          'quadrant', case when ck.skim is not null then k.payload #>> '{config,quadrant}' end)) as effect
+        from acts k left join card_kinds ck on ck.key = k.payload ->> 'card'
+        -- One grouped read of the post's drive plays: each play's drive, and that drive's close (its latest play plus the card's `lasts`).
+        left join (select d.id, d.drive, max(d.created_at) over (partition by d.card, d.drive) + span_interval(dk.drive -> 'lasts') as closes
+                   from drive_plays(a.id) d join card_kinds dk on dk.key = d.card) dp on dp.id = k.id
+        where k.kind = 'card' and k.target_act_id = a.id and not (k.payload ? 'caught') and not card_ended(k.id) and coalesce(k.payload ->> 'reach', 'post') = 'post'
+        union all
+        select s.created_at, s.id, jsonb_build_object('card', null, 'act', s.id, 'faceDown', true,
+          'ends', to_jsonb(coalesce(least(sp.created_at, tb.created_at, f.ends_at), f.ends_at)))
+        from acts s join face_down f on f.play = s.id
+        left join acts sp on sp.kind = 'spring' and (sp.payload ->> 'set') = s.id::text
+        left join acts tb on tb.kind = 'take_back' and (tb.payload ->> 'set') = s.id::text
+        where s.kind = 'set' and s.target_act_id = a.id
+      ) e), '[]'))
+    -- Where the target is a reply a play in force draws under its parent (post_under): the parent, and no key for any other post.
+    || coalesce((select jsonb_build_object('under', u.parent) from post_under u where u.reply = a.id and not card_ended(u.play)), '{}'::jsonb)
+  from acts_public a where a.id = target
+  );
+end
+$function$;
+
+-- my_hidden_version (0342): the verdict of the hidden version's own row (`cur`, the post's latest version), beside its words. The function-level settings 0368 gave it are stated again, since a replacement carries only what it says.
+create or replace function my_hidden_version(act uuid) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp set plan_cache_mode = force_generic_plan set jit = off as $$
+declare
+  p acts;
+  cur acts;
+  d conduct_decisions;
+  hidden boolean;
+  answer jsonb := null;
+  mine boolean;
+begin
+  select * into p from acts a where a.id = my_hidden_version.act;
+  if found and p.kind = 'edit' then
+    select * into p from acts a where a.id = p.target_act_id;
+  end if;
+  if not found or p.kind <> 'post' then return null; end if;
+  -- "A response never proves a private fact": whose post this is must not change how long the answer takes. So the post's latest version, whether it is hidden and the
+  -- decision on it are looked up for every caller alike, whoever they are, and the ownership check is the last thing, deciding only whether the answer is given.
+  select * into cur from acts e where e.kind = 'edit' and e.target_act_id = p.id order by e.created_at desc, e.id desc limit 1;
+  if not found then cur := p; end if;
+  hidden := version_hidden(cur.id, p.id);
+  select * into d from conduct_decisions x
+  where x.post = p.id and x.version_act = cur.id and x.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve')
+  order by x.id desc limit 1;
+  if hidden then
+    if found then
+      if d.outcome = 'hideUntilEdited' then answer := jsonb_build_object('status', 'hiddenUntilEdited', 'version', cur.id, 'words', cur.payload ->> 'body', 'forged', coalesce(cur.payload -> 'forged', '[]'::jsonb)); end if;
+    else
+      answer := jsonb_build_object('status', 'waiting', 'version', cur.id, 'words', cur.payload ->> 'body', 'forged', coalesce(cur.payload -> 'forged', '[]'::jsonb));
+    end if;
+  end if;
+  select auth.uid() is not null and exists (select 1 from characters c where c.id = p.character and c.owner = auth.uid()) into mine;
+  return case when mine then answer end;
+end $$;

@@ -423,8 +423,9 @@ begin
   select a.current_payload ->> 'body', a.payload ->> 'body', a.concealing into said, rd.body, rd.concealing from acts_public a where a.id = qe;
   perform tests.unbecome();
   if said is not null or rd.concealing is distinct from true or rd.body is distinct from 'original, nothing quoted' then raise exception 'the current version is not withheld, or the original is not as written: % % %', said, rd.body, rd.concealing; end if;
-  -- a quote written after the hide is a counterfeit of the post: it asks for a layer (quote_refs names it) and is served as written, with no layer to make
+  -- a quote written after the hide is a counterfeit of the post: acts_quote_refs leaves it out, so it is in no quote_refs and asks for no layer, and it is served as written
   doctored := tests.post(ch_reader, th, format('[quote=%s]Hidden words.[/quote] after', p1), base + interval '12 minutes 30 seconds');
+  if exists (select 1 from conceal_requests r where r.act = doctored) or exists (select 1 from quote_refs r where r.act = doctored) then raise exception 'a forged quote of a hidden post is in quote_refs or asked for a layer'; end if;
   select * into rd from tests.read_as(reader, doctored) x;
   if rd.body is distinct from format('[quote=%s]Hidden words.[/quote] after', p1) or rd.concealing is distinct from false then
     raise exception 'a quote written after the hide is not served as written: %', rd;
