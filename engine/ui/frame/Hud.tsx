@@ -128,7 +128,7 @@ export function Hud() {
   const menuSource = menuWait.source;
   const { board, scale } = useBoard();
   const wide = board === 'main';
-  const [readFace, setFace] = useState<Character | null>(null);
+  const [readFaces, setFaces] = useState<readonly Character[]>([]);
   const [readNext, setNext] = useState<string | null>(null);
   const [tab, setTab] = useState<readonly [number, number, number, number] | null>(null);
   const handButton = useRef<HTMLButtonElement>(null);
@@ -193,17 +193,46 @@ export function Hud() {
   useTip('ghost', aura, { when: signedIn && player.wallet !== null && player.pending !== 0 });
 
   const hudId = hud?.id ?? null;
-  /* Boot's faces are in the first render; a mask boot does not hold (made after it) is read, and a later page asks again. */
-  const bootFace = hudId && boot ? boot.faces.find((f) => f.id === hudId) ?? null : null;
-  const face = bootFace ?? readFace;
+  /*
+   * Every mask the picker offers has its face ready before it is chosen, so a swap draws the new mask's picture in the commit that
+   * swaps it, under the recast, and never its letter first. Boot's faces are in the first render; the masks boot does not hold (made
+   * after it, or no boot at all) are read in one read for all of them, not one per swap, and a later page asks again. A mask whose face
+   * is not read yet has its letter in the slot.
+   */
+  const acting = player.actingCharacters;
+  const unbooted = useMemo(() => acting.map((c) => c.id).filter((id) => !boot?.faces.some((f) => f.id === id)), [acting, boot]);
+  const unbootedKey = unbooted.join(',');
   useEffect(() => {
     let live = true;
-    setFace(null);
-    if (!hudId || bootFace) return;
-    /* No face is the initial in the slot; a later page asks again. */
-    void api.characters([hudId]).then((cs) => { if (live) setFace(cs[0] ?? null); }, () => {});
+    /* What was read stays drawn until the new read lands: a face is found by its id, so one no longer offered is never drawn. */
+    if (unbooted.length === 0) return;
+    void api.characters(unbooted).then((cs) => { if (live) setFaces(cs); }, () => {});
     return () => { live = false; };
-  }, [api, hudId, bootFace]);
+  // The read is of the ids, not of the array that carries them: a new array with the same masks reads nothing again.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, unbootedKey]);
+  const faceOf = (id: string) => boot?.faces.find((f) => f.id === id) ?? readFaces.find((f) => f.id === id) ?? null;
+  const face = hudId ? faceOf(hudId) : null;
+  /*
+   * And its picture is in the browser's cache, decoded: each mask's avatar is fetched once, ahead, and held here so it is not let go
+   * before it lands. These are the player's own masks' public pictures, asked for by their own browser; no other player sees the asking.
+   * At six masks a player, at most six small files, whatever the size of the instance.
+   */
+  const avatarUrls = acting.map((c) => faceOf(c.id)?.avatarSquare ?? null).filter((u): u is string => u !== null);
+  const avatarKey = avatarUrls.join('\n');
+  const warmed = useRef(new Map<string, HTMLImageElement>());
+  useEffect(() => {
+    for (const url of avatarUrls) {
+      if (warmed.current.has(url)) continue;
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = url;
+      warmed.current.set(url, img);
+      /* Setting the source fetches it; decoding it too, where the browser can, saves the first paint that work. */
+      if (typeof img.decode === 'function') void img.decode().catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarKey]);
 
   const booted = boot !== null;
   const next = booted ? boot.nextSettlementAt : readNext;
@@ -461,7 +490,6 @@ export function Hud() {
   const account = player.session.account;
   const recastFrom = useRef<{ readonly account: string | null; readonly id: string | null }>({ account, id: hudId });
   const recastRun = useRef<(() => void) | null>(null);
-  const acting = player.actingCharacters;
   useLayoutEffect(() => {
     const was = recastFrom.current;
     recastFrom.current = { account, id: hudId };

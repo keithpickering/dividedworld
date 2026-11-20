@@ -8,7 +8,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { KayfaApi, MyCharacter } from '../data/api.ts';
+import type { Character, KayfaApi, MyCharacter } from '../data/api.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { PlayerProvider } from '../player.tsx';
 import { RouterProvider } from '../router.tsx';
@@ -38,7 +38,7 @@ const mine = (id: string, name: string, cls: string): MyCharacter => ({
   debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false,
 });
 
-function setup() {
+function setup(faces: (ids: readonly string[]) => Promise<readonly Character[]> = async () => []) {
   const api = {
     session: async () => ({ signedIn: true, account: 'acc' }),
     onSession: () => () => {},
@@ -46,7 +46,7 @@ function setup() {
     wallet: async () => ({ balance: 240, cap: 600 }),
     myCards: async () => [],
     estimate: async () => ({ entries: [], lines: [], asOf: null, freshAfter: null }),
-    characters: vi.fn(async () => []),
+    characters: vi.fn(faces),
     boards: async () => [],
     nextSettlementAt: async () => '2026-10-31T08:17:00Z',
     preferences: async () => ({ tips: 'off', tipsSeen: [] }),
@@ -62,13 +62,14 @@ function setup() {
     ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine', badges: [] }, cards: [], frontDoor: { prompt: { title: 'Who will you play as?', line: 'A test game.' } } },
     settings: { walletCap: 600, registrationMode: 'invite' },
   } as unknown as Kayfa;
-  return render(
+  const view = render(
     <RouterProvider>
       <KayfaProvider value={kayfa}>
         <PlayerProvider api={api}><Frame><p>page</p></Frame></PlayerProvider>
       </KayfaProvider>
     </RouterProvider>,
   );
+  return { ...view, api };
 }
 
 const root = document.documentElement;
@@ -220,5 +221,50 @@ describe('the plate recast for another mask', () => {
     await screen.findByText('Mrs. Hooligan', { selector: '.kb-hud-name' });
     expect(recastRuns()).toEqual([]);
     expect(plate()).not.toHaveAttribute('data-kb-recast');
+  });
+});
+
+/* Each mask's avatar, as its public face carries it; Pipewrench has none. */
+const AVATAR: Readonly<Record<string, string | null>> = { a: null, b: 'https://example.test/b.png', c: 'https://example.test/c.png' };
+const faceOf = (id: string) => ({ id, name: id, avatarSquare: AVATAR[id] ?? null }) as unknown as Character;
+
+describe('every mask\'s avatar is ready before the first swap', () => {
+  /* jsdom loads no images: Image is a stub that records what was asked for and decodes at once. */
+  const warmed: string[] = [];
+  beforeEach(() => {
+    warmed.length = 0;
+    vi.stubGlobal('Image', class { decoding = ''; set src(v: string) { warmed.push(v); } decode() { return Promise.resolve(); } });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  test('the faces boot does not hold are read in one read for every mask, not one per swap', async () => {
+    root.setAttribute('data-kb-motion', 'reduce');
+    const { api } = setup(async (ids) => ids.map(faceOf));
+    const select = await ready();
+    await waitFor(() => expect(api.characters).toHaveBeenCalledTimes(1));
+    expect([...(vi.mocked(api.characters).mock.calls[0]![0] as readonly string[])].sort()).toEqual(['a', 'b', 'c']);
+    await userEvent.selectOptions(select, 'b');
+    await userEvent.selectOptions(select, 'c');
+    expect(api.characters).toHaveBeenCalledTimes(1);
+  });
+
+  test('each mask\'s avatar is fetched and decoded ahead, once, and a mask with none asks for nothing', async () => {
+    root.setAttribute('data-kb-motion', 'reduce');
+    setup(async (ids) => ids.map(faceOf));
+    const select = await ready();
+    await waitFor(() => expect([...warmed].sort()).toEqual([AVATAR.b, AVATAR.c]));
+    await userEvent.selectOptions(select, 'b');
+    expect([...warmed].sort()).toEqual([AVATAR.b, AVATAR.c]);
+  });
+
+  test('the first swap draws the new mask\'s picture in the same commit, never its letter first', async () => {
+    root.setAttribute('data-kb-motion', 'reduce');
+    setup(async (ids) => ids.map(faceOf));
+    const select = await ready();
+    await waitFor(() => expect(warmed).toHaveLength(2));
+    await userEvent.selectOptions(select, 'c');
+    const avatar = plate().querySelector('.kb-hud-avatar')!;
+    expect(avatar.querySelector('img')).toHaveAttribute('src', AVATAR.c);
+    expect(avatar.querySelector('.kb-avatar-none')).toBeNull();
   });
 });
