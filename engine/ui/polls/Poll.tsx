@@ -37,25 +37,29 @@ export const NAMES_SHOWN = 8;
 export const NAMES_OPENED = 100;
 const MOST_MS = 2 ** 31 - 1;
 
-export function Poll({ post, polls }: { readonly post: Id; readonly polls?: Polls | undefined }) {
+/**
+ * `board` is the board whose bars bind a vote on this poll: left out, the thread screen's own board; the ORIGIN box passes null (the poll's board is not the spun thread's, and the
+ * server refuses a barred ballot in its own words, shown in the foot).
+ */
+export function Poll({ post, polls, board }: { readonly post: Id; readonly polls?: Polls | undefined; readonly board?: Id | null }) {
   const thread = useContext(ThreadCtx);
   const store = polls ?? thread?.polls;
   const view = usePoll(store, post);
   if (store === undefined || view === undefined) return null;
   /* A replaced poll is another poll: its form and open lists start over. */
-  return <PollBody key={view.poll.act.id} view={view} store={store} />;
+  return <PollBody key={view.poll.act.id} view={view} store={store} board={board} />;
 }
 
 const same = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((n) => b.includes(n));
 
-function PollBody({ view, store }: { readonly view: PollView; readonly store: Polls }) {
+function PollBody({ view, store, board }: { readonly view: PollView; readonly store: Polls; readonly board: Id | null | undefined }) {
   const { api } = useKayfa();
   const player = usePlayer();
   const thread = useContext(ThreadCtx);
   const hud = player.hudCharacter;
   const admin = useIsAdmin(api, player.session.signedIn);
   const bannedUntil = useBannedUntil(hud);
-  const bar = useBar(hud, thread?.summary.board ?? null);
+  const bar = useBar(hud, board !== undefined ? board : thread?.summary.board ?? null);
   const drafts = useSpinDrafts();
   const { poll } = view;
   const id = poll.act.id;
@@ -180,6 +184,8 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
   };
 
   const [spinning, setSpinning] = useState(false);
+  /* A ballot of the record being spun from: its Act's id and who it is by, for the form's words. */
+  const [spinningBallot, setSpinningBallot] = useState<{ readonly act: Id; readonly name: string } | null>(null);
 
   const form = !closed && hud !== null && bannedUntil === null && bar === null;
   const voters = view.voters;
@@ -268,7 +274,13 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
               <ol aria-label="Ballots" className="kb-poll-ballots">
                 {history.ballots.map((b, i) => {
                   const earlier = history.ballots.slice(i + 1).find((x) => x.character.id === b.character.id);
-                  return <li key={b.act}>{ballotLine(b.character.name, b.picks.map((p) => options[p] ?? ''), earlier === undefined ? (history.more ? null : false) : earlier.picks.length > 0, b.at)}</li>;
+                  return (
+                    <li key={b.act}>
+                      {ballotLine(b.character.name, b.picks.map((p) => options[p] ?? ''), earlier === undefined ? (history.more ? null : false) : earlier.picks.length > 0, b.at)}
+                      {' '}
+                      <button type="button" className="kb-link-button" aria-label={`Spin from ${b.character.name}'s ballot`} aria-expanded={spinningBallot?.act === b.act} onClick={(e) => { setSpinningBallot((s) => (s?.act === b.act ? null : { act: b.act, name: b.character.name })); }}>Spin</button>
+                    </li>
+                  );
                 })}
               </ol>
             )}
@@ -279,6 +291,12 @@ function PollBody({ view, store }: { readonly view: PollView; readonly store: Po
           </div>
         )}
       </fieldset>
+      {spinningBallot !== null && (
+        <SpinForm
+          key={spinningBallot.act} origin={spinningBallot.act} label={`${spinningBallot.name}'s ballot`} draft={drafts.get(spinningBallot.act)} onDraft={(d) => drafts.set(spinningBallot.act, d)}
+          onClose={() => setSpinningBallot(null)}
+        />
+      )}
       {spinning && (
         <SpinForm
           origin={id} label="this poll" draft={drafts.get(id)} onDraft={(d) => drafts.set(id, d)}

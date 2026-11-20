@@ -331,6 +331,14 @@ function toPlace(raw: unknown): OriginPlace | null {
     /* `from` and `at` (0351) are each a post place, else null: a row from before the migration has neither key. */
     return { kind: 'play', card: raw['card'], on: toPlaceOn(raw['on']), from: toPostPlace(raw[PLAY_FROM]), at: toPostPlace(raw['at']) };
   }
+  /* A poll, and a public ballot on one (0389): the question and the poll's post; a ballot also names its character. */
+  if (raw['kind'] === 'poll' || raw['kind'] === 'ballot') {
+    const on = toPostPlace(raw['on']);
+    const who = raw['character'];
+    if (!isText(raw['question']) || on === null) return null;
+    if (raw['kind'] === 'poll') return { kind: 'poll', question: raw['question'], on };
+    return isObject(who) && isText(who['id']) && isText(who['name']) ? { kind: 'ballot', character: { id: who['id'], name: who['name'] }, question: raw['question'], on } : null;
+  }
   const place = toPlaceOn(raw);
   return place !== null && (place.kind === 'post' || place.kind === 'update') ? place : null;
 }

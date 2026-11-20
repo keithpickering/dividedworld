@@ -922,6 +922,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const pressed = first?.kind === 'spin' && typeof first.payload.at === 'string' ? postPlace(acts.get(first.payload.at)) : null;
       return { kind: 'play', card, on, from, at: pressed };
     }
+    /* A poll, and a public ballot on one (0389): the question and the poll's post; a secret ballot has no character to name and is no origin. */
+    if (origin.kind === 'poll' || origin.kind === 'ballot') {
+      const poll = origin.kind === 'poll' ? origin : acts.get(origin.target!);
+      const post = poll?.target == null ? undefined : acts.get(poll.target);
+      const on = post === undefined || post.seq === null ? null : placeOf(post);
+      if (poll === undefined || on === null || on.kind !== 'post') return null;
+      if (origin.kind === 'poll') return { kind: 'poll', question: String(poll.payload.question), on };
+      const who = origin.character === null || poll.payload.secret === true ? undefined : characters.get(origin.character);
+      return who === undefined ? null : { kind: 'ballot', character: { id: who.id, name: who.name }, question: String(poll.payload.question), on };
+    }
     return origin.seq !== null ? placeOf(origin) : null;
   }
 
@@ -1601,6 +1611,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(c)) return c;
     const from = acts.get(origin);
     if (!from || from.kind === 'edit') return refuse('there is no such Act to spin from');
+    /* spin_written (0388): a close is not spun, a replaced or removed poll is not, and a secret ballot would have no one to name. */
+    if (from.kind === 'poll_close') return refuse('spin the poll');
+    if (from.kind === 'poll' && currentPoll(from.target!)?.id !== from.id) return refuse('that poll was replaced');
+    if (from.kind === 'ballot' && acts.get(from.target!)?.payload.secret === true) return refuse('a secret ballot cannot be spun');
     const home = boards.find((b) => b.id === threads.get(from.thread)!.board)!;
     const board = home.isSystem ? playersBoard! : home;
     /* spin_written (0351, 0357): a spin names a post only from a live character play, on a post of the character the play is on as the post shows its author (a veiled post is the stand-in's). Nothing here reads who owns either. */

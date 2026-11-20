@@ -329,6 +329,9 @@ export const PLAY_FROM = 'from' as const;
 /** Where a spun thread's origin can be found: an Act with a place number, an update, or a play and where it landed. */
 export type OriginPlace =
   | Extract<PlaceOn, { kind: 'post' | 'update' }>
+  /** A poll, and a public ballot on one (0389): `on` is the poll's post. A secret ballot is no origin. */
+  | { readonly kind: 'poll'; readonly question: string; readonly on: PostPlace }
+  | { readonly kind: 'ballot'; readonly character: { readonly id: Id; readonly name: string }; readonly question: string; readonly on: PostPlace }
   /*
    * `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. `from` is the post a play on a
    * character was cast from, and `at` the post the spin was pressed on (0351); each is null where the thread has none (a play on a post, a

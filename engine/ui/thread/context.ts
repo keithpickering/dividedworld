@@ -30,6 +30,8 @@ export interface ThreadContext {
   readonly origin?: PageOrigin | null;
   /** The ORIGIN box's own store of plays, which the thread screen gives the saved states and releases the page carried for the origin's plays. Absent outside the thread screen. */
   readonly originPlays?: Plays;
+  /** The ORIGIN box's own store of polls, for a thread spun from a poll or a ballot: the page's origin parts and the origin thread's events go here, never into `polls`. Absent outside the thread screen. */
+  readonly originPolls?: Polls;
   /** The post a reply is drawn under, by the reply's id, or undefined for a post of the thread's own: what a card that replies reads to leave itself off a reply. Stable; a reply is drawn only after it is known. A thread drawn with none has no replies. */
   readonly underOf?: (act: Id) => Id | undefined;
   /** Each post's latest visit, by the post's id, as the pages read carried it. */

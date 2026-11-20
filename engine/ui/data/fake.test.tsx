@@ -5951,6 +5951,32 @@ describe('polls (0388, 0389)', () => {
     expect(await fake.startThread('general', anaFace, 'T', 'b', undefined, { ...draft, pick: 9 })).toEqual(refused('a poll lets 1 to 3 options be picked', 'poll'));
   });
 
+  test('a poll and a public ballot can be spun: the place names them, the page\'s origin carries the poll, and the refusals are the server\'s', async () => {
+    const { fake, id, anaFace, thread, post, ana } = await poll();
+    const ballot = must(await fake.castBallot(id, anaFace, [1])).act;
+    const on = { kind: 'post', thread, title: 'Hello', seq: post.seq };
+    const polled = must(await fake.spin(id, anaFace, 'About the poll', 'b'));
+    expect(polled.thread.origin).toEqual({ kind: 'poll', question: 'Which?', on });
+    const origin = (await fake.threadPage(polled.thread.id, { page: 1 }, null, []))!.origin!;
+    expect([origin.polls.map((x) => x.act.id), origin.at]).toEqual([[id], { thread, seq: post.seq }]);
+    expect(origin.polls[0]!.counts).toEqual([0, 1, 0]);
+    const balloted = must(await fake.spin(ballot.id, anaFace, 'About the ballot', 'b'));
+    expect(balloted.thread.origin).toMatchObject({ kind: 'ballot', character: { id: anaFace, name: expect.any(String) }, question: 'Which?', on });
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    const close = must(await fake.closePollAsAdmin(id)).act;
+    fake.signInAs(ana);
+    expect(await fake.spin(close.id, anaFace, 'About the close', 'b')).toEqual(refused('spin the poll'));
+  });
+
+  test('a secret ballot cannot be spun, and a replaced or removed poll cannot be spun', async () => {
+    const secret = await poll(true);
+    const ballot = must(await secret.fake.castBallot(secret.id, secret.anaFace, [0])).act;
+    expect(await secret.fake.spin(ballot.id, secret.anaFace, 'No', 'b')).toEqual(refused('a secret ballot cannot be spun'));
+    const w = await poll();
+    must(await w.fake.edit(w.post.id, w.anaFace, 'Vote again.', { ...draft, question: 'Which now?' }));
+    expect(await w.fake.spin(w.id, w.anaFace, 'No', 'b')).toEqual(refused('that poll was replaced'));
+  });
+
   test('a ballot counts its characters; the latest ballot counts, a withdrawal takes it back, and a refusal names the rule', async () => {
     const { fake, id, anaFace, anaHeel } = await poll();
     expect(must(await fake.castBallot(id, anaFace, [2, 0])).counts).toMatchObject({ counts: [1, 0, 1], voters: 1 });

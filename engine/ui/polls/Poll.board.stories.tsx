@@ -13,8 +13,9 @@ import { cardOf, type World } from '../story.tsx';
 import type { Instance } from '../../rules/types.ts';
 
 const TITLE = 'Ranking every Mario Kart';
+const SPUN_TITLE = 'Karts, settled';
 const DAY = 86_400_000;
-type Scene = 'spun' | 'open' | 'voted' | 'closed' | 'secret' | 'three' | 'own' | 'no-mask' | 'whoops';
+type Scene = 'origin' | 'origin-closed' | 'spun' | 'open' | 'voted' | 'closed' | 'secret' | 'three' | 'own' | 'no-mask' | 'whoops';
 
 /** The world's spin, done: a story's world is made before it renders, and the page is read after this. */
 let seeded: Promise<unknown> = Promise.resolve();
@@ -50,9 +51,11 @@ const worldOf = (scene: Scene): World => (fake: Fake, instance: Instance) => {
     const whoops = cardOf(instance.cards, 'whoops');
     fake.seed.card(caster, made.act, whoops.key, { layer: 1, live: true, config: { ...(whoops.staffConfigs?.[0] ?? {}), seed: 2591 } as Readonly<Record<string, unknown>>, message: 'Settled.' });
   }
-  if (scene === 'spun') seeded = fake.spin(poll, mine, 'Karts, settled', 'Carrying on over here.');
-  if (scene === 'closed') fake.clock.advance(3 * DAY);
+  if (scene === 'closed' || scene === 'origin-closed') fake.clock.advance(3 * DAY);
   fake.signInAs(scene === 'no-mask' ? fake.seed.account('story-nobody', { seasoned: true }) : me);
+  /* A spin is written by the signed-in player: after the sign-in. */
+  if (scene === 'origin' || scene === 'origin-closed') seeded = fake.spin(poll, mine, SPUN_TITLE, 'Carrying on over here.');
+  if (scene === 'spun') seeded = fake.spin(poll, mine, SPUN_TITLE, 'Carrying on over here.');
 };
 
 /** The thread, drawn by the thread screen, found by its title. */
@@ -66,7 +69,7 @@ function Seen({ scene }: { readonly scene?: Scene }) {
       /* Every card met, so no one-line tip hangs off the ink's mark over the poll. */
       if (scene === 'whoops') for (const c of instance.cards) await api.meetCard(c.key);
       for (const board of await api.boards()) {
-        const found = (await api.threads(board.id, { offset: 0, limit: 200 })).threads.find((x) => x.title === TITLE);
+        const found = (await api.threads(board.id, { offset: 0, limit: 200 })).threads.find((x) => x.title === (scene === 'origin' || scene === 'origin-closed' ? SPUN_TITLE : TITLE));
         if (found) { if (live) setThread(found.id); return; }
       }
       if (live) setThread('missing');
@@ -90,6 +93,10 @@ type Story = StoryObj<typeof Seen>;
 export const Open: Story = { parameters: { world: worldOf('open') } };
 /** A thread was spun from the poll: its SpunInto stands in the foot. */
 export const Spun: Story = { parameters: { world: worldOf('spun') } };
+/** The spun thread: its ORIGIN box draws the poll (open, voteable), under a head that links to the poll's post. */
+export const OriginBox: Story = { args: { scene: 'origin' }, parameters: { world: worldOf('origin') } };
+/** The same, once the poll has closed: final, no form. */
+export const OriginBoxClosed: Story = { args: { scene: 'origin-closed' }, parameters: { world: worldOf('origin-closed') } };
 /** The mask has voted: its pick is checked, and the foot offers "Change ballot" and "Withdraw". */
 export const Voted: Story = { parameters: { world: worldOf('voted') } };
 /** A poll past its time: no inputs, "closed" in the head, and one plain line in the foot. */

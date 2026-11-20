@@ -292,6 +292,12 @@ describe('reads and their rows', () => {
         { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: { kind: 'post', thread: T, title: 'U', seq: 5 } }],
       [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: null },
         { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: null }],
+      [{ kind: 'poll', question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, { kind: 'poll', question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }],
+      [{ kind: 'ballot', character: { id: B, name: 'Wario' }, question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, { kind: 'ballot', character: { id: B, name: 'Wario' }, question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }],
+      /* A poll or a ballot whose parts are malformed is no place. */
+      [{ kind: 'poll', question: 5, on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, null],
+      [{ kind: 'poll', question: 'Q', on: { kind: 'update', act: A, title: 'U' } }, null],
+      [{ kind: 'ballot', character: { id: B }, question: 'Q', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, null],
       [null, null],
     ];
     for (const [raw, want] of places) {
