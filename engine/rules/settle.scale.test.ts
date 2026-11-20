@@ -21,6 +21,7 @@ const counting: ClassRules = {
     ...i.cardsPlayed.map((c) => ({ reason: 'busy.card', amount: c.votes - c.targetVotes, act: c.act })),
     ...i.threadsSpun.map((t) => ({ reason: 'busy.spun', amount: t.repliersNow - t.repliersBefore, act: t.act })),
     ...i.standings.map((s) => ({ reason: 'busy.standing', amount: s.before.length + s.now.length, act: s.act })),
+    ...i.debates.map((d) => ({ reason: 'busy.debate', amount: d.posts.length + d.standing.now.length, act: d.act })),
     ...i.cardsPlayed.map((c) => ({ reason: 'busy.drawn', amount: c.drawnAfter?.now.length ?? 0, act: c.act })),
   ],
 };
@@ -35,7 +36,7 @@ const instance: Instance = {
     { key: 'tea', emoji: '☕', quadrant: 'calmPositive' }, { key: 'zzz', emoji: '💤', quadrant: 'boredNegative' },
   ],
   settings: {
-    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
+    walletCap: 600, vote: 10, halving: 0.5, debateDays: 3, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
 };
@@ -203,4 +204,22 @@ test('a thousand skim plays on a thousand posts, and one post of five thousand v
   assert.equal(r.entries.filter((e) => e.reason === 'card.skim').length, casters, 'one entry per caster');
   assert.ok(r.entries.find((e) => e.character === 'k0' && e.reason === 'card.skim')!.amount > 0);
   assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
+});
+
+test('a 2,000-post quote chain in one window hands each post its debate in seconds', () => {
+  // Every post quotes the one before it, so every post is a spark whose debate is the rest of the chain: each spark costs its own
+  // debate's size (quotes indexed once), never a walk per post from scratch.
+  const posts = 2_000;
+  const players = 40;
+  const characters = Array.from({ length: players }, (_, i) => ({ id: `c${i}`, player: `p${i}`, classes: [{ class: 'counting', from: 0 }] }));
+  const acts: InputAct[] = Array.from({ length: posts }, (_, i) => ({ id: `a${i}`, character: `c${i % players}`, kind: 'post', at: 1_000 + i, thread: 'chain' }));
+  const quotes = Array.from({ length: posts - 1 }, (_, i) => ({ act: `a${i + 1}`, quoted: `a${i}` }));
+  const input: SettlementInput = { window: { id: 'chain', from: 0, to: 10_000_000 }, characters, acts, reactions: [], quotes };
+  const start = performance.now();
+  const r = settle(input, instance);
+  const ms = performance.now() - start;
+  const sparks = r.entries.filter((e) => e.reason === 'busy.debate');
+  console.log(`  handed ${posts - 1} debates of a ${posts}-post quote chain in ${Math.round(ms)} ms`);
+  assert.equal(sparks.reduce((n, e) => n + e.amount, 0), (posts * (posts - 1)) / 2, 'each post but the last has a debate, which is the rest of the chain');
+  assert.ok(ms < 20_000, `took ${Math.round(ms)} ms`);
 });

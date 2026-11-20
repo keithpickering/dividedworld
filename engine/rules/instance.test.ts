@@ -13,6 +13,7 @@ const settings: Settings = {
   walletCap: 600,
   vote: 10,
   halving: 0.5,
+  debateDays: 3,
   reactionCap: 3,
   charactersPerPlayer: 6,
   settlementCron: '17 8 * * *',
@@ -321,6 +322,8 @@ test('settings out of range are problems', () => {
   assert.match(settingsProblems({ ...settings, vote: 2.5 }).join('\n'), /vote/);
   assert.match(settingsProblems({ ...settings, halving: 1.5 }).join('\n'), /halving/);
   assert.match(settingsProblems({ ...settings, reactionCap: 0 }).join('\n'), /reactionCap/);
+  for (const bad of [0, 1.5, -2, '3', NaN]) assert.match(settingsProblems({ ...settings, debateDays: bad as number }).join('\n'), /debateDays/, `debateDays ${String(bad)}`);
+  assert.deepEqual(settingsProblems({ ...settings, debateDays: 1 }), [], 'one day is the least');
   for (const cron of ['daily', '* * * * * *', '99 99 * * *', '60 * * * *', '* 24 * * *', '* * 0 * *', '* * * 13 *', '* * * * 8', '*/0 * * * *', '5-1 * * * *', 'MON * * * *', ''])
     assert.match(settingsProblems({ ...settings, settlementCron: cron }).join('\n'), /settlementCron/, `cron ${JSON.stringify(cron)}`);
   for (const cron of ['17 8 * * *', '*/15 0-6 * * 1-5', '0 0 1,15 * 0', '0 12 * * 7'])

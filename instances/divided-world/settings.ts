@@ -16,6 +16,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   walletCap: 600,
   vote: 10,
   halving: 0.5,
+  /** A post's debate is followed for three days: long enough for a thread to catch fire over a weekend, short enough that a stale post is not a spark. */
+  debateDays: 3,
   reactionCap: 3,
   charactersPerPlayer: 6,
   /** Daily, at 08:17 UTC: the small hours across the Americas, when the board is quietest. */

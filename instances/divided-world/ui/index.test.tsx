@@ -361,7 +361,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('the numbers a reason\'s earnings carry are the ones its words declare, so a settled line is said with its own', () => {
     const lurker = instance.classes.find((c) => c.key === 'lurker')!;
     const earned = lurker.earn({
-      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [],
+      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [], debates: [],
       threadsSpun: [{ act: 's1', thread: 't', at: 1, fromOthers: true, repliersBefore: 0, repliersNow: economy['lurker.spunThreadRepliers']! }],
     }, instance.settings);
     const reasons = Object.keys(wordsRead).filter((k) => k.includes('.'));
@@ -744,7 +744,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       targetAfter: { ...none, excitedPositive: 2 }, drawnAfter: { at: 6, now: [hype, heat] },
     });
     const i: ClassInput = {
-      character: 'c', from: 0, to: 20 * DAY, received, given: [],
+      character: 'c', from: 0, to: 20 * DAY, received, given: [], debates: [],
       posts: Array.from({ length: eco('lurker.postsAllowed') + 1 }, (_, n) => ({ act: `q${n}`, at: n })),
       held: [{ act: 'p9', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'excitedPositive' }],
       cardsPlayed: [played('sweet', 'k1'), played('salty', 'k2'), played('pepperoni', 'k3')],
