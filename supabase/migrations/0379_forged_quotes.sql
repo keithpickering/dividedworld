@@ -1548,3 +1548,251 @@ begin
 end $$;
 revoke execute on function acts_forged_quotes() from public, anon, authenticated;
 create trigger acts_forged_quotes before insert on acts for each row when (new.kind in ('post', 'spin', 'edit')) execute function acts_forged_quotes();
+
+-- ===================================================================================== 4. the writers and the guards ====
+-- A doctored quote quotes no post (docs/plans/2026-11-20-forged-quotes-design.md, sections 1, 6 and 11; plan, Task 4). The verdict's trigger has already written the Act with no target where its target is forged, so the two
+-- writers of a quote read the target from the row they wrote and spring the back and write the `quote` alert only for one that is left. Each function below is its latest definition (found with grep) with only what is said here changed.
+-- Every lock a copied function takes, and its order, stand as written (0075's header): a back that lock_for_quote locked and the write then did not meet is left as 0142 leaves one that a quote did not spring, and the
+-- locks it took are released with the transaction; nothing waits on a lock for a back that no later step of the write takes.
+
+-- write_forged_framed(written, acting, framing): a `framed` alert for the author of each post the Act's verdict names that is a debuted character, through write_alert as write_framed writes its own (which skips staff and the
+-- acting account's own masks). Called by post, start_thread and spin after write_framed, never by an edit or a pool post. It shares write_framed's five: the ids of `framing` that write_framed meant to alert (the first five, distinct,
+-- debuted, named by the body, as it reads them) take their places first, a character that one of them already told is not told again, and the forged authors take what is left, in the verdict's order, each character once.
+-- Which places are taken is worked out from the composer's ids and public facts alone (a character's debut, the body's words), never from who owns anything or whether write_alert wrote a row, so no answer differs with a private fact.
+-- `framing` is the third argument the plan's (written, acting) does not name: without it the function cannot tell how many of the five write_framed took. Callable by no API role.
+create function write_forged_framed(written uuid, acting uuid, framing uuid[] default '{}') returns void
+language plpgsql set search_path = public, pg_temp as $$
+declare
+  p jsonb;
+  forged uuid[];
+  body text;
+  told uuid[];
+  ch uuid;
+begin
+  select a.payload into p from acts a where a.id = written;
+  forged := act_forged(p);
+  if cardinality(forged) = 0 then return; end if;
+  body := p ->> 'body';
+  -- write_framed's reading of `framing`: the first five, each id once, a debuted character the body names.
+  told := coalesce(array(
+    select t.id from unnest((coalesce(framing, '{}'::uuid[]))[1:5]) with ordinality t(id, n)
+    where t.id is not null and exists (select 1 from characters c where c.id = t.id and c.debuted_at is not null) and position('user=' || lower(t.id::text) in lower(coalesce(body, ''))) > 0
+    group by t.id order by min(t.n)), '{}'::uuid[]);
+  for ch in
+    select d.character from (
+      select a.character, min(u.o) as o
+      from unnest(forged) with ordinality u(id, o)
+      join acts a on a.id = u.id and post_kind(a.kind)
+      join characters c on c.id = a.character and c.debuted_at is not null
+      where a.character <> all (told)
+      group by a.character) d
+    order by d.o
+    limit greatest(5 - cardinality(told), 0)
+  loop
+    perform write_alert(ch, 'framed', null, written, acting);
+  end loop;
+end $$;
+revoke execute on function write_forged_framed(uuid, uuid, uuid[]) from public, anon, authenticated, service_role;
+
+-- post (0142): the target is read from the row after the insert; a back is sprung and the quote alert written only for one that is left. write_forged_framed follows write_framed.
+CREATE OR REPLACE FUNCTION public.post(in_thread uuid, through uuid, body text, quoting uuid DEFAULT NULL::uuid, framing uuid[] DEFAULT '{}'::uuid[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  on_board uuid;
+  written uuid;
+  kept uuid;
+  sprung jsonb;
+  locked uuid[];
+begin
+  perform acting(through);
+  perform not_banned(through);
+  perform within('body', body, 'postMaxLength');
+  select board into on_board from threads where id = in_thread;
+  if on_board is null then raise exception 'there is no such thread' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform not_the_systems(on_board);
+  perform not_barred(through, on_board);
+  if quoting is not null and not exists (select 1 from acts where id = quoting) then raise exception 'there is no such Act to quote' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- Steps 3 to 5 of the lock order, for the quoted post's back (lock_for_quote).
+  locked := lock_for_quote(through, in_thread, quoting);
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id, target_act_id into written, kept;
+  -- Only a back this post locked springs (spring_traps' `held`), and only for a post that still has its target: a doctored quote is written with none (acts_forged_quotes).
+  if kept is not null then sprung := spring_traps('quote', kept, written, held => locked); end if;
+  if kept is not null then perform write_alert((select a.character from acts a where a.id = kept), 'quote', null, written, auth.uid()); end if;
+  perform write_framed(body, framing, written, auth.uid());
+  perform write_forged_framed(written, auth.uid(), framing);
+  perform draw_visits(written);
+  return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
+end $function$;
+
+-- start_thread (0326): write_forged_framed follows write_framed.
+CREATE OR REPLACE FUNCTION public.start_thread(board_slug text, through uuid, title text, body text, framing uuid[] DEFAULT '{}'::uuid[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  on_board uuid;
+  made uuid;
+  written uuid;
+begin
+  perform acting(through);
+  perform not_banned(through);
+  perform within('title', title, 'titleMaxLength');
+  perform within('body', body, 'postMaxLength');
+  select id into on_board from boards where slug = board_slug;
+  if on_board is null then raise exception 'there is no such board' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform not_the_systems(on_board);
+  -- Shared, and in a statement before the check, so the check's snapshot is made once a closing move on this board has committed (or none is open): the thread is never stored on a board that is closing.
+  perform lock_board_start(on_board);
+  perform not_closed(on_board);
+  perform not_barred(through, on_board);
+  insert into threads (board, title) values (on_board, title) returning id into made;
+  insert into acts (character, kind, thread, payload) values (through, 'post', made, jsonb_build_object('body', body)) returning id into written;
+  perform write_framed(body, framing, written, auth.uid());
+  perform write_forged_framed(written, auth.uid(), framing);
+  perform draw_visits(written);
+  return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
+end $function$;
+
+-- spin_written (0374): write_forged_framed follows write_framed.
+create or replace function public.spin_written(origin uuid, through uuid, title text, body text, check_bar boolean, framing uuid[], at_post uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  on_board uuid;
+  made uuid;
+  written uuid;
+begin
+  perform within('title', title, 'titleMaxLength');
+  perform within('body', coalesce(body, ''), 'postMaxLength', true);
+  select case when b.is_system then players_board() else b.id end into on_board
+  from acts a join threads t on t.id = a.thread join boards b on b.id = t.board where a.id = origin and a.kind <> 'edit';
+  if on_board is null then raise exception 'there is no such Act to spin from' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The post a spin is pressed at: a post by the character a landed, live play was cast on. Public facts only; one sentence for every predicate that fails.
+  if at_post is not null then
+    if not exists (
+      select 1 from acts k join play_reach r on r.play = k.id join acts p on p.id = at_post
+      where k.id = origin and k.kind = 'card' and not (k.payload ? 'caught')
+        and r.reach = 'character' and post_kind(p.kind) and shown_author(p.id, p.character) = r.character
+        and r.ends_at > now()
+        and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = k.id)
+    ) then raise exception 'that card is not on that post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  end if;
+  if check_bar then perform not_barred(through, on_board); end if;
+  insert into threads (board, title, origin_act_id) values (on_board, title, origin) returning id into made;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (through, 'spin', made, origin,
+          jsonb_build_object('title', title, 'body', coalesce(body, '')) || case when at_post is not null then jsonb_build_object('at', at_post) else '{}'::jsonb end)
+  returning id into written;
+  perform write_framed(body, framing, written, auth.uid());
+  perform write_forged_framed(written, auth.uid(), framing);
+  perform draw_visits(written);
+  return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
+end $function$;
+
+-- write_staff_act (0316): the target is read from the row after the insert (a pool post's doctored quote is written with none), and the back is sprung only for one that is left. The locks taken before the insert stay.
+create or replace function write_staff_act(staff_key text, kind text, thread uuid, target uuid, payload jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  who uuid;
+  whose text;
+  written uuid;
+  kept uuid;
+  held text;
+  stamped jsonb := payload;
+  quoting boolean := kind = 'post' and target is not null;
+  locked uuid[];
+  sprung jsonb;
+begin
+  select c.id, c.staff_kind into who, whose from characters c where c.staff = staff_key;
+  if whose = 'developer' then
+    raise exception 'the developer speaks only through post_update, by an admin' using errcode = '42501';
+  end if;
+  if kind is null or kind not in ('post', 'spin', 'card', 'edit', 'move', 'move_keep', 'visit', 'visit_join', 'report_verdict', 'appeal_ruling') then
+    raise exception 'a staff character posts, spins, plays a card, edits, moves, keeps a move, visits or gives a verdict or a ruling, not %', coalesce(kind, 'nothing') using errcode = '22023';
+  end if;
+  if jsonb_typeof(payload) is distinct from 'object' then raise exception 'an Act''s payload is an object' using errcode = '22023'; end if;
+  if who is null then raise exception 'there is no staff member "%"', staff_key using errcode = 'P0002'; end if;
+  -- A persona that has not debuted writes nothing, and a benched one is silent (0082).
+  select o.office into held from staff_office_now o where o.staff = staff_key;
+  if held in ('waiting', 'benched') then
+    raise exception 'a % persona writes nothing', held using errcode = '55000';
+  end if;
+  -- A move says which office made it, and an appeal's ruling which office heard it, as the office stood when it landed.
+  if kind in ('move', 'appeal_ruling') and held in ('boss', 'mod') and not (payload ? 'office') then
+    stamped := payload || jsonb_build_object('office', held);
+  end if;
+  -- A pool reply to a post that holds a live No quote is written as a plain reply, with no target: the paid answer is kept, and nothing springs (the post holds no back, as the two never share one). The post's plays are public.
+  if quoting and exists (select 1 from no_quote_on(target)) then
+    quoting := false;
+    target := null;
+  end if;
+  -- A pool post that quotes: the quoted post's back, the thread and the count rows, in the lock order, before the insert.
+  if quoting then locked := lock_for_quote(who, write_staff_act.thread, target); end if;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (who, kind, write_staff_act.thread, target, stamped) returning id, target_act_id into written, kept;
+  perform set_config('kayfabb.staff_writer', '', true);
+  -- Only a post that still has its target springs: one whose quote is doctored was written with none (acts_forged_quotes).
+  if quoting and kept is not null then sprung := spring_traps('quote', kept, written, held => locked); end if;
+  return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
+end $$;
+
+-- acts_quote_guard (0316): the quotes it lists leave out the Act's forged posts, for the post's target and for the body's quotes alike. The new Act's verdict is in its own payload (acts_forged_quotes fires first); the verdict of the
+-- post an edit replaces is its current payload's. A quote that is a counterfeit is not a quote, as No-quote never refused one.
+create or replace function acts_quote_guard() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  body text := new.payload ->> 'body';
+  mine uuid[] := act_forged(new.payload);
+  listed text[] := '{}';
+  have text[];
+  had text[];
+  current_body text;
+  current_forged uuid[];
+  q text;
+  stop record;
+  quoted_seq integer;
+begin
+  if new.kind = 'post' and new.target_act_id is not null and new.target_act_id <> all (mine) then listed := array[new.target_act_id::text]; end if;
+  if coalesce(body ~* '\[quote=', false) then
+    select w.quotes into have from bbcode_walk(body, null, mine) w;
+    listed := listed || coalesce(have, '{}');
+  end if;
+  if cardinality(listed) = 0 then return new; end if;
+  -- Each Act once, at the place it first appears.
+  listed := array(select d.x from (select distinct on (u.x) u.x, u.o from unnest(listed) with ordinality u(x, o) order by u.x, u.o) d order by d.o);
+  if new.kind = 'edit' then
+    select p.current_payload ->> 'body', act_forged(p.current_payload) into current_body, current_forged from acts_public p where p.id = new.target_act_id;
+    if coalesce(current_body ~* '\[quote=', false) then
+      select w.quotes into had from bbcode_walk(current_body, null, current_forged) w;
+      listed := array(select u.x from unnest(listed) with ordinality u(x, o) where u.x <> all (coalesce(had, '{}')) order by u.o);
+    end if;
+  end if;
+  foreach q in array listed loop
+    continue when q !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+    select n.name, n.ends into stop from no_quote_on(q::uuid) n order by n.ends desc limit 1;
+    if found then
+      select a.seq into quoted_seq from acts a where a.id = q::uuid and a.thread = new.thread;
+      raise exception '%', format('%s carries %s, so it cannot be quoted until %s; take that quote out and send again',
+        case when quoted_seq is null then 'a post in another thread' else 'post ' || quoted_seq end, stop.name, refusal_time(stop.ends))
+        using hint = 'kayfabb.refusal', errcode = '42501';
+    end if;
+  end loop;
+  return new;
+end $$;
+
+-- hidden_refs (0340): leaves out the Act's forged posts, so no conceal request or layer covers a forged quote; the verdict is the payload of the Act itself (each version is an Act with its own).
+create or replace function hidden_refs(v uuid) returns uuid[]
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(array_agg(r.quoted order by r.quoted), '{}'::uuid[]) from quote_refs r
+  where r.act = v and quote_hidden(r.quoted) and r.quoted <> all (act_forged((select x.payload from acts x where x.id = v)))
+$$;

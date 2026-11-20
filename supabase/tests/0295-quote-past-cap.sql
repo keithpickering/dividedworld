@@ -124,7 +124,7 @@ declare
   ann uuid := tests.account('qc-ann'); bob uuid := tests.account('qc-bob');
   a uuid := tests.character(ann, 'Qc Ann'); b uuid := tests.character(bob, 'Qc Bob');
   t uuid := tests.thread('Qc thread');
-  p uuid := tests.post(a, t, 'Stopped.'); p2 uuid := tests.post(a, t, 'Another post.');
+  p uuid := tests.post(a, t, 'Stopped. hello'); p2 uuid := tests.post(a, t, 'Another post.');
   got text; n integer;
   bad text[] := '{}';
 begin
