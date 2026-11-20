@@ -161,6 +161,7 @@ test('the masks of a secret poll hold in every read another account can make, an
   const openPlace = place(cy.account, fromOpen);
   assert.deepEqual((openPlace?.character as Row | undefined)?.name, 'Voter Alpha', 'a public ballot as an origin names its character');
   for (const who of [cy, bob, ann]) {
+    assert.equal(readAs(who.account, `select count(*) from thread_open where id = '${fromSecret}';`), '1', 'the thread spun from a secret ballot is listed, so the null below is no missing row');
     const p = place(who.account, fromSecret);
     assert.equal(p, null, 'a secret ballot as an origin is named by no one');
     assert.deepEqual(named(p, voters), []);
@@ -186,8 +187,13 @@ test('the masks of a secret poll hold in every read another account can make, an
     const said = new Set<string | null>();
     for (const w of callers) said.add(await refusal(() => w.db.rpc('cast_ballot', { poll: secret.poll, through: w.c, picks })));
     assert.equal(said.size, 1, `${what} is refused in the same words for every caller: ${JSON.stringify([...said])}`);
-    assert.match([...said][0] ?? '', /pick up to 2 options|pick/, what);
+    assert.deepEqual([...said], ['cast_ballot: pick up to 2 options'], what);
   }
+  // The caller's own character is the one fact a refusal may read (acting): another player's character, one that is not there and a staff-free stranger's are refused in one sentence, whoever owns them.
+  const unowned = new Set<string | null>();
+  for (const through of [ann.characters[0]!, '00000000-0000-4000-8000-0000000000aa', cy.characters[0]!]) unowned.add(await refusal(() => db.bob.rpc('cast_ballot', { poll: secret.poll, through, picks: [0] })));
+  assert.equal(unowned.size, 1, `Bob casting through Ann's character, through none and through Cy's is refused in the same words: ${JSON.stringify([...unowned])}`);
+  assert.match([...unowned][0] ?? '', /^cast_ballot: .+/, 'and it is a refusal');
   const nothing = new Set<string | null>();
   for (const w of callers) nothing.add(await refusal(() => w.db.rpc('cast_ballot', { poll: '00000000-0000-4000-8000-000000000000', through: w.c, picks: [0] })));
   assert.equal(nothing.size, 1, 'a poll that is not there is refused in the same words for every caller');
@@ -204,56 +210,70 @@ test('the masks of a secret poll hold in every read another account can make, an
   assert.deepEqual(parts(closedPage), parts(await page(db.cy, secret.thread)), 'and is the same for every reader');
 
   // ---- 7. Time ----
-  // Two open secret polls of the same size: one whose other voters are Ann's own characters, one whose are Dee's. Ann's Timer casts on each, and is refused on each, over and over,
-  // every try rolled back, the two interleaved, and the medians compared. Nothing in the answer may depend on who owns another character, and nothing in the time either.
-  const timing = (() => {
-    const n = 40;
-    const timer = make('timer', ['Timer One']);
-    // (Past the six characters a player may run, which a trigger holds: a busy instance's player has fewer, and the many here are only so a count of them is measurable.)
-    const sibling = (account: string, label: string) => sql(`alter table characters disable trigger characters_within_cap;
-      with c as (insert into characters (owner, name, debuted_at) select '${account}', '${label} ' || g, now() from generate_series(1, ${n}) g returning id)
+  // Four secret polls with the same thousands of voters: two open, two closed; on one open and one closed poll the voters are Ann's Timer's own characters, on the others Dee's. Timer casts a ballot on each open
+  // poll and is refused on each closed one (each refusal is checked to be the closed poll's sentence), over and over, every try rolled back, interleaved. What each try read is counted by the tuples the transaction has
+  // fetched (exact, and the same every time), and the time by medians. Nothing a ballot or a refusal reads or takes may depend on who owns another character.
+  const n = 2000;
+  const timer = make('timer', ['Timer One']);
+  // (Past the six characters a player may run, which a trigger holds: the many here are only so that what a read of them costs is measurable. Disabled and enabled in one transaction.)
+  const crowd = (account: string, label: string) => sql(`begin;
+    alter table characters disable trigger characters_within_cap;
+    with c as (insert into characters (owner, name, debuted_at) select '${account}', '${label} ' || g, now() from generate_series(1, ${n}) g returning id)
       select string_agg(id::text, ',') from c \\gset
-      alter table characters enable trigger characters_within_cap;
-      select :'string_agg'`).split(',');
-    const poll = async (title: string) => (await start(title, true)).poll;
-    return { n, timer, sibling, poll };
-  })();
-  const polls2 = [await timing.poll('Timing, kin'), await timing.poll('Timing, strangers')];
-  const kin = timing.sibling(timing.timer.account, 'Kin');
-  const strangers = timing.sibling(dee.account, 'Stranger');
-  for (const [poll, who] of [[polls2[0]!, kin], [polls2[1]!, strangers]] as const) {
+    alter table characters enable trigger characters_within_cap;
+    commit;
+    select :'string_agg'`).split(',');
+  const kin = crowd(timer.account, 'Kin');
+  const strangers = crowd(dee.account, 'Stranger');
+  const timed: Record<string, string> = {};
+  for (const [label, who, closes] of [['kinCast', kin, false], ['strangersCast', strangers, false], ['kinRefused', kin, true], ['strangersRefused', strangers, true]] as const) {
+    const made = await start(`Timing, ${label}`, true);
     sql(`insert into acts (character, kind, thread, target_act_id, payload, created_at)
-      select c, 'ballot', (select thread from acts where id = '${poll}'), '${poll}', '{"picks": [0]}', now() from unnest('{${who.join(',')}}'::uuid[]) c`);
+      select c, 'ballot', '${made.thread}', '${made.poll}', '{"picks": [0]}', now() from unnest('{${who.join(',')}}'::uuid[]) c`);
+    if (closes) sql(`insert into acts (character, kind, thread, target_act_id, payload) values ('${cy.characters[0]}', 'poll_close', '${made.thread}', '${made.poll}', '{"by": "author"}')`);
+    timed[label] = made.poll;
   }
-  sql(`create or replace function tests.ballot_timing(account uuid, caller uuid, poll_a uuid, poll_b uuid, tries integer, picks integer[]) returns jsonb language plpgsql as $$
-    declare t0 timestamptz; d double precision; da double precision[] := '{}'; db double precision[] := '{}'; ra double precision[] := '{}'; rb double precision[] := '{}'; i integer; p uuid;
+  sql(`create or replace function tests.ballot_timing(account uuid, caller uuid, polls uuid[], tries integer) returns jsonb language plpgsql as $$
+    declare t0 timestamptz; r0 bigint; r1 bigint; ms double precision[][]; rows bigint[][]; i integer; k integer; out jsonb := '{}';
+    function_dummy integer;
     begin
+      ms := array_fill(0::double precision, array[4, tries]); rows := array_fill(0::bigint, array[4, tries]);
       perform tests.become(account);
       for i in 1..tries loop
-        foreach p in array array[poll_a, poll_b] loop
+        for k in 1..4 loop
+          select coalesce(sum(coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), 0) into r0 from pg_stat_xact_user_tables;
+          t0 := clock_timestamp();
           begin
-            t0 := clock_timestamp(); perform cast_ballot(p, caller, picks); d := extract(epoch from clock_timestamp() - t0) * 1000;
-            if p = poll_a then da := da || d; else db := db || d; end if;
+            perform cast_ballot(polls[k], caller, '{0}');
+            if k > 2 then raise exception 'a closed poll took a ballot'; end if;
+            ms[k][i] := extract(epoch from clock_timestamp() - t0) * 1000;
+            select coalesce(sum(coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), 0) - r0 into r1 from pg_stat_xact_user_tables; rows[k][i] := r1;
             raise exception 'undone' using errcode = 'P0001';
           exception when others then
-            if sqlerrm <> 'undone' then raise; end if;
-          end;
-          begin
-            t0 := clock_timestamp(); perform cast_ballot(p, caller, array[9]);
-          exception when others then
-            d := extract(epoch from clock_timestamp() - t0) * 1000;
-            if p = poll_a then ra := ra || d; else rb := rb || d; end if;
+            if k <= 2 and sqlerrm <> 'undone' then raise; end if;
+            if k > 2 then
+              ms[k][i] := extract(epoch from clock_timestamp() - t0) * 1000;
+              if sqlerrm <> 'that poll has closed' then raise exception 'a closed poll was refused in other words: %', sqlerrm; end if;
+              select coalesce(sum(coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), 0) - r0 into r1 from pg_stat_xact_user_tables; rows[k][i] := r1;
+            end if;
           end;
         end loop;
       end loop;
       perform tests.unbecome();
-      return jsonb_build_object('kinCast', (select (array_agg(x order by x))[tries / 2 + 1] from unnest(da) x), 'strangersCast', (select (array_agg(x order by x))[tries / 2 + 1] from unnest(db) x),
-                                'kinRefused', (select (array_agg(x order by x))[tries / 2 + 1] from unnest(ra) x), 'strangersRefused', (select (array_agg(x order by x))[tries / 2 + 1] from unnest(rb) x));
-    end $$;`);
-  const measured = JSON.parse(sql(`select tests.ballot_timing('${timing.timer.account}', '${timing.timer.characters[0]}', '${polls2[0]}', '${polls2[1]}', 60, '{0}')`)) as Record<string, number>;
-  console.log(`# ballot timing, medians of 60 in ms: ${JSON.stringify(Object.fromEntries(Object.entries(measured).map(([k, v]) => [k, Math.round(v * 1000) / 1000])))}`);
-  for (const [a, b] of [['kinCast', 'strangersCast'], ['kinRefused', 'strangersRefused']] as const) {
-    const ratio = measured[a]! / measured[b]!;
-    assert.ok(ratio > 0.6 && ratio < 1.67, `${a} and ${b} take the same time (medians ${measured[a]} ms and ${measured[b]} ms, ratio ${ratio.toFixed(2)})`);
+      for k in 1..4 loop
+        out := out || jsonb_build_object('ms' || k, (select (array_agg(x order by x))[tries / 2 + 1] from (select ms[k][g] x from generate_series(1, tries) g) q),
+                                         'rowsMin' || k, (select min(rows[k][g]) from generate_series(1, tries) g), 'rowsMax' || k, (select max(rows[k][g]) from generate_series(1, tries) g));
+      end loop;
+      return out;
+    end $$;`.replace('    function_dummy integer;\n', ''));
+  const tries = 30;
+  const m = JSON.parse(sql(`select tests.ballot_timing('${timer.account}', '${timer.characters[0]}', array['${timed.kinCast}', '${timed.strangersCast}', '${timed.kinRefused}', '${timed.strangersRefused}']::uuid[], ${tries})`)) as Record<string, number>;
+  const round = (v: number) => Math.round(v * 1000) / 1000;
+  console.log(`# ballot timing, ${n} voters a poll, medians of ${tries} in ms: cast kin ${round(m.ms1!)} strangers ${round(m.ms2!)}; refused kin ${round(m.ms3!)} strangers ${round(m.ms4!)}; tuples read: cast ${m.rowsMin1}-${m.rowsMax1} / ${m.rowsMin2}-${m.rowsMax2}, refused ${m.rowsMin3}-${m.rowsMax3} / ${m.rowsMin4}-${m.rowsMax4}`);
+  for (const [a, b, what] of [[1, 2, 'a ballot'], [3, 4, 'a refusal']] as const) {
+    assert.deepEqual([m[`rowsMin${a}`], m[`rowsMax${a}`]], [m[`rowsMin${b}`], m[`rowsMax${b}`]], `${what} reads the same tuples whoever owns the poll's other voters`);
+    assert.equal(m[`rowsMin${a}`], m[`rowsMax${a}`], `${what} reads the same tuples every time`);
+    const ratio = m[`ms${a}`]! / m[`ms${b}`]!;
+    assert.ok(ratio > 0.6 && ratio < 1.67, `${what} takes the same time whoever owns the other voters (medians ${m[`ms${a}`]} ms and ${m[`ms${b}`]} ms, ratio ${ratio.toFixed(2)})`);
   }
 });
