@@ -97,3 +97,8 @@ test('placeParts: a poll and a ballot are one link to the poll\'s post, the word
   assert.deepEqual(placeParts({ kind: 'poll', question: 'Q?', on: post }, cardName, 20), [{ words: 'the poll “Q?” on #12 in Title', href: '/t/t1?page=1#post-12' }]);
   assert.equal(placeParts({ kind: 'ballot', character: { id: 'c1', name: 'Wario' }, question: 'Q?', on: post }, cardName, 20).length, 1);
 });
+
+test('the 60-character cut counts characters, never half a surrogate pair', () => {
+  const words = placeWords({ kind: 'poll', question: '😀'.repeat(61), on: post }, cardName);
+  assert.equal(words, `the poll “${'😀'.repeat(60)}…” on #12 in Title`);
+});

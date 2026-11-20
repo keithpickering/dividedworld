@@ -112,6 +112,24 @@ describe('a thread spun from a poll', () => {
   });
 });
 
+describe('a poll replaced on the origin post', () => {
+  test('is never drawn under the origin poll\'s head: the box says the poll was replaced', async () => {
+    const w = world();
+    const heard = new Map<Id, ThreadListener>();
+    const real = w.fake.subscribeThread.bind(w.fake);
+    w.fake.subscribeThread = (t, l) => { heard.set(t, l); return real(t, l); };
+    open(w, await spinFrom(w, w.poll));
+    const b = await box();
+    await question(b);
+    await waitFor(() => expect(heard.has(w.thread)).toBe(true));
+    const options = ['X', 'Y'];
+    act(() => heard.get(w.thread)!.onAct?.({ id: 'new-poll', character: w.spritey, kind: 'poll', thread: w.thread, targetActId: w.ids[0]!, seq: null, createdAt: new Date(w.fake.clock.now() + 5_000).toISOString(), payload: { question: 'Another?', options, pick: 1, secret: false, closes_at: new Date(w.fake.clock.now() + 86_400_000).toISOString() }, currentPayload: {}, editedAt: null, shownEditedAt: null }));
+    await waitFor(() => expect(b).toHaveTextContent('That poll was replaced on its post.'));
+    expect(within(b).queryByRole('group', { name: /Another\?/u })).toBeNull();
+    expect(within(b).queryByRole('group', { name: /Best kart/u })).toBeNull();
+  });
+});
+
 describe('a thread spun from a public ballot', () => {
   test('its head names the character, the poll and the post, and the box names the ballot above the table', async () => {
     const w = world();
@@ -122,7 +140,7 @@ describe('a thread spun from a public ballot', () => {
     expect(within(head).getByRole('link')).toHaveAttribute('href', `/t/${w.thread}?page=1#post-1`);
     const poll = await question(b);
     const line = b.querySelector('.kb-origin-ballot') as HTMLElement;
-    expect(line).toHaveTextContent(/^Wario picked Pipe Frame, /u);
+    expect(line).toHaveTextContent(/^Wario voted for Pipe Frame, /u);
     /* Above the table, in the content area. */
     expect(line.compareDocumentPosition(poll) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(b.querySelector('.kb-origin-area')).toContainElement(line);
@@ -168,5 +186,21 @@ describe('a page read again after the poll was removed from its post', () => {
     expect(store.get('post-1')).toBeDefined();
     take(origin(from, []), store);
     expect(store.get('post-1')).toBeUndefined();
+  });
+});
+
+describe('a ballot whose poll is gone', () => {
+  test('shows the notice alone, with no ballot line of blank picks', async () => {
+    const w = world();
+    const heard = new Map<Id, ThreadListener>();
+    const real = w.fake.subscribeThread.bind(w.fake);
+    w.fake.subscribeThread = (t, l) => { heard.set(t, l); return real(t, l); };
+    open(w, await spinFrom(w, w.ballot));
+    const b = await box();
+    await question(b);
+    await waitFor(() => expect(heard.has(w.thread)).toBe(true));
+    act(() => heard.get(w.thread)!.onAct?.({ id: 'gone', character: w.spritey, kind: 'poll', thread: w.thread, targetActId: w.ids[0]!, seq: null, createdAt: new Date(w.fake.clock.now() + 5_000).toISOString(), payload: { removed: true }, currentPayload: {}, editedAt: null, shownEditedAt: null }));
+    await waitFor(() => expect(b).toHaveTextContent('That poll is no longer on its post.'));
+    expect(b.querySelector('.kb-origin-ballot')).toBeNull();
   });
 });

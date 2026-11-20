@@ -190,16 +190,18 @@ function postOf(place: Extract<OriginPlace, { kind: 'play' }>, which: 'at' | typ
  */
 function PollOrigin({ act, post, polls, name }: { readonly act: Act; readonly post: Id | null; readonly polls: Polls; readonly name: string }) {
   const view = usePoll(polls, post ?? '');
-  const options = view !== undefined && Array.isArray(view.poll.act.payload.options) ? (view.poll.act.payload.options as readonly unknown[]).map(String) : [];
+  /* The poll this origin is: the Act itself, or the poll a ballot is on. A replacement heard or read on the post is another poll, and is never drawn under this one's head. */
+  const origin = act.kind === 'poll' ? act.id : act.targetActId;
+  if (post === null || view === undefined) return <p className="kb-notice kb-small">That poll is no longer on its post.</p>;
+  if (view.poll.act.id !== origin) return <p className="kb-notice kb-small">That poll was replaced on its post.</p>;
+  const options = Array.isArray(view.poll.act.payload.options) ? (view.poll.act.payload.options as readonly unknown[]).map(String) : [];
   const picks = Array.isArray(act.payload.picks) ? (act.payload.picks as readonly number[]) : [];
   return (
     <>
       {act.kind === 'poll'
         ? <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-        : <p className="kb-small kb-origin-ballot" data-kb-over-ink>{ballotLine(name, picks.map((p) => options[p] ?? ''), false, act.createdAt)}</p>}
-      {post === null || view === undefined
-        ? <p className="kb-notice kb-small">That poll is no longer on its post.</p>
-        : <Poll post={post} polls={polls} board={null} />}
+        : <p className="kb-small kb-origin-ballot" data-kb-over-ink>{ballotLine(name, picks.map((p) => options[p] ?? ''), null, act.createdAt)}</p>}
+      <Poll post={post} polls={polls} board={null} />
     </>
   );
 }
