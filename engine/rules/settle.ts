@@ -102,8 +102,8 @@
  */
 import { payVotes, shareVotes, type PaidVote } from './votes.ts';
 import type {
-  ActKind, Settings, ActStanding, Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
-  LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing, UnscoredTarget,
+  ActKind, ActStanding, Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
+  LandedCard, PlayedCard, Quadrant, ReceivedReaction, Settings, SettlementInput, SpunThread, Standing, UnscoredTarget,
 } from './types.ts';
 import { QUADRANTS, isPost } from './types.ts';
 import type { GimmickEffect } from './cards.ts';
@@ -214,16 +214,15 @@ export interface SettleOptions {
  * The System's, no unscored staff post and no gift or admin-ended play, which `settlement_input` does not send.
  */
 export function crowdPay(input: SettlementInput, settings: Pick<Settings, 'crowdPayEach' | 'crowdPayMost'>): Settlement['crowd'] {
-  if (settings.crowdPayEach <= 0 || settings.crowdPayMost <= 0) return [];
+  if (settings.crowdPayEach <= 0) return [];
   const { window } = input;
   const ownerOf = new Map(input.characters.map((c) => [c.id, c.player]));
   const authorOf = new Map<string, string | undefined>();
   for (const a of input.acts) if (a.at < window.to) authorOf.set(a.id, ownerOf.get(a.character));
-  const excluded = new Set([...(input.systemActs ?? []), ...(input.unscoredTargets ?? []).map((t) => t.id)]);
   /* Each player's earliest reaction on each Act, over every reaction the input holds. */
   const first = new Map<string, Map<string, number>>();
   for (const r of input.reactions) {
-    if (!authorOf.has(r.act) || excluded.has(r.act) || authorOf.get(r.act) === r.player) continue;
+    if (!authorOf.has(r.act) || authorOf.get(r.act) === r.player) continue;
     const mine = first.get(r.player) ?? new Map<string, number>();
     const seen = mine.get(r.act);
     if (seen === undefined || r.at < seen) mine.set(r.act, r.at);
