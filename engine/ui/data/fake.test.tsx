@@ -3037,6 +3037,9 @@ describe('an admin ends a card play (reverse_card)', () => {
     const ended = must(await fake.reverseCard(play.id));
     expect((await fake.cardsOn(opener, 10)).map((a) => [a.kind, a.id, a.targetActId])).toEqual([['card', play.id, opener], ['card_end', ended.act, play.id]]);
     expect((await fake.cardsOnMany([opener], 10)).map((a) => a.kind)).toEqual(['card', 'card_end']);
+    expect((await fake.cardEnds([play.id, 'nope'])).map((a) => [a.kind, a.id, a.targetActId])).toEqual([['card_end', ended.act, play.id]]);
+    expect(await fake.cardEnds([opener])).toEqual([]);
+    expect(await fake.cardEnds([])).toEqual([]);
   });
 
   test('an ended play keeps no state and is not released from: both are refused in the server\'s words, after the checks that come first', async () => {

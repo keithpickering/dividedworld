@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'vitest';
 import type { Act, Log, LogSettlement, MyCharacter, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { testCutter, testInstance } from '../test-world.tsx';
-import { actsFollowed, actsNamed, logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
+import { actsFollowed, actsNamed, lockoutEnd, logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
 import { around, mergeLogs } from './useLog.ts';
 import type { KayfaApi } from '../data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS, type PronounSet } from '../../rules/pronouns.ts';
@@ -1949,5 +1949,16 @@ describe('merging pages with poll lines', () => {
     expect(mergeLogs({ ...empty, ballots: [b('b1')] }, { ...empty }).ballots?.map((x) => x.act)).toEqual(['b1']);
     expect(mergeLogs({ ...empty }, { ...empty, pollCloses: [k('k2')] }).pollCloses?.map((x) => x.act)).toEqual(['k2']);
     expect(mergeLogs({ ...empty }, { ...empty }).ballots).toBeUndefined();
+  });
+});
+
+describe('lockoutEnd', () => {
+  const base = { character: 'c', thread: 't', seq: null, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null } as const;
+  test('sees a card_end added to the same Map after an earlier call', () => {
+    const spring: Act = { ...base, id: 'sp', kind: 'spring', targetActId: 'p', createdAt: '2026-11-01T10:00:00.000Z', payload: { did: 'lockedOut', until: '2026-11-02T10:00:00.000Z' } };
+    const acts = new Map<string, Act>([[spring.id, spring]]);
+    expect(lockoutEnd(spring, acts).ended).toBeNull();
+    acts.set('en', { ...base, id: 'en', kind: 'card_end', targetActId: 'sp', createdAt: '2026-11-01T12:30:00.000Z' });
+    expect(lockoutEnd(spring, acts).ended).toBe('Nov 1 · 12:30 UTC');
   });
 });

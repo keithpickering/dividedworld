@@ -2848,6 +2848,11 @@ export interface KayfaApi {
    */
   cardsOnMany(acts: readonly Id[], limit: number): Promise<readonly Act[]>;
   /**
+   * The `card_end` Acts whose target is one of these Acts (a play, or a lockout's spring), read by target alone: a play's place
+   * on its post, and how many plays the post holds, do not matter. Each names what it ends in `targetActId`. An empty list reads nothing.
+   */
+  cardEnds(targets: readonly Id[]): Promise<readonly Act[]>;
+  /**
    * The live plays above a page's posts (effects_above, 0055): on any of these characters, on this thread and on this board, oldest
    * first, in one batched read (a page asks once, however many posts it holds). Each play's Act sits where it was played; its `target`
    * is the character, thread or board it lands on, and it is drawn there until `endsAt`. Public: nothing about who owns a character.

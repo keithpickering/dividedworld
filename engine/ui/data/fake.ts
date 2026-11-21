@@ -4109,6 +4109,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const wanted = new Set(ids);
       return withEnds([...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit));
     },
+    cardEnds(targets) {
+      const wanted = new Set(targets);
+      return [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).map(publicAct);
+    },
     tails: (posts) => tails(posts),
     effectStates(plays) {
       const out: Record<Id, EffectState> = {};

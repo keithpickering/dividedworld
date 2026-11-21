@@ -525,6 +525,17 @@ describe('reads and their rows', () => {
     expect(ask).toBe(`in.(${A})`);
     expect(plays.map((p) => p.kind)).toEqual(['spring', 'spring', 'card_end']);
   });
+  it('cardEnds reads the card_end Acts by their targets alone, in one request per chunk, and skips ids that are not ids', async () => {
+    const END = { ...ACT_ROW, id: D, kind: 'card_end', target_act_id: A };
+    const h = harness(() => rows([END]));
+    const ends = await h.api.cardEnds([A, A, 'x),y']);
+    const q = h.to('acts_public');
+    expect(q).toHaveLength(1);
+    expect(q[0]?.url.searchParams.get('kind')).toBe('eq.card_end');
+    expect(q[0]?.url.searchParams.get('target_act_id')).toBe(`in.(${A})`);
+    expect(ends.map((e) => [e.id, e.targetActId])).toEqual([[D, A]]);
+    expect(await h.api.cardEnds([])).toEqual([]);
+  });
   it('carries `untaken`, the public flag of a play that did not take (acts_public, 0149), onto the Act, and nothing of a play without it', async () => {
     const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, id: A, kind: 'card', target_act_id: B, untaken: true }, { ...ACT_ROW, id: C, kind: 'card', target_act_id: B, untaken: false }, { ...ACT_ROW, id: B, kind: 'card', target_act_id: B }])));
     const plays = await h.api.cardsOnMany([B], 10);

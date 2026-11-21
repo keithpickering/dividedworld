@@ -138,24 +138,14 @@ export const utcWhen = (iso: string) => {
   const d = new Date(iso);
   return `${utcDay(iso)} · ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 };
-/** An admin's `card_end` Acts by the Act each ends (a lockout's spring), indexed once for each set of Acts. */
-const endsCache = new WeakMap<ReadonlyMap<Id, Act>, Map<Id, Act>>();
-const endsByTarget = (acts: ReadonlyMap<Id, Act>): Map<Id, Act> => {
-  let ends = endsCache.get(acts);
-  if (!ends) {
-    ends = new Map();
-    for (const a of acts.values()) if (a.kind === 'card_end' && a.targetActId !== null) ends.set(a.targetActId, a);
-    endsCache.set(acts, ends);
-  }
-  return ends;
-};
-
 /**
  * When a lockout ends and when an admin ended it early (a `card_end` on its spring, where the Act is held), as the log and the alerts write times:
  * `until` is "Nov 1 · 10:00 UTC" (or "it ends" where the spring names none), `ended` "Oct 31 · 12:30 UTC" or null.
  */
 export function lockoutEnd(spring: Act, acts: ReadonlyMap<Id, Act>): { readonly until: string; readonly ended: string | null } {
-  const end = endsByTarget(acts).get(spring.id);
+  /* Read from the Acts as they are now: a card_end added to the same Map later is seen (no cache keyed on the Map). */
+  let end: Act | undefined;
+  for (const a of acts.values()) if (a.kind === 'card_end' && a.targetActId === spring.id) end = a;
   return { until: typeof spring.payload.until === 'string' ? `${utcWhen(spring.payload.until)} UTC` : 'it ends', ended: end ? `${utcWhen(end.createdAt)} UTC` : null };
 }
 
