@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tokensOf } from '../contrast.ts';
 import { POST_INK } from './band.ts';
 import { cling, landAll, loose, makeFlakes, MAX_AIR, MAX_LOOSE, shake, SHAKE_SPEED, type Flakes } from './flakes.ts';
-import { landPage, landPost, probe } from './landing.ts';
+import { landBox, landPage, landPost, probe } from './landing.ts';
 
 const GLINT = '#ffffff';
 const GLITTER = ['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec'];
@@ -701,5 +701,52 @@ describe('the 300, and the way out', () => {
     drop(310, 255);
     expect(() => settle(5000)).not.toThrow();
     expect(cellTiles(main)).toHaveLength(1);
+  });
+});
+
+/* docs/plans/2026-11-21-glitter-hands-plan.md, task 3: the Reply box paints its own ground, so it is a landing place of its own. */
+describe('a box of its own (landBox): the Reply box', () => {
+  /** The reply form: its own ground, as `.kb-form` paints one, over the page. */
+  const form = (): HTMLElement => { const el = box(0, 0, 1024, 300); el.style.backgroundColor = '#223344'; return el; };
+
+  it('a flake falling over it lands on it, in its own px, and a tile is drawn in it', () => {
+    keep(landPage());
+    const f = form();
+    keep(landBox(f));
+    drop(500, 30);
+    settle();
+    expect(cling.falling()).toBe(0);
+    expect(loose(f).length).toBeGreaterThan(5);
+    for (const fl of loose(f)) expect(fl.x >= 0 && fl.x < 1024 && fl.y >= 0 && fl.y < 300).toBe(true);
+    expect(probe.landed().page).toBe(0);
+    expect(cellTiles(f).length).toBeGreaterThan(0);
+    expect(f.hasAttribute('data-kb-land-box')).toBe(true);
+    expect(f.hasAttribute('data-kb-landed')).toBe(true);
+  });
+
+  it('its way out drops its glitter and tiles and lets go of it: a flake over it then lands nowhere', () => {
+    keep(landPage());
+    const f = form();
+    const out = landBox(f);
+    drop(500, 30);
+    settle();
+    expect(loose(f).length).toBeGreaterThan(0);
+    out();
+    expect(loose(f)).toHaveLength(0);
+    expect(cellTiles(f)).toHaveLength(0);
+    expect(f.hasAttribute('data-kb-landed')).toBe(false);
+    expect(f.hasAttribute('data-kb-land-box')).toBe(false);
+    drop(500, 30);
+    settle(0, 1500);
+    expect(cling.falling()).toBeGreaterThan(0);
+    expect(loose(f)).toHaveLength(0);
+  });
+
+  it('base.css lays its tiles over its ground and under its content, as a post cell\'s', () => {
+    const css = readFileSync(join(process.cwd(), 'engine/ui/base.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const rule = (sel: string): string => { const at = css.indexOf(`${sel} {`); return at < 0 ? '' : css.slice(at, css.indexOf('}', at)); };
+    expect(rule('[data-kb-land-box][data-kb-landed]')).toMatch(/position:\s*relative/u);
+    expect(rule('[data-kb-land-box][data-kb-landed]')).toMatch(/isolation:\s*isolate/u);
+    expect(rule('[data-kb-land-box] > canvas[data-kb-landing]')).toMatch(/z-index:\s*-1/u);
   });
 });
