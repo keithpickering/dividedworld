@@ -89,7 +89,7 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
     ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []),
     '--enable-begin-frame-control', '--run-all-compositor-stages-before-draw', '--disable-new-content-rendering-timeout',
     '--disable-threaded-animation', '--disable-threaded-scrolling', '--disable-checker-imaging',
-    '--font-render-hinting=none', '--force-color-profile=srgb', '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', '--mute-audio',
+    '--blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2', '--font-render-hinting=none', '--force-color-profile=srgb', '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', '--mute-audio',
     'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
   const wsUrl = await new Promise((resolve, reject) => {
