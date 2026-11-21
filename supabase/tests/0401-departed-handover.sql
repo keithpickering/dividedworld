@@ -171,6 +171,48 @@ begin
     and (career -> 0 ->> 'since')::timestamptz is not distinct from h.landed_at, 'the new Boss''s career is not season 2 from the departure, still going: ' || career::text);
 end $$;
 
+-- ---- 2b. Handoffs are read per Boss: the new Boss's meeting in the farewell window does not stand for the departed Boss's ----
+create function pg_temp.apply(boss text, farewell text, handoff text) returns jsonb language plpgsql as $$
+declare
+  pl jsonb;
+begin
+  insert into move_bank (staff, balance, as_of) values (boss, 1, now()) on conflict (staff) do update set balance = excluded.balance, as_of = excluded.as_of;
+  pl := jsonb_build_object('boss', boss, 'weekly_moves', 5, 'bank_cap', 10,
+    'memory', jsonb_build_object('hobby', jsonb_build_object('name', 'pie', 'since', 'today', 'from', 'a friend'), 'opinions', '[]'::jsonb, 'grudges', '[]'::jsonb,
+      'wheelhouse', '[]'::jsonb, 'realWorld', '[]'::jsonb, 'marks', '[]'::jsonb),
+    'profile', jsonb_build_object('interests', jsonb_build_array('pie'), 'favorites', '[]'::jsonb, 'mood', 'smug', 'signature', 'Done.'),
+    'moves', '[]'::jsonb, 'bundles', '[]'::jsonb, 'record', '{}'::jsonb)
+    || case when farewell is not null then jsonb_build_object('farewell', farewell) else '{}'::jsonb end
+    || case when handoff is not null then jsonb_build_object('handoff', handoff) else '{}'::jsonb end;
+  return apply_meeting((begin_meeting(clock_timestamp()) ->> 'meeting')::bigint, pl);
+end $$;
+do $$
+declare
+  s bigint := pg_temp.open_season();
+  todo jsonb;
+  pred jsonb;
+  row_new handoffs%rowtype;
+begin
+  -- The departed Boss wrote a farewell and a note in this season; the farewell window is wide, so the new Boss's meeting is in it.
+  insert into handoffs (season, staff, farewell, note) values (s, 'dp-mod', 'Mod farewell', 'Mod note');
+  insert into settings (key, value) values ('farewellWindowHours', '720') on conflict (key) do update set value = excluded.value;
+  perform pg_temp.apply('dp-mod2', null, 'New note');
+  select * into row_new from handoffs where season = s and staff = 'dp-mod2';
+  perform pg_temp.expect(row_new.note is not distinct from 'New note', 'the new Boss''s handoff was not written: ' || coalesce(to_jsonb(row_new)::text, 'no row'));
+  -- (b) The new Boss's first row does not carry the departed Boss's farewell.
+  perform pg_temp.expect(nullif(row_new.farewell, '') is null, 'the new Boss''s row carries the departed Boss''s farewell: ' || row_new.farewell);
+  perform pg_temp.expect((select count(*) from handoffs_latest where season = s) = 2, 'handoffs_latest does not hold one row per Boss for the season');
+  -- (a) The departure's to-do and the predecessor show the departed Boss's note, never the new Boss's.
+  todo := (select t from jsonb_array_elements(pg_temp.todos()) t where t ->> 'cause' = 'departure');
+  perform pg_temp.expect(todo ->> 'note' is not distinct from 'Mod note', 'the departure''s to-do does not show the departed Boss''s note: ' || coalesce(todo::text, 'no to-do'));
+  pred := predecessor_handoff();
+  perform pg_temp.expect(pred ->> 'note' is not distinct from 'Mod note', 'the predecessor''s note is not the departed Boss''s: ' || coalesce(pred::text, 'null'));
+  -- The roll-over's to-do is of season 1, which dp-boss served and wrote nothing in: no note, and not the new Boss's.
+  perform pg_temp.expect((select t ->> 'note' from jsonb_array_elements(pg_temp.todos()) t where t ->> 'cause' = 'rollover') is null, 'the roll-over''s to-do shows a note nobody wrote');
+  -- The departed Boss's farewell is the one said at the departure's handover (say_farewell reads it by its Boss).
+  perform pg_temp.expect((select count(*) from handoffs_latest h where h.season = s and h.staff = 'dp-mod' and h.farewell = 'Mod farewell') = 1, 'the departed Boss''s farewell does not stand');
+end $$;
+
 -- ---- 3. The departure's to-do is its own; dismissing it leaves the roll-over's; a handover that kept the Boss has none ----
 do $$
 declare
