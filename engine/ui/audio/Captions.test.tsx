@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { Captions, FADE_MS, SAID_MS } from './Captions.tsx';
-import { createCaptions, type Captions as Store } from './captions.ts';
+import { Captions } from './Captions.tsx';
+import { createCaptions, QUIET_MS, SAID_MS, type Captions as Store } from './captions.ts';
 
 let store: Store;
 beforeEach(() => { store = createCaptions(); });
@@ -14,6 +14,8 @@ afterEach(() => {
 
 const status = () => screen.getByRole('status');
 const bar = () => document.querySelector('.kb-captions-bar');
+const bars = () => [...document.querySelectorAll<HTMLElement>('.kb-captions-bar')];
+const stack = () => document.querySelector<HTMLElement>('.kb-captions');
 
 describe('the caption bar', () => {
   test('is in the page with a polite live region, and draws nothing with nothing to say', () => {
@@ -28,7 +30,7 @@ describe('the caption bar', () => {
     act(() => store.say({ text: 'Crowd laughs', ink: 'var(--kb-glass-salty)', ms: 5000 }));
     expect(bar()?.textContent).toBe('Crowd laughs');
     expect(status().textContent).toBe('Crowd laughs');
-    expect(bar()?.getAttribute('aria-hidden')).toBe('true');
+    expect(stack()?.getAttribute('aria-hidden')).toBe('true');
     const dot = bar()?.querySelector<HTMLElement>('.kb-captions-dot');
     expect(dot?.style.background).toContain('--kb-glass-salty');
   });
@@ -48,14 +50,13 @@ describe('the caption bar', () => {
     expect(status().textContent).toBe('');
   });
 
-  test('a say over a hold is announced, and the hold is back drawn after it', async () => {
+  test('a say over a hold stands with it, newest last, and the hold is alone once the say ends', async () => {
     render(<Captions store={store} />);
     act(() => store.hold('loop', { text: 'Crowd murmuring' }));
     act(() => store.say({ text: 'Boom', ms: 40 }));
-    expect(bar()?.textContent).toBe('Boom');
-    expect(bar()?.getAttribute('data-held')).toBeNull();
+    expect(bars().map((b) => b.textContent)).toEqual(['Crowd murmuring', 'Boom']);
     expect(status().textContent).toBe('Boom');
-    await waitFor(() => expect(bar()?.textContent).toBe('Crowd murmuring'), { timeout: 2000 });
+    await waitFor(() => expect(bars().map((b) => b.textContent)).toEqual(['Crowd murmuring']), { timeout: 2000 });
     expect(bar()?.getAttribute('data-held')).toBe('true');
   });
 
@@ -65,7 +66,7 @@ describe('the caption bar', () => {
     render(<Captions store={store} />);
     expect(root.style.getPropertyValue('--kb-captions-measured')).toBe('');
     act(() => store.say({ text: 'Cheers', ms: 40 }));
-    expect(root.style.getPropertyValue('--kb-captions-measured')).toBe('40px');
+    expect(root.style.getPropertyValue('--kb-captions-measured')).toBe('40px'); /* the stack's height, 30, and the gap */
     await waitFor(() => expect(root.style.getPropertyValue('--kb-captions-measured')).toBe(''), { timeout: 2000 });
   });
 
@@ -86,9 +87,9 @@ describe('the caption bar', () => {
       dialog.getBoundingClientRect = () => rect({ left: box.left + 90, top: box.top + 90, right: box.left + 91, bottom: box.top + 91 });
       return scrim;
     };
-    /* The bar rests at 730 to 760, and a lift moves it as the transform would. */
+    /* The stack rests at 730 to 760, and a lift moves it as the transform would. */
     const measure = (el: HTMLElement) => {
-      if (!el.classList.contains('kb-captions-bar')) return rect({ left: 0, top: 0, right: 0, bottom: 0 });
+      if (!el.classList.contains('kb-captions')) return rect({ left: 0, top: 0, right: 0, bottom: 0 });
       const lift = parseFloat(el.style.getPropertyValue('--kb-captions-lift') || '0');
       return rect({ left: 540, top: 730 - lift, right: 740, bottom: 760 - lift });
     };
@@ -100,10 +101,10 @@ describe('the caption bar', () => {
       const scrim = withDialog({ left: 400, top: 100, right: 880, bottom: 600 });
       render(<Captions store={store} />);
       act(() => store.say({ text: 'Cheers', ms: 60_000 }));
-      await waitFor(() => expect(bar()?.getAttribute('data-over-scrim')).toBe('true'));
-      expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('0px');
+      await waitFor(() => expect(stack()?.getAttribute('data-over-scrim')).toBe('true'));
+      expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('0px');
       scrim.remove();
-      await waitFor(() => expect(bar()?.getAttribute('data-over-scrim')).toBeNull());
+      await waitFor(() => expect(stack()?.getAttribute('data-over-scrim')).toBeNull());
     });
 
     test('a bar that meets the dialog is lifted to rest above it', async () => {
@@ -111,8 +112,8 @@ describe('the caption bar', () => {
       const scrim = withDialog({ left: 0, top: 400, right: 1280, bottom: 790 });
       render(<Captions store={store} />);
       act(() => store.say({ text: 'Cheers', ms: 60_000 }));
-      await waitFor(() => expect(bar()?.getAttribute('data-over-scrim')).toBe('true'));
-      expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px');
+      await waitFor(() => expect(stack()?.getAttribute('data-over-scrim')).toBe('true'));
+      expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px');
       scrim.remove();
     });
 
@@ -121,10 +122,10 @@ describe('the caption bar', () => {
       const scrim = withDialog({ left: 0, top: 400, right: 1280, bottom: 790 });
       render(<Captions store={store} />);
       act(() => store.say({ text: 'Cheers', ms: 60_000 }));
-      await waitFor(() => expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px'));
+      await waitFor(() => expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px'));
       scrim.remove();
-      await waitFor(() => expect(bar()?.getAttribute('data-over-scrim')).toBeNull());
-      expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
+      await waitFor(() => expect(stack()?.getAttribute('data-over-scrim')).toBeNull());
+      expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
     });
 
     test('once placed, the lift is the same a few frames later: the bar does not oscillate', async () => {
@@ -132,10 +133,10 @@ describe('the caption bar', () => {
       const scrim = withDialog({ left: 0, top: 400, right: 1280, bottom: 790 });
       render(<Captions store={store} />);
       act(() => store.say({ text: 'Cheers', ms: 60_000 }));
-      await waitFor(() => expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px'));
+      await waitFor(() => expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px'));
       for (let i = 0; i < 5; i++) {
         await new Promise((r) => requestAnimationFrame(() => r(null)));
-        expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px');
+        expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px');
       }
       scrim.remove();
     });
@@ -146,8 +147,8 @@ describe('the caption bar', () => {
       render(<Captions store={store} />);
       act(() => store.say({ text: 'Cheers', ms: 60_000 }));
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-      expect(bar()?.getAttribute('data-over-scrim')).toBeNull();
-      expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
+      expect(stack()?.getAttribute('data-over-scrim')).toBeNull();
+      expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
       scrim.remove();
     });
 
@@ -158,15 +159,15 @@ describe('the caption bar', () => {
       render(<Captions store={store} />);
       act(() => store.say({ text: 'Cheers', ms: 60_000 }));
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-      expect(bar()?.getAttribute('data-over-scrim')).toBeNull();
+      expect(stack()?.getAttribute('data-over-scrim')).toBeNull();
       scrim.remove();
     });
 
     test('with no dialog the bar is not raised and carries no lift', () => {
       render(<Captions store={store} />);
       act(() => store.say({ text: 'Cheers', ms: 60_000 }));
-      expect(bar()?.getAttribute('data-over-scrim')).toBeNull();
-      expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
+      expect(stack()?.getAttribute('data-over-scrim')).toBeNull();
+      expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
     });
   });
 
@@ -214,33 +215,74 @@ describe('the caption bar', () => {
     }
   });
 
-  test('saying the same words twice replaces the live region\'s node, so it is announced again', () => {
+  test('two different says draw two bars, the first said first in the document', () => {
     render(<Captions store={store} />);
-    act(() => store.say({ text: 'Boo', ms: 5000 }));
-    const first = status().querySelector('p');
-    act(() => store.say({ text: 'Boo', ms: 5000 }));
-    const second = status().querySelector('p');
-    expect(second?.textContent).toBe('Boo');
-    expect(second).not.toBe(first);
+    act(() => store.say({ text: 'A chair clatters', ms: 5000 }));
+    act(() => store.say({ text: 'A steel chair clangs', ms: 5000 }));
+    expect(bars().map((b) => b.textContent)).toEqual(['A chair clatters', 'A steel chair clangs']);
+    expect(bars().every((b) => b.parentElement === stack())).toBe(true);
   });
 
-  test('a say during the fade-out keeps the bar', () => {
+  test('a say repeated draws one bar whose text ends x2, and a single say draws no count', () => {
+    render(<Captions store={store} />);
+    act(() => store.say({ text: 'A steel chair clangs', ms: 5000 }));
+    expect(document.querySelector('.kb-captions-count')).toBeNull();
+    expect(bar()?.textContent).toBe('A steel chair clangs');
+    act(() => store.say({ text: 'A steel chair clangs', ms: 5000 }));
+    expect(bars()).toHaveLength(1);
+    expect(bar()?.textContent).toBe('A steel chair clangs×2');
+    expect(bar()?.querySelector('.kb-captions-count')?.textContent).toBe('×2');
+  });
+
+  test('a held line\'s bar is data-held, and a said line\'s is not', () => {
+    render(<Captions store={store} />);
+    act(() => store.hold('loop', { text: 'Crowd murmuring' }));
+    act(() => store.say({ text: 'Boom', ms: 5000 }));
+    const [held, said] = bars();
+    expect(held!.getAttribute('data-held')).toBe('true');
+    expect(said!.hasAttribute('data-held')).toBe(false);
+  });
+
+  test('with full motion a new bar carries a transform while it enters', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    render(<Captions store={store} />);
+    act(() => store.say({ text: 'Boo', ms: 5000 }));
+    expect(bars()[0]?.style.transform).toContain('translateY');
+  });
+
+  test('with reduced motion a bar has no transform, and is gone the moment the store drops it', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
     vi.useFakeTimers();
     try {
       render(<Captions store={store} />);
-      act(() => store.say({ text: 'One', ms: 100 }));
+      act(() => store.say({ text: 'Boo', ms: 100 }));
+      expect(bar()).not.toBeNull();
+      expect(bars()[0]?.style.transform === '' || bars()[0]?.style.transform === 'none').toBe(true);
       act(() => { vi.advanceTimersByTime(100); });
-      expect(bar()?.getAttribute('data-leaving')).toBe('true');
-      act(() => store.say({ text: 'Two', ms: 5000 }));
-      act(() => { vi.advanceTimersByTime(FADE_MS * 2); });
-      expect(bar()?.textContent).toBe('Two');
-      expect(bar()?.getAttribute('data-leaving')).toBeNull();
+      expect(bar()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('the live region holds a first say\'s text, and after three repeats and QUIET_MS, the total', () => {
+    vi.useFakeTimers();
+    try {
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'A steel chair clangs', ms: 10_000 }));
+      expect(status().textContent).toBe('A steel chair clangs');
+      act(() => store.say({ text: 'A steel chair clangs', ms: 10_000 }));
+      act(() => store.say({ text: 'A steel chair clangs', ms: 10_000 }));
+      expect(status().textContent).toBe('A steel chair clangs');
+      act(() => { vi.advanceTimersByTime(QUIET_MS); });
+      expect([...status().querySelectorAll('p')].map((p) => p.textContent)).toContain('A steel chair clangs, 3 times');
     } finally {
       vi.useRealTimers();
     }
   });
 
   test('unmounting removes --kb-captions-measured', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ height: 30, width: 100, top: 0, left: 0, right: 100, bottom: 30, x: 0, y: 0, toJSON: () => ({}) });
     const view = render(<Captions store={store} />);
     act(() => store.say({ text: 'Cheers', ms: 5000 }));
     expect(document.documentElement.style.getPropertyValue('--kb-captions-measured')).not.toBe('');
