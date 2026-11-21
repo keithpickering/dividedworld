@@ -149,6 +149,13 @@ test('the call to apply_settlement carries each entry\'s shares, which add up to
   assert.deepEqual(shares.filter((s) => s.reason === 'heel.drewHeat').map((s) => [s.act, s.quadrant, s.amount]), [['p1', 'excitedNegative', 70]]);
 });
 
+test('the call to apply_settlement carries the window\'s tallied sums, a list the engine returned (debates fixes, Task 3)', async () => {
+  const { db, calls } = fakeDb();
+  await runSettlement(db, instance, new Date(TO).toISOString());
+  const apply = calls.find((c) => c.fn === 'apply_settlement')!.args;
+  assert.ok(Array.isArray(apply.tallied), `tallied is a list: ${JSON.stringify(apply.tallied)}`);
+});
+
 test('the call to apply_settlement carries each player\'s crowd pay as the Acts alone, never an amount (crowd pay, section 5)', async () => {
   const { db, calls } = fakeDb();
   await runSettlement(db, instance, new Date(TO).toISOString());
