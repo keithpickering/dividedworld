@@ -18,6 +18,8 @@ export const CARD_KEY = { least: 1, most: 64 } as const;
 export const cardCollector: CardRules<CardCollectorConfig> = {
   key: 'card-collector',
   name: 'Card Collector',
+  // It was Trap Card until 2026-11; the seed moves every copy of the old key to this one.
+  formerly: [{ key: 'trap-card', name: 'Trap Card' }],
   alignment: 'salty',
   rarity: 'uncommon',
   play: 'set',

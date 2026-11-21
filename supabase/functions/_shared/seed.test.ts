@@ -271,3 +271,9 @@ test('the seed carries a card\'s retired flag, the cards\' former names as {key,
   assert.equal(made.cards.some((c) => c.key === 'old-name' || c.key === 'gone'), false, 'a key that left is listed in its own list, never as a card');
   assert.deepEqual(JSON.parse(JSON.stringify(made.withdrawn)).every((w: Record<string, unknown>) => Object.keys(w).sort().join() === 'key,name,refund'), true, 'nothing else rides on a withdrawal');
 });
+
+test('the seed lists the cards Divided World retired by name: Trap Card as Card Collector, Bluff withdrawn for 1.00 orb', () => {
+  const seed = instanceSeed(instance, conduct);
+  assert.deepEqual(seed.formerly, [{ key: 'trap-card', name: 'Trap Card', became: 'card-collector' }]);
+  assert.deepEqual(seed.withdrawn, [{ key: 'bluff', name: 'Bluff', refund: 100 }]);
+});
