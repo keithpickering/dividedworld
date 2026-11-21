@@ -1943,6 +1943,27 @@ describe('cards that left the game', () => {
     expect(pack(1).filter((r) => r.kind === 'retired')).toEqual([]);
   });
 
+  test('a cap that held back part of the refunds is said, on a seed\'s withdrawal and on a pack opening', () => {
+    const capped = { ...refunded(2), change: 150, overflow: 50 };
+    const [line] = rowsOf([ev('bluff', 'withdrawn', { price: 100 }), ev('bluff', 'withdrawn', { price: 100 })], [capped]);
+    expect(text(line!)).toBe("Your 2 copies were refunded 2.00 orbs. The wallet's cap held back 0.50 orbs of the refunds paid with it.");
+    const opening = rowsOf([ev('bluff', 'withdrawn', { pack: 'p1', price: 100, packKind: 'starter', packSource: 'welcome' })], [{ ...refunded(1), change: 50, overflow: 50 }]).find((r) => r.kind === 'pack')!;
+    expect(text(opening)).toBe("Bluff. 1 card in it was withdrawn and refunded 1.00 orb. The wallet's cap held back 0.50 orbs of the refunds paid with it.");
+  });
+
+  test('a renamed card\'s new name is found from the renamedIn row when no card lists the old key as formerly', () => {
+    const lone: Words = { ...words, instance: { ...testInstance, cards: [...testInstance.cards, { ...base, key: 'collector', name: 'Card Collector' }], withdrawn: [] } };
+    const [line] = logRows(data({ log: { ...empty, cards: [ev('trap-card', 'renamedOut'), ev('collector', 'renamedIn')] }, mine: [char('c', 'Spritey', 'heel')] }), lone, 600, null);
+    expect(line!.what).toBe('a card is now Card Collector');
+    expect(text(line!)).toBe('Your copy is a Card Collector now.');
+  });
+
+  test('a card an Event found, later withdrawn or renamed, is named by its old name', () => {
+    const found = (item: string) => logRows(data({ log: { ...empty, cosmetics: [{ id: 'e1', character: 'p', at, kind: 'found', outcome: 'card', item } as unknown as Log['cosmetics'][number]] }, mine: [char('p', 'Pipewrench', 'heel')] }), w, 600, null).find((r) => r.kind === 'found')!;
+    expect(text(found('bluff'))).toBe('Something happened to Pipewrench: you found a Bluff.');
+    expect(text(found('trap-card'))).toBe('Something happened to Pipewrench: you found a Trap Card.');
+  });
+
   test('a play from before the seed names the card by its old name, never "a card"', () => {
     for (const [key, old] of [['bluff', 'Bluff'], ['trap-card', 'Trap Card']] as const) {
       const rows = rowsOf([{ card: key, kind: 'played' as const, act: 'k1', price: 0, at }]);

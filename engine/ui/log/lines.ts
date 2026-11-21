@@ -131,6 +131,8 @@ export const signed = (hundredths: number) => (hundredths > 0 ? '+' : hundredths
 /** Aura without a sign: "4.72". */
 export const plain = (hundredths: number) => (hundredths / 100).toFixed(2);
 /** An amount of orbs as a sentence says it: "1.00 orb", "2.00 orbs". */
+/** The sentence a withdrawal's wallet event gains when the wallet's cap held some of the refunds back. */
+const capSaid = (paid: WalletEvent | undefined) => (paid && paid.overflow > 0 ? ` The wallet's cap held back ${orbs(paid.overflow)} of the refunds paid with it.` : '');
 const orbs = (hundredths: number) => `${plain(hundredths)} ${hundredths === 100 ? 'orb' : 'orbs'}`;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -515,7 +517,8 @@ function cosmeticRows(data: LogData, words: Words): LogRow[] {
         found = g ? `you found ${aOrAn(g.name)} (${g.rarity} gear)` : 'you found a piece of gear';
       } else if (e.outcome === 'card') {
         const c = instance.cards.find((x) => x.key === e.item);
-        found = c ? `you found ${aOrAn(c.name)} (${c.rarity} card)` : 'you found a card';
+        const gone = c ? undefined : cardNameOf(instance, String(e.item));
+        found = c ? `you found ${aOrAn(c.name)} (${c.rarity} card)` : gone ? `you found ${aOrAn(gone)}` : 'you found a card';
       } else found = (e.text ?? 'something odd').replace(/[.!?]$/u, '');
       rows.push(row(`found:${e.id}`, 'found', `Something happened to ${who}`, `Something happened to ${who}: ${found}.`, mine));
     } else if (e.kind === 'granted') {
@@ -863,7 +866,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       const total = group.reduce((sum, x) => sum + x.price, 0);
       /* The seed's one wallet event for this account (every card's refunds together), so a cap that held some back is said. */
       const paid = data.log.wallet.find((w) => w.kind === 'withdrawal' && at(w.at) === at(e.at));
-      const held = paid && paid.overflow > 0 ? ` The wallet's cap held back ${orbs(paid.overflow)} of the refunds paid with it.` : '';
+      const held = capSaid(paid);
       rows.push({
         key: `withdrawn:${e.card}:${e.at}`, kind: 'retired', at: e.at, what: `${cardName(e.card)} was withdrawn from the game`,
         details: [`${group.length === 1 ? 'Your copy was' : `Your ${group.length} copies were`} refunded ${orbs(total)}.${held}`], aura: total, wallet: paid?.balanceAfter ?? null, characters: [],
@@ -916,7 +919,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       /* A card in it that was withdrawn is refunded at opening (open_pack): a line of the opening's own, plain and true. */
       const gone = data.log.cards.filter((c) => c.kind === 'withdrawn' && c.pack === e.pack);
       const refunded = gone.reduce((sum, c) => sum + c.price, 0);
-      const goneSaid = gone.length === 0 ? '' : ` ${gone.length === 1 ? '1 card in it was' : `${gone.length} cards in it were`} withdrawn and refunded ${orbs(refunded)}.`;
+      const goneSaid = gone.length === 0 ? '' : ` ${gone.length === 1 ? '1 card in it was' : `${gone.length} cards in it were`} withdrawn and refunded ${orbs(refunded)}.${capSaid(data.log.wallet.find((w) => w.kind === 'withdrawal' && at(w.at) === at(e.at)))}`;
       if ((bought?.source ?? e.packSource) === 'welcome') {
         rows.push({ key: `pack:opened:${e.pack}`, kind: 'pack', at: e.at, what: `You opened your ${ui.packs[bought?.kind ?? e.packKind ?? '']?.name ?? 'pack'}`, details: [`${list}.${goneSaid}`], aura: refunded, wallet: null, characters: [] });
         return;
