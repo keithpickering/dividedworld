@@ -9,7 +9,8 @@
  *   c-n06  The phrase trap. Human Josh quotes Chadluminum's post and types "to be fair" with real key events, and sends it; the Steel Chair
  *                         waiting on that phrase springs and dents the post, and its Lens shows the phrase. A node appears, unclicked.
  *   c-n07  The mask.      D-Guy's HUD, large in frame: the pointer switches the mask to Chadluminum (HEEL to FACE). Three nodes drift in.
- *   c-n08  The node takes control. The page scrolls itself, at a steady pace, from D-Guy's review past the five dressed posts to the foot;
+ *   c-n08  The node takes control. The page scrolls itself, at a steady pace on every filmed frame (the clicks' frames too), from D-Guy's
+ *                         review past the five dressed posts, and rests with post 19 (the taped-over words) in frame for the last two seconds;
  *                         the pointer clicks a node twice on the way and nothing changes.
  *
  * Every take is filmed at the camera's native double density (1440 x 810 at 2x) and written at 2880 x 1620, so the edit can push in
@@ -309,15 +310,21 @@ const n08 = () => take('c-n08', {
     const drew = () => d.page(`({ smoke: Boolean(document.querySelector('#post-15 .kb-hot-box, #post-15 [class*=hot-box], #post-15 canvas')), views: ['15','16','17','18','19'].map((s) => document.querySelector('#post-' + s + ' .kb-act-main')?.querySelector('canvas, svg, [class*=kb-fab], [class*=graffiti], [class*=glitter], [class*=autocorrect], [class*=hot]') ? 1 : 0) })`);
     const y0 = await d.page(`scrollY`);
     const foot = await d.page(`document.documentElement.scrollHeight - innerHeight`);
-    const seconds = 10;
-    const n = Math.round(seconds * d.F);
+    /* The scroll ends with post 19 (the taped-over words, the last dressed post) in frame, not on the empty reply box at the thread's foot: its top 100 px down the view, or the foot if that is nearer. */
+    const top19 = await d.page(`document.querySelector('#post-19').getBoundingClientRect().top + scrollY`);
+    const yEnd = Math.min(foot, top19 - 100);
+    /* The take is 16.4 s: half a second of lead, the scroll, and at least two seconds of the page at rest with post 19 in frame. The scroll is a function of the film's own frame, so it advances on every filmed frame, the frames in which the pointer presses among them. */
+    const seconds = 13;
+    const n = Math.round(seconds * d.F), CLICK_FRAMES = 12, f0 = d.frame, span = n + CLICK_FRAMES;
+    const scrollTo = () => d.page(`document.scrollingElement.scrollTop = ${y0 + (yEnd - y0) * Math.min(1, (d.frame - f0) / span)}`);
+    /** One filmed frame, the page scrolled first. */
+    const tick = async () => { await scrollTo(); await d.shoot(1 / d.F); };
     let nodeId = null, t0 = 0, clicks = 0;
     const started = [];
     d.mark('scroll');
     for (let i = 0; i <= n; i++) {
-      /* The page scrolls itself: a steady pace, one scroll per frame, no wheel. */
-      await d.page(`document.scrollingElement.scrollTop = ${y0 + ((foot - y0) * i) / n}`);
       /* Midway the pointer goes to a node that is in view (clear of the HUD), and follows it up the screen as the page moves. */
+      await scrollTo();
       if (nodeId === null && i >= Math.round(n * 0.25)) {
         const near = await d.page(`window.__shot.nodes().find((m) => m.y > 400 && m.y < 540) ?? null`);
         if (near) { nodeId = near.id; t0 = i; d.mark('node-seen'); }
@@ -330,7 +337,8 @@ const n08 = () => take('c-n08', {
           d.cam.move(p.x - (1 - k) * 300, p.y + (1 - k) * 140);
         }
         if (i === t0 + 30 || i === t0 + 90) {
-          await d.cam.press(); await d.shoot(0.05); await d.cam.release(); await d.shoot(0.05);
+          /* The press and release are frames of the scroll too: three before the release and three after, none still. */
+          await d.cam.press(); for (let k = 0; k < 3; k++) await tick(); await d.cam.release(); for (let k = 0; k < 3; k++) await tick();
           clicks++; d.mark('click');
           started.push(await d.page(`window.__shot.nodes().find((n) => n.id === ${nodeId}).started`));
         }
@@ -340,9 +348,11 @@ const n08 = () => take('c-n08', {
     assert(clicks === 2, 'the node clicked twice');
     assert(started[0] === true && started[1] === false, `the node started and stopped by the two clicks: ${JSON.stringify(started)}`);
     const y1 = await d.page(`scrollY`);
-    assert(y1 >= foot - 2, `the page scrolled itself to the foot (${y1} of ${foot})`);
+    assert(Math.abs(y1 - yEnd) < 3, `the page scrolled itself to post 19 (${y1} of ${yEnd})`);
     const fx = await drew();
     console.log('c-n08: effects on the posts at the end', JSON.stringify(fx));
+    const seen = await d.page(`(() => { const r = document.querySelector('#post-19').getBoundingClientRect(); return Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) / r.height; })()`);
+    assert(seen > 0.5, `post 19 is in frame at the end of the scroll (${(seen * 100).toFixed(0)}% of it)`);
     await d.shoot(0.5);
   },
   camera: () => ({

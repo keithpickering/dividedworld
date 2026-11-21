@@ -24,7 +24,7 @@ export const BUILT = `(() => {
 })()`;
 
 /**
- * Opens the stage, in `skin`, signed in as the player of the character `as` names (Snuckles's when it names none). `quiet` names what is taken out of frame: `toasts`, `host` (the address in the banner, which is the preview server's)
+ * Opens the stage, in `skin`, signed in as the player of the character `as` names (Snuckles's when it names none). `quiet` names what is taken out of frame: `toasts`, `host` (the address in the banner, which is the preview server's; hidden by a style rule, so it stays hidden across the stage's in-place navigation)
  * `hud` (the glass along the foot, for a shot tight on a post) and `selection` (the post's words cannot be selected: a drag that outlives
  * its stroke, because the coat it was washing came clean under it, selects the words it passes over, and opens the quote button).
  *
@@ -45,7 +45,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
     /* A post's pictures are pixel art, shown pixel for pixel, and are all loaded before a film starts, so none arrives during it and moves the page. */
     sheet.insertRule('.kb-bb-img { image-rendering: pixelated; }');
     for (const img of document.querySelectorAll('img.kb-bb-img')) img.loading = 'eager';
-    if (quiet.includes('host')) for (const el of document.querySelectorAll('.kb-banner-host *')) if (el.children.length === 0 && el.textContent.includes(location.host)) el.style.visibility = 'hidden';
+    /* The address is hidden by a rule, not by a style on the element it is now: the stage's in-place navigation (\`__shot.show\`) draws the banner afresh, and an element hidden by hand comes back visible. */
+    if (quiet.includes('host')) sheet.insertRule('.kb-address-text { visibility: hidden !important; }');
   })()`);
   await cam.until(`[...document.querySelectorAll('img.kb-bb-img')].every((i) => i.complete && i.naturalWidth > 0)`, { label: "the posts' pictures loaded" });
   /* The parts the other players play, and what the rounds before a shot left on the post. */
