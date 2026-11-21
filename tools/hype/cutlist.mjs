@@ -141,3 +141,27 @@ export function resolveList(list, { tl, cues, takes }) {
   });
   return { shots, slates: [...new Set(shots.filter((s) => s.slate).map((s) => s.take))], blocks };
 }
+
+/**
+ * The coda's shots, directed. The edit cuts node 11 on the music's chords; `list.coda` (an array, one entry a cut, in order, `null` or absent for
+ * the take's own: node 11's) names a take and where in it for the cut: `{ "take": "b-scrub-3", "from": 2.4, "move": ..., "punch": ... }`. The
+ * chord's own punch stays unless the entry gives one. Refused: more entries than cuts, a take that is not on disk, a shot past its take's end.
+ * @param {any[]} cuts the coda's cuts (the timeline's node 11) @param {(any | null)[] | undefined} coda @param {Record<string, TakeInfo>} takes
+ */
+export function directCoda(cuts, coda, takes) {
+  if (!coda) return cuts;
+  if (coda.length > cuts.length) throw new Error(`the coda has ${cuts.length} cuts, one to a chord, and the list directs ${coda.length}`);
+  return cuts.map((cut, k) => {
+    const r = coda[k];
+    if (!r) return cut;
+    const info = takes[r.take];
+    if (!info) throw new Error(`coda cut ${k + 1} names ${r.take}, which is not a take on disk`);
+    const from = r.from ?? 0, end = from + cut.frames / F;
+    if (end > info.seconds + 0.5 / F) throw new Error(`coda cut ${k + 1} runs to ${end.toFixed(2)} s of ${r.take}, which is ${info.seconds.toFixed(2)} s`);
+    const out = { ...cut, take: r.take, from };
+    delete out.move; delete out.punches;
+    if (r.move) out.move = r.move;
+    if (r.punch) out.punch = r.punch;
+    return out;
+  });
+}

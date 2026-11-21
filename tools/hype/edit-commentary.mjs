@@ -13,7 +13,8 @@
  * THE CUT LIST (`--cutlist`, default `instances/divided-world/ui/hype/cutlist.json`; cutlist.mjs says what a row is) gives every shot of the picture
  * from the first frame to the coda, each naming a take (a file under `--takes`, without `.mp4`: `c-n06`, `b-scrub-2`) and where in it the shot starts, on a beat
  * of the music or on a word of the narration. The run prints the shots and their median length for part one and each block of the music. A take's own
- * notes (below) apply to its shots, a row's `move` over them; `--moves` then names takes, not nodes. `--cutlist none` cuts one take a node.
+ * notes (below) apply to its shots, a row's `move` over them; `--moves` then names takes, not nodes. `--cutlist none` cuts one take a node. The list's
+ * optional `coda` array directs the coda's cuts (one to a chord; cutlist.mjs `directCoda`): a take and a place in it for each, or null for node 11's own.
  *
  * TAKES are `c-n01` to `c-n11` and `c-end`, as `.mp4` under `--takes`, 60 frames a second, 1920 x 1080 or larger (3840 x 2160 gives the
  * moves twice the room). A take that is not there is replaced by a generated slate (a dark frame, the node and its first caption line),
@@ -58,7 +59,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { versionMap, codaGaps, expectedSeconds, beats, VERSIONS } from './music.mjs';
 import { refusePush, corners } from './moves.mjs';
 import { run, duration, videoInfo, fontFile, flag } from './cutting.mjs';
-import { resolveList } from './cutlist.mjs';
+import { resolveList, directCoda } from './cutlist.mjs';
 
 export const F = 60;
 export const BREATH = 0.35;
@@ -479,11 +480,14 @@ async function main() {
   const LIST = flag('cutlist', 'instances/divided-world/ui/hype/cutlist.json');
   /** @type {ReturnType<typeof resolveList> | null} */
   let cutList = null;
+  /** @type {any[] | undefined} */
+  let codaList;
+  /** @type {Record<string, any>} */
+  const info = {};
   if (LIST !== 'none') {
     const list = JSON.parse(readFileSync(LIST, 'utf8'));
-    /** @type {Record<string, any>} */
-    const info = {};
-    for (const stem of new Set(list.rows.map((/** @type {{ take: string }} */ r) => r.take))) {
+    codaList = list.coda;
+    for (const stem of new Set([...list.rows, ...(list.coda ?? []).filter(Boolean)].map((/** @type {{ take: string }} */ r) => r.take))) {
       const file = takePath(stem);
       if (!existsSync(file)) continue;
       const notes = [`${stem}.json`, `${stem.replace(/-(wide|tight|turned)$/u, '')}.json`].map((f) => path.join(TAKES, f)).find((f) => existsSync(f));
@@ -523,7 +527,7 @@ async function main() {
   }
   for (const n of tl.nodes.filter((x) => !cutList || x.id === 'n11')) {
     const first = firstLine(n.id);
-    for (const [k, c] of n.cuts.entries()) {
+    for (const [k, c] of (n.id === 'n11' ? directCoda(n.cuts, codaList, info) : n.cuts).entries()) {
       const take = takePath(c.take);
       const real = !stampsFor(resolved, { take: c.take }, takeFiles).slate;
       pieces.push({ name: `${n.id} cut ${k + 1}`, startFrame: c.startFrame, frames: c.frames, take: real ? take : undefined, slate: real ? undefined : [c.take, ...wrap(first, 36)], cut: c });

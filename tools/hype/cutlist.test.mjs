@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { wordTime, resolveList } from './cutlist.mjs';
+import { wordTime, resolveList, directCoda } from './cutlist.mjs';
 import { timeline, captions } from './edit-commentary.mjs';
 import { madeUp } from './made-up.mjs';
 
@@ -185,6 +185,8 @@ test('the committed list, read against the placeholder voice, falls: part one, t
   console.log(blocks.map((b) => `${b.name}: ${b.count} shots, median ${b.median.toFixed(2)} s`).join('\n'));
   assert.ok(blocks.every((b) => b.count > 0), 'every stretch has shots');
   for (let i = 1; i < medians.length; i++) assert.ok(medians[i] < medians[i - 1], `${blocks[i].name} (${medians[i].toFixed(2)} s) is shorter than ${blocks[i - 1].name} (${medians[i - 1].toFixed(2)} s)`);
+  const coda = directCoda(t.nodes.find((/** @type {{ id: string }} */ n) => n.id === 'n11').cuts, list.coda, new Proxy({}, { get: () => ({ seconds: 1e6 }) }));
+  assert.ok(coda.length > 0, 'the coda is directed from the list');
   for (const r of list.rows) if (!r.slate) assert.ok(!slates.includes(r.take), `${r.take} is named by a row not marked as a slate`);
 });
 
@@ -213,6 +215,25 @@ test('the lock-off ends where node 4 begins: a row there may carry a move or pun
   assert.deepEqual(own.shots[1].move, move, 'and a take`s own camera is applied there');
   assert.throws(() => read([rows[0], { node: 'n03', at: 0, take: 'c-n05', move }, rows[1]]), /part one.*locked off/);
   assert.equal(n3.end, n4.start);
+});
+
+test('the coda`s cuts can be directed: a take and a place in it for a chord, the rest left as they are, and what cannot be shot is refused', () => {
+  const cuts = tl.nodes.find((n) => n.id === 'n11').cuts;
+  assert.ok(cuts.length >= 3, 'the made-up coda has chords to cut on');
+  const t = { 's-a': { seconds: 3 }, 'b-x': { seconds: 20 } };
+  const out = directCoda(cuts, [{ take: 's-a', from: 1 }, null, { take: 'b-x', from: 0.2, punch: 7, move: { from: { x: 0, y: 0, w: 1, roll: 0 }, to: { x: 0.1, y: 0.1, w: 0.8, roll: 0 } } }], t);
+  assert.equal(out.length, cuts.length);
+  assert.equal(out[0].take, 's-a');
+  assert.equal(out[0].from, 1);
+  assert.equal(out[0].punch, cuts[0].punch, 'the chord`s punch stays');
+  assert.deepEqual(out[1], cuts[1], 'a null entry leaves the cut as it is');
+  assert.equal(out[2].punch, 7);
+  assert.equal(out[2].move.to.w, 0.8);
+  assert.equal(out[0].startFrame, cuts[0].startFrame, 'the cut keeps its time');
+  assert.equal(directCoda(cuts, undefined, t), cuts, 'no direction, no change');
+  assert.throws(() => directCoda(cuts, [{ take: 'nope', from: 0 }], t), /coda cut 1.*nope/);
+  assert.throws(() => directCoda(cuts, [{ take: 's-a', from: 2.9 }], t), /coda cut 1.*s-a/);
+  assert.throws(() => directCoda(cuts, new Array(cuts.length + 1).fill(null), t), /one to a chord/);
 });
 
 test('a synced landing must fall inside its shot: a next cut that comes before it is refused', () => {
