@@ -19,6 +19,8 @@
  *   b-chair              Steel Chairs thrown at a post, in the Midnight skin
  *   b-react              the React picker, and its stamp
  */
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { writeFileSync } from 'node:fs';
 import { openCamera, openFilm } from './camera.mjs';
 import { buzz, glide, seeded } from './pointer.mjs';
@@ -366,8 +368,7 @@ const graffitiTag = () => take('b-graffiti-tag', {
   async prep(cam) { await cam.evaluate(`document.querySelector('#post-18').scrollIntoView({ block: 'start' })`); await settle(cam, 90); },
   async body(d) {
     /* Node strips the types of the stage's own shapes; the tools' type check does not read a .ts import. */
-    // @ts-expect-error TS5097
-    const { arrow, heart, face, word, scribbleOut } = await import('../../instances/divided-world/ui/hype/graffiti-shapes.ts');
+    const { arrow, heart, face, word, scribbleOut } = await import(pathToFileURL(path.resolve('instances/divided-world/ui/hype/graffiti-shapes.ts')).href);
     const meterOf = async () => Number(/(\d+)% of/.exec(await d.page(`document.querySelector('.kb-graffiti-label')?.textContent ?? ''`))?.[1]);
     const before = await d.page(WALL_PIXELS);
     assert(before > 500, 'the stage wall inked on post 18');
