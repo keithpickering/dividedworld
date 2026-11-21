@@ -1870,9 +1870,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const reversedPlays = new Set<Id>();
   /** The card plays whose first generation failed and were refunded (a row in card_write_refunds, 0149): over, as an ended play is, and public as `untaken`. */
   const untakenPlays = new Set<Id>();
-  /** card_ended (0149): ended by an admin, or over because it did not take. Every reader of "in force" asks this. */
   /** The pierce plays a cast named in `pierce.by`: spent, which is ended for every reader as `card_ended` has it (0149 and Cheap Shot's pierce migration). */
   const spentPierces = new Set<Id>();
+  /** card_ended (0149): ended by an admin, or over because it did not take. Every reader of "in force" asks this. */
   const over = (play: Id): boolean => reversedPlays.has(play) || untakenPlays.has(play) || spentPierces.has(play);
   /** post_under (0348): the reply each play of a card that replies carried, by the play: the post it was played on and the reply, a post of the thread with a number of its own. Never edited; the end is the play's own. */
   const underPlays = new Map<Id, { parent: Id; reply: Id }>();
@@ -2580,6 +2580,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The plays beyond a post (play_reach, 0055): each play's reach, its target and when it ends, never edited. */
   const reachPlays = new Map<Id, { reach: BeyondPost; target: Id; endsAt: number }>();
   /** The live plays on one target beyond a post, as effects (reach_effects, 0055). */
+  /* Beside reversedPlays, not over(): an untaken play has no play_reach row to read here, so only the ended and spent are asked (card_ended's reach readers). */
   const reachEffects = (reach: BeyondPost, target: Id): CardEffect[] => [...reachPlays].filter(([play, r]) => r.reach === reach && r.target === target && r.endsAt > now() && !reversedPlays.has(play) && !spentPierces.has(play))
     .map(([play, r]) => {
       const rules = instance.cards.find((c) => c.key === acts.get(play)!.payload.card);
@@ -4262,6 +4263,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .map(([play, r]) => ({ thread: summary(threads.get(r.target)!), play, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }))
       .sort((a, b) => acts.get(b.play)!.at - acts.get(a.play)!.at || acts.get(b.play)!.order - acts.get(a.play)!.order),
     effectsAbove: (chars, thread, board) => {
+      /* Beside reversedPlays, not over(): a reach play is never untaken, so the ended and the spent are the two asked, as in reachEffects. */
       const wanted = new Set(chars);
       return [...reachPlays].filter(([play, r]) => r.endsAt > now() && !reversedPlays.has(play) && !spentPierces.has(play) && (r.reach === 'character' ? wanted.has(r.target) : r.reach === 'thread' ? r.target === thread : r.target === board))
         .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }))

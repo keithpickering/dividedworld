@@ -2613,16 +2613,21 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
   const rareShield = { ...shield, key: 'rareshield', name: 'Rare Shield', rarity: 'rare' as const };
   const csnare = { ...snare, key: 'csnare', name: 'Common Snare', rarity: 'common' as const };
   const rsnare = { ...snare, key: 'rsnare', name: 'Rare Snare', rarity: 'rare' as const };
+  const spark = { ...base, key: 'spark', name: 'Spark', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'cast' as const, reaches: ['character' as const, 'thread' as const, 'board' as const], lasts: { unit: 'day' as const, count: 1 }, canApply: () => ok(undefined) };
+  const reachWard = (key: string, reach: 'character' | 'thread') => ({ ...shield, key, name: key, reaches: [reach] });
+  const lift2 = { ...lift, key: 'lift2', name: 'Lift Two' };
+  /* One whose own rules refuse a second while one is up (landsOn), so what reachEffects hands them is seen. */
+  const lift3 = { ...lift, key: 'lift3', name: 'Lift Three', canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lift3', reaches: ['character'] }, t, e, now) };
   function pierceSetup() {
-    const fake = createFake({ instance: { ...world, cards: [...world.cards, sugar, lift, rareShield, csnare, rsnare, cushion] } });
+    const fake = createFake({ instance: { ...world, cards: [...world.cards, sugar, lift, lift2, lift3, spark, reachWard('cward', 'character'), reachWard('tward', 'thread'), reachWard('bward', 'thread'), rareShield, csnare, rsnare, cushion] } });
     const ana = fake.seed.account('ana');
     const bo = fake.seed.account('bo');
     const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
     const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const { thread, act: mine } = fake.seed.thread('general', anaFace, 'Mine', 'Ana here.');
     const bos = fake.seed.post(thread, boFace, 'Bo here.');
-    fake.seed.cards(ana, { lift: 3, blot: 3, shield: 1 });
-    fake.seed.cards(bo, { shield: 1, rareshield: 1, csnare: 1, rsnare: 1, cushion: 1, blot: 1 });
+    fake.seed.cards(ana, { lift: 3, lift2: 2, lift3: 2, blot: 3, shield: 1, spark: 4 });
+    fake.seed.cards(bo, { cward: 1, tward: 1, shield: 1, rareshield: 1, csnare: 1, rsnare: 1, cushion: 1, blot: 1 });
     fake.signInAs(ana);
     const lifted = async () => must(await fake.useCard('lift', anaFace, anaFace, {}, '', 'character', mine));
     return { fake, ana, bo, anaFace, boFace, thread, mine, bos, lifted };
@@ -2633,12 +2638,11 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
     const pierce = await lifted();
     fake.signInAs(bo);
-    const ward = must(await fake.useCard('shield', boFace, bos, {}, ''));
+    must(await fake.useCard('shield', boFace, bos, {}, ''));
     fake.signInAs(ana);
     const landed = must(await fake.playCard('blot', anaFace, bos, {}, ''));
     expect(landed.payload.caught).toBeUndefined();
     expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift', ward: 'shield' });
-    void ward;
     // Spent: a second cast carries no pierce, and the ward turns it away.
     expect(await fake.playCard('blot', anaFace, bos, {}, '')).toEqual(refused('this post\'s Shield turns away cards up to uncommon', 'config'));
   });
@@ -2703,6 +2707,71 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(used.payload.pierce).toBeUndefined();
     const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
     expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ card: 'lift' });
+  });
+
+  test.each(['character', 'thread', 'board'] as const)('a pierce gets a cast at %s reach past a ward of that reach, names it, and is spent', async (reach) => {
+    const { fake, ana, bo, anaFace, boFace, bos, thread, lifted } = pierceSetup();
+    const pierce = await lifted();
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    fake.signInAs(bo);
+    const bothread = fake.seed.thread('general', boFace, 'Bo thread', 'Bo opens.');
+    const target = { character: boFace, thread: bothread.thread, board: general.id }[reach];
+    const key = { character: 'cward', thread: 'tward', board: 'bward' }[reach];
+    if (reach === 'board') fake.seed.reach(boFace, 'board', general.id, key);
+    else must(await fake.useCard(key, boFace, reach === 'character' ? boFace : bothread.thread, {}, '', reach, reach === 'character' ? bos : undefined));
+    fake.signInAs(ana);
+    const cast = () => fake.playCard('spark', anaFace, target, {}, '', reach, reach === 'character' ? bos : undefined);
+    const landed = must(await cast());
+    expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift', ward: key });
+    expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === pierce.id)).toBe(false);
+    // Spent: the next cast meets the ward.
+    expect(await cast()).toMatchObject({ ok: false });
+  });
+
+  test('a Use at a reach reads no pierce, and the pierce stays live', async () => {
+    const { fake, anaFace, mine, thread, lifted } = pierceSetup();
+    const pierce = await lifted();
+    const used = must(await fake.useCard('lift2', anaFace, anaFace, {}, '', 'character', mine));
+    expect(used.payload.pierce).toBeUndefined();
+    expect((await fake.effectsAbove([anaFace], thread, null)).some((e) => e.play === pierce.id)).toBe(true);
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: pierce.id });
+  });
+
+  test('with two live pierces the oldest is spent first', async () => {
+    const { fake, anaFace, mine, lifted } = pierceSetup();
+    const first = await lifted();
+    fake.clock.advance(1000);
+    const second = must(await fake.useCard('lift2', anaFace, anaFace, {}, '', 'character', mine));
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: first.id });
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: second.id });
+  });
+
+  test('an expired pierce is not used', async () => {
+    const { fake, anaFace, lifted } = pierceSetup();
+    await lifted();
+    fake.clock.advance(8 * 24 * 3_600_000);
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toBeUndefined();
+  });
+
+  test('a cast as another account\'s character is refused as before and spends no pierce', async () => {
+    const { fake, boFace, anaFace, lifted } = pierceSetup();
+    const pierce = await lifted();
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(await fake.playCard('blot', boFace, act, {}, '')).toMatchObject({ ok: false });
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: pierce.id });
+  });
+
+  test('reachEffects leaves a spent pierce out: its own card can be used again only once it is spent', async () => {
+    const { fake, anaFace, mine } = pierceSetup();
+    const use = async () => fake.useCard('lift3', anaFace, anaFace, {}, '', 'character', mine);
+    const first = must(await use());
+    expect(await use()).toMatchObject({ ok: false, error: 'this character already carries that card' });
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: first.id });
+    expect(must(await use()).kind).toBe('card');
   });
 
   test('a pierce is left out of the effects once spent, and a second can be used at once', async () => {
