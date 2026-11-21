@@ -24,7 +24,8 @@ insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts
 create function pg_temp.meet(setter_account uuid, setter uuid, in_thread uuid, quoter uuid, says text, quoted text,
                              phrase text default null, passage text default null, named uuid[] default null, but boolean default null, old boolean default false) returns jsonb language plpgsql as $$
 declare
-  p uuid := tests.post(setter, in_thread, 'The trapped post: the punchline, and zebra stripes.');
+  -- The trapped post holds the words quoted from it, so the quote is an authentic one (a doctored quote is a counterfeit and springs nothing: supabase/migrations/0393_forged_quotes.sql).
+  p uuid := tests.post(setter, in_thread, 'The trapped post: the punchline, and zebra stripes. ' || quoted);
   the_set uuid;
   quoting uuid;
   made jsonb;
@@ -181,10 +182,10 @@ begin
   foreach one in array posts loop
     select * into fd from face_down f where f.post = one;
     before := pg_temp.reads();
-    b_walk := pg_temp.calls('bbcode_walk(text, uuid)'::regprocedure); b_probe := pg_temp.calls('phrase_probe(text, text, text)'::regprocedure); b_norm := pg_temp.calls('phrase_norm(text)'::regprocedure);
+    b_walk := pg_temp.calls('bbcode_walk(text, uuid, uuid[], boolean)'::regprocedure); b_probe := pg_temp.calls('phrase_probe(text, text, text)'::regprocedure); b_norm := pg_temp.calls('phrase_norm(text)'::regprocedure);
     perform spring_facts(fd, 'quote', quoting, null);
     facts_reads := facts_reads || pg_temp.since(before);
-    walks := walks || (pg_temp.calls('bbcode_walk(text, uuid)'::regprocedure) - b_walk);
+    walks := walks || (pg_temp.calls('bbcode_walk(text, uuid, uuid[], boolean)'::regprocedure) - b_walk);
     probes := probes || (pg_temp.calls('phrase_probe(text, text, text)'::regprocedure) - b_probe);
     norms := norms || (pg_temp.calls('phrase_norm(text)'::regprocedure) - b_norm);
   end loop;

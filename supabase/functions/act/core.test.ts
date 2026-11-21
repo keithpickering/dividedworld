@@ -1280,3 +1280,14 @@ test('each discipline card lands otherwise, and the RPC carries no argument beyo
   // Another character's post: the same arguments as any card cast on a post (Stick Around's), and none of its own.
   assert.deepEqual(await sent('take-the-fall', post, 'post'), await sent('stick-around', post, 'post'));
 });
+
+test('a play on a phrase inside a quote lands when card_target_reach reports the post forged (a doctored quote is the poster\'s own words), and is refused inside an honest one', async () => {
+  const quoted = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const body = `[quote=${quoted}]cats[/quote] dogs`;
+  const play = async (forged?: string[]) => {
+    const { dbs } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: body.length, body, effects: [], ...(forged ? { forged } : {}) }, play_card: { id: 'k', kind: 'card' } });
+    return runAction(dbs, instance, { action: 'playCard', card: 'autocorrect', character: id, target, config: { phrase: 'cats', replacement: 'dogs' }, message: '' });
+  };
+  assert.equal((await play(undefined)).status, 400, 'an honest quote is another post\'s words');
+  assert.equal((await play([quoted])).status, 200, 'a forged one is the poster\'s own');
+});

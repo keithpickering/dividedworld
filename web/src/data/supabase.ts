@@ -31,6 +31,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { SignedIn } from '../../../engine/ui/data/api.ts';
+import { forgedList } from '../../../engine/bbcode/quoted.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
@@ -1340,6 +1341,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       for (const r of counts) tally[r['kind']] = num(r['count']);
       return buildMoveNotice(toAct(a), tally, progress);
     },
+    async quoteCheck(body) {
+      const r = await read(() => client.rpc('quote_check', { body }));
+      return Array.isArray(r.data) ? r.data.filter((x): x is string => typeof x === 'string') : [];
+    },
     async myApologies(character) {
       if (!idOk(character)) return [];
       const rows = await list(() => client.rpc('my_apologies', { in_character: character }));
@@ -1981,8 +1986,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       try {
         const d = (await read(() => client.rpc('my_hidden_version', { act: post }))).data;
         if (!isObject(d) || typeof d['version'] !== 'string') return null;
-        if (d['status'] === 'hiddenUntilEdited' && typeof d['words'] === 'string') return { status: 'hiddenUntilEdited', version: d['version'], words: d['words'] };
-        return d['status'] === 'waiting' && typeof d['words'] === 'string' ? { status: 'waiting', version: d['version'], words: d['words'] } : null;
+        /* The version's own verdict rides with its words (`my_hidden_version`'s `forged`), so they are drawn as the version was judged. */
+        const forged = forgedList(d);
+        if (d['status'] === 'hiddenUntilEdited' && typeof d['words'] === 'string') return { status: 'hiddenUntilEdited', version: d['version'], words: d['words'], ...(forged ? { forged } : {}) };
+        return d['status'] === 'waiting' && typeof d['words'] === 'string' ? { status: 'waiting', version: d['version'], words: d['words'], ...(forged ? { forged } : {}) } : null;
       } catch {
         return null;
       }

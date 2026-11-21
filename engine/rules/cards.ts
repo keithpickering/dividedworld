@@ -63,10 +63,13 @@ export type CardTarget =
   | { readonly reach: 'board'; readonly board: string };
 export type PostTarget = Extract<CardTarget, { reach: 'post' }>;
 
-/** A post as a card's rules see it, from its current body: its length in characters and its visible text, and its version where the server read one. */
-export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string, under?: string, author?: string): PostTarget {
+/**
+ * A post as a card's rules see it, from its current body: its length in characters and its visible text, and its version where the server read one. `forged` is the version's verdict (its payload's `forged`):
+ * a forged quote is a counterfeit, so its words are the poster's own and are in the text the rules see.
+ */
+export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string, under?: string, author?: string, forged?: readonly string[]): PostTarget {
   const words = typeof body === 'string' ? body : '';
-  const { text, links } = visibleWalk(parse(words));
+  const { text, links } = visibleWalk(parse(words, undefined, forged && forged.length > 0 ? new Set(forged) : undefined));
   return { reach: 'post', act, kind, length: [...words].length, text, links, ...(version ? { version } : {}), ...(under ? { under } : {}), ...(author ? { author } : {}) };
 }
 

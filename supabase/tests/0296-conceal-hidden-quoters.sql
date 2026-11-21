@@ -27,13 +27,13 @@ begin
   hid := tests.post(ch_au, th, 'Hidden words zqxhidden.', base);
   shown := tests.post(ch_au, th, 'Visible words.', base + interval '1 minute');
   lifted := tests.post(ch_au, th, 'Words that were hidden once.', base + interval '2 minutes');
+  -- the quoters: one of the hidden post (its layer recorded, stale: it holds the hidden words, as one made before the cap changed would; written before the hide, as a quote written after it is a counterfeit), one of a visible post, one of a post whose hide was lifted, one of nothing
+  stale := tests.post(ch_qu, th, format('[quote=%s]Hidden words zqxhidden.[/quote] stale', hid), base + interval '3 minutes');
   perform tests.become(adm);
   perform decide(null, hid, 'hide', null, 'chq');
   perform decide(null, lifted, 'hide', null, 'chq');
   perform decide(null, lifted, 'unhide', null, 'chq');
   perform tests.unbecome();
-  -- the quoters: one of the hidden post (its layer recorded, stale: it holds the hidden words, as one made before the cap changed would), one of a visible post, one of a post whose hide was lifted, one of nothing
-  stale := tests.post(ch_qu, th, format('[quote=%s]Hidden words zqxhidden.[/quote] stale', hid), base + interval '3 minutes');
   ok := tests.post(ch_qu, th, format('[quote=%s]Visible words.[/quote] fine', shown), base + interval '4 minutes');
   of_lifted := tests.post(ch_qu, th, format('[quote=%s]Words that were hidden once.[/quote] lifted', lifted), base + interval '5 minutes');
   plain_post := tests.post(ch_qu, th, 'No quote at all.', base + interval '6 minutes');

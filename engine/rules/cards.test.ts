@@ -761,6 +761,14 @@ test('a card that carries a reply lands on a plain post, and not on a reply draw
   assert.equal(postTarget('r', 'post', 'x').under, undefined);
 });
 
+test('a post target reads a forged quote as the poster\'s own words, and a real one as another post\'s', () => {
+  const id = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const body = `[quote=${id}]quoted words[/quote] mine`;
+  assert.equal(postTarget('p', 'post', body).text.includes('quoted words'), false);
+  assert.equal(postTarget('p', 'post', body, undefined, undefined, undefined, [id]).text.includes('quoted words'), true);
+  assert.equal(postTarget('p', 'post', body, undefined, undefined, undefined, ['1f8fad5b-d9cb-469f-a165-70867728950e']).text.includes('quoted words'), false);
+});
+
 test('a card that carries a reply is cast face up and never set face down, and no staff persona is offered it', () => {
   const set = decideSet(cutter, settings, post, [], {}, [cutter]);
   assert.equal(set.ok, false);
