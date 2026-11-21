@@ -489,7 +489,7 @@ describe('a nomination of a successor', () => {
       expect(todo).toHaveTextContent('Season 2 opens with Comptroller.');
       expect(todo).toHaveTextContent('Season 2: The Boss is Comptroller (was a Moderator).');
       expect(todo).toHaveTextContent('Old Boss is now a member.');
-      expect(within(todo).getByRole('link', { name: 'Write the announcement for season 2' })).toHaveAttribute('href', '/updates?write=handover&season=2');
+      expect(within(todo).getByRole('link', { name: 'Write the announcement for season 2' })).toHaveAttribute('href', '/updates?write=handover&handover=1');
       expect(within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' })).toBeInTheDocument();
       const waiting = await group(/^Waiting to land/u);
       expect(todo.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

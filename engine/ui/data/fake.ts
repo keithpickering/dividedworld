@@ -4658,12 +4658,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         people: core.characters([...new Set([...acts.values()].flatMap((a) => (a.character === null ? [] : [a.character])))]), openings: core.openingActs(threads), reading: core.reading(threads),
       };
     },
-    updatesPage(update, before, handoverSeason): UpdatesPage {
+    updatesPage(update, before, handover): UpdatesPage {
       const updates = core.updates(before);
       const open = update !== null && updates.some((u) => u.act === update) ? update : updates[0]?.act ?? null;
       return {
         updates, tallies: core.tallies(open === null ? [] : [open]), mine: core.myReactions(open === null ? [] : [open]),
-        ...(handoverSeason !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
+        ...(handover !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
       };
     },
     reportsPage(): ReportsPage | null {

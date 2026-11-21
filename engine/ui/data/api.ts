@@ -2995,8 +2995,8 @@ export interface KayfaApi {
   seasonPage(tab: string | null, season: number | null, character: Id | null, page: number | null): Promise<SeasonPage | null>;
   /** The Alerts page in one read, the rows at or before `before`. */
   alertsPage(before: string | null): Promise<AlertsPage>;
-  /** The Updates page in one read: a page of Updates at or before `before`, `update` open (the newest when null); a handover season asks an admin's queue as well. */
-  updatesPage(update: Id | null, before: string | null, handoverSeason: number | null): Promise<UpdatesPage>;
+  /** The Updates page in one read: a page of Updates at or before `before`, `update` open (the newest when null); a handover (its `season_handovers` id) asks an admin's queue as well. */
+  updatesPage(update: Id | null, before: string | null, handover: number | null): Promise<UpdatesPage>;
   /** The admin queue page in one read; null for a caller who is not an admin. */
   queuePage(): Promise<QueuePage | null>;
   /** The reports screen in one read; null for a caller who is not an admin. */

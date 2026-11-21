@@ -2102,8 +2102,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         people: rowsOf(d['people']).map(faceOf), openings: rowsOf(d['openings']).map(toAct), reading,
       };
     },
-    async updatesPage(update, before, handoverSeason): Promise<UpdatesPage> {
-      const d = (await read(() => client.rpc('updates_page', { in_update: update !== null && idOk(update) ? update : null, in_before: before, in_handover_season: handoverSeason }))).data as Row | null;
+    /* The RPC's `in_handover_season` only asks for the queue (any non-null); the id names which to-do the page then opens. */
+    async updatesPage(update, before, handover): Promise<UpdatesPage> {
+      const d = (await read(() => client.rpc('updates_page', { in_update: update !== null && idOk(update) ? update : null, in_before: before, in_handover_season: handover }))).data as Row | null;
       if (!isObject(d)) throw new ReadFailure('server');
       const updates = rowsOf(d['updates']).map(toUpdate);
       /* The open Update is the one asked for when it is on the page, else the newest of the page (as Updates.tsx shows it): the tallies were read for it alone. */

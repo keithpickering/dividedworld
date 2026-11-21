@@ -385,7 +385,7 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
           </div>
           <div className="kb-queue-act">
             <ButtonRow>
-              <GlassButton to={`/updates?write=handover&season=${t.season}`} aria-label={`Write the announcement for ${label(t)}`}>Write the announcement</GlassButton>
+              <GlassButton to={`/updates?write=handover&handover=${t.handover}`} aria-label={`Write the announcement for ${label(t)}`}>Write the announcement</GlassButton>
               <GlassButton busy={busy === t.handover} disabled={busy !== null && busy !== t.handover} aria-label={`Dismiss the ${label(t)} to-do`} onClick={() => void dismiss(t.handover)}>DISMISS</GlassButton>
             </ButtonRow>
           </div>
