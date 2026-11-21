@@ -787,7 +787,9 @@ function outcomeProblems(o: unknown, who: string, play: string, on: unknown): st
     const extra = Object.keys(e).find((k) => k !== 'kind' && k !== 'hours');
     if (extra !== undefined) out.push(`${who} has a lockout outcome with ${extra}; a lockout outcome has hours alone`);
     const h = e.hours;
-    if (typeof h !== 'number' || !Number.isInteger(h) || h < 1 || h > 168) out.push(`${who} locks out for ${String(h)} hours; a lockout is a whole number of hours from 1 to 168`);
+    // A number reads bare and anything else as its JSON, so "24" (a string) does not read as a valid 24.
+    if (h === undefined) out.push(`${who} has a lockout outcome with no hours; a lockout is a whole number of hours from 1 to 168`);
+    else if (typeof h !== 'number' || !Number.isInteger(h) || h < 1 || h > 168) out.push(`${who} locks out for ${typeof h === 'number' ? String(h) : JSON.stringify(h)} hours; a lockout is a whole number of hours from 1 to 168`);
   } else if (e.kind !== 'ride') out.push(`${who} has an outcome of kind ${JSON.stringify(e.kind)}; an outcome is ride, refund or lockout`);
   else {
     // `every` is a ride's alone; a refund names it as a key it does not take.

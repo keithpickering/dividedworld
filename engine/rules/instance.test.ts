@@ -939,8 +939,10 @@ test('a lockout outcome has whole hours from 1 to 168 and nothing else', () => {
   assert.equal(set({ kind: 'lockout', hours: 24 }), '');
   assert.equal(set({ kind: 'lockout', hours: 1 }), '');
   assert.equal(set({ kind: 'lockout', hours: 168 }), '');
-  for (const hours of [0, 169, 1.5]) assert.equal(set({ kind: 'lockout', hours }), `card "splat" locks out for ${hours} hours; a lockout is a whole number of hours from 1 to 168`);
-  assert.equal(set({ kind: 'lockout' }), 'card "splat" locks out for undefined hours; a lockout is a whole number of hours from 1 to 168');
+  for (const hours of [0, 169, 1.5, -1, NaN, Infinity]) assert.equal(set({ kind: 'lockout', hours }), `card "splat" locks out for ${hours} hours; a lockout is a whole number of hours from 1 to 168`);
+  assert.equal(set({ kind: 'lockout', hours: '24' }), 'card "splat" locks out for "24" hours; a lockout is a whole number of hours from 1 to 168');
+  assert.equal(set({ kind: 'lockout', hours: null }), 'card "splat" locks out for null hours; a lockout is a whole number of hours from 1 to 168');
+  assert.equal(set({ kind: 'lockout' }), 'card "splat" has a lockout outcome with no hours; a lockout is a whole number of hours from 1 to 168');
   assert.match(set({ kind: 'lockout', hours: 24, share: 1 }), /card "splat" has a lockout outcome with share; a lockout outcome has hours alone/);
   assert.match(set({ kind: 'lockout', hours: 24, every: true }), /card "splat" has a lockout outcome with every; a lockout outcome has hours alone/);
   assert.match(set({ kind: 'lock', hours: 24 }), /card "splat" has an outcome of kind "lock"; an outcome is ride, refund or lockout/);
