@@ -14,26 +14,27 @@
  *                         the pointer clicks a node twice on the way and nothing changes.
  *
  * Every take is filmed at the camera's native double density (1440 x 810 at 2x) and written at 2880 x 1620, so the edit can push in
- * without softening, 60 frames a second, with the page's own clock virtual. Each is at least its window of the music (the design's
- * section 2, measured: windows.mjs) and two seconds, and its action is in the first half of its voice clip, so the take then breathes.
+ * without softening, 60 frames a second, with the page's own clock virtual. Each is at least its node's length in the film (its voice clip and a
+ * breath: the narration is continuous, the revision design's section 1) and two seconds, and its action is in the first half of its voice clip, so the take then breathes.
  * Beside each take is `c-nNN.json`: the frames beats landed on, and the camera's moves (`move`, `punches`) for the edit to make.
  * Every "asserts" below reads the page and throws when the picture is not the rule.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { openFilm } from './camera.mjs';
 import { glide } from './pointer.mjs';
 import { OUT, flag, openStage, settle } from './stage.mjs';
-import { windows } from './windows.mjs';
 import { duration } from './cutting.mjs';
+
+const BREATH = 0.35;
 
 const only = flag('only', null);
 const port = Number(flag('port', 4319));
 const SIZE = { width: 2880, height: 1620 };
-/* Seconds each node has in the film: the music's windows (music-map.json, split by the voice clips' lengths where the voice folder is there, else by the default shares), and the take's extra still. */
+/* Seconds each node has in the film: its voice clip (20 s where the voice folder is not there) and a breath, and the take's extra still. */
 const VOICE = flag('voice', '.runs/hype/voice');
 const clipLength = (stem) => { const hit = existsSync(VOICE) ? ['.mp3', '.wav', '.m4a', '.flac'].map((e) => `${VOICE}/${stem}${e}`).find(existsSync) : undefined; return hit ? duration(hit) : undefined; };
 const heard = Object.fromEntries(['n05', 'n06', 'n07', 'n08', 'n09', 'n10'].flatMap((id) => { const t = clipLength(id); return t === undefined ? [] : [[id, t]]; }));
-const WINDOWS = Object.fromEntries(windows(JSON.parse(readFileSync('instances/divided-world/ui/hype/music-map.json', 'utf8')), { clips: heard }).filter((w) => /^n0[5-8]$/u.test(w.id)).map((w) => [`c-${w.id}`, w.length]));
+const WINDOWS = Object.fromEntries(['n05', 'n06', 'n07', 'n08'].map((id) => [`c-${id}`, (heard[id] ?? 20) + BREATH]));
 const STILL = 2.5;
 
 /** Throws with `what` when `ok` is not so: the picture is the rule, not a staging of it. @param {unknown} ok @param {string} what */

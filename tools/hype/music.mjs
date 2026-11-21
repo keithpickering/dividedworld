@@ -64,3 +64,16 @@ export function versionMap(map, name) {
 export function beats(map, name) {
   return versionMap(map, name).statements.flatMap((s) => Array.from({ length: s.beats }, (_, k) => s.start + (k * s.length) / s.beats));
 }
+
+/**
+ * The `lines` longest gaps between the coda's chords, in the order they come: a line is spoken into a gap, and the longer the gap the
+ * more of the line survives the next chord. Each is `{ start, end, length, confident }`. Refuses when the coda has fewer gaps than lines.
+ * @param {Version} version @param {number} lines
+ */
+export function codaGaps(version, lines) {
+  const chords = version.coda.chords;
+  const all = chords.slice(1).map((c, i) => ({ start: chords[i].t, end: c.t, length: c.t - chords[i].t, confident: chords[i].confident !== false && c.confident !== false }));
+  if (all.length < lines) throw new Error(`n11 has ${lines} lines but the coda has only ${all.length} gaps between its chords`);
+  const keep = new Set([...all].sort((x, y) => y.length - x.length).slice(0, lines));
+  return all.filter((g) => keep.has(g));
+}

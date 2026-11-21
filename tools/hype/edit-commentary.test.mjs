@@ -9,57 +9,101 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { versionMap } from './music.mjs';
 import { timeline, captions, srt, framesBetween, wrap, duckExpression, captionBand } from './edit-commentary.mjs';
 import * as ec from "./edit-commentary.mjs";
 import { madeUp } from './made-up.mjs';
 import { cutRect, moveRect, punchScale, refusePush, pushLimit, expressions, corners, maxPush } from './moves.mjs';
 
 const map = madeUp();
+/* Speech to 111.15 s: the ten clips and nine breaths of 0.35 s. With these, the coda's first chord falls at 111.35 and mk-b (first chord at 90) is the longest version that starts 5 s in. */
 const clips = { n01: 8, n02: 6, n03: 5, n04: 7, n05: 20, n06: 20, n07: 10, n08: 8, n09: 14, n10: 10, n11: [1.5, 6, 8] };
+/** The clips with node 5 longer (or shorter) by `by` seconds, which moves the coda by as much. */
+const longer = (/** @type {number} */ by) => ({ ...clips, n05: clips.n05 + by });
 const F = 60;
 const near = (/** @type {number} */ a, /** @type {number} */ b, /** @type {string} */ what = '') => assert.ok(Math.abs(a - b) < 1e-9, `${what} ${a} is not ${b}`);
 
-test('part one follows the clips: each node is its clip and a breath of 0.4 s, one after another from 0', () => {
+test('the narration is continuous: each node is its clip and a breath of 0.35 s, one after another from the first frame', () => {
   const t = timeline(clips, map);
   const one = t.nodes.filter((n) => n.part === 1);
   assert.deepEqual(one.map((n) => n.id), ['n01', 'n02', 'n03', 'n04']);
-  one.forEach((n, i) => near(n.length, [8.4, 6.4, 5.4, 7.4][i], n.id));
+  one.forEach((n, i) => near(n.length, [8.35, 6.35, 5.35, 7.35][i], n.id));
   near(one[0].start, 0);
-  near(one[1].start, 8.4);
-  near(one[3].start, 20.2);
   near(one[0].voice[0].start, 0);
   assert.equal(one[0].voice[0].length, 8);
-  assert.equal(one[0].cuts.length, 1, 'no cut inside a node of part one');
+  near(one[1].start, 8.35);
+  near(one[3].start, 20.05);
+  assert.equal(one[0].cuts.length, 1, 'no cut inside a node before the cut list');
+  const ids = ['n01', 'n02', 'n03', 'n04', 'n05', 'n06', 'n07', 'n08', 'n09', 'n10'];
+  let at = 0;
+  for (const id of ids) {
+    const n = t.nodes.find((x) => x.id === id);
+    near(n.start, at, `${id} starts when the clip before it and its breath are done`);
+    near(n.voice[0].start, at, `${id}'s voice`);
+    at += clips[id] + 0.35;
+  }
+  near(t.nodes.find((n) => n.id === 'n10').voice[0].start + clips.n10, 111.15, 'the speech ends');
 });
 
-test('part two starts where part one ends, and the music with it', () => {
+test('the music is laid from its end: the version`s first coda chord falls 0.2 s after node 10`s last word', () => {
   const t = timeline(clips, map);
-  const p1 = 27.6;
-  near(t.nodes.find((n) => n.id === 'n05').start, p1, 'n05');
-  near(t.music.start, p1, 'music');
-  near(t.music.from, 10);
-  near(t.part.two[0], p1);
-  near(t.part.one[1], p1);
+  const n10 = t.nodes.find((n) => n.id === 'n10'), n11 = t.nodes.find((n) => n.id === 'n11');
+  near(n10.voice[0].start + clips.n10 + 0.2, n11.start, 'node 11 begins 0.2 s after node 10 is spoken');
+  near(t.music.codaStart, n11.start);
+  near(n10.end, n11.start, 'node 10 runs to the coda');
+  const v = versionMap(map, t.music.version);
+  near(t.music.start, 111.35 - v.coda.chords[0].t, 'the start is the coda less the first chord');
+  near(t.music.until, v.coda.end.t, 'the music plays to the final chord`s end');
+  near(t.music.untilFilm, t.music.start + v.coda.end.t);
 });
 
-test('the windows are the clips fitted: nodes 5 to 10 sit at their window, node 11 across the coda', () => {
+test('the version is the longest of full, mk-a and mk-b whose music starts at least 5 s into the film', () => {
+  /* speech end 111.15 + by: the coda at 111.35 + by; the start is that less 130 (full), 110 (mk-a), 90 (mk-b). */
+  const pick = (/** @type {number} */ by) => { const t = timeline(longer(by), map); return { v: t.music.version, start: t.music.start }; };
+  assert.equal(pick(0).v, 'mk-b');
+  near(pick(0).start, 21.35, 'mk-b starts 21.35 s in');
+  assert.equal(pick(3.6).v, 'mk-b', 'mk-a would start at 4.95 s');
+  assert.equal(pick(3.7).v, 'mk-a');
+  near(pick(10).start, 11.35, 'mk-a');
+  assert.equal(pick(23.6).v, 'mk-a', 'full would start at 4.95 s');
+  assert.equal(pick(23.7).v, 'full');
+  near(pick(30).start, 11.35, 'full');
+});
+
+test('--recording fixes the version; a start before the film begins is trimmed from the head of the music', () => {
+  const t = timeline(clips, map, { recording: 'full' });
+  assert.equal(t.music.version, 'full');
+  near(t.music.start, 0, 'the music starts on the first frame');
+  near(t.music.from, 130 - 111.35, 'and begins 18.65 s into the recording');
+  assert.equal(timeline(clips, map, { recording: 'mk-a' }).music.version, 'mk-a');
+  near(timeline(clips, map, { recording: 'mk-a' }).music.start, 1.35, 'mk-a would start 1.35 s in, which the speech lets it do when asked');
+  assert.throws(() => timeline(clips, map, { recording: 'mk-z' }), /mk-z/);
+  const auto = timeline(clips, map);
+  near(auto.music.from, 0, 'a start after the first frame is the recording from its first second');
+});
+
+test('when no version reaches 5 s the shortest is used, and the timeline says the music starts before the speech allows', () => {
+  const t = timeline(longer(-18), map);
+  assert.equal(t.music.version, 'mk-b');
+  assert.ok(t.music.start < 5);
+  assert.ok(t.music.notes.some((n) => /before the speech allows/.test(n)), t.music.notes.join('|'));
+  assert.deepEqual(timeline(clips, map).music.notes, [], 'no note when the rule is met');
+});
+
+test('where the second block and the full orchestra fall in the speech: the node and how far into it', () => {
   const t = timeline(clips, map);
-  const p1 = 27.6;
-  const n07 = t.nodes.find((n) => n.id === 'n07');
-  const w = t.windows.find((x) => x.id === 'n07');
-  near(n07.start, p1 + (w.start - 10), 'n07 start');
-  near(n07.length, w.length, 'n07 length');
-  near(n07.voice[0].start, n07.start, 'the voice begins with its window');
-  const n11 = t.nodes.find((n) => n.id === 'n11');
-  near(n11.start, p1 + 120, 'n11 begins on the first chord');
-  assert.equal(n11.voice.length, 3);
-  near(n11.voice[1].start, p1 + (132 - 10), 'line 2 is spoken from the gap that begins at the second chord');
+  /* mk-b: statement 7 is at 70 - 40 = 30 of the music, statement 13 at 60; the music starts at 21.35. */
+  near(t.music.second?.at, 51.35, 'block 2');
+  assert.equal(t.music.second?.node, 'n06');
+  near(t.music.second?.into, 51.35 - 47.75 + 0, 'into n06');
+  near(t.music.third?.at, 81.35, 'the full orchestra');
+  assert.equal(t.music.third?.node, 'n08');
+  near(t.music.third?.into, 81.35 - 78.45, 'into n08');
 });
 
 test('the black and the end card follow the last chord: 5 s of black, then 10 s of card', () => {
   const t = timeline(clips, map);
-  const p1 = 27.6;
-  near(t.out.blackStart, p1 + (155 - 10), 'black');
+  near(t.out.blackStart, t.music.start + versionMap(map, 'mk-b').coda.end.t, 'black');
   near(t.out.cardStart, t.out.blackStart + 5, 'card');
   near(t.out.end, t.out.cardStart + 10, 'end');
   near(t.total, t.out.end);
@@ -80,16 +124,22 @@ test('the cuts of a node cover it frame for frame, and every node starts on the 
   assert.equal(framesBetween(0, 1.0083), 60);
 });
 
-test('a clip that overruns its window is refused as fit refuses it, naming the node', () => {
-  assert.throws(() => timeline({ ...clips, n08: 40 }, map), (/** @type {Error} */ e) => /n08/.test(e.message) && /over/.test(e.message));
-});
-
 test('a node 11 line longer than its gap is kept, cut off by the chord, and says by how much', () => {
   const t = timeline({ ...clips, n11: [1.5, 6, 10] }, map);
   const n11 = t.nodes.find((n) => n.id === 'n11');
   near(n11.voice[2].length, 9, 'line 3 plays only its gap');
   near(n11.voice[2].cut, 1, 'and the chord takes a second');
   assert.equal(t.slack.n11[2].cut, 1);
+});
+
+test('node 11`s lines sit in the coda`s three longest gaps, as spoken into the gap that begins at a chord', () => {
+  const t = timeline(clips, map);
+  const n11 = t.nodes.find((n) => n.id === 'n11'), s = t.music.start;
+  assert.equal(n11.voice.length, 3);
+  near(n11.voice[0].start, s + 90, 'line 1: the gap from the first chord');
+  near(n11.voice[1].start, s + 92, 'line 2: the gap from the second chord');
+  near(n11.voice[2].start, s + 101, 'line 3: the gap from the fourth');
+  assert.throws(() => timeline({ ...clips, n11: [1, 1, 1, 1, 1] }, map), /5 lines.*4 gaps/);
 });
 
 test('a clip missing for a node is refused plainly', () => {
@@ -122,19 +172,6 @@ test('a move declared on a part-two node reaches its cut, and a push past the ta
   assert.throws(() => timeline(clips, map, { moves: { n06: { move: wider } } }), /3\.33x/);
 });
 
-test('part three is cut to the theme: node 9 changes framing on every entry inside its window, on one clock', () => {
-  const t = timeline(clips, map, { framings: { n09: ['wide', 'tight', 'turned'] } });
-  const n09 = t.nodes.find((n) => n.id === 'n09');
-  const w = t.windows.find((x) => x.id === 'n09');
-  const inside = map.statements.filter((s) => s.block === 3).map((s) => s.start).filter((x) => x > w.start + 1e-9 && x < w.end - 1e-9);
-  assert.equal(n09.cuts.length, inside.length + 1);
-  assert.deepEqual(n09.cuts.map((c) => c.take).slice(0, 4), ['n09-wide', 'n09-tight', 'n09-turned', 'n09-wide']);
-  for (const c of n09.cuts) near(c.from, c.at, 'every framing plays the same moment');
-  near(n09.cuts[1].at, inside[0] - w.start, 'the first cut is on the first entry');
-  assert.equal(n09.cuts[1].punch, 8, 'a cut on an entry is a punch');
-  assert.equal(n09.cuts[0].punch, undefined);
-});
-
 test('each chord of the coda is a hard cut with a punch-in', () => {
   const t = timeline(clips, map);
   const n11 = t.nodes.find((n) => n.id === 'n11');
@@ -144,13 +181,12 @@ test('each chord of the coda is a hard cut with a punch-in', () => {
   near(n11.cuts.at(-1).at + n11.cuts.at(-1).length, 25);
 });
 
-test('a landing in part three is a punch at its frame, wherever the retime has put it', () => {
+test('a landing in part three is a punch at its frame, and its sound is placed at that frame of its node', () => {
   const t = timeline(clips, map, { landed: { n09: [{ what: 'steel-chair', frame: 150 }] } });
   const n09 = t.nodes.find((n) => n.id === 'n09');
-  const at = n09.retime.placed[0].at;
-  const cut = n09.cuts.find((c) => c.at <= at + 1e-9 && c.at + c.length > at);
-  assert.deepEqual(cut.punches, [{ frame: Math.round((at - cut.at) * F), percent: 5 }]);
-  assert.deepEqual(t.hits.map((h) => [h.what, Math.round((h.at - n09.start) * F)]), [['steel-chair', Math.round(at * F)]]);
+  assert.deepEqual(n09.cuts[0].punches, [{ frame: 150, percent: 5 }]);
+  assert.deepEqual(t.hits.map((h) => [h.what, h.at]), [['steel-chair', n09.start + 2.5]]);
+  assert.equal(timeline(clips, map, { landed: { n06: [{ what: 'steel-chair', frame: 150 }] } }).nodes.find((n) => n.id === 'n06').cuts[0].punches, undefined, 'only in part three');
 });
 
 /* ---- captions ---- */
@@ -181,7 +217,7 @@ test('captions: each line of node 11 is shown in its own gap, for as long as it 
   assert.equal(cues.length, 3);
   near(cues[0].end - cues[0].start, 1.5);
   near(cues[2].end - cues[2].start, 9, 'cut off by the chord');
-  near(cues[1].start, 27.6 + (132 - 10));
+  near(cues[1].start, t.music.start + 92, 'the gap that begins at the second chord');
 });
 
 test('captions: a node with no commentary text has no cue, and the srt is numbered and timed in milliseconds', () => {
@@ -338,42 +374,6 @@ test('the top band never reaches the HUD at the foot, and the captions flag is r
   assert.throws(() => captionMode(['--captions', 'middle']), /foot, top or off/);
 });
 
-test('a node with landings in part three is retimed to the theme: speeds on its cuts, one clock for every framing, the voice untouched', () => {
-  const landed = { n09: [{ what: 'a', frame: 1 * 60 }, { what: 'b', frame: 4 * 60 }, { what: 'c', frame: 10 * 60 }, { what: 'd', frame: 16 * 60 }] };
-  const t = timeline(clips, map, { framings: { n09: ['wide', 'tight', 'turned'] }, landed });
-  const n09 = t.nodes.find((n) => n.id === 'n09');
-  assert.ok(n09.cuts.every((c) => typeof c.speed === 'number'), 'every cut of node 9 has a speed');
-  assert.ok(n09.cuts.every((c) => c.speed >= 2 / 3 - 1e-9 && c.speed <= 4 / 3 + 1e-9), 'never past a third');
-  assert.ok(n09.cuts.some((c) => Math.abs(c.speed - 1) > 1e-6), 'and at least one is not 1');
-  near(n09.cuts[0].from, 0);
-  for (let k = 1; k < n09.cuts.length; k++) near(n09.cuts[k].from, n09.cuts[k - 1].from + n09.cuts[k - 1].speed * n09.cuts[k - 1].length, 'the take is continuous across the cut');
-  assert.ok(n09.retime, 'the node carries what the retime did');
-  const plain = timeline(clips, map, { framings: { n09: ['wide', 'tight', 'turned'] } });
-  const p9 = plain.nodes.find((n) => n.id === 'n09');
-  assert.deepEqual(p9.voice, n09.voice, 'the voice is not retimed');
-  assert.equal(p9.cuts[0].speed, undefined, 'a node with no landings is not retimed');
-  assert.deepEqual(t.music, plain.music, 'nor is the music');
-});
-
-test('hand-set entries replace the derived ones: the cuts are on them', () => {
-  const w = timeline(clips, map).windows.find((x) => x.id === 'n09');
-  const hand = [w.start + 3, w.start + 9];
-  const t = timeline(clips, map, { entries: hand });
-  const n09 = t.nodes.find((n) => n.id === 'n09');
-  assert.equal(n09.cuts.length, 3);
-  near(n09.cuts[1].at, 3);
-  near(n09.cuts[2].at, 9);
-});
-
-test("a landing's sound is placed where its play now lands in the film", () => {
-  const landed = { n09: [{ what: 'steel-chair', frame: 6 * 60 }, { what: 'x', frame: 10 * 60 }] };
-  const t = timeline(clips, map, { landed });
-  const n09 = t.nodes.find((n) => n.id === 'n09');
-  const hit = t.hits.find((h) => h.what === 'steel-chair');
-  const r = n09.retime.placed.find((p) => p.what === 'steel-chair');
-  near(hit.at, n09.start + r.at);
-});
-
 /* ---- the guards against a film that looks finished and is not ---- */
 
 const nodes = [...['n01', 'n02', 'n03', 'n04', 'n05', 'n06', 'n07', 'n08', 'n09', 'n10'].map((id) => ({ id, lines: ['a line.'] })), { id: 'n11', lines: ['one', 'two', 'three'] }];
@@ -449,11 +449,19 @@ test('the music must be the recording the map was measured on: its length within
   assert.throws(() => ec.checkRecording(m, { seconds: 160, sha1: () => 'aaa' }, true), /160\.000/, 'but never the length');
 });
 
-test('the sheet is made before an overrun can throw, and marks the clip that overruns by how much', () => {
-  const text = ec.sheetText(map, { ...clips, n05: 60 });
-  assert.match(text, /n05 +60\.00 +\d+\.\d+ +OVER by/);
-  assert.match(text, /line 1/, 'the timing sheet is above the table');
-  assert.throws(() => timeline({ ...clips, n05: 60 }, map), /n05 runs/, 'and the timeline still refuses');
+test("a shortened version is checked against its own length, not the recording's; its sha1 is not the recording's and is not asked", () => {
+  assert.doesNotThrow(() => ec.checkRecording(map, { seconds: 120.01, sha1: () => 'bbb' }, false, 'mk-b'));
+  assert.doesNotThrow(() => ec.checkRecording(map, { seconds: 140, sha1: () => 'bbb' }, false, 'mk-a'));
+  assert.throws(() => ec.checkRecording(map, { seconds: 140, sha1: () => 'bbb' }, false, 'mk-b'), (/** @type {Error} */ e) => /140\.000/.test(e.message) && /120\.000/.test(e.message) && /mk-b/.test(e.message));
+  assert.throws(() => ec.checkRecording(map, { seconds: 120, sha1: () => 'aaa' }, false, 'full'), /120\.000.*160/, 'the full recording is its own length');
+});
+
+test('the placement text names the version, the start, and where the second block and the full orchestra fall in the speech', () => {
+  const text = ec.placementText(timeline(clips, map));
+  assert.match(text, /mk-b/);
+  assert.match(text, /starts 21\.35 s into the film/);
+  assert.match(text, /block 2 .*at 51\.35 s, in n06, 3\.60 s in/);
+  assert.match(text, /full orchestra at 81\.35 s, in n08, 2\.90 s in/);
 });
 
 /* ---- ducking at the edges ---- */
@@ -496,4 +504,9 @@ test('the caption is a pill no wider than its words: libass\'s own box, never a 
   assert.match(filter, /OutlineColour=&H61000000&/, 'black at 62%, as the band was');
   assert.deepEqual(ec.captionFilters('off', '/tmp/cap.srt', 'Verdana'), []);
   assert.match(ec.captionFilters('foot', '/tmp/cap.srt', 'Verdana')[0], /Alignment=2/);
+});
+
+test('a clip length that is NaN, negative, infinite or not a number is refused naming the node', () => {
+  for (const bad of [NaN, -1, Infinity, '5', null]) assert.throws(() => timeline({ ...clips, n05: /** @type {any} */ (bad) }, map), /n05 has a clip length/, String(bad));
+  assert.throws(() => timeline({ ...clips, n11: [1, NaN, 2] }, map), /n11 has a clip length/);
 });

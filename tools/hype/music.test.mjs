@@ -5,7 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { versionMap, beats, expectedSeconds, VERSIONS } from './music.mjs';
+import { versionMap, beats, expectedSeconds, codaGaps, VERSIONS } from './music.mjs';
+import { madeUp } from './made-up.mjs';
 
 const map = JSON.parse(readFileSync(new URL('../../instances/divided-world/ui/hype/music-map.json', import.meta.url), 'utf8'));
 const near = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ tol, /** @type {string} */ what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
@@ -83,4 +84,17 @@ test('a recipe that removes from block 2 or 3, or an unknown version, is refused
   const gone = structuredClone(map);
   gone.versions['mk-a'].remove = [1, 3];
   assert.throws(() => versionMap(gone, 'mk-a'), /statement 1|first/);
+});
+
+test('the coda`s gaps: the longest three, in the order they come, each with its length; fewer gaps than lines is refused', () => {
+  const v = versionMap(madeUp(), 'full');
+  const gaps = codaGaps(v, 3);
+  assert.deepEqual(gaps.map((g) => [g.start, g.end, g.length]), [[130, 132, 2], [132, 140, 8], [141, 150, 9]]);
+  assert.deepEqual(codaGaps(v, 1).map((g) => g.start), [141], 'the longest alone');
+  assert.deepEqual(codaGaps(versionMap(madeUp(), 'mk-b'), 3).map((g) => g.start), [90, 92, 101], 'a version`s gaps are shifted');
+  assert.throws(() => codaGaps(v, 5), /5 lines.*4 gaps/);
+});
+
+test('the committed map`s coda has gaps for the three lines of node 11, in every version', () => {
+  for (const name of VERSIONS) assert.equal(codaGaps(versionMap(map, name), 3).length, 3, name);
 });
