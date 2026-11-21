@@ -407,7 +407,7 @@ test('one clip missing from an otherwise full voice folder is refused, naming th
 });
 
 test('no voice folder is PLACEHOLDER SOUND on every frame, and so is music that is absent', () => {
-  for (const [what, over] of [['no voice folder', { voiceFiles: null }], ['no music', { haveMusic: false }]]) {
+  for (const [what, over] of /** @type {[string, object][]} */ ([['no voice folder', { voiceFiles: null }], ['no music', { haveMusic: false }]])) {
     const r = resolve(over);
     assert.equal(r.placeholderSound, true, what);
     assert.ok(r.notes.some((n) => /PLACEHOLDER SOUND/.test(n)), what);
@@ -458,7 +458,7 @@ test('the music must be the recording the map was measured on: its length within
 });
 
 test("a map whose first note is not block 1's start, or whose block 3 does not end on the first chord, is refused by the timeline", () => {
-  assert.throws(() => timeline(clips, { ...map, firstNote: { t: 11 } }), /first note/);
+  assert.throws(() => timeline(clips, { ...map, firstNote: { t: 11, confident: true } }), /first note/);
   assert.throws(() => timeline(clips, { ...map, blocks: [map.blocks[0], map.blocks[1], { ...map.blocks[2], end: 129 }] }), /block 3 ends/);
 });
 

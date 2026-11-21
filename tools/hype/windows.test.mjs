@@ -122,7 +122,7 @@ test('the timing sheet marks a window with an unsure or chosen end with a tilde'
 
 test('fit refuses a clip length that is NaN, negative, infinite or not a number, naming the node', () => {
   const ws = windows(map, { fragments: 3 });
-  for (const bad of [NaN, -1, Infinity, '5', null]) assert.throws(() => fit(ws, { n05: bad }), /n05 has a clip length/, String(bad));
+  for (const bad of [NaN, -1, Infinity, '5', null]) assert.throws(() => fit(ws, /** @type {any} */ ({ n05: bad })), /n05 has a clip length/, String(bad));
   assert.throws(() => fit(ws, { n11: [1, NaN, 2] }), /n11 has a clip length/);
   assert.throws(() => fit(ws, { n11: [1, -2, 2] }), /n11 has a clip length/);
   assert.doesNotThrow(() => fit(ws, { n05: 0, n11: [1, 2, 3] }));
