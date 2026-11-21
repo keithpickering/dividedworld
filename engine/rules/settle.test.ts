@@ -2591,6 +2591,14 @@ test('a tallied earning comes back in `tallied`, summed by Act and reason across
   assert.deepEqual(settle(debateBoard([post('p1', 'ann-1', FROM + 1 * H)], []), debateWorld(spy().rules)).tallied, []);
 });
 
+test('a tally is summed before it is rounded, and is the same whatever order the Acts arrive in', () => {
+  const thirds: ClassRules = { key: 'quiet', name: 'Quiet', earn: (i) => (i.character !== 'ann-1' ? [] : [0, 1, 2].map(() => ({ reason: 'quiet.fuse', amount: 0.4, act: 'p1', tally: true as const }))) };
+  const acts = [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H)];
+  const r = settle(debateBoard(acts, [quote('a', 'p1')]), debateWorld(thirds));
+  assert.deepEqual(r.tallied, [{ act: 'p1', reason: 'quiet.fuse', amount: 1 }]);
+  assert.deepEqual(settle(debateBoard([...acts].reverse(), [quote('a', 'p1')]), debateWorld(thirds)).tallied, r.tallied);
+});
+
 test('a tallied earning with no act is refused, since a tally is kept by Act', () => {
   const bare: ClassRules = { key: 'quiet', name: 'Quiet', earn: (i) => (i.character !== 'ann-1' ? [] : [{ reason: 'quiet.fuse', amount: 5, tally: true }]) };
   const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H)], [quote('a', 'p1')]);
