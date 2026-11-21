@@ -1907,7 +1907,7 @@ describe('cards that left the game', () => {
   const collector = { ...base, key: 'collector', name: 'Card Collector', formerly: [{ key: 'trap-card', name: 'Trap Card' }] };
   const w: Words = { ...words, instance: { ...testInstance, cards: [...testInstance.cards, collector], withdrawn: [{ key: 'bluff', name: 'Bluff', refund: 100 }] } };
   const text = (r: { what: string; details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
-  const ev = (card: string, kind: 'renamedOut' | 'renamedIn' | 'withdrawn', over: Record<string, unknown> = {}) => ({ card, kind, act: null, price: 0, at, ...over }) as Log['cards'][number];
+  const ev = (card: string, kind: 'renamedOut' | 'renamedIn' | 'withdrawn' | 'pulled', over: Record<string, unknown> = {}) => ({ card, kind, act: null, price: 0, at, ...over }) as Log['cards'][number];
   const rowsOf = (cards: Log['cards'], wallet: WalletEvent[] = []) => logRows(data({ log: { ...empty, cards, wallet }, mine: [char('c', 'Spritey', 'heel')] }), w, 600, null);
   const refunded = (n: number): WalletEvent => ({ settlement: null, kind: 'withdrawal', change: n * 100, overflow: 0, floored: 0, balanceAfter: 500 + n * 100, ref: null, at });
 
@@ -1949,6 +1949,19 @@ describe('cards that left the game', () => {
     expect(text(line!)).toBe("Your 2 copies were refunded 2.00 orbs. The wallet's cap held back 0.50 orbs of the refunds paid with it.");
     const opening = rowsOf([ev('bluff', 'withdrawn', { pack: 'p1', price: 100, packKind: 'starter', packSource: 'welcome' })], [{ ...refunded(1), change: 50, overflow: 50 }]).find((r) => r.kind === 'pack')!;
     expect(text(opening)).toBe("Bluff. 1 card in it was withdrawn and refunded 1.00 orb. The wallet's cap held back 0.50 orbs of the refunds paid with it.");
+  });
+
+  test('two cards taking copies at one seed with no formerly to say which is not guessed', () => {
+    const two: Words = { ...words, instance: { ...testInstance, cards: [...testInstance.cards, { ...base, key: 'c1', name: 'One' }, { ...base, key: 'c2', name: 'Two' }], withdrawn: [] } };
+    const [line] = logRows(data({ log: { ...empty, cards: [ev('trap-card', 'renamedOut'), ev('c1', 'renamedIn'), ev('c2', 'renamedIn')] }, mine: [char('c', 'Spritey', 'heel')] }), two, 600, null);
+    expect(line!.what).toBe('a card is now another card');
+  });
+
+  test('a bought pack with a withdrawn card nets its price against the refund', () => {
+    const cards = [ev('bluff', 'withdrawn', { pack: 'p1', price: 100, packKind: 'booster', packSource: 'bought' }), ev('collector', 'pulled', { pack: 'p1', packKind: 'booster', packSource: 'bought' })];
+    const packs = [{ pack: 'p1', kind: 'booster', price: 300, repriced: false, contents: ['collector', 'bluff'], at, source: 'bought' as const, openedAt: at }];
+    const [row] = logRows(data({ log: { ...empty, cards, packs, wallet: [{ settlement: null, kind: 'purchase', change: -300, overflow: 0, floored: 0, balanceAfter: 200, ref: null, at }, refunded(1)] }, mine: [char('c', 'Spritey', 'heel')] }), w, 600, null).filter((r) => r.kind === 'pack');
+    expect(row!.aura).toBe(-200);
   });
 
   test('a renamed card\'s new name is found from the renamedIn row when no card lists the old key as formerly', () => {

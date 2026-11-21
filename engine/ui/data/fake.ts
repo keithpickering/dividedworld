@@ -5454,6 +5454,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     retireCards(o) {
       const at = o?.at ?? stamp ?? now();
       for (const account of accounts.values()) {
+        /* A back whose time passed unsprung is held (card_held), so it is a held copy here: settled into the hand before the count. */
+        settleBacks(account);
         const took = (key: string, act: Id | null) => {
           const went = wentTo(key);
           if (!went) return null;

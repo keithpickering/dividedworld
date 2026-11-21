@@ -877,7 +877,11 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       const group = data.log.cards.filter(sameSeed);
       if (group[0] !== e) return;
       const became = words.instance.cards.find((c) => c.formerly?.some((f) => f.key === e.card))
-        ?? words.instance.cards.find((c) => data.log.cards.some((x) => x.kind === 'renamedIn' && x.card === c.key && micros(x.at) === at(e.at)));
+        ?? (() => {
+          /* Only when one card took copies at this seed; two candidates would be a guess. */
+          const into = words.instance.cards.filter((c) => data.log.cards.some((x) => x.kind === 'renamedIn' && x.card === c.key && micros(x.at) === at(e.at)));
+          return into.length === 1 ? into[0] : undefined;
+        })();
       const now = became?.name ?? 'another card';
       const n = group.length;
       rows.push({

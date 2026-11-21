@@ -6653,6 +6653,19 @@ describe('the card retirement seed', () => {
     expect(await fake.myCards()).toEqual([{ card: 'collector', held: 1 }]);
   });
 
+  test('a back whose time passed unsprung is a held copy: retiring moves it, and the hand never holds the gone key', async () => {
+    const { fake, ana } = world();
+    const face = fake.seed.character(ana, 'Ana Face', 'face');
+    const { act: post } = fake.seed.thread('general', face, 'Hello', 'First post');
+    fake.seed.set(face, post, 'trap-card', {});
+    fake.clock.advance(400 * DAY);
+    fake.seed.retireCards();
+    expect(await fake.myCards()).toEqual([{ card: 'collector', held: 1 }]);
+    expect(Object.keys((await fake.log(null)).cards.filter((c) => c.kind === 'renamedOut'))).toHaveLength(1);
+    fake.clock.advance(DAY);
+    expect(await fake.myCards()).toEqual([{ card: 'collector', held: 1 }]);
+  });
+
   test('opening a sealed pack refunds a withdrawn card with a withdrawn row and no copy, and pulls a renamed one under its new key', async () => {
     const { fake } = world();
     expect((await fake.createCharacter('Ana Face', 'face', 'now', 'silent')).ok).toBe(true);
