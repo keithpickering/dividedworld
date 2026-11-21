@@ -16,9 +16,12 @@
 
 -- ------------------------------------------------------------------------------------------------------ the tables ----
 
+-- table part: begin
+-- (tests/e2e/0031-handover-table-on-held-rows.ts runs the lines between these two markers on tables in the old shape, so what stands between them runs as written on rows already held.)
 alter table season_handovers drop constraint season_handovers_pkey cascade;
 alter table season_handovers add column id bigint generated always as identity;
 alter table season_handovers add primary key (id);
+alter table season_handovers add unique (id, season);
 alter table season_handovers add column cause text not null default 'rollover' check (cause in ('rollover', 'departure'));
 create index season_handovers_by_season on season_handovers (season, id);
 create unique index season_handovers_one_rollover on season_handovers (season) where cause = 'rollover';
@@ -26,13 +29,16 @@ create unique index season_handovers_one_rollover on season_handovers (season) w
 -- The digest role's columns (0088), `cause` added: a handover's public facts are who left, who came, how, why and when.
 grant select (season, outgoing, boss, how, cause, landed_at, arrival_act) on season_handovers to kayfabb_digest;
 
-alter table handover_dismissals add column handover bigint references season_handovers (id);
+-- A dismissal keeps its season (what the to-do was about) and names its handover; the key on both says the season is that handover's, so the two cannot disagree.
+alter table handover_dismissals add column handover bigint;
 alter table handover_dismissals disable trigger handover_dismissals_no_update;
 update handover_dismissals d set handover = (select h.id from season_handovers h where h.season = d.season and h.cause = 'rollover');
 alter table handover_dismissals enable always trigger handover_dismissals_no_update;
 alter table handover_dismissals alter column handover set not null;
 alter table handover_dismissals drop constraint handover_dismissals_pkey;
 alter table handover_dismissals add primary key (handover);
+alter table handover_dismissals add foreign key (handover, season) references season_handovers (id, season);
+-- table part: end
 
 -- A Boss changed at a handover: the Boss it ended with is not the one it began with, by nomination or rotation. One row per such handover, with its id and cause.
 create or replace view season_boss_changes as

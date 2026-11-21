@@ -10,8 +10,7 @@
 -- 4. predecessor_handoff() and pool_context().predecessor name the departed Boss.
 -- 5. season_news shows bossLeft and bossArrived in the open season for a departure, and the roll-over's bossLeft in the season before.
 -- 6. An inherited board move that landed 10 days before a departure, with inheritanceGraceDays = 3, is not ended by the next tick, and is ended by a tick 3 days after the departure.
--- 7. The migration on rows already held (a roll-over and a dismissal): every old row is a roll-over with an id, and every dismissal is carried to its handover. Built in a scratch schema in the old shape, because the
---    migration has already run on this database; the statements are the migration's table part, copied.
+-- 7. The migration on rows already held: not here (this database ran it on empty tables); e2e/0031-handover-table-on-held-rows.ts runs the migration's own table part on old-shape rows.
 -- 8. A departure where the roster holds no other Boss is refused with the reason, and no row, office or announcement is written.
 -- 9. A roll-over whose handover fails still writes its fallback row (reveal_season's `on conflict` names the one-roll-over-per-season index).
 
@@ -245,6 +244,10 @@ begin
   perform pg_temp.expect(said like 'P0002%no to-do for that handover%', 'a handover that kept the Boss was not refused in words: ' || coalesce(said, 'accepted'));
   perform pg_temp.expect((select count(*) from handover_dismissals) = 1 and jsonb_array_length(pg_temp.todos()) = 1, 'the refused dismissal changed something');
   delete from season_handovers where id = kept;
+  -- A dismissal's kept season is its handover's: a row naming another season is refused by the key, and the rows held are unchanged.
+  said := pg_temp.refused('insert into handover_dismissals (season, handover, admin) select (select id from seasons where number = 1), ' || rol || ', (select admin from handover_dismissals limit 1)');
+  perform pg_temp.expect(said like '23503%', 'a dismissal whose season is not its handover''s was accepted: ' || coalesce(said, 'accepted'));
+  perform pg_temp.expect((select count(*) from handover_dismissals) = 1, 'the refused mismatched dismissal left a row');
 end $$;
 
 -- ---- 4. The predecessor is the departed Boss ----
@@ -289,64 +292,8 @@ begin
 end $$;
 
 -- ---- 7. The migration on rows already held ----
--- The old shape, in a schema of its own: season_handovers keyed by season, and a dismissal keyed by it. Then the migration's table part, as written there (its digest grant left out).
-create schema dp_old;
-create table dp_old.season_handovers (
-  season bigint primary key references seasons (id),
-  outgoing text references characters (staff),
-  boss text references characters (staff),
-  how text not null check (how in ('nomination', 'rotation', 'unchanged', 'none')),
-  note text,
-  at timestamptz not null default now(),
-  landed_at timestamptz not null default now(),
-  arrival_act uuid references acts (id)
-);
-create table dp_old.handover_dismissals (
-  season bigint primary key references dp_old.season_handovers (season),
-  admin uuid not null,
-  at timestamptz not null default now()
-);
-create trigger handover_dismissals_no_update before update or delete on dp_old.handover_dismissals for each row execute function public.handover_dismissals_append_only();
-alter table dp_old.handover_dismissals enable always trigger handover_dismissals_no_update;
-insert into dp_old.season_handovers (season, outgoing, boss, how) values ((select id from seasons where number = 1), null, 'dp-boss', 'none'), ((select id from seasons where number = 2), 'dp-boss', 'dp-mod', 'rotation');
-insert into dp_old.handover_dismissals (season, admin) values ((select id from seasons where number = 2), (select id from auth.users where email = 'dp-admin@test.invalid'));
-
-set local search_path to dp_old, public;
-alter table season_handovers drop constraint season_handovers_pkey cascade;
-alter table season_handovers add column id bigint generated always as identity;
-alter table season_handovers add primary key (id);
-alter table season_handovers add column cause text not null default 'rollover' check (cause in ('rollover', 'departure'));
-create index season_handovers_by_season on season_handovers (season, id);
-create unique index season_handovers_one_rollover on season_handovers (season) where cause = 'rollover';
-alter table handover_dismissals add column handover bigint references season_handovers (id);
-alter table handover_dismissals disable trigger handover_dismissals_no_update;
-update handover_dismissals d set handover = (select h.id from season_handovers h where h.season = d.season and h.cause = 'rollover');
-alter table handover_dismissals enable always trigger handover_dismissals_no_update;
-alter table handover_dismissals alter column handover set not null;
-alter table handover_dismissals drop constraint handover_dismissals_pkey;
-alter table handover_dismissals add primary key (handover);
-reset search_path;
-
-do $$
-declare
-  said text;
-begin
-  perform pg_temp.expect((select count(*) from dp_old.season_handovers) = 2 and (select count(*) from dp_old.season_handovers where cause = 'rollover' and id is not null) = 2 and (select count(distinct id) from dp_old.season_handovers) = 2,
-    'an old handover row is not a roll-over with an id of its own');
-  perform pg_temp.expect((select count(*) from dp_old.handover_dismissals) = 1
-    and (select d.handover from dp_old.handover_dismissals d) is not distinct from (select h.id from dp_old.season_handovers h where h.season = (select id from seasons where number = 2))
-    and (select d.season from dp_old.handover_dismissals d) is not distinct from (select id from seasons where number = 2), 'the old dismissal was not carried to its season''s handover, with its season kept');
-  said := pg_temp.refused('update dp_old.handover_dismissals set at = now()');
-  perform pg_temp.expect(said is not null, 'the dismissals'' append-only guard did not survive the migration');
-  said := pg_temp.refused('delete from dp_old.handover_dismissals');
-  perform pg_temp.expect(said is not null, 'a dismissal was removed after the migration');
-  -- Season is no longer the key: a second row for a season is a departure's, and a second roll-over for it is refused.
-  said := pg_temp.refused('insert into dp_old.season_handovers (season, outgoing, boss, how, cause) select season, boss, outgoing, ''rotation'', ''departure'' from dp_old.season_handovers where outgoing is not null');
-  perform pg_temp.expect(said is null, 'a second row for a season (a departure) was refused: ' || coalesce(said, ''));
-  said := pg_temp.refused('insert into dp_old.season_handovers (season, outgoing, boss, how) select season, boss, outgoing, ''rotation'' from dp_old.season_handovers where outgoing is not null limit 1');
-  perform pg_temp.expect(said like '23505%', 'a second roll-over for a season was accepted: ' || coalesce(said, ''));
-end $$;
-drop schema dp_old cascade;
+-- Not here: this database ran the migration on empty tables, and a copy of its lines in a scratch schema would be a subject built by the test. e2e/0031-handover-table-on-held-rows.ts runs the migration's own table part
+-- (between its two marker comments) on old-shape rows.
 
 -- ---- 9. A roll-over whose handover fails still writes its fallback row ----
 -- (Before 8, which retires the other personas.) A trigger refuses every row but the fallback's, so hand_over fails and reveal_season writes the row that keeps the season with its Boss.
