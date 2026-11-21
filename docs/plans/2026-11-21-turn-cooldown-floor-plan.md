@@ -33,8 +33,9 @@ File: `engine/rules/instance.ts` (`settingsProblems`), test in `engine/rules/ins
 
 1. Test first: `settingsProblems` with `settlementLength` 1 week and `turnCooldown` 6 days is refused with
    `setting "turnCooldown" is …; it must be a span no shorter than settlementLength …`; 1-month cooldown with 30-day
-   window allowed; 30-day cooldown with 1-month window refused; 1-month cooldown with 4-week window allowed; 1-month
-   cooldown with 1-month window allowed; 1-month cooldown with 2-month window refused; the defaults pass. Red run:
+   window refused (28 < 30) and with a 29-day window refused; 30-day cooldown with 1-month window refused; 1-month cooldown with 4-week window allowed; 1-month
+   cooldown with 1-month window allowed; 1-month cooldown with 2-month window refused; the defaults (a 30-day cooldown, a
+   1-day window) pass, and `settingsProblems` of the whole test settings is empty. Red run:
    the refusals are missing.
 2. Code: a pure `cooldownCoversWindow(cooldown, window)` beside `settingsProblems`, applied only when both rows are
    spans (a row that is not a span is its own refusal), and the sentence above. Green run.

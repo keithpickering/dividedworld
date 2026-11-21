@@ -956,7 +956,7 @@ insert into goods (key, value) values
   ('viewCountCron', '"41 * * * *"'),
   ('meetingCron', '"23 9 * * *"'),
   ('settlementLength', '{"unit": "day", "count": 1}'),
-  ('settlementLength', '{"unit": "month", "count": 1000}'),
+  ('settlementLength', '{"unit": "day", "count": 30}'),
   ('settlementLength', '{"unit": "day", "count": 1}'),
   ('seasonLength', '{"unit": "month", "count": 3}'),
   ('seasonLength', '{"unit": "month", "count": 1000}'),

@@ -1573,11 +1573,13 @@ test('a Turn cooldown is never shorter than a settlement window (#931), a month 
   assert.match(pair({ unit: 'day', count: 30 }, { unit: 'month', count: 1 }).join('\n'), refused, 'a 31-day month outlasts 30 days');
   assert.match(pair({ unit: 'month', count: 1 }, { unit: 'month', count: 2 }).join('\n'), refused, 'a month against two');
   assert.match(pair({ unit: 'month', count: 1 }, { unit: 'day', count: 29 }).join('\n'), refused, 'a 28-day month is shorter than 29 days');
+  assert.match(pair({ unit: 'month', count: 1 }, { unit: 'day', count: 30 }).join('\n'), refused, 'a 28-day month is shorter than 30 days');
   assert.deepEqual(pair({ unit: 'day', count: 31 }, { unit: 'month', count: 1 }), [], 'thirty-one days cover any month');
   assert.deepEqual(pair({ unit: 'month', count: 1 }, { unit: 'week', count: 4 }), [], 'any month covers four weeks');
   assert.deepEqual(pair({ unit: 'month', count: 1 }, { unit: 'month', count: 1 }), [], 'a month covers a month');
   assert.deepEqual(pair({ unit: 'week', count: 1 }, { unit: 'day', count: 7 }), [], 'a week covers seven days');
   assert.deepEqual(pair({ unit: 'day', count: 30 }, { unit: 'day', count: 1 }), [], 'the defaults');
+  assert.deepEqual(settingsProblems(settings), [], 'the whole of the test settings, unfiltered');
   // A row that is not a span is its own refusal, never this one.
   assert.deepEqual(pair({ unit: 'day', count: 0 }, { unit: 'week', count: 1 }), []);
 });
