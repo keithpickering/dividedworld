@@ -76,18 +76,17 @@ const given = async () => (await screen.findByRole('dialog', { name: /Buzz|Dab/u
 describe('the Gimmicks the form gives a card that cuts', () => {
   test('on a post: the live Use-card Gimmicks up to its rarity, oldest first, leaving out a cut one, a rarer one and a card that is no Gimmick', async () => {
     const w = world();
-    const first = w.fake.seed.card(w.gloomba, w.p2, 'jimmy', { at: Date.now() - 3000 });
+    w.fake.seed.card(w.gloomba, w.p2, 'jimmy', { at: Date.now() - 3000 });
     const cut = w.fake.seed.card(w.spritey, w.p2, 'jimmy', { at: Date.now() - 2000 });
     w.fake.seed.card(w.gloomba, w.p2, 'rarer', { at: Date.now() - 1000 });
     w.fake.seed.card(w.gloomba, w.p2, 'dab', { at: Date.now() - 500 });
-    const second = w.fake.seed.card(w.spritey, w.p2, 'jimmy', { at: Date.now() - 100 });
+    w.fake.seed.card(w.spritey, w.p2, 'jimmy', { at: Date.now() - 100 });
     expect((await w.fake.playCard('buzz', w.pipe, w.p2, { play: cut }, '')).ok).toBe(true);
     const user = await open(w);
     await arm(user, /^Buzz, Salty, Cast, rare postcard/u);
     await user.click(await within(post(2)).findByRole('button', { name: 'Play Buzz on post 2' }));
     const out = await given();
     await waitFor(() => expect(JSON.parse(out.textContent!)).toEqual([['jimmy', w.gloomba, null], ['jimmy', w.spritey, null]]));
-    void first; void second;
   });
 
   test('on a character: the live ones its reach holds, an expired one left out', async () => {

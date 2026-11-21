@@ -348,7 +348,8 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   /* A card that cuts is given the Gimmicks it may end on its target: the store's live plays there (a post's own, or a character's, which the page reads above its posts), and the engine's `cuttable` says which. */
   const gimmicks: ConfigFormProps['gimmicks'] = rules?.cuts === undefined || !goal ? undefined : (() => {
     const now = api.now();
-    const plays = livePlays(carried, now);
+    /* As the ghost marks read them (`effectsOf`): a caught play is no Gimmick there. */
+    const plays = livePlays(carried, now).filter((p) => !p.caught);
     const effects: CardEffect[] = plays.map((p) => ({ card: p.card, act: p.id, ...(p.reach ? { reach: p.reach } : {}), ...(p.ends ? { ends: p.ends } : {}) }));
     const named = new Set(cuttable(rules, effects, goal, new Date(now), (key) => instance.cards.find((c) => c.key === key)).map((e) => e.act));
     return plays.filter((p) => named.has(p.id) && p.caster !== null)
