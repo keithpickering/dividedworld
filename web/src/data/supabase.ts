@@ -32,7 +32,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { SignedIn } from '../../../engine/ui/data/api.ts';
 import { forgedList } from '../../../engine/bbcode/quoted.ts';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, pollHeard, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, pollHeard, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, REPORT_REFUNDS, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -725,7 +725,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     })),
     reports: src['reports'].map((r): LogReport => ({
       report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
-      verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: r['refund'] === 'failed' || r['refund'] === 'stale' ? r['refund'] : null,
+      verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: REPORT_REFUNDS.find((w) => w === r['refund']) ?? null,
     })),
     cosmetics: src['cosmetics'].map((r): LogCosmetic => ({
       kind: COSMETIC_KINDS.find((k) => k === r['kind']) ?? 'found', id: String(r['id']), at: r['at'], character: str(r['character']),
@@ -1979,7 +1979,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await edge('staff', { through, post, reason }, LOST);
       if (!a.ok) return a;
       const verdict = VERDICTS.find((v) => v === a.value['verdict']) ?? null;
-      return { ok: true, value: { report: String(a.value['report'] ?? ''), verdict, line: str(a.value['line']) ?? '', visit: str(a.value['visit']) } };
+      const back = a.value['refund'];
+      const given: Record<string, unknown> = typeof back === 'object' && back !== null ? { ...back } : {};
+      const refund: ReportResult['refund'] = given['why'] === 'veiled' || given['why'] === 'visited' ? { why: given['why'], amount: num(given['amount']) } : null;
+      return { ok: true, value: { report: String(a.value['report'] ?? ''), verdict, line: str(a.value['line']) ?? '', visit: str(a.value['visit']), refund } };
     },
     async fileAppeal(through, punishment, plea): Promise<Answer<AppealResult>> {
       if (!idOk(through) || !idOk(punishment)) return refusal('that punishment could not be found');

@@ -22,6 +22,7 @@ import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { CharactersFailed } from '../characters/CharactersFailed.tsx';
 import { Link } from '../router.tsx';
+import { landBox } from '../shine/landing.ts';
 import { text as textOf } from '../thread/lines.tsx';
 import { BannedNote } from './BannedNote.tsx';
 import { BarredNote, useBar } from './BarredNote.tsx';
@@ -83,6 +84,9 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   /* The last quote took the draft over the longest post. */
   const [quoted, setQuoted] = useState(false);
   const editor = useRef<EditorHandle>(null);
+  /* The Reply box catches glitter that falls on it (engine/ui/shine/landing.ts `landBox`): it paints its own ground, so it is no part
+     of the page's, and a flake over it would fall on through (docs/plans/2026-11-21-glitter-hands-plan.md). */
+  const landing = useCallback((form: HTMLFormElement | null) => (form ? landBox(form) : undefined), []);
   const hud = hudCharacter?.id ?? null;
   const who = useWhoPosts(hud, text.trim() !== '', kept?.as ?? null);
   const bannedUntil = useBannedUntil(hudCharacter);
@@ -184,7 +188,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   };
 
   return (
-    <form className="kb-composer kb-box kb-form" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
+    <form ref={landing} className="kb-composer kb-box kb-form" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
       <h2 className="kb-box-head" id={`composer-head-${thread}`}>Reply</h2>
       <p className="kb-composer-as kb-small" id={`composer-as-${thread}`}>Posting as <strong>{hudCharacter.name}</strong></p>
       {bannedUntil !== null && <BannedNote character={hudCharacter} until={bannedUntil} />}

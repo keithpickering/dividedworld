@@ -2568,9 +2568,11 @@ describe('where glitter lands in a thread', () => {
       return e as PointerEvent;
     };
     const move = (x: number, y: number, over: Element) => window.dispatchEvent(pointer(x, y, over));
+    let swept = 0;
     const drop = (x: number, y: number, over: Element) => {
       target = source;
-      for (let i = 0; i < 400; i++) { const x0 = 5010 + (i % 2) * 120; cling.over(pointer(x0, 100, source)); move(x0, 100, source); }
+      /* All over the source, each move far from the last: a pickup takes real flakes, so one spot swept twice runs dry. */
+      for (let i = 0; i < 400; i++) { const n = swept++, x0 = 5010 + ((n * 37) % 280), y0 = 20 + ((n * 53) % 260); cling.over(pointer(x0, y0, source)); move(x0, y0, source); }
       target = over;
       move(x, y, over);
       for (let ms = 0; (cling.falling() || cling.carried()) && ms < 12000; ms += 16) cling.tick(ms);

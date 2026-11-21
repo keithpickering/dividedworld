@@ -372,7 +372,8 @@ declare
 begin
   perform draw_visits(sp);
   if pg_temp.visit_of(sp) is not null then raise exception 'a post by a staff character drew a visit'; end if;
-  if start_visit(sp, 'vs-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', sp)) is not null
+  -- It names why it opened none (0401): a staff post is {"visit": null, "staff": true}, and nothing is written.
+  if start_visit(sp, 'vs-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', sp)) is distinct from '{"visit": null, "staff": true}'::jsonb
      or pg_temp.visit_of(sp) is not null then
     raise exception 'start_visit visited a staff character''s post';
   end if;

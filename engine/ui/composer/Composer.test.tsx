@@ -29,6 +29,14 @@ describe('the quick reply', () => {
     expect(within(form).queryByRole('button', { name: /^Reveal/u })).toBeNull();
   });
 
+  test('catches falling glitter: the form is a landing box of its own while it is mounted (docs/plans/2026-11-21-glitter-hands-plan.md)', async () => {
+    const shown = openThread(threadWorld());
+    const form = (await replyBox()).closest('form')!;
+    expect(form.hasAttribute('data-kb-land-box')).toBe(true);
+    shown.unmount();
+    expect(form.hasAttribute('data-kb-land-box')).toBe(false);
+  });
+
   test('sits at the foot of the thread and names the HUD\'s character in bold', async () => {
     const w = threadWorld();
     openThread(w);
