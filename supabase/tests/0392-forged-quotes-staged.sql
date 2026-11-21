@@ -3,7 +3,7 @@
 --           ignored and the trigger searches for itself. The staged value here is a lie (a quote that holds, staged as forged, and the reverse), so that "used" and "ignored" cannot look alike.
 --   lock:   post() stages the verdict before lock_for_quote runs: lock_for_quote is wrapped in this transaction (DDL rolls back with the file) by a function that records whether a verdict was staged when it was
 --           called, and post() searches exactly once (quote_forged's call count in this transaction: the trigger used the staged verdict and did not search again).
---   cap:    the work budget is the same for every caller: the verdict of a body past it is the same for the author and for a stranger (quote_check as two accounts).
+--   cap:    the time cap is the same for every caller: the verdict of a body past it is the same for the author and for a stranger (quote_check as two accounts).
 
 create function pg_temp.noise(n integer) returns text language sql as $$
   select left(string_agg(md5(random()::text || g::text), ' '), n) from generate_series(1, n / 32 + 1) g
@@ -94,7 +94,8 @@ begin
   if coalesce(nullif(current_setting('kayfabb.test_saw', true), '<none>'), '') <> '' then raise exception 'lock: a plain post staged %', current_setting('kayfabb.test_saw', true); end if;
 end $$;
 
--- cap: past the work budget the verdict is forged, and it is the same for every caller (quote_check, as the author and as a stranger)
+-- cap: past the time cap the verdict is forged, and it is the same for every caller (quote_check, as the author and as a stranger). The shape cannot finish in 100 ms: a periodic quote with its odd letter first against
+-- 60 versions (about 1.5 s of strpos in all), and the quote holds in the oldest, so only the clock forges it. Its twin, one quote that holds in the newest version, is found at once and is authentic.
 do $$
 declare
   au uuid := tests.account('fqs3-author');
@@ -102,28 +103,18 @@ declare
   ch uuid := tests.character(au, 'Fqs3 Author');
   th uuid := tests.thread('Forged cap');
   base timestamptz := now() - interval '1 day';
-  post_id uuid; i integer; parts text[]; qbody text; v1 uuid[]; v2 uuid[];
+  post_id uuid; i integer; qbody text; v1 uuid[]; v2 uuid[];
 begin
-  -- 15 versions of 10,000 characters (noise: the walk caps a run of one letter, so `bbbb` would be eight characters), every quote only in the oldest: 14 x 10,000 x the quotes is the work
-  post_id := tests.post(ch, th, 'zq ' || (select string_agg(format('w%s', lpad(n::text, 3, '0')), ' ') from generate_series(0, 99) n) || pg_temp.noise(9000) || ' v0', base);
-  for i in 1..14 loop
-    perform tests.act(ch, 'edit', th, jsonb_build_object('body', pg_temp.noise(10000) || ' v' || i), post_id, base + make_interval(mins => i));
+  post_id := tests.post(ch, th, 'z1' || repeat(' ab', 6600) || ' end0', base);
+  for i in 1..59 loop
+    perform tests.act(ch, 'edit', th, jsonb_build_object('body', 'v' || i || repeat(' ab', 6600) || ' end' || i), post_id, base + make_interval(mins => i));
   end loop;
-  -- few quotes: 15 x 10,000 x 5 = 0.75 million: authentic
-  parts := '{}';
-  for i in 0..4 loop parts := parts || format('[quote=%s]w%s[/quote]', post_id, lpad(i::text, 3, '0')); end loop;
-  qbody := array_to_string(parts, '');
+  qbody := format('[quote=%s]v59%s[/quote]', post_id, repeat(' ab', 10));
   perform tests.become(au); v1 := quote_check(qbody); perform tests.unbecome();
   perform tests.become(other); v2 := quote_check(qbody); perform tests.unbecome();
-  if cardinality(v1) <> 0 or v1 is distinct from v2 then raise exception 'cap: a body within the budget is forged: % / %', v1, v2; end if;
-  -- the work past the budget: the same post, 297 distinct quotes (all hold in the oldest): 14 x 10,000 x 297 = 42 million > 30 million
-  parts := '{}';
-  for i in 0..99 loop parts := parts || format('[quote=%s]w%s[/quote]', post_id, lpad(i::text, 3, '0')); end loop;
-  for i in 0..98 loop parts := parts || format('[quote=%s]w%s w%s[/quote]', post_id, lpad(i::text, 3, '0'), lpad((i + 1)::text, 3, '0')); end loop;
-  for i in 0..97 loop parts := parts || format('[quote=%s]w%s w%s w%s[/quote]', post_id, lpad(i::text, 3, '0'), lpad((i + 1)::text, 3, '0'), lpad((i + 2)::text, 3, '0')); end loop;
-  qbody := array_to_string(parts, '');
+  if cardinality(v1) <> 0 or v1 is distinct from v2 then raise exception 'cap: a quote of the newest version is forged: % / %', v1, v2; end if;
+  qbody := format('[quote=%s]z1%s[/quote] [quote=%s]z1%s[/quote]', post_id, repeat(' ab', 3000), post_id, repeat(' ab', 2999));
   perform tests.become(au); v1 := quote_check(qbody); perform tests.unbecome();
   perform tests.become(other); v2 := quote_check(qbody); perform tests.unbecome();
-  if v1 is distinct from array[post_id] or v2 is distinct from v1 then raise exception 'cap: a body past the work budget is not forged for everyone alike: % / %', v1, v2; end if;
-  -- the honest busy case stays inside it: see 0392-forged-quotes-scale.sql
+  if v1 is distinct from array[post_id] or v2 is distinct from v1 then raise exception 'cap: a body past the time cap is not forged for everyone alike: % / %', v1, v2; end if;
 end $$;

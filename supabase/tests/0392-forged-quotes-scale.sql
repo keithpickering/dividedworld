@@ -3,7 +3,8 @@
 --     `abcdefgh...`), the quote a near-miss of 10,000 characters (the shape's own words, then a letter the post never has), so every version is searched and none holds: quote_forged under SHAPE_BUDGET each.
 --   busy: 300 quotes of 300 posts with 3 versions each, doctored (all three versions searched for each) and authentic of the oldest version (the last one tried): under BUSY_BUDGET each.
 -- A shape that misses its budget stops the task and goes to the owner, who chooses the search (the plan's Task 3), so the assertions here are the budgets and nothing is tuned around them.
--- Each version's text is distinct by a suffix (the same text twice is searched once, by digest), and the shape's words are what the quote's cap on runs (quote_run_cap, eight) leaves of them.
+-- The time cap (quote_search_cap) bounds the search whatever the shape: the cases further down add the shapes that a count of characters could not bound (a periodic quote whose odd letter comes first, many versions,
+-- thousands of tiny versions). Each version's text is distinct by a suffix (the same text twice is searched once, by digest), and the shape's words are what the quote's cap on runs (quote_run_cap, eight) leaves of them.
 do $$
 declare
   SHAPE_BUDGET constant interval := interval '250 milliseconds';
@@ -20,10 +21,12 @@ declare
   base timestamptz := now() - interval '1 day';
   shapes constant text[][] := array[['a run of one letter', 'a'], ['ab...', 'ab'], ['aaaaaaaab...', 'aaaaaaaab'], ['abcdefgh...', 'abcdefgh']];
   unit text; label text; post_id uuid; qbody text; v uuid[]; t0 timestamptz; spent interval;
-  i integer; j integer; ids uuid[] := '{}'; parts text[]; filler text; walk_spent interval; w record;
+  i integer; j integer; ids uuid[] := '{}'; parts text[]; filler text; walk_spent interval; w record; front boolean;
 begin
-  for s in 1..array_length(shapes, 1) loop
-    label := shapes[s][1]; unit := shapes[s][2];
+  for s in 1..array_length(shapes, 1) * 2 loop
+    -- the first four are the near-miss with its odd letter at the end, the next four with it at the FRONT (strpos, Boyer-Moore-Horspool, skips at once from the end and costs the length times the needle's for a periodic one at the front)
+    front := s > array_length(shapes, 1);
+    label := shapes[(s - 1) % array_length(shapes, 1) + 1][1] || case when front then ', odd letter first' else '' end; unit := shapes[(s - 1) % array_length(shapes, 1) + 1][2];
     post_id := tests.post(ch, th, left(repeat(unit, BODY_CHARS), BODY_CHARS - 10) || ' version 0', base);
     for i in 1..VERSIONS - 1 loop
       perform tests.act(ch, 'edit', th, jsonb_build_object('body', left(repeat(unit, BODY_CHARS), BODY_CHARS - 10) || ' version ' || i), post_id, base + make_interval(mins => i));
@@ -32,7 +35,7 @@ begin
       raise exception '% : the versions are not % distinct sources', label, VERSIONS;
     end if;
     filler := repeat('own words here ', 1000);
-    qbody := format('[quote=%s]%sz[/quote] ', post_id, left(repeat(unit, NEEDLE_CHARS), NEEDLE_CHARS)) || left(filler, BODY_CHARS - NEEDLE_CHARS - 80);
+    qbody := format('[quote=%s]%s[/quote] ', post_id, case when front then 'z' || left(repeat(unit, NEEDLE_CHARS), NEEDLE_CHARS) else left(repeat(unit, NEEDLE_CHARS), NEEDLE_CHARS) || 'z' end) || left(filler, BODY_CHARS - NEEDLE_CHARS - 80);
     t0 := clock_timestamp();
     select w2.held into w from bbcode_walk(qbody, null, '{}', true) w2;
     walk_spent := clock_timestamp() - t0;
@@ -140,4 +143,58 @@ begin
   raise notice 'many, 20 distinct quotes: quote_forged %', spent;
   if cardinality(v) <> 0 then raise exception 'many: 20 quotes within the budget are forged: %', v; end if;
   if spent > MANY_BUDGET then raise exception 'many: 20 quotes took %, over the budget of %', spent, MANY_BUDGET; end if;
+end $$;
+
+-- The time cap (final delta review, D1 and D2; supabase/migrations/0392_forged_quotes.sql, quote_search_cap). A count of characters cannot bound strpos, so the search stops by the clock: past 100 ms every post with an
+-- unmatched quote is forged. Three shapes whose full search takes seconds or whose rows cost a few hundred milliseconds, so a cap taken out or set far higher fails by the clock on every runner, and none of the
+-- assertions depends on a timing that a slow runner could miss by a little: the full search is 5 s or more (50 times the cap, and 20 times the budget asserted), and the budget asserted is the plan's 250 ms.
+--   front-odd, 200 versions: versions `vN ab ab ...` (20,000 characters), two quotes `zN ab ab ...` of about 9,000: a near-miss quote (not in any version) and the same quote that DOES hold in the oldest version
+--     (the cap forges an honest quote that asks for 5 s of search); each quote_forged and a post() insert under CAP_BUDGET, forged.
+--   tiny, 5,000 versions of about 20 characters: a near-miss quote, so every row is read and missed (about 300 ms uncapped; a near-miss, because a runner three times faster would finish and an honest quote would then
+--     be authentic, so the verdict is forged either way and the assertion is the clock): forged, under CAP_BUDGET.
+--   the constant: quote_search_cap() is 100 ms; a change of it goes through this test and the two above.
+do $$
+declare
+  CAP_BUDGET constant interval := interval '250 milliseconds';
+  au uuid := tests.account('fqc-author');
+  ch uuid := tests.character(au, 'Fqc Author');
+  th uuid := tests.thread('Forged time cap');
+  base timestamptz := now() - interval '1 day';
+  post_id uuid; i integer; qbody text; v uuid[]; t0 timestamptz; spent interval; r jsonb;
+begin
+  if quote_search_cap() is distinct from interval '100 milliseconds' then raise exception 'cap: quote_search_cap is %, not 100 ms', quote_search_cap(); end if;
+
+  -- front-odd: the oldest version is `z1 ab ab ...`, the 199 newer are `vN ab ab ...`
+  post_id := tests.post(ch, th, 'z1' || repeat(' ab', 6600) || ' end0', base);
+  for i in 1..199 loop
+    perform tests.act(ch, 'edit', th, jsonb_build_object('body', 'v' || i || repeat(' ab', 6600) || ' end' || i), post_id, base + make_interval(mins => i));
+  end loop;
+  -- a near-miss (`z2 ab ...` stands in no version) and an honest one (`z1 ab ...` stands in the oldest)
+  foreach qbody in array array[format('[quote=%s]z2%s[/quote] [quote=%s]z3%s[/quote]', post_id, repeat(' ab', 3000), post_id, repeat(' ab', 3000)),
+                              format('[quote=%s]z1%s[/quote] [quote=%s]z1%s[/quote]', post_id, repeat(' ab', 3000), post_id, repeat(' ab', 2999))] loop
+    t0 := clock_timestamp(); v := quote_forged(qbody, now()); spent := clock_timestamp() - t0;
+    raise notice 'cap, front-odd 200 versions: body % chars, quote_forged %, %', char_length(qbody), spent, v;
+    if v is distinct from array[post_id] then raise exception 'cap: front-odd, 200 versions, is not forged: %', v; end if;
+    if spent > CAP_BUDGET then raise exception 'cap: front-odd, 200 versions, quote_forged took %, over the budget of %', spent, CAP_BUDGET; end if;
+    perform tests.become(au);
+    t0 := clock_timestamp(); r := post(th, ch, qbody); spent := clock_timestamp() - t0;
+    perform tests.unbecome();
+    raise notice 'cap, front-odd 200 versions: post() %', spent;
+    if spent > CAP_BUDGET then raise exception 'cap: front-odd, 200 versions, the post insert took %, over the budget of %', spent, CAP_BUDGET; end if;
+    if (select not coalesce(a.payload -> 'forged' @> to_jsonb(array[post_id]), false) from acts a where a.id = (r ->> 'id')::uuid) then raise exception 'cap: the front-odd post was not written forged'; end if;
+  end loop;
+
+  -- tiny: 5,000 versions, a quote of words none of them has
+  post_id := tests.post(ch, th, 'oldest tiny words', base);
+  for i in 1..5000 loop
+    perform tests.act(ch, 'edit', th, jsonb_build_object('body', 'tiny version number ' || i), post_id, base + make_interval(secs => i));
+  end loop;
+  qbody := format('[quote=%s]never said these words[/quote]', post_id);
+  t0 := clock_timestamp(); v := quote_forged(qbody, now()); spent := clock_timestamp() - t0;
+  raise notice 'cap, 5,000 tiny versions: quote_forged %, %', spent, v;
+  if v is distinct from array[post_id] then raise exception 'cap: 5,000 tiny versions are not forged: %', v; end if;
+  if spent > CAP_BUDGET then raise exception 'cap: 5,000 tiny versions took %, over the budget of %', spent, CAP_BUDGET; end if;
+  -- the twin: the same quote of the newest version is found at once, and is authentic
+  v := quote_forged(format('[quote=%s]tiny version number 5000[/quote]', post_id), now());
+  if cardinality(v) <> 0 then raise exception 'cap: a quote of the newest of 5,000 versions is forged: %', v; end if;
 end $$;

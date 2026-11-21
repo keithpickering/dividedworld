@@ -1411,7 +1411,7 @@ end $function$;
 -- quote_forged(body, at): one walk of the body; for each Act it quotes, its eligible versions newest first (a text seen already, by digest, once; a hidden one skipped before its text is read; one written after `at`
 --   left out), each version's text read once and tested against every quote of the Act not yet matched, until all are matched or the versions run out (design, sections 2 and 12). A quote that stands in no
 --   eligible version forges the Act (section 5); no version at all (an id that is no Act, an Act with no text body, every version hidden or written after `at`) is forged. The work is budgeted
---   (quote_work_budget, below): past it every Act with an unmatched quote is forged. Security definer, no client grant.
+--   (quote_search_cap, below, a time): past it every Act with an unmatched quote is forged. Security definer, no client grant.
 -- forged_verdict_stage and acts_forged_quotes: post() works the verdict out before it takes the thread's lock and hands it to the trigger (bound to the transaction, the body and the instant).
 -- quote_check(body): within postMaxLength, then quote_forged(body, now()): the composer's preview asks it of a draft. It reads only public facts (versions that are not hidden now, which the History shows
 --   everyone), nothing about the caller or who owns anything, so a guess at a hidden post's words comes back forged for its author and for anyone alike.
@@ -1473,17 +1473,16 @@ begin
 end $$;
 revoke execute on function quote_holds(text, jsonb) from public, anon, authenticated;
 
--- The work budget of one check (quote_work_budget, written once, here): the most characters one quote_forged call searches. Each time a version's text is tested against a quote that is still unmatched, the text's
--- length is added, and every version looked at adds quote_version_cost besides (a row found, its hiding asked, its text read), so a history of very many small versions cannot cost without bound. Past the budget the
--- search stops, and every post of the body that still has an unmatched quote is forged, the posts after it without a read: a body that asks for that much work is not an honest quote of posts as they were. The
--- constants are the same for every caller and every body (nothing about who asks, who owns anything or how long a history is can move them), so the verdict never depends on a private fact, and the same body
--- against the same posts is forged or not forged for everyone alike. 30,000,000 characters is about a tenth of a second of string search at most (about 2 ns a character, measured in
--- supabase/tests/0392-forged-quotes-scale.sql), under the 250 ms budget with the body's walk and the insert beside it; the plan's honest busy case (300 posts, one quote each, three versions of about a hundred
--- characters) uses 4,500,000 of it, nearly all of that version costs (15%); a post of 20,000 characters edited fifty times, quoted by twenty distinct quotes, is within it too.
-create function quote_work_budget() returns bigint language sql immutable parallel safe as $$ select 30000000::bigint $$;
-create function quote_version_cost() returns bigint language sql immutable parallel safe as $$ select 5000::bigint $$;
-revoke execute on function quote_work_budget() from public, anon, authenticated;
-revoke execute on function quote_version_cost() from public, anon, authenticated;
+-- The time cap of one check (quote_search_cap, written once, here): the longest one quote_forged call searches, counted from the end of the body's walk. A count of characters cannot bound the work: Postgres's strpos
+-- (Boyer-Moore-Horspool) costs about the text's length times the quote's length for a periodic quote whose odd letter comes first, 5 s for two such quotes against 200 versions of 20,000 characters, and a post of very many
+-- tiny versions costs a row each. So the clock is read when the search starts and checked before every version and before every quote is tested (one test is one strpos of at most a 20,000-character body's quote
+-- against one 20,000-character version, a few tens of milliseconds at the worst). Past the cap the search stops, and every post of the body that still has an unmatched quote is forged, the posts after it without a read:
+-- a body that asks for that much search is not an honest quote of posts as they were. The cap is the same for every caller and every body (nothing about who asks or who owns anything moves it), so the same body against
+-- the same posts is forged or not forged for everyone alike on one machine; on a slower machine the same honest body can run out of time, the cost of a bound in time and not in a measure that can be fooled.
+-- 100 ms is the plan's budget of 250 ms less what a post's insert spends beside the verdict (about 125 ms for a body of 20,000 characters, whose walk is part of it) and the one test that can run past the cap. An honest
+-- quote of a post of 20,000 characters edited fifty times needs a few milliseconds of it (supabase/tests/0392-forged-quotes-scale.sql); the plan's busy case (300 posts, one quote each, three versions) about 20.
+create function quote_search_cap() returns interval language sql immutable parallel safe as $$ select interval '100 milliseconds' $$;
+revoke execute on function quote_search_cap() from public, anon, authenticated;
 
 create function quote_forged(body text, at timestamptz) returns uuid[]
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -1497,25 +1496,24 @@ declare
   q jsonb;
   v record;
   src text;
-  len bigint;
-  work bigint := 0;
-  budget constant bigint := quote_work_budget();
-  version_cost constant bigint := quote_version_cost();
+  started timestamptz;
+  cap constant interval := quote_search_cap();
   any_version boolean;
   spent boolean := false;
   seen_digests text[];
 begin
   if body is null or body !~* '\[quote=' then return '{}'::uuid[]; end if;
   select w.held into walked from bbcode_walk(body, null, '{}', true) w;
+  started := clock_timestamp();
   for k, quotes in select e.key, e.value from jsonb_each(coalesce(walked, '{}'::jsonb)) e loop
-    -- Once the budget is spent every post that is left has unmatched quotes, and is forged without a read.
+    -- Once the time cap is passed every post that is left has unmatched quotes, and is forged without a read.
     if spent then forged := forged || k::uuid; continue; end if;
     -- The quotes of the post, each distinct one once, none matched yet. Each version's text is read once and every pending quote is tested against it; the rule is as before: the post is forged when
     -- some quote of it stands in no eligible version (design, section 2 and 5), and no version at all (an id that is no Act, an Act with no text body, every version hidden or after `at`) is forged.
     pending := array(select distinct j from jsonb_array_elements(quotes) j);
     any_version := false;
     seen_digests := '{}';
-    -- The eligible versions, newest first, a text seen already (by digest) once, a hidden one skipped before its text is read (hidden is asked first, so a hidden copy of a text does not hide a visible one).
+    -- The eligible versions, newest first, a text seen already (by digest) once, a hidden one skipped before its text is read (only a visible version's digest is remembered, so a hidden copy of a text does not hide a visible one).
     for v in
       select x.id, s.digest
       from (
@@ -1527,21 +1525,20 @@ begin
       order by x.created_at desc, x.id desc
     loop
       exit when cardinality(pending) = 0;
-      -- Every version looked at costs a flat QUOTE_VERSION_COST (a hidden one, and a text seen already, included: the row is found and its hiding asked), so a long history of small versions is bounded as well.
-      work := work + version_cost;
-      if work > budget then spent := true; exit; end if;
+      -- The clock, before every version looked at (a hidden one and a text seen already included: the row is found and its hiding asked), so a long history of small versions is bounded as well.
+      if clock_timestamp() - started > cap then spent := true; exit; end if;
       continue when v.digest = any (seen_digests) or version_hidden(v.id, k::uuid);
       seen_digests := seen_digests || v.digest;
       any_version := true;
       -- The text is read only now, once, for a version that is not hidden.
       select s.source into src from quote_sources s where s.act = v.id;
-      len := char_length(src);
-      work := work + len * cardinality(pending);
-      if work > budget then spent := true; exit; end if;
       left_over := '{}';
       foreach q in array pending loop
+        -- The clock again, before each quote is tested: the unit that can be slow is one strpos.
+        if clock_timestamp() - started > cap then spent := true; exit; end if;
         if not quote_holds(src, q) then left_over := left_over || q; end if;
       end loop;
+      exit when spent;
       pending := left_over;
     end loop;
     if not any_version or cardinality(pending) > 0 then forged := forged || k::uuid; end if;
