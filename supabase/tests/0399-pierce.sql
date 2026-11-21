@@ -1,4 +1,4 @@
--- The pierce Gimmick kind (supabase/migrations/0398_pierce.sql; docs/plans/2026-11-20-cheap-shot-plan.md, Task 2; design docs/plans/2026-11-20-cheap-shot-design.md, sections 3.1 to 3.3).
+-- The pierce Gimmick kind (supabase/migrations/0399_pierce.sql; docs/plans/2026-11-20-cheap-shot-plan.md, Task 2; design docs/plans/2026-11-20-cheap-shot-design.md, sections 3.1 to 3.3).
 -- A pierce, used on a player's own character, gets that character's next cast past every live ward, and every set card that would catch it, whose card is no rarer than its `upTo`; that cast spends it.
 --   * The catalog: card_kinds_gimmick_kind takes 'pierce', and card_kinds_problem refuses a pierce with no or an unknown upTo, on a card that is not a use card, that reaches more than a character, or whose upTo is
 --     rarer than the card, each in the engine's words (engine/rules/instance.ts).
