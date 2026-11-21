@@ -6,6 +6,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { viewProblems, wordsProblems, sprungWords, shortQuote, readCaughtFate, STATUS_MAX_WORDS } from './lens-words.ts';
+import { dayAndTime } from '../characters/format.ts';
 import type { CardView } from './types.ts';
 import { caughtWords, endsWords, keptEndedWords } from './marks.ts';
 
@@ -129,13 +130,24 @@ describe('readCaughtFate: where a caught play\'s card went, for the Lens', () =>
   });
 });
 
+describe('an end, in both tenses', () => {
+  const ends = '2026-11-08T12:00:00.000Z';
+  const at = Date.parse(ends);
+  test('says "Ends" a minute before its end, and "Ended" at it and after, with the same date', () => {
+    assert.equal(endsWords(ends, at - 60_000), `Ends ${dayAndTime(ends)}`);
+    assert.equal(endsWords(ends, at), `Ended ${dayAndTime(ends)}`);
+    assert.equal(endsWords(ends, at + 60_000), `Ended ${dayAndTime(ends)}`);
+  });
+});
+
 describe('the way out of a card that keeps, once its time is up', () => {
   const ends = '2026-11-08T12:00:00.000Z';
+  const after = Date.parse(ends) + 60_000;
   test('says it ended, and that posts written while it was up keep it, with the date as a live end says it', () => {
-    assert.equal(keptEndedWords(ends), `${endsWords(ends).replace(/^Ends /u, 'Ended ')}. Posts written while it was up keep it.`);
-    assert.match(keptEndedWords(ends), /^Ended .+\. Posts written while it was up keep it\.$/u);
+    assert.equal(keptEndedWords(ends, after), `${endsWords(ends, Date.parse(ends) - 60_000).replace(/^Ends /u, 'Ended ')}. Posts written while it was up keep it.`);
+    assert.match(keptEndedWords(ends, after), /^Ended .+\. Posts written while it was up keep it\.$/u);
   });
   test('passes the Lens word rules as the ends of a view that covers the post, beside a short state', () => {
-    assert.deepEqual(viewProblems(view({ state: 'Lifting every post', ends: keptEndedWords(ends) }), { holds: false, covers: true }), []);
+    assert.deepEqual(viewProblems(view({ state: 'Lifting every post', ends: keptEndedWords(ends, after) }), { holds: false, covers: true }), []);
   });
 });

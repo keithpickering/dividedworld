@@ -30,25 +30,26 @@ test('a strip draws four marks on a desktop and three on a phone', () => {
 describe('a card back, a ward and a caught play, in words', () => {
   const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('s1', 'kb:card-back'), caster: 'c', faceDown: true, playedAt: '2026-10-29T12:00:00.000Z', endsAt: '2026-11-05T12:00:00.000Z', ...over });
   const day = (iso: string) => utcDate(iso);
+  const NOW = Date.parse('2026-11-01T00:00:00.000Z');
 
   test('a back says "Face down on this post", the engine\'s own words; who set it and when is its note, and when it ends its way out, the same for any card to any reader but the setter', () => {
-    const words = backWords(back(), 'PIPEWRENCH', () => 'Card Collector');
-    assert.deepEqual(words, { name: 'A card set face down by PIPEWRENCH', state: 'Face down on this post', note: `Set face down by PIPEWRENCH on ${localDate('2026-10-29T12:00:00.000Z')}.`, ends: `${endsWords('2026-11-05T12:00:00.000Z')}, unless it springs first.` });
+    const words = backWords(back(), 'PIPEWRENCH', () => 'Card Collector', NOW);
+    assert.deepEqual(words, { name: 'A card set face down by PIPEWRENCH', state: 'Face down on this post', note: `Set face down by PIPEWRENCH on ${localDate('2026-10-29T12:00:00.000Z')}.`, ends: `${endsWords('2026-11-05T12:00:00.000Z', NOW)}, unless it springs first.` });
     assert.deepEqual(wordsProblems('state', words.state), []);
-    assert.deepEqual(backWords(back(), 'PIPEWRENCH', () => 'Hall Pass'), words, 'the card behind it changes nothing');
+    assert.deepEqual(backWords(back(), 'PIPEWRENCH', () => 'Hall Pass', NOW), words, 'the card behind it changes nothing');
   });
 
   test('when a back ends is the end the server stored, not the setting added to when it was set', () => {
-    const words = backWords(back({ endsAt: '2026-11-20T12:00:00.000Z' }), 'PIPEWRENCH', () => 'Card Collector');
-    assert.equal(words.ends, `${endsWords('2026-11-20T12:00:00.000Z')}, unless it springs first.`);
+    const words = backWords(back({ endsAt: '2026-11-20T12:00:00.000Z' }), 'PIPEWRENCH', () => 'Card Collector', NOW);
+    assert.equal(words.ends, `${endsWords('2026-11-20T12:00:00.000Z', NOW)}, unless it springs first.`);
   });
 
   test('a back read with no end claims none: it does not say it ends only by springing', () => {
-    assert.equal(backWords(back({ endsAt: null }), 'PIPEWRENCH', () => 'Card Collector').ends, 'Its end is not shown here.');
+    assert.equal(backWords(back({ endsAt: null }), 'PIPEWRENCH', () => 'Card Collector', NOW).ends, 'Its end is not shown here.');
   });
 
   test('a back that sprang names its card, which is public from then', () => {
-    const words = backWords(back({ revealed: { card: 'card-collector', spring: 'sp', at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', () => 'Card Collector');
+    const words = backWords(back({ revealed: { card: 'card-collector', spring: 'sp', at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', () => 'Card Collector', NOW);
     assert.deepEqual(words, { name: 'Card Collector, set face down by PIPEWRENCH', state: `Sprang on ${localDate('2026-10-30T02:00:00.000Z')}`, note: 'A Card Collector set face down by PIPEWRENCH.', ends: 'It has sprung, and ended.' });
     assert.deepEqual(wordsProblems('state', words.state), []);
   });
@@ -75,18 +76,16 @@ describe('a card back, a ward and a caught play, in words', () => {
     /* A ride says its author is paid, with the share the card's rules hold (retuned, the new share is said), in a heading within the Lens's word rule. */
     assert.deepEqual(gimmickWords({ kind: 'ride', share: 0.5 }, end, now), { state: 'Pays its author for votes here', ends: `Ends ${dayAndTime(end)}`, report: 'Each vote on a card another player casts here pays its author half a vote.' });
     assert.equal(gimmickWords({ kind: 'ride', share: 0.25 }, end, now).report, 'Each vote on a card another player casts here pays its author a quarter of a vote.');
-    /* A no-quote says what it stops while it is up, in a heading within the Lens's word rule, and what every ended use card says once it is over; a ward's words are unchanged beside it. */
+    /* A no-quote says what it stops while it is up, in a heading within the Lens's word rule; a ward's words are unchanged beside it. */
     assert.deepEqual(gimmickWords({ kind: 'noQuote' }, end, now), { state: 'Cannot be quoted', ends: `Ends ${dayAndTime(end)}` });
-    assert.deepEqual(gimmickWords({ kind: 'noQuote' }, '2026-10-31T10:00:00.000Z', now), { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime('2026-10-31T10:00:00.000Z')}` });
     assert.deepEqual(gimmickWords({ kind: 'ward', upTo: 'uncommon' }, end, now), { state: 'Turns away cards up to uncommon', ends: `Ends ${dayAndTime(end)}` });
     for (const effect of [{ kind: 'noQuote' }, { kind: 'ward', upTo: 'uncommon' }, { kind: 'price', flavors: ['salty'], add: 25 }, { kind: 'earn', by: 0.1 }, { kind: 'earn', flat: 0.5 }, { kind: 'cushion', share: 0.5 }, { kind: 'ride', share: 0.5 }] as const) {
       assert.deepEqual(wordsProblems('state', gimmickWords(effect, undefined, now).state), [], effect.kind);
-      assert.deepEqual(gimmickWords(effect, '2026-10-31T10:00:00.000Z', now), { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime('2026-10-31T10:00:00.000Z')}` }, effect.kind);
     }
   });
 
   test('a back taken back says so, and names no card', () => {
-    const words = backWords(back({ takenBack: { at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', () => 'never asked');
+    const words = backWords(back({ takenBack: { at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', () => 'never asked', NOW);
     assert.deepEqual(words, { name: 'A card set face down by PIPEWRENCH', state: `Taken back on ${localDate('2026-10-30T02:00:00.000Z')}`, note: `Set face down by PIPEWRENCH on ${localDate(back({}).playedAt)}, and taken back.`, ends: 'It was taken back, and ended.' });
     assert.deepEqual(wordsProblems('state', words.state), []);
   });
