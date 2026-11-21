@@ -204,6 +204,25 @@ Chair and Feelin' Fab each stack three deep.
 Weighed: the voice leading everything (the music would have to be cut and looped under it, and its one long
 acceleration is the point); the music leading everything (part one has none).
 
+## 5a. The camera loses control too
+
+The owner, on reading the plan: "I'd like to really push the limits, quick cuts, pans, even rotate a camera in 3D if
+you'd like, have fun with it." The camera follows the narrator's composure:
+
+- **Part one is locked off.** A fixed frame, no cut inside a node, as a commentary track's game footage is. The
+  stillness is what the rest breaks.
+- **Part two starts to move.** Slow push-ins on what he is explaining, and pans that follow the pointer. By node 8
+  the page is scrolling itself and the frame drifts off level.
+- **Part three is cut to the music.** A cut on every entry of the theme, whip pans between posts, punch-ins on each
+  landing, and the board itself tilted and turned in three dimensions as a plane in space, further with each
+  statement, so that by the end of block 3 the forum is spinning. Each of the coda's chords is a hard cut with a
+  punch-in.
+- **The black and the end card are still.**
+
+The moves are of two kinds. A push-in, a pan and a punch are made in the edit from the double-density frames, so no
+take is filmed again to change one. The turn in three dimensions is the page's own: the stage draws the board inside
+a perspective, and a shot turns it frame by frame, so the game is drawn at an angle and not a picture of it.
+
 ## 6. Sound and captions
 
 - **Music:** the Musopen Symphony recording of 2012 (the Czech National Symphony Orchestra), 2:34, as FLAC from

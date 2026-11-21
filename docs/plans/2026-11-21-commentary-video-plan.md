@@ -180,6 +180,29 @@ New `tools/hype/edit-commentary.mjs`, beside round 1's edit and sharing its help
   made-up map (part one's lengths follow the clips; part two starts where part one ends; the black and the card
   follow the last chord); `captions` for a node of three lines; the refusal passes through from `fit`.
 
+## Task 8a. The camera's moves
+
+Model: sonnet
+
+The design's section 5a. Built with Task 4 (the stage's part) and Task 8 (the edit's part).
+
+- **The turn in space, on the stage.** `Stage.board.stories.tsx` draws the board inside a wrapper with a CSS
+  `perspective`, and `window.__shot.turn({ rx, ry, rz, z, scale })` sets the wrapper's transform for the next frame.
+  At rest the transform is none, so every part-one take is the plain page. A shot turns the page only while no
+  pointer press is in progress and reads no element's place while it is turned: it places its plays by calling
+  `__shot`, not by aiming a pointer at a turned page. Behind the turned board is black.
+- **A move in the edit.** A cut in `tools/hype/edit-commentary.mjs` may carry `move: { from, to, ease }`, where each
+  end is a rectangle of the take's frame (x, y, width in shares of the frame, and a roll in degrees). The edit crops
+  and scales each frame along it (ffmpeg's `zoompan` or a per-frame crop, whichever holds 60 frames a second without
+  judder). A rectangle never asks for more than the take's double density gives: a push past 2x is refused, naming
+  the cut. `punch: n` is a move's short form, a jump in of n percent that eases back over eight frames.
+- **Part three's cuts.** Node 9 is filmed three times from one script with three framings (wide, tight on the post's
+  body, and turned), each with the same clock and the same plays, so the edit can cut between them on the theme's
+  entries and every cut lands on the same moment of the page.
+- Tests first, in `edit-commentary.test.mjs`: a move's rectangle at its first frame, its middle and its last; the
+  refusal past 2x; a punch's eight frames return to the full frame.
+- Part one's cuts carry no move, and a test holds that.
+
 ## Task 9. The truth check, and the note to the owner
 
 Model: sonnet
