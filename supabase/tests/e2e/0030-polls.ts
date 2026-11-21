@@ -239,34 +239,36 @@ test('the masks of a secret poll hold in every read another account can make, an
     declare t0 timestamptz; r0 bigint; r1 bigint; ms double precision[][]; rows bigint[][]; i integer; k integer; out jsonb := '{}';
     function_dummy integer;
     begin
-      ms := array_fill(0::double precision, array[4, tries]); rows := array_fill(0::bigint, array[4, tries]);
+      ms := array_fill(0::double precision, array[4, tries + 1]); rows := array_fill(0::bigint, array[4, tries + 1]);
       perform tests.become(account);
       -- Index reads only: a sequential scan of a small table (threads) stops at the row it wants, so its tuple count is where that row sits in the heap, which differs from one poll's thread to the next and says nothing of who owns a voter.
       set local enable_seqscan = off;
-      for i in 1..tries loop
+      -- Try 0 is a warm-up and is not measured: the first read of rows a statement has just written finds them still to be marked (hint bits, index entries not yet known dead), and
+      -- on a first try that has read one tuple more than the tries after it. Every try that is kept starts from the same state.
+      for i in 0..tries loop
         for k in 1..4 loop
           select coalesce(sum(coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), 0) into r0 from pg_stat_xact_user_tables;
           t0 := clock_timestamp();
           begin
             perform cast_ballot(polls[k], caller, '{0}');
             if k > 2 then raise exception 'a closed poll took a ballot'; end if;
-            ms[k][i] := extract(epoch from clock_timestamp() - t0) * 1000;
-            select coalesce(sum(coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), 0) - r0 into r1 from pg_stat_xact_user_tables; rows[k][i] := r1;
+            ms[k][i + 1] := extract(epoch from clock_timestamp() - t0) * 1000;
+            select coalesce(sum(coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), 0) - r0 into r1 from pg_stat_xact_user_tables; rows[k][i + 1] := r1;
             raise exception 'undone' using errcode = 'P0001';
           exception when others then
             if k <= 2 and sqlerrm <> 'undone' then raise; end if;
             if k > 2 then
-              ms[k][i] := extract(epoch from clock_timestamp() - t0) * 1000;
+              ms[k][i + 1] := extract(epoch from clock_timestamp() - t0) * 1000;
               if sqlerrm <> 'that poll has closed' then raise exception 'a closed poll was refused in other words: %', sqlerrm; end if;
-              select coalesce(sum(coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), 0) - r0 into r1 from pg_stat_xact_user_tables; rows[k][i] := r1;
+              select coalesce(sum(coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), 0) - r0 into r1 from pg_stat_xact_user_tables; rows[k][i + 1] := r1;
             end if;
           end;
         end loop;
       end loop;
       perform tests.unbecome();
       for k in 1..4 loop
-        out := out || jsonb_build_object('ms' || k, (select (array_agg(x order by x))[tries / 2 + 1] from (select ms[k][g] x from generate_series(1, tries) g) q),
-                                         'rowsMin' || k, (select min(rows[k][g]) from generate_series(1, tries) g), 'rowsMax' || k, (select max(rows[k][g]) from generate_series(1, tries) g));
+        out := out || jsonb_build_object('ms' || k, (select (array_agg(x order by x))[tries / 2 + 1] from (select ms[k][g] x from generate_series(2, tries + 1) g) q),
+                                         'rowsMin' || k, (select min(rows[k][g]) from generate_series(2, tries + 1) g), 'rowsMax' || k, (select max(rows[k][g]) from generate_series(2, tries + 1) g));
       end loop;
       return out;
     end $$;`.replace('    function_dummy integer;\n', ''));
