@@ -46,6 +46,7 @@ test('the narration is continuous: each node is its clip and a breath of 0.35 s,
 });
 
 test('a node that follows a pause starts that pause after the clip before it, in the data\'s order: n02b, 3 s after "politely."', () => {
+  /** @type {{ id: string, part: 1 | 2 | 3, after?: number }[]} */
   const nodes = [
     { id: 'n01', part: 1 }, { id: 'n02', part: 1 }, { id: 'n02b', part: 1, after: 3 }, { id: 'n03', part: 1 }, { id: 'n04', part: 1 },
     { id: 'n05', part: 2 }, { id: 'n06', part: 2 }, { id: 'n07', part: 2 }, { id: 'n08', part: 2 }, { id: 'n09', part: 3 }, { id: 'n10', part: 3 },

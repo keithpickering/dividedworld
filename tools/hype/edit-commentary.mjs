@@ -34,7 +34,7 @@
  * the coda's first chord falls just after node 10's last word. The version of the recording is the longest of the full one, `mk-a` and `mk-b`
  * (music-cut.mjs makes the last two, beside the recording) whose start is at least 5 s into the film; `--recording` fixes it. The run prints
  * the version, the start and where in the speech the second block and the full orchestra fall.
- * A landing plays its game sound (`steel-chair` the chair's hit, `filing` a boo; any other kind none) at its frame of the node, and in
+ * A landing plays its game sound (`steel-chair` or `hit` the chair's hit, its impact on the landing's frame, `filing` a boo; any other kind none) at its frame of the node, and in
  * part three is a punch-in. `move`, `punch` and `punches` are the camera's: they apply to every cut of the node, are refused in part
  * one (locked off), and `--moves` takes the same fields by node id in one file, over the take's own.
  *
@@ -61,7 +61,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { versionMap, titleStrikes, expectedSeconds, beats, VERSIONS } from './music.mjs';
 import { refusePush, corners } from './moves.mjs';
 import { run, duration, videoInfo, fontFile, flag } from './cutting.mjs';
-import { resolveList, directCoda } from './cutlist.mjs';
+import { resolveList, directCoda, codaHits } from './cutlist.mjs';
 
 export const F = 60;
 export const BREATH = 0.35;
@@ -409,7 +409,9 @@ export function checkRecording(map, recording, anyRecording = false, version = '
 
 const SOUNDS = 'instances/divided-world/ui/sounds';
 /** The game's sound for what lands; a kind not listed has none. */
-export const SOUND_FOR = { 'steel-chair': 'steel-chair-hit.mp3', filing: 'boo-1.mp3' };
+export const SOUND_FOR = { 'steel-chair': 'steel-chair-hit.mp3', hit: 'steel-chair-hit.mp3', filing: 'boo-1.mp3' };
+/** Seconds into a sound file where its impact sits (measured: the chair's hit peaks 0.07 s in), so the impact falls on the landing's frame. */
+export const SOUND_ONSET = { 'steel-chair-hit.mp3': 0.07 };
 const DUCK = { db: -10, attack: 0.15, release: 0.4 };
 const MUSIC_LEVEL = 0.8;
 
@@ -662,11 +664,11 @@ async function main() {
     mix.push('[music]');
   }
   /* The game's sounds on their landings: the shots' (a shot's take lands them at its own frames), and node 11's. */
-  const hitList = (cutList ? [...cutList.shots.flatMap((/** @type {any} */ s) => s.hits.map((/** @type {{ what: string, at: number }} */ h) => ({ id: s.node, what: h.what, at: h.at }))), ...tl.hits.filter((h) => h.id === 'n11')] : tl.hits).sort((a, b) => a.at - b.at);
+  const hitList = (cutList ? [...cutList.shots.flatMap((/** @type {any} */ s) => s.hits.map((/** @type {{ what: string, at: number }} */ h) => ({ id: s.node, what: h.what, at: h.at }))), ...tl.hits.filter((h) => h.id === 'n11').map((h) => ({ id: 'n11', what: h.what, at: h.at })), ...codaHits(directCoda(/** @type {any} */ (tl.nodes.find((x) => x.id === 'n11')).cuts, codaList, info), info).map((h) => ({ id: 'n11', ...h }))] : tl.hits).sort((a, b) => a.at - b.at);
   const sounds = hitList.filter((h) => /** @type {Record<string, string>} */ (SOUND_FOR)[h.what]);
   sounds.forEach((h, i) => {
     const k = input(path.join(SOUNDS, /** @type {Record<string, string>} */ (SOUND_FOR)[h.what]));
-    filters.push(`[${k}:a]aresample=48000,aformat=channel_layouts=stereo,volume=0.8,adelay=${ms(h.at)}:all=1[s${i}]`);
+    filters.push(`[${k}:a]aresample=48000,aformat=channel_layouts=stereo,volume=0.8,adelay=${ms(Math.max(0, h.at - ((/** @type {Record<string, number>} */ (SOUND_ONSET))[/** @type {Record<string, string>} */ (SOUND_FOR)[h.what]] ?? 0)))}:all=1[s${i}]`);
     mix.push(`[s${i}]`);
   });
   filters.push(mix.length ? `${mix.join('')}amix=inputs=${mix.length}:normalize=0:duration=longest,alimiter=limit=0.95,apad=whole_dur=${tl.total.toFixed(3)},atrim=start=${from.toFixed(3)}:end=${to.toFixed(3)},asetpts=PTS-STARTPTS[a]` : `anullsrc=r=48000:cl=stereo,atrim=0:${(to - from).toFixed(3)}[a]`);

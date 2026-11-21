@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { wordTime, resolveList, directCoda } from './cutlist.mjs';
+import { wordTime, resolveList, directCoda, codaHits } from './cutlist.mjs';
 import { timeline, captions, speechNodes } from './edit-commentary.mjs';
 import { madeUp } from './made-up.mjs';
 
@@ -242,4 +242,13 @@ test('a synced landing must fall inside its shot: a next cut that comes before i
   rows[2] = { node: 'n06', word: 'phrase', take: 'c-n06', sync: 'steel-chair', lead: 60 };
   assert.doesNotThrow(() => read(rows), 'a lead of a second is fine with no cut in it');
   assert.throws(() => read([...rows, { node: 'n06', at: word - 0.85, take: 'c-n05' }]), (/** @type {Error} */ e) => /steel-chair/.test(e.message) && /before it lands|next cut/.test(e.message));
+});
+
+test('a landing inside a directed coda cut is a hit at its frame of the film: the chair\'s hit in a coda cut plays its sound', () => {
+  const cuts = [{ start: 168.62, frames: 178, from: 0, take: 'c-n11' }, { start: 171.59, frames: 57, from: 0, take: 'c-n11' }];
+  const taken = { 'b-chair': { seconds: 5.15, landed: [{ what: 'throw', frame: 46 }, { what: 'hit', frame: 81 }] }, 's-quiz': { seconds: 2.1, landed: [{ what: 'press', frame: 49 }] } };
+  const directed = directCoda(cuts, [{ take: 'b-chair', from: 0.55 }, { take: 's-quiz', from: 0 }], taken);
+  const hits = codaHits(directed, taken);
+  assert.deepEqual(hits.map((h) => [h.what, +h.at.toFixed(3)]), [['throw', +(168.62 + (46 - 33) / 60).toFixed(3)], ['hit', +(168.62 + (81 - 33) / 60).toFixed(3)], ['press', +(171.59 + 49 / 60).toFixed(3)]]);
+  assert.deepEqual(codaHits(cuts, taken), [], 'a cut that names its own take (node 11) has none of these');
 });

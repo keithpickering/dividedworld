@@ -165,3 +165,20 @@ export function directCoda(cuts, coda, takes) {
     return out;
   });
 }
+
+/**
+ * The hits (a take's landings) that fall inside the coda's directed cuts, as `{ what, at }` seconds of the film, so a game sound on a coda cut's
+ * landing (the chair's hit) is played as it is in a shot of the list. A cut that names no take of `takes` (node 11's own) has none.
+ * @param {any[]} cuts the cuts as `directCoda` returned them @param {Record<string, TakeInfo>} takes
+ * @returns {{ what: string, at: number }[]}
+ */
+export function codaHits(cuts, takes) {
+  const hits = [];
+  for (const cut of cuts) {
+    const info = takes[cut.take];
+    if (!info) continue;
+    const first = Math.round((cut.from ?? 0) * F);
+    for (const l of info.landed ?? []) if (l.frame >= first && l.frame < first + cut.frames) hits.push({ what: l.what, at: cut.start + (l.frame - first) / F });
+  }
+  return hits;
+}
