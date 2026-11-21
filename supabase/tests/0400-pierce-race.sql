@@ -1,4 +1,4 @@
--- The concurrent cases of the pierce Gimmick (supabase/migrations/0399_pierce.sql; docs/plans/2026-11-20-cheap-shot-plan.md, Task 2; design docs/plans/2026-11-20-cheap-shot-design.md, section 3.3).
+-- The concurrent cases of the pierce Gimmick (supabase/migrations/0400_pierce.sql; docs/plans/2026-11-20-cheap-shot-plan.md, Task 2; design docs/plans/2026-11-20-cheap-shot-design.md, section 3.3).
 -- place_cast locks the caster's oldest live pierce (its play_reach row) and asks again, after the lock, whether a concurrent cast spent it; one that did is set aside and the caster's next live pierce is tried,
 -- at most three tries. A character holds one of a card (stack 1), so the caster here holds two pierce kinds, A (played first, the older) and B. Two parts, both on posts under a ward the pierce passes:
 --   1. Deterministic: another session holds A's play_reach row, a cast is started and must come to wait on it, and the holder then spends A (a card_end) and commits. The cast, woken on a spent A, must land under B.
