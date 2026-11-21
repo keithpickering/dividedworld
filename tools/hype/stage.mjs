@@ -53,9 +53,43 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
   await cam.until(`[...document.querySelectorAll('img.kb-bb-img')].every((i) => i.complete && i.naturalWidth > 0)`, { label: "the posts' pictures loaded" });
   /* The parts the other players play, and what the rounds before a shot left on the post. */
   await cam.evaluate(`(() => {
-    const { fake, target, cast, whoops } = window.__kbStage;
+    const { fake, target, cast, whoops, play, nodes, camera } = window.__kbStage;
     const post = '#post-' + target.seq;
-    if (!document.querySelector(post)) { window.__shot = {}; return; }
+    /* The commentary video's parts hold on any screen of the stage: the Staff's beats are filmed on a board's index and a profile, which have no post. */
+    const parts = {
+      /*
+       * The commentary video's parts (docs/plans/2026-11-21-commentary-video-plan.md, Tasks 4 and 8a). Each is the stage's own (instances/divided-world/ui/hype/stage-play.ts),
+       * which plays the backend's real action as the player it names, so a reaction is scored, a cast is caught or rides, and a refusal throws in the server's words.
+       * A post is named by its number in the thread (\`__kbStage.posts\` and \`__kbStage.scenes\`), a character by its name (the cast's, and the crowd's: \`__kbStage.crowd\`).
+       */
+      /** A reaction by a character of the cast or the crowd, as its player: \`react('Serious Deer', 14, 'tomato')\`. Scores a Heel's forecast through the instance's own class rule. */
+      react: (name, postSeq, key) => play.react(name, postSeq, key),
+      /** A card cast on a post through the backend's own play path, so a back there catches it or lets it ride: returns \`{ play, caught, rode }\`. */
+      cast: (name, postSeq, card, config = {}, message = '') => play.cast(name, postSeq, card, config, message),
+      /** A quote of the post that holds \`words\`, written by the named character, which springs the Steel Chair set on it: returns \`{ post, spring, play }\`. */
+      quoteSprings: (name, postSeq, words) => play.quoteSprings(name, postSeq, words),
+      /** The Staff's beats: \`staff('memo', where?)\` (FanGaME's memo, in the main thread), \`staff('merge')\` (the Boss merges the Palace into World -1, with his reason), \`staff('file', postSeq?)\` (a Mod files a post, Snuckles's first by default). */
+      staff: Object.assign((key, ...args) => { if (!play.staff[key]) throw new Error('there is no staff beat "' + key + '": the beats are ' + Object.keys(play.staff).join(', ')); return play.staff[key](...args); }, play.staff),
+      /** One step of node 9's pile on Snuckles's first post, in order (\`pileSteps\` names them): the first call is step 0. Returns the step's name. */
+      pile: (step) => play.pile(step),
+      pileSteps: play.steps,
+      /** The pending Aura the orbs' ghost shows now for the film's player, in signed hundredths: what a take reads to prove the forecast moved. */
+      forecast: () => play.forecast(),
+      /** A commentary node hung at a point of the window as it is now (it stays at that place of the page, and scrolls with it); returns its id. */
+      node: (x, y) => nodes.add(x + scrollX, y + scrollY),
+      /** The nodes now, each with its place in the window (read only while the board is level): \`[{ id, x, y, started }]\`. */
+      nodes: () => nodes.list().map((n) => ({ id: n.id, x: n.x - scrollX, y: n.y - scrollY, started: n.started })),
+      clearNodes: () => nodes.clear(),
+      /** Turns the board in space for the next frame: degrees about each axis, \`z\` px toward the viewer, a scale. Turn only while no pointer press is in progress, and read no element's place while turned. */
+      turn: (t = {}) => camera.turn(t),
+      /** The board plain again: no transform, no wrapper style. */
+      level: () => camera.level(),
+      /** The beats that landed, each \`{ what, ms, frame }\` from \`zero()\` (the page's virtual clock, a frame at 60 a second): the edit puts each on an entry of the theme. */
+      landed: play.landed,
+      /** Starts the beats' clock: call it as the film starts, so \`landed\`'s frames count from the first frame. */
+      zero: () => play.zero(),
+    };
+    if (!document.querySelector(post)) { window.__shot = { ...parts }; return; }
     const body = () => { const r = document.querySelector(post + ' .kb-act-main').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
     const saved = async (play, effect) => { const r = await fake.saveEffect(play, target.character, effect); if (!r.ok) throw new Error('the wash was refused: ' + r.error); };
     window.__shot = {
@@ -124,6 +158,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       place(y) { document.querySelector(post).scrollIntoView({ block: 'center' }); scrollBy(0, body().y - y); return body(); },
       /** The card's first-time tip, answered: the film's player has met this card. */
       met() { [...document.querySelectorAll('.kb-callout button')].find((b) => b.textContent.trim() === 'Got it')?.click(); },
+
+      ...parts,
     };
   })()`);
   return cam;
