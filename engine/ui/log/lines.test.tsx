@@ -943,6 +943,21 @@ describe('the Mod Bots\' lines', () => {
     expect(said(refunded)).toContain('could not hear it, so your Aura came back (0.25), and you can make it again.');
   });
 
+  test('a visit verdict that opened no visit says why, that the Aura came back and that it still counts for the day; a free one has no amount; a visit with no refund says it sent one', () => {
+    const base = { report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: 'visit', verdictAt: '2099-10-29T17:00:03.000Z', mod: 'The Clerk', refund: null } as const;
+    const wallet = [paid('refund', 'r1', 25), paid('report', 'r1', -25)];
+    const veiled = rowsOf({ wallet, reports: [{ ...base, refund: 'veiled' }] })[0]!;
+    expect(veiled.aura).toBe(0);
+    expect(said(veiled)).toBe('Pipewrench reported post #42, for 0.25 Aura. The report is public. The Clerk judged it a visit, but no visit opened: the post\'s author was hidden when it was judged. Your Aura came back (0.25). It still counts as one of Pipewrench\'s reports for that day.');
+    const visited = rowsOf({ wallet, reports: [{ ...base, refund: 'visited' }] })[0]!;
+    expect(visited.aura).toBe(0);
+    expect(said(visited)).toBe('Pipewrench reported post #42, for 0.25 Aura. The report is public. The Clerk judged it a visit, but no visit opened: the post had already been visited after a report on that charge, and a post is not charged twice for one breach. Your Aura came back (0.25). It still counts as one of Pipewrench\'s reports for that day.');
+    const free = said(rowsOf({ reports: [{ ...base, refund: 'veiled' }] })[0]!);
+    expect(free).toContain('no visit opened: the post\'s author was hidden when it was judged. Your Aura came back. It still');
+    expect(free).not.toMatch(/\(/u);
+    expect(said(rowsOf({ wallet: [paid('report', 'r1', -25)], reports: [base] })[0]!)).toContain('The Clerk judged it and sent a visit.');
+  });
+
   test('an appeal says what it was of, the ruling, the points and the price', () => {
     const base = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
     const overturned = rowsOf({ wallet: [paid('appeal', 'a1', -50), paid('refund', 'a1', 50)], appeals: [{ ...base, verdict: 'overturned', pointsDelta: -2, hearer: 'The Clerk' }] })[0]!;

@@ -42,7 +42,11 @@ export function endedModWords(r: Pick<MoveLogRow, 'kind' | 'outcome' | 'params'>
       default: return 'ended';
     }
   }
-  if (r.kind === 'report') return o === 'visit' ? 'sent a visit' : o === 'dismissed' ? 'dismissed' : o === 'backfire' ? 'backfired onto the reporter' : 'judged';
+  if (r.kind === 'report') {
+    /* `visited` is in a row's params from `moves_log`: false where the verdict opened no visit; a row without it reads as it did. */
+    const none = r.params['visited'] === false;
+    return o === 'visit' ? (none ? 'judged a visit, but none opened' : 'sent a visit') : o === 'dismissed' ? 'dismissed' : o === 'backfire' ? (none ? 'backfired, but no visit opened' : 'backfired onto the reporter') : 'judged';
+  }
   const delta = num(r.params['points_delta']);
   switch (o) {
     case 'overturned': return 'overturned';
