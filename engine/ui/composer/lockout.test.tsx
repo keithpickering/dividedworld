@@ -63,6 +63,28 @@ describe('the reply box of a locked-out mask', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
   });
 
+  test('an admin ending the lockout early: the note goes and Send is open, with no reload', async () => {
+    const w = lockoutWorld(true);
+    const { spring } = await lockOut(w);
+    open(w);
+    await box();
+    await screen.findByText(/is locked out of this thread until/u);
+    expect((await w.fake.reverseCard(spring.id)).ok).toBe(true);
+    await waitFor(() => expect(screen.queryByText(/is locked out of this thread until/u)).toBeNull());
+    await userEvent.click(await box());
+    await userEvent.paste('Back.');
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
+  });
+
+  test('a lockout sprung while the thread is open shows its note at once', async () => {
+    const w = lockoutWorld();
+    open(w);
+    await box();
+    expect(screen.queryByText(/is locked out of this thread until/u)).toBeNull();
+    await act(async () => { await lockOut(w); });
+    await screen.findByText(/is locked out of this thread until/u);
+  });
+
   test('a ban speaks first where both hold: only its note is shown', async () => {
     const w = lockoutWorld();
     await lockOut(w);

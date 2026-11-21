@@ -156,6 +156,9 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   hud.current = player.hudCharacter?.id ?? null;
   const own = useRef<ReadonlySet<Id>>(new Set());
   own.current = new Set(player.characters.map((c) => c.id));
+  /* The player's characters carry their lockouts (`my_characters.lockouts`): a lockout of one of them sprung or ended here is read again, so the reply box and the play form follow it at once. */
+  const refreshPlayer = useRef(player.refresh);
+  refreshPlayer.current = player.refresh;
   const reactionLanded = useRef(player.reactionLanded);
   reactionLanded.current = player.reactionLanded;
 
@@ -768,13 +771,14 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
             /* Remembered whether or not its spring has been heard: the end may come first, and a spring that arrives ended locks no one. */
             endedSprings.current.add(spring);
             const held = lockouts.current.get(spring);
-            if (held) markLocked(held.who);
+            if (held) { markLocked(held.who); if (own.current.has(held.who)) void refreshPlayer.current(); }
             else {
               void api.actsById([spring]).then(([found]) => {
                 if (!found || found.kind !== 'spring' || found.payload.did !== 'lockedOut' || typeof found.payload.locks !== 'string') return;
                 /* A spring the page was read with: if its end is the one the page carries, that lockout is over (any other the page held is not known to be, and stays). */
                 if (pageLocks.current.get(found.payload.locks) === found.payload.until) pageLocks.current.delete(found.payload.locks);
                 markLocked(found.payload.locks);
+                if (own.current.has(found.payload.locks)) void refreshPlayer.current();
               }, quietly);
             }
           }
@@ -791,6 +795,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
           if (a.kind === 'spring' && a.payload.did === 'lockedOut' && typeof a.payload.locks === 'string' && typeof a.payload.until === 'string') {
             const who = a.payload.locks;
             lockouts.current.set(a.id, { who, until: a.payload.until });
+            if (own.current.has(who)) void refreshPlayer.current();
             void ensurePeople([who]).then(() => markLocked(who), quietly);
           }
           void ensurePeople([a.character]).then(() => {
