@@ -626,8 +626,7 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
   // A card that cuts is refused where its target holds no Gimmick it may end, so the ghost marks offer it only where it could land; the named play is checked in `decided`.
   // The old voice's refusal is said before it, as `decided` says it first.
-  if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
-  if (rules.cuts !== undefined && context.rulesOf !== undefined && cuttable(rules, effects, target, now, context.rulesOf).length === 0) return refuse(`there's no Gimmick up on this ${target.reach} for ${rules.name} to end`);
+  if (rules.cuts !== undefined && context.rulesOf !== undefined && !withheld(rules, settings) && cuttable(rules, effects, target, now, context.rulesOf).length === 0) return refuse(`there's no Gimmick up on this ${target.reach} for ${rules.name} to end`);
   const staffed = disciplineRefusal(rules, target, context, now);
   if (staffed) return staffed;
   const play = decided(rules, settings, target, effects, config, message, now, true, context);
