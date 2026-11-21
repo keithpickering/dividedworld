@@ -47,7 +47,7 @@ export function openSeasonAhead(): () => void {
  * they stood before. Where a held kind shares a key or an emoji with one of the instance's, the instance's
  * wins and the held one is left out.
  *
- * The same for personas: the seed's roster is the whole staff, and a persona it does not list is benched (0401), with the Boss handed over first. The files here are not about
+ * The same for personas: the seed's roster is the whole staff, and a persona it does not list is benched (0402), with the Boss handed over first. The files here are not about
  * a roster leaving, and each seeds the roster its own world needs (the placeholder Bosses, FanGaME), so the personas the database already holds are listed beside the instance's own,
  * by key and name alone (which leaves what an earlier seed wrote as it was), and no file's seed benches what an earlier file left.
  */

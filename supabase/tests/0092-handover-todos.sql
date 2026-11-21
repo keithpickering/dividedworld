@@ -47,7 +47,7 @@ end $$;
 create function pg_temp.dismiss(n integer) returns jsonb language plpgsql as $$
 declare
   r jsonb;
-  -- A to-do is a handover's (0401): the season's number names its roll-over, read before the admin is put on (no client reads the table); a season with none (the first) names no handover, which is refused in words.
+  -- A to-do is a handover's (0402): the season's number names its roll-over, read before the admin is put on (no client reads the table); a season with none (the first) names no handover, which is refused in words.
   roll bigint := (select h.id from season_handovers h join seasons s on s.id = h.season where s.number = n and h.cause = 'rollover');
 begin
   perform pg_temp.as_admin();

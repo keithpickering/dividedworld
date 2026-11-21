@@ -85,7 +85,7 @@ begin
   if exists (select 1 from jsonb_array_elements((select settings from screen_settings) -> 'groups') g where not g ? 'staff') then raise exception 'a group in screen_settings does not say whether it is the staff rung'; end if;
   -- staff_now lists exactly the mods; the Boss's office is never a row.
   if (select string_agg(staff, ',' order by staff) from staff_now) is distinct from 'of-mod' then raise exception 'staff_now should hold of-mod alone: %', (select string_agg(staff, ',') from staff_now); end if;
-  -- A reseed hires no one again and debuts no one. (It lists the whole roster: a persona a reseed leaves out is benched, which supabase/tests/0401-departed-personas.sql holds.)
+  -- A reseed hires no one again and debuts no one. (It lists the whole roster: a persona a reseed leaves out is benched, which supabase/tests/0402-departed-personas.sql holds.)
   perform seed_instance((select jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
       'firstBoss', 'of-boss', 'firstStaff', jsonb_build_array('of-mod'), 'staff', jsonb_build_array(
         jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w1', 'name', 'Of W One'),
