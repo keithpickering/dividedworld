@@ -157,3 +157,80 @@ recast copy.
 - **Whether node 2's forecast counts as filmed from the game** (#914's design question 3): unanswered.
 - **The matched phrase in node 6's Lens** needs the fake's seeded spring to carry it (#922). Without it the close-up
   shows the phrase in the dented post.
+
+## 9. The owner's script pass, on the fifth cut
+
+The owner, on seeing the fifth cut whole: "We are getting there!", with a pass over the script and the stage's posts.
+The words below are the owner's; `commentary.ts` holds them as the film says them.
+
+**The posts.**
+
+- Snuckles's first post: "Hi divided world, it's ya boy Snuckles here with my first ever sprite sheet. He's an
+  original character I invented after I saw him in a Mario game." Then the sheet. Then: "When he walks his legs move."
+- D-Guy's reply, in place of the review: "OF COURSE YOUR SPRITES LOOK LIKE THIS WITH THOSE STEAMBOAT WILLIE ASS
+  FINGERS"
+- The smoked post: "ok i am just going to say it: this wiggler is making me wiggle in all kinds of ways 👀"
+- Chadluminum's: "Some go their whole lives wondering. Only a few among us truly achieve the greatness of making a
+  Sprite Sheet"
+- Human Josh quotes him with a forged quote: "Some go their whole lives wondering. Only a few among us are Wiggler
+  Freaks enough to do something about it", and adds "what did he mean by this".
+- Serious Deer, in a post folded by Below the Fold: "I've analyzed this sprite sheet's pixels and come to the
+  unfortunate conclusion that it was created using generative AI."
+
+**The narration.**
+
+- **Node 1:** "Hi, I'm Gabe. Over the last few years, people have been asking me what our company has been up to. Why
+  haven't we been making any games? Well, I'm happy to announce that the indefinite delay of Half-Life: Nuts & Bolts
+  has not been in vain. For the last nine years, we've been putting all of our resources into this: Divided World. And
+  nobody can ever get that time back. To listen to a commentary node, put your cursor over the floating commentary
+  symbol and click. To stop one, click it again. Some commentary nodes may take temporary control over the forum in
+  order to show you something. It's best to just let those ones happen."
+- **Node 2:** "Early playtests showed us that people posting on a forum want to be liked. We found this resulted in a
+  positive, nurturing environment - So instead, every character has a secret class, and some classes are paid for
+  being disliked. This one is a Heel. Playtesters threw tomatoes at him and he made money. We then found they could
+  hurt him by agreeing with him, politely." Then D-Guy is seen typing a reply, furiously: "Who was that??? Come out
+  here and fight me like a man and I will show you where to stick that thumbs up", the shot cutting off before he
+  sends it, under: "And that REALLY got him going!" He cannot know who it was: who reacted is private, which is the
+  joke.
+- **Node 3:** as it was, without "We agree."
+- **Node 4:** the words stand. The picture changes: the post at rest under a slow push was awkward (section 10).
+- **Node 5:** "This is a training arc. The player learns that a card can be caught, and then learns that being caught
+  can be the plan. We found 1 in 5 players understood this. He took the other four for everything they had, and none
+  of them ever logged in again."
+- **Nodes 6, 7, 8:** as they were.
+- **Node 9:** as it was through "This is not in the middle of the curve. Okay." Then, in place of the GPT-2 lines:
+  "This is... somebody's post continuing itself? I guess? Okay, I'm hoping at one point one of the, uh..." The session
+  kept the chair's lines on its own reading of the note; the owner may strike them.
+- **Node 10:** "Okay good, here's a Moderator. He's a personality core we pulled out of a pile, he should be able to
+  clean some of this up, aaand.... he's merging all the boards together."
+- **Node 11:** four fragments between the chords: "Please let me know..." / "what you think...." / "after you've had
+  a chance...." / "to figure this stupid thing out!"
+
+The model is no longer named in the narration, so the claim that it is GPT-2 leaves the film; the text on screen is
+still the card's real output.
+
+**The ending.** The circus music, the held black and the rainbow card go. The owner: "take advantage of the final 2
+strikes of the mountain king... to show 'DIVIDED WROLD' on strike 1 and then the nonsense in the parentheses
+immediately afterwards on strike 2, in smaller text. Make the title card look essentially cinematic in quality in
+spite of the inexplicable errors in the text itself." The film ends as the last chord dies. The card is drawn in the
+glass's own look (its smoke, its heading face), so the title belongs to the game.
+
+## 10. What the fifth cut showed, in the owner's words
+
+- **Node 4** "needs something else on the screen, it's just the same snuckles post again with a slow zoom that is a
+  bit awkward." The scrub carries the whole node: ink on the post from his first words, a hand at it throughout, a
+  fresh coat on "exceeded" and another on "personally".
+- **Node 5:** "the footage is cool but it doesn't really line up with the explanation of a reversal anymore." Its shots
+  are put in the order of its sentences: the catch at "can be caught", the card thrown back and the 4D Chess paying at
+  "being caught can be the plan".
+- **The chair** "makes a noise here when it gets triggered but I don't actually see the chair hitting the wall. We
+  should get a good take where the chair is thrown, gets a good dent, bounce, falls onto the floor satisfyingly."
+- **The glass in close-up:** "The Stick Around UI doesn't really show the post as visible. In fact a lot of the glass
+  shots are using a rather wide variant of the tablet layout, not as flattering as a full desktop view in some cases,
+  such as the mod poll with quite wide buttons." The close-ups were filmed at small viewports, which the glass answers
+  with its tablet layout. A take that shows the glass is filmed at a desktop viewport and magnified.
+
+**A forged quote and a phrase trap.** Node 6's chair springs on a quote that says a phrase. Whether a forged quote
+springs a card set on the post it claims to quote is the rules' to say, and the stage follows them: if it does not,
+the chair is sprung by a real quote of Chadluminum's post by another character, and the forged quote stands beside it
+as its own beat.
