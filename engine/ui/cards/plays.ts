@@ -428,10 +428,11 @@ export function createPlays(): Plays {
   const takenBacks = new Map<Id, string>();
   /* The plays an admin ended: a `card_end` that arrived before its play is kept here for when the play does. */
   const ended = new Set<Id>();
-  /* The Gimmicks a cutting play ended, by the Gimmick play's id: a cutting play that arrived before its Gimmick is kept here for when it does. */
-  const cutBy = new Map<Id, NonNullable<CardPlay['cut']>>();
-  /* Each cutting play's Gimmick, by the cutting play's id: an admin's end of the cutting play clears the cut. */
+  /* Every cutting play of a Gimmick, by the Gimmick play's id, in the order they arrived (one that came before its Gimmick is kept for when it does): the first one an admin has not ended is what cut it. */
+  const cutters = new Map<Id, { readonly by: Id; readonly card: string }[]>();
+  /* Each cutting play's Gimmick, by the cutting play's id. */
   const cuttingOf = new Map<Id, Id>();
+  const cutOf = (gimmick: Id): NonNullable<CardPlay['cut']> | undefined => cutters.get(gimmick)?.find((c) => !ended.has(c.by));
   /* The falls a filing spent: a mark that arrived before its play is kept here for when the play does. */
   const spentPlays = new Set<Id>();
   /* Each post's billing order, by play id: set by a read of its page, with a play that arrives later appended. */
@@ -451,16 +452,15 @@ export function createPlays(): Plays {
   /* An admin's end of a cutting play brings its Gimmick back: the cut is cleared from the play it named, and from the held set. */
   const clearCut = (cutting: Id, touched: Set<Id>) => {
     const gimmick = cuttingOf.get(cutting);
-    if (gimmick === undefined || cutBy.get(gimmick)?.by !== cutting) return;
-    cutBy.delete(gimmick);
+    if (gimmick === undefined) return;
     const at = postOf.get(gimmick);
     const mine = at === undefined ? undefined : byPost.get(at);
     const was = mine?.get(gimmick);
-    if (mine && was?.cut) {
-      const { cut: _cut, ...back } = was;
-      mine.set(gimmick, back);
-      touched.add(at!);
-    }
+    if (!mine || !was?.cut || was.cut.by !== cutting) return;
+    const next = cutOf(gimmick);
+    if (next) mine.set(gimmick, { ...was, cut: next });
+    else { const { cut: _cut, ...back } = was; mine.set(gimmick, back); }
+    touched.add(at!);
   };
   const newer = (a: EffectState, b: EffectState) => Date.parse(a.savedAt) > Date.parse(b.savedAt);
   return {
@@ -547,18 +547,19 @@ export function createPlays(): Plays {
         /* A cutting play ends the Gimmick it names in place: marked now, or held for when that play arrives. One an admin already ended cuts nothing. */
         if (found.cuts && !cuttingOf.has(found.id)) {
           cuttingOf.set(found.id, found.cuts.play);
+          cutters.set(found.cuts.play, [...(cutters.get(found.cuts.play) ?? []), { by: found.id, card: found.card }]);
           if (!ended.has(found.id)) {
-            const mark = { by: found.id, card: found.card };
-            cutBy.set(found.cuts.play, mark);
+            const mark = cutOf(found.cuts.play)!;
             const at = postOf.get(found.cuts.play);
             const mine = at === undefined ? undefined : byPost.get(at);
             const was = mine?.get(found.cuts.play);
-            if (mine && was && !was.cut) { mine.set(was.id, { ...was, cut: mark }); touched.add(at!); }
+            if (mine && was && was.cut?.by !== mark.by) { mine.set(was.id, { ...was, cut: mark }); touched.add(at!); }
           }
         }
         const withEnd = ended.has(found.id) || (early !== undefined && ended.has(early.spring)) ? { ...withTaken, reversed: true as const } : withTaken;
         const withSpent = spentPlays.has(found.id) ? { ...withEnd, spent: true as const } : withEnd;
-        const play = cutBy.has(found.id) ? { ...withSpent, cut: cutBy.get(found.id)! } : withSpent;
+        const cutNow = cutOf(found.id);
+        const play = cutNow ? { ...withSpent, cut: cutNow } : withSpent;
         const home = homeOf(play);
         const own = byPost.get(home) ?? new Map<Id, CardPlay>();
         /* A play already held is the same play, with one change it can learn: that it did not take (`untaken`, 0149), set in place so its place in the billing stays. */

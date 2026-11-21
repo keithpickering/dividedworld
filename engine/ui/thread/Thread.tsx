@@ -825,7 +825,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       onUnder(parent, play, a) {
         /* The reply is drawn under its post and never at the tail: it is heard on this event alone, never as an Act, and its number is left empty. */
         void ensurePeople([a.character]).then(() => {
-          if (plays.get(parent).plays.some((p) => p.id === play && p.reversed)) { dispatch({ type: 'live', act: a }); return; }
+          if (plays.get(parent).plays.some((p) => p.id === play && (p.reversed || p.cut !== undefined))) { dispatch({ type: 'live', act: a }); return; }
           heard(play, a.seq);
           putNested(parent, play, a);
           if (a.seq !== null) dispatch({ type: 'cut', seq: a.seq });

@@ -999,4 +999,21 @@ describe('a Gimmick a cutting card ended', () => {
     held.setEnded(['b1']);
     expect(held.get('p1').plays.find((p) => p.id === 'g1')).not.toHaveProperty('cut');
   });
+
+  test('two cutters of one Gimmick: the first un-reversed cutter marks it, held or in place, and a later one marks it once the first is ended', () => {
+    const second = () => act('b2', 'card', { card: 'buzzkill', instant: true, cut: { play: 'g1', card: 'jimmy-wails' } });
+    const held = createPlays();
+    held.add([cutting(), second()]);
+    held.add([gimmick()]);
+    expect(held.get('p1').plays.find((p) => p.id === 'g1')?.cut?.by).toBe('b1');
+    const placed = createPlays();
+    placed.add([gimmick(), cutting(), second()]);
+    expect(placed.get('p1').plays.find((p) => p.id === 'g1')?.cut?.by).toBe('b1');
+    placed.add([end('b1')]);
+    expect(placed.get('p1').plays.find((p) => p.id === 'g1')?.cut?.by).toBe('b2');
+    const early = createPlays();
+    early.add([cutting(), second(), end('b1')]);
+    early.add([gimmick()]);
+    expect(early.get('p1').plays.find((p) => p.id === 'g1')?.cut?.by).toBe('b2');
+  });
 });
