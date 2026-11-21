@@ -31,6 +31,15 @@ export function trapStruckWords(f: TrapStruckFacts): { readonly line: string; re
   if (f.how === 'returned') {
     return { line: 'Paid forward', detail: `Their face-down ${f.card ?? 'card'} sprang on your ${f.laid ?? 'Move'}. It landed as usual, and the card is back in your hand.` };
   }
+  /* A lockout back's Move landed as usual and its player is locked out of the thread until the time the spring shows: the voice may be smug, and says only what the spring shows everyone. Where the spring was not read (`f.card` null) it is only "card". */
+  if (f.how === 'lockedOut') {
+    /* Once an admin has ended the lockout, the voice says it was, in the past tense; the engine adds the time it was ended. */
+    const until = f.until ? ` until ${f.until}` : '';
+    return {
+      line: 'So very happy for you',
+      detail: `Their face-down ${f.card ?? 'card'} sprang on your ${f.laid ?? 'Move'}. It landed as usual, and you ${f.ended ? 'were' : 'are'} locked out of this thread${until}.`,
+    };
+  }
   if (f.card === null) return undefined;
   if (f.how === 'quote') {
     /* The engine hands the matched conditions already shortened and quoted; each is a fact of the spring, so the voice may gloat about it and says no more. */

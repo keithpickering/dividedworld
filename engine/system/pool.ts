@@ -129,6 +129,8 @@ export interface PoolContext {
   readonly boards: Readonly<Record<string, string>>;
   /** A persona's staff key to its character's id, as `hot.authors` and memory opinions name characters. */
   readonly characters: Readonly<Record<string, string>>;
+  /** Threads a staff character is locked out of (`pool_context`'s `lockouts`): staff character id and thread id. */
+  readonly lockouts: readonly { readonly staff: string; readonly thread: string }[];
 }
 
 /** An opinion at or above this is a favorite for `oldFlame`; a grudge is any grudge the memory holds. */
@@ -147,9 +149,11 @@ export function candidates(
     return (POSTING_OFFICES as readonly string[]).includes(office ?? '') ? (office as PostingOffice) : null;
   };
   const out: Candidate[] = [];
+  // A locked-out persona cannot post in that thread; a candidate with no thread (a thread start) is never dropped.
+  const locked = new Set(ctx.lockouts.map((l) => JSON.stringify([l.staff, l.thread])));
   const add = (staff: string | null | undefined, trigger: PoolTrigger, thread: string | null, quoting: string | null, act: string | null) => {
     const office = officeOf(staff);
-    if (staff != null && office !== null) out.push({ staff, office, trigger, thread, quoting, act });
+    if (staff != null && office !== null && !(thread !== null && locked.has(JSON.stringify([ctx.characters[staff], thread])))) out.push({ staff, office, trigger, thread, quoting, act });
   };
 
   for (const s of signals.named) add(s.staff, 'named', s.thread, s.act, s.act);

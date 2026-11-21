@@ -755,6 +755,8 @@ export interface Character {
   readonly warnPoints?: number;
   /** When its ban ends (characters_public, carried by a thread's page); absent when it is not banned. A ban holds only this character, and ends by itself at that time. */
   readonly bannedUntil?: string;
+  /** When a lockout from the thread the page is for ends (`thread_page`'s `locked_until`, a public fact about the character there); absent when it is not locked out. A lockout holds only this character, in that thread, and ends by itself or by an admin. */
+  readonly lockedUntil?: string;
 }
 
 /** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office; `anonymous` is the stand-in's, shown for a post whose author a card has hidden, and holds no badge either. */
@@ -1308,6 +1310,8 @@ export interface MyCharacter {
   readonly bannedUntil?: string;
   /** The boards it is barred from posting on (`my_characters.bars`, from `bars_now`, a public fact about it); absent while it is barred from none. The composer and New thread say so, and each bar ends by itself at its time. */
   readonly bars?: readonly Bar[];
+  /** The threads it is locked out of now and when each lockout ends (`my_characters.lockouts`, public facts about it, from the `lockedOut` springs); absent while it is locked out of none. Each ends by itself, or by an admin ending the spring. */
+  readonly lockouts?: readonly { readonly thread: Id; readonly until: string }[];
 }
 
 /** Where a presence box is: a thread, a board (its page and every thread on it) or the index ("Who is online"). */
@@ -2843,6 +2847,11 @@ export interface KayfaApi {
    * may have some. The `card_end` Acts of those plays follow them in the same list (they name their play in `targetActId`, not a post).
    */
   cardsOnMany(acts: readonly Id[], limit: number): Promise<readonly Act[]>;
+  /**
+   * The `card_end` Acts whose target is one of these Acts (a play, or a lockout's spring), read by target alone: a play's place
+   * on its post, and how many plays the post holds, do not matter. Each names what it ends in `targetActId`. An empty list reads nothing.
+   */
+  cardEnds(targets: readonly Id[]): Promise<readonly Act[]>;
   /**
    * The live plays above a page's posts (effects_above, 0055): on any of these characters, on this thread and on this board, oldest
    * first, in one batched read (a page asks once, however many posts it holds). Each play's Act sits where it was played; its `target`

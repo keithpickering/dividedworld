@@ -173,10 +173,10 @@ begin
   perform set_config('kayfabb.card_end_writer', 'on', true);
   -- Targeting a post.
   why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', %L, %L, '{"why": "reversed", "by": "admin"}')$s$, t, p));
-  if why is null or why not like 'a card_end is of a card play, in its thread%' then raise exception 'a card_end targeting a post must fail: %', why; end if;
+  if why is null or why not like 'a card_end is of a card play or a lockout, in its thread%' then raise exception 'a card_end targeting a post must fail: %', why; end if;
   -- Out of the play's thread.
   why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', %L, %L, '{"why": "reversed", "by": "admin"}')$s$, other_thread, play));
-  if why is null or why not like 'a card_end is of a card play, in its thread%' then raise exception 'a card_end out of its play''s thread must fail: %', why; end if;
+  if why is null or why not like 'a card_end is of a card play or a lockout, in its thread%' then raise exception 'a card_end out of its play''s thread must fail: %', why; end if;
   -- With a character.
   why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, target_act_id, payload) values (%L, 'card_end', %L, %L, '{"why": "reversed", "by": "admin"}')$s$, author, t, play));
   if why is null or why not like '%acts_character_null%' then raise exception 'a card_end with a character must fail: %', why; end if;

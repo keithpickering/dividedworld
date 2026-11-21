@@ -138,6 +138,16 @@ export const utcWhen = (iso: string) => {
   const d = new Date(iso);
   return `${utcDay(iso)} · ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 };
+/**
+ * When a lockout ends and when an admin ended it early (a `card_end` on its spring, where the Act is held), as the log and the alerts write times:
+ * `until` is "Nov 1 · 10:00 UTC" (or "it ends" where the spring names none), `ended` "Oct 31 · 12:30 UTC" or null.
+ */
+export function lockoutEnd(spring: Act, acts: ReadonlyMap<Id, Act>): { readonly until: string; readonly ended: string | null } {
+  /* Read from the Acts as they are now: a card_end added to the same Map later is seen (no cache keyed on the Map). */
+  let end: Act | undefined;
+  for (const a of acts.values()) if (a.kind === 'card_end' && a.targetActId === spring.id) end = a;
+  return { until: typeof spring.payload.until === 'string' ? `${utcWhen(spring.payload.until)} UTC` : 'it ends', ended: end ? `${utcWhen(end.createdAt)} UTC` : null };
+}
 
 /** A reason's name, the instance's words before their colon ("Drew heat"), and the whole of them (what it pays for). */
 export function reasonName(words: string): string {
@@ -976,6 +986,18 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
     });
+    /* A lockout back that this play sprang (the play names the spring, `lockedOut`): the caster is told, in the spring's own facts. */
+    const sprungBy = e.act ? data.acts.get(e.act)?.payload.lockedOut : undefined;
+    const locking = typeof sprungBy === 'string' && data.acts.get(sprungBy)?.payload.did === 'lockedOut' ? data.acts.get(sprungBy) : undefined;
+    if (locking) {
+      const t = lockoutEnd(locking, data.acts);
+      const trapped = locking.targetActId ? data.acts.get(locking.targetActId) : undefined;
+      rows.push({
+        key: `lockedOut:${e.act}`, kind: 'struck', at: locking.createdAt, what: `A face-down card locked you out of a thread`,
+        details: [`The ${cardName(locking.payload.card)} on `, (trapped && actLink(trapped, data, words, caster ?? undefined)) ?? link ?? 'a post', ` locked ${nameOf(typeof locking.payload.locks === 'string' ? locking.payload.locks : caster, 'one of your characters')} out of this thread until ${t.until}.${t.ended === null ? '' : ` An admin ended it at ${t.ended}.`}`],
+        aura: 0, wallet: null, characters: caster ? [caster] : [],
+      });
+    }
   });
   for (const p of data.log.playsOnMine) {
     const play = data.acts.get(p.play);
@@ -1125,7 +1147,8 @@ function surfaceRows(data: LogData, words: Words): LogRow[] {
  */
 function endedRows(data: LogData, words: Words): LogRow[] {
   const cardName = (key: unknown) => words.instance.cards.find((c) => c.key === key)?.name ?? 'a card';
-  return data.log.ended.map((e): LogRow => {
+  /* An admin's end of a lockout has its words in the lockout's own lines ("An admin ended it at {time}.", from the card_end this entry names), so it adds none. */
+  return data.log.ended.filter((e) => data.acts.get(e.play)?.kind !== 'spring').map((e): LogRow => {
     const play = data.acts.get(e.play);
     const post = play?.targetActId ? data.acts.get(play.targetActId) : undefined;
     const mine = e.side === 'onMine';
@@ -1183,10 +1206,22 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
       continue;
     }
     const did = spring?.payload.did;
-    if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode' || did === 'returned') {
+    if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode' || did === 'returned' || did === 'lockedOut') {
       const by = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
       if (did === 'ended') {
         rows.push({ key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`, details: [`${cardName(e.card)} on `, on, ' sprang when a Mod Bot\'s visit began, and ended the visit.'], aura: 0, wallet: null, characters });
+        continue;
+      }
+      if (did === 'lockedOut' && spring) {
+        const played = by;
+        const move = cardName(played?.payload.card);
+        const who = nameOf(typeof spring.payload.locks === 'string' ? spring.payload.locks : played?.character);
+        const t = lockoutEnd(spring, data.acts);
+        rows.push({
+          key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
+          details: [`${cardName(e.card)} on `, on, ` sprang when ${who} played ${move} on it. ${move} landed, and ${who} ${t.ended === null ? 'is' : 'was'} locked out of the thread until ${t.until}.${t.ended === null ? '' : ` An admin ended it at ${t.ended}.`}`],
+          aura: 0, wallet: null, characters,
+        });
         continue;
       }
       if (did === 'returned') {
@@ -1364,7 +1399,7 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const s of log.saves) { ids.add(s.play); ids.add(s.post); }
   for (const e of log.setEnds) { ids.add(e.post); if (e.spring) ids.add(e.spring); }
   for (const c of log.caught) { ids.add(c.play); ids.add(c.post); ids.add(c.spring); }
-  for (const e of log.ended) ids.add(e.play);
+  for (const e of log.ended) { ids.add(e.play); ids.add(e.cardEnd); }
   for (const w of log.wallet) if ((w.kind === 'bribe' || w.kind === 'gift_out' || w.kind === 'gift_in') && w.ref) ids.add(w.ref);
   return [...ids];
 }
@@ -1378,9 +1413,9 @@ export function actsFollowed(acts: ReadonlyMap<Id, Act>): Id[] {
   for (const a of acts.values()) {
     if ((a.kind === 'card' || a.kind === 'spring' || a.kind === 'set' || a.kind === 'donation') && a.targetActId) ids.add(a.targetActId);
     if (a.kind === 'intercept' && typeof a.payload.visit_act === 'string') ids.add(a.payload.visit_act);
-    for (const key of ['spring', 'caught', 'by'] as const) {
+    for (const key of ['spring', 'caught', 'by', 'lockedOut'] as const) {
       const v = a.payload[key];
-      if (typeof v === 'string' && (a.kind === 'spring' || (a.kind === 'card' && key === 'spring'))) ids.add(v);
+      if (typeof v === 'string' && (a.kind === 'spring' || (a.kind === 'card' && (key === 'spring' || key === 'lockedOut')))) ids.add(v);
     }
   }
   return [...ids].filter((id) => !acts.has(id));

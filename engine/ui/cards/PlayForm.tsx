@@ -34,6 +34,8 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { Editor } from '../composer/Editor.tsx';
 import { framingArgs } from '../composer/text.ts';
+import { LockedOutNote } from '../composer/LockedOutNote.tsx';
+import { useLockedOutUntil } from '../composer/lockout.ts';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
@@ -166,6 +168,9 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced, ui.copy.cardKinds) : null), [rules, cardUi, priced, ui.copy.cardKinds]);
   const hud = player.hudCharacter;
   const wallet = player.wallet;
+  /* A lockout holds one character in one thread: a play on a post there, on the thread, or on a character reached from a post there is refused; a play on a board is no part of a thread. */
+  const lockThread = beyond?.reach === 'board' ? null : beyond?.reach === 'thread' ? beyond.target : postThread;
+  const lockedUntil = useLockedOutUntil(setting ? setter : hud, lockThread);
 
   const context = { cards: instance.cards, ...(pierce === undefined ? {} : { pierce }), ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
@@ -238,7 +243,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const replyMost = screen.postMaxLength;
   const unwritten = replying && (!/[\p{L}\p{N}]/u.test(reply) || [...reply].length > replyMost);
   const out = wasCaught && player.loaded && (player.cards.find((c) => c.card === card)?.held ?? 0) === 0;
-  const blocked = spent || out || unwritten || busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || flawed;
+  const blocked = spent || out || unwritten || busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || flawed || lockedUntil !== null;
   const nameOf = (who: string) => draft.who.find((c) => c.id === who)?.name ?? 'someone';
   /* What the Set does, in the form's one sentence: the conditions read back where there are any (a locked phrase is the card's Says), the card's plain sentence where there are none. */
   const springs = when || lockedSays ? `Springs ${conditionWords({ ...when, ...(lockedSays ? { says: lockedSays } : {}) }, nameOf)}, and lands on ${landsWords(rules)}.` : springWords(rules);
@@ -423,6 +428,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
               )}
               <p className="kb-play-fine" role="status" aria-label="Cost">{shortWords || (!lands.ok ? plainRefusal(lands.why) : '')}</p>
             </div>}
+          {lockedUntil !== null && named && <LockedOutNote character={named} until={lockedUntil} />}
           {unsettled && <p className="kb-play-fine" id={`${id}-unsettled`} role="status">Choose the card's settings above to set it.</p>}
           <p className="kb-play-fine">
             {setting
