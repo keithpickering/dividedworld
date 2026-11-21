@@ -148,7 +148,7 @@ export function spanWords(ms: number): string {
 
 /**
  * A face-down card struck the player: it landed on their quoting post (the card Act names its spring), or a catching set card caught their cast (the play
- * names the set that caught it). Both are public Acts, so nothing here is computed from a private fact: the setter is the character the spring
+ * names the set that caught it), or a pierce got their cast past one (the play names the pierce, and nothing about the back). Each is a public Act, so nothing here is computed from a private fact: the setter is the character the spring
  * (or the set) names, never an account. A part that could not be read is left out, never guessed.
  */
 function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {

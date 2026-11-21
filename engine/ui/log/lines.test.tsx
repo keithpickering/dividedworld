@@ -401,6 +401,10 @@ describe('cards set face down, traps and catches', () => {
       expect(read({ pierce: { by: 'pc', card: 'pass' } })[0]).not.toContain('got it past');
       expect(read({})[0]).not.toContain('got it past');
     });
+    test('a malformed pierce adds nothing', () => {
+      expect(read({ pierce: 'pass' })[0]).not.toContain('got it past');
+      expect(read({ pierce: { by: 'pc', card: 'pass', ward: 123 } })[0]).not.toContain('got it past');
+    });
   });
 
   test('a caught play is the caster\'s line, with its whole cost, and no line of its own as a play', () => {
