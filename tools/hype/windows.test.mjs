@@ -27,10 +27,42 @@ test('the windows cover the music from the first note to the last chord with no 
   assert.equal(w.at(-1).end, 155);
 });
 
-test('two nodes to a block, split at the fourth statement', () => {
-  const w = windows(map, { fragments: 3 });
-  assert.deepEqual(w.slice(0, 6).map((x) => [x.start, x.end]), [[10, 40], [40, 70], [70, 85], [85, 100], [100, 115], [115, 130]]);
+test('fragments defaults to 3', () => {
+  assert.equal(windows(map).at(-1).gaps.length, 3);
+});
+
+test('two nodes to a block, split by the shares: 50/50, 60/40 and 57/43 by default', () => {
+  const w = windows(map);
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} is not ${b}`);
+  assert.deepEqual(w.slice(0, 4).map((x) => [x.start, x.end]), [[10, 40], [40, 70], [70, 88], [88, 100]]);
+  close(w[4].end, 117.1);
+  close(w[5].start, 117.1);
   assert.equal(w[0].length, 30);
+  assert.deepEqual(windows(map, { shares: [[0.25, 0.75], [0.5, 0.5], [0.5, 0.5]] })[0].end, 25);
+});
+
+test('clips split a block in proportion to their lengths, and neither node gets under 35 percent of it', () => {
+  const w = windows(map, { clips: { n05: 10, n06: 30, n07: 1, n08: 29 } });
+  assert.equal(w[0].end, 31, 'n05: 10 of 40 is a quarter, which is raised to 35 percent of the block: 10 + 21');
+  assert.equal(w[0].length, 21);
+  assert.equal(w[1].length, 39);
+  assert.equal(w[2].length, 10.5, 'n07 would be 1 of 30 and gets 35 percent of 30');
+  const even = windows(map, { clips: { n09: 20, n10: 20 } });
+  assert.equal(even[4].length, 15);
+  const one = windows(map, { clips: { n09: 20 } });
+  assert.ok(Math.abs(one[4].length - 17.1) < 1e-9, 'a block with one clip keeps the default shares');
+});
+
+test('each window and each node 11 gap says whether both its ends are measured', () => {
+  const w = windows(map);
+  assert.equal(w[0].confident, false, 'its split is derived');
+  const m = structuredClone(map);
+  const all = windows(m);
+  assert.equal(all.at(-1).confident, true, 'n11 runs from a confident chord to a confident end');
+  assert.deepEqual(all.at(-1).gaps.map((g) => g.confident), [true, true, true]);
+  m.coda.chords[2].confident = false;
+  const g = windows(m, { fragments: 4 }).at(-1).gaps;
+  assert.deepEqual(g.map((x) => x.confident), [true, false, false, true]);
 });
 
 test('node 11 gets as many gaps as it has lines, the longest of the coda, in order', () => {
@@ -47,21 +79,31 @@ test('node 11 throws when the map has fewer coda gaps than it has lines', () => 
 
 test('a clip that fits returns its slack, and node 11 returns one slack a fragment', () => {
   const w = windows(map, { fragments: 3 });
-  const slack = fit(w, { n05: 28.5, n07: 15, n11: [1.5, 7, 9] });
+  const slack = fit(w, { n05: 28.5, n07: 18, n11: [1.5, 7, 9] });
   assert.equal(slack.n05, 1.5);
   assert.equal(slack.n07, 0);
-  assert.deepEqual(slack.n11, [0.5, 1, 0]);
+  assert.deepEqual(slack.n11, [{ slack: 0.5, cut: 0 }, { slack: 1, cut: 0 }, { slack: 0, cut: 0 }]);
   assert.equal('n06' in slack, false, 'a node with no clip has no slack');
 });
 
 test('a clip one frame too long throws, naming the node, the window and the overrun', () => {
   const w = windows(map, { fragments: 3 });
-  assert.throws(() => fit(w, { n08: 15 + FRAME }), (/** @type {Error} */ e) => /n08/.test(e.message) && /15\.00 s/.test(e.message) && /0\.017 s/.test(e.message));
+  assert.throws(() => fit(w, { n08: 12 + FRAME }), (/** @type {Error} */ e) => /n08/.test(e.message) && /12\.00 s/.test(e.message) && /0\.017 s/.test(e.message));
 });
 
-test('a line of node 11 that overruns its gap throws, naming the node and the line', () => {
+test('a line of node 11 that overruns its gap is cut off by the chord, not refused, and says how much', () => {
   const w = windows(map, { fragments: 3 });
-  assert.throws(() => fit(w, { n11: [1, 8, 9 + FRAME] }), (/** @type {Error} */ e) => /n11/.test(e.message) && /line 3/.test(e.message));
+  const out = /** @type {any} */ (fit(w, { n11: [1, 8, 9.5] }));
+  assert.deepEqual(out.n11.map((x) => x.cut), [0, 0, 0.5]);
+  assert.equal(out.n11[2].slack, 0);
+});
+
+test('a clip id that matches no window, and a wrong shape for node 11, throw plainly', () => {
+  const w = windows(map);
+  assert.throws(() => fit(w, { n99: 3 }), /n99.*no window/);
+  assert.throws(() => fit(w, { n11: 3 }), /n11.*one length a line/);
+  assert.throws(() => fit(w, { n05: [3] }), /n05.*one length/);
+  assert.throws(() => fit(w, { n11: [1, 1, 1, 1] }), /n11.*3 gaps/);
 });
 
 test('the timing sheet lists every window and every gap', () => {
@@ -69,4 +111,11 @@ test('the timing sheet lists every window and every gap', () => {
   for (const id of ['n05', 'n06', 'n07', 'n08', 'n09', 'n10', 'n11']) assert.match(text, new RegExp(id));
   assert.match(text, /n05\s+10\.00\s+40\.00\s+30\.00/);
   assert.match(text, /line 3/);
+});
+
+test('the timing sheet marks a window with an unsure or chosen end with a tilde', () => {
+  const lines = sheet(windows(map)).split('\n');
+  assert.match(lines.find((l) => l.startsWith('n05')), /~$/);
+  assert.doesNotMatch(lines.find((l) => l.startsWith('n11')), /~/);
+  assert.doesNotMatch(lines.find((l) => l.includes('line 1')), /~/);
 });

@@ -37,6 +37,12 @@ test('block 2 begins where the high band steps up, and is not claimed with confi
   assert.equal(map.blocks[0].end, map.blocks[1].start);
 });
 
+test('a block is confident only when both its start and its end are: block 1 ends where block 2 starts', () => {
+  assert.equal(map.blocks[0].confident, false, 'block 1 ends at the unsure block 2 start');
+  assert.equal(map.blocks[1].confident, false);
+  assert.equal(map.blocks[2].confident, map.coda.chords[0].confident, 'block 3 starts on the tutti and ends on the first chord');
+});
+
 test('the tutti entrance is where the crescendo reaches the full orchestra', () => {
   const t = map.blocks[2].start;
   assert.ok(t >= 100 && t <= 102, `tutti at ${t}`);

@@ -1,5 +1,6 @@
 {
   "source": "https://archive.org/download/MusopenCollectionAsFlac/Greig_PeerGynt/EdvardGrieg-PeerGyntSuiteNo.1Op.46-04-InTheHallOfTheMountainKing.flac",
+  "note": "This file was fetched from the Internet Archive's Musopen collection because Wikimedia Commons rate-limited the fetch; it is the same recording the design names (the Czech National Symphony Orchestra's, 2012), the same length, 154.09 s.",
   "seconds": 154.09,
   "sha1": "7d34c97620149eff83bc14a1e838ef5d8e66746b",
   "firstNote": {
@@ -11,7 +12,7 @@
       "id": 1,
       "start": 0.5,
       "end": 64.35,
-      "confident": true,
+      "confident": false,
       "entries": [
         {
           "t": 0.5,

@@ -27,6 +27,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { flag } from './stage.mjs';
+import { run, expr } from './cutting.mjs';
 
 const DIR = '.runs/hype', TMP = `${DIR}/edit`, F = 60;
 const SOUNDS = 'instances/divided-world/ui/sounds';
@@ -78,13 +79,6 @@ const CUTS = [
   ['card-t10', 0, 516, 1],
   ['black', 0, 60, 1],
 ];
-
-const run = (args, label) => {
-  const r = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', ...args], { stdio: 'inherit' });
-  if (r.status !== 0) throw new Error(`ffmpeg could not ${label}`);
-};
-/* An expression inside a filter: its commas are the filter graph's unless they are escaped. */
-const expr = (e) => e.replace(/,/gu, '\\,');
 
 mkdirSync(TMP, { recursive: true });
 

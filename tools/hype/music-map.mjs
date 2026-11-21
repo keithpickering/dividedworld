@@ -17,7 +17,8 @@
  *   - the final chord's end: where the last chord has fallen 35 dB from its peak.
  *
  * The recording gives no clean edge for the theme's separate entries, so each block is divided evenly into six, each marked
- * `derived: true, confident: false`. Everything is in seconds. The output also carries `source`, `seconds` and `sha1`.
+ * `derived: true, confident: false`. A block is confident only when both its start and its end are (block 1 ends where the unsure block 2
+ * begins, so it is not). Everything is in seconds. The output also carries `source`, a `note` on where the file came from, `seconds` and `sha1`.
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -66,9 +67,11 @@ export function mapFromEnvelopes({ db, hb, hop }) {
 
   const entries = (/** @type {number} */ a, /** @type {number} */ b) => Array.from({ length: 6 }, (_, k) => ({ t: a + (k * (b - a)) / 6, confident: false, derived: true }));
   const edges = [at(first), at(b2), at(tutti), at(chords[0].i)];
+  /* Whether each edge is measured: a block is confident only when both of its ends are. */
+  const starts = [true, false, true, chords[0].confident];
   return {
     firstNote: { t: at(first), confident: true },
-    blocks: [1, 2, 3].map((id, k) => ({ id, start: edges[k], end: edges[k + 1], confident: k === 0 || k === 2, entries: entries(edges[k], edges[k + 1]) })),
+    blocks: [1, 2, 3].map((id, k) => ({ id, start: edges[k], end: edges[k + 1], confident: starts[k] && starts[k + 1], entries: entries(edges[k], edges[k + 1]) })),
     coda: {
       chords: chords.map((c) => ({ t: at(c.i), confident: c.confident })),
       end: { t: end < 0 ? at(db.length) : at(end), confident: end >= 0 },
@@ -100,6 +103,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const seconds = Number(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).stdout.toString());
   const map = {
     source: flag('source', 'https://archive.org/download/MusopenCollectionAsFlac/Greig_PeerGynt/EdvardGrieg-PeerGyntSuiteNo.1Op.46-04-InTheHallOfTheMountainKing.flac'),
+    note: flag('note', "This file was fetched from the Internet Archive's Musopen collection because Wikimedia Commons rate-limited the fetch; it is the same recording the design names (the Czech National Symphony Orchestra's, 2012), the same length, 154.09 s."),
     seconds: Math.round(seconds * 100) / 100,
     sha1: createHash('sha1').update(readFileSync(file)).digest('hex'),
     ...mapFromEnvelopes(e),
