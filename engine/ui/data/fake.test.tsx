@@ -6661,7 +6661,7 @@ describe('the card retirement seed', () => {
     fake.clock.advance(400 * DAY);
     fake.seed.retireCards();
     expect(await fake.myCards()).toEqual([{ card: 'collector', held: 1 }]);
-    expect(Object.keys((await fake.log(null)).cards.filter((c) => c.kind === 'renamedOut'))).toHaveLength(1);
+    expect((await fake.log(null)).cards.filter((c) => c.kind === 'renamedOut')).toHaveLength(1);
     fake.clock.advance(DAY);
     expect(await fake.myCards()).toEqual([{ card: 'collector', held: 1 }]);
   });
