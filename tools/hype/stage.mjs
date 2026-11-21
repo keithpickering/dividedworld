@@ -70,13 +70,28 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       quoteSprings: (name, postSeq, words) => play.quoteSprings(name, postSeq, words),
       /** The spring and landed Move for a quoting post written some other way (the real composer): \`springsOn(2, actId)\` springs the Steel Chair set on post 2 onto that post. Returns \`{ spring, play }\`. */
       springsOn: (quoted, quoting) => play.springsOn(quoted, quoting),
-      /** The Staff's beats: \`staff('memo', where?)\` (FanGaME's memo, in the main thread), \`staff('merge')\` (the Boss merges the Palace into World -1, with his reason), \`staff('file', postSeq?)\` (a Mod files a post, Snuckles's first by default). */
+      /**
+       * The Staff's beats (stage-play.ts, every word a line of the rehearsal's, staff-lines.json): call them as \`staff('merge')\` or \`staff.merge()\`. A thread a beat makes is named in its result
+       * (\`key\`), to be shown with \`show('thread:' + key)\`. A Mod is \`'qc'\` (QC-1000) or \`'ontopic'\` (ONTOPIC 5.0); a post is named by its number in the thread.
+       *   memo(where = 'main', key = 'memo')            the Boss's memo: key memo, orderNoAllowance, orderHoneymoon or orderQuote
+       *   merge() / created(name?) / moved()            the Boss's move notices, each with his reason; moved() returns { move, thread }
+       *   file(postSeq = 1)                             a Mod files a post of the main thread (round 1's beat, now with real words)
+       *   visit(mod, postSeq | null, { quiz, line, by })  a visit opens: with null, on a post of a thread of the board the opener names; quiz asks the fixture's quiz. Returns { thread, key, post, seq, visit, line, board }
+       *   hallPass(postSeq | null, { mod, by })         the author sets a real Hall Pass; a visit begins and it springs. Returns that plus { set, spring }
+       *   filing(mod, postSeq | null, key, { by })      the filing's aimed-at post is written (null) and filed; key is filingQcHelp, filingQcGames, filingQcGotcha, filingOtThematic, filingOtPatience or filingOtPalace. Adds { infraction }
+       *   report(name, postSeq)                         names what to press for a report; the film's player must be name (\`as=name\`), and not the post's author. Returns { seq, press }
+       *   appeal(name, key = 'filingQcHelp')            a filing against name's own post, appeal still to make; the film's player must be name (\`as=name\`). Returns the filing's and { press }
+       *   review(key)                                   ONTOPIC 5.0's review: stars or fiveStars. Returns { thread, post, key }
+       *   handover()                                    FanGaME leaves, QC-1000 takes the seat: the farewell and the arrival in the announcements. Returns { farewell, arrival, note, thread }
+       */
       staff: Object.assign((key, ...args) => { if (!play.staff[key]) throw new Error('there is no staff beat "' + key + '": the beats are ' + Object.keys(play.staff).join(', ')); return play.staff[key](...args); }, play.staff),
       /** One step of node 9's pile on Snuckles's first post, in order (\`pileSteps\` names them): the first call is step 0. Returns the step's name. */
       pile: (step) => play.pile(step),
       pileSteps: play.steps,
       /** The order the film lands the pile in (stage-play.ts's FILM_ORDER): { n09: [...], n11: { chairs, heap } }. */
       pileOrder: play.order,
+      /** You Were Saying? lands on the stage's post that is the true pair of the card's real tail (\`posts.gpt2\`, or \`postSeq\`), and the tail (gpt2-tail.txt, 1373 characters) types in under it. Returns the play's Act. */
+      gpt2: (postSeq) => play.gpt2(postSeq),
       /** The pending Aura the orbs' ghost shows now for the film's player, in signed hundredths: what a take reads to prove the forecast moved. */
       forecast: () => play.forecast(),
       /** A commentary node hung at a point of the window as it is now (it stays at that place of the page, and scrolls with it); returns its id. */
