@@ -107,8 +107,7 @@ class FakeContext {
   decoded = 0;
   failDecode = false;
   compressors: FakeCompressor[] = [];
-  /** Set by a test: `noCompressor` deletes the method (an old WebKit), `throwCompressor` makes it throw. */
-  noCompressor = false;
+  /** Set by a test to make the method throw; a test deletes the method itself for a context with none (an old WebKit). */
   throwCompressor = false;
   createDynamicsCompressor?: () => FakeCompressor = () => {
     if (this.throwCompressor) throw new Error('no compressor');
@@ -982,7 +981,7 @@ describe('mixer', () => {
     });
 
     for (const [name, arrange] of [
-      ['55. a context with no createDynamicsCompressor', () => { ctx.noCompressor = true; delete ctx.createDynamicsCompressor; }],
+      ['55. a context with no createDynamicsCompressor', () => { delete ctx.createDynamicsCompressor; }],
       ['56. a createDynamicsCompressor that throws', () => { ctx.throwCompressor = true; }],
     ] as const) {
       it(`${name} connects the bus gain to the destination, and the play resolves`, async () => {
