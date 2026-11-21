@@ -91,6 +91,33 @@ check('in the dark blocks too', fires(`${GOOD}`.replace('--kb-fg: #fff; }\n}', '
   check('a gradient is clean', fires(`:root { --kb-head-bg: linear-gradient(#fff, #2b2b2b); }`).length === 0);
 }
 
+/* ---- an SVG written into the theme fetches nothing, and is read for anything that would ---- */
+{
+  const svg = (inner, open = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none'>`) => `url("data:image/svg+xml,${open}${inner}</svg>")`;
+  const ok = svg(`<path fill='%230a1448' d='M4 19C4 11 11 5 20 5Z'/>`);
+  const one = (v) => fires(`:root { --kb-page-bg: ${v}; }`);
+  check('an inline SVG in a token is clean, alone or as a layer with its own tile size',
+    one(ok).length === 0 && one(`${ok} 0 0 / 40px 40px, #000`).length === 0 && one(svg(`<defs><path id='m' d='M0 0h1v1z'/></defs><use href='%23m'/>`)).length === 0,
+    JSON.stringify([one(ok), one(`${ok} 0 0 / 40px 40px, #000`)]));
+  const poisons = {
+    'an <image> inside it': svg(`<image href='https://x.test/a.png'/>`),
+    'an href out of the file': svg(`<use href='https://x.test/a.svg%23m'/>`),
+    'an href spelled in percent-escapes': svg(`<use %68ref='https://x.test/a.svg'/>`),
+    'a url() out of the file inside it': svg(`<path fill='url(https://x.test/a.svg)' d='M0 0'/>`),
+    'a <script>': svg(`<script>fetch('//x.test')</script>`),
+    'an event attribute': svg(`<path onload='x()' d='M0 0'/>`),
+    'a <style> with an @import': svg(`<style>@import '//x.test/a.css';</style>`),
+    'a backslash inside the URI, which CSS decodes': svg(`<use \\68ref='https://x.test/a.svg'/>`),
+    'a base64 SVG, which this cannot read': `url("data:image/svg+xml;base64,PHN2Zy8+")`,
+    'a raster data: image': `url("data:image/png,abc")`,
+    'an unquoted data: URI': `url(data:image/svg+xml,<svg/>)`,
+    'a percent-escape that does not decode': svg(`<path d='M0 0%'/>`),
+    'a quoted outside url()': `url("https://x.test/a.png")`,
+    'an outside url() in a later layer than a clean SVG': `${ok}, url(x.png)`,
+  };
+  for (const [what, v] of Object.entries(poisons)) check(`${what} fires`, one(v).length >= 1, JSON.stringify(one(v)));
+}
+
 /* ---- clean ---- */
 check('a theme in the contract\'s shape is clean', fires(GOOD).length === 0, JSON.stringify(fires(GOOD)));
 check('an empty theme is clean', fires('/* nothing yet */').length === 0);

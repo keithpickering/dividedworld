@@ -26,9 +26,17 @@
  * engine does not name; the engine ignores it.
  *
  * No token's value may name `url(`, `image-set(`, `src(`, `image(`, `cross-fade(` or `element(`: an image a theme fetches
- * can watch who reads a page, so a theme draws with gradients and colors, and any art is the instance's own file (the
- * screens design, section 12). Spelling cannot be matched closed, since CSS decodes `\75rl(` and `u\72l(` into `url(`, so
- * a backslash in a value outside a quoted string is refused outright; a quoted string is let through, as it names no function.
+ * can watch who reads a page, so a theme draws with gradients, colors and SVG written into the theme itself, and any other
+ * art is the instance's own file (the screens design, section 12). Spelling cannot be matched closed, since CSS decodes
+ * `\75rl(` and `u\72l(` into `url(`, so a backslash in a value outside a quoted string is refused outright; a quoted
+ * string is let through, as it names no function.
+ *
+ * The one `url(` let through is an SVG written into the value: `url("data:image/svg+xml,<svg ...>")`, quoted, plain
+ * (never base64, which this cannot read), with no backslash in it (CSS decodes an escape inside a string too). It fetches
+ * nothing, so it watches nobody; its text is percent-decoded and held to what a card's art is held to
+ * (tools/check-card-art.mjs, rule 6 and the hostile cases): nothing in it runs, and every reference stays inside it, as a
+ * second wall behind the browser, which loads nothing from an SVG drawn as a background. engine/ui/contrast.ts reads its
+ * colors, so the text over it is held as it is over a gradient.
  *
  * Also read: each instance's `ui/index.ts`. Every `href` in its `themes` list must be an identifier
  * imported from a `*.css?url` file that sits in that instance's own ui/ folder (or its ui/themes/) and is in the tree, so
@@ -47,6 +55,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { safetyFaults } from './check-card-art.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -62,6 +71,19 @@ const FETCHES = /(?<![a-z0-9_])(?:url|image-set|-webkit-image-set|src|image|cros
 /* Browsers decode a backslash escape in a function name (`\75rl(` is `url(`), so no pattern on the spelling can be closed:
    a backslash anywhere in a value outside a quoted string is refused instead, and no token a theme needs has one. */
 const ESCAPE = /\\/;
+/* An SVG written into a value: a quoted, plain data: URI. The quote it opens with closes it, since no backslash may escape one. */
+const INLINE_SVG = /url\(\s*(["'])data:image\/svg\+xml,(.*?)\1\s*\)/gis;
+/** Faults of each inline SVG in a token's value, and the value with them taken out, for the reading that follows. */
+function inlineSvgFaults(name, value) {
+  const faults = [];
+  for (const m of value.matchAll(INLINE_SVG)) {
+    if (m[2].includes('\\')) { faults.push(`${name}: its inline SVG holds a backslash; CSS decodes an escape inside a string, so one can hide what the SVG says`); continue; }
+    let svg;
+    try { svg = decodeURIComponent(m[2]); } catch { faults.push(`${name}: its inline SVG has a percent-escape that does not decode, so it cannot be read`); continue; }
+    faults.push(...safetyFaults(`${name}: its inline SVG`, svg));
+  }
+  return { faults, rest: value.replace(INLINE_SVG, '""') };
+}
 const withoutStrings = (v) => v.replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, '""');
 const SIZE_TOKEN = /^--kb-(size-[a-z0-9-]+|line|board-max)$/;
 
@@ -133,12 +155,15 @@ function declarationFaults(body, at, lineOf, file, out) {
     const colon = decl.indexOf(':');
     const name = colon === -1 ? decl.trim() : decl.slice(0, colon).trim();
     const value = colon === -1 ? '' : decl.slice(colon + 1).replace(/!\s*important\s*$/i, '').trim();
+    const svg = inlineSvgFaults(name, value);
     if (!/^--kb-[a-z0-9-]+$/.test(name)) {
       out.push({ file, line, why: `"${name.slice(0, 40)}" is not a --kb-* custom property; a theme sets tokens and nothing else` });
     } else if (ESCAPE.test(withoutStrings(value))) {
       out.push({ file, line, why: `${name}: has a backslash outside a quoted string; an escape can spell url() and fetch an image, so a theme value has none` });
-    } else if (FETCHES.test(value)) {
-      out.push({ file, line, why: `${name}: names url(), and a theme's art must be the instance's own file, never a fetch; an outside image can watch who reads a page` });
+    } else if (FETCHES.test(svg.rest)) {
+      out.push({ file, line, why: `${name}: names url(), and a theme's art must be an SVG written into it (url("data:image/svg+xml,...")) or the instance's own file, never a fetch; an outside image can watch who reads a page` });
+    } else if (svg.faults.length) {
+      for (const why of svg.faults) out.push({ file, line, why });
     } else if (SIZE_TOKEN.test(name)) {
       const m = value.match(/^(\d*\.?\d+)([a-z%]*)$/i);
       if (!m) out.push({ file, line, why: `${name}: ${value} is not a plain positive number with an optional unit, so it cannot be shown to size text above zero` });

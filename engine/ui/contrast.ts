@@ -181,9 +181,38 @@ function substitute(tokens: Tokens, value: string, seen: readonly string[]): str
   }
 }
 
-/* A layer is a gradient, then optionally where it sits and how big one tile of it is (`0 0 / 40px 40px`), as the
+/* What may follow a layer: where it sits and how big one tile of it is (`0 0 / 40px 40px`), and how it repeats, as the
    background shorthand takes them; the tail holds no color, so only its shape is checked. */
-const GRADIENT = /^(?:repeating-)?(?:linear|radial|conic)-gradient\((.*)\)((?:\s*\/\s*|\s+(?:[-+]?\d*\.?\d+(?:%|px|em|rem)?|left|right|top|bottom|center|auto|cover|contain|repeat|no-repeat|repeat-x|repeat-y|space|round))*)$/isu;
+const TAIL = '((?:\\s*\\/\\s*|\\s+(?:[-+]?\\d*\\.?\\d+(?:%|px|em|rem)?|left|right|top|bottom|center|auto|cover|contain|repeat|no-repeat|repeat-x|repeat-y|space|round))*)';
+const GRADIENT = new RegExp(`^(?:repeating-)?(?:linear|radial|conic)-gradient\\((.*)\\)${TAIL}$`, 'isu');
+/* An SVG written into the theme, the one url( tools/check-theme.mjs lets through: quoted, plain, percent-encoded. */
+const INLINE_SVG = new RegExp(`^url\\(\\s*(["'])data:image/svg\\+xml,(.*)\\1\\s*\\)${TAIL}$`, 'isu');
+const SVG_PAINT = /(?<![\w-])(fill|stroke|stop-color|flood-color|lighting-color|color)\s*=\s*(["'])(.*?)\2/giu;
+
+/**
+ * Every color an inline SVG paints. It is read strictly, so what it says is what is drawn: its root sets `fill` (a shape
+ * with none of its own would paint black unread), every paint is `none`, a reference inside the file (`url(#g)`, whose
+ * stops are read where they stand, and each stop names its color) or a color parseColor reads, and nothing blends (no opacity) or styles (no `style`).
+ */
+function svgStops(encoded: string): string[] {
+  const svg = decodeURIComponent(encoded);
+  if (/<style|(?<![\w-])style\s*=/iu.test(svg)) throw new Error('an inline SVG with a style this check does not read; write each paint as an attribute');
+  if (/(?<![\w-])(?:fill-|stroke-|stop-)?opacity\s*=/iu.test(svg)) throw new Error('an inline SVG with an opacity, which blends with what is under it');
+  const root = /<svg\b(?:"[^"]*"|'[^']*'|[^>"'])*>/iu.exec(svg);
+  if (!root || !/(?<![\w-])fill\s*=/iu.test(root[0])) throw new Error("an inline SVG whose root sets no fill, so a shape with none of its own paints black unread");
+  for (const stop of svg.matchAll(/<stop\b(?:"[^"]*"|'[^']*'|[^>"'])*>/giu)) {
+    if (!/(?<![\w-])stop-color\s*=/iu.test(stop[0])) throw new Error('an inline SVG gradient stop with no stop-color, which paints black unread');
+  }
+  const stops: string[] = [];
+  for (const m of svg.matchAll(SVG_PAINT)) {
+    const v = m[3]!.trim();
+    if (v.toLowerCase() === 'none' || /^url\(\s*#/iu.test(v)) continue;
+    parseColor(v);
+    stops.push(v);
+  }
+  if (!stops.length) throw new Error('an inline SVG that paints no color');
+  return stops;
+}
 /** What a gradient's argument may be when it holds no color: a direction, a shape or position, an interpolation, a hint. */
 const WORD = '(?:to|in|from|at|circle|ellipse|closest-side|closest-corner|farthest-side|farthest-corner|left|right|top|bottom|center'
   + '|srgb|srgb-linear|lab|oklab|lch|oklch|hsl|hwb|xyz|xyz-d50|xyz-d65|shorter|longer|increasing|decreasing|hue)';
@@ -193,8 +222,8 @@ const NO_COLOR = new RegExp(`^(?:${WORD}|${NUM})(?:\\s+(?:${WORD}|${NUM}))*$`, '
 const COLOR = /^(#[0-9a-f]{3,6}|rgba?\([^)]*\)|transparent)(?:\s+[-+]?\d*\.?\d+(?:%|px|em|rem|deg|turn)?){0,2}$/iu;
 
 /**
- * Every color a background value paints, stop by stop: a plain color, a gradient (linear, radial, conic, repeating),
- * which may be followed by its position, tile size and repeat, or layers of them separated by commas; a `transparent` stop is skipped, and is refused in the last layer, which has nothing
+ * Every color a background value paints, stop by stop: a plain color, a gradient (linear, radial, conic, repeating) or an
+ * inline SVG (svgStops), either followed by its position, tile size and repeat, or layers of them separated by commas; a `transparent` stop is skipped, and is refused in the last layer, which has nothing
  * under it to read. A value that holds anything else (a url(), a named color, a color with alpha, a
  * gradient it cannot take apart) throws, so the check fails on it rather than passing over it.
  */
@@ -203,6 +232,13 @@ export function backgroundStops(value: string): string[] {
   const layers = splitTop(value);
   layers.forEach((layer, i) => {
     if (layer === '') throw new Error(`an empty layer in ${value}`);
+    const svg = INLINE_SVG.exec(layer);
+    if (svg) {
+      stops.push(...svgStops(svg[2]!));
+      /* Between its shapes the layers under it show, and under the last there is only the page, which is not known here. */
+      if (i === layers.length - 1) throw new Error(`the last layer is an SVG, which lets the page show through between its shapes: ${layer.slice(0, 80)}`);
+      return;
+    }
     const g = GRADIENT.exec(layer);
     if (!g) { parseColor(layer); stops.push(layer); return; }
     const before = stops.length;
