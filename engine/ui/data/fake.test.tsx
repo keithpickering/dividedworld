@@ -4239,7 +4239,10 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
     const rfrare = { ...rfsweet, key: 'rfrare', name: 'Rf Rare', rarity: 'rare' as const, canApply: () => ok(undefined) };
     const rfsalty = { ...rfsweet, key: 'rfsalty', name: 'Rf Salty', alignment: 'salty' as const, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'rfsalty', stack: 6 }, t, e, now) };
     const rfcatch = { ...rfBase, key: 'rfcatch', name: 'Rf Catch', alignment: 'salty' as const, rarity: 'common' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'rfsalty', canApply: () => ok(undefined) };
-    const rfCards = [rfgift, rfsign, rfsweet, rfrare, rfsalty, rfcatch] as unknown as CardRules[];
+    /* A newer sign that refunds sweet casts alone, and a back that rides a common salty cast. */
+    const rfsign2 = { ...rfsign, key: 'rfsign2', name: 'Rf Sign Two', refunds: { flavors: ['sweet' as const], count: 3 }, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'rfsign2', reaches: ['post'], stack: 1 }, t, e, now) };
+    const rfride = { ...rfBase, key: 'rfride', name: 'Rf Ride', alignment: 'salty' as const, rarity: 'common' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const], upTo: 'common' as const }, outcome: { kind: 'ride' as const, share: 1 } }, canApply: () => ok(undefined) };
+    const rfCards = [rfgift, rfsign, rfsign2, rfride, rfsweet, rfrare, rfsalty, rfcatch] as unknown as CardRules[];
     const rfWorld: Instance = { ...instance, cards: rfCards, machine: [], settings: { ...settings, economy: {} } };
     function rf() {
       const fake = createFake({ instance: rfWorld });
@@ -4250,7 +4253,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       const boFace = fake.seed.character(bo, 'Bo Face', 'face');
       const posts = [1, 2, 3, 4].map((i) => fake.seed.thread('general', anaFace, `T${i}`, `Post ${i}`).act);
       fake.seed.wallet(ana, 900); fake.seed.wallet(bo, 900);
-      fake.seed.cards(ana, { rfgift: 4, rfsign: 4, rfcatch: 2, rfsalty: 4 });
+      fake.seed.cards(ana, { rfgift: 4, rfsign: 4, rfcatch: 2, rfsalty: 4, rfsign2: 2, rfride: 2 });
       fake.seed.cards(bo, { rfsweet: 6, rfrare: 2, rfsalty: 12 });
       fake.signInAs(ana);
       return { fake, ana, bo, anaFace, anaHeel, boFace, posts };
@@ -4305,6 +4308,28 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       const cast = must(await fake.playCard('rfsalty', anaHeel, post, {}, ''));
       expect(cast.payload).toMatchObject({ handedBack: { by: sign.id, card: 'rfsign' } });
       expect(await held(fake, 'rfsalty')).toBe(before);
+    });
+
+    test('the sign is the latest one that qualifies: an older salty sign hands a salty cast back when the newer sign is for another flavor', async () => {
+      const { fake, bo, anaFace, boFace, posts } = rf();
+      const post = posts[3]!;
+      const older = must(await fake.useCard('rfsign', anaFace, post, {}, ''));
+      fake.clock.advance(1000);
+      must(await fake.useCard('rfsign2', anaFace, post, {}, ''));
+      fake.signInAs(bo);
+      const cast = must(await fake.playCard('rfsalty', boFace, post, {}, ''));
+      expect(cast.payload).toMatchObject({ handedBack: { by: older.id, card: 'rfsign' } });
+    });
+
+    test('a ride back and a refunds sign on one post: the landed cast rides and is handed back by the sign', async () => {
+      const { fake, bo, anaFace, boFace, posts } = rf();
+      const post = posts[2]!;
+      const sign = must(await fake.useCard('rfsign', anaFace, post, {}, ''));
+      const back = must(await fake.setCard('rfride', anaFace, post, { quadrant: 'calmPositive' }));
+      fake.signInAs(bo);
+      const cast = must(await fake.playCard('rfsalty', boFace, post, {}, ''));
+      expect(cast.payload).toMatchObject({ rode: back.id, handedBack: { by: sign.id, card: 'rfsign' } });
+      expect((await fake.cardsOn(post, 8)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ did: 'rode', set: back.id, by: cast.id });
     });
 
     test('a back that catches the cast takes it: nothing is handed back and no kick is used', async () => {

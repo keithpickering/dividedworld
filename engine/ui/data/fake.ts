@@ -2120,6 +2120,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const match = trapRules?.trap?.match;
     const matched = match !== undefined && (match.flavors === undefined || match.flavors.includes(rules.alignment)) && (match.upTo === undefined || atOrBelow(rules.rarity, match.upTo)) && atOrBelow(rules.rarity, trapRules!.rarity);
     /* A staff cast has no hand to hand a card back to, so a refund back passes over it and stays set; the caster's staff flag is public (spring_traps). */
+    /* The fake's acting() refuses a character with no owner, so a staff cast never reaches here; the guard mirrors place_cast. */
     const staffCaster = c.staff !== undefined;
     const outcome = trapRules?.trap?.outcome?.kind;
     const catches = trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined && !(outcome === 'refund' && staffCaster);
@@ -2148,12 +2149,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (lands && !staffCaster) {
       if (returns) handed = { by: trap!.set, card: trap!.card };
       else {
-        const signs = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && onPost(a) && !over(a.id) && a.payload.caught === undefined
-          && instance.cards.find((k) => k.key === a.payload.card)?.refunds !== undefined && typeof a.payload.ends === 'string' && Date.parse(a.payload.ends) > at);
+        /* The latest live refunds play that qualifies: its flavor holds the cast's and its kicks are not used up, so an older one is not skipped for a newer that cannot serve. */
+        const signs = [...acts.values()].filter((a) => {
+          const r = a.kind === 'card' && a.target === target && onPost(a) && !over(a.id) && a.payload.caught === undefined && typeof a.payload.ends === 'string' && Date.parse(a.payload.ends) > at
+            ? instance.cards.find((k) => k.key === a.payload.card)?.refunds : undefined;
+          return r !== undefined && r.flavors.includes(rules.alignment)
+            && [...acts.values()].filter((x) => x.kind === 'card' && x.target === target && (x.payload.handedBack as { by?: unknown } | undefined)?.by === a.id).length < r.count;
+        });
         const sign = signs[signs.length - 1];
-        const refunds = sign ? instance.cards.find((k) => k.key === sign.payload.card)!.refunds! : undefined;
-        if (sign && refunds && refunds.flavors.includes(rules.alignment)
-          && [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && (a.payload.handedBack as { by?: unknown } | undefined)?.by === sign.id).length < refunds.count) handed = { by: sign.id, card: String(sign.payload.card) };
+        if (sign) handed = { by: sign.id, card: String(sign.payload.card) };
       }
     }
     const drive = !lands ? undefined : driveOf(rules, target, playId);
