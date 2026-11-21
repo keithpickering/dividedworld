@@ -66,6 +66,11 @@ describe('a cast that was handed back (the refund outcome)', () => {
     const none = [sign, quiet];
     expect(withHandedOut(none)).toBe(none);
   });
+  test('withHandedOut leaves every play without the key where a cast names a play not on the post', () => {
+    const quiet = playOf(card({ payload: { card: 'whoops' } }))!;
+    const orphan = playOf(card({ payload: { card: 'whoops', handedBack: { by: 'gone', card: 'sign' } } }))!;
+    for (const p of withHandedOut([quiet, orphan])) expect(p).not.toHaveProperty('handedOut');
+  });
 });
 
 describe('the store', () => {

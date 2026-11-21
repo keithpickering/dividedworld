@@ -218,7 +218,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    * those that fall on this post (`playsFallingOn`): up now, or of a card that keeps and written while the post was up, so a week-long play still lights a post written inside it.
    */
   const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
-  /* The post's plays with the sign's count (`withHandedOut`), so a refunded cast arriving live redraws the sign. */
+  /* The post's plays with the sign's count (`withHandedOut`), so a refunded cast arriving live redraws the sign. Only the post layer handed to Effects reads it; the moment, tails and drives reads below use `here.plays`, which carry no count. */
   const counted = useMemo(() => withHandedOut(here.plays), [here.plays]);
   const layers = [
     ...above.map((l) => ({ reach: l.reach as Reach, acting: l.reach === 'thread' || l.reach === 'character' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now), of: l.of })),
