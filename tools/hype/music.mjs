@@ -66,14 +66,14 @@ export function beats(map, name) {
 }
 
 /**
- * The `lines` longest gaps between the coda's chords, in the order they come: a line is spoken into a gap, and the longer the gap the
- * more of the line survives the next chord. Each is `{ start, end, length, confident }`. Refuses when the coda has fewer gaps than lines.
- * @param {Version} version @param {number} lines
+ * The coda's strikes that matter to the ending (the revision design, section 9): the first chord, the TITLE's strike (the second-to-last chord,
+ * where "DIVIDED WROLD" is shown) and the FINAL strike (the last chord, where the parenthetical is shown), and where the final chord ends. All
+ * in seconds of the version. Refuses a coda with fewer than three chords: the title needs two strikes of its own after a first.
+ * @param {Version} version
+ * @returns {{ first: number, title: number, final: number, end: number }}
  */
-export function codaGaps(version, lines) {
+export function titleStrikes(version) {
   const chords = version.coda.chords;
-  const all = chords.slice(1).map((c, i) => ({ start: chords[i].t, end: c.t, length: c.t - chords[i].t, confident: chords[i].confident !== false && c.confident !== false }));
-  if (all.length < lines) throw new Error(`n11 has ${lines} lines but the coda has only ${all.length} gaps between its chords`);
-  const keep = new Set([...all].sort((x, y) => y.length - x.length).slice(0, lines));
-  return all.filter((g) => keep.has(g));
+  if (chords.length < 3) throw new Error(`the coda has ${chords.length} chords: the title takes the last two strikes and the narration needs a first chord before them (3 chords at least)`);
+  return { first: chords[0].t, title: chords[chords.length - 2].t, final: chords[chords.length - 1].t, end: version.coda.end.t };
 }

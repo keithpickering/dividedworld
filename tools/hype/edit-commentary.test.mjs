@@ -3,7 +3,7 @@
  * (docs/plans/2026-11-21-commentary-video-plan.md, tasks 8 and 8a). Nothing here runs ffmpeg.
  *
  * The made-up map is made-up.mjs's: block 1 runs 10 to 70, block 2 70 to 100, block 3 100 to 130, the coda's chords sit at 130, 132,
- * 140, 141 and 150, and the last chord ends at 155. The music's first note is at 10, so it is 0 on the film where node 5 begins.
+ * 140, 141 and 150, and the last chord ends at 155. The title's strike is the one before the last: 141 (101 in mk-b), the final strike 150 (110). The music's first note is at 10, so it is 0 on the film where node 5 begins.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,7 +17,7 @@ import { cutRect, moveRect, punchScale, refusePush, pushLimit, expressions, corn
 
 const map = madeUp();
 /* Speech to 111.15 s: the ten clips and nine breaths of 0.35 s. With these, the coda's first chord falls at 111.35 and mk-b (first chord at 90) is the longest version that starts 5 s in. */
-const clips = { n01: 8, n02: 6, n03: 5, n04: 7, n05: 20, n06: 20, n07: 10, n08: 8, n09: 14, n10: 10, n11: [1.5, 6, 8] };
+const clips = { n01: 8, n02: 6, n03: 5, n04: 7, n05: 20, n06: 20, n07: 10, n08: 8, n09: 14, n10: 10, n11: [1, 2, 2] };
 /** The clips with node 5 longer (or shorter) by `by` seconds, which moves the coda by as much. */
 const longer = (/** @type {number} */ by) => ({ ...clips, n05: clips.n05 + by });
 const F = 60;
@@ -53,8 +53,8 @@ test('the music is laid from its end: the version`s first coda chord falls 0.2 s
   near(n10.end, n11.start, 'node 10 runs to the coda');
   const v = versionMap(map, t.music.version);
   near(t.music.start, 111.35 - v.coda.chords[0].t, 'the start is the coda less the first chord');
-  near(t.music.until, v.coda.end.t, 'the music plays to the final chord`s end');
-  near(t.music.untilFilm, t.music.start + v.coda.end.t);
+  near(t.music.until, v.coda.end.t + 1.2, 'the music plays on to the film`s end, 1.2 s past the final chord`s end');
+  near(t.music.untilFilm, t.music.start + v.coda.end.t + 1.2);
 });
 
 test('the version is the longest of full, mk-a and mk-b whose music starts at least 5 s into the film', () => {
@@ -101,14 +101,19 @@ test('where the second block and the full orchestra fall in the speech: the node
   near(t.music.third?.into, 81.35 - 78.45, 'into n08');
 });
 
-test('the black and the end card follow the last chord: 5 s of black, then 10 s of card', () => {
-  const t = timeline(clips, map);
-  near(t.out.blackStart, t.music.start + versionMap(map, 'mk-b').coda.end.t, 'black');
-  near(t.out.cardStart, t.out.blackStart + 5, 'card');
-  near(t.out.end, t.out.cardStart + 10, 'end');
+test('the title: its strike is the coda`s second-to-last chord, the final strike the last, and the film ends 1.2 s after the final chord`s end', () => {
+  const t = timeline(clips, map), s = t.music.start, v = versionMap(map, 'mk-b');
+  near(t.out.titleStart, s + 101, 'the title`s strike');
+  near(t.out.finalStart, s + 110, 'the final strike');
+  near(t.out.end, s + v.coda.end.t + 1.2, 'the film ends a tail after the final chord`s end');
+  near(t.out.fadeStart, t.out.end - 0.8, 'the picture fades over the last 0.8 s');
   near(t.total, t.out.end);
-  near(t.music.untilFilm, t.out.blackStart, 'the music stops where the black begins');
-  near(t.nodes.at(-1).start + t.nodes.at(-1).length, t.out.blackStart, 'node 11 runs to the final chord');
+  near(t.nodes.at(-1).start + t.nodes.at(-1).length, t.out.titleStart, 'node 11 runs to the title`s strike');
+  near(t.music.untilFilm, t.out.end, 'the music plays to the end, its decay as recorded');
+  assert.equal(t.out.blackStart, undefined, 'no held black');
+  assert.equal(t.out.cardStart, undefined, 'no end card');
+  assert.deepEqual(t.part.out, [t.out.titleStart, t.out.end]);
+  assert.equal(t.part.three[1], t.out.titleStart);
 });
 
 test('the cuts of a node cover it frame for frame, and every node starts on the frame where the last ended', () => {
@@ -124,22 +129,21 @@ test('the cuts of a node cover it frame for frame, and every node starts on the 
   assert.equal(framesBetween(0, 1.0083), 60);
 });
 
-test('a node 11 line longer than its gap is kept, cut off by the chord, and says by how much', () => {
-  const t = timeline({ ...clips, n11: [1.5, 6, 10] }, map);
-  const n11 = t.nodes.find((n) => n.id === 'n11');
-  near(n11.voice[2].length, 9, 'line 3 plays only its gap');
-  near(n11.voice[2].cut, 1, 'and the chord takes a second');
-  assert.equal(t.slack.n11[2].cut, 1);
+test('node 11`s lines are laid from the coda`s first chord to the title`s strike, in order, each at full length, with equal gaps', () => {
+  for (const lengths of [[1, 2, 2], [1, 1.5, 2, 0.5]]) {
+    const t = timeline({ ...clips, n11: lengths }, map), n11 = t.nodes.find((n) => n.id === 'n11'), s = t.music.start;
+    assert.equal(n11.voice.length, lengths.length, 'one voice a line, however many lines');
+    const gap = (11 - lengths.reduce((a, b) => a + b, 0)) / (lengths.length + 1);
+    let at = s + 90 + gap;
+    n11.voice.forEach((v, i) => { near(v.start, at, `line ${i + 1} starts`); near(v.length, lengths[i], `line ${i + 1} plays in full`); assert.ok(!v.cut, 'nothing is cut off'); at += lengths[i] + gap; });
+    near(at, s + 101, 'the last gap runs to the title`s strike');
+    assert.ok(n11.voice.at(-1).start + n11.voice.at(-1).length < t.out.titleStart, 'the last line ends before the title`s strike');
+  }
 });
 
-test('node 11`s lines sit in the coda`s three longest gaps, as spoken into the gap that begins at a chord', () => {
-  const t = timeline(clips, map);
-  const n11 = t.nodes.find((n) => n.id === 'n11'), s = t.music.start;
-  assert.equal(n11.voice.length, 3);
-  near(n11.voice[0].start, s + 90, 'line 1: the gap from the first chord');
-  near(n11.voice[1].start, s + 92, 'line 2: the gap from the second chord');
-  near(n11.voice[2].start, s + 101, 'line 3: the gap from the fourth');
-  assert.throws(() => timeline({ ...clips, n11: [1, 1, 1, 1, 1] }, map), /5 lines.*4 gaps/);
+test('node 11`s lines that do not fit between the first chord and the title`s strike are refused, naming the overrun', () => {
+  assert.throws(() => timeline({ ...clips, n11: [4, 4, 4] }, map), /n11.*1(\.00)? s too long|overrun.*1(\.00)? s|1(\.00)? s.*(over|too long)/);
+  assert.doesNotThrow(() => timeline({ ...clips, n11: [4, 4, 3] }, map));
 });
 
 test('a clip missing for a node is refused plainly', () => {
@@ -175,10 +179,10 @@ test('a move declared on a part-two node reaches its cut, and a push past the ta
 test('each chord of the coda is a hard cut with a punch-in', () => {
   const t = timeline(clips, map);
   const n11 = t.nodes.find((n) => n.id === 'n11');
-  assert.equal(n11.cuts.length, 5);
+  assert.equal(n11.cuts.length, 3, 'a cut to each chord up to the title`s strike, and none on the title`s two');
   assert.ok(n11.cuts.every((c) => c.punch === 10));
   near(n11.cuts[1].at, 2);
-  near(n11.cuts.at(-1).at + n11.cuts.at(-1).length, 25);
+  near(n11.cuts.at(-1).at + n11.cuts.at(-1).length, 11, 'the last cut ends at the title`s strike');
 });
 
 test('a landing in part three is a punch at its frame, and its sound is placed at that frame of its node', () => {
@@ -193,7 +197,7 @@ test('a landing in part three is a punch at its frame, and its sound is placed a
 
 const commentary = [
   { id: 'n06', part: 2, lines: ['A card can be set to go off when somebody says a particular phrase.', 'This trains players to choose their words carefully,', 'which, on a forum, we think is new.'] },
-  { id: 'n11', part: 3, lines: ['Please let me know—', '—what you think—', '—after you have had a chance—'] },
+  { id: 'n11', part: 3, lines: ['Please let me know—', '—what you think—', '—after you have had a chance—', '—to figure this out!'] },
 ];
 
 test('captions: a node of three lines, each shown for its share of the clip by its characters', () => {
@@ -211,13 +215,13 @@ test('captions: a node of three lines, each shown for its share of the clip by i
   assert.deepEqual(cues.map((c) => c.text), commentary[0].lines);
 });
 
-test('captions: each line of node 11 is shown in its own gap, for as long as it plays', () => {
-  const t = timeline({ ...clips, n11: [1.5, 6, 10] }, map);
+test('captions: each line of node 11 is shown at its own time, for as long as it plays, and nothing is captioned during the title', () => {
+  const t = timeline({ ...clips, n11: [1, 1.5, 2, 0.5] }, map);
   const cues = captions(commentary, t).filter((c) => c.node === 'n11');
-  assert.equal(cues.length, 3);
-  near(cues[0].end - cues[0].start, 1.5);
-  near(cues[2].end - cues[2].start, 9, 'cut off by the chord');
-  near(cues[1].start, t.music.start + 92, 'the gap that begins at the second chord');
+  assert.equal(cues.length, 4);
+  const n11 = t.nodes.find((n) => n.id === 'n11');
+  cues.forEach((c, i) => { near(c.start, n11.voice[i].start, `cue ${i + 1}`); near(c.end - c.start, [1, 1.5, 2, 0.5][i]); });
+  assert.ok(captions(commentary, t).every((c) => c.end <= t.out.titleStart + 1e-9), 'no caption in the title');
 });
 
 test('captions: a node with no commentary text has no cue, and the srt is numbered and timed in milliseconds', () => {
@@ -325,12 +329,10 @@ test('the corners handed to the perspective filter are the rectangle, turned by 
 
 /* ---- the end card's words, and the music's ducking ---- */
 
-test('the end card wraps its words without losing or changing one', async () => {
-  const { END_CARD } = await import(pathToFileURL(path.resolve('instances/divided-world/ui/hype/commentary.ts')).href);
-  const lines = wrap(END_CARD, 22);
-  assert.equal(lines.join(' '), END_CARD);
-  assert.ok(lines.every((l) => l.length <= 22), lines.join(' | '));
-  assert.ok(lines.length >= 3);
+test('the title`s words are TITLE and TITLE_NOTE when the instance has them, else the deprecated END_CARD split at its first parenthesis', () => {
+  assert.deepEqual(ec.titleWords({ TITLE: 'DIVIDED WROLD', TITLE_NOTE: '(nonsense)', END_CARD: 'old (card)' }), { title: 'DIVIDED WROLD', note: '(nonsense)' });
+  assert.deepEqual(ec.titleWords({ END_CARD: 'DIVIDED WROLD (misspelled) (put it in)' }), { title: 'DIVIDED WROLD', note: '(misspelled) (put it in)' });
+  assert.throws(() => ec.titleWords({}), /TITLE/);
 });
 
 test('the music is 10 dB down under a clip, 150 ms to go down and 400 ms to come back, and never ducked in the coda', () => {
@@ -378,7 +380,7 @@ test('the top band never reaches the HUD at the foot, and the captions flag is r
 
 const nodes = [...['n01', 'n02', 'n03', 'n04', 'n05', 'n06', 'n07', 'n08', 'n09', 'n10'].map((id) => ({ id, lines: ['a line.'] })), { id: 'n11', lines: ['one', 'two', 'three'] }];
 const fullVoice = [...nodes.slice(0, 10).map((n) => `${n.id}.mp3`), 'n11-1.mp3', 'n11-2.mp3', 'n11-3.mp3'];
-const fullTakes = [...nodes.slice(0, 8).map((n) => `c-${n.id}.mp4`), 'c-n09-wide.mp4', 'c-n09-tight.mp4', 'c-n09-turned.mp4', 'c-n10.mp4', 'c-n11.mp4', 'c-end.mp4'];
+const fullTakes = [...nodes.slice(0, 8).map((n) => `c-${n.id}.mp4`), 'c-n09-wide.mp4', 'c-n09-tight.mp4', 'c-n09-turned.mp4', 'c-n10.mp4', 'c-n11.mp4', 'c-title-1.mp4', 'c-title-2.mp4'];
 const resolve = (over = {}) => ec.resolveInputs({ commentary: nodes, voiceFiles: fullVoice, takeFiles: fullTakes, haveMusic: true, ...over });
 
 test('a full voice folder, every take and the music resolve with no stand-in, no note and no stamp', () => {
@@ -390,7 +392,7 @@ test('a full voice folder, every take and the music resolve with no stand-in, no
   assert.deepEqual(r.voice.n11, ['n11-1.mp3', 'n11-2.mp3', 'n11-3.mp3']);
   assert.equal(r.voice.n05, 'n05.mp3');
   assert.deepEqual(ec.stampsFor(r, { take: 'c-n05' }, fullTakes), { slate: false, stamps: [] });
-  assert.deepEqual(ec.stampsFor(r, { card: true }, fullTakes), { slate: false, stamps: [] });
+  assert.deepEqual(ec.stampsFor(r, { take: 'c-title-1' }, fullTakes), { slate: false, stamps: [] });
 });
 
 test('one clip missing from an otherwise full voice folder is refused, naming the clip', () => {
@@ -403,7 +405,7 @@ test('no voice folder is PLACEHOLDER SOUND on every frame, and so is music that 
     const r = resolve(over);
     assert.equal(r.placeholderSound, true, what);
     assert.ok(r.notes.some((n) => /PLACEHOLDER SOUND/.test(n)), what);
-    for (const piece of [{ take: 'c-n05' }, { black: true }, { card: true }]) assert.ok(ec.stampsFor(r, piece, fullTakes).stamps.includes('PLACEHOLDER SOUND'), `${what}: ${JSON.stringify(piece)}`);
+    for (const piece of [{ take: 'c-n05' }, { take: 'c-title-2' }]) assert.ok(ec.stampsFor(r, piece, fullTakes).stamps.includes('PLACEHOLDER SOUND'), `${what}: ${JSON.stringify(piece)}`);
   }
   assert.deepEqual(resolve({ voiceFiles: null }).voice.n11, [null, null, null], 'a clip with no folder is silence, not a file');
 });
@@ -429,13 +431,15 @@ test('node 9 with only some of its three framings is reported naming the missing
   assert.equal(none.framings.n09, undefined);
 });
 
-test('a missing c-end is reported and stamped PLACEHOLDER PICTURE on the end card', () => {
-  const takes = fullTakes.filter((f) => f !== 'c-end.mp4');
+test('a missing c-title-1 or c-title-2 is a slate like any take: reported, and stamped PLACEHOLDER PICTURE', () => {
+  const takes = fullTakes.filter((f) => f !== 'c-title-2.mp4');
   const r = resolve({ takeFiles: takes });
-  assert.equal(r.endCard, 'stand-in');
-  assert.ok(r.notes.some((n) => /c-end is missing/.test(n)));
-  assert.deepEqual(ec.stampsFor(r, { card: true }, takes).stamps, ['PLACEHOLDER PICTURE']);
-  assert.deepEqual(ec.stampsFor(r, { black: true }, takes).stamps, [], 'the black is not a stand-in');
+  assert.deepEqual(r.slates, []);
+  assert.deepEqual(r.titleSlates, ['c-title-2']);
+  assert.ok(r.notes.some((n) => /c-title-2 has no take/.test(n)), r.notes.join('|'));
+  assert.deepEqual(ec.stampsFor(r, { take: 'c-title-2' }, takes).stamps, ['PLACEHOLDER PICTURE']);
+  assert.deepEqual(ec.stampsFor(r, { take: 'c-title-1' }, takes).stamps, []);
+  assert.equal('endCard' in r, false, 'there is no end card');
 });
 
 /* ---- the recording, the map's anchors, the sheet ---- */

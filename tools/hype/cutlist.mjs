@@ -1,7 +1,7 @@
 /**
  * The cut list's reader (docs/plans/2026-11-21-commentary-video-revision-design.md, section 2; the plan's Task R3). Pure: it is given the
  * list, the timeline, the captions and what is known of each take, and returns the shots of the film's pictures from its first frame to
- * the coda, or refuses naming the row. The edit (edit-commentary.mjs) cuts the film from the shots; the coda is cut on its chords by the
+ * the coda, or refuses naming the row. The edit (edit-commentary.mjs) cuts the film from the shots; the coda is cut on its chords (up to the title's strike) by the
  * edit itself, as it was.
  *
  * THE LIST (`instances/divided-world/ui/hype/cutlist.json`) is `{ "rows": [...] }`. A row is a shot, and runs to the next row's start (the
@@ -143,14 +143,14 @@ export function resolveList(list, { tl, cues, takes }) {
 }
 
 /**
- * The coda's shots, directed. The edit cuts node 11 on the music's chords; `list.coda` (an array, one entry a cut, in order, `null` or absent for
+ * The coda's shots, directed. The edit cuts node 11 on the music's chords, up to the title's strike (the last two strikes are the title's, `c-title-1` and `c-title-2`, and a list entry for them is refused); `list.coda` (an array, one entry a cut, in order, `null` or absent for
  * the take's own: node 11's) names a take and where in it for the cut: `{ "take": "b-scrub-3", "from": 2.4, "move": ..., "punch": ... }`. The
  * chord's own punch stays unless the entry gives one. Refused: more entries than cuts, a take that is not on disk, a shot past its take's end.
  * @param {any[]} cuts the coda's cuts (the timeline's node 11) @param {(any | null)[] | undefined} coda @param {Record<string, TakeInfo>} takes
  */
 export function directCoda(cuts, coda, takes) {
   if (!coda) return cuts;
-  if (coda.length > cuts.length) throw new Error(`the coda has ${cuts.length} cuts, one to a chord, and the list directs ${coda.length}`);
+  if (coda.length > cuts.length) throw new Error(`the coda has ${cuts.length} cuts, one to a chord up to the title's strike, and the list directs ${coda.length}: the last two strikes are the title's, and no coda entry may take them`);
   return cuts.map((cut, k) => {
     const r = coda[k];
     if (!r) return cut;

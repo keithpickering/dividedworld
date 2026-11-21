@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { versionMap, beats, expectedSeconds, codaGaps, VERSIONS } from './music.mjs';
+import { versionMap, beats, expectedSeconds, titleStrikes, VERSIONS } from './music.mjs';
 import { madeUp } from './made-up.mjs';
 
 const map = JSON.parse(readFileSync(new URL('../../instances/divided-world/ui/hype/music-map.json', import.meta.url), 'utf8'));
@@ -86,15 +86,15 @@ test('a recipe that removes from block 2 or 3, or an unknown version, is refused
   assert.throws(() => versionMap(gone, 'mk-a'), /statement 1|first/);
 });
 
-test('the coda`s gaps: the longest three, in the order they come, each with its length; fewer gaps than lines is refused', () => {
+test('the title`s strikes: the coda`s last two chords, and the first chord; a coda of fewer than three chords is refused', () => {
   const v = versionMap(madeUp(), 'full');
-  const gaps = codaGaps(v, 3);
-  assert.deepEqual(gaps.map((g) => [g.start, g.end, g.length]), [[130, 132, 2], [132, 140, 8], [141, 150, 9]]);
-  assert.deepEqual(codaGaps(v, 1).map((g) => g.start), [141], 'the longest alone');
-  assert.deepEqual(codaGaps(versionMap(madeUp(), 'mk-b'), 3).map((g) => g.start), [90, 92, 101], 'a version`s gaps are shifted');
-  assert.throws(() => codaGaps(v, 5), /5 lines.*4 gaps/);
+  assert.deepEqual(titleStrikes(v), { first: 130, title: 141, final: 150, end: 155 });
+  assert.deepEqual(titleStrikes(versionMap(madeUp(), 'mk-b')), { first: 90, title: 101, final: 110, end: 115 }, 'a version`s are shifted');
+  const short = structuredClone(v);
+  short.coda.chords = short.coda.chords.slice(0, 2);
+  assert.throws(() => titleStrikes(short), /3 chords|two strikes/);
 });
 
-test('the committed map`s coda has gaps for the three lines of node 11, in every version', () => {
-  for (const name of VERSIONS) assert.equal(codaGaps(versionMap(map, name), 3).length, 3, name);
+test('the committed map`s coda has the title`s two strikes after its first chord, in every version', () => {
+  for (const name of VERSIONS) { const t = titleStrikes(versionMap(map, name)); assert.ok(t.first < t.title && t.title < t.final && t.final < t.end, name); }
 });

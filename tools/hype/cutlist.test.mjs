@@ -13,10 +13,10 @@ import { madeUp } from './made-up.mjs';
 
 const F = 60;
 const map = madeUp();
-const clips = { n01: 8, n02: 6, n03: 5, n04: 7, n05: 20, n06: 20, n07: 10, n08: 8, n09: 14, n10: 10, n11: [1.5, 6, 8] };
+const clips = { n01: 8, n02: 6, n03: 5, n04: 7, n05: 20, n06: 20, n07: 10, n08: 8, n09: 14, n10: 10, n11: [1, 2, 2] };
 const commentary = [
   { id: 'n06', part: 2, lines: ['A card can be set to go off when somebody says a particular phrase.', 'This trains players to choose their words carefully,', 'which, on a forum, we think is new.'] },
-  { id: 'n11', part: 3, lines: ['Please let me know—', '—what you think—', '—after you have had a chance—'] },
+  { id: 'n11', part: 3, lines: ['Please let me know—', '—what you think—', '—after you have had a chance—', '—to figure this out!'] },
 ];
 const tl = timeline(clips, map);
 const cues = captions(commentary, tl);
@@ -163,7 +163,7 @@ test('the committed list, read against the placeholder voice, falls: part one, t
   const real = JSON.parse(readFileSync(new URL('music-map.json', dir), 'utf8'));
   const { commentary: text } = await import(pathToFileURL(path.resolve('instances/divided-world/ui/hype/commentary.ts')).href);
   /* The placeholder voice's clip lengths (.runs/hype/voice, seconds), so the film this list is cut to is the one the edit makes of it; a new voice is new numbers here. */
-  const voice = { n01: 31.556, n02: 20.767, n03: 16.196, n04: 16.771, n05: 13.166, n06: 8.202, n07: 12.591, n08: 7.967, n09: 18.129, n10: 10.266, n11: [3.161, 1.567, 2.429] };
+  const voice = { n01: 31.556, n02: 20.767, n03: 16.196, n04: 16.771, n05: 13.166, n06: 8.202, n07: 12.591, n08: 7.967, n09: 18.129, n10: 10.266, n11: [2.0, 1.4, 2.2, 2.4] };
   assert.deepEqual(Object.keys(voice), text.map((/** @type {{ id: string }} */ n) => n.id), 'a clip for every node');
   const c = voice;
   const t = timeline(c, real);
@@ -233,7 +233,7 @@ test('the coda`s cuts can be directed: a take and a place in it for a chord, the
   assert.equal(directCoda(cuts, undefined, t), cuts, 'no direction, no change');
   assert.throws(() => directCoda(cuts, [{ take: 'nope', from: 0 }], t), /coda cut 1.*nope/);
   assert.throws(() => directCoda(cuts, [{ take: 's-a', from: 2.9 }], t), /coda cut 1.*s-a/);
-  assert.throws(() => directCoda(cuts, new Array(cuts.length + 1).fill(null), t), /one to a chord/);
+  assert.throws(() => directCoda(cuts, new Array(cuts.length + 1).fill(null), t), /one to a chord.*title/);
 });
 
 test('a synced landing must fall inside its shot: a next cut that comes before it is refused', () => {

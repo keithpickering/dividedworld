@@ -70,8 +70,6 @@
     {"take":"s-quiz","from":0.6},
     {"take":"b-scrub-3","from":2.4},
     {"take":"b-chair","from":0.55},
-    {"take":"s-hallpass","from":1.0},
-    {"take":"b-gpt2-end","from":0.0},
-    null
+    {"take":"s-hallpass","from":1.0}
   ]
 }
