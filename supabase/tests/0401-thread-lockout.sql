@@ -371,3 +371,58 @@ begin
   select prosrc into src from pg_proc where proname = 'post' and pronargs = 6;
   if src not like '%lock_for_quote(through, in_thread, quoting);%not_locked_out(through, in_thread)%' then raise exception 'post() does not ask not_locked_out again after lock_for_quote'; end if;
 end $$;
+
+create function pg_temp.entry_of(input jsonb, id uuid) returns jsonb language sql as $$
+  select e from jsonb_array_elements(input -> 'acts') e where e ->> 'id' = id::text
+$$;
+create function pg_temp.reacted_to(input jsonb, act uuid) returns integer language sql as $$
+  select count(*)::integer from jsonb_array_elements(input -> 'reactions') e where e ->> 'act' = act::text
+$$;
+
+-- ---- An admin's end of a lockout takes the setter's spring, and the reactions to it, out of the scoring window, as an ended card play does (issue #942) ----
+-- settlement_input and estimate_input both build `ended` from every card_end by its target: the spring is the target here, so nothing in either is special to a card play. The Move that sprang it is not ended.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('lk-w-ann'); bob uuid := tests.account('lk-w-bob'); carol uuid := tests.account('lk-w-carol'); admin_acc uuid := tests.account('lk-w-admin');
+  a uuid := tests.character(ann, 'Lk W Ann'); b uuid := tests.character(bob, 'Lk W Bob'); c uuid := tests.character(carol, 'Lk W Carol');
+  t uuid := tests.thread('Lk window thread'); p uuid := tests.post(a, t, 'The back, in a window.');
+  w0 timestamptz := now() - interval '1 day'; w1 timestamptz := now() + interval '1 hour';
+  back uuid; r jsonb; move uuid; spring uuid; input jsonb; est jsonb;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'lkback');
+  perform pg_temp.hand(bob, 'lksalty');
+  insert into admins (account) values (admin_acc);
+  perform tests.become_service();
+  back := (set_card(ann, 'lkback', a, p, '{}', 0) ->> 'id')::uuid;
+  r := play_card(bob, 'lksalty', b, p, '{}', 0, '');
+  move := (r ->> 'id')::uuid;
+  spring := pg_temp.spring_id(back);
+  if spring is null then raise exception 'the window test''s lockout did not spring'; end if;
+  insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
+    (spring, c, carol, 'up', 1, now()), (move, c, carol, 'up', 1, now());
+  -- (a) Control: the lockout stands, so the spring, its reaction, the Move and its reaction are all in the window's input and in the setter's estimate.
+  input := settlement_input(w0, w1);
+  if pg_temp.entry_of(input, spring) is null then raise exception 'control: the spring of a standing lockout is not in settlement_input'; end if;
+  if pg_temp.reacted_to(input, spring) is distinct from 1 then raise exception 'control: the reaction to a standing lockout''s spring is not in settlement_input: %', input -> 'reactions'; end if;
+  est := estimate_input(ann, w1);
+  if pg_temp.entry_of(est, spring) is null then raise exception 'control: the spring of a standing lockout is not in the setter''s estimate_input'; end if;
+  if pg_temp.reacted_to(est, spring) is distinct from 1 then raise exception 'control: the reaction to a standing lockout''s spring is not in estimate_input: %', est -> 'reactions'; end if;
+
+  -- (b) An admin ends the lockout: a card_end whose target is the spring.
+  perform tests.become(admin_acc);
+  perform reverse_card(spring);
+  perform tests.unbecome(); perform tests.become_service();
+  if not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = spring) then raise exception 'reverse_card on the spring wrote no card_end'; end if;
+  input := settlement_input(w0, w1);
+  if pg_temp.entry_of(input, spring) is not null then raise exception 'an admin-ended lockout''s spring is still in settlement_input'; end if;
+  if pg_temp.reacted_to(input, spring) <> 0 then raise exception 'a reaction to an admin-ended lockout''s spring is still in settlement_input: %', input -> 'reactions'; end if;
+  -- (d) The Move that sprang it is not ended: it and its reaction stay.
+  if pg_temp.entry_of(input, move) is null then raise exception 'the Move that sprang an ended lockout left settlement_input'; end if;
+  if pg_temp.reacted_to(input, move) is distinct from 1 then raise exception 'the reaction to the Move that sprang an ended lockout left settlement_input'; end if;
+  -- (c) The setter's estimate reads the same ended set.
+  est := estimate_input(ann, w1);
+  if pg_temp.entry_of(est, spring) is not null then raise exception 'an admin-ended lockout''s spring is still in estimate_input'; end if;
+  if pg_temp.reacted_to(est, spring) <> 0 then raise exception 'a reaction to an admin-ended lockout''s spring is still in estimate_input: %', est -> 'reactions'; end if;
+end $$;
