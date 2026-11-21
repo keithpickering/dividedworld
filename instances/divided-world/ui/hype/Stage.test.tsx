@@ -156,6 +156,19 @@ describe('a real cast', () => {
   });
 });
 
+describe('a spring on a post written another way', () => {
+  test('a quoting post the composer wrote gets the chair and the spring, as one `quoteSprings` writes', async () => {
+    const { fake, made, play } = await stage('Human Josh');
+    const quoted = (await fake.acts(made.thread, made.posts['kind']!, made.posts['kind']!))[0]!;
+    fake.signInAs(made.viewer);
+    const wrote = await fake.post(made.thread, made.cast['Human Josh']!, 'to be fair, it is a good walk cycle.', quoted.id);
+    if (!wrote.ok) throw new Error(wrote.error);
+    const sprang = await play.springsOn(made.posts['kind']!, wrote.value.id);
+    expect((await fake.cardsOn(wrote.value.id, 30)).filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card)).toEqual(['steel-chair']);
+    expect((await fake.cardsOn(made.acts['kind']!, 30)).find((a) => a.id === sprang.spring)?.payload).toMatchObject({ card: 'steel-chair', trigger: 'quote', did: 'landed' });
+  });
+});
+
 describe('the Staff\'s beats', () => {
   test('the memo is FanGaME\'s own words, posted in the thread', async () => {
     const { fake, made, play } = await stage();

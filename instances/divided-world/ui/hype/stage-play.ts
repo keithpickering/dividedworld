@@ -113,18 +113,27 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
    */
   async function quoteSprings(name: string, post: number, words: string): Promise<{ readonly post: string; readonly spring: string; readonly play: string }> {
     const quoted = await actOf(post);
-    const set = made.sets['steelChair'];
-    if (set === undefined) throw new Error('the stage has no Steel Chair set face down');
     const wrote = await inAs(ownerOf(name), () => fake.post(made.thread, characterOf(name), words, quoted.id));
     if (!wrote.ok) throw new Error(`${name}'s quote of post ${post} was refused: ${wrote.error}`);
+    return { post: wrote.value.id, ...(await springsOn(post, wrote.value.id)) };
+  }
+
+  /**
+   * The spring and the landed Move for a quoting post that already exists (written by the real composer, say): the half of `quoteSprings`
+   * after the writing. `quoted` is the number of the post it quotes.
+   */
+  async function springsOn(quoted: number, quoting: string): Promise<{ readonly spring: string; readonly play: string }> {
+    const quotedAct = await actOf(quoted);
+    const set = made.sets['steelChair'];
+    if (set === undefined) throw new Error('the stage has no Steel Chair set face down');
     fake.clock.advance(1000);
     const spring = fake.seed.spring(set, { trigger: 'quote' });
-    const setter = quoted.character;
-    if (setter === null) throw new Error(`post ${post} has no author to have set the card`);
-    const play = fake.seed.card(setter, wrote.value.id, 'steel-chair', { layer: 1, message: '', spring, live: true, ends: new Date(Date.now() + 3 * DAY).toISOString() });
+    const setter = quotedAct.character;
+    if (setter === null) throw new Error(`post ${quoted} has no author to have set the card`);
+    const play = fake.seed.card(setter, quoting, 'steel-chair', { layer: 1, message: '', spring, live: true, ends: new Date(Date.now() + 3 * DAY).toISOString() });
     fake.broadcast.rejoin();
-    mark(`spring:${name}`);
-    return { post: wrote.value.id, spring, play };
+    mark('spring');
+    return { spring, play };
   }
 
   /** The Staff's three beats, each as the seed writes it where the backend plays none, and the page told to catch up. */
@@ -197,7 +206,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     return pendingOf(await fake.estimate());
   }
 
-  return { react, cast, quoteSprings, staff, pile, steps, forecast, landed, zero: () => { zero = performance.now(); landed.length = 0; layers.clear(); } };
+  return { react, cast, quoteSprings, springsOn, staff, pile, steps, forecast, landed, zero: () => { zero = performance.now(); landed.length = 0; layers.clear(); } };
 }
 
 export type Playbook = ReturnType<typeof playbook>;
