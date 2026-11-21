@@ -530,8 +530,8 @@ describe('a nomination of a successor', () => {
       expect(todo).toHaveTextContent('Third takes over Season 2 from Comptroller.');
       expect(todo).toHaveTextContent("Comptroller left the instance's roster and is now benched.");
       expect(within(todo).getAllByRole('link', { name: /^Write the announcement/u })).toHaveLength(2);
-      await userEvent.click(within(todo).getByRole('button', { name: 'Dismiss the to-do: Third takes over season 2' }));
-      await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the to-do: Third takes over season 2' })).toBeNull());
+      await userEvent.click(within(todo).getByRole('button', { name: 'Dismiss the to-do: Third takes over Season 2 from Comptroller' }));
+      await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the to-do: Third takes over Season 2 from Comptroller' })).toBeNull());
       expect(dismiss).toHaveBeenCalledWith(2);
       expect(todo).toHaveTextContent('Season 2 opens with Comptroller.');
       expect(todo).not.toHaveTextContent('Third takes over');
@@ -547,17 +547,19 @@ describe('a nomination of a successor', () => {
         fake.seed.staff('fourth', 'Fourth', 'mod');
         fake.seed.handover({ outgoing: 'comptroller', boss: 'third', at: fake.clock.now() - 7_200_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'benched', cause: 'departure' });
         fake.seed.handover({ outgoing: 'third', boss: 'fourth', at: fake.clock.now() - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'benched', cause: 'departure' });
+        fake.seed.handover({ outgoing: 'fourth', boss: 'third', at: fake.clock.now() - 1_800_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'benched', cause: 'departure' });
       } });
       const dismiss = vi.spyOn(fake, 'dismissHandoverTodo');
       const todo = await group(/^To do/u);
       const names = within(todo).getAllByRole('button', { name: /^Dismiss/u }).map((b) => b.getAttribute('aria-label'));
-      expect(names).toHaveLength(2);
-      expect(new Set(names).size).toBe(2);
+      expect(names).toHaveLength(3);
+      expect(new Set(names).size).toBe(3);
       const links = within(todo).getAllByRole('link', { name: /^Write the announcement/u }).map((a) => a.getAttribute('aria-label'));
-      expect(new Set(links).size).toBe(2);
-      await userEvent.click(within(todo).getByRole('button', { name: 'Dismiss the to-do: Fourth takes over season 1' }));
-      await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the to-do: Fourth takes over season 1' })).toBeNull());
-      expect(within(todo).getByRole('button', { name: 'Dismiss the to-do: Third takes over season 1' })).toBeInTheDocument();
+      expect(new Set(links).size).toBe(3);
+      await userEvent.click(within(todo).getByRole('button', { name: 'Dismiss the to-do: Third takes over Season 1 from Fourth' }));
+      await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the to-do: Third takes over Season 1 from Fourth' })).toBeNull());
+      expect(within(todo).getByRole('button', { name: 'Dismiss the to-do: Third takes over Season 1 from Comptroller' })).toBeInTheDocument();
+      expect(within(todo).getByRole('button', { name: 'Dismiss the to-do: Fourth takes over Season 1 from Third' })).toBeInTheDocument();
       expect(dismiss).toHaveBeenCalledTimes(1);
     });
 

@@ -48,7 +48,7 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { shortDate } from '../postbit/dates.ts';
-import { todoFacts, todoHandoff, todoSentence } from './handover-words.ts';
+import { todoFacts, todoHandoff, todoSentence, todoTitle } from './handover-words.ts';
 import { AdminContact } from './AdminContact.tsx';
 import { AdminPages } from './AdminPages.tsx';
 import './queue.css';
@@ -365,9 +365,9 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
       setBusy(null);
     }
   };
-  /** What a to-do is called to a screen reader. A season holds one roll-over but may hold several departures, so a departure names the Boss who takes over. */
-  const dismissName = (t: HandoverTodo) => (t.cause === 'departure' ? `Dismiss the to-do: ${t.bossName} takes over season ${t.season}` : `Dismiss the season ${t.season} to-do`);
-  const writeName = (t: HandoverTodo) => (t.cause === 'departure' ? `Write the announcement for ${t.bossName} taking over season ${t.season}` : `Write the announcement for season ${t.season}`);
+  /** What a to-do is called to a screen reader. A season holds one roll-over but may hold several departures, even two that seat the same Boss, so a departure is called by its title, which names both Bosses. */
+  const dismissName = (t: HandoverTodo) => (t.cause === 'departure' ? `Dismiss the to-do: ${todoTitle(t)}` : `Dismiss the season ${t.season} to-do`);
+  const writeName = (t: HandoverTodo) => (t.cause === 'departure' ? `Write the announcement: ${todoTitle(t)}` : `Write the announcement for season ${t.season}`);
   return (
     <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-todo" data-kb-group="todo">
       <GroupHead id="queue-todo" title="To do" count={rows.length} more={false} />
