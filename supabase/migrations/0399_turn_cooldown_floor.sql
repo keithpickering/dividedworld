@@ -17,6 +17,7 @@ language sql immutable set search_path = public, pg_temp as $$
     else (cooldown ->> 'count')::integer * case cooldown ->> 'unit' when 'week' then 7 when 'month' then 28 else 1 end
       >= (win ->> 'count')::integer * case win ->> 'unit' when 'week' then 7 when 'month' then 31 else 1 end end
 $$;
+revoke execute on function turn_cooldown_covers(jsonb, jsonb) from public, anon, authenticated;
 
 -- settings_held (0395_polls.sql's copy), also holding turnCooldown against settlementLength, whichever is written. Everything else as 0395 wrote it.
 create or replace function public.settings_held()

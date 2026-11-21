@@ -367,10 +367,10 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
  * the window's opening plus M months is at or after the opening plus N months whenever M >= N. Otherwise they compare in days, a week 7, and
  * a month at its shortest (28 days) in the cooldown and its longest (31) in the window. SQL's turn_cooldown_covers (0399) is the same.
  */
-export function cooldownCoversWindow(cooldown: Span, window: Span): boolean {
-  if (cooldown.unit === 'month' && window.unit === 'month') return cooldown.count >= window.count;
+export function cooldownCoversWindow(cooldown: Span, win: Span): boolean {
+  if (cooldown.unit === 'month' && win.unit === 'month') return cooldown.count >= win.count;
   const days = (s: Span, month: number): number => s.count * (s.unit === 'week' ? 7 : s.unit === 'month' ? month : 1);
-  return days(cooldown, 28) >= days(window, 31);
+  return days(cooldown, 28) >= days(win, 31);
 }
 
 export function settingsProblems(settings: Settings): string[] {

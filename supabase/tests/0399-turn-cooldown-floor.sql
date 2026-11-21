@@ -70,4 +70,14 @@ begin
   delete from settings where key = 'turnCooldown';
   got := pg_temp.say('update settings set value = ''{"unit": "month", "count": 12}'' where key = ''settlementLength''');
   if got is not null then raise exception 'a window against no cooldown was refused: %', got; end if;
+  -- And a cooldown written against a window missing its row.
+  delete from settings where key = 'settlementLength';
+  insert into settings (key, value) values ('turnCooldown', '{"unit": "day", "count": 30}');
+  got := pg_temp.say('update settings set value = ''{"unit": "day", "count": 1}'' where key = ''turnCooldown''');
+  if got is not null then raise exception 'a cooldown against no window was refused: %', got; end if;
+
+  -- The helper is the trigger's alone: no API role runs it.
+  if has_function_privilege('anon', 'turn_cooldown_covers(jsonb, jsonb)', 'execute') or has_function_privilege('authenticated', 'turn_cooldown_covers(jsonb, jsonb)', 'execute') then
+    raise exception 'an API role may run turn_cooldown_covers';
+  end if;
 end $$;
