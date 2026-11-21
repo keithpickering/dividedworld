@@ -63,6 +63,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       react: (name, postSeq, key) => play.react(name, postSeq, key),
       /** A card cast on a post through the backend's own play path, so a back there catches it or lets it ride: returns \`{ play, caught, rode }\`. */
       cast: (name, postSeq, card, config = {}, message = '') => play.cast(name, postSeq, card, config, message),
+      /** The alert a caught cast writes its caster (the in-memory backend writes none): \`told('D-Guy', 1)\`, after the cast. Returns the caught play's id. */
+      told: (name, postSeq) => play.told(name, postSeq),
       /** A quote of the post that holds \`words\`, written by the named character, which springs the Steel Chair set on it: returns \`{ post, spring, play }\`. */
       quoteSprings: (name, postSeq, words) => play.quoteSprings(name, postSeq, words),
       /** The Staff's beats: \`staff('memo', where?)\` (FanGaME's memo, in the main thread), \`staff('merge')\` (the Boss merges the Palace into World -1, with his reason), \`staff('file', postSeq?)\` (a Mod files a post, Snuckles's first by default). */

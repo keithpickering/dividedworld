@@ -134,6 +134,15 @@ describe('a real cast', () => {
     expect((await fake.session()).account).toBe(made.viewer);
   });
 
+  test('told() writes the caster the trapStruck alert the backend writes for a caught cast, and says nothing where none was caught', async () => {
+    const { fake, made, play } = await stage('D-Guy');
+    await expect(play.told('D-Guy', made.posts['first']!)).rejects.toThrow(/no caught cast/);
+    await play.cast('D-Guy', made.posts['first']!, 'whoops', { color: '#3d77ff' });
+    expect((await fake.alertsPage(null)).alerts.some((a) => a.kind === 'trapStruck')).toBe(false);
+    await play.told('D-Guy', made.posts['first']!);
+    expect((await fake.alertsPage(null)).alerts.some((a) => a.kind === 'trapStruck')).toBe(true);
+  });
+
   test('Snuckles\'s Whoops! on D-Guy\'s review lands (an ink play is on it), and the spring there says it rode, naming the quadrant', async () => {
     const { fake, made, play } = await stage();
     const cast = await play.cast('Snuckles', made.posts['review']!, 'whoops', { color: '#ff2bd6' });

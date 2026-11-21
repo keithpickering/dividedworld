@@ -127,6 +127,20 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     return { post: wrote.value.id, spring, play };
   }
 
+  /**
+   * The alert a caught cast writes its caster. The backend's `play_card` writes it (a `trapStruck` on the caught play, 0370); the in-memory
+   * backend writes none, so a stage that shows the caster's side of a catch writes what the database would have, on the newest cast of the
+   * named character on the post that a back caught. It reaches the caster's page as a toast and a row in the alerts, as any alert does.
+   */
+  async function told(name: string, post: number): Promise<string> {
+    const act = await actOf(post);
+    const caught = (await fake.cardsOn(act.id, 30)).filter((a) => a.kind === 'card' && a.character === characterOf(name) && (a.payload as { caught?: unknown }).caught !== undefined).at(-1);
+    if (caught === undefined) throw new Error(`${name} has no caught cast on post ${post}: nothing was caught to tell them of`);
+    fake.seed.alert(ownerOf(name), { kind: 'trapStruck', act: caught.id });
+    mark(`told:${name}`);
+    return caught.id;
+  }
+
   /** The Staff's three beats, each as the seed writes it where the backend plays none, and the page told to catch up. */
   const staff = {
     /** FanGaME's memo, posted in a thread of the stage (the main one unless `where` names another). */
@@ -197,7 +211,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     return pendingOf(await fake.estimate());
   }
 
-  return { react, cast, quoteSprings, staff, pile, steps, forecast, landed, zero: () => { zero = performance.now(); landed.length = 0; layers.clear(); } };
+  return { react, cast, told, quoteSprings, staff, pile, steps, forecast, landed, zero: () => { zero = performance.now(); landed.length = 0; layers.clear(); } };
 }
 
 export type Playbook = ReturnType<typeof playbook>;
