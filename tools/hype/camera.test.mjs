@@ -40,6 +40,14 @@ test('the newest build wins', () => {
   assert.equal(findHeadlessShell([dir], 'linux'), newer);
 });
 
+test('builds are ordered by number, not by spelling', () => {
+  const { dir } = make('chromium_headless_shell-999', 'chrome-linux', 'headless_shell');
+  const newer = join(dir, 'chromium_headless_shell-1243', 'chrome-headless-shell-linux64', 'chrome-headless-shell');
+  mkdirSync(join(newer, '..'), { recursive: true });
+  writeFileSync(newer, '');
+  assert.equal(findHeadlessShell([dir], 'linux'), newer);
+});
+
 test('roots are tried in order, and a missing root is skipped', () => {
   const { dir, file } = make('chromium_headless_shell-1243', 'x', 'chrome-headless-shell');
   assert.equal(findHeadlessShell([join(dir, 'nowhere'), dir], 'linux'), file);

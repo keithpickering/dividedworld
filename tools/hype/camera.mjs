@@ -32,7 +32,9 @@ export function findHeadlessShell(roots, platform = process.platform) {
   const exes = platform === 'win32' ? ['chrome-headless-shell.exe', 'headless_shell.exe'] : ['chrome-headless-shell', 'headless_shell'];
   for (const root of roots) {
     if (!existsSync(root)) continue;
-    const dirs = readdirSync(root).filter((d) => d.startsWith('chromium_headless_shell-')).sort().reverse();
+    /* By build number, since as spelling "999" sorts after "1243". */
+    const build = (d) => Number(d.slice('chromium_headless_shell-'.length)) || 0;
+    const dirs = readdirSync(root).filter((d) => d.startsWith('chromium_headless_shell-')).sort((a, b) => build(b) - build(a));
     for (const d of dirs) {
       for (const sub of readdirSync(join(root, d))) {
         for (const exe of exes) {
