@@ -325,7 +325,7 @@ test('the music is 10 dB down under a clip, 150 ms to go down and 400 ms to come
 test('the caption band is at the top of the frame by default, two rows at most, and is the same height wherever it sits', () => {
   const top = captionBand('top', 'A short line.');
   assert.equal(top.y, 0, 'the top band starts at the top edge');
-  assert.equal(top.alignment, 8, 'the words are top-centered');
+  assert.equal(top.alignment, 6, 'the words are top-centered (force_style takes the legacy SSA numbers: 6 is top-center, 8 mid-height)');
   const one = top.h, two = captionBand('top', 'x'.repeat(86)).h;
   assert.ok(two > one, 'a line that wraps to two rows has a taller band');
   assert.ok(two <= 120, `two rows need no more than 120 px of the 1080, not ${two}`);

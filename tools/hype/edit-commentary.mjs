@@ -195,14 +195,15 @@ export function captions(commentary, tl) {
 /**
  * Where the burned-in caption band sits, for a cue's words: `top` (the default; the game's HUD is at the foot), `foot`, or `off` (null).
  * The band is as tall as its words need, one row or two (a line of more than 70 characters wraps to a second; never a third): rows of 40 px
- * (FontSize 9 on libass's 288-line page is 34 px) and a margin of 15 px above and 12 below. `marginV` is libass's, on that 288-line page.
+ * (FontSize 9 on libass's 288-line page is 34 px). `force_style`'s Alignment is the legacy SSA numbering: 2 is bottom-center and 6 top-center (8 would be
+ * mid-height: the first cut's captions came out in the middle of the frame) and a margin of 8 px above and below. `marginV` is libass's, on that 288-line page.
  * @param {'top' | 'foot' | 'off'} mode @param {string} text
- * @returns {{ y: number, h: number, alignment: 2 | 8, marginV: number } | null}
+ * @returns {{ y: number, h: number, alignment: 2 | 6, marginV: number } | null}
  */
 export function captionBand(mode, text) {
   if (mode === 'off') return null;
-  const rows = text.length > 70 ? 2 : 1, h = 15 + rows * 40 + 12;
-  return mode === 'top' ? { y: 0, h, alignment: 8, marginV: 4 } : { y: 1080 - h, h, alignment: 2, marginV: 3 };
+  const rows = text.length > 70 ? 2 : 1, h = 8 + rows * 40 + 8;
+  return mode === 'top' ? { y: 0, h, alignment: 6, marginV: 2 } : { y: 1080 - h, h, alignment: 2, marginV: 3 };
 }
 
 /** The caption mode the command line asks for: `--captions top|foot|off`, `--clean` being `off`. @param {string[]} args @returns {'top' | 'foot' | 'off'} */
