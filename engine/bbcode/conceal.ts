@@ -7,7 +7,8 @@
  * cuts it (a `cut` node) and still reports its span, so its contents are emptied like any other, at any depth. It empties exactly
  * the contents of each such quote, between its opener (which keeps the id, so the renderer can say a hidden post was quoted) and its closer, and leaves every
  * other character as written: the parser reports where each quote's contents lie, and the body is cut there, never re-serialized from the tree.
- * A quote inside one already emptied is inside it. The function is pure and the cost is the parser's: one pass, linear in the body.
+ * A quote inside one already emptied is inside it. A forged quote (parse's `forged`: its words are not in the post it names) is a counterfeit and records no span, so a caller that reads the body with the Act's verdict
+ * never empties it: it was checked against public versions only, its words are the poster's own, and an admin judges them as the poster's. The function is pure and the cost is the parser's: one pass, linear in the body.
  */
 import { parse, type QuoteSpan } from './parse.ts';
 

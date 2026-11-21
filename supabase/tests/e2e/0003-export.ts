@@ -555,8 +555,8 @@ test('an instance exported and imported into a fresh database is the same instan
         perform donate(bob, b, dplay, 25);
         perform donate(ann, a, dplay, 10);
       end;
-      -- Polls (0393): a post whose poll was replaced by a second, a ballot of Bob's mask, the same mask's changed ballot and the author's close; and a secret poll on another post with a ballot from each of Bob's and Ann's masks.
-      -- Each Act is written at a time of its own (a transaction has one now(), and a ballot counts when it is created before the poll's end), as supabase/tests/0393-polls.sql writes them.
+      -- Polls (0394): a post whose poll was replaced by a second, a ballot of Bob's mask, the same mask's changed ballot and the author's close; and a secret poll on another post with a ballot from each of Bob's and Ann's masks.
+      -- Each Act is written at a time of its own (a transaction has one now(), and a ballot counts when it is created before the poll's end), as supabase/tests/0394-polls.sql writes them.
       declare poll_post uuid := tests.post(a, t, 'A post that carries a poll.', now() - interval '6 hours'); secret_post uuid := tests.post(a, t, 'A post that carries a secret poll.', now() - interval '6 hours');
               replaced uuid; closed uuid; secret uuid;
       begin
@@ -569,6 +569,11 @@ test('an instance exported and imported into a fresh database is the same instan
         perform tests.act(b, 'ballot', t, '{"picks": [0]}', secret, now() - interval '150 minutes');
         perform tests.act(a, 'ballot', t, '{"picks": [1]}', secret, now() - interval '2 hours');
       end;
+      -- A doctored quote (Forged quotes, Task 7): Bob's mask quotes Ann's post p with words it never had, so the Act is written with its verdict (forged, the quoted post's id), no
+      -- target (the verdict drops it), and its quote_sources row; the export carries all three and the import writes them as a replica.
+      perform tests.become((select owner from characters where id = b));
+      perform post(t, b, '[quote=' || p || ']Never said in this post.[/quote] Bob, doctored.', p);
+      perform tests.unbecome();
     end $$;
     -- A table holding what the instance's own do not yet: a type whose name has a comma, an
     -- array, an astral character. Made here and in the fresh database alike.
@@ -638,6 +643,12 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.equal(sql(`select ends_at <= now() from face_down where card = 'exptime'`), 't', 'a back whose time passed is held as ended');
   // The post earn (Task 6): a cast on a post for three days carries its ends in its payload, and the round trip below carries that value as it is.
   const postEnds = (url: string) => psqlOn(url, `select coalesce(string_agg(payload ->> 'ends', ',' order by payload ->> 'ends'), '-') from acts where kind = 'card' and payload ->> 'card' = 'exppost'`);
+  // A doctored quote (Forged quotes, Task 7): its Act's `forged` is the list of the post it forges, and its quote_sources rows (one per Act, not per version) are read by its Act's id.
+  const doctoredRow = (url: string) => psqlOn(url, `select (a.payload -> 'forged')::text || '|' || (select count(*) from quote_sources s where s.act = a.id) || '|' || coalesce((select string_agg(s.source || '#' || s.digest, ',' order by s.digest) from quote_sources s where s.act = a.id), '-')
+    from acts a where a.payload ->> 'body' like '%Bob, doctored.'`);
+  assert.equal(psqlOn(from, `select (a.payload -> 'forged') = jsonb_build_array(substring(a.payload ->> 'body' from '[[]quote=([0-9a-f-]{36})[]]')::uuid) from acts a where a.payload ->> 'body' like '%Bob, doctored.'`), 't', 'the doctored quote\'s verdict forges the post it quotes');
+  assert.equal(psqlOn(from, `select a.target_act_id is null from acts a where a.payload ->> 'body' like '%Bob, doctored.'`), 't', 'a doctored quote quotes no post: its target is null');
+  assert.match(doctoredRow(from), /^\["[0-9a-f-]{36}"\]\|1\|.+#[0-9a-f]{32}$/, 'the doctored quote holds its verdict and one quote_sources row');
   assert.match(postEnds(from), /^\d{4}-\d{2}-\d{2}T[\d:.]+[+-]\d{2}:\d{2}$/, 'the post earn\'s play holds the ends its three days give');
   assert.equal(sql(`select (payload ->> 'ends')::timestamptz - created_at from acts where kind = 'card' and payload ->> 'card' = 'exppost'`), '3 days', 'the post earn ends three days after it was played');
   // The drive and its gifts (0153): the play opened a drive with a drawn key, both gifts are `donation` Acts, and each wallet event names its gift; Ann's full wallet cut off part of what arrived.
@@ -845,6 +856,8 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
+    // The doctored quote's Act still holds its verdict, and its quote_sources rows are the same in the imported instance (Forged quotes, Task 7).
+    assert.equal(doctoredRow(fresh.toString()), doctoredRow(from), 'the doctored quote\'s forged list and its quote_sources rows survive the round trip');
     // A custom pronoun set (0124) is carried as it was chosen, not reset to the column's default.
     const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
     const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
@@ -861,13 +874,13 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.equal(postEnds(fresh.toString()), postEnds(from), 'the post earn\'s ends are the same in the imported instance');
     // A share of the skim ledger row carries across, and its owner reads the card it was paid by through my_ledger_shares (0290).
     const skimShare = (url: string) => psqlOn(url, `begin; select set_config('request.jwt.claims', jsonb_build_object('sub', (select id from auth.users where email = 'exp-ann@test.invalid'), 'role', 'authenticated')::text, true); set local role authenticated; select string_agg(coalesce(to_jsonb(s) ->> 'card', '-') || ':' || s.amount, ',' order by s.amount) from my_ledger_shares s where s.reason = 'card.skim'; rollback;`).split('\n').pop();
-    // Polls (0393): the polls' counts and each player's own ballots (a secret one's character and picks too) are the same after the round trip as in the fixture, and are what the fixture wrote.
+    // Polls (0394): the polls' counts and each player's own ballots (a secret one's character and picks too) are the same after the round trip as in the fixture, and are what the fixture wrote.
     const pollCounts = (url: string) => psqlOn(url, `select string_agg(p.payload ->> 'question' || ':' || c.counts::text || ':' || c.voters || ':' || c.closed, ',' order by p.payload ->> 'question') from poll_counts c join acts p on p.id = c.poll where p.payload ->> 'question' like 'Exported %'`);
     const ballotsOf = (url: string, who: string) => psqlOn(url, `begin; select set_config('request.jwt.claims', jsonb_build_object('sub', (select id from auth.users where email = '${who}@test.invalid'), 'role', 'authenticated')::text, true); set local role authenticated; create temp table mine as select b.poll, b.character, b.picks, b.created_at from my_ballots b; reset role; select coalesce(string_agg(q.payload ->> 'question' || ':' || (select c.name from characters c where c.id = b.character) || ':' || b.picks::text, ',' order by b.created_at), '') from mine b join acts q on q.id = b.poll; rollback;`).split('\n').pop();
     assert.equal(pollCounts(from), POLL_COUNTS, 'the fixture holds a replaced poll, a closed one with a changed ballot, and a secret one');
     assert.equal(ballotsOf(from, 'exp-bob'), BOB_BALLOTS, 'Bob reads his three ballots, the changed one and the secret one included');
     assert.equal(ballotsOf(from, 'exp-ann'), ANN_BALLOTS, 'Ann reads her own secret ballot and not Bob\'s');
-    // Each (poll, character)'s latest ballot is a row of its own (poll_latest_ballots, 0393), derived from the ballot Acts: the export carries the table, and in both databases it is the rows the Acts say (the first number counts the fixture's own
+    // Each (poll, character)'s latest ballot is a row of its own (poll_latest_ballots, 0394), derived from the ballot Acts: the export carries the table, and in both databases it is the rows the Acts say (the first number counts the fixture's own
     // rows, the second the rows that differ from the Acts' in either direction), the same rows after the round trip.
     const latestRows = (url: string) => psqlOn(url, `select
       (select count(*) from poll_latest_ballots r join acts p on p.id = r.poll where p.payload ->> 'question' like 'Exported %') || '|' ||

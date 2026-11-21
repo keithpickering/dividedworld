@@ -6,7 +6,7 @@
  * The hands (Task 7) are driven here by a held key on the anchor and by pointer events on a piece, with fake timers: the animation
  * frame loop ticks the state machine with the frame's time, so a hold is as long as the time that passes.
  */
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useState } from 'react';
@@ -46,13 +46,14 @@ vi.mock('./tape.ts', async (original) => {
 });
 const pieceWork = vi.mocked(piecesOf);
 
-const QUOTE = '[quote=0f8fad5b-d9cb-469f-a165-70867728950e]Mario in a quote[/quote]';
-const postOf = (body: string) => ({ id: 'post-1', character: 'author', kind: 'post', thread: 't', payload: { body }, currentPayload: { body }, targetActId: null, seq: 3, createdAt: '2026-11-03T10:00:00.000Z', editedAt: null, shownEditedAt: null }) as unknown as Act;
+const QUOTE_ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+const QUOTE = `[quote=${QUOTE_ID}]Mario in a quote[/quote]`;
+const postOf = (body: string, forged?: readonly string[]) => ({ id: 'post-1', character: 'author', kind: 'post', thread: 't', payload: { body, ...(forged ? { forged } : {}) }, currentPayload: { body, ...(forged ? { forged } : {}) }, targetActId: null, seq: 3, createdAt: '2026-11-03T10:00:00.000Z', editedAt: null, shownEditedAt: null }) as unknown as Act;
 const playOf = (n: number, phrase: string, replacement: string): CardPlay => ({ id: `k${n}`, card: 'autocorrect', layer: n, caster: `c${n}`, message: '', config: { phrase, replacement }, playedAt: `2026-11-03T10:0${n}:00.000Z`, post: 'post-1' });
 const ok = async (play: string) => ({ ok: true as const, value: { play, savedAt: '2026-11-03T11:00:00.000Z' } });
 const savedOf = (state: unknown): EffectState => ({ state, savedAt: '2026-11-03T10:30:00.000Z', savedBy: 'author' }) as unknown as EffectState;
 
-interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly states?: Record<string, EffectState>; readonly author?: boolean; readonly save?: EffectProps['save']; readonly moment?: { readonly at: number }; readonly around?: readonly TextRun[] }
+interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly states?: Record<string, EffectState>; readonly author?: boolean; readonly save?: EffectProps['save']; readonly moment?: { readonly at: number }; readonly around?: readonly TextRun[]; readonly forged?: readonly string[] }
 
 function mount(o: Options = {}) {
   const save = vi.fn(o.save ?? (ok as unknown as EffectProps['save']));
@@ -69,11 +70,11 @@ function mount(o: Options = {}) {
     bump = () => setN((n) => n + 1);
     const effect = (
       <AutocorrectEffect
-        post={postOf(body)} plays={o.plays ?? [playOf(1, 'mario', 'Luigi')]} states={held} released={new Set()} written={new Map()} reader={{ author: o.author ?? false, caster: false }}
+        post={postOf(body, o.forged)} plays={o.plays ?? [playOf(1, 'mario', 'Luigi')]} states={held} released={new Set()} written={new Map()} reader={{ author: o.author ?? false, caster: false }}
         place="thread" reach="post" still={false} moment={o.moment ?? null} save={save} release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={(v) => { views.push(v); }} met={() => {}}
         ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
       >
-        <BbCode text={body} />
+        <BbCode text={body} forged={o.forged} />
       </AutocorrectEffect>
     );
     return o.around ? <TextLayer runs={o.around}>{effect}</TextLayer> : effect;
@@ -183,6 +184,17 @@ afterEach(() => {
 });
 
 describe('Autocorrect: the anchors', () => {
+  test('a phrase inside a doctored quote (a counterfeit by the verdict) is taped like the poster\'s own words, and inside an honest quote it is not', () => {
+    mount({ forged: [QUOTE_ID] });
+    expect(buttons()).toHaveLength(4);
+    expect(document.querySelector('blockquote[data-kb-counterfeit] [data-kb-ac-anchor]')).not.toBeNull();
+    expect(document.querySelector('blockquote[data-kb-counterfeit]')).toHaveTextContent(/Luigi/u);
+    cleanup();
+    mount();
+    expect(buttons()).toHaveLength(3);
+    expect(document.querySelector('blockquote [data-kb-ac-anchor]')).toBeNull();
+  });
+
   test('every occurrence gets one anchor, named for the role, and none is inside a quote', () => {
     mount();
     expect(buttons()).toHaveLength(3);

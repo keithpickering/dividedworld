@@ -85,7 +85,7 @@ begin
       'pack_pulls_problem(jsonb)',
       -- What acts_public calls as its reader (0340): whether a version is hidden, what its quoting body's layer comes to and what a payload shows of it, so a digest never reads a hidden version's words.
       'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'conceal_layer(uuid)', 'shown_payload(jsonb,boolean,boolean,boolean,text)',
-      -- And whether a ballot's poll is secret (0393): acts_public withholds a secret ballot's character and picks, and the digest reads it through the view.
+      -- And whether a ballot's poll is secret (0394): acts_public withholds a secret ballot's character and picks, and the digest reads it through the view.
       'ballot_secret(uuid)']) x) then
     raise exception 'the functions the digest role may execute are not the reviewed twenty-three: %', fns;
   end if;

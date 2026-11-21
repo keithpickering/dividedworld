@@ -31,6 +31,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { SignedIn } from '../../../engine/ui/data/api.ts';
+import { forgedList } from '../../../engine/bbcode/quoted.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, pollHeard, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
@@ -287,7 +288,7 @@ const toPollCounts = (r: Row): PollCounts => ({ poll: r['poll'] as Id, counts: t
 /** A `poll` event with no time cannot be ordered against the others, so it is dropped rather than heard as the newest or the oldest. */
 const toPollEvent = (r: Row): PollEvent | null => (typeof r['at'] === 'string' ? { ...toPollCounts(r), at: r['at'] } : null);
 const toPollWritten = (r: Row): PollWritten => ({ act: toAct(r['act'] as Row), counts: toPollCounts(r) });
-/** thread_page's poll parts (0394), for the page and for the origin alike; a document without them reads as none. */
+/** thread_page's poll parts (0395), for the page and for the origin alike; a document without them reads as none. */
 const toPollParts = (d: Row) => ({
   polls: rowsOf(d['polls']).map((p): Poll => ({ post: p['post'] as Id, act: toAct(p['act'] as Row), counts: toPicks(p['counts']), voters: num(p['voters']), endsAt: String(p['ends_at']), closed: p['closed'] === true, close: isObject(p['close']) ? toAct(p['close']) : null, balloted: p['balloted'] === true })),
   voters: rowsOf(d['voters']).map((v): PollVoter => ({ poll: v['poll'] as Id, act: v['act'] as Id, character: v['character'] as Id, picks: toPicks(v['picks']), at: String(v['at']) })),
@@ -331,7 +332,7 @@ function toPlace(raw: unknown): OriginPlace | null {
     /* `from` and `at` (0351) are each a post place, else null: a row from before the migration has neither key. */
     return { kind: 'play', card: raw['card'], on: toPlaceOn(raw['on']), from: toPostPlace(raw[PLAY_FROM]), at: toPostPlace(raw['at']) };
   }
-  /* A poll, and a public ballot on one (0394): the question and the poll's post; a ballot also names its character. */
+  /* A poll, and a public ballot on one (0395): the question and the poll's post; a ballot also names its character. */
   if (raw['kind'] === 'poll' || raw['kind'] === 'ballot') {
     const on = toPostPlace(raw['on']);
     const who = raw['character'];
@@ -1369,6 +1370,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       for (const r of counts) tally[r['kind']] = num(r['count']);
       return buildMoveNotice(toAct(a), tally, progress);
     },
+    async quoteCheck(body) {
+      const r = await read(() => client.rpc('quote_check', { body }));
+      return Array.isArray(r.data) ? r.data.filter((x): x is string => typeof x === 'string') : [];
+    },
     async myApologies(character) {
       if (!idOk(character)) return [];
       const rows = await list(() => client.rpc('my_apologies', { in_character: character }));
@@ -2012,8 +2017,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       try {
         const d = (await read(() => client.rpc('my_hidden_version', { act: post }))).data;
         if (!isObject(d) || typeof d['version'] !== 'string') return null;
-        if (d['status'] === 'hiddenUntilEdited' && typeof d['words'] === 'string') return { status: 'hiddenUntilEdited', version: d['version'], words: d['words'] };
-        return d['status'] === 'waiting' && typeof d['words'] === 'string' ? { status: 'waiting', version: d['version'], words: d['words'] } : null;
+        /* The version's own verdict rides with its words (`my_hidden_version`'s `forged`), so they are drawn as the version was judged. */
+        const forged = forgedList(d);
+        if (d['status'] === 'hiddenUntilEdited' && typeof d['words'] === 'string') return { status: 'hiddenUntilEdited', version: d['version'], words: d['words'], ...(forged ? { forged } : {}) };
+        return d['status'] === 'waiting' && typeof d['words'] === 'string' ? { status: 'waiting', version: d['version'], words: d['words'], ...(forged ? { forged } : {}) } : null;
       } catch {
         return null;
       }
@@ -2305,7 +2312,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     startThread: (board, character, title, body, framing, poll) => act({ action: 'startThread', board, character, title, body, ...framed(framing), ...(poll ? { poll } : {}) }, (r) => ({ thread: toNewThread(r['thread'], toAct(r['act'])), act: toAct(r['act']) })),
     post: (thread, character, body, quote, framing, poll) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}), ...framed(framing), ...(poll ? { poll } : {}) }, toAct),
     edit: (post, character, body, poll) => act({ action: 'edit', post, character, body, ...(poll ? { poll } : {}) }, toAct),
-    /* A ballot or a close answers the Act's projection (a secret poll's names no one) and the poll's counts, the shape the `poll` event carries (0393 cast_ballot). */
+    /* A ballot or a close answers the Act's projection (a secret poll's names no one) and the poll's counts, the shape the `poll` event carries (0394 cast_ballot). */
     castBallot: (poll, character, picks) => act({ action: 'castBallot', poll, character, picks: [...picks] }, toPollWritten),
     closePoll: (poll, character) => act({ action: 'closePoll', poll, character }, toPollWritten),
     closePollAsAdmin: (poll) => act({ action: 'closePollAsAdmin', poll }, toPollWritten),

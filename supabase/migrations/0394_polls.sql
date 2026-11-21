@@ -49,7 +49,7 @@
 --
 -- Lock order: POST, THEN visits_open, THEN CHARACTER (0357's header), in each function below that takes more than one. edit_post takes the post `for no key update` before it checks anything when it sets or removes a poll, and cast_ballot and
 -- the closes take the poll's post `for share` before they read the post's current poll or check the character, so an edit and a ballot meet at the post's row and never hold one row each and wait on the other: whichever
--- commits second is refused (a ballot on the replaced poll, or an edit of a poll that has a ballot), never a ballot that counts on a replaced poll (supabase/tests/0393-polls.sql, section 1). A close also takes the poll's own row
+-- commits second is refused (a ballot on the replaced poll, or an edit of a poll that has a ballot), never a ballot that counts on a replaced poll (supabase/tests/0394-polls.sql, section 1). A close also takes the poll's own row
 -- `for no key update`, which a ballot's foreign key (`for key share`) does not conflict with, so two closes are laid one at a time and the second is refused. No function here takes a character's row; the veil's advisory lock
 -- (veil_cover_lock) is taken by the triggers after every row lock, as 0371 has it.
 --
@@ -551,7 +551,7 @@ revoke all on my_latest_ballots from public, anon, authenticated, service_role;
 grant select on my_latest_ballots to authenticated;
 
 
--- post (0142), also taking `poll`, a draft for the post's own poll, written after the post's insert. The old signature is dropped so no call is ambiguous. Everything else as 0142 wrote it, its lock order included.
+-- post (0393), also taking `poll`, a draft for the post's own poll, written after the post's insert. The old signature is dropped so no call is ambiguous. Everything else as 0393 wrote it, its lock order included.
 drop function post(uuid, uuid, text, uuid, uuid[]);
 CREATE OR REPLACE FUNCTION public.post(in_thread uuid, through uuid, body text, quoting uuid DEFAULT NULL::uuid, framing uuid[] DEFAULT '{}'::uuid[], poll jsonb DEFAULT NULL::jsonb)
  RETURNS jsonb
@@ -562,6 +562,7 @@ AS $function$
 declare
   on_board uuid;
   written uuid;
+  kept uuid;
   sprung jsonb;
   locked uuid[];
 begin
@@ -573,22 +574,25 @@ begin
   perform not_the_systems(on_board);
   perform not_barred(through, on_board);
   if quoting is not null and not exists (select 1 from acts where id = quoting) then raise exception 'there is no such Act to quote' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The quotes' verdict, before any lock (the search may take a tenth of a second, and a thread's row held for it would stop every other post of the thread): staged for acts_forged_quotes to use.
+  perform forged_verdict_stage(body);
   -- Steps 3 to 5 of the lock order, for the quoted post's back (lock_for_quote).
   locked := lock_for_quote(through, in_thread, quoting);
   insert into acts (character, kind, thread, target_act_id, payload)
-  values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id into written;
+  values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id, target_act_id into written, kept;
   if poll is not null then perform poll_written(written, through, poll); end if;
-  -- Only a back this post locked springs (spring_traps' `held`).
-  if quoting is not null then sprung := spring_traps('quote', quoting, written, held => locked); end if;
-  if quoting is not null then perform write_alert((select a.character from acts a where a.id = quoting), 'quote', null, written, auth.uid()); end if;
+  -- Only a back this post locked springs (spring_traps' `held`), and only for a post that still has its target: a doctored quote is written with none (acts_forged_quotes).
+  if kept is not null then sprung := spring_traps('quote', kept, written, held => locked); end if;
+  if kept is not null then perform write_alert((select a.character from acts a where a.id = kept), 'quote', null, written, auth.uid()); end if;
   perform write_framed(body, framing, written, auth.uid());
+  perform write_forged_framed(written, auth.uid(), framing);
   perform draw_visits(written);
   return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
 end $function$;
 revoke execute on function post(uuid, uuid, text, uuid, uuid[], jsonb) from public, anon;
 grant execute on function post(uuid, uuid, text, uuid, uuid[], jsonb) to authenticated;
 
--- start_thread (0326), also taking `poll`, as post does. Everything else as 0326 wrote it.
+-- start_thread (0393), also taking `poll`, as post does. Everything else as 0393 wrote it.
 drop function start_thread(text, uuid, text, text, uuid[]);
 CREATE OR REPLACE FUNCTION public.start_thread(board_slug text, through uuid, title text, body text, framing uuid[] DEFAULT '{}'::uuid[], poll jsonb DEFAULT NULL::jsonb)
  RETURNS jsonb
@@ -616,6 +620,7 @@ begin
   insert into acts (character, kind, thread, payload) values (through, 'post', made, jsonb_build_object('body', body)) returning id into written;
   if poll is not null then perform poll_written(written, through, poll); end if;
   perform write_framed(body, framing, written, auth.uid());
+  perform write_forged_framed(written, auth.uid(), framing);
   perform draw_visits(written);
   return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
 end $function$;
@@ -934,7 +939,7 @@ begin
                   else (select coalesce(jsonb_object_agg(t.kind, t.count order by t.kind), '{}') from reaction_tallies t where t.act = target) end);
 end $function$;
 
--- spin_written (0374), refusing a spin of a close ("spin the poll"), of a poll that is replaced or removed ("that poll was replaced") and of a secret ballot ("a secret ballot cannot be spun": the spin's head would have no one to name).
+-- spin_written (0393), refusing a spin of a close ("spin the poll"), of a poll that is replaced or removed ("that poll was replaced") and of a secret ballot ("a secret ballot cannot be spun": the spin's head would have no one to name).
 -- A spin of the poll itself or of a public ballot is written. Public facts only, the same words for every caller. Everything else as 0374 wrote it.
 create or replace function public.spin_written(origin uuid, through uuid, title text, body text, check_bar boolean, framing uuid[], at_post uuid DEFAULT NULL::uuid)
  RETURNS jsonb
@@ -976,6 +981,7 @@ begin
           jsonb_build_object('title', title, 'body', coalesce(body, '')) || case when at_post is not null then jsonb_build_object('at', at_post) else '{}'::jsonb end)
   returning id into written;
   perform write_framed(body, framing, written, auth.uid());
+  perform write_forged_framed(written, auth.uid(), framing);
   perform draw_visits(written);
   return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
 end $function$;

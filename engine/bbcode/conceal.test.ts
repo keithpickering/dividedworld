@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { parse, MAX_DEPTH } from './parse.ts';
-import type { BbNode } from './parse.ts';
+import type { BbNode, QuoteSpan } from './parse.ts';
 import { concealQuotes } from './conceal.ts';
 
 /*
@@ -204,4 +204,16 @@ test('property: a hidden quote\'s words never survive in a quote of the hidden p
     assert.equal(out.includes(inner), false, `leak at depth ${n}: ${JSON.stringify(body).slice(0, 300)}`);
   }
   assert.ok(counted > 1000 && deep > 400, `${counted} counted, ${deep} deep`);
+});
+
+test('a forged quote of a hidden id keeps its words: the parser records no span for it, so no layer built from spans empties it', () => {
+  // The verdict is the poster's own words (docs/plans/2026-11-20-forged-quotes-design.md, section 1): checked against public versions only, nothing of a hidden post is in it.
+  const body = `a[quote=${HIDDEN}]made up[/quote]b[quote=${SHOWN}]real[/quote]`;
+  const spans: QuoteSpan[] = [];
+  const tree = parse(body, spans, new Set([HIDDEN]));
+  assert.deepEqual(spans.map((s) => s.act), [SHOWN]);
+  assert.equal(spans.some((s) => HIDE.has(s.act)), false);
+  assert.equal(JSON.stringify(tree).includes('made up'), true);
+  // the same body, read without the verdict, is a quote of the hidden post and is emptied
+  assert.equal(concealQuotes(body, HIDE), `a[quote=${HIDDEN}][/quote]b[quote=${SHOWN}]real[/quote]`);
 });

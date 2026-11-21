@@ -47,7 +47,7 @@ test('a report is hidden until edited, edited, hidden again, edited and approved
 
   const shown = () => json<{ hidden: boolean; body: string | null; any_hidden: boolean }>(sql(`select jsonb_build_object('hidden', a.hidden, 'body', a.payload ->> 'body', 'any_hidden', a.any_hidden)::text from acts_public a where a.id = '${post}'`));
   const current = () => json<{ hidden: boolean; body: string | null }>(sql(`select jsonb_build_object('hidden', a.hidden, 'body', a.current_payload ->> 'body')::text from acts_public a where a.id = '${post}'`));
-  const mineHidden = async (db = asAuthor) => db.rpc<{ status: string; version: string; words?: string } | null>('my_hidden_version', { act: post });
+  const mineHidden = async (db = asAuthor) => db.rpc<{ status: string; version: string; words?: string; forged?: string[] } | null>('my_hidden_version', { act: post });
   const reports = async () => asAdmin.rpc<{ reports: any[]; reviews: any[]; moreReports: boolean; moreReviews: boolean }>('admin_reports', {});
 
   // ---- 1. A player reports the post ----
@@ -64,7 +64,7 @@ test('a report is hidden until edited, edited, hidden again, edited and approved
   await asAdmin.rpc('decide_report', { report: first, outcomes: [{ outcome: 'hideUntilEdited', note: 'Mind the person.' }] });
   assert.deepEqual(current(), { hidden: true, body: null });
   assert.equal(shown().body, null);
-  assert.deepEqual(await mineHidden(), { status: 'hiddenUntilEdited', version: post, words: 'Words that go too far.' });
+  assert.deepEqual(await mineHidden(), { status: 'hiddenUntilEdited', version: post, words: 'Words that go too far.', forged: [] });
   assert.equal(await mineHidden(asReporter), null, 'another player read the hidden words');
   assert.equal((await reports()).reports.some((r) => r.id === first), false, 'a decided report stays listed');
 
@@ -79,13 +79,13 @@ test('a report is hidden until edited, edited, hidden again, edited and approved
   await asAdmin.rpc('decide', { account: null, version_act: e1, outcome: 'hideUntilEdited', until: null, note: 'Not yet.' });
   assert.deepEqual(current(), { hidden: true, body: null });
   assert.equal((await reports()).reviews.length, 0, 'a version hidden again is still on the re-review list');
-  assert.deepEqual(await mineHidden(), { status: 'hiddenUntilEdited', version: e1, words: 'Kinder words.' });
+  assert.deepEqual(await mineHidden(), { status: 'hiddenUntilEdited', version: e1, words: 'Kinder words.', forged: [] });
   assert.equal(await mineHidden(asReporter), null);
 
   // ---- 5. The author edits again: the edit waits for an admin, and shows once approved ----
   const e2 = one(`select tests.act('${ada}', 'edit', '${thread}', '{"body": "Kindest words."}', '${post}', now() + interval '2 minutes')`);
   assert.deepEqual(current(), { hidden: true, body: null });
-  assert.deepEqual(await mineHidden(), { status: 'waiting', version: e2, words: 'Kindest words.' });
+  assert.deepEqual(await mineHidden(), { status: 'waiting', version: e2, words: 'Kindest words.', forged: [] });
   assert.equal(await mineHidden(asReporter), null);
   await asAdmin.rpc('decide', { account: null, version_act: e2, outcome: 'approve', until: null, note: '' });
   assert.deepEqual(current(), { hidden: false, body: 'Kindest words.' });

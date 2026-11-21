@@ -329,7 +329,7 @@ export const PLAY_FROM = 'from' as const;
 /** Where a spun thread's origin can be found: an Act with a place number, an update, or a play and where it landed. */
 export type OriginPlace =
   | Extract<PlaceOn, { kind: 'post' | 'update' }>
-  /** A poll, and a public ballot on one (0394): `on` is the poll's post. A secret ballot is no origin. */
+  /** A poll, and a public ballot on one (0395): `on` is the poll's post. A secret ballot is no origin. */
   | { readonly kind: 'poll'; readonly question: string; readonly on: PostPlace }
   | { readonly kind: 'ballot'; readonly character: { readonly id: Id; readonly name: string }; readonly question: string; readonly on: PostPlace }
   /*
@@ -346,10 +346,10 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   | 'donation'
   /* A surface's layer (0317): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
   | 'draw' | 'wash'
-  /* A poll (0393): a poll on a post, a ballot on a poll, and a close of a poll. Acts of the post's thread, no place in the thread (`seq` null). */
+  /* A poll (0394): a poll on a post, a ballot on a poll, and a close of a poll. Acts of the post's thread, no place in the thread (`seq` null). */
   | 'poll' | 'ballot' | 'poll_close';
 
-/** A poll as the page draws it (`thread_page`'s `polls`, 0394): the poll's Act, its counts for each option, how many characters voted, when it ends, whether it has, and its close (an Act of kind `poll_close`) if one was written. */
+/** A poll as the page draws it (`thread_page`'s `polls`, 0395): the poll's Act, its counts for each option, how many characters voted, when it ends, whether it has, and its close (an Act of kind `poll_close`) if one was written. */
 export interface Poll {
   /** The post (or spin) the poll is on. */
   readonly post: Id;
@@ -363,7 +363,7 @@ export interface Poll {
   readonly balloted: boolean;
 }
 
-/** The live counts of a poll (the `poll` event, 0394's `poll_counts`): the same for every caller. */
+/** The live counts of a poll (the `poll` event, 0395's `poll_counts`): the same for every caller. */
 export interface PollCounts {
   readonly poll: Id;
   readonly counts: readonly number[];
@@ -397,7 +397,7 @@ export function pollHeard(apply: (e: PollEvent) => void): (e: PollEvent) => void
   };
 }
 
-/** A ballot of the caller's own (`my_ballots`, 0393): the poll it is on, its character, the picked indices (empty for a withdrawal) and when. */
+/** A ballot of the caller's own (`my_ballots`, 0394): the poll it is on, its character, the picked indices (empty for a withdrawal) and when. */
 export interface Ballot {
   readonly act: Id;
   readonly poll: Id;
@@ -409,7 +409,7 @@ export interface Ballot {
 import type { PollDraft } from '../../rules/polls.ts';
 export type { PollDraft };
 
-/** A counted ballot a public poll lists (`voters` in thread_page, 0394): who, which options, when. A secret poll lists none. */
+/** A counted ballot a public poll lists (`voters` in thread_page, 0395): who, which options, when. A secret poll lists none. */
 export interface PollVoter {
   readonly poll: Id;
   readonly act: Id;
@@ -418,13 +418,13 @@ export interface PollVoter {
   readonly at: string;
 }
 
-/** What a ballot or a close answers (`cast_ballot`, `close_poll`, `close_poll_as_admin`, 0393): the Act's projection, which on a secret poll names no one, and the poll's counts as they now stand. */
+/** What a ballot or a close answers (`cast_ballot`, `close_poll`, `close_poll_as_admin`, 0394): the Act's projection, which on a secret poll names no one, and the poll's counts as they now stand. */
 export interface PollWritten {
   readonly act: Act;
   readonly counts: PollCounts;
 }
 
-/** One ballot of a public poll's record (`poll_ballots`, 0394): the character with its public face, the picked indices (empty for a withdrawal) and when. */
+/** One ballot of a public poll's record (`poll_ballots`, 0395): the character with its public face, the picked indices (empty for a withdrawal) and when. */
 export interface PollBallot {
   readonly act: Id;
   readonly character: Character;
@@ -438,7 +438,7 @@ export interface PollBallotsPage {
   readonly more: boolean;
 }
 
-/** What a thread's page, and the origin of a spun thread, say of the polls on the posts they draw (0394). Each reads the same for every caller but `myBallots`, the caller's own. */
+/** What a thread's page, and the origin of a spun thread, say of the polls on the posts they draw (0395). Each reads the same for every caller but `myBallots`, the caller's own. */
 export interface PollParts {
   /** The current poll of each post drawn. */
   readonly polls: readonly Poll[];
@@ -524,6 +524,10 @@ export interface Act {
    */
   readonly seq: number | null;
   readonly createdAt: string;
+  /**
+   * `payload.forged`, on a post, spin or edit that quotes: the verdict, the posts whose quotes in its words are doctored (lowercase ids, sorted, each once), written once when the Act was and absent when
+   * there is none. A version in History carries its own. `forgedList` (engine/bbcode/quoted.ts) reads it as a list; every screen that draws an Act's words hands it to `BbCode` and to `parse`.
+   */
   readonly payload: Readonly<Record<string, unknown>>;
   readonly currentPayload: Readonly<Record<string, unknown>>;
   readonly editedAt: string | null;
@@ -568,8 +572,9 @@ export interface Act {
  * until edited.
  */
 export type MyHiddenVersion =
-  | { readonly status: 'hiddenUntilEdited'; readonly version: Id; readonly words: string }
-  | { readonly status: 'waiting'; readonly version: Id; readonly words: string };
+  | { readonly status: 'hiddenUntilEdited'; readonly version: Id; readonly words: string; readonly forged?: readonly string[] }
+  | { readonly status: 'waiting'; readonly version: Id; readonly words: string; readonly forged?: readonly string[] };
+/* `forged` on either: that version's own verdict (its payload's `forged`), which the words are drawn with, as a version in History is. */
 
 /* ------------------------------------------------------------------------------ a visit (the Mod Bots design, sections 6 and 7) ---- */
 
@@ -2791,6 +2796,11 @@ export interface KayfaApi {
    */
   myApologies(character: Id): Promise<readonly Apology[]>;
   /**
+   * The posts a draft's real quotes falsely name (`quote_check`, forged-quotes design section 8): the save's own check run on the words, so the composer can say so before the post is written. The same answer
+   * for every caller, computed from versions anyone can read; it never refuses a post. Rejects when it cannot be read.
+   */
+  quoteCheck(body: string): Promise<readonly string[]>;
+  /**
    * The group moves of one of the player's characters that an appeal was made on and not refunded for a failed judgment (`my_appeals`): each is appealed once, so the barred box stops
    * offering Appeal on them. A character that is not the player's, or an id that is no one's, reads none. Rejects when it cannot be read.
    */
@@ -3094,7 +3104,7 @@ export interface KayfaApi {
    * (`framedIn`, composer/text.ts); each debuted character of another player that the body names is told (the `framed` alert, 0118).
    */
   startThread(board: string, character: Id, title: string, body: string, framing?: readonly Id[], poll?: PollDraft): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
-  /** `poll` puts a poll on the post (0393); a draft the settings refuse, or the database does, comes back in its words. */
+  /** `poll` puts a poll on the post (0394); a draft the settings refuse, or the database does, comes back in its words. */
   post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[], poll?: PollDraft): Promise<Answer<Act>>;
   /** `poll` left out keeps the post's poll, a draft sets one (replacing the old, until it has ballots), `{ removed: true }` takes it away. */
   edit(post: Id, character: Id, body: string, poll?: PollDraft | { readonly removed: true }): Promise<Answer<Act>>;

@@ -25,6 +25,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
+import { forgedList, forgedSet } from '../../../../engine/bbcode/quoted.ts';
 import { visibleText } from '../../../../engine/bbcode/visible.ts';
 import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -49,7 +50,9 @@ function lineHeightOf(el: HTMLElement): number {
 
 export function ThisEffect({ post, plays, show, children }: EffectProps) {
   const body = typeof post.currentPayload.body === 'string' ? post.currentPayload.body : '';
-  const text = useMemo(() => visibleText(parse(body)), [body]);
+  /* A forged quote (the Act's verdict) is a counterfeit, so its words are the poster's own and count (forged-quotes design, section 1). */
+  const forged = forgedList(post.currentPayload);
+  const text = useMemo(() => visibleText(parse(body, undefined, forgedSet(forged))), [body, forged]);
   /* The plays by content, so a new array of equal plays is not a new set of places. */
   const playsKey = JSON.stringify(plays.map((p) => [p.id, p.config, inForce(p)]));
   const places = useMemo(() => placesOf(text, plays.filter(inForce)), [text, playsKey]); // eslint-disable-line react-hooks/exhaustive-deps

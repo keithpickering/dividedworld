@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runChatter } from './core.ts';
+import { decideOptions, runChatter } from './core.ts';
 import { CHATTER_TOKENS } from '../../../engine/system/chatter.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
@@ -1006,4 +1006,16 @@ test('the structured chatter call is capped at CHATTER_TOKENS', async () => {
   await run(d, m);
   assert.ok(m.chats.length > 0);
   for (const c of m.chats) assert.equal(c.maxTokens, CHATTER_TOKENS);
+});
+
+test('the options a persona\'s card is decided on read a forged quote as the post\'s own words, as card_target_reach reports it', async () => {
+  const quoted = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const body = `[quote=${quoted}]cats[/quote] dogs`;
+  const decide = async (forged?: string[]) => {
+    const db: Db = { rpc: async <T>() => ({ act: 'p', kind: 'post', length: body.length, body, version: 'v1', effects: [], above: {}, ...(forged ? { forged } : {}) }) as T };
+    const rules = realInstance.cards.find((c) => c.key === 'autocorrect')!;
+    return decideOptions(db, realInstance, rules, 'p', 'reply', { phrase: 'cats', replacement: 'dogs' });
+  };
+  assert.equal((await decide()).ok, false, 'an honest quote is another post\'s words');
+  assert.equal((await decide([quoted])).ok, true, 'a forged one is the poster\'s own');
 });

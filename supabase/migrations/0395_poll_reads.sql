@@ -1,6 +1,6 @@
 -- Polls: the reads (docs/plans/2026-11-20-polls-design.md; plan docs/plans/2026-11-20-polls-plan.md, Task 2; models 0375_spun_thread_reads.sql, 0372_origin_in_page.sql and 0377_sealed_packs.sql).
 --
--- 0393 wrote the kinds, the writes and the guards. This reads them back, in the screens' own reads, and changes nothing 0393 wrote. Each function and view below is copied whole from its latest definition (named in the comment above it), changing only what is named.
+-- 0394 wrote the kinds, the writes and the guards. This reads them back, in the screens' own reads, and changes nothing 0394 wrote. Each function and view below is copied whole from its latest definition (named in the comment above it), changing only what is named.
 --
 --   1. poll_ballots    (poll, before, before_id): a public poll's every ballot, the changes included, newest first, 50 at a time paged by the keyset (at, act) of the last one, each with its character's public name and avatar; it refuses a secret poll in one sentence. And my_poll_closes, an
 --                       owner-rights view of an admin's closes of the polls the caller's characters wrote (as my_ballots is the caller's own ballots), which the log reads: the poll's character through acts_public may be the veil's stand-in.
@@ -21,7 +21,7 @@
 -- whatever the caller, and the digest carries counts and no one.
 --
 -- A busy instance: nothing limits how often a character changes its ballot, so no read here costs the ballots cast. The counts are poll_counts', one pass over a poll's voters through poll_latest_ballots (each character's latest ballot,
--- 0393) for each poll on the page, and a poll's voters are poll_voter_acts', the newest of those rows stopped at 50; the voters' rows are then read through acts_public by primary key, for those ids alone. The caller's own ballots are
+-- 0394) for each poll on the page, and a poll's voters are poll_voter_acts', the newest of those rows stopped at 50; the voters' rows are then read through acts_public by primary key, for those ids alone. The caller's own ballots are
 -- my_latest_ballots', a row for each poll they voted on. A page reads one poll for each post it draws (a probe of acts_polls, newest first, one row), so the read grows with the page's posts and the polls' voters, never with the instance's
 -- Acts or the changes of ballots. poll_ballots (the history of every ballot) reads one page by a keyset on (created_at, id) through acts_ballots_recent and returns 50: its cost is the page's, however deep.
 --

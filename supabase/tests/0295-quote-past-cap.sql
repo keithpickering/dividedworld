@@ -96,7 +96,7 @@ begin
   rule := tests.act((select id from characters where staff = 'qc-boss'), 'move', (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'),
     jsonb_build_object('kind', 'setRule', 'body', 'A rule.', 'params', jsonb_build_object('board', null, 'predicate', 'bannedWord', 'param', 'zqxjkvdeepwords', 'band', 'minor')), null, base);
   perform set_config('kayfabb.staff_writer', '', true);
-  q := tests.post(ch, th, 'The quoted post.', base + interval '1 minute');
+  q := tests.post(ch, th, 'The quoted post. zqxjkvdeepwords', base + interval '1 minute');
   -- the rule fires on the post's own words, so the checks below can tell
   own := tests.post(ch, th, 'I say zqxjkvdeepwords myself.', base + interval '2 minutes');
   select count(*) into n from rule_breaks(own);
@@ -124,7 +124,7 @@ declare
   ann uuid := tests.account('qc-ann'); bob uuid := tests.account('qc-bob');
   a uuid := tests.character(ann, 'Qc Ann'); b uuid := tests.character(bob, 'Qc Bob');
   t uuid := tests.thread('Qc thread');
-  p uuid := tests.post(a, t, 'Stopped.'); p2 uuid := tests.post(a, t, 'Another post.');
+  p uuid := tests.post(a, t, 'Stopped. hello'); p2 uuid := tests.post(a, t, 'Another post.');
   got text; n integer;
   bad text[] := '{}';
 begin

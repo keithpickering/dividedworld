@@ -17,6 +17,7 @@ import type { Act, Refusal, Slot, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, START, TEST_CODE, TEST_LINK } from './fake.ts';
 import { cutLog, LOG_ROWS, micros } from './log-page.ts';
+import { targetOf as targetOf2 } from '../cards/land.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../../rules/test-system.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
@@ -3207,6 +3208,129 @@ describe('framed alerts', () => {
   });
 });
 
+/* Forged quotes (docs/plans/2026-11-20-forged-quotes-design.md, sections 1, 3, 5 and 7): the fake works out the verdict as the database does, with Task 1's TypeScript, when a post, spin or edit is written. */
+describe('forged quotes', () => {
+  function forgedWorld() {
+    const w = world({ postMaxLength: 2000 });
+    return { ...w, quoted: w.fake.seed.post(w.thread, w.boFace, 'I like Mario a lot') };
+  }
+  const forgedOf = async (w: { fake: ReturnType<typeof createFake> }, id: string) => ((await w.fake.actsById([id]))[0]!.payload as { forged?: unknown }).forged;
+  const targetOf = async (w: { fake: ReturnType<typeof createFake> }, id: string) => (await w.fake.actsById([id]))[0]!.targetActId;
+  const alertsFor = async (w: { fake: ReturnType<typeof createFake>; ana: string; bo: string }, account: string, kind: string) => { w.fake.signInAs(account); const rows = (await w.fake.alerts()).filter((a) => a.kind === kind); w.fake.signInAs(w.ana); return rows; };
+
+  test('an honest quote leaves the Act with no verdict, keeps its target, and writes a quote alert and no framed one', async () => {
+    const w = forgedWorld();
+    const made = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Mario a lot[/quote]agreed`, w.quoted));
+    expect(await forgedOf(w, made.id)).toBeUndefined();
+    expect(await targetOf(w, made.id)).toBe(w.quoted);
+    expect(await alertsFor(w, w.bo, 'quote')).toHaveLength(1);
+    expect(await alertsFor(w, w.bo, 'framed')).toEqual([]);
+  });
+
+  test('a doctored quote carries the verdict, drops the target, writes no quote alert, and writes a framed one to the quoted post\'s author', async () => {
+    const w = forgedWorld();
+    const made = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]I hate Mario a lot[/quote]so there`, w.quoted));
+    expect(await forgedOf(w, made.id)).toEqual([w.quoted]);
+    expect(await targetOf(w, made.id)).toBeNull();
+    expect(await alertsFor(w, w.bo, 'quote')).toEqual([]);
+    expect(await alertsFor(w, w.bo, 'framed')).toMatchObject([{ kind: 'framed', act: made.id, character: w.boFace }]);
+  });
+
+  test('the verdict is one per quoted post (a forged quote taints the others of it), lowercase and sorted, and a client\'s own is dropped', async () => {
+    const w = forgedWorld();
+    const other = w.fake.seed.post(w.thread, w.boFace, 'second words');
+    const body = `[quote=${w.quoted}]Mario a lot[/quote][quote=${w.quoted}]never said[/quote][quote=${other}]second words[/quote]`;
+    const made = must(await w.fake.post(w.thread, w.anaFace, body, null));
+    expect(await forgedOf(w, made.id)).toEqual([w.quoted]);
+  });
+
+  test('a quote that stands only in an edit written before the save is authentic; one that stands only in an edit written after is forged', async () => {
+    const w = forgedWorld();
+    w.fake.clock.advance(60_000);
+    w.fake.seed.edit(w.quoted, w.boFace, 'I like Luigi now');
+    w.fake.clock.advance(60_000);
+    const before = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Luigi now[/quote]`, null));
+    const original = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Mario a lot[/quote]`, null));
+    expect(await forgedOf(w, before.id)).toBeUndefined();
+    expect(await forgedOf(w, original.id)).toBeUndefined();
+    const fresh = w.fake.seed.post(w.thread, w.boFace, 'brand new words');
+    const made = must(await w.fake.post(w.thread, w.anaFace, `[quote=${fresh}]Waluigi[/quote]`, null));
+    w.fake.clock.advance(60_000);
+    w.fake.seed.edit(fresh, w.boFace, 'Waluigi is here');
+    expect(await forgedOf(w, made.id)).toEqual([fresh]);
+  });
+
+  test('a quote that matches only a hidden version is forged, and a hidden version\'s words are not read', async () => {
+    const w = forgedWorld();
+    const secret = w.fake.seed.post(w.thread, w.boFace, 'a secret sentence');
+    w.fake.seed.hide(secret, 'hide');
+    const made = must(await w.fake.post(w.thread, w.anaFace, `[quote=${secret}]secret sentence[/quote]`, null));
+    expect(await forgedOf(w, made.id)).toEqual([secret]);
+  });
+
+  test('an id that is no Act, a card\'s id and an empty quote of a real post', async () => {
+    const w = forgedWorld();
+    const nowhere = '99999999-9999-4999-8999-999999999999';
+    const card = w.fake.seed.card(w.anaFace, w.quoted, 'dab', { live: true });
+    const made = must(await w.fake.post(w.thread, w.anaFace, `[quote=${nowhere}]x[/quote][quote=${w.quoted}][/quote][quote=${card}]x[/quote]`, null));
+    expect(await forgedOf(w, made.id)).toEqual([nowhere, card].sort());
+  });
+
+  test('a spin and an edit carry their own verdicts, and an edit writes no framed alert', async () => {
+    const w = forgedWorld();
+    const spun = must(await w.fake.spin(w.opener, w.anaFace, 'Spun', `[quote=${w.quoted}]never said[/quote]`, []));
+    expect(((spun.act.payload) as { forged?: unknown }).forged).toEqual([w.quoted]);
+    expect(await alertsFor(w, w.bo, 'framed')).toHaveLength(1);
+    const mine = must(await w.fake.post(w.thread, w.anaFace, 'plain', null));
+    must(await w.fake.edit(mine.id, w.anaFace, `[quote=${w.quoted}]never said it either[/quote]`));
+    expect(await alertsFor(w, w.bo, 'framed')).toHaveLength(1);
+    const versions = await w.fake.history(mine.id);
+    expect(versions.map((v) => (v.payload as { forged?: unknown }).forged)).toEqual([undefined, [w.quoted]]);
+  });
+
+  test('a forged quote of a post hidden later keeps its words, since no layer is asked for it, and an honest quote of the same post is emptied', async () => {
+    const w = forgedWorld();
+    const doctored = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Words never said[/quote]tail`, null));
+    const honest = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Mario a lot[/quote]tail`, null));
+    w.fake.seed.hide(w.quoted, 'hide');
+    const [d, h] = await w.fake.actsById([doctored.id, honest.id]);
+    expect(d!.payload.body).toBe(`[quote=${w.quoted}]Words never said[/quote]tail`);
+    expect(h!.payload.body).toBe(`[quote=${w.quoted}][/quote]tail`);
+  });
+
+  test('a character named by `framing` is never told a second time through a forged quote, whether or not the framing alert was skipped', async () => {
+    const w = forgedWorld();
+    /* Told once by framing (named in the body), and its post is also forged: one alert. */
+    must(await w.fake.post(w.thread, w.anaFace, `[quote=Someone user=${w.boFace}]x[/quote][quote=${w.quoted}]never said[/quote]`, null, [w.boFace]));
+    expect(await alertsFor(w, w.bo, 'framed')).toHaveLength(1);
+    /* Named in `framing` but not in the body, so the framing alert is skipped: the forged quote does not tell it either. */
+    must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]never said it again[/quote]`, null, [w.boFace]));
+    expect(await alertsFor(w, w.bo, 'framed')).toHaveLength(1);
+  });
+
+  test('a play on a phrase inside a doctored quote lands on the post as the poster\'s own words, and inside an honest quote it does not', async () => {
+    const w = forgedWorld();
+    const hits = (target: unknown) => (target as { text: string }).text;
+    const doctored = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Luigi never said this[/quote]tail`, null));
+    const honest = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Mario a lot[/quote]tail`, null));
+    const [d, h] = await w.fake.actsById([doctored.id, honest.id]);
+    expect(hits(targetOf2(d!))).toContain('Luigi never said this');
+    expect(hits(targetOf2(h!))).not.toContain('Mario a lot');
+  });
+
+  test('a thread start frames the author of each forged post, and with `framing` ids no more than five alerts are written, each character once', async () => {
+    const w = forgedWorld();
+    const faces = Array.from({ length: 6 }, (_, i) => w.fake.seed.character(w.bo, `Bo ${i}`, 'face'));
+    const posts = faces.map((c, i) => w.fake.seed.post(w.thread, c, `words ${i}`));
+    const named = faces.slice(0, 3).map((c) => `[quote=Someone user=${c}]x[/quote]`).join('');
+    const forged = posts.map((p) => `[quote=${p}]never said[/quote]`).join('');
+    must(await w.fake.startThread('general', w.anaFace, 'Fresh', `${named}${forged}`, faces.slice(0, 3)));
+    const rows = await alertsFor(w, w.bo, 'framed');
+    expect(rows).toHaveLength(5);
+    expect(new Set(rows.map((r) => r.character)).size).toBe(5);
+  });
+});
+
 describe('a play on a post is not announced on reach', () => {
   test('only a character, a thread or a board play is', async () => {
     const w = world();
@@ -4610,35 +4734,46 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
     expect(via).toMatchObject({ ok: false });
     expect((via as Refusal).error).toContain(words(1));
     expect((via as Refusal).error).toMatch(/; take that quote out and send again$/);
-    const inBody = await fake.post(thread, boFace, `[quote=${opener}]yes[/quote] no`, null);
+    const inBody = await fake.post(thread, boFace, `[quote=${opener}]First post[/quote] no`, null);
     expect((inBody as Refusal).error).toContain(words(1));
     expect(must(await fake.post(thread, boFace, `Replying.`, null)).kind).toBe('post');
     /* A thread started or spun with the quote in its words is refused too, and a spin from the stopped post is not. */
-    expect((await fake.startThread('general', boFace, 'New', `[quote=${opener}]x[/quote]`) as Refusal).error).toContain('a post in another thread');
-    expect((await fake.spin(opener, boFace, 'Spun', `[quote=${opener}]x[/quote]`) as Refusal).error).toContain('a post in another thread');
+    expect((await fake.startThread('general', boFace, 'New', `[quote=${opener}]First post[/quote]`) as Refusal).error).toContain('a post in another thread');
+    expect((await fake.spin(opener, boFace, 'Spun', `[quote=${opener}]First post[/quote]`) as Refusal).error).toContain('a post in another thread');
     expect(must(await fake.spin(opener, boFace, 'Spun', `Plain.`)).act.kind).toBe('spin');
+  });
+
+  test('a doctored quote of a stopped post is written (it is a counterfeit, which No-quote never refused), an honest one is refused', async () => {
+    const { fake, bo, boFace, thread, opener, anaFace } = setup();
+    must(await fake.useCard('hush', anaFace, opener, {}, ''));
+    fake.signInAs(bo);
+    const doctored = must(await fake.post(thread, boFace, `[quote=${opener}]Words the post never held[/quote] no`, null));
+    expect((await fake.actsById([doctored.id]))[0]!.payload).toMatchObject({ forged: [opener] });
+    expect(((await fake.post(thread, boFace, `[quote=${opener}]First post[/quote]`, null)) as Refusal).error).toContain(words(1));
+    /* A reply whose target is forged drops the target, so the stopped post is not quoted at all. */
+    expect((await fake.actsById([must(await fake.post(thread, boFace, `[quote=${opener}]Never held[/quote]`, opener)).id]))[0]!.targetActId).toBeNull();
   });
 
   test('the post\'s own author is refused the same way, a quote inside code is no quote, and an ended play stops nothing', async () => {
     const { fake, thread, opener, anaFace } = setup();
     must(await fake.useCard('hush', anaFace, opener, {}, ''));
     expect(((await fake.post(thread, anaFace, `Me.`, opener)) as Refusal).error).toContain(words(1));
-    expect(must(await fake.post(thread, anaFace, `[code][quote=${opener}]x[/quote][/code]`, null)).kind).toBe('post');
+    expect(must(await fake.post(thread, anaFace, `[code][quote=${opener}]First post[/quote][/code]`, null)).kind).toBe('post');
     fake.clock.advance(2 * 86_400_000);
     expect(must(await fake.post(thread, anaFace, `Me again.`, opener)).kind).toBe('post');
   });
 
   test('an edit that adds the quote is refused; one that keeps a quote the post already held is written', async () => {
     const { fake, thread, opener, anaFace } = setup();
-    const held = must(await fake.post(thread, anaFace, `[quote=${opener}]x[/quote] first`, null));
+    const held = must(await fake.post(thread, anaFace, `[quote=${opener}]First post[/quote] first`, null));
     must(await fake.useCard('hush', anaFace, opener, {}, ''));
-    expect(must(await fake.edit(held.id, anaFace, `[quote=${opener}]x[/quote] changed words`)).kind).toBe('post');
+    expect(must(await fake.edit(held.id, anaFace, `[quote=${opener}]First post[/quote] changed words`)).kind).toBe('post');
     const plain = must(await fake.post(thread, anaFace, `No quote yet.`, null));
-    const refusedEdit = await fake.edit(plain.id, anaFace, `[quote=${opener}]x[/quote] now`);
+    const refusedEdit = await fake.edit(plain.id, anaFace, `[quote=${opener}]First post[/quote] now`);
     expect((refusedEdit as Refusal).error).toContain(words(1));
     /* An edit compares against the post's current body: once an edit drops the quote, one that puts it back adds it. */
     expect(must(await fake.edit(held.id, anaFace, `Dropped the quote.`)).kind).toBe('post');
-    const readded = await fake.edit(held.id, anaFace, `[quote=${opener}]x[/quote] back again`);
+    const readded = await fake.edit(held.id, anaFace, `[quote=${opener}]First post[/quote] back again`);
     expect((readded as Refusal).error).toContain(words(1));
   });
 
@@ -5946,7 +6081,7 @@ describe('the welcome pack: one sealed gift per account, opened by the player', 
   });
 });
 
-describe('polls (0393, 0394)', () => {
+describe('polls (0394, 0395)', () => {
   const draft = { question: 'Which?', options: ['A', 'B', 'C'], pick: 2, secret: false, lasts: { unit: 'day' as const, count: 1 } };
   const poll = async (secret = false) => {
     const w = world();
