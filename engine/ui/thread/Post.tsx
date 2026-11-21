@@ -42,6 +42,7 @@ import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, Unmask
 import { pageOf, threadHref } from './pages.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
 import { FoldBar } from './FoldBar.tsx';
+import { Poll } from '../polls/Poll.tsx';
 import { RowFoldCtx, useFoldMotion } from './fold.tsx';
 
 export { ThreadCtx, type ThreadContext };
@@ -125,6 +126,7 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
                 </>
               )
               : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>}
+          {!editing && !hidden && act.concealing !== true && <Poll post={act.id} />}
           <LastEdited act={act} />
           <Reactions act={act.id} author={by} authorName={spoken} tallies={tallies} mine={mine} plays={plays} />
           {person && <Signature text={person.character.signature} />}

@@ -1784,3 +1784,74 @@ describe('the crowd pay line', () => {
     expect(logRows(data({ log, mine, names, acts: heldActs(1) }), w, 600, null).map((r) => r.kind)).toEqual(['settlement', 'crowd']);
   });
 });
+
+/**
+ * The poll lines (the polls plan, Task 8): the player's own ballots (cast, changed, withdrawn, secret or not) and an admin's close of their poll, in plain words and true. The picks are said from the
+ * poll's options; a line names the character's own name and pronoun and never another voter.
+ */
+describe('the poll lines', () => {
+  const mine = [char('b', 'Wario', 'heel', undefined, PRONOUN_PRESETS.he), char('c', 'Waluigi', 'face', undefined, PRONOUN_PRESETS.they)];
+  const at = '2026-11-20T12:00:00.000Z';
+  const place = { thread: 'th', title: 'Best kart?', seq: 12 };
+  const ballot = (over: Partial<NonNullable<Log['ballots']>[number]> = {}): NonNullable<Log['ballots']>[number] =>
+    ({ act: 'a1', poll: 'pl', character: 'b', picks: [1], at, question: 'Best part?', secret: false, options: ['Wheel', 'Pipe Frame', 'Engine'], changed: false, place, ...over });
+  const rowsOf = (log: Partial<Log>, tab: string | null = null) => logRows(data({ log: { ...empty, ...log }, mine }), words, 600, tab).filter((r) => r.kind === 'ballot' || r.kind === 'pollClose');
+  const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+
+  test('a cast ballot says what it picked, in which poll, and where the post is', () => {
+    const [r] = rowsOf({ ballots: [ballot()] });
+    expect(r).toMatchObject({ kind: 'ballot', at, aura: 0, wallet: null, characters: ['b'], what: 'Wario cast a ballot' });
+    expect(said(r!)).toBe('Wario cast a ballot for Pipe Frame in the poll “Best part?” on #12 in Best kart?.');
+    expect(r!.details).toContainEqual({ text: '#12 in Best kart?', href: '/t/th?page=1#post-12' });
+  });
+  test('two picks and three are said in a list', () => {
+    expect(said(rowsOf({ ballots: [ballot({ picks: [0, 1] })] })[0]!)).toContain('for Wheel and Pipe Frame in');
+    expect(said(rowsOf({ ballots: [ballot({ picks: [0, 1, 2] })] })[0]!)).toContain('for Wheel, Pipe Frame and Engine in');
+  });
+  test('a secret ballot says so, to its own player', () => {
+    expect(said(rowsOf({ ballots: [ballot({ secret: true })] })[0]!)).toBe('Wario cast a ballot for Pipe Frame in the poll “Best part?” on #12 in Best kart? (secret ballot).');
+  });
+  test('a change of ballot says it changed, with the pronoun the log reads for the character', () => {
+    const [r] = rowsOf({ ballots: [ballot({ changed: true, picks: [2] })] });
+    expect(said(r!)).toBe('Wario changed his ballot to Engine in the poll “Best part?” on #12 in Best kart?.');
+    expect(r!.what).toBe('Wario changed his ballot');
+    expect(said(rowsOf({ ballots: [ballot({ changed: true, character: 'c' })] })[0]!)).toContain('Waluigi changed their ballot to Pipe Frame');
+  });
+  test('a withdrawal says it was withdrawn, and a secret one says so too', () => {
+    expect(said(rowsOf({ ballots: [ballot({ changed: true, picks: [] })] })[0]!)).toBe('Wario withdrew his ballot in the poll “Best part?” on #12 in Best kart?.');
+    expect(said(rowsOf({ ballots: [ballot({ changed: true, picks: [], secret: true })] })[0]!)).toBe('Wario withdrew his ballot in the poll “Best part?” on #12 in Best kart? (secret ballot).');
+  });
+  test('a pick the poll no longer lists is said by its number, never dropped', () => {
+    expect(said(rowsOf({ ballots: [ballot({ picks: [7] })] })[0]!)).toContain('for option 8 in the poll');
+  });
+  test('an admin closing a poll of the player\'s says so, and names the character', () => {
+    const [r] = rowsOf({ pollCloses: [{ act: 'k1', poll: 'pl', character: 'b', at, question: 'Best part?', place }] });
+    expect(r).toMatchObject({ kind: 'pollClose', at, aura: 0, wallet: null, characters: ['b'] });
+    expect(said(r!)).toBe('An admin closed Wario\'s poll “Best part?”.');
+  });
+  test('a line is in its character\'s tab and in All, and a character that is not the player\'s has none', () => {
+    const log = { ballots: [ballot(), ballot({ act: 'a2', character: 'c' }), ballot({ act: 'a3', character: 'zz' })] };
+    expect(rowsOf(log, 'b').map((r) => r.key)).toEqual(['ballot:a1']);
+    expect(rowsOf(log, null).map((r) => r.key).sort()).toEqual(['ballot:a1', 'ballot:a2']);
+  });
+  test('a line names no one else, whatever the options hold', () => {
+    const [r] = rowsOf({ ballots: [ballot()], pollCloses: [{ act: 'k1', poll: 'pl', character: 'b', at, question: 'Best part?', place }] });
+    expect(JSON.stringify(r)).not.toMatch(/voter|reacted/u);
+  });
+});
+
+describe('merging pages with poll lines', () => {
+  const place = { thread: 't', title: 'T', seq: 1 };
+  const b = (act: string) => ({ act, poll: 'p', character: 'c', picks: [0], at: '2026-11-20T12:00:00.000Z', question: 'Q', secret: false, options: ['A', 'B'], changed: false, place });
+  const k = (act: string) => ({ act, poll: 'p', character: 'c', at: '2026-11-20T12:00:00.000Z', question: 'Q', place });
+  test('ballots and closes of both pages are kept, newer first', () => {
+    const merged = mergeLogs({ ...empty, ballots: [b('b1')], pollCloses: [k('k1')] }, { ...empty, ballots: [b('b2')], pollCloses: [k('k2')] });
+    expect(merged.ballots?.map((x) => x.act)).toEqual(['b1', 'b2']);
+    expect(merged.pollCloses?.map((x) => x.act)).toEqual(['k1', 'k2']);
+  });
+  test('where only one page has them they survive, and where neither does they stay absent', () => {
+    expect(mergeLogs({ ...empty, ballots: [b('b1')] }, { ...empty }).ballots?.map((x) => x.act)).toEqual(['b1']);
+    expect(mergeLogs({ ...empty }, { ...empty, pollCloses: [k('k2')] }).pollCloses?.map((x) => x.act)).toEqual(['k2']);
+    expect(mergeLogs({ ...empty }, { ...empty }).ballots).toBeUndefined();
+  });
+});

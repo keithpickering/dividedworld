@@ -30,6 +30,11 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
   assert.equal(defaults.halving, 0.5);
   assert.equal(defaults.debateDays, 3);
   assert.equal(defaults.reactionCap, 3);
+  assert.equal(defaults.pollOptionsMax, 10);
+  assert.equal(defaults.pollQuestionMax, 200);
+  assert.equal(defaults.pollOptionMax, 100);
+  assert.deepEqual(defaults.pollLastsMin, { unit: 'hour', count: 1 });
+  assert.deepEqual(defaults.pollLastsMax, { unit: 'day', count: 14 });
   assert.equal(defaults.crowdPayEach, 2);
   assert.equal(defaults.crowdPayMost, 10);
   assert.equal(defaults.charactersPerPlayer, 6);

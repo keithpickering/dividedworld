@@ -4,23 +4,37 @@
  * unmasks you").
  */
 import { useCallback, useEffect, useState } from 'react';
-import type { Id } from '../data/api.ts';
+import type { Id, PollDraft } from '../data/api.ts';
 
 export interface Draft {
   readonly text: string;
   /** The character the draft was being written as. */
   readonly as: Id | null;
+  /** The poll being written with it, if one is open. */
+  readonly poll?: PollDraft;
 }
 
 export const draftKey = (account: Id, thread: Id) => `kb-draft:${account}:${thread}`;
+
+/** A kept poll, if it is shaped as a draft is; anything else is dropped. */
+function pollOf(v: unknown): PollDraft | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const p = v as Record<string, unknown>;
+  const lasts = p.lasts as { unit?: unknown; count?: unknown } | undefined;
+  return typeof p.question === 'string' && Array.isArray(p.options) && p.options.every((o) => typeof o === 'string') && typeof p.pick === 'number' && typeof p.secret === 'boolean'
+    && typeof lasts === 'object' && lasts !== null && typeof lasts.unit === 'string' && typeof lasts.count === 'number'
+    ? (p as unknown as PollDraft) : null;
+}
 
 /** Every access is guarded: a private window or a full disk keeps nothing, and the reply still goes. */
 export function readDraft(key: string): Draft | null {
   try {
     const raw = globalThis.localStorage?.getItem(key);
     if (!raw) return null;
-    const d = JSON.parse(raw) as { text?: unknown; as?: unknown };
-    return typeof d.text === 'string' && d.text !== '' ? { text: d.text, as: typeof d.as === 'string' ? d.as : null } : null;
+    const d = JSON.parse(raw) as { text?: unknown; as?: unknown; poll?: unknown };
+    const poll = pollOf(d.poll);
+    if (typeof d.text !== 'string' || (d.text === '' && !poll)) return null;
+    return { text: d.text, as: typeof d.as === 'string' ? d.as : null, ...(poll ? { poll } : {}) };
   } catch { return null; }
 }
 
@@ -36,7 +50,7 @@ export function clearDrafts(account: Id): void {
 
 export function writeDraft(key: string, draft: Draft): void {
   try {
-    if (draft.text === '') globalThis.localStorage?.removeItem(key);
+    if (draft.text === '' && !draft.poll) globalThis.localStorage?.removeItem(key);
     else globalThis.localStorage?.setItem(key, JSON.stringify(draft));
   } catch { /* nothing kept */ }
 }

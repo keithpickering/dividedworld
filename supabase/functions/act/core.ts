@@ -79,6 +79,16 @@ const surfaceHeard = (play: unknown, answer: Row | undefined, thread: unknown): 
   typeof play === 'string' && thread && answer && typeof answer.covered === 'number'
     ? [{ topic: `thread:${thread}`, event: 'surface', payload: { play, covered: answer.covered } }] : [];
 /**
+ * A ballot or a close of a poll (0395): the Act's projection as `act` (on a secret poll the database's projection names no one) and the poll's live
+ * numbers as `poll`: `{ poll, counts, voters, ends_at, closed, at }`, counts of characters, `at` the created_at of the Act the write made. Built from the answer
+ * alone, never from the request, so a secret ballot's event carries no character and no picks. Events can arrive twice or out of order: a listener applies one only
+ * if its `at` is later than the last it applied for that poll (at a tie a closed one wins), and `closed` is final (engine/ui/data/api.ts, pollHeard).
+ */
+const polled = (a: Row): Broadcast[] => [
+  ...act(a.act),
+  ...(a.thread && a.poll ? [{ topic: `thread:${a.thread}`, event: 'poll', payload: { poll: a.poll, counts: a.counts, voters: a.voters, ends_at: a.ends_at, closed: a.closed, at: (a.act as Row | undefined)?.created_at } }] : []),
+];
+/**
  * What each SQL function's answer sends live. Each is the public projection the function
  * returned, never more; a purchase, which is the player's alone, sends nothing, and so does a
  * Turn, which waits for the settlement to send its tally.
@@ -123,6 +133,9 @@ const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   withdraw_turn: () => [],
   // A null tally is a post whose totals are hidden (a blind study): there is none to send.
   react: (a) => withSprung(a, a.thread && a.tally !== null ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
+  cast_ballot: polled,
+  close_poll: polled,
+  close_poll_as_admin: polled,
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   // A gift is an Act of the drive's thread, heard as a play is. The answer also holds the giver's own balance, which is the giver's alone and is never sent on.
   donate: (a) => act(a.gift),

@@ -32,7 +32,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { SignedIn } from '../../../engine/ui/data/api.ts';
 import { forgedList } from '../../../engine/bbcode/quoted.ts';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, pollHeard, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -44,13 +44,13 @@ import { RARITIES } from '../../../engine/rules/cards.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type { HandoffFacts } from '../../../engine/system/meeting.ts';
 import type {
-  SurfaceAct, SurfaceNow, SurfaceWritten,
+  SurfaceAct, SurfaceNow, SurfaceWritten, Ballot, Poll, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Unsealed, SealedPack, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent, CrowdPaid,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
-  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogBallot, LogPollClose, LogPlace, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -281,6 +281,20 @@ function toThread(r: Row): ThreadSummary {
 }
 
 const toDriveGifts = (v: unknown): DriveGift[] => (Array.isArray(v) ? (v as Row[]) : []).map((g): DriveGift => ({ id: String(g['id']), character: typeof g['character'] === 'string' ? g['character'] : null, name: typeof g['name'] === 'string' ? g['name'] : null, amount: num(g['amount']), at: String(g['at']) }));
+/** The picked option numbers of a ballot; anything else reads as none. */
+const toPicks = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : []);
+/** A poll's live numbers (`poll_counts`'s columns, as the `poll` event and cast_ballot's answer carry them). */
+const toPollCounts = (r: Row): PollCounts => ({ poll: r['poll'] as Id, counts: toPicks(r['counts']), voters: num(r['voters']), endsAt: String(r['ends_at']), closed: r['closed'] === true });
+/** A `poll` event with no time cannot be ordered against the others, so it is dropped rather than heard as the newest or the oldest. */
+const toPollEvent = (r: Row): PollEvent | null => (typeof r['at'] === 'string' ? { ...toPollCounts(r), at: r['at'] } : null);
+const toPollWritten = (r: Row): PollWritten => ({ act: toAct(r['act'] as Row), counts: toPollCounts(r) });
+/** thread_page's poll parts (0396), for the page and for the origin alike; a document without them reads as none. */
+const toPollParts = (d: Row) => ({
+  polls: rowsOf(d['polls']).map((p): Poll => ({ post: p['post'] as Id, act: toAct(p['act'] as Row), counts: toPicks(p['counts']), voters: num(p['voters']), endsAt: String(p['ends_at']), closed: p['closed'] === true, close: isObject(p['close']) ? toAct(p['close']) : null, balloted: p['balloted'] === true })),
+  voters: rowsOf(d['voters']).map((v): PollVoter => ({ poll: v['poll'] as Id, act: v['act'] as Id, character: v['character'] as Id, picks: toPicks(v['picks']), at: String(v['at']) })),
+  votersMore: (Array.isArray(d['votersMore']) ? d['votersMore'] : []).filter((x): x is Id => typeof x === 'string'),
+  myBallots: rowsOf(d['myBallots']).map((b): Ballot => ({ act: b['act'] as Id, poll: b['poll'] as Id, character: b['character'] as Id, picks: toPicks(b['picks']), at: String(b['at']) })),
+});
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isText = (v: unknown): v is string => typeof v === 'string';
 
@@ -317,6 +331,14 @@ function toPlace(raw: unknown): OriginPlace | null {
     if (!(raw['card'] === null || isText(raw['card']))) return null;
     /* `from` and `at` (0351) are each a post place, else null: a row from before the migration has neither key. */
     return { kind: 'play', card: raw['card'], on: toPlaceOn(raw['on']), from: toPostPlace(raw[PLAY_FROM]), at: toPostPlace(raw['at']) };
+  }
+  /* A poll, and a public ballot on one (0396): the question and the poll's post; a ballot also names its character. */
+  if (raw['kind'] === 'poll' || raw['kind'] === 'ballot') {
+    const on = toPostPlace(raw['on']);
+    const who = raw['character'];
+    if (!isText(raw['question']) || on === null) return null;
+    if (raw['kind'] === 'poll') return { kind: 'poll', question: raw['question'], on };
+    return isObject(who) && isText(who['id']) && isText(who['name']) ? { kind: 'ballot', character: { id: who['id'], name: who['name'] }, question: raw['question'], on } : null;
   }
   const place = toPlaceOn(raw);
   return place !== null && (place.kind === 'post' || place.kind === 'update') ? place : null;
@@ -625,12 +647,14 @@ const toBosses = (v: unknown): { readonly staff: string; readonly name: string; 
 
 /** A draw or a wash on a surface, as the log reads it (`my_draws`, `my_walls_drawn_on`, 0317): public facts and the reader's own character. */
 const surfaceLogRow = (r: Row): SurfaceLogRow => ({ act: r['act'], kind: r['kind'], play: r['play'], post: r['post'], character: r['character'], mine: r['mine'], at: r['at'], cells: num(r['cells']) });
+/** A poll's post as `log_page` names it ({kind: 'post', thread, title, seq}). */
+const logPlace = (v: Row): LogPlace => ({ thread: String(v['thread']), title: String(v['title'] ?? ''), seq: num(v['seq']) });
 const COSMETIC_KINDS = ['found', 'granted', 'awarded', 'reversed', 'lost', 'beltBack'] as const;
 const COSMETIC_OUTCOMES = ['line', 'gear', 'card'] as const;
 const COSMETIC_BYS = ['season', 'boss', 'demand', 'admin'] as const;
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'falls' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>> & { readonly crowd?: Row[] }, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'falls' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>> & { readonly crowd?: Row[]; readonly ballots?: Row[]; readonly pollCloses?: Row[] }, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
@@ -665,6 +689,11 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     })),
     playsOnMine: src['playsOnMine'].map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
     writes: src['writes'].map((r): WrittenOnMine => ({ play: r['play'], post: r['post'], version: r['version'], failed: r['failed'] === true, opening: r['opening'] === true, over: r['over'] === true, at: r['at'] })),
+    ...(src.ballots === undefined ? {} : { ballots: src.ballots.flatMap((r): LogBallot[] => (isObject(r['place']) ? [{
+      act: r['act'], poll: r['poll'], character: r['character'], picks: Array.isArray(r['picks']) ? r['picks'].filter((n): n is number => typeof n === 'number') : [], at: r['at'], question: String(r['question'] ?? ''),
+      secret: r['secret'] === true, options: Array.isArray(r['options']) ? r['options'].map(String) : [], changed: r['changed'] === true, place: logPlace(r['place']),
+    }] : [])) }),
+    ...(src.pollCloses === undefined ? {} : { pollCloses: src.pollCloses.flatMap((r): LogPollClose[] => (isObject(r['place']) ? [{ act: r['act'], poll: r['poll'], character: r['character'], at: r['at'], question: String(r['question'] ?? ''), place: logPlace(r['place']) }] : [])) }),
     draws: src['draws'].map(surfaceLogRow),
     wallsDrawn: src['wallsDrawn'].map(surfaceLogRow),
     saves: src['saves'].map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
@@ -1880,6 +1909,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
             act: isObject(o['act']) ? toAct(o['act']) : null, plays: rowsOf(o['plays']).map(toAct), more: o['more'] === true, moment: toMoment(o['moment']),
             at: isObject(o['at']) && typeof o['at']['thread'] === 'string' ? { thread: o['at']['thread'], seq: num(o['at']['seq']) } : null,
             cast: rowsOf(o['cast']).map((p) => toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined)),
+            ...toPollParts(o),
           }
         : null;
       /* The ids the page's tallies were asked for: its Acts, then the plays on its posts and above them, the nested replies and the kept plays, and the origin's Act and plays (the plays' ends are no plays). */
@@ -1903,6 +1933,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
         board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
         presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']), origin,
+        ...toPollParts(d), voterCast: rowsOf(d['voterCast']).map((p) => toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined)),
       };
     },
     async visitStory(thread, visit, _post): Promise<VisitStory> {
@@ -2235,7 +2266,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!isObject(d)) throw new ReadFailure('server');
       const sources: Row = isObject(d['sources']) ? d['sources'] : {};
       const first = toLogRead({
-        crowd: rowsOf(sources['crowd']),
+        crowd: rowsOf(sources['crowd']), ballots: rowsOf(sources['ballots']), pollCloses: rowsOf(sources['pollCloses']),
         ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), draws: rowsOf(sources['draws']), wallsDrawn: rowsOf(sources['wallsDrawn']), saves: rowsOf(sources['saves']),
         setEnds: rowsOf(sources['setEnds']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
         infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), falls: rowsOf(sources['falls']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']), cosmetics: rowsOf(sources['cosmetics']),
@@ -2278,9 +2309,17 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     createInvite: () => act({ action: 'createInvite' }, (r) => ({ invite: r['invite'], code: r['code'] })),
     reissueInvite: (invite) => act({ action: 'reissueInvite', invite }, (r) => ({ invite: r['invite'], code: r['code'] })),
 
-    startThread: (board, character, title, body, framing) => act({ action: 'startThread', board, character, title, body, ...framed(framing) }, (r) => ({ thread: toNewThread(r['thread'], toAct(r['act'])), act: toAct(r['act']) })),
-    post: (thread, character, body, quote, framing) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}), ...framed(framing) }, toAct),
-    edit: (post, character, body) => act({ action: 'edit', post, character, body }, toAct),
+    startThread: (board, character, title, body, framing, poll) => act({ action: 'startThread', board, character, title, body, ...framed(framing), ...(poll ? { poll } : {}) }, (r) => ({ thread: toNewThread(r['thread'], toAct(r['act'])), act: toAct(r['act']) })),
+    post: (thread, character, body, quote, framing, poll) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}), ...framed(framing), ...(poll ? { poll } : {}) }, toAct),
+    edit: (post, character, body, poll) => act({ action: 'edit', post, character, body, ...(poll ? { poll } : {}) }, toAct),
+    /* A ballot or a close answers the Act's projection (a secret poll's names no one) and the poll's counts, the shape the `poll` event carries (0395 cast_ballot). */
+    castBallot: (poll, character, picks) => act({ action: 'castBallot', poll, character, picks: [...picks] }, toPollWritten),
+    closePoll: (poll, character) => act({ action: 'closePoll', poll, character }, toPollWritten),
+    closePollAsAdmin: (poll) => act({ action: 'closePollAsAdmin', poll }, toPollWritten),
+    async pollBallots(poll, after) {
+      const a = await rpcWrite(() => client.rpc('poll_ballots', { poll, before: after?.at ?? null, before_id: after?.act ?? null }));
+      return a.ok ? { ok: true, value: { ballots: rowsOf(a.value['ballots']).map((b) => ({ act: b['act'] as Id, character: toCharacter(isObject(b['character']) ? b['character'] : {}, isObject(b['character']) ? b['character'] : undefined), picks: toPicks(b['picks']), at: String(b['at']) })), more: a.value['more'] === true } } : a;
+    },
     spin: (origin, character, title, body, framing, at) => act({ action: 'spin', origin, character, title, body, ...framed(framing), ...(at ? { at } : {}) }, withThread),
     apologize: (move, character, title, body, framing) => act({ action: 'apologize', move, character, title, body, ...framed(framing) }, withThread),
     react: (target, character, kind, opts) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: isObject(r['tally']) ? r['tally'] as Tally : null }), opts?.keepalive === true),
@@ -2397,8 +2436,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
 
     subscribeThread(thread, l) {
-      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'surface', 'card_text', 'under'], (event, p) => {
+      const onPoll = l.onPoll && pollHeard(l.onPoll);
+      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'surface', 'card_text', 'under', 'poll'], (event, p) => {
         if (event === 'act') l.onAct?.(toAct(p));
+        else if (event === 'poll') { const e = toPollEvent(p); if (e) onPoll?.(e); }
         else if (event === 'under') l.onUnder?.(p['parent'], p['play'], toAct(p['act']));
         else if (event === 'surface') l.onSurface?.(p['play'], num(p['covered']));
         else if (event === 'tally') l.onTally?.(p['act'], (p['tally'] ?? {}) as Tally);

@@ -198,6 +198,16 @@ export interface Settings {
   readonly editGrace: Span;
   /** The longest a post's text may be, in characters (code points). */
   readonly postMaxLength: number;
+  /** The most options a poll may have (2 to 100). */
+  readonly pollOptionsMax: number;
+  /** The longest a poll's question may be, in characters. */
+  readonly pollQuestionMax: number;
+  /** The longest one of a poll's options may be, in characters. */
+  readonly pollOptionMax: number;
+  /** The least a poll may last, from the moment it is written until it closes by itself. A span, which may count hours. */
+  readonly pollLastsMin: Span;
+  /** The most a poll may last. A span, which may count hours. */
+  readonly pollLastsMax: Span;
   /** The longest a thread's title may be, in characters. */
   readonly titleMaxLength: number;
   /** How many posts a thread shows on one page. */

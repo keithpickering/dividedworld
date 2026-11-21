@@ -169,3 +169,15 @@ test('lines of one character and reason are ordered by card, no card first, and 
   const log = cutLog({ ...none, ledger: [ride('y', 7), ride('x', 3), ride(null, 1)], shares: [share('y', 7), share(null, 1), share('x', 3)] });
   assert.deepEqual(log.settlements[0]!.lines.map((l) => [l.params?.card ?? null, l.shares.map((s) => s.amount)]), [[null, [1]], ['x', [3]], ['y', [7]]]);
 });
+
+test('a ballot and an admin\'s close of a poll page by when each landed: a full source ends the page, and an older payload with none leaves them out', () => {
+  const place = { thread: 't', title: 'T', seq: 1 };
+  const b = (act: string, at: string) => ({ act, poll: 'p', character: 'c', picks: [0], at, question: 'Q', secret: false, options: ['A', 'B'], changed: false, place });
+  const k = (act: string, at: string) => ({ act, poll: 'p', character: 'c', at, question: 'Q', place });
+  const log = cutLog({ ...none, ballots: [b('b1', '2026-10-30T10:00:00Z'), b('b2', '2026-10-30T09:00:00Z')], pollCloses: [k('k1', '2026-10-30T09:30:00Z')], cards: [bought('2026-10-30T08:00:00Z')] }, 2);
+  assert.equal(log.before, '2026-10-30T09:00:00Z');
+  assert.deepEqual(log.ballots?.map((x) => x.act), ['b1']);
+  assert.deepEqual(log.pollCloses?.map((x) => x.act), ['k1']);
+  assert.deepEqual(log.cards, []);
+  assert.equal(cutLog(none).ballots, undefined);
+});
