@@ -58,11 +58,11 @@ export const tollShare = () => {
   return shareWords(toll.gimmick.share);
 };
 export const rideShare = () => {
-  if (fourDChess.trap?.outcome === undefined) throw new Error('4D Chess has no ride outcome');
+  if (fourDChess.trap?.outcome?.kind !== 'ride') throw new Error('4D Chess has no ride outcome');
   return shareWords(fourDChess.trap.outcome.share);
 };
 export const cushionShare = () => {
-  if (whoopeeCushion.trap?.outcome === undefined) throw new Error('Whoopee Cushion has no ride outcome');
+  if (whoopeeCushion.trap?.outcome?.kind !== 'ride') throw new Error('Whoopee Cushion has no ride outcome');
   return shareWords(whoopeeCushion.trap.outcome.share);
 };
 

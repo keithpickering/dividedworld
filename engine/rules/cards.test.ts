@@ -283,6 +283,19 @@ test('staffOffers: a set card with a ride outcome is never offered, and is again
   assert.equal(staffOffers(snare), true, 'the same card without its outcome');
 });
 
+test('staffOffers: a set card with a refund outcome is offered, and one with a ride outcome is not', () => {
+  const refunder: CardRules = { ...snare, trap: { trigger: { on: 'cast' }, outcome: { kind: 'refund' } } };
+  assert.equal(staffOffers(refunder), true);
+  assert.equal(staffOffers({ ...snare, trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 0.5 } } }), false);
+});
+
+test('decideSet of a refund set card needs no quadrant, and a ride without every still does', () => {
+  const refunder: CardRules = { ...snare, key: 'refunder', trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome: { kind: 'refund' } }, catches: undefined, validateConfig: () => ok({}) };
+  assert.deepEqual(decideSet(refunder, settings, post, [], {}, []), { ok: true, value: { price: 0, config: {} } });
+  const rider: CardRules = { ...refunder, trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.5 } } };
+  assert.throws(() => decideSet(rider, settings, post, [], {}, []), /names no quadrant/);
+});
+
 test('staffOffers: a card with staffOptions and no default is offered, and a card with neither is not', () => {
   const options = { prompt: 'Pick an ink.', schema: { type: 'object', properties: { ink: { type: 'string' } }, required: ['ink'], additionalProperties: false } };
   assert.equal(staffOffers(inky), false, 'no default, no staffConfigs, no staffOptions');

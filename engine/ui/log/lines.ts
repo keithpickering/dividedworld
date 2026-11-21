@@ -1173,7 +1173,8 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
       if (did === 'rode') {
         const rode = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
         const move = cardName(rode?.payload.card);
-        const share = rules(e.card)?.trap?.outcome?.share;
+        const outcome = rules(e.card)?.trap?.outcome;
+        const share = outcome?.kind === 'ride' ? outcome.share : undefined;
         const named = typeof spring?.payload.quadrant === 'string';
         const kind = named ? words.ui.quadrantLabels[spring.payload.quadrant as Quadrant] : undefined;
         rows.push({
