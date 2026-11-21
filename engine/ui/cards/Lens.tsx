@@ -488,8 +488,6 @@ function EndCard({ play, end, card, caster, store }: { readonly play: Id; /** Wh
           onEnded={(endId) => {
             const ended: Act = { id: endId, character: null, kind: 'card_end', thread: '', targetActId: end, seq: null, createdAt: new Date(api.now()).toISOString(), payload: { why: 'reversed', by: 'admin' }, currentPayload: {}, editedAt: null, shownEditedAt: null };
             store.add([ended]);
-            /* A lockout's end names its spring, so its back is marked ended here: the card_end finds no play of the spring's id. */
-            if (end !== play) store.setEnded([play]);
             setAsking(false);
           }}
           returnFocusTo={() => (opener.current?.isConnected ? opener.current : document.querySelector<HTMLElement>('.kb-lens [role="tab"][aria-selected="true"]'))}

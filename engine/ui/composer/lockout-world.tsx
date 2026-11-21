@@ -13,9 +13,10 @@ import { buildWorld, testInstance } from '../test-world.tsx';
 const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
 const lkback = { ...base, key: 'lkback', name: 'Lk Back', alignment: 'sweet' as const, rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const, 'pepperoni' as const], upTo: 'rare' as const }, outcome: { kind: 'lockout' as const, hours: 24 } }, canApply: () => ok(undefined) };
 const lksalty = { ...base, key: 'lksalty', name: 'Lk Salty', alignment: 'salty' as const, rarity: 'common' as const, stack: 6, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lksalty', stack: 6 }, t, e, now) };
-export const lockoutInstance: Instance = { ...testInstance, cards: [lkback, lksalty] as unknown as CardRules[], machine: [], settings: { ...testInstance.settings, economy: {} } };
+const lkwide = { ...base, key: 'lkwide', name: 'Lk Wide', alignment: 'sweet' as const, rarity: 'common' as const, reaches: ['post' as const, 'thread' as const, 'character' as const, 'board' as const], lasts: { unit: 'day' as const, count: 1 }, canApply: () => ok(undefined) };
+export const lockoutInstance: Instance = { ...testInstance, cards: [lkback, lksalty, lkwide] as unknown as CardRules[], machine: [], settings: { ...testInstance.settings, economy: {} } };
 const art = { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' };
-export const lockoutCards: CardUi[] = ['lkback', 'lksalty'].map((key) => ({ key, art, describe: () => `${key}.`, summary: `${key}.` }));
+export const lockoutCards: CardUi[] = ['lkback', 'lksalty', 'lkwide'].map((key) => ({ key, art, describe: () => `${key}.`, summary: `${key}.` }));
 
 const must = <T,>(a: { ok: true; value: T } | Refusal): T => { if (!a.ok) throw new Error(`refused: ${a.error}`); return a.value; };
 
@@ -31,7 +32,7 @@ export function lockoutWorld(admin = false) {
   const second = fake.seed.post(thread, spritey, 'post 2');
   const away = fake.seed.thread('general', spritey, 'Another thread', 'elsewhere');
   fake.seed.wallet(me, 900); fake.seed.wallet(other, 900);
-  fake.seed.cards(me, { lksalty: 6 }); fake.seed.cards(other, { lkback: 3 });
+  fake.seed.cards(me, { lksalty: 6, lkwide: 6 }); fake.seed.cards(other, { lkback: 3 });
   if (admin) fake.seed.admin(me);
   fake.signInAs(me);
   return { fake, me, other, pipe, zed, spritey, thread, post, second, elsewhere: away.thread, elsewherePost: away.act };

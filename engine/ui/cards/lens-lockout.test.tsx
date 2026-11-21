@@ -37,9 +37,17 @@ class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { ret
 beforeEach(() => { vi.stubGlobal('IntersectionObserver', Observer); Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); window.history.replaceState(null, '', '/'); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-async function lens(admin: boolean) {
+async function lens(admin: boolean, ended = false) {
   const w = lockoutWorld(admin);
   const sprung = await lockOut(w);
+  if (ended) {
+    const answer = await w.fake.reverseCard(sprung.spring.id);
+    if (!answer.ok) throw new Error(answer.error);
+    /* The page carries the end of a lockout's spring beside its plays, as it does a card play's (the server's side of this is the coordinator's: cardsOn lists the `card_end` of a spring). */
+    const [end] = await w.fake.actsById([answer.value.act]);
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (...args) => { const page = await real(...args); return page && end ? { ...page, plays: [...page.plays, end] } : page; });
+  }
   renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards });
   await screen.findByRole('article', { name: /^Post 1 /u });
   const mark = await within(document.getElementById('post-1')!).findByRole('button', { name: /Lk Back/u });
@@ -60,6 +68,11 @@ describe('the Lens on a lockout back', () => {
 
   test('a reader who is no admin is not offered it', async () => {
     const { dialog } = await lens(false);
+    expect(within(dialog).queryByRole('button', { name: 'End this card' })).toBeNull();
+  });
+
+  test('after a reload, a lockout an admin already ended is not offered again', async () => {
+    const { dialog } = await lens(true, true);
     expect(within(dialog).queryByRole('button', { name: 'End this card' })).toBeNull();
   });
 });

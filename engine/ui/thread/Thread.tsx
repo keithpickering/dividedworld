@@ -755,7 +755,6 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
             if (held) { lockouts.current.delete(spring); markLocked(held.who); }
             void api.actsById([spring]).then(([found]) => {
               if (!found || found.kind !== 'spring' || found.payload.did !== 'lockedOut') return;
-              if (typeof found.payload.set === 'string') plays.setEnded([found.payload.set]);
               if (!held && typeof found.payload.locks === 'string') markLocked(found.payload.locks);
             }, quietly);
           }
