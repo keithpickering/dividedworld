@@ -131,9 +131,9 @@ export const signed = (hundredths: number) => (hundredths > 0 ? '+' : hundredths
 /** Aura without a sign: "4.72". */
 export const plain = (hundredths: number) => (hundredths / 100).toFixed(2);
 /** An amount of orbs as a sentence says it: "1.00 orb", "2.00 orbs". */
+const orbs = (hundredths: number) => `${plain(hundredths)} ${hundredths === 100 ? 'orb' : 'orbs'}`;
 /** The sentence a withdrawal's wallet event gains when the wallet's cap held some of the refunds back. */
 const capSaid = (paid: WalletEvent | undefined) => (paid && paid.overflow > 0 ? ` The wallet's cap held back ${orbs(paid.overflow)} of the refunds paid with it.` : '');
-const orbs = (hundredths: number) => `${plain(hundredths)} ${hundredths === 100 ? 'orb' : 'orbs'}`;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "Oct 29": a day in UTC, as the log's times are. */
