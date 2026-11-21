@@ -277,6 +277,12 @@ test('staffOffers: a cast card that carries a gimmick is never offered, and is a
   assert.equal(staffOffers(bare as CardRules), true, 'the same card without the earn');
 });
 
+test('staffOffers: a set card with a ride outcome is never offered, and is again without it', () => {
+  const rider: CardRules = { ...snare, trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 0.5 } } };
+  assert.equal(staffOffers(rider), false, 'a staff character has no wallet and its Acts are not settled');
+  assert.equal(staffOffers(snare), true, 'the same card without its outcome');
+});
+
 test('staffOffers: a card with staffOptions and no default is offered, and a card with neither is not', () => {
   const options = { prompt: 'Pick an ink.', schema: { type: 'object', properties: { ink: { type: 'string' } }, required: ['ink'], additionalProperties: false } };
   assert.equal(staffOffers(inky), false, 'no default, no staffConfigs, no staffOptions');
@@ -587,6 +593,16 @@ test('a ride trap names its quadrant in its configuration: a card that drops it 
   assert.match((decideSet(ride, settings, post, [], { ...named, card: 'nothing' }, [inky]) as { why: string }).why, /names a card that is cast on a post/);
   // A catching trap has no outcome and needs no quadrant.
   assert.equal(decideSet(snare, settings, post, [], { card: 'inky' }, [inky]).ok, true);
+});
+
+test('a ride with every beside a match needs no quadrant and no catch; without every the quadrant guard still stands', () => {
+  const trap = (outcome: { kind: 'ride'; share: number; every?: true }): CardRules => ({ ...snare, key: 'every-set', name: 'Test Every', catches: undefined, validateConfig: (c) => ok(c), trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome } });
+  const every = decideSet(trap({ kind: 'ride', share: 0.25, every: true }), settings, post, [], {}, [inky]);
+  assert.equal(every.ok, true);
+  const value = (every as { value: { price: number; catches?: string } }).value;
+  assert.equal(value.price, 0);
+  assert.equal(value.catches, undefined);
+  assert.throws(() => decideSet(trap({ kind: 'ride', share: 0.25 }), settings, post, [], {}, [inky]), /card every-set has a ride and its checked configuration names no quadrant/);
 });
 
 test('a card\'s repairStaff is the persona\'s alone: a player\'s play with the same options is decided as given, never repaired', () => {

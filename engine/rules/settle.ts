@@ -75,8 +75,8 @@
  *   week is a negative vote there and takes back what it paid, so a play never costs more than it paid.
  * - A ride pays `card.ride` for the votes on a card cast on a post, on the unhalved share of a vote: a ride gimmick (a use card on a post)
  *   pays its user's character its share for each vote, in any quadrant, before it ends, on a cast made while it was up; a ride spring (a
- *   trap whose outcome is a ride) pays its setter's character its share for each vote in the quadrant the set named, on the cast that
- *   sprang it, with no end. Neither pays for a cast by the post's author's player, nor the paid character's own player's votes.
+ *   trap whose outcome is a ride) pays its setter's character its share for each vote in the quadrant the set named, or in every quadrant,
+ *   where its outcome says `every`, on the cast that sprang it, with no end. Neither pays for a cast by the post's author's player, nor the paid character's own player's votes.
  * - A character in `scoredAs` is given the named class's rules in every stretch of the window, whatever class it holds or Turns to.
  * - A card's payout is a contribution with no class, so it is in no class's season total (`byClass`).
  * - A play an admin reversed before the window's end is not in the input, nor are the votes on it
@@ -263,11 +263,11 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   for (const c of instance.cards) if (c.gimmick?.kind === 'cushion') cushionOf.set(c.key, c.gimmick.share);
   const skimOf = new Map<string, number>();
   const rideGimmickOf = new Map<string, number>();
-  const rideTrapOf = new Map<string, number>();
+  const rideTrapOf = new Map<string, { share: number; every: boolean }>();
   for (const c of instance.cards) {
     if (c.skim) skimOf.set(c.key, c.skim.share);
     if (c.gimmick?.kind === 'ride') rideGimmickOf.set(c.key, c.gimmick.share);
-    if (c.trap?.outcome?.kind === 'ride') rideTrapOf.set(c.key, c.trap.outcome.share);
+    if (c.trap?.outcome?.kind === 'ride') rideTrapOf.set(c.key, { share: c.trap.outcome.share, every: c.trap.outcome.every === true });
   }
   /* The class a character is scored as for this window, if a play named one: the instance must have it, as for a held class. */
   const scoredAs = new Map<string, string>();
@@ -800,15 +800,17 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   }
   /* Ride: the gimmicks up and the springs that rode, each indexed once, by the post and by the cast they are on. */
   const gimmicksOn = new Map<string, { id: string; card: string; user: string; at: number; ends: number; share: number }[]>();
-  const springsBy = new Map<string, { card: string; setter: string; quadrant: Quadrant; share: number }[]>();
+  const springsBy = new Map<string, { card: string; setter: string; quadrant?: Quadrant; share: number }[]>();
   for (const a of acts.values()) {
     if (a.kind === 'card' && a.card && a.reach === undefined && a.target !== undefined && a.ends !== undefined && rideGimmickOf.has(a.card)) {
       const list = gimmicksOn.get(a.target) ?? [];
       list.push({ id: a.id, card: a.card, user: a.character, at: a.at, ends: a.ends, share: rideGimmickOf.get(a.card)! });
       gimmicksOn.set(a.target, list);
-    } else if (a.kind === 'spring' && a.card && a.by !== undefined && a.quadrant !== undefined && rideTrapOf.has(a.card)) {
+    } else if (a.kind === 'spring' && a.card && a.by !== undefined && rideTrapOf.has(a.card)) {
+      const trap = rideTrapOf.get(a.card)!;
+      if (!trap.every && a.quadrant === undefined) continue;
       const list = springsBy.get(a.by) ?? [];
-      list.push({ card: a.card, setter: a.character, quadrant: a.quadrant, share: rideTrapOf.get(a.card)! });
+      list.push({ card: a.card, setter: a.character, ...(trap.every ? {} : { quadrant: a.quadrant }), share: trap.share });
       springsBy.set(a.by, list);
     }
   }
@@ -820,7 +822,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     // A gimmick is no cast of its own to ride, and rides only a cast made while it was up.
     const up = (gimmicksOn.get(cast.target) ?? []).filter((g) => g.id !== cast.id && g.at <= cast.at && cast.at < g.ends);
     for (const g of up) for (const v of votes) if (v.at < g.ends && v.owner !== playerOf(g.user)) payout('card.ride', g.card, g.user, g.share, v);
-    for (const s of springsBy.get(cast.id) ?? []) for (const v of votes) if (v.quadrant === s.quadrant && v.owner !== playerOf(s.setter)) payout('card.ride', s.card, s.setter, s.share, v);
+    for (const s of springsBy.get(cast.id) ?? []) for (const v of votes) if ((s.quadrant === undefined || v.quadrant === s.quadrant) && v.owner !== playerOf(s.setter)) payout('card.ride', s.card, s.setter, s.share, v);
   }
 
   /* Flat earns: one pass over the window's votes, each read against the flat plays on its Act's character and on the Act, indexed once above, so
