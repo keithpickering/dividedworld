@@ -964,6 +964,28 @@ describe('mixer', () => {
       assert.deepEqual(onStop.mock.calls.map((c) => c.arguments), [['replaced']]);
     });
 
+    it('57. a smaller cap past a loop ends each voice once, and the pool holds only the new voice', async () => {
+      const m = await unlocked();
+      await m.loop(slot('build', { loop: true }), { group: 'g' });
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 3 });
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 3 });
+      await m.play(cheer, { group: 'g', fadeMs: 100, voices: 1 });
+      assert.deepEqual(ctx.sources.map((s) => s.stops), [1, 1, 1, 0], 'the loop and both plays end once');
+      await m.play(cheer, { group: 'g', fadeMs: 100, voices: 3 });
+      assert.deepEqual(ctx.sources.map((s) => s.stops), [1, 1, 1, 0, 0], 'the pool held one voice, so a cap of 3 ends nothing again');
+    });
+
+    it('58. a voice whose wrapped onended throws still leaves the pool', async () => {
+      const m = await unlocked();
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 2 });
+      const first = ctx.sources[0]!;
+      first.disconnect = () => { throw new Error('gone'); };
+      assert.throws(() => first.onended?.());
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 2 });
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 2 });
+      assert.deepEqual(ctx.sources.map((s) => s.stops), [0, 0, 0], 'the ended voice no longer counts toward the cap');
+    });
+
     it('54. on the first play one compressor is made with the limiter values, connected to the destination, and the bus gain to it; a second bus makes no second', async () => {
       const m = await unlocked();
       m.setBus('interface', { on: true, volume: 100 });

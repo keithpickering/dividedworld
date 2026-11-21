@@ -257,15 +257,19 @@ export function createMixer(deps: MixerDeps): Mixer {
         const fadeMs = o.fadeMs ?? 0;
         const cap = typeof o.voices === 'number' && Number.isFinite(o.voices) && o.voices >= 1 ? Math.floor(o.voices) : 1;
         if (o.group !== undefined) {
-          const list = groups.get(o.group);
-          while (list && list.length >= cap) list.shift()!.end(fadeMs);
+          /* Read the list again each pass: a voice's end may leave the group itself (a loop does), and each voice ends once. */
+          for (let list = groups.get(o.group); list && list.length >= cap; list = groups.get(o.group)) {
+            const oldest = list[0]!;
+            leave(o.group, oldest.source);
+            oldest.end(fadeMs);
+          }
         }
         const { source, voice, naturalEnd } = start(c, slot, buffer, false, o.group === undefined ? 0 : fadeMs, o.tailMs);
         if (o.group !== undefined) {
           const group = o.group;
           groups.set(group, [...(groups.get(group) ?? []), { source, end: (ms) => fadeOut(c, voice, source, ms, naturalEnd) }]);
           const done = source.onended;
-          source.onended = () => { done?.(); leave(group, source); };
+          source.onended = () => { leave(group, source); done?.(); };
         }
         return { lengthMs: Math.round(buffer.duration * 1000) };
       } catch { return null; }
