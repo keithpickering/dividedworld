@@ -14,7 +14,7 @@ import { NO_INK } from '../../../../../engine/ui/cards/claims.ts';
 import type { Act } from '../../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../../engine/ui/test-world.tsx';
 import { kickMe } from '../../../cards/kick-me.ts';
-import { KickMeEffect } from '../../kick-me/Effect.tsx';
+import { KickMeEffect, LETTERS, LETTER_SCALE, LETTER_Y, MARKER, SIGN_H, SIGN_W, STROKES } from '../../kick-me/Effect.tsx';
 import { ui } from './ui.ts';
 
 const post = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-10-29T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null } as unknown as Act;
@@ -115,6 +115,37 @@ describe('Kick Me\'s sign', () => {
     mount({ plays: [play({ ends: PAST })] });
     expect(sign()).toBeNull();
     expect(document.querySelector('[data-kb-words]')!.textContent).toBe('The words of the post.');
+  });
+
+  test('the lettering stands inside the cardboard with a margin on every side, and a clear space sits between KICK and ME', () => {
+    /* The extents of each letter's strokes (every point; a Q curve sampled along its length, since its control point lies off the ink), in the sign's units, before the tilt (at most 2 degrees: a px or so). */
+    const ink = LETTERS.map(([letter, x]) => {
+      const xs: number[] = [], ys: number[] = [];
+      let cx = 0, cy = 0;
+      for (const [, cmd, args] of STROKES[letter].matchAll(/([MLQHV])([^MLQHV]*)/gu)) {
+        const n = args!.trim().split(/[\s,]+/u).map(Number);
+        if (cmd === 'H') { cx = n[0]!; xs.push(cx); ys.push(cy); }
+        else if (cmd === 'V') { cy = n[0]!; xs.push(cx); ys.push(cy); }
+        else if (cmd === 'Q') {
+          const [qx, qy, ex, ey] = n as [number, number, number, number];
+          for (let t = 0; t <= 1; t += 0.05) { xs.push((1 - t) ** 2 * cx + 2 * (1 - t) * t * qx + t * t * ex); ys.push((1 - t) ** 2 * cy + 2 * (1 - t) * t * qy + t * t * ey); }
+          cx = ex; cy = ey;
+        } else { cx = n[0]!; cy = n[1]!; xs.push(cx); ys.push(cy); }
+      }
+      const r = MARKER / 2;
+      return { left: x + LETTER_SCALE * Math.min(...xs) - r, right: x + LETTER_SCALE * Math.max(...xs) + r, top: LETTER_Y + LETTER_SCALE * Math.min(...ys) - r, bottom: LETTER_Y + LETTER_SCALE * Math.max(...ys) + r };
+    });
+    const MARGIN = 8;
+    expect(Math.min(...ink.map((l) => l.left)), 'left margin').toBeGreaterThanOrEqual(MARGIN);
+    expect(SIGN_W - Math.max(...ink.map((l) => l.right)), 'right margin').toBeGreaterThanOrEqual(MARGIN);
+    expect(Math.min(...ink.map((l) => l.top)), 'top margin').toBeGreaterThanOrEqual(MARGIN);
+    /* The prints stand along the bottom edge (center 68 of SIGN_H, their top 11 above it), below the lettering. */
+    expect(SIGN_H).toBe(90);
+    expect(Math.max(...ink.map((l) => l.bottom)), 'lettering ends above the prints').toBeLessThan(68 - 11);
+    /* The word space (K-I-C-K, then M-E) is wider than any gap inside a word. */
+    const gaps = ink.slice(1).map((l, i) => l.left - ink[i]!.right);
+    expect(gaps[3], 'word space').toBeGreaterThan(Math.max(gaps[0]!, gaps[1]!, gaps[2]!, gaps[4]!) + 8);
+    expect(gaps[3], 'word space').toBeGreaterThanOrEqual(12);
   });
 
   test('its entry in the screens\' card list is lazy: the effect it carries is not this module\'s own', () => {

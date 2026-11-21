@@ -45,8 +45,16 @@ const STROKES = {
   M: 'M2 38V0L15 23L28 0V38',
   E: 'M25 1H3V37H25M3 19H20',
 } as const;
-/** "KICK ME" as [letter, left, tilt in degrees]: the letters are not quite level, as a marker's are not. */
-const LETTERS = [['K', 6, -2], ['I', 38, 1], ['C', 62, -1], ['K', 94, 2], ['M', 132, -1], ['E', 168, 2]] as const;
+/**
+ * "KICK ME" as [letter, x of its cell, tilt in degrees]: the letters are not quite level, as a marker's are not. Each cell is drawn at LETTER_SCALE
+ * from (x, LETTER_Y), so the lettering stands inside the cardboard with room on every side and a clear space between KICK and ME (a unit test pins both).
+ */
+export const LETTERS = [['K', 24.4, -2], ['I', 47.4, 1], ['C', 66, -1], ['K', 89.4, 2], ['M', 129.4, -1], ['E', 153.6, 2]] as const;
+export const LETTER_SCALE = 0.8;
+export const LETTER_Y = 13;
+/** The marker's width in the sign's own units (it is drawn at 7.5 before the scale, so 6 here). */
+export const MARKER = 7.5 * LETTER_SCALE;
+export { STROKES, W as SIGN_W, H as SIGN_H };
 
 /** The x of print `i` of `n` along the sign's bottom edge, centered. */
 const printX = (i: number, n: number) => ((i + 1) * W) / (n + 1);
@@ -59,16 +67,16 @@ function Sign({ left, count }: { left: number; count: number }) {
       <polygon points="3,5 197,2 199,85 1,88" fill="#c9a06b" stroke="#7d5a2f" strokeWidth="2.5" strokeLinejoin="round" />
       <path d="M8 14H192M7 22H193M7 30H193M7 38H193M7 46H193M7 54H193M7 62H193M7 70H193M7 78H193" stroke="#7d5a2f" strokeWidth="0.8" opacity="0.18" fill="none" />
       {/* The lettering. */}
-      <g fill="none" stroke="#2a0f0a" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round">
+      <g fill="none" stroke="#2a0f0a" strokeWidth="7.5" strokeLinecap="round" strokeLinejoin="round">
         {LETTERS.map(([letter, x, tilt], i) => (
-          <path key={i} d={STROKES[letter]} transform={`translate(${x} 6) rotate(${tilt} 15 19)`} />
+          <path key={i} d={STROKES[letter]} transform={`translate(${x} ${LETTER_Y}) scale(${LETTER_SCALE}) rotate(${tilt} 15 19)`} />
         ))}
       </g>
       {/* The boot prints along the bottom edge: a sole and a heel each, the first `handedOut` scuffed out. */}
       {Array.from({ length: count }, (_, i) => {
         const gone = i < count - left;
         return (
-          <g key={i} data-kick-print="" {...(gone ? { 'data-scuffed': '' } : {})} transform={`translate(${printX(i, count)} 67) rotate(${i % 2 === 0 ? -12 : 10})`}>
+          <g key={i} data-kick-print="" {...(gone ? { 'data-scuffed': '' } : {})} transform={`translate(${printX(i, count)} 68) rotate(${i % 2 === 0 ? -12 : 10})`}>
             <g fill="#4a3217" opacity={gone ? 0.28 : 0.95}>
               <ellipse cx="0" cy="-3" rx="6" ry="8" />
               <ellipse cx="0" cy="9" rx="4" ry="3.5" />
