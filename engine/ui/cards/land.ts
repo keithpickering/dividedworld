@@ -8,6 +8,7 @@
 import { QUADRANTS } from '../../rules/types.ts';
 import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarget, matchWords, playOf as playOfRules, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
+import { forgedList } from '../../bbcode/quoted.ts';
 import { shareWords } from '../copy-words.ts';
 import type { Act } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
@@ -21,7 +22,7 @@ export function lengthOf(post: Act): number {
 
 /** The post as a card's rules see it; `under` is the post it is drawn under, where it is a reply a play carries. */
 export function targetOf(post: Act, under?: string): PostTarget {
-  return postTarget(post.id, post.kind as PostTarget['kind'], post.currentPayload.body, undefined, under);
+  return postTarget(post.id, post.kind as PostTarget['kind'], post.currentPayload.body, undefined, under, undefined, forgedList(post.currentPayload));
 }
 
 /** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0149), with a use card's gimmick and end; a card back naming no card, ended where it sprang, was taken back or its time passed. */

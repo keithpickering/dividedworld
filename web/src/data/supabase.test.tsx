@@ -127,7 +127,7 @@ describe('what the adapter may request', () => {
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.boot(), api.indexPage(), api.boardPage('general', 1, []), api.searchPosts({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null }), api.searchThreads({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null }), api.suggest('ma'), api.threadPage(T, { page: 1 }, 20, []), api.profilePage(B), api.recordPage(B, 'all', 1), api.presenceBox({ kind: 'index' }),
       api.myCharactersPage(), api.seasonPage('news', null, null, null), api.alertsPage(null), api.updatesPage(null, null, null), api.queuePage(), api.logPage(null),
-      api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
+      api.quoteCheck('[quote=x]y[/quote]'), api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
     const tables = new Set(h.rest().filter((r) => !r.url.pathname.includes('/rpc/')).map((r) => r.url.pathname.replace(`${REST}/`, '')));
     expect(tables.size).toBeGreaterThan(15);
@@ -209,6 +209,10 @@ describe('what the adapter may request', () => {
     expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'hiddenUntilEdited', version: B, words: 'My words.' });
     expect(h.to('rpc/my_hidden_version')[0]?.body).toEqual({ act: B });
     answer = { status: 'waiting', version: A, words: 'My edit.' };
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'waiting', version: A, words: 'My edit.' });
+    answer = { status: 'hiddenUntilEdited', version: B, words: 'My words.', forged: [A] };
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'hiddenUntilEdited', version: B, words: 'My words.', forged: [A] });
+    answer = { status: 'waiting', version: A, words: 'My edit.', forged: [] };
     expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'waiting', version: A, words: 'My edit.' });
     answer = null;
     expect(await h.api.myHiddenVersion(B)).toBeNull();
@@ -2554,6 +2558,14 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(notice?.reactions).toEqual([{ kind: 'fire', count: 9 }, { kind: 'tomato', count: 6 }, { kind: 'folded-hands', count: 3 }]);
     expect(h.to('rpc/move_progress')[0]?.body).toEqual({ move_act: A });
     expect(await harness(() => rows([])).api.moveNotice(A)).toBeNull();
+  });
+
+  it('asks quote_check with the draft and returns the uuids it answers, and rejects when it cannot be read', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/quote_check') ? json([A, 7, B]) : rows([])));
+    expect(await h.api.quoteCheck('[quote=x]y[/quote]')).toEqual([A, B]);
+    expect(h.to('rpc/quote_check')[0]?.body).toEqual({ body: '[quote=x]y[/quote]' });
+    const down = harness((r) => (r.url.pathname.endsWith('/rpc/quote_check') ? json({ message: 'down' }, 400) : rows([])));
+    await expect(down.api.quoteCheck('x')).rejects.toBeDefined();
   });
 
   it('shows a move without a count when its progress could not be read, and still shows the move', async () => {

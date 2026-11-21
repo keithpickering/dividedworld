@@ -275,10 +275,11 @@ declare
 begin
   insert into admins (account) values (admin_d);
   hid := tests.post(ch_author, th, 'Hidden for the payload flags.', base);
+  -- the quote is written before the hide: a quote written after it is a counterfeit (a hidden version's words are never compared)
+  orig := tests.post(ch_reader, th, format('[quote=%s]Hidden for the payload flags.[/quote] original', hid), base + interval '1 minute');
   perform tests.become(admin_d);
   perform decide(null, hid, 'hide', null, 'payload flags');
   perform tests.unbecome();
-  orig := tests.post(ch_reader, th, format('[quote=%s]Hidden for the payload flags.[/quote] original', hid), base + interval '1 minute');
   clean_edit := tests.act(ch_reader, 'edit', th, '{"body": "A clean edit."}', orig, base + interval '2 minutes');
   perform tests.become(reader);
   select a.concealing, a.payload_concealing, a.payload_hidden, a.hidden, a.current_payload ->> 'body' as cur, a.payload::text as raw into row_a from acts_public a where a.id = orig;
@@ -306,7 +307,7 @@ declare
   ch_reader uuid := tests.character(reader, 'Bo');
   th uuid := tests.thread('Concealing');
   base timestamptz := now() - interval '1 day';
-  p1 uuid; p2 uuid; q uuid; q2 uuid; qe uuid; plain uuid; e1 uuid;
+  p1 uuid; p2 uuid; q uuid; q2 uuid; qe uuid; plain uuid; e1 uuid; doctored uuid;
   rd record;
   refs uuid[];
   reqs bigint;
@@ -315,7 +316,7 @@ declare
 begin
   insert into admins (account) values (admin_a);
   p1 := tests.post(ch_author, th, 'Hidden words.', base);
-  p2 := tests.post(ch_author, th, 'Shown words.', base + interval '1 minute');
+  p2 := tests.post(ch_author, th, 'Shown words. y z', base + interval '1 minute');
   plain := tests.post(ch_author, th, 'No quote here, just words.', base + interval '2 minutes');
 
   -- ---- quote_refs: every id named after `[quote=`, a superset of what the parser reads ----
@@ -400,6 +401,12 @@ begin
   if tests.is_due(q) then raise exception 'the empty layer leaves the post due'; end if;
   if (select body from quote_layers where act = q order by id desc limit 1) is not null then raise exception 'an empty set stored words'; end if;
 
+  -- A post and an edit that quote the post while it is not hidden, written before it is hidden again: a quote written after a hide is a counterfeit (a hidden version's words are never compared), and is served as written.
+  q2 := tests.post(ch_reader, th, format('[quote=%s]Hidden words.[/quote] later', p1), base + interval '10 minutes');
+  qe := tests.post(ch_reader, th, 'original, nothing quoted', base + interval '11 minutes');
+  e1 := tests.act(ch_reader, 'edit', th, jsonb_build_object('body', format('now [quote=%s]Hidden words.[/quote]', p1)), qe, base + interval '12 minutes');
+  if exists (select 1 from conceal_requests where act in (q2, e1)) then raise exception 'a quote of a post nobody hides asked for a layer'; end if;
+
   -- ---- hidden again: the latest layer (empty) wins over the older ones, so the post is withheld until a new one ----
   perform tests.become(admin_a);
   perform decide(null, p1, 'hide', null, 'again');
@@ -407,26 +414,29 @@ begin
   select * into rd from tests.read_as(reader, q) x;
   if rd.body is not null or rd.concealing is distinct from true then raise exception 'an older layer of the same set was served over the newest: % %', rd.body, rd.concealing; end if;
 
-  -- ---- a post written after the hide, quoting the hidden post, asks at once and is withheld ----
-  q2 := tests.post(ch_reader, th, format('[quote=%s]Hidden words.[/quote] later', p1), base + interval '10 minutes');
-  if not exists (select 1 from conceal_requests where act = q2) then raise exception 'a post quoting a hidden post did not ask for its layer'; end if;
+  -- ---- the hide asks at once for the layers of the quoters written before it, and withholds them ----
+  if not exists (select 1 from conceal_requests where act = q2) or not exists (select 1 from conceal_requests where act = e1) then raise exception 'a hide did not ask for the layers of the posts that quote the hidden post'; end if;
   select * into rd from tests.read_as(reader, q2) x;
-  if rd.body is not null or rd.concealing is distinct from true or rd.everything like '%Hidden words%' then raise exception 'a new quote of a hidden post is not withheld: %', rd; end if;
-
-  -- ---- an edit that quotes a hidden post is its own version: the post's current version is withheld, the original is as written ----
-  qe := tests.post(ch_reader, th, 'original, nothing quoted', base + interval '11 minutes');
-  e1 := tests.act(ch_reader, 'edit', th, jsonb_build_object('body', format('now [quote=%s]Hidden words.[/quote]', p1)), qe, base + interval '12 minutes');
-  if not exists (select 1 from conceal_requests where act = e1) then raise exception 'an edit quoting a hidden post did not ask for its layer'; end if;
+  if rd.body is not null or rd.concealing is distinct from true or rd.everything like '%Hidden words%' then raise exception 'a quote of a hidden post is not withheld: %', rd; end if;
+  -- an edit that quotes a hidden post is its own version: the post's current version is withheld, the original is as written
   perform tests.become(reader);
   select a.current_payload ->> 'body', a.payload ->> 'body', a.concealing into said, rd.body, rd.concealing from acts_public a where a.id = qe;
   perform tests.unbecome();
   if said is not null or rd.concealing is distinct from true or rd.body is distinct from 'original, nothing quoted' then raise exception 'the current version is not withheld, or the original is not as written: % % %', said, rd.body, rd.concealing; end if;
+  -- a quote written after the hide is a counterfeit of the post: acts_quote_refs leaves it out, so it is in no quote_refs and asks for no layer, and it is served as written
+  doctored := tests.post(ch_reader, th, format('[quote=%s]Hidden words.[/quote] after', p1), base + interval '12 minutes 30 seconds');
+  if exists (select 1 from conceal_requests r where r.act = doctored) or exists (select 1 from quote_refs r where r.act = doctored) then raise exception 'a forged quote of a hidden post is in quote_refs or asked for a layer'; end if;
+  select * into rd from tests.read_as(reader, doctored) x;
+  if rd.body is distinct from format('[quote=%s]Hidden words.[/quote] after', p1) or rd.concealing is distinct from false then
+    raise exception 'a quote written after the hide is not served as written: %', rd;
+  end if;
 
   -- ---- a hide until edited ends at the author's edit, computed: the quoters are asked again ----
+  -- the quote is written before the hide: a quote written after it is a counterfeit, which is entered in no quote_refs
+  q := tests.post(ch_reader, th, format('[quote=%s]No quote here[/quote]', plain), base + interval '13 minutes');
   perform tests.become(admin_a);
   perform decide(null, plain, 'hideUntilEdited', null, 'edit it');
   perform tests.unbecome();
-  q := tests.post(ch_reader, th, format('[quote=%s]No quote here[/quote]', plain), base + interval '13 minutes');
   select count(*) into reqs from conceal_requests where act = q;
   perform tests.act(ch_author, 'edit', th, '{"body": "Fixed words."}', plain, base + interval '14 minutes');
   if (select count(*) from conceal_requests where act = q) <= reqs then raise exception 'the author''s edit did not ask for the quoters'' layers again'; end if;
@@ -494,9 +504,12 @@ begin
     for chars in select * from unnest(array[10000, 40000]) loop
       th_of := tests.thread('Hostile ' || chars);
       ids := '{}';
+      -- Acts as they were written before the verdict existed (no `forged`): a quote written now of a hidden post is a counterfeit, which has no layer to read back, and this reads layers.
+      alter table acts disable trigger acts_forged_quotes;
       for n in 1 .. 20 loop
         ids := ids || tests.post(ch_reader, th_of, format('[quote=%s]', p1) || repeat('[quote=zz][b]', chars / 13) || '[/quote]', base + (n || ' seconds')::interval);
       end loop;
+      alter table acts enable trigger acts_forged_quotes;
       perform tests.become_service();
       foreach one in array ids loop perform record_layer(one, array[p1], format('[quote=%s][/quote]', p1)); end loop;
       perform tests.unbecome();
@@ -523,10 +536,11 @@ begin
   -- (a) acts_public serves the raw body when no layer matches: a hidden quote's words reach a player.
   create or replace function shown_payload(p jsonb, hidden boolean, refs boolean, ready boolean, layer text) returns jsonb
   language sql immutable as $f$ select case when hidden then jsonb_set(p, '{body}', 'null'::jsonb) when refs and ready then jsonb_set(p, '{body}', to_jsonb(layer)) else p end $f$;
+  -- (the quote is written before the hide: a quote written after it is a counterfeit, which is served as written whatever the layer says)
+  q := tests.post(ch_reader, th, format('[quote=%s]Shown words.[/quote] poison', p2), base + interval '20 minutes');
   perform tests.become(admin_a);
   perform decide(null, p2, 'hide', null, 'poison');
   perform tests.unbecome();
-  q := tests.post(ch_reader, th, format('[quote=%s]Shown words.[/quote] poison', p2), base + interval '20 minutes');
   select * into rd from tests.read_as(reader, q) x;
   if rd.everything not like '%Shown words.%' then raise exception 'POISON (a) was not seen: a body served raw when no layer matches did not reach the reader (%)', rd.everything; end if;
 
@@ -587,7 +601,9 @@ begin
   perform decide(null, p, 'hide', null, 'cost');
   perform tests.unbecome();
   foreach total in array array[2000, 20000] loop
-    -- Finished Acts: each quotes the hidden post (the trigger asks for its layer), its layer recorded for the set of now and its request answered, as the job leaves them.
+    -- Finished Acts: each quotes the hidden post (the trigger asks for its layer), its layer recorded for the set of now and its request answered, as the job leaves them. They are Acts as they were written before the
+    -- verdict existed (no `forged`): a quote written now of a hidden post is a counterfeit, which has no layer for the job to record, and this measures the job's reads.
+    alter table acts disable trigger acts_forged_quotes;
     insert into acts (character, kind, thread, payload, created_at)
     select ch, 'post', th, jsonb_build_object('body', format('[quote=%s]words %s[/quote] done', p, g)), base + (g || ' seconds')::interval from generate_series(have + 1, total) g;
     insert into quote_layers (act, hidden, body, upto)
@@ -596,6 +612,7 @@ begin
     select r.id, (select l.id from quote_layers l where l.act = r.act order by l.id desc limit 1) from conceal_requests r where not exists (select 1 from conceal_answers n where n.request = r.id);
     have := total;
     open_act := tests.post(ch, th, format('[quote=%s]open[/quote]', p), base + interval '2 days');
+    alter table acts enable trigger acts_forged_quotes;
     analyze conceal_requests; analyze conceal_answers; analyze quote_layers; analyze quote_refs;
     select * into m from tests.due_ratio(open_act, p, true);
     ratio := m.due_ms / greatest(m.scan_ms, 0.05);
@@ -622,7 +639,9 @@ begin
     order by d.first
     limit greatest(conceal_due.most, 0)
   $f$;
+  alter table acts disable trigger acts_forged_quotes;
   open_act := tests.post(ch, th, format('[quote=%s]open[/quote]', p), base + interval '3 days');
+  alter table acts enable trigger acts_forged_quotes;
   analyze conceal_requests;
   select * into m from tests.due_ratio(open_act, p, false);
   ratio := m.due_ms / greatest(m.scan_ms, 0.05);

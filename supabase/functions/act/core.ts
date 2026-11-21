@@ -15,6 +15,7 @@
 import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
 import { casterMessage, refusalTime, decideDraw, decidePlay, decideSet, decideUse, decideWash, effectsOnTarget, postTarget, type CardEffect, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
+import { forgedList } from '../../../engine/bbcode/quoted.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, barredAnswer, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -191,11 +192,12 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       const read = await dbs.player.rpc<(CardTarget & { effects: CardEffect[]; above?: EffectsAbove }) | null>('card_target_reach',
         { reach, target: decision.args.target, ...(decision.args.from_post ? { from_post: decision.args.from_post } : {}) });
       if (!read) return refused('target', `there is no such ${reach}`);
+      // `forged` is the verdict of the version read (card_target_reach): a forged quote is the poster's own words to the card's rules, as a screen shows it.
       const { effects: own, above = {}, ...said } = read;
       // A post is given to its card's rules with its visible words, read from its current body, and the version that body is.
-      const post = said as { act: string; kind: PostTarget['kind']; body?: unknown; version?: string; under?: string; author?: string };
+      const post = said as { act: string; kind: PostTarget['kind']; body?: unknown; version?: string; under?: string; author?: string; forged?: unknown };
       // `under` is the post this one is drawn under, where it is a reply a play in force carried (card_target): a card that replies is refused there.
-      const target = reach === 'post' ? postTarget(post.act, post.kind, post.body, post.version, post.under, post.author) : { ...said, reach } as CardTarget;
+      const target = reach === 'post' ? postTarget(post.act, post.kind, post.body, post.version, post.under, post.author, forgedList({ forged: post.forged })) : { ...said, reach } as CardTarget;
       const effects = effectsOnTarget(target, own ?? [], above);
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
       // A surface card's first draw is the card's own to read; what it refuses is said on the drawing (`first`), not on the configuration.
