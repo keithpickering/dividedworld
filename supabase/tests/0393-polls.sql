@@ -9,6 +9,7 @@
 --  4. edit_post: null keeps a poll, an object sets one, {"removed": true} removes it; refused in one sentence once a ballot is cast; a body-only edit still goes.
 --  5. cast_ballot: its refusals, the sorted picks, a withdrawal, the projection it answers with.
 --  6. What a poll counts: each character's latest ballot before the poll's end, a withdrawal, two characters of one account, a ballot by created_at against a close; poll_counts is the same for every caller.
+--  6b. poll_latest_ballots: the row each character's latest ballot is kept in, by the trigger, the later (created_at, id) winning; a ballot created after the close; rebuilt from the Acts; no API role reads it.
 --  7. Closing: the author's and an admin's, and each refusal.
 --  8. The masks: a secret ballot through acts_public, my_ballots and the projection cast_ballot answers with.
 --  9. The guards: react, settlement_input and estimate_input, spin, and a veiled author's ballot (a ballot written before the veil and one after).
@@ -600,6 +601,60 @@ begin
   perform tests.unbecome();
   if mine is distinct from theirs then raise exception 'poll_counts differs by caller: % / %', mine, theirs; end if;
   if (select array_agg(k order by k) from jsonb_object_keys(mine) k) is distinct from array['closed', 'counts', 'ends_at', 'poll', 'voters'] then raise exception 'poll_counts carries more or less than {poll, counts, voters, ends_at, closed}: %', mine; end if;
+end $$;
+
+-- ---- 6b. poll_latest_ballots: the row each character's latest ballot is kept in ----
+-- Every ballot Act is kept by the trigger in the row of its (poll, character), the later (created_at, id) winning whatever order they were written in; the row is what the ballot Acts say (rebuild_poll_latest_ballots computes it
+-- again from them); a character whose latest ballot was created after the poll's end is counted by its latest before it; and no API role can read the row, which says who voted on a secret poll.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('pl6b-ann'); bob uuid := tests.account('pl6b-bob');
+  a1 uuid := tests.character(ann, 'Pl SixB Ann'); b1 uuid := tests.character(bob, 'Pl SixB Bob');
+  t uuid := tests.thread('Pl latest');
+  p uuid := tests.post(a1, t, 'Vote.', now() - interval '5 hours');
+  pl uuid := pg_temp.mkpoll(t, p, a1, closes => now() + interval '1 day', at => now() - interval '4 hours');
+  p2 uuid := tests.post(a1, t, 'Vote, closed early.', now() - interval '5 hours');
+  plc uuid := pg_temp.mkpoll(t, p2, a1, closes => now() + interval '1 day', at => now() - interval '4 hours');
+  closed_at timestamptz := now() - interval '2 hours';
+  newest uuid; kept record; before_n bigint; voters uuid[]; first_id uuid;
+begin
+  -- The later (created_at, id) wins whichever was written first: the newer ballot is written first, an older one after it, and the row stays the newer.
+  newest := pg_temp.vote(pl, a1, '[1]', now() - interval '1 hour');
+  perform pg_temp.vote(pl, a1, '[0]', now() - interval '3 hours');
+  select * into kept from poll_latest_ballots r where r.poll = pl and r."character" = a1;
+  if kept.act is distinct from newest or kept.picks is distinct from '[1]'::jsonb then raise exception 'an older ballot written after a newer one replaced the character''s row: %', to_jsonb(kept); end if;
+  -- A newer ballot replaces it, and there is one row for the character, however many ballots it cast.
+  newest := pg_temp.vote(pl, a1, '[]', now() - interval '30 minutes');
+  select * into kept from poll_latest_ballots r where r.poll = pl and r."character" = a1;
+  if kept.act is distinct from newest or kept.picks is distinct from '[]'::jsonb or (select count(*) from poll_latest_ballots r where r.poll = pl) is distinct from 1::bigint then raise exception 'a newer ballot did not replace the character''s row: %', to_jsonb(kept); end if;
+  -- Two ballots at the same time: the greater id wins, written in either order.
+  perform tests.act(b1, 'ballot', t, '{"picks": [2]}', pl, now() - interval '10 minutes');
+  select r.act into first_id from poll_latest_ballots r where r.poll = pl and r."character" = b1;
+  if first_id is distinct from (select b.id from acts b where b.kind = 'ballot' and b.target_act_id = pl and b."character" = b1 order by b.created_at desc, b.id desc limit 1) then raise exception 'the row is not the latest ballot by (created_at, id)'; end if;
+  -- A character with a ballot before a poll's close and another created after it: the one before counts, and the voter list names it.
+  perform tests.act(a1, 'poll_close', t, '{"by": "author"}', plc, closed_at);
+  perform pg_temp.vote(plc, b1, '[0]', closed_at - interval '2 minutes');
+  perform pg_temp.vote(plc, b1, '[1]', closed_at + interval '1 minute');
+  if pg_temp.counts(plc) is distinct from '{"counts": [1, 0, 0], "voters": 1, "closed": true}'::jsonb then raise exception 'a character''s ballot before the close is not counted when it also has one after: %', pg_temp.counts(plc); end if;
+  voters := array(select poll_voter_acts(plc, closed_at, 50));
+  if voters is distinct from array[(select b.id from acts b where b.kind = 'ballot' and b.target_act_id = plc and b.created_at < closed_at)] then raise exception 'the voter list does not name the ballot before the close: %', voters; end if;
+  -- The row is what the ballot Acts say: computed again from them, it is the same rows.
+  select count(*) into before_n from poll_latest_ballots;
+  if (select count(*) from (select * from poll_latest_ballots except select b.target_act_id, b."character", b.id, b.payload -> 'picks', b.created_at from (select distinct on (x.target_act_id, x."character") x.* from acts x where x.kind = 'ballot' order by x.target_act_id, x."character", x.created_at desc, x.id desc) b) d) is distinct from 0::bigint then raise exception 'a row of poll_latest_ballots is not the latest ballot of its character'; end if;
+  if rebuild_poll_latest_ballots() is distinct from before_n then raise exception 'rebuilding the rows from the ballots gave another number of rows than the trigger kept (%)', before_n; end if;
+  if (select count(*) from poll_latest_ballots) is distinct from before_n then raise exception 'rebuilding changed the row count'; end if;
+  -- The caller's own latest ballot on each poll, and nobody else's.
+  perform tests.become(bob);
+  if (select count(*) from my_latest_ballots) is distinct from 2::bigint or exists (select 1 from my_latest_ballots m where m."character" = a1) then raise exception 'my_latest_ballots is not the caller''s own latest ballots: %', (select jsonb_agg(to_jsonb(m)) from my_latest_ballots m); end if;
+  perform tests.unbecome();
+  -- No API role reads it, nor runs the functions that keep it.
+  perform tests.become(ann);
+  if pg_temp.say('select * from poll_latest_ballots') is null then raise exception 'a signed-in player reads poll_latest_ballots, which says who voted on a secret poll'; end if;
+  if pg_temp.say('select rebuild_poll_latest_ballots()') is null then raise exception 'a signed-in player runs rebuild_poll_latest_ballots'; end if;
+  perform tests.unbecome();
+  if not (select c.relrowsecurity from pg_class c where c.oid = 'poll_latest_ballots'::regclass) then raise exception 'poll_latest_ballots has no row level security'; end if;
+  if exists (select 1 from pg_policy where polrelid = 'poll_latest_ballots'::regclass) then raise exception 'poll_latest_ballots has a policy'; end if;
 end $$;
 
 -- ---- 7. Closing ----

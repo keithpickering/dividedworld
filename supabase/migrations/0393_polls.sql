@@ -8,13 +8,15 @@
 --
 --   1. the kinds        acts_kind_check, acts_seq_check, acts_take_seq (each copied from its latest definition, 0317) gain the three; acts_character_null (0092) lets a poll_close of an admin's have no character.
 --   2. the payloads     acts_poll_payload, acts_ballot_payload, acts_poll_close_payload, with builtins alone (jsonpath), so a direct writer meets no function it may not run. Lengths and counts that depend on settings are the writers'.
---   3. indexes          acts_ballots (a poll's ballots by character, newest first: the counted ballot, the voter list), acts_polls (a post's polls, newest first: the current poll by key), acts_one_poll_close (a poll has one close).
+--   3. indexes          acts_ballots (a poll's ballots by character, newest first: a character's history), acts_polls (a post's polls, newest first: the current poll by key), acts_one_poll_close (a poll has one close).
+--                       And the derived row, poll_latest_ballots: each (poll, character)'s latest ballot, kept by a trigger on the ballot Act's insert (see section 3).
 --   4. the settings     pollOptionsMax, pollQuestionMax, pollOptionMax, pollLastsMin, pollLastsMax, held where written (settings_held, copied whole from 0383); engine/rules/instance.ts and 0079-settings-held.sql hold the same.
 --   5. acts_well_formed (copied whole from 0374) holds each Act to its target: a poll to a post_kind Act by the same character in the same thread, a ballot and a close to a poll in the same thread, an author's close to the poll's own character.
 --   6. the writers      poll_written (internal), latest_poll and ballot_secret (a public fact of a poll, for the readers of acts_public); span_words (0055) says a span in a refusal; post, start_thread and edit_post gain a last parameter, `poll jsonb default null` (the old signatures are dropped, so no call is ambiguous);
 --                       cast_ballot(poll, through, picks), close_poll(poll, through), close_poll_as_admin(poll), granted to authenticated. A draft is {question, options, pick, secret, lasts}; `lasts` is an interval string
 --                       ("3 days", "1 hour") or a span object as the settings hold them ({"unit": "day", "count": 3}), and the poll closes at now() plus it.
---   7. the reads        poll_counts (one row per poll: counts per option, voters, ends_at, closed; characters counted and no owner read, the same for every caller) and my_ballots (the caller's own, as my_veiled_posts is).
+--   7. the reads        poll_counts (one row per poll: counts per option, voters, ends_at, closed; characters counted and no owner read, the same for every caller; read from poll_latest_ballots, so it costs the poll's voters and never the
+--                       ballots cast), my_ballots (the caller's own, as my_veiled_posts is) and my_latest_ballots (the caller's own latest ballot on each poll).
 --   8. acts_public      a ballot whose poll is secret projects a null character and {"secret": true} as payload and current_payload, for every reader alike (ballot_secret reads the poll once per ballot row): a third select takes
 --                       the secret ballots with a null character, and the first two leave them out. The selects still read `acts` alone with no WHERE and no join of their own, so the union stays one appendrel.
 --   9. the veil         acts_veil_cover (0371) resolves a ballot's and a close's post through its poll, so the veiled author's own ballot shows the stand-in; post_veils_cover also covers the ballots and closes the author wrote before the veil landed.
@@ -102,12 +104,60 @@ alter table acts add constraint acts_poll_close_payload check (kind <> 'poll_clo
   payload - 'by' = '{}'::jsonb and jsonb_typeof(payload -> 'by') = 'string' and payload ->> 'by' in ('author', 'admin')) is true);
 
 -- ===================================================================================== 3. indexes ====
--- A poll's ballots by character, newest first: the counted ballot of each character (poll_counts reads it by DISTINCT ON), the voter list, and the history of changes, all keyed by the poll.
+-- A poll's ballots by character, newest first: a character's history of changes, and the probe behind a ballot that was created after its poll ended (see poll_latest_ballots).
 create index acts_ballots on acts (target_act_id, "character", created_at desc, id desc) where kind = 'ballot';
 -- A post's polls, newest first: the current poll is the first row.
 create index acts_polls on acts (target_act_id, created_at desc, id desc) where kind = 'poll';
 -- A poll has one close; a second, written by two closes at once, is refused by the key (the writers lock the poll and refuse it in words first).
 create unique index acts_one_poll_close on acts (target_act_id) where kind = 'poll_close';
+
+-- poll_latest_ballots: each (poll, character)'s latest ballot by (created_at, id), as a row of its own. Nothing limits how often a character changes its ballot, so what a poll costs to count or to list may never follow the ballots
+-- cast, only the characters that voted ("a state that changes often lives in a row of its own that the Act it belongs to points at, never in the Act"). The ballot Acts stay the source of truth; this row is derived from them and
+-- rebuild_poll_latest_ballots computes it again from them. It is kept by a trigger on the ballot Act's insert, so every path that inserts a ballot Act keeps it (cast_ballot, a direct writer); an import writes the rows themselves
+-- (tools/import-instance.mjs carries every table), so the trigger a replica skips has nothing to do. Two ballots of one character at once are laid by the unique key, and the later (created_at, id) wins whichever commits first.
+-- It holds who voted on a secret poll, so it is private: row level security on and no policy, no grant to an API role; the definers that read it (poll_counts, poll_voter_acts, my_latest_ballots) run with owner rights.
+-- A counted ballot is the latest created before the poll's end. The row holds the latest of all, which is the counted one unless it was created at or after the end (a ballot whose transaction began after a close's, before the close
+-- committed); the readers then take that character's latest before the end from acts_ballots, one probe for each such character, and there are only as many of them as ballots that raced a close.
+create table poll_latest_ballots (
+  poll uuid not null references acts (id),
+  "character" uuid not null references characters (id),
+  act uuid not null references acts (id),
+  picks jsonb not null,
+  created_at timestamptz not null,
+  primary key (poll, "character")
+);
+alter table poll_latest_ballots enable row level security;
+revoke all on poll_latest_ballots from public, anon, authenticated, service_role;
+-- The voter list reads a poll's latest ballots that pick something, newest first, and stops at its limit; the readers' second branch reads the few latest ones at or after the poll's end from the top of the same order.
+create index poll_latest_ballots_recent on poll_latest_ballots (poll, created_at desc, act desc);
+create index poll_latest_ballots_picked on poll_latest_ballots (poll, created_at desc, act desc) where jsonb_array_length(picks) > 0;
+
+create function poll_latest_ballot_kept() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  insert into poll_latest_ballots (poll, "character", act, picks, created_at)
+  values (new.target_act_id, new."character", new.id, new.payload -> 'picks', new.created_at)
+  on conflict (poll, "character") do update set act = excluded.act, picks = excluded.picks, created_at = excluded.created_at
+  where (poll_latest_ballots.created_at, poll_latest_ballots.act) < (excluded.created_at, excluded.act);
+  return null;
+end $$;
+revoke execute on function poll_latest_ballot_kept() from public, anon, authenticated;
+create trigger acts_ballot_kept after insert on acts for each row when (new.kind = 'ballot') execute function poll_latest_ballot_kept();
+
+-- rebuild_poll_latest_ballots (polls): the rows of the given polls (all polls, when null) computed again from their ballot Acts, as the trigger keeps them; returns how many rows it wrote. For the tests and for repair, no API role.
+create function rebuild_poll_latest_ballots(polls uuid[] default null) returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare n bigint;
+begin
+  delete from poll_latest_ballots r where polls is null or r.poll = any (polls);
+  insert into poll_latest_ballots (poll, "character", act, picks, created_at)
+  select distinct on (b.target_act_id, b."character") b.target_act_id, b."character", b.id, b.payload -> 'picks', b.created_at
+  from acts b where b.kind = 'ballot' and (polls is null or b.target_act_id = any (polls))
+  order by b.target_act_id, b."character", b.created_at desc, b.id desc;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke execute on function rebuild_poll_latest_ballots(uuid[]) from public, anon, authenticated;
 
 -- ===================================================================================== 4. the settings ====
 -- settings_held (0391 debates' copy over crowd pay's 0383), also holding the five poll settings: the most options a poll has (2 to 100), the longest question and option (characters, at least 1), and the least and most a poll may last (a span: a unit of hour, day, week or month
@@ -458,7 +508,8 @@ end $$;
 revoke execute on function poll_written(uuid, uuid, jsonb) from public, anon, authenticated;
 
 -- ===================================================================================== 7. the reads ====
--- poll_counts: one row per poll Act (a removal is no poll): {poll, counts, voters, ends_at, closed}, from each character's counted ballot (its latest created before the poll's end) through acts_ballots. `counts` has one entry for each
+-- poll_counts: one row per poll Act (a removal is no poll): {poll, counts, voters, ends_at, closed}, from each character's counted ballot (its latest created before the poll's end), read from poll_latest_ballots: a row for each
+-- character that voted, so the cost is the poll's voters and never the ballots cast. A row created at or after the end is not the counted one; that character's latest before the end is probed in acts_ballots. `counts` has one entry for each
 -- option (the counted ballots that pick it), `voters` is the characters whose counted ballot picks anything. It counts characters and reads no owner, so it is the same for every caller. Owner rights, as acts_public has.
 create view poll_counts as
   select p.id as poll, c.counts, c.voters, e.ends_at, now() >= e.ends_at as closed
@@ -468,10 +519,12 @@ create view poll_counts as
   ) e
   cross join lateral (
     with counted as (
-      select distinct on (b."character") b.payload -> 'picks' as picks
-      from acts b
-      where b.kind = 'ballot' and b.target_act_id = p.id and b.created_at < e.ends_at
-      order by b."character", b.created_at desc, b.id desc)
+      select r.picks from poll_latest_ballots r where r.poll = p.id and r.created_at < e.ends_at
+      union all
+      select l.payload -> 'picks' from poll_latest_ballots r
+      cross join lateral (select x.payload from acts x where x.kind = 'ballot' and x.target_act_id = p.id and x."character" = r."character" and x.created_at < e.ends_at
+                          order by x.created_at desc, x.id desc limit 1) l(payload)
+      where r.poll = p.id and r.created_at >= e.ends_at)
     select array(select (select count(*) from counted k where k.picks @> to_jsonb(g.i))::integer
                  from generate_series(0, jsonb_array_length(p.payload -> 'options') - 1) g(i) order by g.i) as counts,
            (select count(*) from counted k where jsonb_array_length(k.picks) > 0)::integer as voters
@@ -487,6 +540,15 @@ create view my_ballots as
   where b.kind = 'ballot' and b."character" in (select c.id from characters c where c.owner = auth.uid());
 revoke all on my_ballots from public, anon, authenticated, service_role;
 grant select on my_ballots to authenticated;
+
+-- The caller's own latest ballot on each poll, whatever its time (a poll's page reads the counted one of each from it: the row's, or the character's latest before the poll's end when the row's was created after it): the caller's own
+-- fact, filtered by auth.uid() as my_ballots is, and read from poll_latest_ballots, so its cost is the polls the caller voted on and never the times they changed their ballots.
+create view my_latest_ballots as
+  select r.act, r.poll, r."character" as character, r.picks, r.created_at
+  from poll_latest_ballots r
+  where r."character" in (select c.id from characters c where c.owner = auth.uid());
+revoke all on my_latest_ballots from public, anon, authenticated, service_role;
+grant select on my_latest_ballots to authenticated;
 
 
 -- post (0142), also taking `poll`, a draft for the post's own poll, written after the post's insert. The old signature is dropped so no call is ambiguous. Everything else as 0142 wrote it, its lock order included.

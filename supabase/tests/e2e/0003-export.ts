@@ -867,6 +867,14 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.equal(pollCounts(from), POLL_COUNTS, 'the fixture holds a replaced poll, a closed one with a changed ballot, and a secret one');
     assert.equal(ballotsOf(from, 'exp-bob'), BOB_BALLOTS, 'Bob reads his three ballots, the changed one and the secret one included');
     assert.equal(ballotsOf(from, 'exp-ann'), ANN_BALLOTS, 'Ann reads her own secret ballot and not Bob\'s');
+    // Each (poll, character)'s latest ballot is a row of its own (poll_latest_ballots, 0393), derived from the ballot Acts: the export carries the table, and in both databases it is the rows the Acts say (the first number counts the fixture's own
+    // rows, the second the rows that differ from the Acts' in either direction), the same rows after the round trip.
+    const latestRows = (url: string) => psqlOn(url, `select
+      (select count(*) from poll_latest_ballots r join acts p on p.id = r.poll where p.payload ->> 'question' like 'Exported %') || '|' ||
+      (select count(*) from (select * from poll_latest_ballots except select b.target_act_id, b."character", b.id, b.payload -> 'picks', b.created_at from (select distinct on (x.target_act_id, x."character") x.* from acts x where x.kind = 'ballot' order by x.target_act_id, x."character", x.created_at desc, x.id desc) b) d) || '|' ||
+      (select count(*) from (select b.target_act_id, b."character", b.id, b.payload -> 'picks', b.created_at from (select distinct on (x.target_act_id, x."character") x.* from acts x where x.kind = 'ballot' order by x.target_act_id, x."character", x.created_at desc, x.id desc) b except select * from poll_latest_ballots) d)`);
+    assert.equal(latestRows(from), '3|0|0', 'the fixture holds three latest ballots (Bob\'s on the closed poll, Bob\'s and Ann\'s on the secret one), and they are what the ballot Acts say');
+    assert.equal(latestRows(fresh.toString()), latestRows(from), 'the latest ballots are the same rows after the round trip, and are what the ballot Acts say');
     assert.equal(pollCounts(fresh.toString()), pollCounts(from), 'the polls\' counts are the same after the round trip');
     assert.equal(ballotsOf(fresh.toString(), 'exp-bob'), ballotsOf(from, 'exp-bob'), 'Bob\'s ballots are the same after the round trip');
     assert.equal(ballotsOf(fresh.toString(), 'exp-ann'), ballotsOf(from, 'exp-ann'), 'Ann\'s ballots are the same after the round trip');

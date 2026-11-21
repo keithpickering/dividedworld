@@ -37,7 +37,7 @@ declare
                            -- The admins' re-review list (0340): the versions brought back by an author's edit, read by admins alone (the view is empty for anyone else).
                            'reviews_due',
                            -- Polls (0393): every poll's counts, the same for every caller (characters counted, no owner read), and the caller's own ballots, a secret one's character and picks included.
-                           'poll_counts', 'my_ballots',
+                           'poll_counts', 'my_ballots', 'my_latest_ballots',
                            -- The poll reads (0394): the caller's own ballots' sibling, an admin's closes of the caller's own polls, read by the log alone.
                            'my_poll_closes'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[],jsonb)', 'post(uuid,uuid,text,uuid,uuid[],jsonb)',
