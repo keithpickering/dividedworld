@@ -54,6 +54,13 @@ describe('readTrapActs', () => {
     await readTrapActs(api(calls), [row('k')], held);
     assert.deepEqual(calls, [['set1']]);
   });
+  test('a cast a lockout back let land names its spring (`lockedOut`); the spring names the set, and the setter is named', async () => {
+    const calls: string[][] = [];
+    const held = new Map([['k', act('k', { kind: 'card', payload: { card: 'whoops', lockedOut: 'sp' } })]]);
+    const got = await readTrapActs(api(calls), [row('k')], held);
+    assert.deepEqual(calls, [['sp'], ['set1']]);
+    assert.deepEqual([...got.names], [['cPipe', 'Pipewrench']]);
+  });
   test('a failed character read keeps the Acts already read', async () => {
     const held = new Map([['k', act('k', { kind: 'card', payload: { card: 'whoops', spring: 'sp' } })]]);
     const noFaces = { actsById: async (ids: readonly string[]) => ids.flatMap((i) => world.get(i) ?? []), characters: async () => { throw new Error('down'); } } as never;

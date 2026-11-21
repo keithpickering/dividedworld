@@ -982,8 +982,9 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
     });
-    /* A lockout back that this play sprang (its spring names the play and the character it locked): the caster is told, in the spring's own facts. */
-    const locking = e.act ? [...data.acts.values()].find((a) => a.kind === 'spring' && a.payload.did === 'lockedOut' && a.payload.by === e.act) : undefined;
+    /* A lockout back that this play sprang (the play names the spring, `lockedOut`): the caster is told, in the spring's own facts. */
+    const sprungBy = e.act ? data.acts.get(e.act)?.payload.lockedOut : undefined;
+    const locking = typeof sprungBy === 'string' && data.acts.get(sprungBy)?.payload.did === 'lockedOut' ? data.acts.get(sprungBy) : undefined;
     if (locking) {
       const t = lockoutTimes(locking, data);
       const trapped = locking.targetActId ? data.acts.get(locking.targetActId) : undefined;
@@ -1407,9 +1408,9 @@ export function actsFollowed(acts: ReadonlyMap<Id, Act>): Id[] {
   for (const a of acts.values()) {
     if ((a.kind === 'card' || a.kind === 'spring' || a.kind === 'set' || a.kind === 'donation') && a.targetActId) ids.add(a.targetActId);
     if (a.kind === 'intercept' && typeof a.payload.visit_act === 'string') ids.add(a.payload.visit_act);
-    for (const key of ['spring', 'caught', 'by'] as const) {
+    for (const key of ['spring', 'caught', 'by', 'lockedOut'] as const) {
       const v = a.payload[key];
-      if (typeof v === 'string' && (a.kind === 'spring' || (a.kind === 'card' && key === 'spring'))) ids.add(v);
+      if (typeof v === 'string' && (a.kind === 'spring' || (a.kind === 'card' && (key === 'spring' || key === 'lockedOut')))) ids.add(v);
     }
   }
   return [...ids].filter((id) => !acts.has(id));

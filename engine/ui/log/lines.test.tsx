@@ -254,7 +254,7 @@ describe('cards set face down, traps and catches', () => {
   /* A lockout back (the lockout outcome): the Move landed and its character is locked out of the thread; each line branches on the spring's `did`, never a card's key. */
   describe('a lockout', () => {
     const until = '2026-11-01T10:00:00.000Z';
-    const move = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops' } });
+    const move = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', lockedOut: 'sp' } });
     const lock = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', did: 'lockedOut', set: 'set1', by: 'k1', locks: 's', until } });
     const end = act('end', 'card_end', null, { targetActId: 'sp', createdAt: '2026-10-31T12:30:00.000Z' });
     const setter = (extra: readonly Act[] = []) => {
@@ -275,6 +275,15 @@ describe('cards set face down, traps and catches', () => {
       expect(text(setter([end]))).toContain('until Nov 1 · 10:00 UTC. An admin ended it at Oct 31 · 12:30 UTC.');
       const rows = caster([end]);
       expect(text(rows.find((r) => r.kind === 'struck')!)).toContain('until Nov 1 · 10:00 UTC. An admin ended it at Oct 31 · 12:30 UTC.');
+    });
+    test('the caster\'s line is found through the play\'s `lockedOut`, whatever the spring\'s own `by` says', () => {
+      const other = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { ...lock.payload, by: 'elsewhere' } });
+      const log = { ...empty, cards: [{ card: 'whoops', kind: 'played' as const, act: 'k1', price: 0, at }] };
+      const rows = logRows(data({ log, mine: [char('s', 'Spritey', 'heel')], acts: new Map([...posts, move, other].map((a) => [a.id, a])), names: new Map([['p', 'Pipewrench']]) }), w, 600, null);
+      expect(text(rows.find((r) => r.kind === 'struck')!)).toBe('The Snare on Pipewrench\'s post #3 locked Spritey out of this thread until Nov 1 · 10:00 UTC.');
+    });
+    test('actsFollowed reaches the spring from the play\'s `lockedOut`', () => {
+      expect(actsFollowed(new Map([['k1', move]]))).toEqual(expect.arrayContaining(['sp']));
     });
     test('the caster\'s line, after its play line, names the card, the post and the character', () => {
       const rows = caster();

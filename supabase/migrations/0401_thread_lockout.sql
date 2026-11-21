@@ -11,7 +11,7 @@
 --    5. acts_lockout_by, lockout_ends, locked_out_until, not_locked_out  new: the partial index, a lockedOut spring's end (its `until` or an admin's card_end), the latest live end for a character in a thread, and the refusal.
 --    6. acts_well_formed        copied whole from 0395_polls.sql: a card_end may be of a lockedOut spring as well as of a card play (the trigger refused any other target; a gap in the plan's list).
 --    7. post                    copied whole from 0395_polls.sql: not_locked_out(through, in_thread) right after not_barred.
---    8. place_cast              copied whole from 0400_pierce.sql: not_locked_out(caster, in_thread) for a post, thread or character reach, before the back is met; `lands` takes lockedOut; the spring is told `locking => caster`.
+--    8. place_cast              (the play that lands through a lockedOut spring carries `lockedOut`, the spring's id, as a ride's carries `rode`; no card payload constraint names its keys, acts_well_formed checks none) copied whole from 0400_pierce.sql: not_locked_out(caster, in_thread) for a post, thread or character reach, before the back is met; `lands` takes lockedOut; the spring is told `locking => caster`.
 --    9. place_set               copied whole from 0397_refund_outcome.sql: not_locked_out(setter, the post's thread) once the post is read.
 --   10. write_staff_act         copied whole from 0393_forged_quotes.sql: not_locked_out for a staff `post` in a thread.
 --   11. reverse_card            copied whole from 0349_thread_page_under.sql: also takes a lockedOut spring (worn off by `until`; a card play's own checks skipped).
@@ -986,7 +986,10 @@ begin
                         when is_relief then jsonb_build_object('instant', true, 'took', took)
                         else jsonb_build_object('instant', true, 'lifted', lifts) end
               when not lands then jsonb_build_object('caught', sprung -> 'payload' ->> 'set')
-              when rode then jsonb_build_object('layer', layer, 'rode', sprung -> 'payload' ->> 'set') else jsonb_build_object('layer', layer) end
+              when rode then jsonb_build_object('layer', layer, 'rode', sprung -> 'payload' ->> 'set')
+              -- A lockout back's spring names the play (`by`); the play names the spring (`lockedOut`), so the caster's alert and log line read it on from the play as a ride's are read from `rode`.
+              when sprung is not null and sprung -> 'payload' ->> 'did' = 'lockedOut' then jsonb_build_object('layer', layer, 'lockedOut', sprung ->> 'id')
+              else jsonb_build_object('layer', layer) end
       -- What handed the cast back to its caster's hand (the back's set play or the sign's play, with its card), as a public fact of the cast; the caster's ledger row below is the other half.
       || case when handed is not null then jsonb_build_object('handedBack', handed) else '{}'::jsonb end
       -- The pierce the cast was made under, whether it lands or is caught: its play, its card, and the oldest ward it got past (a public fact of the Move, which the Lens line reads).

@@ -198,8 +198,8 @@ function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
   const span = set && Number.isFinite(ended) ? spanWords(ended - Date.parse(set.createdAt)) : null;
   const laid = cardName(act?.payload.card, ctx);
   const setterStaff = setterId !== null && ctx.staff?.has(setterId) === true;
-  /* A lockout back's spring names the caster's play (`by`); the play does not name the spring, so it is found among the Acts held. */
-  const locked = act ? lockoutOf([...ctx.acts.values()].find((a) => a.kind === 'spring' && a.payload.did === 'lockedOut' && a.payload.by === act.id), ctx) : null;
+  /* A lockout back's spring is named by the caster's play (`lockedOut`), as a ride's set is (`rode`). */
+  const locked = act && typeof act.payload.lockedOut === 'string' ? lockoutOf(ctx.acts.get(act.payload.lockedOut), ctx) : null;
   if (locked && act) {
     const post = act.targetActId ? ctx.acts.get(act.targetActId) : undefined;
     const owner = post?.character ? ctx.names?.get(post.character) ?? null : null;

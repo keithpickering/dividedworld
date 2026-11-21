@@ -317,7 +317,7 @@ describe('a trap', () => {
   describe('a lockout', () => {
     const until = '2026-11-03T09:41:00.000Z';
     const locked = (o: Partial<Act> = {}) => spring({ payload: { card: 'trap', trigger: 'cast', did: 'lockedOut', set: 'set1', by: 'k', locks: 'c1', until }, ...o });
-    const play = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', layer: 1 } });
+    const play = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', layer: 1, lockedOut: 'sp' } });
     const lockNames = new Map([['cPipe', 'Pipewrench'], ['c1', 'Spritey']]);
     const post = act('post9', { seq: 9, character: 'cPipe' });
     test('sprang (yours): the Move landed and the caster is locked out until a time, as the alerts write times', () => {
@@ -346,6 +346,11 @@ describe('a trap', () => {
       const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
       const end = act('end', { kind: 'card_end', character: null, targetActId: 'sp', createdAt: '2026-11-02T12:05:00.000Z' });
       expect(said(r, ctx([play, locked(), set(), post, end], { names: lockNames })).detail).toContain('until Nov 3 · 09:41 UTC. An admin ended it at Nov 2 · 12:05 UTC.');
+    });
+    test('struck (the caster): the spring is found through the play\'s `lockedOut`, whatever the spring\'s own `by` says', () => {
+      const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+      const s = said(r, ctx([play, locked({ payload: { card: 'trap', trigger: 'cast', did: 'lockedOut', set: 'set1', by: 'elsewhere', locks: 'c1', until } }), set(), post], { names: lockNames }));
+      expect(s.detail).toBe('The Card Collector on Pipewrench\'s post #9 locked Spritey out of this thread until Nov 3 · 09:41 UTC. In Hobbies.');
     });
     test('none of the new words says "cast"', () => {
       const all = [
