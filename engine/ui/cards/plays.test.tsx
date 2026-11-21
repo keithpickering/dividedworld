@@ -8,7 +8,7 @@ import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
 import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays } from './plays.ts';
+import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays, withHandedOut } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -44,6 +44,32 @@ describe('a play, read from its card Act', () => {
     const b = playOf(card({ payload: { card: 'whoops', layer: 1 }, createdAt: '2026-10-29T22:00:00.000Z' }))!;
     const c = playOf(card({ payload: { card: 'stick-around', layer: 1 }, createdAt: '2026-10-29T21:00:00.000Z' }))!;
     expect([a, b, c].sort(inPlayOrder).map((p) => p.id)).toEqual([c.id, b.id, a.id]);
+  });
+});
+
+describe('a cast that was handed back (the refund outcome)', () => {
+  test('playOf carries a well-formed handedBack, and drops a malformed one', () => {
+    expect(playOf(card({ payload: { card: 'whoops', handedBack: { by: 'sign-1', card: 'sign' } } }))?.handedBack).toEqual({ by: 'sign-1', card: 'sign' });
+    for (const bad of [{ by: 'sign-1' }, { card: 'sign' }, { by: 1, card: 'sign' }, 'sign-1', null, ['sign-1', 'sign']]) {
+      expect(playOf(card({ payload: { card: 'whoops', handedBack: bad } }))).not.toHaveProperty('handedBack');
+    }
+  });
+  test('withHandedOut counts the casts naming a play, and leaves a play nobody names without the key', () => {
+    const sign = playOf(card({ payload: { card: 'sign' } }))!;
+    const quiet = playOf(card({ payload: { card: 'whoops' } }))!;
+    const a = playOf(card({ payload: { card: 'whoops', handedBack: { by: sign.id, card: 'sign' } } }))!;
+    const b = playOf(card({ payload: { card: 'whoops', handedBack: { by: sign.id, card: 'sign' } } }))!;
+    const out = withHandedOut([sign, quiet, a, b]);
+    expect(out.find((p) => p.id === sign.id)?.handedOut).toBe(2);
+    expect(out.find((p) => p.id === quiet.id)).not.toHaveProperty('handedOut');
+    expect(out.find((p) => p.id === a.id)).not.toHaveProperty('handedOut');
+    const none = [sign, quiet];
+    expect(withHandedOut(none)).toBe(none);
+  });
+  test('withHandedOut leaves every play without the key where a cast names a play not on the post', () => {
+    const quiet = playOf(card({ payload: { card: 'whoops' } }))!;
+    const orphan = playOf(card({ payload: { card: 'whoops', handedBack: { by: 'gone', card: 'sign' } } }))!;
+    for (const p of withHandedOut([quiet, orphan])) expect(p).not.toHaveProperty('handedOut');
   });
 });
 

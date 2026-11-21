@@ -664,6 +664,7 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (c.gimmick?.kind === 'ride' && postAlone === false) out.push(`${who} has a ride, and a card with a ride reaches a post alone`);
   if (c.trap?.outcome !== undefined) out.push(...outcomeProblems(c.trap.outcome, who, play, on));
   if (c.skim !== undefined) out.push(...skimProblems(c, who, play));
+  if (c.refunds !== undefined) out.push(...refundsProblems(c, who, play));
   out.push(...veilProblems(c, who, play));
   if (c.scoresAs !== undefined) {
     if (c.scoresAs !== true) out.push(`${who} has scoresAs ${JSON.stringify(c.scoresAs)}; scoresAs is true or left out`);
@@ -751,15 +752,35 @@ function shareProblem(e: Record<string, unknown>, who: string, what: string, sai
   return null;
 }
 
-/** A cast trap's outcome (Part 6 of the card notes): a ride, on a set card that springs on a cast, beside a named card or a match. */
+/** A cast trap's outcome (Part 6 of the card notes): a ride or a refund, on a set card that springs on a cast, beside a named card or a match. */
 function outcomeProblems(o: unknown, who: string, play: string, on: unknown): string[] {
   if (typeof o !== 'object' || o === null) return [`${who} has an outcome that is not an object`];
   if (play !== 'set' || on !== 'cast') return [`${who} has an outcome, and only a set card that springs on a cast does`];
   const e = o as Record<string, unknown>;
   const out: string[] = [];
-  if (e.every !== undefined && e.every !== true) out.push(`${who} has an outcome whose every is ${JSON.stringify(e.every)}; every is true or left out`);
-  if (e.kind !== 'ride') out.push(`${who} has an outcome of kind ${JSON.stringify(e.kind)}; an outcome is ride`);
-  else { const why = shareProblem(e, who, 'an outcome', 'an outcome of share'); if (why) out.push(why); }
+  if (e.kind === 'refund') {
+    const extra = Object.keys(e).find((k) => k !== 'kind');
+    if (extra !== undefined) out.push(`${who} has a refund outcome with ${extra}; a refund outcome has a kind alone`);
+  } else if (e.kind !== 'ride') out.push(`${who} has an outcome of kind ${JSON.stringify(e.kind)}; an outcome is ride or refund`);
+  else {
+    // `every` is a ride's alone; a refund names it as a key it does not take.
+    if (e.every !== undefined && e.every !== true) out.push(`${who} has an outcome whose every is ${JSON.stringify(e.every)}; every is true or left out`);
+    const why = shareProblem(e, who, 'an outcome', 'an outcome of share'); if (why) out.push(why);
+  }
+  return out;
+}
+
+/** Refunds: a use card on a post alone with a time up, with the flavors it hands back and how many casts it does. */
+function refundsProblems(c: CardRules, who: string, play: string): string[] {
+  const r = c.refunds as unknown;
+  if (typeof r !== 'object' || r === null) return [`${who} has refunds that are not an object`];
+  const { flavors, count } = r as { flavors?: unknown; count?: unknown };
+  const out: string[] = [];
+  if (play !== 'use') out.push(`${who} has refunds, and only a use card does`);
+  if (!(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${who} has refunds, and a card with refunds reaches a post alone`);
+  if (c.lasts === undefined) out.push(`${who} has refunds with no time up (lasts)`);
+  if (!Array.isArray(flavors) || flavors.length === 0 || flavorsBad(flavors) || new Set(flavors).size !== flavors.length) out.push(`${who} has refunds whose flavors are ${JSON.stringify(flavors)}; flavors are one or more of sweet, salty and pepperoni`);
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > 10) out.push(`${who} has refunds whose count is ${JSON.stringify(count)}; count is a whole number from 1 to 10`);
   return out;
 }
 

@@ -2354,9 +2354,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* It catches the card it names, or one its match holds: the flavor in `flavors`, the rarity at or below `upTo` and at or below the back's own (spring_traps, 0148). */
     const match = trapRules?.trap?.match;
     const matched = match !== undefined && (match.flavors === undefined || match.flavors.includes(rules.alignment)) && (match.upTo === undefined || atOrBelow(rules.rarity, match.upTo)) && atOrBelow(rules.rarity, trapRules!.rarity);
-    const catches = trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined;
+    /* A staff cast has no hand to hand a card back to, so a refund back passes over it and stays set; the caster's staff flag is public (spring_traps). */
+    /* The fake's acting() refuses a character with no owner, so a staff cast never reaches here; the guard mirrors place_cast. */
+    const staffCaster = c.staff !== undefined;
+    const outcome = trapRules?.trap?.outcome?.kind;
+    const catches = trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined && !(outcome === 'refund' && staffCaster);
     /* A back with an outcome rides instead of catching: the cast lands as usual and the spring says it rode (spring_traps, 0151). The setter takes no card. */
-    const rides = catches && trapRules?.trap?.outcome?.kind === 'ride';
+    const rides = catches && outcome === 'ride';
+    /* A refund back lets the cast land too, and the spring says it returned: no quadrant, and the card goes back to the caster, not the setter. */
+    const returns = catches && outcome === 'refund';
+    /* A cast lands where nothing caught it, or a ride or a refund back let it through. */
+    const lands = !catches || rides || returns;
     /* A skim play carries its end, as a Use's does (place_cast, 0151). */
     const at = stamp ?? now();
     /* The play's id is chosen first, so the spring can name it and be written before it, as play_card writes them (each takes its moment then). */
@@ -2366,16 +2374,35 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (catches) {
       spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: rides
         ? { card: trap.card, trigger: 'cast', did: 'rode', ...(typeof faceDown.get(trap.set)!.quadrant === 'string' ? { quadrant: faceDown.get(trap.set)!.quadrant } : {}), set: trap.set, by: playId }
+        : returns ? { card: trap.card, trigger: 'cast', did: 'returned', set: trap.set, by: playId }
         : { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
     /* A caught play joins no drive and holds no end, since it is never in effect (place_cast, 0370); a play a ride back let land is a play like any other (drive_plays leaves a caught play out, 0153). */
-    const drive = catches && !rides ? undefined : driveOf(rules, target, playId);
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && !(catches && !rides) ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    /* Handed back (place_cast): the Ward first, then the back, then the sign; a landed cast of a player is handed back once at most, by the back that returned it or else by the post's live refunds play with a kick left. */
+    let handed: { by: Id; card: string } | null = null;
+    if (lands && !staffCaster) {
+      if (returns) handed = { by: trap!.set, card: trap!.card };
+      else {
+        /* The post's card Acts, read once. A handed-back cast uses its kick whether or not it was later ended or reversed, as place_cast counts the card Acts naming the sign. */
+        const onTarget = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target);
+        /* The latest live refunds play that qualifies: its flavor holds the cast's and its kicks are not used up, so an older one is not skipped for a newer that cannot serve. */
+        const signs = onTarget.filter((a) => {
+          const r = onPost(a) && !over(a.id) && a.payload.caught === undefined && typeof a.payload.ends === 'string' && Date.parse(a.payload.ends) > at
+            ? instance.cards.find((k) => k.key === a.payload.card)?.refunds : undefined;
+          return r !== undefined && r.flavors.includes(rules.alignment)
+            && onTarget.filter((x) => (x.payload.handedBack as { by?: unknown } | undefined)?.by === a.id).length < r.count;
+        });
+        const sign = signs[signs.length - 1];
+        if (sign) handed = { by: sign.id, card: String(sign.payload.card) };
+      }
+    }
+    const drive = !lands ? undefined : driveOf(rules, target, playId);
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(!lands ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(handed ? { handedBack: handed } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && lands ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
     /* What a landed play on a post writes beside its Act (land_rows, 0357): not for a caught one. */
-    if (!(catches && !rides)) landRows(rules, written, on, decided.value.config, account.id, at);
+    if (lands) landRows(rules, written, on, decided.value.config, account.id, at);
     /* A cast that landed (a ride lets it) writes its reply, a post of the thread with a number of its own, and remembers it under its parent; a caught one writes none, and the id its Act names is no post's. */
-    const replied = replyId !== undefined && reply !== undefined && !(catches && !rides)
+    const replied = replyId !== undefined && reply !== undefined && lands
       ? write({ id: replyId, character, kind: 'post', thread: on.thread, payload: { body: reply.body } }) : null;
     if (replied) underPlays.set(written.id, { parent: target, reply: replied.id });
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
@@ -2392,15 +2419,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       writeFramed(reply!.body, reply!.framing, replied);
     }
     /* A surface card's play opens its wall with the caster's first draw (play_surface_card: play_card, then draw_on_surface as the caster); a caught play opens none. */
-    if (decided.value.draw !== undefined && !(catches && !rides)) writeSurface('draw', written.id, character, first);
+    if (decided.value.draw !== undefined && lands) writeSurface('draw', written.id, character, first);
     if (spring) {
       /* The caught card is the setter's (a ride takes none): one more in the hand, and a `caught` row in their own ledger (nothing is paid). */
-      const setter = rides ? undefined : accounts.get(faceDown.get(trap!.set)!.account);
+      const setter = rides || returns ? undefined : accounts.get(faceDown.get(trap!.set)!.account);
       if (setter) {
         setter.cards[card] = (setter.cards[card] ?? 0) + 1;
         recordCard(setter.id, spring.at, { card, kind: 'caught', act: spring.id, price: 0 });
       }
       sendAct(spring);
+    }
+    /* The card goes back to the caster's hand, with a `returned` row naming the cast and no price; the play's own price is not refunded (place_cast). */
+    if (handed) {
+      account.cards[card] = (account.cards[card] ?? 0) + 1;
+      recordCard(account.id, written.at, { card, kind: 'returned', act: written.id, price: 0 });
     }
     return ok(publicAct(written));
   }
@@ -2687,7 +2719,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (short) return short;
     account.cards[card]! -= 1;
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
-    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(rules.trap?.outcome && typeof (decided.value.config as { quadrant?: unknown } | null)?.quadrant === 'string' ? { quadrant: (decided.value.config as { quadrant: string }).quadrant } : {}), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
+    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(rules.trap?.outcome?.kind === 'ride' && typeof (decided.value.config as { quadrant?: unknown } | null)?.quadrant === 'string' ? { quadrant: (decided.value.config as { quadrant: string }).quadrant } : {}), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
     spend(account, decided.value.price, 'play', written.id);
     /* As my_card_ledger (0142) says it: whether the card can spring, from the card kinds: a set card that carries a trap, or a Move (it springs on a quote). */
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null || kindOfPlay(rules) === 'cast', ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });

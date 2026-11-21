@@ -866,7 +866,7 @@ test('a trap outcome is a ride on a set card that springs on a cast and names it
   assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 0 } }), /card "splat" has an outcome of share 0; share is above 0 and at most 1/);
   assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 2 } }), /card "splat" has an outcome of share 2; share is above 0 and at most 1/);
   assert.match(set({ trigger: cast, outcome: { kind: 'ride' } }), /card "splat" has an outcome with no share/);
-  assert.match(set({ trigger: cast, outcome: { kind: 'sneeze', share: 1 } }), /card "splat" has an outcome of kind "sneeze"; an outcome is ride/);
+  assert.match(set({ trigger: cast, outcome: { kind: 'sneeze', share: 1 } }), /card "splat" has an outcome of kind "sneeze"; an outcome is ride or refund/);
   assert.match(set({ trigger: cast, outcome: 'ride' }), /card "splat" has an outcome that is not an object/);
   assert.match(set({ trigger: { on: 'visit' }, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" has an outcome, and only a set card that springs on a cast does/);
   const everyRide = (every: unknown) => set({ trigger: cast, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.25, every } }, {});
@@ -917,6 +917,31 @@ test('a veil or a reaction is a cast card on a post, a veil ends, and the two ne
   assert.match(bad({ reaction: true, writes: { tokens: () => 1, frame: () => ({ prompt: '', stop: [] }) } }), /card "splat" has a reaction and writes; a card with a reaction does not write/);
   assert.match(bad({ reaction: true, seeded: true }), /card "splat" has a reaction and is seeded; a card with a reaction is not/);
   assert.match(bad({ reaction: 'yes' }), /card "splat" has a reaction of "yes"; a reaction is true or left out/);
+});
+
+test('a refund outcome has a kind alone, and refunds is a use card on a post alone with a time up', () => {
+  const cast = { on: 'cast' };
+  const match = { flavors: ['sweet'], upTo: 'uncommon' };
+  const set = (outcome: unknown) => instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match, outcome } })).join('\n');
+  assert.equal(set({ kind: 'refund' }), '');
+  assert.match(set({ kind: 'refund', share: 1 }), /card "splat" has a refund outcome with share; a refund outcome has a kind alone/);
+  assert.equal(set({ kind: 'refund', every: true }), 'card "splat" has a refund outcome with every; a refund outcome has a kind alone');
+  assert.equal(set({ kind: 'refund', every: 'x' }), 'card "splat" has a refund outcome with every; a refund outcome has a kind alone');
+  assert.match(set({ kind: 'gift' }), /card "splat" has an outcome of kind "gift"; an outcome is ride or refund/);
+  const lasts = { unit: 'day', count: 7 };
+  const refunds = { flavors: ['salty'], count: 3 };
+  const use = (r: unknown, more: Record<string, unknown> = {}) => instanceProblems(withCards({ play: 'use', reaches: ['post'], lasts, gimmick: { kind: 'ward', upTo: 'common' }, refunds: r, ...more })).join('\n');
+  assert.equal(use(refunds), '');
+  assert.match(use('x'), /card "splat" has refunds that are not an object/);
+  assert.match(use(null), /card "splat" has refunds that are not an object/);
+  assert.match(instanceProblems(withCards({ play: 'cast', reaches: ['post'], lasts, refunds })).join('\n'), /card "splat" has refunds, and only a use card does/);
+  assert.match(use(refunds, { reaches: ['post', 'thread'], rarity: 'rare' }), /card "splat" has refunds, and a card with refunds reaches a post alone/);
+  assert.match(use(refunds, { lasts: undefined }), /card "splat" has refunds with no time up \(lasts\)/);
+  assert.match(use({ flavors: [], count: 3 }), /card "splat" has refunds whose flavors are \[\]; flavors are one or more of sweet, salty and pepperoni/);
+  assert.match(use({ flavors: ['salty', 'salty'], count: 3 }), /card "splat" has refunds whose flavors are \["salty","salty"\]; flavors are one or more of sweet, salty and pepperoni/);
+  assert.match(use({ flavors: ['bitter'], count: 3 }), /card "splat" has refunds whose flavors are \["bitter"\]; flavors are one or more of sweet, salty and pepperoni/);
+  assert.match(use({ count: 3 }), /card "splat" has refunds whose flavors are undefined; flavors are one or more of sweet, salty and pepperoni/);
+  for (const count of [0, 11, 1.5, '3']) assert.match(use({ flavors: ['salty'], count }), new RegExp(`card "splat" has refunds whose count is ${JSON.stringify(count).replace(/"/g, '\\"')}; count is a whole number from 1 to 10`));
 });
 
 test('a skim is a cast card that reaches a post alone, lasts, and does not write', () => {

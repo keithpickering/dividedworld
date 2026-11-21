@@ -199,7 +199,7 @@ declare
     jsonb_build_array('{"key": "pr6", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "visit"}, "outcome": {"kind": "ride", "share": 1}}}',
       'card "pr6" has an outcome, and only a set card that springs on a cast does'),
     jsonb_build_array('{"key": "pr7", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "outcome": {"kind": "catch", "share": 1}}}',
-      'card "pr7" has an outcome of kind "catch"; an outcome is ride'),
+      'card "pr7" has an outcome of kind "catch"; an outcome is ride or refund'),
     jsonb_build_array('{"key": "pr8", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "outcome": {"kind": "ride", "share": 0}}}',
       'card "pr8" has an outcome of share 0; share is above 0 and at most 1'),
     jsonb_build_array('{"key": "pr9", "rarity": "uncommon", "play": "use", "reaches": ["post"], "lasts": {"unit": "week", "count": 1}, "gimmick": {"kind": "ward", "upTo": "common"}, "skim": {"share": 0.1}}',
@@ -216,6 +216,37 @@ declare
       'card "pre" scores as a class, and a card that does reaches a character alone'),
     jsonb_build_array('{"key": "prf", "rarity": "uncommon", "play": "cast", "reaches": ["character"], "lasts": {"unit": "day", "count": 2}, "scoresAs": false}',
       'card "prf" has scoresAs false; scoresAs is true or left out'),
+    -- A refund outcome takes a kind alone, and the kind refusal names both kinds.
+    jsonb_build_array('{"key": "prh", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}, "outcome": {"kind": "refund", "share": 1}}}',
+      'card "prh" has a refund outcome with share; a refund outcome has a kind alone'),
+    -- A refund carrying `every`, whatever its value, gets the one refusal and no `every` sentence.
+    jsonb_build_array('{"key": "prz", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}, "outcome": {"kind": "refund", "every": "x"}}}',
+      'card "prz" has a refund outcome with every; a refund outcome has a kind alone'),
+    -- refunds (the refund outcome's other half): a use card on a post alone with a time up, flavors and a count.
+    jsonb_build_array('{"key": "pri", "rarity": "common", "play": "cast", "reaches": ["post"], "refunds": {"flavors": ["salty"], "count": 3}}',
+      'card "pri" has refunds, and only a use card does'),
+    jsonb_build_array('{"key": "prj", "rarity": "common", "play": "use", "reaches": ["post", "thread"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": {"flavors": ["salty"], "count": 3}}',
+      'card "prj" has refunds, and a card with refunds reaches a post alone'),
+    jsonb_build_array('{"key": "prk", "rarity": "common", "play": "use", "reaches": ["post"], "gimmick": {"kind": "earn"}, "refunds": {"flavors": ["salty"], "count": 3}}',
+      'card "prk" has refunds with no time up (lasts)'),
+    jsonb_build_array('{"key": "prl", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": {"flavors": [], "count": 3}}',
+      'card "prl" has refunds whose flavors are []; flavors are one or more of sweet, salty and pepperoni'),
+    jsonb_build_array('{"key": "prm", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": {"flavors": ["salty", "salty"], "count": 3}}',
+      'card "prm" has refunds whose flavors are ["salty","salty"]; flavors are one or more of sweet, salty and pepperoni'),
+    jsonb_build_array('{"key": "prn", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": {"flavors": ["spicy"], "count": 3}}',
+      'card "prn" has refunds whose flavors are ["spicy"]; flavors are one or more of sweet, salty and pepperoni'),
+    jsonb_build_array('{"key": "pro", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": {"count": 3}}',
+      'card "pro" has refunds whose flavors are undefined; flavors are one or more of sweet, salty and pepperoni'),
+    jsonb_build_array('{"key": "prp", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": {"flavors": ["salty"], "count": 0}}',
+      'card "prp" has refunds whose count is 0; count is a whole number from 1 to 10'),
+    jsonb_build_array('{"key": "prq", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": {"flavors": ["salty"], "count": 11}}',
+      'card "prq" has refunds whose count is 11; count is a whole number from 1 to 10'),
+    jsonb_build_array('{"key": "prr", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": {"flavors": ["salty"], "count": 2.5}}',
+      'card "prr" has refunds whose count is 2.5; count is a whole number from 1 to 10'),
+    jsonb_build_array('{"key": "prs", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": {"flavors": ["salty"], "count": "3"}}',
+      'card "prs" has refunds whose count is "3"; count is a whole number from 1 to 10'),
+    jsonb_build_array('{"key": "prt", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": 3}',
+      'card "prt" has refunds that are not an object'),
     -- A cast on a post may end since 0357 (a skim, a veil), so a cast with a time up is no longer refused; a set card with one, on a post alone, still is.
     jsonb_build_array('{"key": "prg", "rarity": "uncommon", "play": "set", "reaches": ["post"], "lasts": {"unit": "day", "count": 1}, "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}}}',
       'card "prg" has a time up (lasts), and only a use card, a cast card or a card reaching beyond a post does')
@@ -227,7 +258,10 @@ declare
     '{"key": "ok4", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "outcome": {"kind": "ride", "share": 1}}}',
     '{"key": "ok5", "rarity": "uncommon", "play": "cast", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}}',
     -- A ride that pays on every quadrant may sit beside a match (Whoopee Cushion).
-    '{"key": "ok6", "rarity": "common", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}, "outcome": {"kind": "ride", "share": 0.25, "every": true}}}'
+    '{"key": "ok6", "rarity": "common", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}, "outcome": {"kind": "ride", "share": 0.25, "every": true}}}',
+    -- A refund outcome beside a match (Pay It Forward), and a use card with refunds on a post alone (Kick Me).
+    '{"key": "ok7", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "match": {"flavors": ["sweet"], "upTo": "uncommon"}, "outcome": {"kind": "refund"}}}',
+    '{"key": "ok8", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn"}, "refunds": {"flavors": ["salty", "pepperoni"], "count": 10}}'
   );
   p jsonb; got text; g jsonb;
 begin
@@ -235,6 +269,9 @@ begin
     got := pg_temp.problem((p ->> 0)::jsonb);
     if got is null or position((p ->> 1) in got) = 0 then raise exception 'the seed check did not refuse % in the engine''s words (%): %', p -> 0, p ->> 1, got; end if;
   end loop;
+  -- A refund with an `every` is refused once, in the one sentence, with no ride sentence beside it.
+  got := pg_temp.problem((select (e ->> 0)::jsonb from jsonb_array_elements(poison) e where (e ->> 0)::jsonb ->> 'key' = 'prz'));
+  if got is distinct from 'card "prz" has a refund outcome with every; a refund outcome has a kind alone' then raise exception 'a refund with every was not refused in one sentence: %', got; end if;
   for g in select * from jsonb_array_elements(good) loop
     got := pg_temp.problem((g #>> '{}')::jsonb);
     if got is not null then raise exception 'the seed check refused a good card %: %', g, got; end if;

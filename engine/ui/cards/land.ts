@@ -128,6 +128,7 @@ export function springWords(rules: Pick<CardRules, 'play' | 'reaches' | 'trap' |
     const comma = waits.includes(', up to ') ? ',' : '';
     const outcome = rules.trap?.outcome;
     if (outcome?.kind === 'ride') return `Waits for ${waits}${comma} to be cast on this post, lets it land, and pays you ${shareWords(outcome.share)} for each vote it draws${outcome.every ? '' : ' of the kind you name'}.`;
+    if (outcome?.kind === 'refund') return `Waits for ${waits}${comma} to be cast on this post, lets it land, and gives the card back to its caster.`;
     return `Waits for ${waits}${comma} to be cast on this post, and takes it.`;
   }
   if (on === 'visit') return 'Ends the next Mod Bot visit to this post when the visit starts.';

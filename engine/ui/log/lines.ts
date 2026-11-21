@@ -896,6 +896,15 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       if (e.act === null || (acted ? acted.kind !== 'card' : refund === undefined)) return;
       const actedPost = acted?.targetActId ? data.acts.get(acted.targetActId) : undefined;
       const where = (acted ? placeOf(acted, data) : null) ?? (actedPost ? actLink(actedPost, data, words, acted?.character ?? undefined) : null);
+      const handed = acted?.payload.handedBack as { card?: unknown } | null | undefined;
+      if (acted && typeof handed === 'object' && handed !== null && typeof handed.card === 'string') {
+        rows.push({
+          key: `returned:${e.act}`, kind: 'returned', at: e.at, what: `Your ${cardName(e.card)} came back`,
+          details: [`The ${cardName(handed.card)} on `, where ?? 'a post', ' gave your card back.'],
+          aura: 0, wallet: null, characters: acted.character ? [acted.character] : [],
+        });
+        return;
+      }
       const back = refund && refund.change > 0 ? `so your ${plain(refund.change)} came back, and the card is back in your hand.` : 'so the card is back in your hand.';
       rows.push({
         key: `returned:${e.act}`, kind: 'returned', at: e.at, what: `Your ${cardName(e.card)} came back`,
@@ -1167,16 +1176,27 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
       continue;
     }
     const did = spring?.payload.did;
-    if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode') {
+    if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode' || did === 'returned') {
       const by = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
       if (did === 'ended') {
         rows.push({ key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`, details: [`${cardName(e.card)} on `, on, ' sprang when a Mod Bot\'s visit began, and ended the visit.'], aura: 0, wallet: null, characters });
         continue;
       }
+      if (did === 'returned') {
+        const cast = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
+        const move = cardName(cast?.payload.card);
+        rows.push({
+          key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
+          details: [`${cardName(e.card)} on `, on, ` sprang when ${nameOf(cast?.character)} cast ${move} on it. ${move} landed, and its card went back to its caster's hand.`],
+          aura: 0, wallet: null, characters,
+        });
+        continue;
+      }
       if (did === 'rode') {
         const rode = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
         const move = cardName(rode?.payload.card);
-        const share = rules(e.card)?.trap?.outcome?.share;
+        const outcome = rules(e.card)?.trap?.outcome;
+        const share = outcome?.kind === 'ride' ? outcome.share : undefined;
         const named = typeof spring?.payload.quadrant === 'string';
         const kind = named ? words.ui.quadrantLabels[spring.payload.quadrant as Quadrant] : undefined;
         rows.push({

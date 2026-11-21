@@ -60,6 +60,24 @@ export function asThen(plays: readonly CardPlay[], then: ReadonlySet<Id> | undef
   });
 }
 
+/** A cast's `handedBack` (the play whose refund it was handed, and that play's card), as `{ handedBack }` where the payload's is an object with a string `by` and `card`, else nothing. */
+function handedBackOf(raw: unknown): { readonly handedBack?: NonNullable<CardPlay['handedBack']> } {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  const { by, card } = raw as Record<string, unknown>;
+  return typeof by === 'string' && typeof card === 'string' ? { handedBack: { by, card } } : {};
+}
+
+/**
+ * Each play with `handedOut`: how many of these plays' casts name it in `handedBack` (the refund sign's count). Set only where it is above zero, so a play nobody names
+ * carries no key; the same array where none is named.
+ */
+export function withHandedOut(plays: readonly CardPlay[]): readonly CardPlay[] {
+  const counts = new Map<Id, number>();
+  for (const p of plays) if (p.handedBack) counts.set(p.handedBack.by, (counts.get(p.handedBack.by) ?? 0) + 1);
+  if (!plays.some((p) => counts.has(p.id))) return plays;
+  return plays.map((p) => (counts.has(p.id) ? { ...p, handedOut: counts.get(p.id)! } : p));
+}
+
 /**
  * A card play, from its card Act or its set Act (a card back); null for any other Act, or a card Act with no card in it. A spring
  * is no play of its own: `Plays.add` reveals the back it names.
@@ -96,6 +114,7 @@ export function playOf(act: Act): CardPlay | null {
     ...(typeof act.payload.drive === 'string' ? { drive: act.payload.drive } : {}),
     ...(typeof act.payload.drawn === 'string' ? { drawn: act.payload.drawn } : {}),
     ...(typeof act.payload.targetName === 'string' ? { targetName: act.payload.targetName } : {}),
+    ...(handedBackOf(act.payload.handedBack)),
     ...(instant ? {
       instant: true as const,
       ...(typeof act.payload.took === 'number' && Number.isSafeInteger(act.payload.took) ? { took: act.payload.took } : {}),

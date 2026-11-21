@@ -45,6 +45,15 @@ describe('the trapStruck voice', () => {
     expect(line('4D Chess')).toBe('Pipewrench wanted you to do that.');
     expect(line(null)).toBe('Pipewrench wanted you to do that.');
   });
+  test('a card handed back: the cast landed as usual and the card is back in its caster\'s hand, with the card named or "card" where unread', () => {
+    const f = { how: 'returned', setter: 'Pipewrench', laid: 'Hype Up', span: null, setterStaff: false } as const;
+    expect(trapStruckWords({ ...f, card: 'Pay It Forward' }))
+      .toEqual({ line: 'Paid forward', detail: 'Their face-down Pay It Forward sprang on your Hype Up. It landed as usual, and the card is back in your hand.' });
+    expect(trapStruckWords({ ...f, card: null })!.detail).toBe('Their face-down card sprang on your Hype Up. It landed as usual, and the card is back in your hand.');
+    expect(trapStruckWords({ ...f, card: 'Pay It Forward', laid: null })!.detail).toBe('Their face-down Pay It Forward sprang on your Move. It landed as usual, and the card is back in your hand.');
+    expect(trapStruckWords({ ...f, card: 'Pay It Forward', setter: null })).toBeUndefined();
+    expect(JSON.stringify(trapStruckWords({ ...f, card: 'Pay It Forward' }))).not.toMatch(/account|owner|player|class/iu);
+  });
   test('without the setter or the card it says nothing, so the engine\'s plain words stand', () => {
     expect(trapStruckWords({ how: 'quote', setter: null, card: 'Whoops!', laid: null, span: null, setterStaff: false })).toBeUndefined();
     expect(trapStruckWords({ how: 'caught', setter: 'Pipewrench', card: null, laid: null, span: null, setterStaff: false })).toBeUndefined();
