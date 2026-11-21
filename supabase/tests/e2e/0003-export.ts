@@ -633,8 +633,8 @@ test('an instance exported and imported into a fresh database is the same instan
     (select string_agg(key || ':' || (retired_at is not null)::text, ',' order by key) from pack_kinds where key in ('exppack', 'expretiredpack')) || '|' ||
     (select string_agg(card || ':' || kind || ':' || price::text, ',' order by card, kind) from card_ledger where card in ('expold', 'expnew', 'expgone')) || '|' ||
     (select string_agg(w.kind || ':' || w.change::text || ':' || w.overflow::text, ',' order by w.kind) from wallet_events w join auth.users u on u.id = w.account and u.email = 'exp-bob@test.invalid' where w.kind = 'withdrawal')`);
-  const RETIREMENT_HELD = 'expgone:false:true:-:40,expnew:false:false:-:-,expold:false:true:expnew:-,expretired:true:false:-:-|exppack:false,expretiredpack:true|expgone:bought:0,expgone:withdrawn:40,expnew:renamedIn:0,expold:bought:0,expold:renamedOut:0|withdrawal:40:0';
-  assert.equal(retirement(from), RETIREMENT_HELD, 'the fixture holds an out-of-print card, a renamed pair with its ledger rows, a withdrawn card with its refund and withdrawal, and an out-of-print pack kind');
+  const retirementHeld = 'expgone:false:true:-:40,expnew:false:false:-:-,expold:false:true:expnew:-,expretired:true:false:-:-|exppack:false,expretiredpack:true|expgone:bought:0,expgone:withdrawn:40,expnew:renamedIn:0,expold:bought:0,expold:renamedOut:0|withdrawal:40:0';
+  assert.equal(retirement(from), retirementHeld, 'the fixture holds an out-of-print card, a renamed pair with its ledger rows, a withdrawn card with its refund and withdrawal, and an out-of-print pack kind');
   // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows
   // whatever else this database holds (#136 F1).
   const trapIds = sql(`select f.play || '|' || s.id || '|' || k.id from face_down f join auth.users u on u.id = f.account and u.email = 'exp-ann@test.invalid'
@@ -888,7 +888,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.equal(narrowRows(fresh.toString()), '2|1|0|0|0|0', 'the imported marks and cuts are the rows the Acts give');
     assert.equal(part3(fresh.toString()), part3Held, 'the veils, the flagged card kinds, the stand-in and the post-local reaction are in the imported instance as they were');
     assert.equal(payouts(fresh.toString()), payouts(from), 'the payout cards\' ledger row, scored_as row, starts and rode quadrant are in the imported instance');
-    assert.equal(retirement(fresh.toString()), RETIREMENT_HELD, 'the out-of-print card and pack kind, the renamed pair with its ledger rows, and the withdrawn card with its refund and withdrawal are in the imported instance as they were');
+    assert.equal(retirement(fresh.toString()), retirementHeld, 'the out-of-print card and pack kind, the renamed pair with its ledger rows, and the withdrawn card with its refund and withdrawal are in the imported instance as they were');
     // The post that quotes the No quote's post (Task 8) is in the imported instance: the quote was written before the No quote was played, and the import writes it as a replica.
     const quoting = `select count(*) from acts q join acts n on n.kind = 'post' and n.payload ->> 'body' = 'Under No quote, and quoted before it.'
       where q.kind = 'post' and q.payload ->> 'body' like '%Bob, quoting under No quote.%' and q.payload ->> 'body' like '%[quote=' || n.id::text || ']%'`;
