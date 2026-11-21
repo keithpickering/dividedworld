@@ -153,8 +153,9 @@
   }
 }
 
-/* The note a banned mask's composer says (ban.ts): plain words over the box, in the same notice the composer's other notes use. */
-.kb-composer-ban {
+/* The note a banned mask's composer says (ban.ts), and a locked-out one's (lockout.ts): plain words over the box, in the same notice the composer's other notes use. */
+.kb-composer-ban,
+.kb-composer-lockout {
   margin-block: 0.4em;
 }
 

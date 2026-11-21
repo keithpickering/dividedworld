@@ -1,6 +1,6 @@
 /**
  * What a `trapStruck` alert's words need beyond the rows (words.ts): a card landed from a face-down back names its spring (`payload.spring`), and a
- * cast a catching set card caught names the set that caught it (`payload.caught`), and one that rode a ride back names the set whose spring it sprang (`payload.rode`). Both Acts are public, and so are the character they name; nothing is
+ * cast a catching set card caught names the set that caught it (`payload.caught`), a cast a lockout back let land names the spring (`payload.lockedOut`), and one that rode a ride back names the set whose spring it sprang (`payload.rode`). Both Acts are public, and so are the character they name; nothing is
  * read about anyone but because an alert of the player's names it. A read that fails leaves the plain words ("A face-down card struck ...").
  */
 import type { Act, Alert, Id, KayfaApi } from '../data/api.ts';
@@ -11,7 +11,7 @@ const text = (v: unknown): Id | null => (typeof v === 'string' && v !== '' ? v :
  * The Acts, the character names and the staff among them to add for these rows' trapStruck alerts, beyond `acts` already held: the spring, the set it
  * names, and the setter's character. Reads in two rounds (the card's Act names the spring, the spring names the set), each in one call.
  */
-export async function readTrapActs(api: Pick<KayfaApi, 'actsById' | 'characters'>, rows: readonly Alert[], acts: ReadonlyMap<Id, Act>): Promise<{ acts: Map<Id, Act>; names: Map<Id, string>; staff: Set<Id> }> {
+export async function readTrapActs(api: Pick<KayfaApi, 'actsById' | 'characters' | 'cardEnds'>, rows: readonly Alert[], acts: ReadonlyMap<Id, Act>): Promise<{ acts: Map<Id, Act>; names: Map<Id, string>; staff: Set<Id> }> {
   const gotActs = new Map<Id, Act>();
   const gotNames = new Map<Id, string>();
   const gotStaff = new Set<Id>();
@@ -22,11 +22,18 @@ export async function readTrapActs(api: Pick<KayfaApi, 'actsById' | 'characters'
       const want = [...new Set(ids.filter((id): id is Id => id !== null && held(id) === undefined))];
       if (want.length > 0) for (const a of await api.actsById(want)) gotActs.set(a.id, a);
     };
-    await read(struck.map((a) => text(a.payload.spring)));
+    await read(struck.map((a) => text(a.payload.spring) ?? text(a.payload.lockedOut)));
     const handedBackBy = (a: Act): Id | null => { const h = a.payload.handedBack; return typeof h === 'object' && h !== null ? text((h as { by?: unknown }).by) : null; };
-    const setOf = (a: Act) => text(a.payload.caught) ?? text(a.payload.rode) ?? handedBackBy(a) ?? text(held(text(a.payload.spring) ?? '')?.payload.set);
+    /* A lockout an admin ended: the card_end on each lockedOut spring (a struck play's, or a trapSprang alert's own spring), read by the spring's id in one call. */
+    try {
+      const springs = new Map<Id, Act>();
+      for (const a of struck) { const id = text(a.payload.lockedOut); const sp = id === null ? undefined : held(id); if (sp) springs.set(sp.id, sp); }
+      for (const r of rows) { const sp = r.kind === 'trapSprang' && r.act !== null ? held(r.act) : undefined; if (sp?.kind === 'spring' && sp.payload.did === 'lockedOut') springs.set(sp.id, sp); }
+      if (springs.size > 0) for (const a of await api.cardEnds([...springs.keys()])) if (a.kind === 'card_end' && a.targetActId !== null && springs.has(a.targetActId)) gotActs.set(a.id, a);
+    } catch { /* the lockout reads "until" alone */ }
+    const setOf = (a: Act) => text(a.payload.caught) ?? text(a.payload.rode) ?? handedBackBy(a) ?? text(held(text(a.payload.spring) ?? text(a.payload.lockedOut) ?? '')?.payload.set);
     await read(struck.map(setOf));
-    const setters = struck.map((a) => held(setOf(a) ?? '')?.character ?? held(text(a.payload.spring) ?? '')?.character ?? null);
+    const setters = struck.map((a) => held(setOf(a) ?? '')?.character ?? held(text(a.payload.spring) ?? text(a.payload.lockedOut) ?? '')?.character ?? null);
     /* Every setter is read, named already or not: a staff setter's catching set card takes nothing, and whether a character is staff is public but is not held with a name. */
     const unnamed = [...new Set(setters.filter((c): c is Id => c !== null))];
     /* Its own try: a failed read of the characters leaves the Acts already read. */

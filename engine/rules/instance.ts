@@ -774,7 +774,7 @@ function shareProblem(e: Record<string, unknown>, who: string, what: string, sai
   return null;
 }
 
-/** A cast trap's outcome (Part 6 of the card notes): a ride or a refund, on a set card that springs on a cast, beside a named card or a match. */
+/** A cast trap's outcome (Part 6 of the card notes): a ride, a refund or a lockout, on a set card that springs on a cast, beside a named card or a match. */
 function outcomeProblems(o: unknown, who: string, play: string, on: unknown): string[] {
   if (typeof o !== 'object' || o === null) return [`${who} has an outcome that is not an object`];
   if (play !== 'set' || on !== 'cast') return [`${who} has an outcome, and only a set card that springs on a cast does`];
@@ -783,7 +783,14 @@ function outcomeProblems(o: unknown, who: string, play: string, on: unknown): st
   if (e.kind === 'refund') {
     const extra = Object.keys(e).find((k) => k !== 'kind');
     if (extra !== undefined) out.push(`${who} has a refund outcome with ${extra}; a refund outcome has a kind alone`);
-  } else if (e.kind !== 'ride') out.push(`${who} has an outcome of kind ${JSON.stringify(e.kind)}; an outcome is ride or refund`);
+  } else if (e.kind === 'lockout') {
+    const extra = Object.keys(e).find((k) => k !== 'kind' && k !== 'hours');
+    if (extra !== undefined) out.push(`${who} has a lockout outcome with ${extra}; a lockout outcome has hours alone`);
+    const h = e.hours;
+    // A number reads bare and anything else as its JSON, so "24" (a string) does not read as a valid 24.
+    if (h === undefined) out.push(`${who} has a lockout outcome with no hours; a lockout is a whole number of hours from 1 to 168`);
+    else if (typeof h !== 'number' || !Number.isInteger(h) || h < 1 || h > 168) out.push(`${who} locks out for ${typeof h === 'number' ? String(h) : JSON.stringify(h)} hours; a lockout is a whole number of hours from 1 to 168`);
+  } else if (e.kind !== 'ride') out.push(`${who} has an outcome of kind ${JSON.stringify(e.kind)}; an outcome is ride, refund or lockout`);
   else {
     // `every` is a ride's alone; a refund names it as a key it does not take.
     if (e.every !== undefined && e.every !== true) out.push(`${who} has an outcome whose every is ${JSON.stringify(e.every)}; every is true or left out`);

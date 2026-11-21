@@ -307,6 +307,12 @@ test('decideSet of a refund set card needs no quadrant, and a ride without every
   assert.throws(() => decideSet(rider, settings, post, [], {}, []), /names no quadrant/);
 });
 
+test('staffOffers offers a lockout set card, and decideSet of it needs no quadrant', () => {
+  const locker: CardRules = { ...snare, key: 'locker', trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome: { kind: 'lockout', hours: 24 } }, catches: undefined, validateConfig: () => ok({}) };
+  assert.equal(staffOffers(locker), true);
+  assert.deepEqual(decideSet(locker, settings, post, [], {}, []), { ok: true, value: { price: 0, config: {} } });
+});
+
 test('staffOffers: a card with staffOptions and no default is offered, and a card with neither is not', () => {
   const options = { prompt: 'Pick an ink.', schema: { type: 'object', properties: { ink: { type: 'string' } }, required: ['ink'], additionalProperties: false } };
   assert.equal(staffOffers(inky), false, 'no default, no staffConfigs, no staffOptions');
