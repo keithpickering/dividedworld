@@ -28,10 +28,22 @@ describe('the trapStruck voice', () => {
   test('a ride back: the setter wanted the cast, it landed as usual and its caster keeps what it earns', () => {
     expect(trapStruckWords({ how: 'rode', setter: 'Pipewrench', card: '4D Chess', laid: 'Whoops!', span: 'two days', setterStaff: false }))
       .toEqual({ line: 'Pipewrench wanted you to do that.', detail: 'Their face-down 4D Chess named your Whoops!. It landed as usual and you keep everything it earns; Pipewrench is paid for the reactions it draws.' });
-    /* The card is named by the instance where the spring was not read, and the setter is still needed. */
-    expect(trapStruckWords({ how: 'rode', setter: 'Pipewrench', card: null, laid: 'Whoops!', span: null, setterStaff: false })!.detail).toContain('Their face-down 4D Chess named your Whoops!.');
+    /* More than one card rides, so where the spring was not read it is only "card"; the setter is still needed. */
+    expect(trapStruckWords({ how: 'rode', setter: 'Pipewrench', card: null, laid: 'Whoops!', span: null, setterStaff: false })!.detail).toContain('Their face-down card sprang on your Whoops!.');
     expect(trapStruckWords({ how: 'rode', setter: null, card: '4D Chess', laid: 'Whoops!', span: null, setterStaff: false })).toBeUndefined();
     expect(JSON.stringify(trapStruckWords({ how: 'rode', setter: 'P', card: '4D Chess', laid: 'Whoops!', span: null, setterStaff: false }))).not.toMatch(/account|owner|player|class|quadrant/iu);
+  });
+  test('a ride back of a card that names none: the cast landed as usual, and the detail names the card, or "card" where unread', () => {
+    const f = { how: 'rode', setter: 'Pipewrench', laid: 'Whoops!', span: null, setterStaff: false } as const;
+    const detail = (card: string | null) => trapStruckWords({ ...f, card })!.detail;
+    expect(detail('Whoopee Cushion')).toBe('Their face-down Whoopee Cushion sprang on your Whoops!. It landed as usual and you keep everything it earns; Pipewrench is paid for every reaction it draws.');
+    expect(detail('4D Chess')).toBe('Their face-down 4D Chess named your Whoops!. It landed as usual and you keep everything it earns; Pipewrench is paid for the reactions it draws.');
+    expect(detail(null)).toBe('Their face-down card sprang on your Whoops!. It landed as usual and you keep everything it earns; Pipewrench is paid for the reactions it draws.');
+    /* The owner's words (#902): Whoopee Cushion has a line of its own; 4D Chess's, and an unread card's, stay as they were. */
+    const line = (card: string | null) => trapStruckWords({ ...f, card })!.line;
+    expect(line('Whoopee Cushion')).toBe("PFFFT! You sat on Pipewrench's whoopee cushion.");
+    expect(line('4D Chess')).toBe('Pipewrench wanted you to do that.');
+    expect(line(null)).toBe('Pipewrench wanted you to do that.');
   });
   test('without the setter or the card it says nothing, so the engine\'s plain words stand', () => {
     expect(trapStruckWords({ how: 'quote', setter: null, card: 'Whoops!', laid: null, span: null, setterStaff: false })).toBeUndefined();

@@ -1,4 +1,4 @@
--- The reveal perk's input (supabase/migrations/0392_reveal_perk.sql; docs/plans/2026-11-20-class-balance-plan.md, Task 6; model: 0376-cushion.sql).
+-- The reveal perk's input (supabase/migrations/0393_reveal_perk.sql; docs/plans/2026-11-20-class-balance-plan.md, Task 6; model: 0376-cushion.sql).
 -- settlement_input gives each character `reveals`: the epoch milliseconds of its `unmask` Acts created before the window's end, oldest first, and none made at or
 -- after it. estimate_input gives the caller's own characters theirs and another player's character none, as it gives that character no `classes`.
 

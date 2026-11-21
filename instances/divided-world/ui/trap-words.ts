@@ -4,15 +4,20 @@
  * setter's character, the card and how long it was set face down before it sprang. It names no account and no class.
  */
 import type { TrapStruckFacts } from '../../../engine/ui/types.ts';
-import { fourDChess } from '../cards/4d-chess.ts';
+import { cards } from '../cards/index.ts';
 
 export function trapStruckWords(f: TrapStruckFacts): { readonly line: string; readonly detail: string } | undefined {
   if (f.setter === null) return undefined;
-  /* A ride back's cast landed as usual: the voice says only what the spring shows everyone, that the Move it named was cast and the setter is paid for its reactions. The setter's card is 4D Chess, the only one that rides, and is named so where the spring was not read. */
+  /* A ride back's cast landed as usual: the voice says only what the spring shows everyone. A setter's card that names its card (`catches`, 4D Chess) says it named the cast; one that names none (Whoopee Cushion) says it sprang on it. Where the spring was not read (`f.card` null) more than one card rides, so the card is only "card". */
   if (f.how === 'rode') {
+    const card = f.card === null ? undefined : cards.find((c) => c.name === f.card);
+    const named = card?.catches !== undefined;
     return {
-      line: `${f.setter} wanted you to do that.`,
-      detail: `Their face-down ${f.card ?? fourDChess.name} named your ${f.laid ?? 'cast'}. It landed as usual and you keep everything it earns; ${f.setter} is paid for the reactions it draws.`,
+      /* Whoopee Cushion's own line is the owner's (#902); every other ride, and an unread card, keep the setter's gloat. */
+      line: card?.key === 'whoopee-cushion' ? `PFFFT! You sat on ${f.setter}'s whoopee cushion.` : `${f.setter} wanted you to do that.`,
+      detail: named
+        ? `Their face-down ${f.card} named your ${f.laid ?? 'cast'}. It landed as usual and you keep everything it earns; ${f.setter} is paid for the reactions it draws.`
+        : `Their face-down ${f.card ?? 'card'} sprang on your ${f.laid ?? 'cast'}. It landed as usual and you keep everything it earns; ${f.setter} is paid for ${f.card === null ? 'the reactions' : 'every reaction'} it draws.`,
     };
   }
   if (f.card === null) return undefined;

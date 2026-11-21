@@ -136,6 +136,7 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
   'card.ride': (n) => {
     const card = instanceCards.find((c) => c.key === n['card']);
     if (card?.gimmick?.kind === 'ride') return `${card.name}: ${shareWords(card.gimmick.share)} for each vote on a Move another player cast on the post`;
+    if (card?.trap?.outcome?.every === true) return `${card.name}: ${shareWords(card.trap.outcome.share)} for each vote on the card whose cast sprang it`;
     if (card?.trap?.outcome !== undefined) return `${card.name}: ${shareWords(card.trap.outcome.share)} for each vote, of the kind it named, on the Move that sprang it`;
     return 'A card: what its payout on a reaction earned';
   },
