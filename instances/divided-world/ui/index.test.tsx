@@ -373,7 +373,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const tweener = instance.classes.find((c) => c.key === 'tweener')!;
     const lit = tweener.earn({
       character: 'tw', from: 0, to: 10, posts: [], received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [], threadsSpun: [],
-      debates: [{ act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0 }],
+      debates: [{ act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0, paid: {}, placed: true }],
     }, instance.settings);
     const reasons = [...new Set([...Object.keys(wordsRead), ...Object.keys(settingsRead)])].filter((k) => k.includes('.'));
     for (const reason of reasons) {
@@ -805,9 +805,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       character: 'c', from: 0, to: 20 * DAY, received, given: [],
       /* A spark that crosses in the window, and one that paid before it whose calm votes moved away in it, so its refund is taken back. */
       debates: [
-        { act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0 },
+        { act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0, paid: {}, placed: true },
         { act: 'p2', at: -DAY, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1 - DAY, voice })), inOwnDebate: false,
-          standing: { before: [{ ...none, calmPositive: 1 }, { ...none, calmPositive: 1 }], now: [] }, cushioned: 0 },
+          standing: { before: [{ ...none, calmPositive: 1 }, { ...none, calmPositive: 1 }], now: [] }, cushioned: 0, paid: { 'tweener.litTheFuse': 20, 'tweener.outvoted': 10 }, placed: true },
       ],
       posts: Array.from({ length: eco('lurker.postsAllowed') + 1 }, (_, n) => ({ act: `q${n}`, at: n })),
       held: [{ act: 'p9', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'excitedPositive' },
