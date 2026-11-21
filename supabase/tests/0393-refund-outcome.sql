@@ -25,6 +25,8 @@ begin
     ('rfgift', 'Rf Gift', 'sweet', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "match": {"flavors": ["sweet"], "upTo": "uncommon"}, "outcome": {"kind": "refund"}}', '{post}', null, null, null, 1),
     ('rfsign', 'Rf Sign', 'pepperoni', 'common', 'use', null, '{post}', interval '3 days',
       '{"kind": "earn", "flat": 1, "quadrants": ["excitedNegative", "boredNegative"]}', '{"flavors": ["salty"], "count": 3}', 1),
+    ('rfsignsweet', 'Rf Sign Sweet', 'pepperoni', 'common', 'use', null, '{post}', interval '3 days',
+      '{"kind": "earn", "flat": 1, "quadrants": ["excitedNegative", "boredNegative"]}', '{"flavors": ["sweet"], "count": 3}', 1),
     ('rfward', 'Rf Ward', 'pepperoni', 'uncommon', 'use', null, '{post}', interval '3 days', '{"kind": "ward", "upTo": "common"}', null, 1),
     ('rfsweet', 'Rf Sweet', 'sweet', 'common', 'cast', null, '{post}', null, null, null, 4),
     ('rfrare', 'Rf Rare', 'sweet', 'rare', 'cast', null, '{post}', null, null, null, 2),
@@ -58,7 +60,7 @@ declare
   p1 uuid := tests.post(a, t, 'Gift.'); p2 uuid := tests.post(a, t, 'Sign.'); p3 uuid := tests.post(a, t, 'Own other mask.'); p4 uuid := tests.post(a, t, 'Staff on a sign.');
   p5 uuid := tests.post(a, t, 'Staff on a gift.'); p6 uuid := tests.post(a, t, 'Caught.'); p7 uuid := tests.post(a, t, 'Warded.');
   back uuid; back5 uuid; back6 uuid; sign uuid; sign3 uuid; sign4 uuid; sign6 uuid; sign7 uuid;
-  c jsonb; c_act uuid; cp jsonb; sp jsonb; first_cp jsonb; why text; held_before integer; ann_rows bigint; bob_rows bigint; n integer; r jsonb;
+  c jsonb; c_act uuid; cp jsonb; sp jsonb; first_cp jsonb; why text; held_before integer; ann_rows bigint; ledger_rows bigint; n integer; r jsonb;
 begin
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'rfgift', 'rfgift', 'rfsign', 'rfsign', 'rfsign', 'rfsign', 'rfsign', 'rfcatch', 'rfward', 'rfsalty');
@@ -115,7 +117,6 @@ begin
   if pg_temp.kicks(sign) is distinct from 3::bigint then raise exception 'the sign handed back % casts, not 3', pg_temp.kicks(sign); end if;
   if card_held(bob, 'rfsalty') is distinct from held_before - 1 then raise exception 'four casts, three handed back, did not cost one card: % -> %', held_before, card_held(bob, 'rfsalty'); end if;
   -- A casts of another flavor is not handed back by it (the sign names salty).
-  held_before := card_held(bob, 'rfsweet');
   c := play_card(bob, 'rfsweet', b, p2, '{}', 0, '');
   if (select x.payload ? 'handedBack' from acts x where x.id = (c ->> 'id')::uuid) then raise exception 'a sweet cast was handed back by a sign that names salty'; end if;
 
@@ -133,11 +134,11 @@ begin
   insert into characters (name, staff, staff_kind, debuted_at) values ('Rf Staff', 'rf-staff', 'persona', now()) returning id into staff;
   insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
   sign4 := (play_card(ann, 'rfsign', a, p4, '{}', 0, '') ->> 'id')::uuid;
-  bob_rows := (select count(*) from card_ledger);
+  ledger_rows := (select count(*) from card_ledger);
   r := staff_play_card('rf-staff', 'rfsalty', p4);
   select x.payload into cp from acts x where x.id = (r ->> 'id')::uuid;
   if cp ? 'handedBack' or cp ->> 'layer' is null then raise exception 'a staff cast was handed back, or did not land: %', cp; end if;
-  if (select count(*) from card_ledger) is distinct from bob_rows then raise exception 'a staff cast wrote a ledger row'; end if;
+  if (select count(*) from card_ledger) is distinct from ledger_rows then raise exception 'a staff cast wrote a ledger row'; end if;
   if pg_temp.kicks(sign4) <> 0 then raise exception 'a staff cast used a kick of the sign'; end if;
   back5 := (set_card(ann, 'rfgift', a, p5, '{}', 0) ->> 'id')::uuid;
   r := staff_play_card('rf-staff', 'rfsweet', p5);
@@ -169,6 +170,58 @@ begin
   why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'rfsalty', b, p7, '{}', ''));
   if why is null or why not like '42501%' then raise exception 'a warded cast was not turned away: %', why; end if;
   if pg_temp.kicks(sign7) <> 0 or card_held(bob, 'rfsalty') is distinct from held_before then raise exception 'a warded cast used a kick or cost a card'; end if;
+end $$;
+
+-- ---- A cast is handed back once at most, and only by a sign that is up ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('rf-o-ann'); bob uuid := tests.account('rf-o-bob');
+  a uuid := tests.character(ann, 'Rf O Ann'); b uuid := tests.character(bob, 'Rf O Bob');
+  t uuid := tests.thread('Rf once');
+  q1 uuid := tests.post(a, t, 'Back and sign.'); q2 uuid := tests.post(a, t, 'Timed out.'); q3 uuid := tests.post(a, t, 'Ended.');
+  back uuid; sign uuid; c jsonb; c_act uuid; cp jsonb; sp jsonb; ended_sign uuid;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'rfgift', 'rfsignsweet', 'rfsign', 'rfsign');
+  perform pg_temp.hand(bob, 'rfsweet', 'rfsweet', 'rfsalty', 'rfsalty');
+  perform tests.become_service();
+
+  -- One post with a refund back and a sign that both cover the cast: the back hands it back, the sign gives no kick, and exactly one row is written.
+  back := (set_card(ann, 'rfgift', a, q1, '{}', 0) ->> 'id')::uuid;
+  sign := (play_card(ann, 'rfsignsweet', a, q1, '{}', 0, '') ->> 'id')::uuid;
+  c := play_card(bob, 'rfsweet', b, q1, '{}', 0, '');
+  c_act := (c ->> 'id')::uuid;
+  select x.payload into cp from acts x where x.id = c_act;
+  sp := pg_temp.spring_of(back);
+  if sp is null or sp ->> 'did' is distinct from 'returned' then raise exception 'the refund back did not spring on a cast the sign also covers: %', sp; end if;
+  if cp -> 'handedBack' is distinct from jsonb_build_object('by', back::text, 'card', 'rfgift') then raise exception 'the cast was not handed back by the back: %', cp; end if;
+  if pg_temp.returned(bob, c_act) is distinct from 1::bigint then raise exception 'a cast handed back by the back wrote % returned rows, not one', pg_temp.returned(bob, c_act); end if;
+  if pg_temp.kicks(sign) <> 0 then raise exception 'a cast handed back by the back used a kick of the sign'; end if;
+  -- The back is spent, so the next sweet cast is handed back by the sign.
+  c := play_card(bob, 'rfsweet', b, q1, '{}', 0, '');
+  select x.payload into cp from acts x where x.id = (c ->> 'id')::uuid;
+  if cp -> 'handedBack' is distinct from jsonb_build_object('by', sign::text, 'card', 'rfsignsweet') then raise exception 'the sign did not hand back the cast after the back was spent: %', cp; end if;
+  if pg_temp.kicks(sign) is distinct from 1::bigint then raise exception 'the sign has % kicks used, not 1', pg_temp.kicks(sign); end if;
+
+  -- A sign whose time has passed hands nothing back (a play written with an `ends` already behind it).
+  ended_sign := tests.act(a, 'card', t, jsonb_build_object('card', 'rfsign', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', now() - interval '1 hour'), q2);
+  c := play_card(bob, 'rfsalty', b, q2, '{}', 0, '');
+  select x.payload into cp from acts x where x.id = (c ->> 'id')::uuid;
+  if cp ? 'handedBack' or pg_temp.returned(bob, (c ->> 'id')::uuid) <> 0 or pg_temp.kicks(ended_sign) <> 0 then raise exception 'a sign whose time had passed handed a cast back: %', cp; end if;
+
+  -- A sign an admin has ended (reverse_card) hands nothing back: its end Act makes card_ended true.
+  sign := (play_card(ann, 'rfsign', a, q3, '{}', 0, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  insert into admins (account) values (ann);
+  perform tests.become(ann);
+  perform reverse_card(sign);
+  perform tests.unbecome();
+  perform tests.become_service();
+  if not card_ended(sign) then raise exception 'the sign is not ended after its end Act'; end if;
+  c := play_card(bob, 'rfsalty', b, q3, '{}', 0, '');
+  select x.payload into cp from acts x where x.id = (c ->> 'id')::uuid;
+  if cp ? 'handedBack' or pg_temp.returned(bob, (c ->> 'id')::uuid) <> 0 or pg_temp.kicks(sign) <> 0 then raise exception 'a sign that was ended handed a cast back: %', cp; end if;
 end $$;
 
 -- ---- The spring's payload: a returned spring names no quadrant ----
@@ -213,4 +266,17 @@ begin
   select k.refunds into kept from card_kinds k where k.key = 'rfseeded';
   if kept is distinct from '{"flavors": ["salty", "sweet"], "count": 2}'::jsonb then raise exception 'the seed did not carry refunds: %', kept; end if;
   if (select k.refunds from card_kinds k where k.key = 'rfplain') is not null then raise exception 'a card with no refunds was seeded with some'; end if;
+  -- Seeding again with changed refunds updates the column (on conflict), and leaving them out clears it.
+  perform seed_instance(jsonb_build_object(
+    'settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb,
+    'cards', jsonb_build_array(
+      '{"key": "rfseeded", "name": "Rf Seeded", "alignment": "pepperoni", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn", "flat": 1}, "refunds": {"flavors": ["pepperoni"], "count": 4}}'::jsonb,
+      '{"key": "rfplain", "name": "Rf Plain", "alignment": "salty", "rarity": "common", "play": "cast"}'::jsonb)));
+  select k.refunds into kept from card_kinds k where k.key = 'rfseeded';
+  if kept is distinct from '{"flavors": ["pepperoni"], "count": 4}'::jsonb then raise exception 'seeding again did not update refunds: %', kept; end if;
+  perform seed_instance(jsonb_build_object(
+    'settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb,
+    'cards', jsonb_build_array(
+      '{"key": "rfseeded", "name": "Rf Seeded", "alignment": "pepperoni", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}, "gimmick": {"kind": "earn", "flat": 1}}'::jsonb)));
+  if (select k.refunds from card_kinds k where k.key = 'rfseeded') is not null then raise exception 'seeding again without refunds kept them'; end if;
 end $$;
