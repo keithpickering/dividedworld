@@ -358,11 +358,11 @@ export async function narrate(cam, cues, io) {
         await fill(cue.at - lead);
         late(cue, cue.at - lead);
         /* Read again where it is as the hand sets off (a guessed target is the page's own by now, and a bobbing one is where it is). */
-        const r = await rectOf(cue.target), dest = cue.do === 'trace' ? inBox({ x: r.left + 6, y: r.y }, box) : aimAt(r, cue);
+        const r = await rectOf(cue.target, cue.guess), dest = cue.do === 'trace' ? inBox({ x: r.left + 6, y: r.y }, box) : aimAt(r, cue);
         await follow(reach(pos, dest, dur, { seed: sub(), box }));
         if (cue.do === 'click') {
           /* The thing may have moved on (a node bobs): the hand reads where it is now and settles on it, then presses. */
-          const again = aimAt(await rectOf(cue.target), cue);
+          const again = aimAt(await rectOf(cue.target, cue.guess), cue);
           await follow(reach(pos, again, 0.3, { seed: sub(), settle: false, box }));
           await cam.press(); if (cue.then) await cue.then(ctx); await hold(0.07); await cam.release();
           log(`narrate: click at ${now().toFixed(2)} s (cue ${cue.at.toFixed(2)} s)`);
