@@ -176,7 +176,8 @@ const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: nu
  * the first with who is online pinned: 5.954 and 8.498 MB, every other figure within 0.001 MB of PR 720's), each rounded up to one decimal plus 0.3 MB; a search read
  * is called with a term and no filter, since the plan it keeps does not depend on the term.
  * Re-recorded on the workflow's Postgres 17 for the polls migration (0393 redefines acts_public with a third select, so planning keeps more): board_page 9.789, boot 8.770,
- * index_page 6.870 and thread_page 17.172 MB, each rounded up to one decimal plus 0.3 MB; every other budget is unchanged.
+ * index_page 6.870 and thread_page 17.172 MB, each rounded up to one decimal plus 0.3 MB; every other budget is unchanged. thread_page again for 0394's
+ * poll_latest_ballots reads (poll_counts, poll_voter_acts and my_latest_ballots in its poll block): 21.198 MB, so 21.5.
  */
 export const BUDGETS: Record<string, Budget> = {
   alerts_page: budget(() => 'public.alerts_page(null)', player, 5.7),
@@ -194,7 +195,7 @@ export const BUDGETS: Record<string, Budget> = {
   search_suggest: budget(() => `public.search_suggest('co', null, null, false, 5)`, player, 3.7),
   search_threads: budget(() => `public.search_threads('cold', null, null, null, null, false, null, null, 5)`, player, 6.2),
   season_page: budget(() => `public.season_page('rankings', null, null, 1)`, player, 3.5),
-  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 17.5),
+  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 21.5),
   updates_page: budget(() => 'public.updates_page(null, null, null)', player, 2.8),
 };
 
