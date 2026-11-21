@@ -530,14 +530,35 @@ describe('a nomination of a successor', () => {
       expect(todo).toHaveTextContent('Third takes over Season 2 from Comptroller.');
       expect(todo).toHaveTextContent("Comptroller left the instance's roster and is now benched.");
       expect(within(todo).getAllByRole('link', { name: /^Write the announcement/u })).toHaveLength(2);
-      await userEvent.click(within(todo).getByRole('button', { name: 'Dismiss the season 2 departure to-do' }));
-      await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the season 2 departure to-do' })).toBeNull());
+      await userEvent.click(within(todo).getByRole('button', { name: 'Dismiss the to-do: Third takes over season 2' }));
+      await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the to-do: Third takes over season 2' })).toBeNull());
       expect(dismiss).toHaveBeenCalledWith(2);
       expect(todo).toHaveTextContent('Season 2 opens with Comptroller.');
       expect(todo).not.toHaveTextContent('Third takes over');
       await userEvent.click(within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' }));
       await waitFor(() => expect(todo).toHaveTextContent('Nothing to do.'));
       expect(dismiss).toHaveBeenLastCalledWith(1);
+    });
+
+    test('two departures in one season have distinct accessible names, and each dismisses its own', async () => {
+      const { fake } = open({ build: (fake) => {
+        fake.seed.staff('comptroller', 'Comptroller', 'boss');
+        fake.seed.staff('third', 'Third', 'mod');
+        fake.seed.staff('fourth', 'Fourth', 'mod');
+        fake.seed.handover({ outgoing: 'comptroller', boss: 'third', at: fake.clock.now() - 7_200_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'benched', cause: 'departure' });
+        fake.seed.handover({ outgoing: 'third', boss: 'fourth', at: fake.clock.now() - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'benched', cause: 'departure' });
+      } });
+      const dismiss = vi.spyOn(fake, 'dismissHandoverTodo');
+      const todo = await group(/^To do/u);
+      const names = within(todo).getAllByRole('button', { name: /^Dismiss/u }).map((b) => b.getAttribute('aria-label'));
+      expect(names).toHaveLength(2);
+      expect(new Set(names).size).toBe(2);
+      const links = within(todo).getAllByRole('link', { name: /^Write the announcement/u }).map((a) => a.getAttribute('aria-label'));
+      expect(new Set(links).size).toBe(2);
+      await userEvent.click(within(todo).getByRole('button', { name: 'Dismiss the to-do: Fourth takes over season 1' }));
+      await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the to-do: Fourth takes over season 1' })).toBeNull());
+      expect(within(todo).getByRole('button', { name: 'Dismiss the to-do: Third takes over season 1' })).toBeInTheDocument();
+      expect(dismiss).toHaveBeenCalledTimes(1);
     });
 
     test('no change of Boss, no row: the group says there is nothing to do', async () => {

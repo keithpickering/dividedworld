@@ -2693,6 +2693,13 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(h.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,name,joined,staff,office,group');
   });
 
+  it('maps a to-do with no cause to a roll-over', async () => {
+    const queue = { cap: 100, waiting: [], inForce: [], ended: [], staffCards: [], more: {}, roster: [], todos: [{ handover: 8, season: 3, boss: 'the-clerk', bossName: 'The Clerk', outgoing: null, outgoingName: null, outgoingOffice: null, how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }] };
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/admin_queue') ? json(queue) : json({}, 404)));
+    const q = await h.api.adminQueue();
+    expect(q.todos[0]?.cause).toBe('rollover');
+  });
+
   it('reads the admin queue in its three groups, and holds and reverses through the admin functions', async () => {
     const queue = {
       cap: 100,

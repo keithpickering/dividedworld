@@ -365,8 +365,9 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
       setBusy(null);
     }
   };
-  /** What a to-do is called to a screen reader: its season, and a departure says so, since it can share a season with a roll-over. */
-  const label = (t: HandoverTodo) => (t.cause === 'departure' ? `season ${t.season} departure` : `season ${t.season}`);
+  /** What a to-do is called to a screen reader. A season holds one roll-over but may hold several departures, so a departure names the Boss who takes over. */
+  const dismissName = (t: HandoverTodo) => (t.cause === 'departure' ? `Dismiss the to-do: ${t.bossName} takes over season ${t.season}` : `Dismiss the season ${t.season} to-do`);
+  const writeName = (t: HandoverTodo) => (t.cause === 'departure' ? `Write the announcement for ${t.bossName} taking over season ${t.season}` : `Write the announcement for season ${t.season}`);
   return (
     <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-todo" data-kb-group="todo">
       <GroupHead id="queue-todo" title="To do" count={rows.length} more={false} />
@@ -385,8 +386,8 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
           </div>
           <div className="kb-queue-act">
             <ButtonRow>
-              <GlassButton to={`/updates?write=handover&handover=${t.handover}`} aria-label={`Write the announcement for ${label(t)}`}>Write the announcement</GlassButton>
-              <GlassButton busy={busy === t.handover} disabled={busy !== null && busy !== t.handover} aria-label={`Dismiss the ${label(t)} to-do`} onClick={() => void dismiss(t.handover)}>DISMISS</GlassButton>
+              <GlassButton to={`/updates?write=handover&handover=${t.handover}`} aria-label={writeName(t)}>Write the announcement</GlassButton>
+              <GlassButton busy={busy === t.handover} disabled={busy !== null && busy !== t.handover} aria-label={dismissName(t)} onClick={() => void dismiss(t.handover)}>DISMISS</GlassButton>
             </ButtonRow>
           </div>
         </article>

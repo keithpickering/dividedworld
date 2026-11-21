@@ -22,6 +22,12 @@ describe('a handover to-do in plain words', () => {
     ]);
   });
 
+  test('a departure whose outgoing name is unknown falls back to the roll-over sentence, naming no role', () => {
+    const t = todo({ cause: 'departure', outgoingName: null, outgoing: null });
+    expect(todoSentence(t)).toBe('Season 4 opens with Comptroller.');
+    expect(todoTitle(t)).toBe('Season 4 opens with Comptroller');
+  });
+
   test('a departure says who takes over from whom, and that the outgoing left the roster and is benched', () => {
     const t = todo({ cause: 'departure', outgoingOffice: 'benched' });
     expect(todoSentence(t)).toBe('Comptroller takes over Season 4 from Old Boss.');

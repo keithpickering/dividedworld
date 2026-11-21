@@ -22,9 +22,9 @@ export function officeWords(office: string | null, role: string): string | null 
   }
 }
 
-/** "Season 4 opens with Comptroller." A departure: "Comptroller takes over Season 4 from Old Boss." */
+/** "Season 4 opens with Comptroller." A departure: "Comptroller takes over Season 4 from Old Boss." A departure with no outgoing name has nobody to take over from, and no role word to stand in, so it reads as the roll-over does. */
 export function todoSentence(t: HandoverTodo): string {
-  return t.cause === 'departure' ? `${t.bossName} takes over Season ${t.season} from ${t.outgoingName ?? 'the outgoing Boss'}.` : `Season ${t.season} opens with ${t.bossName}.`;
+  return t.cause === 'departure' && t.outgoingName !== null ? `${t.bossName} takes over Season ${t.season} from ${t.outgoingName}.` : `Season ${t.season} opens with ${t.bossName}.`;
 }
 
 /** The title the form opens with: the sentence, without its full stop. */
