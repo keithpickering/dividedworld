@@ -93,7 +93,9 @@ begin
   -- With no pierce, the uncommon ward turns the Move away.
   why0 := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'pcmove', a, w1, '{}', ''));
   if why0 is null or why0 not like '42501%Pc Ward%' then raise exception 'a warded Move with no pierce was not turned away: %', why0; end if;
+  perform tests.unbecome();
   if (select count(*) from wards_against('post', w1, (select k from card_kinds k where k.key = 'pcmove'))) is distinct from 1::bigint then raise exception 'wards_against did not name the one ward'; end if;
+  perform tests.become_service();
 
   -- The pierce is played on the caster's own character, from its own post.
   pierce := pg_temp.pierce(ann, a, pa);
@@ -141,9 +143,9 @@ begin
   perform pg_temp.hand(ann, 'pcpierce', 'pcmove');
   perform pg_temp.hand(bob, 'pccatch', 'pccatchrare', 'pcride');
   perform tests.become_service();
-  back1 := (set_card(bob, 'pccatch', b, q1, '{}', 0) ->> 'id')::uuid;
-  back2 := (set_card(bob, 'pccatchrare', b, q2, '{}', 0) ->> 'id')::uuid;
-  back3 := (set_card(bob, 'pcride', b, q3, '{}', 0) ->> 'id')::uuid;
+  back1 := (set_card(bob, 'pccatch', b, q1, '{}', 0, 'pcmove') ->> 'id')::uuid;
+  back2 := (set_card(bob, 'pccatchrare', b, q2, '{}', 0, 'pcmove') ->> 'id')::uuid;
+  back3 := (set_card(bob, 'pcride', b, q3, '{}', 0, 'pcmove') ->> 'id')::uuid;
 
   -- The common back is passed: the Move lands, no spring is written, the back is still set, and only the caster's account is told, with sub `passed`.
   pierce := pg_temp.pierce(ann, a, pa);
@@ -153,11 +155,13 @@ begin
   if c ? 'sprung' then raise exception 'the answer carried a spring for a passed back: %', c; end if;
   if exists (select 1 from acts s where s.kind = 'spring' and s.payload ->> 'set' = back1::text) then raise exception 'a passed back wrote a spring'; end if;
   if not exists (select 1 from face_down f where f.play = back1 and f.ends_at > now()) then raise exception 'a passed back is no longer set'; end if;
+  perform tests.unbecome();
   if (select count(*) from alerts where account = ann and kind = 'trapStruck' and sub = 'passed') is distinct from 1::bigint then raise exception 'the caster was not told once that the back was passed: %', (select jsonb_agg(to_jsonb(x)) from alerts x); end if;
   if (select count(*) from alerts where account = ann and kind = 'trapStruck') is distinct from 1::bigint then raise exception 'the caster has another trapStruck'; end if;
   if exists (select 1 from alerts where account = bob and kind in ('trapStruck', 'trapSprang')) then raise exception 'the setter was told of a passed back: %', (select jsonb_agg(to_jsonb(x)) from alerts x where account = bob); end if;
   if exists (select 1 from card_ledger l where l.account = bob and l.kind = 'caught') then raise exception 'a passed back took a card'; end if;
   if not card_ended(pierce) then raise exception 'the cast past a back did not spend the pierce'; end if;
+  perform tests.become_service();
   -- With the pierce spent, the same back catches the next Move as it always did.
   c := play_card(ann, 'pcmove', a, q1, '{}', 0, '');
   if c -> 'sprung' -> 'payload' ->> 'did' is distinct from 'caught' then raise exception 'with no pierce the common back did not catch: %', c; end if;
@@ -202,10 +206,11 @@ begin
   -- A Move set face down on Ann's own post, landing from Bob's quote, leaves it live too and carries no pierce.
   the_set := (set_card(ann, 'pcmove', a, pa, '{}', 0) ->> 'id')::uuid;
   quoting := tests.post(b, t, 'Quoting. [quote=' || pa || ']the punchline[/quote]');
+  perform tests.unbecome();
   landed := spring_traps('quote', pa, quoting);
   if landed is null or landed -> 'payload' ->> 'did' is distinct from 'landed' then raise exception 'the Move did not land from the quote: %', landed; end if;
   if card_ended(pierce) then raise exception 'a Move landing from a quote spent the pierce'; end if;
-  if exists (select 1 from acts k where k.kind = 'card' and k.payload ? 'pierce') then raise exception 'a Use or a landed Move carries a pierce'; end if;
+  if exists (select 1 from acts k where k.kind = 'card' and k.thread = t and k.payload ? 'pierce') then raise exception 'a Use or a landed Move carries a pierce'; end if;
 
   -- The probe of a spent pierce is one lookup of acts_pierce_by (a partial expression index), not a scan of the Acts.
   perform set_config('enable_seqscan', 'off', true);

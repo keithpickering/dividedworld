@@ -31,7 +31,7 @@ begin
   why := card_kinds_problem(('[{"key": "ok", "rarity": "uncommon", "play": "use", "reaches": ["character"], "lasts": {"unit": "day", "count": 3}, "gimmick": ' || cushion || '}]')::jsonb);
   if why is not null then raise exception 'a use card with a cushion was refused: %', why; end if;
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": {"kind": "hex"}}]');
-  if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn, price, ride, noQuote or cushion' then raise exception 'the kinds a gimmick may be: %', why; end if;
+  if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn, price, ride, noQuote, cushion or pierce' then raise exception 'the kinds a gimmick may be: %', why; end if;
   -- The widened kind list is for a use card alone: a cast card holds an earn and nothing else, a cushion included.
   why := card_kinds_problem(('[{"key": "castcu", "rarity": "uncommon", "play": "cast", "reaches": ["character"], "lasts": {"unit": "day", "count": 3}, "gimmick": ' || cushion || '}]')::jsonb);
   if why is distinct from 'card "castcu" has a gimmick, and only a use card has one, or a cast card on a character alone or a post alone an earn' then raise exception 'a cast card holding a cushion was not refused in the sentence: %', why; end if;
