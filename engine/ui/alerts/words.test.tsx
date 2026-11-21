@@ -313,6 +313,48 @@ describe('a trap', () => {
       expect(seen).toEqual([{ how: 'returned', setter: 'Pipewrench', card: null, laid: 'Whoops!', span: 'two days', setterStaff: false }]);
     });
   });
+  /* A lockout back: the Move landed and its character is locked out of the thread; the words branch on the spring's `did`, never a card's key. */
+  describe('a lockout', () => {
+    const until = '2026-11-03T09:41:00.000Z';
+    const locked = (o: Partial<Act> = {}) => spring({ payload: { card: 'trap', trigger: 'cast', did: 'lockedOut', set: 'set1', by: 'k', locks: 'c1', until }, ...o });
+    const play = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', layer: 1 } });
+    const lockNames = new Map([['cPipe', 'Pipewrench'], ['c1', 'Spritey']]);
+    const post = act('post9', { seq: 9, character: 'cPipe' });
+    test('sprang (yours): the Move landed and the caster is locked out until a time, as the alerts write times', () => {
+      const r = row({ kind: 'trapSprang', act: 'sp', character: 'cPipe', name: 'Pipewrench', title: 'Hobbies' });
+      const s = said(r, ctx([locked(), play, post], { names: lockNames }));
+      expect(s.line).toBe('Your face-down Card Collector sprang');
+      expect(s.detail).toBe('Card Collector on your post #9 sprang when Spritey played Whoops! on it. Whoops! landed, and Spritey is locked out of the thread until Nov 3 · 09:41 UTC. In Hobbies.');
+    });
+    test('sprang (yours): an admin who ended it early is named plainly, with the time', () => {
+      const r = row({ kind: 'trapSprang', act: 'sp', character: 'cPipe', name: 'Pipewrench', title: 'Hobbies' });
+      const end = act('end', { kind: 'card_end', character: null, targetActId: 'sp', createdAt: '2026-11-02T12:05:00.000Z' });
+      expect(said(r, ctx([locked(), play, post, end], { names: lockNames })).detail)
+        .toContain('until Nov 3 · 09:41 UTC. An admin ended it at Nov 2 · 12:05 UTC. In Hobbies.');
+    });
+    test('struck (the caster): the default words, and the instance voice is handed how: lockedOut with the time', () => {
+      const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+      const acts = [play, locked(), set(), post];
+      const s = said(r, ctx(acts, { names: lockNames }));
+      expect(s.detail).toBe('The Card Collector on Pipewrench\'s post #9 locked Spritey out of this thread until Nov 3 · 09:41 UTC. In Hobbies.');
+      const seen: unknown[] = [];
+      const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: unknown) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+      said(r, ctx(acts, { names: lockNames, ui }));
+      expect(seen).toEqual([{ how: 'lockedOut', setter: 'Pipewrench', card: 'Card Collector', laid: 'Whoops!', span: null, setterStaff: false, until: 'Nov 3 · 09:41 UTC' }]);
+    });
+    test('struck (the caster): an admin ending it is named plainly', () => {
+      const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+      const end = act('end', { kind: 'card_end', character: null, targetActId: 'sp', createdAt: '2026-11-02T12:05:00.000Z' });
+      expect(said(r, ctx([play, locked(), set(), post, end], { names: lockNames })).detail).toContain('until Nov 3 · 09:41 UTC. An admin ended it at Nov 2 · 12:05 UTC.');
+    });
+    test('none of the new words says "cast"', () => {
+      const all = [
+        said(row({ kind: 'trapSprang', act: 'sp', character: 'cPipe', name: 'Pipewrench', title: 'Hobbies' }), ctx([locked(), play, post], { names: lockNames })),
+        said(row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' }), ctx([play, locked(), set(), post], { names: lockNames })),
+      ];
+      for (const s of all) expect(`${s.line} ${s.detail}`).not.toMatch(/cast/i);
+    });
+  });
   test('sprang, as it was written before: the old words', () => {
     const old = act('sp', { kind: 'card', targetActId: 'post9', payload: { card: 'whoops', trigger: 'cast' } });
     const s = said(row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' }), ctx([old, act('post9', { seq: 9 })]));

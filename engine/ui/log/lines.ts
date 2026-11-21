@@ -138,6 +138,12 @@ export const utcWhen = (iso: string) => {
   const d = new Date(iso);
   return `${utcDay(iso)} · ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 };
+/** When a lockout ends and when an admin ended it early (a `card_end` on its spring, where the Act is held), as the log writes times: "until Nov 1 · 10:00 UTC", "An admin ended it at Oct 31 · 12:30 UTC." */
+function lockoutTimes(spring: Act, data: LogData): { until: string; ended: string } {
+  const end = [...data.acts.values()].find((a) => a.kind === 'card_end' && a.targetActId === spring.id);
+  const until = typeof spring.payload.until === 'string' ? `${utcWhen(spring.payload.until)} UTC` : 'it ends';
+  return { until, ended: end ? ` An admin ended it at ${utcWhen(end.createdAt)} UTC.` : '' };
+}
 
 /** A reason's name, the instance's words before their colon ("Drew heat"), and the whole of them (what it pays for). */
 export function reasonName(words: string): string {
@@ -976,6 +982,17 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
     });
+    /* A lockout back that this play sprang (its spring names the play and the character it locked): the caster is told, in the spring's own facts. */
+    const locking = e.act ? [...data.acts.values()].find((a) => a.kind === 'spring' && a.payload.did === 'lockedOut' && a.payload.by === e.act) : undefined;
+    if (locking) {
+      const t = lockoutTimes(locking, data);
+      const trapped = locking.targetActId ? data.acts.get(locking.targetActId) : undefined;
+      rows.push({
+        key: `lockedOut:${e.act}`, kind: 'struck', at: locking.createdAt, what: `A face-down card locked you out of a thread`,
+        details: [`The ${cardName(locking.payload.card)} on `, (trapped && actLink(trapped, data, words, caster ?? undefined)) ?? link ?? 'a post', ` locked ${nameOf(typeof locking.payload.locks === 'string' ? locking.payload.locks : caster, 'one of your characters')} out of this thread until ${t.until}.${t.ended}`],
+        aura: 0, wallet: null, characters: caster ? [caster] : [],
+      });
+    }
   });
   for (const p of data.log.playsOnMine) {
     const play = data.acts.get(p.play);
@@ -1183,10 +1200,22 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
       continue;
     }
     const did = spring?.payload.did;
-    if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode' || did === 'returned') {
+    if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode' || did === 'returned' || did === 'lockedOut') {
       const by = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
       if (did === 'ended') {
         rows.push({ key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`, details: [`${cardName(e.card)} on `, on, ' sprang when a Mod Bot\'s visit began, and ended the visit.'], aura: 0, wallet: null, characters });
+        continue;
+      }
+      if (did === 'lockedOut' && spring) {
+        const played = by;
+        const move = cardName(played?.payload.card);
+        const who = nameOf(typeof spring.payload.locks === 'string' ? spring.payload.locks : played?.character);
+        const t = lockoutTimes(spring, data);
+        rows.push({
+          key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
+          details: [`${cardName(e.card)} on `, on, ` sprang when ${who} played ${move} on it. ${move} landed, and ${who} is locked out of the thread until ${t.until}.${t.ended}`],
+          aura: 0, wallet: null, characters,
+        });
         continue;
       }
       if (did === 'returned') {
