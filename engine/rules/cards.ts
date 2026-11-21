@@ -517,7 +517,7 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   // A card that cuts names the Gimmick it ends (`play`); with a `rulesOf` the engine reads that it is up on this target and not rarer than the card's `upTo`.
   if (rules.cuts !== undefined && context.rulesOf !== undefined) {
     const named = (checked.value as { play?: unknown } | null)?.play;
-    const found = cuttable({ cuts: { upTo: 'legendary' } }, effects, target, now, context.rulesOf).find((e) => e.act === named);
+    const found = cuttable({ cuts: { upTo: RARITIES[RARITIES.length - 1]! } }, effects, target, now, context.rulesOf).find((e) => e.act === named);
     if (found === undefined) return refuse(`that Gimmick isn't up on this ${target.reach}`);
     const card = found.card as string;
     const rarity = context.rulesOf(card)!.rarity;
@@ -625,6 +625,8 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules) && !pierced(e));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
   // A card that cuts is refused where its target holds no Gimmick it may end, so the ghost marks offer it only where it could land; the named play is checked in `decided`.
+  // The old voice's refusal is said before it, as `decided` says it first.
+  if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   if (rules.cuts !== undefined && context.rulesOf !== undefined && cuttable(rules, effects, target, now, context.rulesOf).length === 0) return refuse(`there's no Gimmick up on this ${target.reach} for ${rules.name} to end`);
   const staffed = disciplineRefusal(rules, target, context, now);
   if (staffed) return staffed;

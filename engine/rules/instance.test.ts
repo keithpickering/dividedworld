@@ -1563,7 +1563,7 @@ test('a card that cuts is a cast card on a post or a character, with no time up 
   assert.equal(bad({}), '', 'a well-formed card that cuts: no time up asked, since it is over when it lands');
   assert.equal(bad({ rarity: 'legendary', cuts: { upTo: 'legendary' } }), '');
   assert.match(bad({ cuts: { upTo: 'mythic' } }), /card "splat" has cuts up to "mythic"; a rarity is common, uncommon, rare or legendary/);
-  assert.match(bad({ cuts: {} }), /card "splat" has cuts up to undefined; a rarity is common/);
+  assert.match(bad({ cuts: {} }), /card "splat" has cuts up to nothing; a rarity is common/);
   assert.match(bad({ play: 'use', gimmick: { kind: 'ward', flavors: ['salty'] }, lasts: { unit: 'day', count: 1 } }), /card "splat" has cuts and is not a cast card/);
   assert.match(bad({ rarity: 'uncommon' }), /card "splat" has cuts up to rare, rarer than the card/);
   assert.match(bad({ reaches: ['post', 'thread'], lasts: { unit: 'day', count: 1 } }), /card "splat" has cuts and reaches a thread; a card that cuts reaches a post or a character/);
@@ -1575,7 +1575,9 @@ test('a card that cuts is a cast card on a post or a character, with no time up 
     ['draws', { draws: ['a'] }], ['a drive', { drive: {} }], ['a surface', { surface: {} }], ['needsMessage', { needsMessage: 'say why' }],
   ];
   for (const [what, over] of held) assert.match(bad(over), new RegExp(`card "splat" has cuts and ${what}; a card that cuts has no other effect`), what);
-  assert.doesNotMatch(bad({}), /time up/, 'the reach check that asks a card beyond a post for a time up skips a card that cuts');
+  for (const [field, said] of [['stack', 'a stack'], ['pins', 'pins']] as const) {
+    assert.match(bad({ [field]: field === 'pins' ? true : 1 }), new RegExp(`card "splat" has cuts and ${said}; a card that cuts is over when it lands and has none`), field);
+  }
 });
 
 // Fixed packs and the starting pack (docs/plans/2026-11-18-starter-pack-plan.md, Task 1).

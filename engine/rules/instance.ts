@@ -778,13 +778,16 @@ const NOT_WITH_CUTS: readonly [keyof CardRules, string][] = [
 function cutsProblems(c: CardRules, who: string, play: string): string[] {
   const upTo = (c.cuts as { upTo?: unknown } | null)?.upTo;
   const out: string[] = [];
-  if (!RARITIES.includes(upTo as never)) out.push(`${who} has cuts up to ${JSON.stringify(upTo)}; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
+  if (!RARITIES.includes(upTo as never)) out.push(`${who} has cuts up to ${JSON.stringify(upTo) ?? 'nothing'}; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
   if (play !== 'cast') out.push(`${who} has cuts and is not a cast card`);
   if (RARITIES.includes(upTo as never) && RARITIES.includes(c.rarity) && !atOrBelow(upTo as never, c.rarity)) out.push(`${who} has cuts up to ${upTo}, rarer than the card`);
   const reaches: unknown = c.reaches;
   const outside = Array.isArray(reaches) ? reaches.filter((r) => r !== 'post' && r !== 'character') : [];
   if (outside.length) out.push(`${who} has cuts and reaches ${outside.map((r) => (r === 'thread' ? 'a thread' : r === 'board' ? 'a board' : JSON.stringify(r))).join(' and ')}; a card that cuts reaches a post or a character`);
   if (c.lasts !== undefined) out.push(`${who} has cuts and a time up (lasts); a card that cuts is over when it lands`);
+  for (const [field, said] of [['stack', 'a stack'], ['pins', 'pins']] as const) {
+    if (c[field] !== undefined) out.push(`${who} has cuts and ${said}; a card that cuts is over when it lands and has none`);
+  }
   const other = NOT_WITH_CUTS.find(([field]) => c[field] !== undefined);
   if (other) out.push(`${who} has cuts and ${other[1]}; a card that cuts has no other effect`);
   return out;

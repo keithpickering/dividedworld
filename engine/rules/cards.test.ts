@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import { isPost, type ActKind, type Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -929,4 +929,19 @@ test('decidePlay of a card that cuts: refused where the target holds no Gimmick 
   assert.deepEqual(decidePlay(buzzer, settings, post, [upOf('a', 'rareUse'), upOf('l', 'legendUse')], { play: 'l' }, '', ctx), { ok: false, why: 'Test Buzzer ends a Gimmick up to rare, and legendUse is legendary' });
   assert.equal(decidePlay(buzzer, settings, post, [], { play: 'a' }, '').ok, true, 'with no rulesOf it refuses nothing of these');
   assert.equal(decidePlay(buzzer, settings, post, [upOf('l', 'legendUse')], { play: 'l' }, '', { nameOf: (k) => k }).ok, true, 'nor the named play');
+});
+
+test('a card that cuts: the refusals on a character, the old voice and a ward come in order', () => {
+  const ctx = { nameOf: (k: string) => k, rulesOf };
+  const char = { reach: 'character', act: 'c' } as unknown as CardTarget;
+  const onChar = (e: CardEffect) => ({ ...e, reach: 'character' }) as CardEffect;
+  assert.deepEqual(decidePlay(buzzer, settings, char, [], { play: 'a' }, '', ctx), { ok: false, why: "there's no Gimmick up on this character for Test Buzzer to end" });
+  assert.deepEqual(decidePlay(buzzer, settings, char, [onChar(upOf('a', 'rareUse'))], { play: 'zzz' }, '', ctx), { ok: false, why: "that Gimmick isn't up on this character" });
+  assert.deepEqual(decidePlay(buzzer, settings, char, [onChar(upOf('a', 'rareUse')), onChar(upOf('l', 'legendUse'))], { play: 'l' }, '', ctx), { ok: false, why: 'Test Buzzer ends a Gimmick up to rare, and legendUse is legendary' });
+  assert.equal(decidePlay(buzzer, settings, char, [onChar(upOf('a', 'rareUse'))], { play: 'a' }, '', ctx).ok, true);
+  const voiced: CardRules = { ...buzzer, writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
+  assert.deepEqual(decidePlay(voiced, { oldVoice: false } as Settings, post, [], { play: 'a' }, '', ctx), { ok: false, why: OLD_VOICE_OFF }, 'the old voice is said first');
+  const ward = { card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'legendary' }, ends: soon } as CardEffect;
+  const why = (v: unknown) => (v as { why: string }).why;
+  assert.match(why(decidePlay(buzzer, settings, post, [ward], { play: 'a' }, '', { ...ctx, nameOf: names })), /Test Shield/, 'a ward turns the card away before the cuts refusal');
 });
