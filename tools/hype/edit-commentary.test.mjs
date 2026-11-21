@@ -389,7 +389,7 @@ test('a full voice folder, every take and the music resolve with no stand-in, no
   assert.deepEqual(r.framings.n09, ['wide', 'tight', 'turned']);
   assert.deepEqual(r.voice.n11, ['n11-1.mp3', 'n11-2.mp3', 'n11-3.mp3']);
   assert.equal(r.voice.n05, 'n05.mp3');
-  assert.deepEqual(ec.stampsFor(r, { take: 'n05' }, fullTakes), { slate: false, stamps: [] });
+  assert.deepEqual(ec.stampsFor(r, { take: 'c-n05' }, fullTakes), { slate: false, stamps: [] });
   assert.deepEqual(ec.stampsFor(r, { card: true }, fullTakes), { slate: false, stamps: [] });
 });
 
@@ -403,7 +403,7 @@ test('no voice folder is PLACEHOLDER SOUND on every frame, and so is music that 
     const r = resolve(over);
     assert.equal(r.placeholderSound, true, what);
     assert.ok(r.notes.some((n) => /PLACEHOLDER SOUND/.test(n)), what);
-    for (const piece of [{ take: 'n05' }, { black: true }, { card: true }]) assert.ok(ec.stampsFor(r, piece, fullTakes).stamps.includes('PLACEHOLDER SOUND'), `${what}: ${JSON.stringify(piece)}`);
+    for (const piece of [{ take: 'c-n05' }, { black: true }, { card: true }]) assert.ok(ec.stampsFor(r, piece, fullTakes).stamps.includes('PLACEHOLDER SOUND'), `${what}: ${JSON.stringify(piece)}`);
   }
   assert.deepEqual(resolve({ voiceFiles: null }).voice.n11, [null, null, null], 'a clip with no folder is silence, not a file');
 });
@@ -413,9 +413,9 @@ test('a missing take is a slate that carries PLACEHOLDER PICTURE; a take that is
   const r = resolve({ takeFiles: takes });
   assert.deepEqual(r.slates, ['n06']);
   assert.ok(r.notes.some((n) => /n06 has no take/.test(n)));
-  assert.deepEqual(ec.stampsFor(r, { take: 'n06' }, takes), { slate: true, stamps: ['PLACEHOLDER PICTURE'] });
-  assert.deepEqual(ec.stampsFor(r, { take: 'n05' }, takes).stamps, []);
-  assert.deepEqual(ec.stampsFor(resolve({ takeFiles: takes, voiceFiles: null }), { take: 'n06' }, takes).stamps, ['PLACEHOLDER SOUND', 'PLACEHOLDER PICTURE'], 'both stamps, on a slate with no sound');
+  assert.deepEqual(ec.stampsFor(r, { take: 'c-n06' }, takes), { slate: true, stamps: ['PLACEHOLDER PICTURE'] });
+  assert.deepEqual(ec.stampsFor(r, { take: 'c-n05' }, takes).stamps, []);
+  assert.deepEqual(ec.stampsFor(resolve({ takeFiles: takes, voiceFiles: null }), { take: 'c-n06' }, takes).stamps, ['PLACEHOLDER SOUND', 'PLACEHOLDER PICTURE'], 'both stamps, on a slate with no sound');
 });
 
 test('node 9 with only some of its three framings is reported naming the missing; with none it is a slate', () => {
@@ -509,4 +509,13 @@ test('the caption is a pill no wider than its words: libass\'s own box, never a 
 test('a clip length that is NaN, negative, infinite or not a number is refused naming the node', () => {
   for (const bad of [NaN, -1, Infinity, '5', null]) assert.throws(() => timeline({ ...clips, n05: /** @type {any} */ (bad) }, map), /n05 has a clip length/, String(bad));
   assert.throws(() => timeline({ ...clips, n11: [1, NaN, 2] }, map), /n11 has a clip length/);
+});
+
+test('the music carries what a cut list is cut to: the film time of every kept statement and of every beat, sixteen to a statement', () => {
+  const t = timeline(clips, map);
+  assert.deepEqual(t.music.statements.map((s) => s.n).slice(0, 3), [1, 6, 7], 'mk-b keeps statement 1 and then 6');
+  assert.equal(t.music.beats.length, 16 * t.music.statements.length);
+  near(t.music.beats[0], t.music.statements[0].start, 'the first beat is the first statement');
+  near(t.music.beats[16], t.music.statements[1].start, 'the seventeenth is the second');
+  near(t.music.statements[0].start, 21.35 + 10, 'statement 1 of the made-up map is at 10 in the recording');
 });

@@ -4,11 +4,16 @@
  *
  *   node tools/hype/edit-commentary.mjs [--takes .runs/hype] [--voice .runs/hype/voice] [--music <recording>] [--circus <recording>]
  *       [--out .runs/hype/commentary.mp4] [--part one|two|three|out] [--captions top|foot|off] [--clean] [--sheet] [--moves moves.json]
- *       [--recording full|mk-a|mk-b] [--preset veryfast] [--any-recording]
+ *       [--recording full|mk-a|mk-b] [--cutlist <file>|none] [--preset veryfast] [--any-recording]
  *
  * This file is run with plain `node`: Node 22.18 and later strips the types of the instance's `commentary.ts` as it imports it (as
  * tools/check-guide.mjs reads the instance's `.ts`), so no flag is needed. The pure parts (`timeline`, `captions`, `srt`) are exported
  * for the tests; `moves.mjs` holds the camera's arithmetic; nothing runs ffmpeg unless this file is the command.
+ *
+ * THE CUT LIST (`--cutlist`, default `instances/divided-world/ui/hype/cutlist.json`; cutlist.mjs says what a row is) gives every shot of the picture
+ * from the first frame to the coda, each naming a take (a file under `--takes`, without `.mp4`: `c-n06`, `b-scrub-2`) and where in it the shot starts, on a beat
+ * of the music or on a word of the narration. The run prints the shots and their median length for part one and each block of the music. A take's own
+ * notes (below) apply to its shots, a row's `move` over them; `--moves` then names takes, not nodes. `--cutlist none` cuts one take a node.
  *
  * TAKES are `c-n01` to `c-n11` and `c-end`, as `.mp4` under `--takes`, 60 frames a second, 1920 x 1080 or larger (3840 x 2160 gives the
  * moves twice the room). A take that is not there is replaced by a generated slate (a dark frame, the node and its first caption line),
@@ -50,9 +55,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { versionMap, codaGaps, expectedSeconds, VERSIONS } from './music.mjs';
+import { versionMap, codaGaps, expectedSeconds, beats, VERSIONS } from './music.mjs';
 import { refusePush, corners } from './moves.mjs';
 import { run, duration, videoInfo, fontFile, flag } from './cutting.mjs';
+import { resolveList } from './cutlist.mjs';
 
 export const F = 60;
 export const BREATH = 0.35;
@@ -137,7 +143,7 @@ export function timeline(clips, map, { recording, breath = BREATH, moves = {}, f
       const length = times[k + 1] - cutAt;
       const startFrame = Math.round((start + cutAt) * F), endFrame = k === times.length - 2 ? Math.round(end * F) : Math.round((start + times[k + 1]) * F);
       /** @type {Cut} */
-      const cut = { take: framings[id] ? `${id}-${framings[id][0]}` : id, at: cutAt, start: start + cutAt, length, startFrame, frames: endFrame - startFrame, from: cutAt };
+      const cut = { take: framings[id] ? `c-${id}-${framings[id][0]}` : `c-${id}`, at: cutAt, start: start + cutAt, length, startFrame, frames: endFrame - startFrame, from: cutAt };
       if (camera.move) cut.move = camera.move;
       const punch = camera.punch ?? (id === 'n11' ? CHORD_PUNCH : undefined);
       if (punch) cut.punch = punch;
@@ -174,7 +180,7 @@ export function timeline(clips, map, { recording, breath = BREATH, moves = {}, f
     nodes,
     slack: { n11: lines.map((l) => ({ cut: l.cut })) },
     hits,
-    music: { version, start: Math.max(0, musicStart), from: Math.max(0, -musicStart), until: v.coda.end.t, untilFilm: blackStart, codaStart, notes, second: place(firstOf(2)), third: place(firstOf(3)) },
+    music: { version, start: Math.max(0, musicStart), from: Math.max(0, -musicStart), until: v.coda.end.t, untilFilm: blackStart, codaStart, notes, second: place(firstOf(2)), third: place(firstOf(3)), statements: v.statements.map((s) => ({ n: s.n, start: at(s.start), length: s.length })), beats: beats(map, version).map(at) },
     part: { one: [0, starts.n05], two: [starts.n05, nine.start], three: [nine.start, blackStart], out: [blackStart, blackStart + black + card] },
     out: { blackStart, cardStart: blackStart + black, end: blackStart + black + card },
     total: blackStart + black + card,
@@ -335,13 +341,13 @@ export function resolveInputs({ commentary, voiceFiles, takeFiles, haveMusic }) 
  * The red stamps a piece of the film carries, and whether its picture is a slate: `PLACEHOLDER SOUND` on every frame when the sound
  * is a stand-in, `PLACEHOLDER PICTURE` on a slate and on a stand-in end card. A real take with real sound carries none.
  * @param {ReturnType<typeof resolveInputs>} resolved
- * @param {{ take?: string, black?: boolean, card?: boolean }} piece `take` is the take's name, as `n09-wide`
+ * @param {{ take?: string, black?: boolean, card?: boolean }} piece `take` is the take's file name without `.mp4`, as `c-n09-wide`
  * @param {string[]} takeFiles
  * @returns {{ slate: boolean, stamps: string[] }}
  */
 export function stampsFor(resolved, piece, takeFiles) {
   const stamps = resolved.placeholderSound ? ['PLACEHOLDER SOUND'] : [];
-  const slate = Boolean(piece.take) && !takeFiles.includes(`c-${piece.take}.mp4`);
+  const slate = Boolean(piece.take) && !takeFiles.includes(`${piece.take}.mp4`);
   if (slate || (piece.card && resolved.endCard === 'stand-in')) stamps.push('PLACEHOLDER PICTURE');
   return { slate, stamps };
 }
@@ -435,7 +441,7 @@ async function main() {
     }
   }
   /* The takes, their notes, and the camera's moves. */
-  const takePath = (/** @type {string} */ name) => path.join(TAKES, `c-${name}.mp4`);
+  const takePath = (/** @type {string} */ stem) => path.join(TAKES, `${stem}.mp4`);
   /** @type {Record<string, Camera>} */
   const moves = {};
   /** @type {Record<string, { what: string, frame: number }[]>} */
@@ -448,7 +454,7 @@ async function main() {
   for (const node of commentary) {
     const id = node.id;
     const names = framings[id] ?? [];
-    const probe = [takePath(id), ...names.map((f) => takePath(`${id}-${f}`))].find((f) => existsSync(f));
+    const probe = [takePath(`c-${id}`), ...names.map((f) => takePath(`c-${id}-${f}`))].find((f) => existsSync(f));
     if (probe) sizes[id] = videoInfo(probe).width;
     const notes = path.join(TAKES, `c-${id}.json`);
     const raw = existsSync(notes) ? JSON.parse(readFileSync(notes, 'utf8')) : {};
@@ -468,6 +474,27 @@ async function main() {
   if (haveMusic) checkRecording(map, { seconds: duration(musicFile), sha1: () => createHash('sha1').update(readFileSync(musicFile)).digest('hex') }, has('any-recording'), tl.music.version);
   const CAPTIONS = captionMode(args);
   const cuesAll = captions(commentary, tl);
+
+  /* The cut list: the shots of every picture before the coda (cutlist.mjs), from the takes there are and their notes; `--cutlist none` cuts one take a node. */
+  const LIST = flag('cutlist', 'instances/divided-world/ui/hype/cutlist.json');
+  /** @type {ReturnType<typeof resolveList> | null} */
+  let cutList = null;
+  if (LIST !== 'none') {
+    const list = JSON.parse(readFileSync(LIST, 'utf8'));
+    /** @type {Record<string, any>} */
+    const info = {};
+    for (const stem of new Set(list.rows.map((/** @type {{ take: string }} */ r) => r.take))) {
+      const file = takePath(stem);
+      if (!existsSync(file)) continue;
+      const notes = [`${stem}.json`, `${stem.replace(/-(wide|tight|turned)$/u, '')}.json`].map((f) => path.join(TAKES, f)).find((f) => existsSync(f));
+      const raw = notes ? JSON.parse(readFileSync(notes, 'utf8')) : {};
+      const obj = Array.isArray(raw) ? { landed: raw } : raw;
+      info[stem] = { seconds: duration(file), width: videoInfo(file).width, landed: obj.landed ?? [], move: obj.move, punch: obj.punch, punches: obj.punches, ...overrides[stem] };
+    }
+    cutList = resolveList(list, { tl, cues: cuesAll, takes: info });
+    for (const t of cutList.slates) console.log(`NOTE ${t} is a slate in the cut list: no take, a placeholder stands in, marked PLACEHOLDER PICTURE`);
+    console.log(`cut list ${LIST}: ${cutList.shots.length} shots\n${cutList.blocks.map((b) => `  ${b.name.padEnd(12)} ${String(b.count).padStart(3)} shots, median ${b.median.toFixed(2)} s`).join('\n')}`);
+  }
   if (has('sheet')) {
     console.log(`\npart one 0 to ${tl.part.one[1].toFixed(2)} s; two to ${tl.part.two[1].toFixed(2)}; three to ${tl.part.three[1].toFixed(2)}; black to ${tl.out.cardStart.toFixed(2)}; card to ${tl.out.end.toFixed(2)} s`);
     return;
@@ -484,13 +511,18 @@ async function main() {
   /* Which of the film's pieces this run makes. */
   const [from, to] = PART ? tl.part[/** @type {'one'} */ (PART)] : [0, tl.total];
   const fromFrame = Math.round(from * F), toFrame = Math.round(to * F);
-  const inPart = (/** @type {{ startFrame: number, frames: number }} */ c) => c.startFrame >= fromFrame && c.startFrame + c.frames <= toFrame;
+  const inPart = (/** @type {{ startFrame: number, frames: number }} */ c) => c.startFrame >= fromFrame && c.startFrame < toFrame;
 
   /** @typedef {{ name: string, startFrame: number, frames: number, take?: string, slate?: string[], black?: boolean, card?: boolean, cut?: Cut }} Piece */
   /** @type {Piece[]} */
   const pieces = [];
-  for (const n of tl.nodes) {
-    const first = commentary.find((/** @type {{ id: string }} */ c) => c.id === n.id)?.lines[0] ?? '';
+  const firstLine = (/** @type {string} */ id) => commentary.find((/** @type {{ id: string }} */ c) => c.id === id)?.lines[0] ?? '';
+  for (const s of cutList?.shots ?? []) {
+    const real = !stampsFor(resolved, { take: s.take }, takeFiles).slate;
+    pieces.push({ name: `shot ${s.row}`, startFrame: s.startFrame, frames: s.frames, take: real ? takePath(s.take) : undefined, slate: real ? undefined : [s.take, ...wrap(firstLine(s.node), 36)], cut: s });
+  }
+  for (const n of tl.nodes.filter((x) => !cutList || x.id === 'n11')) {
+    const first = firstLine(n.id);
     for (const [k, c] of n.cuts.entries()) {
       const take = takePath(c.take);
       const real = !stampsFor(resolved, { take: c.take }, takeFiles).slate;
@@ -498,7 +530,7 @@ async function main() {
     }
   }
   pieces.push({ name: 'black', startFrame: Math.round(tl.out.blackStart * F), frames: framesBetween(tl.out.blackStart, tl.out.cardStart), black: true });
-  pieces.push({ name: 'end card', startFrame: Math.round(tl.out.cardStart * F), frames: framesBetween(tl.out.cardStart, tl.out.end), card: true, take: resolved.endCard === 'take' ? takePath('end') : undefined });
+  pieces.push({ name: 'end card', startFrame: Math.round(tl.out.cardStart * F), frames: framesBetween(tl.out.cardStart, tl.out.end), card: true, take: resolved.endCard === 'take' ? takePath('c-end') : undefined });
   const mine = pieces.filter(inPart);
 
   const cues = cuesAll.filter((c) => c.end > from && c.start < to);
@@ -593,7 +625,9 @@ async function main() {
     filters.push(`[mu]volume='${duck}':eval=frame[music]`);
     mix.push('[music]');
   }
-  const sounds = tl.hits.filter((h) => /** @type {Record<string, string>} */ (SOUND_FOR)[h.what]);
+  /* The game's sounds on their landings: the shots' (a shot's take lands them at its own frames), and node 11's. */
+  const hitList = (cutList ? [...cutList.shots.flatMap((/** @type {any} */ s) => s.hits.map((/** @type {{ what: string, at: number }} */ h) => ({ id: s.node, what: h.what, at: h.at }))), ...tl.hits.filter((h) => h.id === 'n11')] : tl.hits).sort((a, b) => a.at - b.at);
+  const sounds = hitList.filter((h) => /** @type {Record<string, string>} */ (SOUND_FOR)[h.what]);
   sounds.forEach((h, i) => {
     const k = input(path.join(SOUNDS, /** @type {Record<string, string>} */ (SOUND_FOR)[h.what]));
     filters.push(`[${k}:a]aresample=48000,aformat=channel_layouts=stereo,volume=0.8,adelay=${ms(h.at)}:all=1[s${i}]`);
