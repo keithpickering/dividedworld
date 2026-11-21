@@ -46,6 +46,7 @@ import type { SpinOrigin } from '../thread/Post.tsx';
 import { OriginLink } from './OriginLink.tsx';
 import { placeHref, placeParts } from './place.ts';
 import { SpinForm, useSpinDrafts } from './SpinForm.tsx';
+import { forgedList } from '../../bbcode/quoted.ts';
 import './spin.css';
 
 /** Card plays listed under the origin; the page carries at most this many, and says there are more. */
@@ -147,7 +148,7 @@ function CharacterMoment({ play, spin, nameOf, characterOf, onView, listInto }: 
         {version && <> · <time dateTime={version.editedAt ?? version.createdAt}>{when(version.editedAt ?? version.createdAt)}</time></>}
       </p>
       <MomentView play={play} place="origin" nameOf={nameOf} now={null} onView={onView} listInto={listInto} {...(spin ? { source: { spin } } : {})}
-        bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />} />
+        bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />} />
     </>
   );
 }
@@ -276,7 +277,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         }
         return cardPlay.reach ? null : (
           <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null} onView={onView} listInto={foot}
-            bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />} />
+            bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />} />
         );
       case 'draw':
       case 'wash': return null;
@@ -288,7 +289,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-            <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>
+            <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small" data-kb-over-ink>{history.button}</p>}
             {/* Lifted always and empty until History opens: a wrapper with nothing in it draws and covers nothing, and its ground (spin.css) is on what it holds. */}

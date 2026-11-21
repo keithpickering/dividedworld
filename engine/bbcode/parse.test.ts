@@ -186,7 +186,7 @@ test('a quote names an Act by id', () => {
 });
 
 const USER = '1b4e28ba-2fa1-11d2-883f-0016d3cca427';
-const fake = (name: string | null, user: string | null, ...children: BbNode[]): BbNode => ({ type: 'counterfeit', name, user, children });
+const fake = (name: string | null, user: string | null, ...children: BbNode[]): BbNode => ({ type: 'counterfeit', name, user, act: null, children });
 
 test('a quote with a name that is not an Act id is a counterfeit', () => {
   assert.deepEqual(parse('[quote=Geno]hi[/quote]'), [fake('Geno', null, text('hi'))]);
@@ -1033,4 +1033,45 @@ test('the megabyte shapes hold with real quotes', () => {
     assert.ok(ms < 3000, `${name} took ${ms}ms`);
     assert.ok(depthOf(tree) <= MAX_DEPTH + 1, `${name} too deep`);
   }
+});
+
+/* Forged quotes (docs/plans/2026-11-20-forged-quotes-design.md, section 1): the third argument of parse is the Acts whose quotes in this body are doctored. */
+test('a real quote of a forged Act is a counterfeit that names the Act, and records no span', () => {
+  const spans: QuoteSpan[] = [];
+  const tree = parse(`[quote=${ACT}]made up[/quote]`, spans, new Set([ACT]));
+  assert.deepEqual(tree, [{ type: 'counterfeit', name: null, user: null, act: ACT, children: [text('made up')] }]);
+  assert.deepEqual(spans, []);
+});
+
+test('a quote of an Act that is not forged is still a real quote, beside a forged one of another Act, and an upper-case id is the same Act', () => {
+  const OTHER = '6ba7b810-9dad-41d1-80b4-00c04fd430c8';
+  const spans: QuoteSpan[] = [];
+  const tree = parse(`[quote=${ACT.toUpperCase()}]a[/quote][quote=${OTHER}]b[/quote]`, spans, new Set([ACT]));
+  assert.deepEqual(tree.map((n) => n.type), ['counterfeit', 'quote']);
+  assert.equal((tree[0] as { act: string | null }).act, ACT);
+  assert.deepEqual(spans.map((s) => s.act), [OTHER]);
+});
+
+test('a counterfeit written by hand has no Act', () => {
+  const tree = parse('[quote=Bob]x[/quote]', undefined, new Set([ACT]));
+  assert.deepEqual(tree.map((n) => (n.type === 'counterfeit' ? n.act : 'other')), [null]);
+});
+
+test('a forged quote inside an authentic one stays inside it, and a forged quote past the cap is text as any counterfeit is', () => {
+  const OTHER = '6ba7b810-9dad-41d1-80b4-00c04fd430c8';
+  const tree = parse(`[quote=${OTHER}][quote=${ACT}]x[/quote][/quote]`, undefined, new Set([ACT]));
+  const outer = tree[0] as { type: string; children: BbNode[] };
+  assert.equal(outer.type, 'quote');
+  assert.deepEqual(outer.children.map((n) => n.type), ['counterfeit']);
+  const deep = '[b]'.repeat(MAX_DEPTH) + `[quote=${ACT}]x[/quote]` + '[/b]'.repeat(MAX_DEPTH);
+  const spans: QuoteSpan[] = [];
+  const t = parse(deep, spans, new Set([ACT]));
+  assert.equal(JSON.stringify(t).includes('counterfeit'), false);
+  assert.equal(JSON.stringify(t).includes('"cut"'), false);
+  assert.deepEqual(spans, []);
+});
+
+test('a forged set holds ids in any letters: the parser compares them with the id it read, lowercase', () => {
+  const tree = parse(`[quote=${ACT}]x[/quote]`, undefined, new Set([ACT.toUpperCase()]));
+  assert.deepEqual(tree.map((n) => n.type), ['counterfeit']);
 });

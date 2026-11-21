@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { occurrences } from '../../../../engine/bbcode/phrase.ts';
 import { parse } from '../../../../engine/bbcode/parse.ts';
+import { forgedList, forgedSet } from '../../../../engine/bbcode/quoted.ts';
 import { visibleWalk } from '../../../../engine/bbcode/visible.ts';
 import { ConfigChoice } from '../../../../engine/ui/cards/config/ConfigChoice.tsx';
 import { ConfigField } from '../../../../engine/ui/cards/config/ConfigField.tsx';
@@ -72,7 +73,9 @@ export function ConfigForm({ config, onChange, post, id, faceDown }: ConfigFormP
   const refocus = useRef<number | null>(null);
   const form = useRef<HTMLFieldSetElement>(null);
   const body = typeof post.currentPayload?.body === 'string' ? post.currentPayload.body : '';
-  const { text, links } = useMemo(() => visibleWalk(parse(body)), [body]);
+  /* A forged quote (the Act's verdict) is a counterfeit, so its words are the poster's own and count (forged-quotes design, section 1). */
+  const forged = forgedList(post.currentPayload);
+  const { text, links } = useMemo(() => visibleWalk(parse(body, undefined, forgedSet(forged))), [body, forged]);
   const all = useMemo(() => placesOf(text, cues, links), [text, links, cues]);
   const counts = useMemo(() => cues.map((_, i) => all.filter((p) => p.cue === i).length), [all, cues]);
   /* A cue with no places that still occurs in the text can only be inside a link: said per cue here, not searched again on every render. */

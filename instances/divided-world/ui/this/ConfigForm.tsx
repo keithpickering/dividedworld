@@ -11,6 +11,7 @@
  */
 import { useMemo, useRef, useState } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
+import { forgedList, forgedSet } from '../../../../engine/bbcode/quoted.ts';
 import { visibleText } from '../../../../engine/bbcode/visible.ts';
 import { ConfigField } from '../../../../engine/ui/cards/config/ConfigField.tsx';
 import { ConfigHint } from '../../../../engine/ui/cards/config/ConfigHint.tsx';
@@ -37,7 +38,9 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const [said, setSaid] = useState({ words: '', n: 0 });
   const form = useRef<HTMLFieldSetElement>(null);
   const body = typeof post.currentPayload?.body === 'string' ? post.currentPayload.body : '';
-  const text = useMemo(() => visibleText(parse(body)), [body]);
+  /* A forged quote (the Act's verdict) is a counterfeit, so its words are the poster's own and count (forged-quotes design, section 1). */
+  const forged = forgedList(post.currentPayload);
+  const text = useMemo(() => visibleText(parse(body, undefined, forgedSet(forged))), [body, forged]);
   const trimmed = phrase.trim();
   const places = useMemo(() => (trimmed ? occurrences(text, trimmed).length : 0), [text, trimmed]);
   const bound = trimmed ? boundOf(trimmed) : undefined;
