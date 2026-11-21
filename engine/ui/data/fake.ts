@@ -1906,7 +1906,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const DID_NOT_TAKE = 'That card didn\'t take, so there is nothing of it on this post.';
   /** The plays cut to a limit, as public Acts, and after them the `card_end` of each that has one (cardsOn, cardsOnMany): the ends ride in the same list. */
   const withEnds = (plays: readonly ActRec[]): Act[] => {
-    const wanted = new Set(plays.filter((p) => p.kind === 'card').map((p) => p.id));
+    /* A lockout's spring is ended as a card play is (thread_page's on_posts takes springs), so its card_end rides too. */
+    const wanted = new Set(plays.filter((p) => p.kind === 'card' || (p.kind === 'spring' && p.payload.did === 'lockedOut')).map((p) => p.id));
     const ends = [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order);
     return [...plays, ...ends].map(publicAct);
   };

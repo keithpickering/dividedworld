@@ -43,10 +43,7 @@ async function lens(admin: boolean, ended = false) {
   if (ended) {
     const answer = await w.fake.reverseCard(sprung.spring.id);
     if (!answer.ok) throw new Error(answer.error);
-    /* The page carries the end of a lockout's spring beside its plays, as it does a card play's (the server's side of this is the coordinator's: cardsOn lists the `card_end` of a spring). */
-    const [end] = await w.fake.actsById([answer.value.act]);
-    const real = w.fake.threadPage.bind(w.fake);
-    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (...args) => { const page = await real(...args); return page && end ? { ...page, plays: [...page.plays, end] } : page; });
+    /* No help for the page: it carries the spring's card_end as the real thread page does (the fake's `withEnds`). */
   }
   renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards });
   await screen.findByRole('article', { name: /^Post 1 /u });
