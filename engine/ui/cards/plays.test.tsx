@@ -47,6 +47,37 @@ describe('a play, read from its card Act', () => {
   });
 });
 
+describe('a pierce an Act names (the Cheap Shot)', () => {
+  test('playOf carries a well-formed pierce, and drops a malformed one', () => {
+    expect(playOf(card({ payload: { card: 'whoops', pierce: { by: 'cs-1', card: 'cheap-shot', ward: 'force-field' } } }))?.pierce).toEqual({ by: 'cs-1', card: 'cheap-shot', ward: 'force-field' });
+    expect(playOf(card({ payload: { card: 'whoops', pierce: { by: 'cs-1', card: 'cheap-shot' } } }))?.pierce).toEqual({ by: 'cs-1', card: 'cheap-shot' });
+    for (const bad of [null, 'cs-1', [], {}, { by: 'cs-1' }, { card: 'cheap-shot' }, { by: 1, card: 'cheap-shot' }]) {
+      expect(playOf(card({ payload: { card: 'whoops', pierce: bad } }))).not.toHaveProperty('pierce');
+    }
+    expect(playOf(card({ payload: { card: 'whoops', pierce: { by: 'cs-1', card: 'cheap-shot', ward: 3 } } }))?.pierce).toEqual({ by: 'cs-1', card: 'cheap-shot' });
+  });
+
+  test('a Move naming a pierce play marks it spent, whether the Move arrives after the play or first', () => {
+    const CHAR = '33333333-0000-4000-8000-000000000009';
+    const shot = () => card({ targetActId: null, payload: { card: 'cheap-shot', reach: 'character', character: CHAR, ends: '2999-01-01T00:00:00.000Z' } });
+    const after = createPlays();
+    const a = shot();
+    after.add([a]);
+    expect(after.get(CHAR).plays[0]).not.toHaveProperty('spent');
+    expect(after.add([card({ payload: { card: 'whoops', pierce: { by: a.id, card: 'cheap-shot' } } })])).toBe(true);
+    expect(after.get(CHAR).plays[0]!.spent).toBe(true);
+    const first = createPlays();
+    const b = shot();
+    first.add([card({ payload: { card: 'whoops', pierce: { by: b.id, card: 'cheap-shot' } } })]);
+    first.add([b]);
+    expect(first.get(CHAR).plays[0]!.spent).toBe(true);
+    /* A Move that names none leaves a play alone. */
+    const alone = createPlays();
+    alone.add([shot(), card()]);
+    expect(alone.get(CHAR).plays[0]).not.toHaveProperty('spent');
+  });
+});
+
 describe('a cast that was handed back (the refund outcome)', () => {
   test('playOf carries a well-formed handedBack, and drops a malformed one', () => {
     expect(playOf(card({ payload: { card: 'whoops', handedBack: { by: 'sign-1', card: 'sign' } } }))?.handedBack).toEqual({ by: 'sign-1', card: 'sign' });

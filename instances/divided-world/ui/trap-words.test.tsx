@@ -45,6 +45,14 @@ describe('the trapStruck voice', () => {
     expect(line('4D Chess')).toBe('Pipewrench wanted you to do that.');
     expect(line(null)).toBe('Pipewrench wanted you to do that.');
   });
+  test('a Move that got past a face-down card: the voice gloats a little, says the card stays face down and that its setter is not told, and names no setter', () => {
+    const f = { how: 'passed', setter: null, laid: 'Hype Up', span: null, setterStaff: false } as const;
+    const said = trapStruckWords({ ...f, card: 'Cheap Shot' })!;
+    expect(said).toEqual({ line: 'Cheap shot! It slipped right past.', detail: 'Your Cheap Shot got your Hype Up past a card set face down. That card stays face down, and the one who set it is not told.' });
+    expect(trapStruckWords({ ...f, card: null })!.detail).toBe('Your card got your Hype Up past a card set face down. That card stays face down, and the one who set it is not told.');
+    expect(trapStruckWords({ ...f, card: 'Cheap Shot', laid: null })!.detail).toContain('got your Move past');
+    expect(JSON.stringify(said)).not.toMatch(/account|owner|player|class|cast/iu);
+  });
   test('a card handed back: the cast landed as usual and the card is back in its caster\'s hand, with the card named or "card" where unread', () => {
     const f = { how: 'returned', setter: 'Pipewrench', laid: 'Hype Up', span: null, setterStaff: false } as const;
     expect(trapStruckWords({ ...f, card: 'Pay It Forward' }))

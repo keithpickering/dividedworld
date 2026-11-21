@@ -105,6 +105,8 @@ export interface CardEffect {
  * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up;
  * a no-quote stops a post that quotes the post it is on, before that post is written.
  * A cast card that reaches one character or one post alone may carry an earn too, ending at its `lasts`.
+ * A pierce, used on the player's own character, gets that character's next cast past every live ward, and every set card that
+ * would catch it, whose card is no rarer than `upTo`; that cast spends it.
  */
 export type GimmickEffect =
   | { readonly kind: 'ward'; readonly upTo?: Rarity; readonly flavors?: readonly Alignment[]; readonly cards?: readonly string[] }
@@ -113,9 +115,10 @@ export type GimmickEffect =
   | { readonly kind: 'price'; readonly flavors: readonly Alignment[]; readonly add: Hundredths }
   | { readonly kind: 'ride'; readonly share: number }
   | { readonly kind: 'noQuote' }
-  | { readonly kind: 'cushion'; readonly share: number };
+  | { readonly kind: 'cushion'; readonly share: number }
+  | { readonly kind: 'pierce'; readonly upTo: Rarity };
 export type WardEffect = Extract<GimmickEffect, { kind: 'ward' }>;
-export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote', 'cushion']);
+export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote', 'cushion', 'pierce']);
 
 /** What a cast does to the staff's discipline of its target, one of a fixed list; each card picks one and sets its numbers. */
 export type DisciplineEffect =
@@ -560,6 +563,10 @@ export interface PlayContext {
   readonly first?: unknown;
   /** The character the play is made through, by id; a discipline card compares it with a post's author (`disciplineRefusal`). */
   readonly caster?: string;
+  /** The caster's live pierce, where one is up: a ward whose card is at or below it does not turn the cast away. */
+  readonly pierce?: Rarity;
+  /** A card's rarity by key, so a pierce can be weighed against the ward's own card. */
+  readonly rarityOf?: (key: string) => Rarity | undefined;
 }
 
 /**
@@ -577,7 +584,12 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   const now = context.now ?? new Date();
   // A reply drawn under a post is a post of its own, and takes none under it: one reply under a post, never a chain.
   if (rules.replies === true && target.reach === 'post' && target.under !== undefined) return refuse('a reply drawn under a post takes no reply under it');
-  const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules));
+  const pierced = (e: CardEffect): boolean => {
+    if (e.card === null || context.pierce === undefined) return false;
+    const rarity = context.rarityOf?.(e.card);
+    return rarity !== undefined && atOrBelow(rarity, context.pierce);
+  };
+  const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules) && !pierced(e));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
   const staffed = disciplineRefusal(rules, target, context, now);
   if (staffed) return staffed;

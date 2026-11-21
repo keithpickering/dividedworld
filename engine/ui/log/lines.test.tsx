@@ -388,6 +388,25 @@ describe('cards set face down, traps and catches', () => {
     });
   });
 
+  describe('a Move a pierce got past a ward', () => {
+    const read = (payload: Record<string, unknown>) => {
+      const cast = act('k3', 'card', 'p', { targetActId: 'post4', payload: { card: 'whoops', reach: 'post', ...payload } });
+      const log = { ...empty, cards: [{ card: 'whoops', kind: 'played' as const, act: 'k3', price: 75, at }] };
+      return logRows(data({ log, mine, acts: new Map([...posts, cast].map((a) => [a.id, a])), names }), w, 600, null).filter((r) => r.kind === 'played').map(text);
+    };
+    test('the caster\'s line gains the pierce and the ward it got past', () => {
+      expect(read({ pierce: { by: 'pc', card: 'pass', ward: 'whoops' } })[0]).toContain(' Your Hall Pass got it past a Whoops! that would have turned it away.');
+    });
+    test('a pierce with no ward adds nothing, and a cast with no pierce reads as before', () => {
+      expect(read({ pierce: { by: 'pc', card: 'pass' } })[0]).not.toContain('got it past');
+      expect(read({})[0]).not.toContain('got it past');
+    });
+    test('a malformed pierce adds nothing', () => {
+      expect(read({ pierce: 'pass' })[0]).not.toContain('got it past');
+      expect(read({ pierce: { by: 'pc', card: 'pass', ward: 123 } })[0]).not.toContain('got it past');
+    });
+  });
+
   test('a caught play is the caster\'s line, with its whole cost, and no line of its own as a play', () => {
     const others = [act('post9', 'post', 's', { seq: 9 }), act('k2', 'card', 'p', { targetActId: 'post9', payload: { card: 'whoops', caught: 'setX' } })];
     const log = { ...empty,

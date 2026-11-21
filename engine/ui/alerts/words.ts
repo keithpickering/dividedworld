@@ -148,11 +148,23 @@ export function spanWords(ms: number): string {
 
 /**
  * A face-down card struck the player: it landed on their quoting post (the card Act names its spring), or a catching set card caught their cast (the play
- * names the set that caught it). Both are public Acts, so nothing here is computed from a private fact: the setter is the character the spring
+ * names the set that caught it), or a pierce got their cast past one (the play names the pierce, and nothing about the back). Each is a public Act, so nothing here is computed from a private fact: the setter is the character the spring
  * (or the set) names, never an account. A part that could not be read is left out, never guessed.
  */
 function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
   const who = row.name ?? 'Yours';
+  /* A pierce got the cast past a card set face down: the Act's public `pierce` names the pierce card, and nothing about the back is told (it stays face down, and its setter is not told). */
+  if (row.sub === 'passed' && act) {
+    const pierce = act.payload.pierce;
+    const pierceCard = cardName(typeof pierce === 'object' && pierce !== null ? (pierce as { card?: unknown }).card : undefined, ctx);
+    const laid = cardName(act.payload.card, ctx);
+    const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'passed', setter: null, card: pierceCard, laid, span: null, setterStaff: false });
+    return {
+      line: own ? [own.line] : [`Your ${pierceCard ?? 'card'} got your ${laid ?? 'card'} past a card set face down`],
+      detail: own ? [own.detail] : sentences(["It stays face down and didn't spring, and whoever set it isn't told."], inTitle(row)),
+      ways: postWay(act.targetActId ? ctx.acts.get(act.targetActId) : undefined, row, ctx), who,
+    };
+  }
   const springId = act && typeof act.payload.spring === 'string' ? act.payload.spring : null;
   const spring = springId ? ctx.acts.get(springId) : undefined;
   const caughtSet = act && typeof act.payload.caught === 'string' ? act.payload.caught : null;

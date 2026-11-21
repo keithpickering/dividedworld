@@ -5,7 +5,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { viewProblems, wordsProblems, sprungWords, shortQuote, readCaughtFate, STATUS_MAX_WORDS } from './lens-words.ts';
+import { viewProblems, wordsProblems, sprungWords, pierceWords, shortQuote, readCaughtFate, STATUS_MAX_WORDS } from './lens-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import type { CardView } from './types.ts';
 import { caughtWords, endsWords, keptEndedWords } from './marks.ts';
@@ -149,5 +149,12 @@ describe('the way out of a card that keeps, once its time is up', () => {
   });
   test('passes the Lens word rules as the ends of a view that covers the post, beside a short state', () => {
     assert.deepEqual(viewProblems(view({ state: 'Lifting every post', ends: keptEndedWords(ends, after) }), { holds: false, covers: true }), []);
+  });
+});
+
+describe('pierceWords: what a play that got past a ward says', () => {
+  test('names the card it was played on, and the Ward it got past where there was one', () => {
+    assert.equal(pierceWords('Cheap Shot'), 'Played on a Cheap Shot');
+    assert.equal(pierceWords('Cheap Shot', 'Force Field'), 'Played on a Cheap Shot, past Force Field');
   });
 });

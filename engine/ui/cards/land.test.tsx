@@ -125,6 +125,15 @@ describe('wards, backs and catches, as a screen offers a card', () => {
     expect(landing(blot, post('hi'), [ward('2020-01-01T00:00:00Z')], { cards }).ok).toBe(true);
   });
 
+  test('a cast on a post under a live uncommon ward is offered with a pierce up to uncommon, and not without it', () => {
+    const live = [ward('2999-01-01T00:00:00Z')];
+    const ctx = { cards, own: false, now: Date.now() };
+    expect(waysOn(blot, post('hi'), live, ctx).cast).toBe(false);
+    expect(waysOn(blot, post('hi'), live, { ...ctx, pierce: 'common' }).cast).toBe(false);
+    expect(waysOn(blot, post('hi'), live, { ...ctx, pierce: 'uncommon' }).cast).toBe(true);
+    expect(landing(blot, post('hi'), live, { cards, pierce: 'uncommon' }).ok).toBe(true);
+  });
+
   test('a card that writes lands on a post, as a screen offers it: the screens hold no settings, so the old voice does not withhold it', () => {
     const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
     expect(landing(writer, post('hi'), [], { cards: [...cards, writer] }).ok).toBe(true);

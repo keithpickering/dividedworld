@@ -677,6 +677,12 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
   else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a set card that springs on a cast does`);
   if (c.gimmick?.kind === 'noQuote' && c.reaches !== undefined && !(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${who} stops quotes, and a card that stops quotes reaches a post alone`);
+  if (c.gimmick?.kind === 'pierce') {
+    if (play !== 'use') out.push(`${who} has a pierce and is not a use card`);
+    if (!(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'character')) out.push(`${who} has a pierce and reaches more than a character`);
+    const upTo = c.gimmick.upTo;
+    if (RARITIES.includes(upTo) && RARITIES.includes(c.rarity) && !atOrBelow(upTo, c.rarity)) out.push(`${who} has a pierce up to ${upTo}, rarer than the card`);
+  }
   if (c.gimmick?.kind === 'ride' && postAlone === false) out.push(`${who} has a ride, and a card with a ride reaches a post alone`);
   if (c.trap?.outcome !== undefined) out.push(...outcomeProblems(c.trap.outcome, who, play, on));
   if (c.skim !== undefined) out.push(...skimProblems(c, who, play));
@@ -887,6 +893,8 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
     if (why) out.push(why);
   } else if (e.kind === 'cushion') {
     if (typeof e.share !== 'number' || !(e.share > 0 && e.share <= 1)) out.push(`${who} has a cushion of ${JSON.stringify(e.share) ?? 'undefined'}; share is above 0 and at most 1`);
+  } else if (e.kind === 'pierce') {
+    if (!RARITIES.includes(e.upTo as never)) out.push(`${who} has a pierce up to ${JSON.stringify(e.upTo)}; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
   } else if (e.kind === 'noQuote') {
     // It has no numbers: a card that stops quotes stops them all, and what it reaches is playProblems'.
   } else {

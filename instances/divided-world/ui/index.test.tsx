@@ -1620,3 +1620,53 @@ describe('Thick Skin in plain words (the Thick Skin plan, Task 3)', () => {
     expect(keys).toEqual([...keys].sort());
   });
 });
+
+describe('Cheap Shot in plain words (the Cheap Shot plan, Task 7)', () => {
+  const shot = instanceUi.cards.find((c) => c.key === 'cheap-shot');
+  const wrap = (text: string) => {
+    const lines: string[] = [];
+    for (const word of text.split(' ')) {
+      const last = lines[lines.length - 1];
+      if (last !== undefined && last.length + 1 + word.length <= 20) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    return lines;
+  };
+
+  test('it wears the Salty pink and ink, and says what it does in a tagline, a summary and a status', () => {
+    expect(shot, 'cheap-shot is listed').toBeDefined();
+    expect(shot!.art.color).toBe('#ff3d7f');
+    expect(shot!.art.ink).toBe('#14030a');
+    expect(shot!.art.tagline).toBe('Your next Move slips past defenses.');
+    expect(shot!.summary).toBe("Used on your own character. Its next Move within 3 days can't be turned away or caught by a card up to uncommon.");
+    expect(shot!.status).toBe('Lining up a cheap shot');
+  });
+
+  test('its words are the ones the rules give', () => {
+    expect(shot!.describe(instance.settings)).toBe("A Salty card, uncommon, used on your own character. Its next Move within 3 days gets past any card that would turn it away or catch it, up to uncommon. A card set face down that it gets past stays face down, and only you are told. A card that lets a Move land and pays or gives it back still springs. It does nothing for a Move that lands from a quote. That Move uses it up, whatever was in the way. It costs nothing more to use.");
+    expect(shot!.logPlay!({}, {})).toBe("That character's next Move can't be turned away or caught by a card up to uncommon.");
+  });
+
+  test('its tagline fits the plate: at most two lines of at most 20 characters', () => {
+    const lines = wrap(shot!.art.tagline!);
+    expect(lines.length, lines.join(' | ')).toBeLessThanOrEqual(2);
+    for (const line of lines) expect(line.length, line).toBeLessThanOrEqual(20);
+  });
+
+  test('it has no effect and no form, says "play" and never "cast", and holds no percent and no class name', () => {
+    expect(shot!.Effect).toBeUndefined();
+    expect(shot!.ConfigForm).toBeUndefined();
+    const words = [shot!.art.tagline, shot!.summary, shot!.status as string, shot!.describe(instance.settings), shot!.logPlay!({}, {})].join('\n');
+    expect(words).not.toMatch(/%|\bcast/iu);
+    /* "face down" is the card's own phrase, not the class Face, so it is set aside before the class check. */
+    const unset = words.replace(/face[- ]down/giu, '');
+    for (const c of instance.classes) expect(unset, c.name).not.toMatch(new RegExp(`\\b${c.name}\\b`, 'iu'));
+  });
+
+  test('the rules over every card hold with it in', () => {
+    expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
+    const keys = cardsUi.map((c) => c.key);
+    expect(keys).toContain('cheap-shot');
+    expect(keys).toEqual([...keys].sort());
+  });
+});

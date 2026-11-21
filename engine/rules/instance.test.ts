@@ -800,6 +800,19 @@ test('a cast card on a character or a post alone may carry an earn, and nothing 
   assert.match(cast({ rarity: 'rare', reaches: ['character', 'post'], gimmick: earn, lasts: days3 }), gimmickWords, 'a cast earn on a character and a post');
 });
 
+test('a pierce is a use card on a character alone, up to no rarer than itself', () => {
+  const hours = { unit: 'hour', count: 36 };
+  const pierce = (over: Record<string, unknown>, gimmick: Record<string, unknown> = { upTo: 'uncommon' }) => instanceProblems(withCards({ play: 'use', rarity: 'uncommon', reaches: ['character'], lasts: hours, gimmick: { kind: 'pierce', ...gimmick }, ...over })).join('\n');
+  assert.equal(pierce({}), '', 'a use card reaching a character, up to its own rarity');
+  assert.match(pierce({}, {}), /card "splat" has a pierce up to undefined; a rarity is common, uncommon, rare or legendary/);
+  assert.match(pierce({}, { upTo: 'mythic' }), /card "splat" has a pierce up to "mythic"; a rarity is common, uncommon, rare or legendary/);
+  assert.match(pierce({ play: 'cast' }), /card "splat" has a pierce and is not a use card/);
+  assert.match(pierce({ reaches: ['post'] }), /card "splat" has a pierce and reaches more than a character/);
+  assert.match(pierce({ reaches: ['character', 'post'] }), /card "splat" has a pierce and reaches more than a character/);
+  assert.doesNotMatch(pierce({}, { upTo: 'mythic' }), /rarer than the card/, 'an unknown rarity is one problem, not two');
+  assert.match(pierce({}, { upTo: 'rare' }), /card "splat" has a pierce up to rare, rarer than the card/);
+});
+
 test('a card that stops quotes reaches a post alone', () => {
   const week = { unit: 'day', count: 7 };
   const stop = (over: Record<string, unknown>) => instanceProblems(withCards({ play: 'use', lasts: week, gimmick: { kind: 'noQuote' }, ...over })).join('\n');
@@ -817,7 +830,7 @@ test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   assert.match(use({ kind: 'ward' }), /card "splat" has a ward that names no rarity, flavor or card/);
   assert.match(use({ kind: 'ward', upTo: 'mythic' }), /card "splat" has a ward up to "mythic"/);
   assert.match(use({ kind: 'ward', flavors: ['bitter'] }), /card "splat" has a ward of the flavors \["bitter"\]/);
-  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price, ride, noQuote or cushion/);
+  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price, ride, noQuote, cushion or pierce/);
   assert.equal(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5 }), '');
   assert.equal(use({ kind: 'earn', reactions: ['fire'], by: 1 }), '');
   assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0 }), /card "splat" has an earn of 0; by is above 0 and at most 1/);
