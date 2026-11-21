@@ -231,7 +231,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         const nameOf = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
         const play = decision.play === 'use'
           ? decideUse(rules, tuned.settings, target, effects, decision.args.config, said.value)
-          : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf, first: decision.args.first, caster: decision.args.through as string });
+          : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf, rulesOf: (key) => instance.cards.find((c) => c.key === key), first: decision.args.first, caster: decision.args.through as string });
         // A card that needs a caster message refuses a blank one on the message field, as the screens show it there.
         if (!play.ok) return refused(play.why === rules.needsMessage ? 'message' : 'config', play.why);
         args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
