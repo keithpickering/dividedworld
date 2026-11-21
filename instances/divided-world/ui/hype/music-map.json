@@ -1,0 +1,166 @@
+{
+  "source": "https://archive.org/download/MusopenCollectionAsFlac/Greig_PeerGynt/EdvardGrieg-PeerGyntSuiteNo.1Op.46-04-InTheHallOfTheMountainKing.flac",
+  "note": "This file was fetched from the Internet Archive's Musopen collection because Wikimedia Commons rate-limited the fetch; it is the same recording the design names (the Czech National Symphony Orchestra's, 2012), the same length, 154.09 s.",
+  "seconds": 154.09,
+  "sha1": "7d34c97620149eff83bc14a1e838ef5d8e66746b",
+  "firstNote": {
+    "t": 0.5,
+    "confident": true
+  },
+  "blocks": [
+    {
+      "id": 1,
+      "start": 0.5,
+      "end": 64.35,
+      "confident": false,
+      "entries": [
+        {
+          "t": 0.5,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 11.14,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 21.78,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 32.42,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 43.07,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 53.71,
+          "confident": false,
+          "derived": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "start": 64.35,
+      "end": 100.3,
+      "confident": false,
+      "entries": [
+        {
+          "t": 64.35,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 70.34,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 76.33,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 82.33,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 88.32,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 94.31,
+          "confident": false,
+          "derived": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "start": 100.3,
+      "end": 135.15,
+      "confident": true,
+      "entries": [
+        {
+          "t": 100.3,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 106.11,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 111.92,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 117.73,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 123.53,
+          "confident": false,
+          "derived": true
+        },
+        {
+          "t": 129.34,
+          "confident": false,
+          "derived": true
+        }
+      ]
+    }
+  ],
+  "coda": {
+    "chords": [
+      {
+        "t": 135.15,
+        "confident": true
+      },
+      {
+        "t": 136.1,
+        "confident": true
+      },
+      {
+        "t": 139.05,
+        "confident": false
+      },
+      {
+        "t": 140,
+        "confident": true
+      },
+      {
+        "t": 142.95,
+        "confident": false
+      },
+      {
+        "t": 143.9,
+        "confident": true
+      },
+      {
+        "t": 144.85,
+        "confident": true
+      },
+      {
+        "t": 148.25,
+        "confident": false
+      }
+    ],
+    "end": {
+      "t": 151.3,
+      "confident": true
+    }
+  }
+}
