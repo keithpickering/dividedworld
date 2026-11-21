@@ -471,6 +471,113 @@ describe('a pickup takes a real flake (docs/plans/2026-11-21-glitter-hands-plan.
   });
 });
 
+describe('a finger slides glitter (docs/plans/2026-11-21-glitter-hands-plan.md, task 2)', () => {
+  beforeEach(() => { vi.stubGlobal('innerWidth', 8000); vi.stubGlobal('scrollX', 0); vi.stubGlobal('scrollY', 0); fine = false; });
+  /** A touch event at (x, y) for finger `id`, 16 ms after the last, as the browser sends it: cancelable, so a prevented default would show. */
+  function touch(type: string, x: number, y: number, id = 1): Event {
+    const e = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(e, 'changedTouches', { value: [{ identifier: id, clientX: x, clientY: y }] });
+    Object.defineProperty(e, 'timeStamp', { value: (clock += 16) });
+    window.dispatchEvent(e);
+    return e;
+  }
+  /** A finger put down on the post and slid all over it, each move far from the last. */
+  function slide(n = 400): Event[] {
+    const out = [touch('touchstart', 10, 20)];
+    for (let i = 1; i < n; i++) { const [x, y] = spread(i); out.push(touch('touchmove', x, y)); }
+    return out;
+  }
+
+  it('a finger sliding over a sticky post takes flakes off it, on a coarse device', () => {
+    const { flakes } = page();
+    const n = flakes.settled.length;
+    slide();
+    expect(cling.carried()).toBe(MAX_CARRIED);
+    expect(flakes.settled.length).toBe(n - MAX_CARRIED);
+  });
+
+  it('a scroll drag carries the page with the finger, so nothing slides under it and nothing is picked up', () => {
+    const { flakes } = page();
+    const n = flakes.settled.length;
+    touch('touchstart', 150, 280);
+    /* The finger goes up the screen 20 px a move and the page scrolls down as far: over the page, the finger stands still. */
+    for (let i = 1; i < 12; i++) { vi.stubGlobal('scrollY', i * 20); touch('touchmove', 150, 280 - i * 20); }
+    expect(cling.carried()).toBe(0);
+    expect(flakes.settled.length).toBe(n);
+  });
+
+  it('the lift tosses everything carried the way the finger was going, and it lands on the host under it', () => {
+    const { a } = page();
+    touch('touchstart', 10, 150);
+    for (let i = 1; i < 400 && cling.carried() < MAX_CARRIED; i++) touch('touchmove', 10 + ((i * 7) % 280), 150 + ((i * 13) % 40) - 20);
+    /* The last strokes go right. */
+    for (let x = 20; x <= 140; x += 30) touch('touchmove', x, 150);
+    const n = cling.carried();
+    expect(n).toBeGreaterThan(0);
+    touch('touchend', 140, 150);
+    expect(cling.carried()).toBe(0);
+    expect(cling.falling()).toBe(n);
+    let landed = 0;
+    for (let t = 0; cling.falling() && t < 10000; t += 16) cling.tick(t);
+    landed = loose(a).length;
+    expect(landed).toBeGreaterThan(0);
+    /* Thrown rightward: they land, on the whole, right of where the finger let go. */
+    const mean = loose(a).reduce((s, f) => s + f.x, 0) / landed;
+    expect(mean).toBeGreaterThan(140);
+  });
+
+  it('a cancelled touch tosses what it carried too: nothing stays stuck to a finger that is gone', () => {
+    page();
+    slide(200);
+    expect(cling.carried()).toBeGreaterThan(0);
+    touch('touchcancel', 100, 100);
+    expect(cling.carried()).toBe(0);
+  });
+
+  it('picks nothing up under reduced motion', () => {
+    page();
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    slide();
+    expect(cling.carried()).toBe(0);
+    expect(layer()).toBeNull();
+  });
+
+  it('a second finger moves nothing: the first touch is the one followed', () => {
+    const { flakes } = page();
+    const n = flakes.settled.length;
+    touch('touchstart', 10, 20, 1);
+    for (let i = 1; i < 200; i++) { const [x, y] = spread(i); touch('touchmove', x, y, 2); }
+    expect(flakes.settled.length).toBe(n);
+  });
+
+  it('listens passively, never prevents a default, and only while a sticky host is registered', () => {
+    const seen: Array<{ type: string; passive: boolean }> = [];
+    const add = window.addEventListener.bind(window);
+    vi.spyOn(window, 'addEventListener').mockImplementation((type: string, fn: EventListenerOrEventListenerObject, o?: boolean | AddEventListenerOptions) => {
+      if (type.startsWith('touch')) seen.push({ type, passive: typeof o === 'object' && o.passive === true });
+      add(type, fn, o);
+    });
+    const removed: string[] = [];
+    const remove = window.removeEventListener.bind(window);
+    vi.spyOn(window, 'removeEventListener').mockImplementation((type: string, fn: EventListenerOrEventListenerObject, o?: boolean | EventListenerOptions) => {
+      if (type.startsWith('touch')) removed.push(type);
+      remove(type, fn, o);
+    });
+    const el = host(0, 0);
+    const flakes = makeFlakes({ seed: 'sticky', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    landAll(flakes);
+    const off = cling.register(el, { sticky: true, flakes });
+    expect(seen.map((x) => x.type).sort()).toEqual(['touchcancel', 'touchend', 'touchmove', 'touchstart']);
+    expect(seen.every((x) => x.passive)).toBe(true);
+    const events = slide(100);
+    events.push(touch('touchend', 100, 100));
+    expect(cling.falling() + loose(el).length).toBeGreaterThan(0);
+    expect(events.some((e) => e.defaultPrevented)).toBe(false);
+    off();
+    expect(removed.sort()).toEqual(['touchcancel', 'touchend', 'touchmove', 'touchstart']);
+  });
+});
+
 describe('what the layer asks the page', () => {
   beforeEach(() => { vi.stubGlobal('innerWidth', 8000); });
   /** A page of 20 posts, the first sticky. */

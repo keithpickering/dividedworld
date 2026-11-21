@@ -20,8 +20,10 @@
  * - Shake: a scroll of the page past `SHAKE_SPEED` shakes copies of settled flakes off the sticky hosts on screen, a frame at a time
  *   for as long as it stays that fast (`shake`), onto that same layer: they are thrown the way the page was moving at about half its
  *   speed, sprayed sideways, tumble as air drag slows them, settle at a slow flutter and land on the host under them after their
- *   hang, or leave the screen past its top, bottom or sides (by 10 px: culled), never fading, a number per px scrolled so the frame rate never changes how many (docs/plans/2026-11-11-shake-design.md section 3). The touch
- *   reader's way to move the glitter, where a mouse picks it up.
+ *   hang, or leave the screen past its top, bottom or sides (by 10 px: culled), never fading, a number per px scrolled so the frame rate never changes how many (docs/plans/2026-11-11-shake-design.md section 3).
+ * - A finger: passive touch events, never a prevented default, so scrolling and selecting text stay the browser's. A finger slid over
+ *   a sticky host (its movement over the page, not the screen: a scroll drag slides nothing) picks flakes up as a mouse does, and its
+ *   lift tosses them the way it was going (`TOSS`), to fly and land as shaken glitter does (docs/plans/2026-11-21-glitter-hands-plan.md).
  * - The dark board (a band that ends far short of white): each ink is taken at the ceiling, saturated (`ceilingOf`), and a
  *   flake facing the light glints: its flare is added, in its own hue at full brightness with the instance's glint at its
  *   heart (`glintOf`). The glints alone leave the band (docs/plans/2026-11-06-shine-design.md section 5, issue #340), and
@@ -1174,7 +1176,7 @@ function onMove(e: PointerEvent): void {
   mouse = { x: e.clientX, y: e.clientY, speed: moved, t: e.timeStamp };
   const host = hostOf(e.target);
   const opts = host ? hosts.get(host) : undefined;
-  if (opts?.sticky && opts.flakes) pickUp(host!, opts, e.clientX, e.clientY, moved, e.target, e.timeStamp, false);
+  if (opts?.sticky && opts.flakes) { if (rolls(moved)) pickUp(host!, opts, e.clientX, e.clientY, e.target, e.timeStamp, false); }
   else dropOff(e.clientX, e.clientY, moved);
   if ((carried.length || falling.length) && !frame) frame = requestAnimationFrame(loop);
 }
@@ -1187,14 +1189,17 @@ export const REACH_PICK = 14;
 /** How quickly a flake taken off a post eases to its place by the pointer: the share left after a second is e^-PICK_EASE. */
 const PICK_EASE = 14;
 
+/** Whether a move of `moved` px over a sticky host would pick a flake up: room to carry one, and the roll, a chance per px. */
+const rolls = (moved: number): boolean => carried.length < MAX_CARRIED && cr() < Math.min(0.6, moved / 40);
+
 /**
- * A move of `moved` px over a sticky host may pick a flake up: the roll, then the host's refusal (it can cost a walk up the document, so
- * it is asked only of a move that would pick up), then the one measure a pickup costs, the host's box, to put the pointer in its px.
+ * A move over a sticky host whose roll came up (`rolls`) picks a flake up: the host's refusal first (it can cost a walk up the document,
+ * so it is asked only of a move that would pick up), then the one measure a pickup costs, the host's box, to put the pointer in its px.
  * The settled flake nearest the pointer within `REACH_PICK` is taken off the post (`take`) and starts where it lay. A finger's flakes
  * ride in a ring outside its contact (`ring`), a mouse's below and right of the arrow's tip.
  */
-function pickUp(host: HTMLElement, opts: ClingOptions, x: number, y: number, moved: number, target: EventTarget | null, t: number, ring: boolean): void {
-  if (carried.length >= MAX_CARRIED || !(cr() < Math.min(0.6, moved / 40)) || opts.refuses?.(target)) return;
+function pickUp(host: HTMLElement, opts: ClingOptions, x: number, y: number, target: EventTarget | null, t: number, ring: boolean): void {
+  if (opts.refuses?.(target)) return;
   /* A board whose band cannot be computed gets no glitter lent from it: nothing is drawn that has no band to hold. */
   const band = bandAt(host, t);
   if (!band) return;
@@ -1216,6 +1221,89 @@ function dropOff(x: number, y: number, moved: number): void {
     }
   }
 }
+
+/* --------------------------------------------------------------- finger ---- */
+
+/**
+ * A finger (docs/plans/2026-11-21-glitter-hands-plan.md). Its pointer events end in `pointercancel` once the browser takes the gesture
+ * for a scroll, so the layer follows touch events instead, passively, on the window, while a sticky host is registered: a passive
+ * listener cannot hold up a scroll or the long press that starts a text selection, and nothing here prevents a default. The first
+ * touch is followed and any other ignored. What a move counts is the finger's movement over the page (on the screen, plus the page's
+ * scroll since the last move): a scroll drag carries the page with the finger and slides nothing, while a finger slid across the post
+ * picks flakes up at a mouse's chance per px. On its lift or a cancel, everything carried is tossed the way the finger was going.
+ */
+let finger: { id: number; x: number; y: number; sx: number; sy: number; t: number; vx: number; vy: number } | null = null;
+/** A toss leaves at this share of the finger's speed over the page, at most `TOSS_MAX` px a second, and then flies as shaken glitter does. */
+export const TOSS = 0.5;
+export const TOSS_MAX = 2400;
+
+interface TouchPoint { readonly identifier: number; readonly clientX: number; readonly clientY: number }
+/** The touch of finger `id` among an event's changed touches, or the first of them for `null`. */
+function touchOf(e: Event, id: number | null): TouchPoint | null {
+  const list = (e as TouchEvent).changedTouches as unknown as ArrayLike<TouchPoint> | undefined;
+  if (!list) return null;
+  for (let i = 0; i < list.length; i++) if (id === null || list[i]!.identifier === id) return list[i]!;
+  return null;
+}
+
+function onTouchStart(e: Event): void {
+  if (finger) return;
+  const p = touchOf(e, null);
+  if (p) finger = { id: p.identifier, x: p.clientX, y: p.clientY, sx: window.scrollX, sy: window.scrollY, t: e.timeStamp, vx: 0, vy: 0 };
+}
+
+function onTouchMove(e: Event): void {
+  const was = finger;
+  const p = was ? touchOf(e, was.id) : null;
+  if (!was || !p) return;
+  const sx = window.scrollX, sy = window.scrollY;
+  /* Over the page: the finger's step on the screen plus how far the page scrolled under it. */
+  const rx = p.clientX - was.x + (sx - was.sx), ry = p.clientY - was.y + (sy - was.sy);
+  const dt = (e.timeStamp - was.t) / 1000;
+  /* Its velocity over the page, smoothed over the last few moves; a move after a pause starts it afresh. */
+  if (dt > 0) {
+    const k = dt * 1000 < STALE_MS ? 0.5 : 1;
+    was.vx += (rx / dt - was.vx) * k; was.vy += (ry / dt - was.vy) * k;
+  }
+  was.x = p.clientX; was.y = p.clientY; was.sx = sx; was.sy = sy; was.t = e.timeStamp;
+  if (clingReduced()) return;
+  const moved = Math.hypot(rx, ry);
+  mouse = { x: p.clientX, y: p.clientY, speed: moved, t: e.timeStamp };
+  /* The point under the finger is hit-tested only for a move that would pick up, or while something rides it. */
+  const want = rolls(moved);
+  if (want || carried.length) {
+    const el = elementAt(p.clientX, p.clientY);
+    const host = hostOf(el);
+    const opts = host ? hosts.get(host) : undefined;
+    if (opts?.sticky && opts.flakes) { if (want) pickUp(host!, opts, p.clientX, p.clientY, el, e.timeStamp, true); }
+    else dropOff(p.clientX, p.clientY, moved);
+  }
+  if ((carried.length || falling.length) && !frame) frame = requestAnimationFrame(loop);
+}
+
+/** The finger's lift, or the browser's cancel of it: what it carried is tossed, so nothing stays on a finger that is gone. */
+function onTouchEnd(e: Event): void {
+  const was = finger;
+  if (!was || !touchOf(e, was.id)) return;
+  finger = null;
+  toss(was.vx, was.vy);
+  mouse = null;
+}
+
+/** Everything the finger carries leaves it at `TOSS` of its velocity over the page (capped), sprayed sideways, and flies. */
+function toss(vx: number, vy: number): void {
+  if (!carried.length || !mouse) { carried = []; return; }
+  const speed = Math.hypot(vx, vy), cap = speed > TOSS_MAX ? TOSS_MAX / speed : 1;
+  const ux = vx * cap * TOSS, uy = vy * cap * TOSS, spray = SPRAY * Math.min(speed, TOSS_MAX);
+  for (const c of carried) {
+    const j = 0.7 + cr() * 0.6;
+    falling.push({ f: c.f, x: mouse.x + c.ox, y: mouse.y + c.oy, vx: ux * j + (cr() - 0.5) * 2 * spray, vy: uy * j + (cr() - 0.5) * 2 * spray, ph: c.ph, spin: 6 + cr() * 14, age: 0, hang: HANG_S * (0.6 + cr() * 0.8), next: 0, band: c.band });
+  }
+  carried = [];
+  if (!frame) frame = requestAnimationFrame(loop);
+}
+
+const TOUCH: ReadonlyArray<readonly [string, (e: Event) => void]> = [['touchstart', onTouchStart], ['touchmove', onTouchMove], ['touchend', onTouchEnd], ['touchcancel', onTouchEnd]];
 
 /* ---------------------------------------------------------------- shake ---- */
 
@@ -1266,12 +1354,18 @@ let shakeV = 0;
 let shakeLast: number | null = null;
 let scrollHeard = false;
 
-/** The page's scroll listener: on while a sticky host is registered, off with the last. */
+/** The page's scroll listener and a finger's (`TOUCH`), all passive: on while a sticky host is registered, off with the last. */
 function hearScroll(on: boolean): void {
   if (typeof window === 'undefined' || on === scrollHeard) return;
   scrollHeard = on;
-  if (on) { addEventListener('scroll', onScroll, { passive: true }); return; }
+  if (on) {
+    addEventListener('scroll', onScroll, { passive: true });
+    for (const [type, fn] of TOUCH) addEventListener(type, fn, { passive: true });
+    return;
+  }
   removeEventListener('scroll', onScroll);
+  for (const [type, fn] of TOUCH) removeEventListener(type, fn);
+  finger = null;
   if (shakeFrame) cancelAnimationFrame(shakeFrame);
   shakeFrame = 0; scrollSeen = null; shakeLast = null;
 }
