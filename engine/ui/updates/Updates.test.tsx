@@ -105,12 +105,12 @@ describe('the page', () => {
     expect(spies.map((spy) => spy.mock.calls.length)).toEqual(own.map(() => 0));
   });
 
-  test('a handover address asks for its season in the same read', async () => {
+  test('a handover address asks for its handover in the same read', async () => {
     const w = world();
     const page = vi.spyOn(w.fake, 'updatesPage');
-    renderIn(w.fake, <LoadedUpdates />, { path: '/updates?write=handover&season=2', instance, avatars: AVATARS });
+    renderIn(w.fake, <LoadedUpdates />, { path: '/updates?write=handover&handover=1', instance, avatars: AVATARS });
     await screen.findByRole('article', { name: 'Traps now bite board cards' });
-    expect(page).toHaveBeenCalledWith(null, null, 2);
+    expect(page).toHaveBeenCalledWith(null, null, 1);
   });
 
   test('an older update opened after Show earlier updates is not the one the document read reactions for, so its own are read', async () => {
@@ -368,53 +368,73 @@ describe('opened from a handover to-do', () => {
     return w;
   };
 
-  test('?write=handover&season=2 opens the writer with the handover\'s facts, for an admin', async () => {
-    show(handedOver().fake, '/updates?write=handover&season=2');
+  test('?write=handover&handover=1 opens the writer with the handover\'s facts, for an admin', async () => {
+    show(handedOver().fake, '/updates?write=handover&handover=1');
     const form = await screen.findByRole('form', { name: 'Write an update' });
     expect(within(form).getByLabelText('Title')).toHaveValue('Season 2 opens with Comptroller');
     expect(within(form).getByLabelText('Words')).toHaveValue('Season 2: The Boss is Comptroller (was a Moderator).\n\nOld Boss is now a member.\n\nThe Boss was chosen by the roster\'s rotation.');
   });
 
+  test('a season with a roll-over and a departure: each link opens its own handover\'s facts', async () => {
+    const w = world();
+    w.fake.seed.staff('old-boss', 'Old Boss', 'boss');
+    w.fake.seed.staff('comptroller', 'Comptroller', 'mod');
+    w.fake.seed.staff('deputy', 'Deputy', 'mod');
+    w.fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at: at(3), bossWas: 'mod', outgoingOffice: 'member' });
+    w.fake.seed.handover({ outgoing: 'comptroller', boss: 'deputy', at: at(3) + 60_000, bossWas: 'mod', outgoingOffice: 'benched', cause: 'departure' });
+    w.fake.clock.advance(Math.max(0, at(3) + 3_600_000 - w.fake.clock.now()));
+    w.fake.signInAs(w.admin);
+    const queue = (await w.fake.adminQueue()).todos;
+    expect(queue.map((t) => [t.handover, t.cause, t.season]).sort()).toEqual([[1, 'rollover', 2], [2, 'departure', 2]]);
+    const first = show(w.fake, '/updates?write=handover&handover=1');
+    expect(within(await screen.findByRole('form', { name: 'Write an update' })).getByLabelText('Title')).toHaveValue('Season 2 opens with Comptroller');
+    first.unmount();
+    show(w.fake, '/updates?write=handover&handover=2');
+    const form = await screen.findByRole('form', { name: 'Write an update' });
+    expect(within(form).getByLabelText('Title')).toHaveValue('Deputy takes over Season 2 from Comptroller');
+    expect(within(form).getByLabelText('Words')).toHaveValue('Season 2: The Boss is Deputy (was a Moderator).\n\nComptroller left the instance\'s roster and is now benched.\n\nThe Boss was chosen by the roster\'s rotation.');
+  });
+
   test('the draft says the role in the instance\'s word', async () => {
-    renderIn(handedOver().fake, <LoadedUpdates />, { path: '/updates?write=handover&season=2', instance, avatars: AVATARS, copy: { roleWord: 'The Champ' } });
+    renderIn(handedOver().fake, <LoadedUpdates />, { path: '/updates?write=handover&handover=1', instance, avatars: AVATARS, copy: { roleWord: 'The Champ' } });
     const form = await screen.findByRole('form', { name: 'Write an update' });
     expect(within(form).getByLabelText('Words')).toHaveValue('Season 2: The Champ is Comptroller (was a Moderator).\n\nOld Boss is now a member.\n\nThe Champ was chosen by the roster\'s rotation.');
   });
 
-  test('a season with no to-do opens the empty writer and says the to-do is already cleared', async () => {
-    show(handedOver().fake, '/updates?write=handover&season=9');
+  test('a handover with no to-do opens the empty writer and says the to-do is already cleared', async () => {
+    show(handedOver().fake, '/updates?write=handover&handover=9');
     const form = await screen.findByRole('form', { name: 'Write an update' });
     expect(within(form).getByLabelText('Title')).toHaveValue('');
-    expect(screen.getByText(/no to-do for season 9/u)).toBeInTheDocument();
+    expect(screen.getByText(/no to-do for handover 9/u)).toBeInTheDocument();
   });
 
   test('a to-do list that could not be read fails the page, which the glass says plainly and reads again', async () => {
     const w = handedOver();
     vi.spyOn(w.fake, 'updatesPage').mockRejectedValueOnce(new Error('offline'));
-    show(w.fake, '/updates?write=handover&season=2');
+    show(w.fake, '/updates?write=handover&handover=1');
     expect(await screen.findByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
-    expect(screen.queryByText(/no to-do for season/u)).toBeNull();
+    expect(screen.queryByText(/no to-do for handover/u)).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('form', { name: 'Write an update' })).toBeInTheDocument();
   });
 
-  test.each(['abc', '0', '-1', '3.5'])('season=%s says plainly that the address names no season', async (bad) => {
-    show(handedOver().fake, `/updates?write=handover&season=${bad}`);
-    expect(await screen.findByText(/names no season/u)).toBeInTheDocument();
-    expect(screen.queryByText(/no to-do for season/u)).toBeNull();
+  test.each(['abc', '0', '-1', '3.5'])('handover=%s says plainly that the address names no handover', async (bad) => {
+    show(handedOver().fake, `/updates?write=handover&handover=${bad}`);
+    expect(await screen.findByText(/names no handover/u)).toBeInTheDocument();
+    expect(screen.queryByText(/no to-do for handover/u)).toBeNull();
   });
 
   test('a player who is not an admin gets no writer from the address', async () => {
     const w = handedOver();
     w.fake.signInAs(w.me);
-    show(w.fake, '/updates?write=handover&season=2');
+    show(w.fake, '/updates?write=handover&handover=1');
     await screen.findByRole('article');
     expect(screen.queryByRole('form', { name: 'Write an update' })).toBeNull();
   });
 
   test('posting the announcement clears the to-do', async () => {
     const w = handedOver();
-    show(w.fake, '/updates?write=handover&season=2');
+    show(w.fake, '/updates?write=handover&handover=1');
     const form = await screen.findByRole('form', { name: 'Write an update' });
     const words = within(form).getByLabelText('Words');
     await userEvent.clear(words);

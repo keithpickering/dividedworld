@@ -3211,6 +3211,23 @@ describe('the Alerts read and the count (my_alerts, my_alerts_unread, 0060)', ()
   });
 });
 
+describe('handover to-dos, by the handover (0401)', () => {
+  test('each handover has its own id and cause, and a to-do is dismissed by its id: a departure in the season a roll-over opened leaves the roll-over\'s to-do', async () => {
+    const { fake } = world();
+    fake.seed.staff('first', 'First Boss', 'boss');
+    fake.seed.staff('second', 'Second Boss', 'mod');
+    fake.seed.staff('third', 'Third Boss', 'mod');
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    fake.seed.handover({ outgoing: 'first', boss: 'second', at: Date.UTC(2026, 10, 2) });
+    fake.seed.handover({ outgoing: 'second', boss: 'third', at: Date.UTC(2026, 10, 3), cause: 'departure', outgoingOffice: 'benched' });
+    const todos = (await fake.adminQueue()).todos;
+    expect(todos.map((t) => [t.handover, t.cause, t.season])).toEqual([[2, 'departure', 2], [1, 'rollover', 2]]);
+    expect(await fake.dismissHandoverTodo(2)).toEqual({ ok: true, value: { handover: 2, season: 2 } });
+    expect((await fake.adminQueue()).todos.map((t) => t.handover)).toEqual([1]);
+    expect(await fake.dismissHandoverTodo(99)).toMatchObject({ ok: false });
+  });
+});
+
 describe('live news on reach', () => {
   test('a change of Boss is heard as the Boss who left and the Boss who arrived, in the words the page reads', async () => {
     const { fake } = world();

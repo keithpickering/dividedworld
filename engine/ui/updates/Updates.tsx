@@ -58,7 +58,7 @@ export interface UpdatesProps {
   /** Whether the player may write one. */
   readonly admin: boolean;
   readonly onWritten: (update: Update) => void;
-  /** A handover's facts to open the writer with (`?write=handover&season=N`), and the writer open on them. */
+  /** A handover's facts to open the writer with (`?write=handover&handover=ID`), and the writer open on them. */
   readonly initial?: { readonly title: string; readonly words: string };
   /** The address asked for a handover's writer, and that to-do is not there (cleared by an update or dismissed). */
   readonly handoverGone?: number;
@@ -154,7 +154,7 @@ export function Updates({ updates, open, more, onMore, paging = false, scope, en
           {admin && (
             <CalmRegion as="div" className="kb-updates-write">
               <ButtonRow><GlassButton aria-expanded={writing} onClick={() => setWriting(!writing)}>Write an update</GlassButton></ButtonRow>
-              {writing && handoverGone !== undefined && <p className="kb-updates-note" role="status">There is no to-do for season {handoverGone}: an update was posted after its handover, or it was dismissed.</p>}
+              {writing && handoverGone !== undefined && <p className="kb-updates-note" role="status">There is no to-do for handover {handoverGone}: an update was posted after its handover, or it was dismissed.</p>}
               {writing && handoverProblem !== undefined && <p className="kb-updates-note" role="status">{handoverProblem}</p>}
               {writing && <WriteUpdate key={initial?.title ?? ''} onWritten={onWritten} initial={initial} />}
             </CalmRegion>
@@ -192,11 +192,11 @@ function UpdatesView({ page }: { readonly page: UpdatesPage }) {
     return [...added.written, ...page.updates, ...added.older].filter((u) => !seen.has(u.act) && seen.add(u.act));
   }, [page.updates, added]);
   const more = added.more ?? page.updates.length >= UPDATES_PAGE;
-  /* `?write=handover&season=N` (from the admin queue's to-do): the writer opens on that handover's facts, read with the document. */
+  /* `?write=handover&handover=ID` (from the admin queue's to-do): the writer opens on that handover's facts, read with the document. */
   const asked = updatesAsked(query);
-  const todo = asked.season === null ? undefined : page.queue?.todos.find((t) => t.season === asked.season);
+  const todo = asked.handover === null ? undefined : page.queue?.todos.find((t) => t.handover === asked.handover);
   const asksHandover = asked.write === 'handover';
-  const problem = asksHandover && asked.season === null ? 'The address names no season, so there is no handover to write about. Open the to-do from the admin queue.' : undefined;
+  const problem = asksHandover && asked.handover === null ? 'The address names no handover, so there is no handover to write about. Open the to-do from the admin queue.' : undefined;
   /* The reactions the document read are of the update it opened: the one asked for when it is among its updates, else the newest. */
   const opened = page.updates.find((u) => u.act === asked.update) ?? page.updates[0];
   /* One object for a document, so the open Post's subscription is made once, not at each render. */
@@ -220,7 +220,7 @@ function UpdatesView({ page }: { readonly page: UpdatesPage }) {
   return (
     <Updates
       updates={updates} open={asked.update} more={more} onMore={onMore} paging={paging} scope={scope} entering={enter.entering} admin={admin} onWritten={written} initial={admin && todo !== undefined ? todoDraft(todo, roleWord) : undefined}
-      handoverGone={admin && asked.season !== null && todo === undefined ? asked.season : undefined} handoverProblem={admin ? problem : undefined} seed={seed}
+      handoverGone={admin && asked.handover !== null && todo === undefined ? asked.handover : undefined} handoverProblem={admin ? problem : undefined} seed={seed}
     />
   );
 }

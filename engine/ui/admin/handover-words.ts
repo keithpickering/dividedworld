@@ -22,14 +22,14 @@ export function officeWords(office: string | null, role: string): string | null 
   }
 }
 
-/** "Season 4 opens with Comptroller." */
+/** "Season 4 opens with Comptroller." A departure: "Comptroller takes over Season 4 from Old Boss." A departure with no outgoing name has nobody to take over from, and no role word to stand in, so it reads as the roll-over does. */
 export function todoSentence(t: HandoverTodo): string {
-  return `Season ${t.season} opens with ${t.bossName}.`;
+  return t.cause === 'departure' && t.outgoingName !== null ? `${t.bossName} takes over Season ${t.season} from ${t.outgoingName}.` : `Season ${t.season} opens with ${t.bossName}.`;
 }
 
 /** The title the form opens with: the sentence, without its full stop. */
 export function todoTitle(t: HandoverTodo): string {
-  return `Season ${t.season} opens with ${t.bossName}`;
+  return todoSentence(t).slice(0, -1);
 }
 
 /** The handover's plain facts, one line each: the new holder of the role (`role` is `UiCopy.roleWord`) and what it was, the outgoing one and what it is now, and how the seat was filled. */
@@ -37,7 +37,7 @@ export function todoFacts(t: HandoverTodo, role: string): string[] {
   const was = officeWords(t.bossWas, role);
   const now = officeWords(t.outgoingOffice, role);
   const lines = [`Season ${t.season}: ${role} is ${t.bossName}${was === null ? '' : ` (was ${was})`}.`];
-  if (t.outgoing !== null && t.outgoingName !== null) lines.push(now === null ? `${t.outgoingName} left ${lowerFirst(role)}'s seat.` : `${t.outgoingName} is now ${now}.`);
+  if (t.outgoing !== null && t.outgoingName !== null) lines.push(t.cause === 'departure' ? `${t.outgoingName} left the instance's roster and is now benched.` : now === null ? `${t.outgoingName} left ${lowerFirst(role)}'s seat.` : `${t.outgoingName} is now ${now}.`);
   lines.push(t.how === 'nomination' ? `${role} was chosen by nomination.` : `${role} was chosen by the roster's rotation.`);
   return lines;
 }
