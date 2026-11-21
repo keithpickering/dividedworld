@@ -930,3 +930,73 @@ describe('kindSpent', () => {
     expect(kindSpent([play({ caught: POST }), play({ instant: true })], NOW_MS, NO_KEEPS)).toBe(true);
   });
 });
+
+/* The Buzzkill (docs/plans/2026-11-21-buzzkill-design.md, section 3.4): a cutting play names the Gimmick play it ended, which the store marks cut, whichever arrives first. */
+describe('a Gimmick a cutting card ended', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const act = (id: string, kind: Act['kind'], payload: Record<string, unknown>, target: string | null = 'p1'): Act =>
+    ({ id, kind, character: kind === 'card_end' ? null : 'c1', thread: 't', targetActId: target, seq: null, createdAt: at, payload, currentPayload: payload, editedAt: null, shownEditedAt: null });
+  const gimmick = () => act('g1', 'card', { card: 'jimmy-wails' });
+  const cutting = () => act('b1', 'card', { card: 'buzzkill', instant: true, cut: { play: 'g1', card: 'jimmy-wails' } });
+  const end = (play: string) => act(`end-${play}`, 'card_end', { why: 'reversed', by: 'admin' }, play);
+
+  test('playOf reads a well-formed cut, and drops a malformed one', () => {
+    expect(playOf(cutting())).toMatchObject({ instant: true, cuts: { play: 'g1', card: 'jimmy-wails' } });
+    for (const bad of [null, 'g1', [], {}, { play: 'g1' }, { card: 'x' }, { play: 1, card: 'x' }, { play: 'g1', card: 2 }]) {
+      expect(playOf(act('b2', 'card', { card: 'buzzkill', cut: bad }))).not.toHaveProperty('cuts');
+    }
+  });
+
+  test('the cutting play arriving after marks the named play cut, in place and waking its post', () => {
+    const plays = createPlays();
+    const heard = vi.fn();
+    plays.add([gimmick()]);
+    plays.subscribe('p1', heard);
+    expect(plays.add([cutting()])).toBe(true);
+    const got = plays.get('p1');
+    expect(got.plays.find((p) => p.id === 'g1')?.cut).toEqual({ by: 'b1', card: 'buzzkill' });
+    expect(heard).toHaveBeenCalled();
+    expect(got.plays.find((p) => p.id === 'b1')).not.toHaveProperty('cut');
+  });
+
+  test('the cutting play arriving first is held, and the Gimmick arrives cut', () => {
+    const plays = createPlays();
+    plays.add([cutting()]);
+    plays.add([gimmick()]);
+    expect(plays.get('p1').plays.find((p) => p.id === 'g1')?.cut).toEqual({ by: 'b1', card: 'buzzkill' });
+  });
+
+  test('stackPlays and livePlays leave a cut play out, and markedPlays keeps it', () => {
+    const plays = createPlays();
+    plays.add([gimmick(), cutting()]);
+    const all = plays.get('p1').plays;
+    expect(livePlays(all, Date.now()).map((p) => p.id)).toEqual([]);
+    expect(stackPlays(all, Date.now()).map((p) => p.id)).toEqual([]);
+    expect(markedPlays(all, Date.now()).map((p) => p.id).sort()).toEqual(['b1', 'g1']);
+  });
+
+  test('a card_end on the cutting play clears the cut, and the Gimmick is back', () => {
+    const plays = createPlays();
+    plays.add([gimmick(), cutting()]);
+    expect(plays.add([end('b1')])).toBe(true);
+    const got = plays.get('p1');
+    expect(got.plays.find((p) => p.id === 'g1')).not.toHaveProperty('cut');
+    expect(got.plays.find((p) => p.id === 'b1')?.reversed).toBe(true);
+    expect(livePlays(got.plays, Date.now()).map((p) => p.id)).toEqual(['g1']);
+  });
+
+  test('an end that came before the cutting play, or setEnded after it, leaves no cut', () => {
+    const early = createPlays();
+    early.add([end('b1'), gimmick(), cutting()]);
+    expect(early.get('p1').plays.find((p) => p.id === 'g1')).not.toHaveProperty('cut');
+    const late = createPlays();
+    late.add([cutting()]);
+    late.setEnded(['b1']);
+    late.add([gimmick()]);
+    expect(late.get('p1').plays.find((p) => p.id === 'g1')).not.toHaveProperty('cut');
+    const held = createPlays();
+    held.add([gimmick(), cutting()]);
+    held.setEnded(['b1']);
+    expect(held.get('p1').plays.find((p) => p.id === 'g1')).not.toHaveProperty('cut');
+  });
+});
