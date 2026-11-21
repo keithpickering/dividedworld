@@ -738,12 +738,13 @@ export async function rereadSurfaces(api: KayfaApi, plays: Plays, surfaces: Read
 
 /**
  * Read the live plays above a page's posts (`KayfaApi.effectsAbove`): on its distinct authors, its thread and its board, in one read
- * however many posts the page holds, each kept on its target. A failed read leaves them undrawn: a mark is missing, never a post.
+ * however many posts the page holds, each kept on its target. A failed read leaves them undrawn: a mark is missing, never a post. `failed`, if given,
+ * is called when the read of the plays failed, for a caller that reads again.
  */
-export async function readAbove(api: KayfaApi, plays: Plays, characters: readonly (Id | null)[], thread: Id | null, board: Id | null, cards: ReadonlySet<string>): Promise<readonly Act[]> {
+export async function readAbove(api: KayfaApi, plays: Plays, characters: readonly (Id | null)[], thread: Id | null, board: Id | null, cards: ReadonlySet<string>, failed?: () => void): Promise<readonly Act[]> {
   const authors = [...new Set(characters.filter((c): c is Id => c !== null))];
   if (authors.length === 0 && thread === null && board === null) return [];
-  const above = await api.effectsAbove(authors, thread, board).catch(() => []);
+  const above = await api.effectsAbove(authors, thread, board).catch(() => { failed?.(); return []; });
   const acts = above.map((p) => p.act);
   plays.add(acts);
   await readEffects(api, plays, acts, cards);

@@ -47,7 +47,7 @@ describe('a play, read from its card Act', () => {
   });
 });
 
-describe('a cast that was handed back (the refund outcome)', () => {
+describe('a pierce an Act names (the Cheap Shot)', () => {
   test('playOf carries a well-formed pierce, and drops a malformed one', () => {
     expect(playOf(card({ payload: { card: 'whoops', pierce: { by: 'cs-1', card: 'cheap-shot', ward: 'force-field' } } }))?.pierce).toEqual({ by: 'cs-1', card: 'cheap-shot', ward: 'force-field' });
     expect(playOf(card({ payload: { card: 'whoops', pierce: { by: 'cs-1', card: 'cheap-shot' } } }))?.pierce).toEqual({ by: 'cs-1', card: 'cheap-shot' });
@@ -76,7 +76,9 @@ describe('a cast that was handed back (the refund outcome)', () => {
     alone.add([shot(), card()]);
     expect(alone.get(CHAR).plays[0]).not.toHaveProperty('spent');
   });
+});
 
+describe('a cast that was handed back (the refund outcome)', () => {
   test('playOf carries a well-formed handedBack, and drops a malformed one', () => {
     expect(playOf(card({ payload: { card: 'whoops', handedBack: { by: 'sign-1', card: 'sign' } } }))?.handedBack).toEqual({ by: 'sign-1', card: 'sign' });
     for (const bad of [{ by: 'sign-1' }, { card: 'sign' }, { by: 1, card: 'sign' }, 'sign-1', null, ['sign-1', 'sign']]) {

@@ -37,7 +37,7 @@ export function usePierce(character: Id | null, plays?: Plays, wanted = true): {
     asked.set(store, held);
     if (held.has(character)) return;
     held.add(character);
-    void readAbove(api, store, [character], null, null, NO_CARDS).catch(() => { held.delete(character); });
+    void readAbove(api, store, [character], null, null, NO_CARDS, () => { held.delete(character); });
   }, [api, store, character, wanted]);
   if (character === null) return null;
   const now = api.now();
