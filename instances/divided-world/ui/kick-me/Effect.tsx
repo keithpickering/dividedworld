@@ -107,12 +107,18 @@ export function KickMeEffect(props: EffectProps) {
   return latest ? <Taped {...props} handedOut={latest.handedOut ?? 0}>{children}</Taped> : <>{children}</>;
 }
 
-function Taped({ handedOut, met, children }: EffectProps & { handedOut: number }) {
+function Taped({ handedOut, met, moment, children }: EffectProps & { handedOut: number }) {
   const host = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const count = kickMe.refunds!.count;
   const left = Math.max(0, count - handedOut);
-  useEffect(() => { met(); }, [met]);
+  /* The reader has met the card when the sign is first taped up (a moment meets nothing). */
+  const met1 = useRef(false);
+  useEffect(() => {
+    if (moment !== null || met1.current) return;
+    met1.current = true;
+    met();
+  }, [met, moment]);
 
   /* The area the sign is taped to, its padding made room, and the layer placed over it; again whenever the area's size changes. */
   useLayoutEffect(() => {
