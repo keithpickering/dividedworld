@@ -669,6 +669,12 @@ export interface InterceptResult {
 /** The three verdicts a report can draw (`report_verdict`): a visit, dismissed, or a backfire onto the reporter's latest post. */
 export type ReportVerdict = 'visit' | 'dismissed' | 'backfire';
 
+/** Why a report's price went back (`report_refunds.why`): its judgment failed, it was never judged, or it was judged a visit and none opened. */
+export const REPORT_REFUNDS = ['failed', 'stale', 'veiled', 'visited'] as const;
+export type ReportRefund = (typeof REPORT_REFUNDS)[number];
+/** A `visit` verdict that opened no visit, and why: the post's author was hidden, or the post was already visited on that charge. */
+export type NoVisit = Extract<ReportRefund, 'veiled' | 'visited'>;
+
 /** What a report answers (the staff function's player door): the report's Act, the Mod's verdict and its line (its own words, which may bluff), and the visit it started. */
 export interface ReportResult {
   readonly report: Id;
@@ -676,6 +682,8 @@ export interface ReportResult {
   readonly verdict: ReportVerdict | null;
   readonly line: string;
   readonly visit: Id | null;
+  /** The price back for a visit verdict that opened no visit (the post's author hidden, or the post already visited on that charge); null otherwise. */
+  readonly refund: { readonly why: NoVisit; readonly amount: number } | null;
 }
 
 /** An appeal's four rulings (`appeal_ruling`). */
@@ -2087,7 +2095,7 @@ export interface LogReport {
   readonly verdictAt: string | null;
   readonly mod: string | null;
   /** Why its price went back, where it did. */
-  readonly refund: 'failed' | 'stale' | null;
+  readonly refund: ReportRefund | null;
 }
 
 /** An appeal one of the player's characters made. */

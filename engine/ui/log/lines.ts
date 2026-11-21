@@ -743,6 +743,8 @@ function modRows(data: LogData, words: Words): LogRow[] {
     const spent = price === null ? '' : ` The ${plain(price)} Aura was spent.`;
     const verdict = r.verdict === null
       ? (r.refund !== null ? ` ${r.mod ?? 'The Mod'} could not hear it, so your Aura came back${gone > 0 ? ` (${plain(gone)})` : ''}, and you can make it again.` : ' It has not been answered yet. If it cannot be, your Aura comes back by itself.')
+      : r.verdict === 'visit' && (r.refund === 'veiled' || r.refund === 'visited')
+        ? ` ${r.mod ?? 'The Mod'} judged it a visit, but no visit opened: ${r.refund === 'veiled' ? 'the post\'s author was hidden when it was judged' : 'the post had already been visited after a report on that charge, and a post is not charged twice for one breach'}. Your Aura came back${gone > 0 ? ` (${plain(gone)})` : ''}. It still counts as one of ${nameOf(r.character)}'s reports for that day.`
       : r.verdict === 'visit' ? ` ${r.mod ?? 'The Mod'} judged it and sent a visit.`
       : r.verdict === 'dismissed' ? ` ${r.mod ?? 'The Mod'} dismissed it.${spent}`
       : ` ${r.mod ?? 'The Mod'} judged it a backfire: a visit went to ${nameOf(r.character)}'s latest post.${spent}`;

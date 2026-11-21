@@ -309,6 +309,30 @@ export function swap(feel: ActiveFeel): MotionProps {
   return { variants, initial: 'enter', animate: 'center', exit: 'exit', ...KEPT };
 }
 
+/**
+ * The HUD's plate taking another mask (Hud.tsx; the owner's choice of 2026-11-20, "Recast in place"): one part of the plate (the
+ * avatar, the name, the class line; on the phone the avatar and the drawn name) arriving at `index` of a `stagger`. Enter only: the old
+ * mask is gone the moment the picker changes and no copy of it is drawn, so nothing is read twice and the picker, which stays, keeps the
+ * keyboard. +1 when the mask chosen lies after the one left in the picker's order: the part rises from below, as the next option sits
+ * below in the list (-1 the other way). Half the feel's distance, since the plate is a HUD's, not a screen's. Smooth comes out of the
+ * feel's blur and a fade; Snappy wipes in along the skew. Not a kept layer: the parts are small, and the plate is not a surface.
+ */
+export function recast(feel: ActiveFeel, dir: Dir, delays: readonly number[], index: number): MotionProps {
+  if (!feel) return {};
+  const y = dir * feel.distance / 2;
+  const transition = landing(feel, feel.enter, delays[index] ?? 0);
+  if (feel.mask === 'skew') {
+    return {
+      initial: { y, clipPath: WIPE_HIDDEN },
+      animate: { y: 0, clipPath: WIPE_SHOWN, transition, transitionEnd: { clipPath: 'none' } },
+    };
+  }
+  return {
+    initial: { y, opacity: 0, filter: BLUR(feel.blur) },
+    animate: { y: 0, opacity: 1, filter: BLUR(0), transition, transitionEnd: { filter: 'none' } },
+  };
+}
+
 /*
  * The machine's motion (docs/plans/2026-11-04-booster-packs-design.md, amended 2026-11-07, "The reveal's motion"; plan Task 10): one flight to the hand for a
  * bought card and for each card of a pack, the lift between a row and the spotlight, the turn, the deal and the hit's beat. Pure functions of the feel, `{}`
