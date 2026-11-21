@@ -30,6 +30,7 @@ import { ui as heatMagnetUi } from './cards/heat-magnet/ui.ts';
 import { ui as hotBoxUi } from './cards/hot-box/ui.ts';
 import { ui as hypeUpUi } from './cards/hype-up/ui.ts';
 import { ui as jimmyWailsUi } from './cards/jimmy-wails/ui.ts';
+import { ui as kickMeUi } from './cards/kick-me/ui.ts';
 import { ui as lastWordUi } from './cards/last-word/ui.ts';
 import { ui as laughTrackUi } from './cards/laugh-track/ui.ts';
 import { ui as lineCutterUi } from './cards/line-cutter/ui.ts';
@@ -37,6 +38,7 @@ import { ui as mainEventUi } from './cards/main-event/ui.ts';
 import { ui as moochUi } from './cards/mooch/ui.ts';
 import { ui as offDayUi } from './cards/off-day/ui.ts';
 import { ui as overreactionUi } from './cards/overreaction/ui.ts';
+import { ui as payItForwardUi } from './cards/pay-it-forward/ui.ts';
 import { ui as publicityTourUi } from './cards/publicity-tour/ui.ts';
 import { ui as requiredReadingUi } from './cards/required-reading/ui.ts';
 import { ui as ropeBreakUi } from './cards/rope-break/ui.ts';
@@ -78,6 +80,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   hotBoxUi,
   hypeUpUi,
   jimmyWailsUi,
+  kickMeUi,
   lastWordUi,
   laughTrackUi,
   lineCutterUi,
@@ -85,6 +88,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   moochUi,
   offDayUi,
   overreactionUi,
+  payItForwardUi,
   publicityTourUi,
   requiredReadingUi,
   ropeBreakUi,

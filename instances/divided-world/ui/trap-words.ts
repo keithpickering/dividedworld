@@ -20,6 +20,10 @@ export function trapStruckWords(f: TrapStruckFacts): { readonly line: string; re
         : `Their face-down ${f.card ?? 'card'} sprang on your ${f.laid ?? 'cast'}. It landed as usual and you keep everything it earns; ${f.setter} is paid for ${f.card === null ? 'the reactions' : 'every reaction'} it draws.`,
     };
   }
+  /* A refund back's cast landed as usual and its card went back to its caster: the glass may be warm, and it says only what the spring shows everyone. Where the spring was not read (`f.card` null) it is only "card". */
+  if (f.how === 'returned') {
+    return { line: 'Paid forward', detail: `Their face-down ${f.card ?? 'card'} sprang on your ${f.laid ?? 'cast'}. It landed as usual, and the card is back in your hand.` };
+  }
   if (f.card === null) return undefined;
   if (f.how === 'quote') {
     /* The engine hands the matched conditions already shortened and quoted; each is a fact of the spring, so the voice may gloat about it and says no more. */
