@@ -14,8 +14,8 @@ import ropeBreakArt from './art.json';
  */
 export const ui: CardUi = {
   key: 'rope-break',
-  art: { color: '#2ee6ff', ink: '#03141a', canvas: ropeBreakCanvas, mark: ropeBreakMark, credit: ropeBreakArt.credit, tagline: 'Reach the ropes.' },
-  summary: 'Set face down on your post. Catches the first Salty common cast there, and takes it into your hand.',
+  art: { color: '#2ee6ff', ink: '#03141a', canvas: ropeBreakCanvas, mark: ropeBreakMark, credit: ropeBreakArt.credit, tagline: 'Catch a Salty Move.' },
+  summary: 'Set face down on your post. The first common Salty Move cast on it is caught: it does nothing, and the card goes to your hand.',
   /* As every Reversal's: the same words, so none can be told from another. */
   status: 'Set, face down to everyone else',
   describe: (settings: Settings) =>

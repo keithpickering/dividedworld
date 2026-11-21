@@ -1218,8 +1218,8 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(rope.status).toBe(ui('card-collector').status);
     expect(rope.art.color).toBe('#2ee6ff');
     expect(rope.art.ink).toBe('#03141a');
-    expect(rope.art.tagline).toBe('Reach the ropes.');
-    expect(rope.summary).toBe('Set face down on your post. Catches the first Salty common cast there, and takes it into your hand.');
+    expect(rope.art.tagline).toBe('Catch a Salty Move.');
+    expect(rope.summary).toBe('Set face down on your post. The first common Salty Move cast on it is caught: it does nothing, and the card goes to your hand.');
     expect(rope.Effect).toBeUndefined();
     expect(rope.ConfigForm).toBeUndefined();
     const said = rope.describe(instance.settings);
@@ -1234,8 +1234,8 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(pop.status).toBe(ui('card-collector').status);
     expect(pop.art.color).toBe('#ff3d7f');
     expect(pop.art.ink).toBe('#14030a');
-    expect(pop.art.tagline).toBe('Steal the pop.');
-    expect(pop.summary).toBe('Set face down on your post. Catches the first Sweet common cast there, and takes it into your hand.');
+    expect(pop.art.tagline).toBe('Steal a Sweet Move.');
+    expect(pop.summary).toBe('Set face down on your post. The first common Sweet Move cast on it is caught: it does nothing, and the card goes to your hand.');
     expect(pop.Effect).toBeUndefined();
     expect(pop.ConfigForm).toBeUndefined();
     const said = pop.describe(instance.settings);

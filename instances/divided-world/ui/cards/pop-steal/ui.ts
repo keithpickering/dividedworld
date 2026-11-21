@@ -14,8 +14,8 @@ import popStealArt from './art.json';
  */
 export const ui: CardUi = {
   key: 'pop-steal',
-  art: { color: '#ff3d7f', ink: '#14030a', canvas: popStealCanvas, mark: popStealMark, credit: popStealArt.credit, tagline: 'Steal the pop.' },
-  summary: 'Set face down on your post. Catches the first Sweet common cast there, and takes it into your hand.',
+  art: { color: '#ff3d7f', ink: '#14030a', canvas: popStealCanvas, mark: popStealMark, credit: popStealArt.credit, tagline: 'Steal a Sweet Move.' },
+  summary: 'Set face down on your post. The first common Sweet Move cast on it is caught: it does nothing, and the card goes to your hand.',
   /* As every Reversal's: the same words, so none can be told from another. */
   status: 'Set, face down to everyone else',
   describe: (settings: Settings) =>
