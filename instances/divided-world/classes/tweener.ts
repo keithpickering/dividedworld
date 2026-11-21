@@ -14,11 +14,15 @@
  * that pay (`tweener.stirredThePot`) are taken in the order played, and the n-th pays `settings.halving ** n` of its full amount; a stir
  * that pays nothing is not in the chain. Class balance design, section 6.
  *
- * And the debate outvotes the nods. For a spark that has paid, while it is handed to the class, the refund standing is `(1 - cushioned)`
- * times the smaller of what the votes standing on the spark cost in shrugs (half a vote's worth for each calm or bored vote, at its
- * weight) and half a vote's worth for each other player with a post in the debate within `debateDays` of the spark. A window pays, under
- * `tweener.outvoted`, the refund standing at its end less the one at its start, which is nothing before the spark has paid. It carries no
- * `votes`, so no cushion reads it: the cut by `cushioned` is what keeps a cushion and the refund from summing past the loss.
+ * And the debate outvotes the nods. For a spark that has paid to a Tweener (its `tweener.litTheFuse` tally is above 0, or this stretch's own
+ * crossing pays it), the refund standing is `(1 - cushioned)` times the smaller of what the votes standing on the spark cost in shrugs (half a
+ * vote's worth for each calm or bored vote, at its weight) and half a vote's worth for each other player with a post in the debate within
+ * `debateDays` of the spark. A stretch that the debate is placed in pays, under `tweener.outvoted`, the refund standing at its end less the sum of
+ * what earlier windows paid under that reason (`SparkedDebate.paid`); both reasons are tallied. So the running total is never below 0, and a
+ * spark that crossed while another class held the character, or never paid, has no refund to give or take. Once the debate is no longer followed
+ * (`input.from` at or past `debateDays` after the spark) the target is held to what was paid, so a nod then is charged as any other and a nod
+ * that moves away takes its refund back. It carries no `votes`, so no cushion reads it: the cut by `cushioned` is what keeps a cushion and the
+ * refund from summing past the loss.
  */
 import type { ClassInput, ClassRules, EconomyRead, Earning, Quadrant, Settings, SparkedDebate, Standing } from '../../../engine/rules/types.ts';
 import { economyOf } from '../../../engine/rules/cards.ts';
@@ -75,10 +79,8 @@ function paysAt(debate: SparkedDebate, settings: Settings): number | null {
 const shrugLoss = (standing: readonly Standing[], settings: Settings) =>
   standing.reduce((t, v) => t + HALF * settings.vote * (v.calmPositive + v.boredNegative), 0);
 
-/** The refund standing at `upTo` (a stretch is open at its start, so a spark crossing at `upTo` has not yet paid): nothing before the spark has paid. */
+/** The refund standing at `upTo`, if the spark has paid: whether it has is for the tally and the stretch's own crossing to say, not this. */
 export function refundAt(debate: SparkedDebate, upTo: number, standing: readonly Standing[], settings: Settings): number {
-  const paid = paysAt(debate, settings);
-  if (paid === null || paid >= upTo) return 0;
   const voices = new Set(debate.posts.filter((p) => p.voice !== 0 && p.at <= upTo && p.at - debate.at < settings.debateDays * DAY).map((p) => p.voice)).size;
   /* Floored to a whole ledger unit (`settle` rounds each line to a whole unit): a cushion's line rounds up by at most a half, and the floor here
      gives that back, so within one window the cushion, refund and shrugs never sum past the loss. Across windows a cushion rounds up in each,
@@ -114,15 +116,21 @@ function fuse(input: ClassInput, settings: Settings): Earning[] {
     .map((debate) => ({ debate, at: paysAt(debate, settings) }))
     .filter((x): x is { debate: SparkedDebate; at: number } => x.at !== null && x.at >= input.from && x.at < input.to)
     .sort((x, y) => x.at - y.at || (x.debate.act < y.debate.act ? -1 : x.debate.act > y.debate.act ? 1 : 0));
+  const litNow = new Set(lit.map((x) => x.debate.act));
   const outvoted = input.debates
+    .filter((d) => d.placed)
     .map((d): Earning => {
+      const paid = d.paid['tweener.outvoted'] ?? 0;
+      const spent = (d.paid['tweener.litTheFuse'] ?? 0) > 0 || litNow.has(d.act);
+      const standing = spent ? refundAt(d, input.to, d.standing.now, settings) : 0;
+      const target = input.from >= d.at + settings.debateDays * DAY ? Math.min(standing, paid) : standing;
       const inside = d.posts.filter((p) => p.at <= input.to);
       const latest = inside[inside.length - 1]?.at ?? input.to;
-      return { reason: 'tweener.outvoted', amount: refundAt(d, input.to, d.standing.now, settings) - refundAt(d, input.from, d.standing.before, settings), act: d.act, at: latest >= input.from ? latest : input.to };
+      return { reason: 'tweener.outvoted', amount: target - paid, act: d.act, at: latest >= input.from ? latest : input.to, tally: true };
     })
     .filter((e) => !nothing(e.amount));
   return [
-    ...lit.map(({ debate, at }, i): Earning => ({ reason: 'tweener.litTheFuse', amount: catalyst * settings.halving ** i, act: debate.act, at, params: { 'tweener.catalystVoices': voices, 'tweener.catalystReturned': returned, debateDays: settings.debateDays } })),
+    ...lit.map(({ debate, at }, i): Earning => ({ reason: 'tweener.litTheFuse', amount: catalyst * settings.halving ** i, act: debate.act, at, tally: true, params: { 'tweener.catalystVoices': voices, 'tweener.catalystReturned': returned, debateDays: settings.debateDays } })),
     ...outvoted,
   ];
 }
