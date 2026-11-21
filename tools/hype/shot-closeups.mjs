@@ -5,19 +5,22 @@
  *   node tools/hype/shot-closeups.mjs [--only b-autocorrect-peel|b-scrub-1|...] [--port 4319]
  *
  * Every take is filmed at 2880 x 1620, 60 frames a second, on the page's virtual clock, the stage drawn at a small CSS viewport at a high
- * density, as a person who has zoomed their browser in sees it: the effect's own pointer math is the real one, only everything is larger.
+ * density (a post's body) or at a desktop one (where the glass is the subject), as a person who has zoomed their browser in sees it: the effect's own pointer math is the real one, only everything is larger.
  * Each is a few seconds, the interesting motion early, nothing held for words to be read. Beside each take is `<take>.json`
  * (`landed`: every beat and its frame, for the edit), and every "asserts" below reads the page and throws when the picture is not the rule.
  *
  *   b-autocorrect-peel   the post's AUTHOR picks the strip of tape at its end, rolls it back, and tears it, three times
- *   b-scrub-1..3         Whoops! ink on a post, scrubbed: calm; faster, wider, missing; frantic, then a fresh coat lands
+ *   b-scrub-long         18 s on post 1 (Snuckles's, as its author): one coat, a hand that gets faster and wider, a fresh coat at 10.5 s and 13 s,
+ *                        a dead stop for half a second, then frantic and overshooting
+ *   b-scrub-1..3         the same post, short: calm; fast and wide; frantic, ending on a fresh coat
  *   b-gpt2               You Were Saying? and its real tail typing in under the post
- *   b-smoke-wave         Hot Box: the pointer waves the smoke away, and it rolls back in
+ *   b-smoke-wave         Hot Box (post 15): the pointer waves the smoke away to read the line, and it rolls back in
  *   b-graffiti-tag       the Graffiti wall, drawn on live by a reader
- *   b-stick-around       a reader held on a post, the wheel against the Break Free bar
- *   b-glitter-drag       the Glitter Bomb's glitter, dragged along
- *   b-chair              Steel Chairs thrown at a post, in the Midnight skin
- *   b-react              the React picker, and its stamp
+ *   b-stick-around       (desktop layout) a reader held on a post, its words in the held view, the wheel against the Break Free bar
+ *   b-chair, b-chair-3   Steel Chair(s) thrown at post 4 in the Midnight skin (--seed n tries another throw; --skin picks the skin)
+ *   b-react              (desktop layout) the React picker, a pick, and the pending chip
+ *   b-fold               Below the Fold: post 21 (page 2 of the thread) is one bar; the pointer opens it
+ *   b-jimmy, b-pack, b-hand   round 1's, kept
  */
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -58,10 +61,12 @@ async function take(id, { as, skin = 'default', css = { width: 576, height: 324 
     const d = {
       cam, F, css,
       get frame() { return frame; },
+      get landed() { return landed; },
       get at() { return at; },
       page: (/** @type {string} */ js) => cam.evaluate(js),
       /** The box of the first element `find` (an expression) gives, in CSS px, or null. */
       box: (/** @type {string} */ find) => cam.evaluate(`(() => { const e = ${find}; if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height, cx: r.left + r.width / 2, cy: r.top + r.height / 2 }; })()`),
+      markAt: (/** @type {string} */ what, /** @type {number} */ at) => { landed.push({ what, frame: at }); console.log(`${id}: ${what} at frame ${at} (read back)`); },
       mark: (/** @type {string} */ what) => { landed.push({ what, frame }); console.log(`${id}: ${what} at frame ${frame}`); },
       async frameOnce() { await film.write(await cam.frame(true)); frame++; },
       async shoot(/** @type {number} */ seconds) { for (let i = 0, n = Math.round(seconds * F); i < n; i++) await d.frameOnce(); },
@@ -100,7 +105,7 @@ async function take(id, { as, skin = 'default', css = { width: 576, height: 324 
     };
     await body(d);
     await film.end();
-    writeFileSync(`${OUT}/${id}.json`, `${JSON.stringify({ landed, move: null, punches: landed.filter((l) => l.what === 'tear' || l.what === 'splat').map((l) => ({ frame: l.frame, percent: 6 })) }, null, 2)}\n`);
+    writeFileSync(`${OUT}/${id}.json`, `${JSON.stringify({ landed, move: null, punches: landed.filter((l) => l.what === 'tear' || l.what.startsWith('splat')).map((l) => ({ frame: l.frame, percent: 6 })) }, null, 2)}\n`);
     console.log(`${id}: ${frame} frames, ${(frame / F).toFixed(1)} s, ${SIZE.width}x${SIZE.height}; errors:`, cam.errors);
     if (cam.errors.length) throw new Error(`${id}: the page raised ${cam.errors.join('; ')}`);
   } finally {
@@ -174,6 +179,16 @@ const COVER = `(() => {
   return sum;
 })()`;
 
+/** Whether post 1's ink is built: a picture held for each live layer in each band near the viewport (stage.mjs `BUILT`, for post 1). */
+const BUILT_1 = `(() => {
+  const el = document.querySelector('#post-1 .kb-whoops');
+  if (!el) return false;
+  const bands = (el.getAttribute('data-kb-bands') ?? '').split(' ').filter(Boolean).length;
+  const live = (el.getAttribute('data-kb-layers') ?? '').split(' ').filter((l) => l === 'live').length;
+  return bands > 0 && Number(el.getAttribute('data-kb-pictures')) === live * bands;
+})()`;
+
+/* The coats, in the order they land: who throws each, its color, the splat's own seed and what its thrower says. */
 const COATS = [
   ['D-Guy', '#ff2bd6', 101, 'classy'],
   ['Serious Deer', '#19e3ff', 202, 'eleven colors'],
@@ -183,36 +198,48 @@ const COATS = [
 const land = (n) => `window.__shot.splat(${n}, '${COATS[n - 1][0]}', '${COATS[n - 1][1]}', ${COATS[n - 1][2]}, '${COATS[n - 1][3]}')`;
 
 /**
- * A scrubbed post: `coats` coats are on it when the take starts; a hand (pointer.mjs `buzz`) works over the post's body at `energy`,
- * pressing only where there is ink under the pointer, and letting go where there is none. `over` is how far past the body the hand roams
- * (px), `fresh` is a time (seconds) at which a fresh coat lands on top. The ink's cover is asserted to have fallen before that.
+ * A scrubbed post 1 (Snuckles's, the sprite sheet, as its author, who can wash it): `coats` coats are on it when the take starts; a hand
+ * (pointer.mjs `buzz`) works over the post's body, pressing only where there is ink under the pointer and letting go where there is none.
+ * `phases` is how the hand changes through the take: from each `t` (seconds) it has that `energy` and roams `over` px past the body
+ * (a new hand starts where the old one was). `beats` are things that happen at a time `t`: `land` a fresh coat (named `splat-n`, and the
+ * ink's cover is asserted to have fallen under the hand before it and to have risen after it), or `stun` the hand dead for some seconds.
+ * @param {string} id
+ * @param {{ coats: number, seconds: number, seed: number, phases: { t: number, energy: number, over?: number }[], beats?: { t: number, land?: number, stun?: number }[], css?: { width: number, height: number } }} spec
  */
-const scrub = (id, { coats, energy, over = 0, seconds = 5, seed, fresh = null, css = { width: 720, height: 405 } }) => take(id, {
+const scrub = (id, { coats, seconds, seed, phases, beats = [], css = { width: 1120, height: 630 } }) => take(id, {
   css,
   quiet: ['toasts', 'host', 'hud', 'selection'],
   async prep(cam) {
-    await cam.evaluate('window.__shot.place(48)');
+    await cam.evaluate(`window.__shot.aim(1, window.__kbStage.acts.first)`);
+    await cam.evaluate('window.__shot.place(16)');
     for (let n = 1; n <= coats; n++) await cam.evaluate(land(n));
     await settle(cam, 60);
-    await cam.until(BUILT, { label: 'the coats built' });
+    await cam.until(BUILT_1, { label: 'the coats built on post 1' });
     await settle(cam, 30);
-    await cam.evaluate('window.__shot.place(48)');
+    await cam.evaluate('window.__shot.place(16)');
     await settle(cam, 20);
   },
   async body(d) {
     const box = await d.page('window.__shot.body()');
     const start = await d.page(COVER);
     console.log(`${id}: the post's body`, box, 'cover', start.toFixed(0));
-    const hand = buzz({ box: { x: box.x - over, y: box.y - over * 0.6, w: box.w + 2 * over, h: box.h + over * 1.2 }, seed, from: { x: box.x + box.w * 0.3, y: box.y + box.h * 0.4 }, energy });
+    const first = { x: box.x + box.w * 0.3, y: box.y + box.h * 0.4 };
+    const make = (/** @type {{ energy: number, over?: number }} */ ph, /** @type {{ x: number, y: number }} */ from, /** @type {number} */ k) => {
+      const over = ph.over ?? 0;
+      return buzz({ box: { x: box.x - over, y: box.y - over * 0.6, w: box.w + 2 * over, h: box.h + over * 1.2 }, seed: seed + 11 * k, from, energy: ph.energy });
+    };
+    let phase = 0, hand = make(phases[0], first, 0);
     const rnd = seeded(seed + 3);
     await d.put(box.x + box.w + 30, box.y + box.h * 0.9);
-    const first = { x: box.x + box.w * 0.3, y: box.y + box.h * 0.4 };
     const approach = glide(d.at, first, 0.45, { seed, settle: false });
-    let down = false, landedFresh = false, coverAtFresh = null, map = null;
     for (let i = 0; i < 0.45 * d.F; i++) { const p = approach.at(i / d.F); await d.put(p.x, p.y); await d.frameOnce(); }
-    let aim = 0;
+    let down = false, map = null, aim = 0, stunnedUntil = 0, last = start, sample = null;
+    const done = new Set();
+    /** The ink's cover before each fresh coat, and after it, for the asserts. */
+    const covers = [];
     for (let f = 0; f < seconds * d.F; f++) {
       const t = f / d.F;
+      while (phase + 1 < phases.length && t >= phases[phase + 1].t) { phase++; hand = make(phases[phase], d.at, phase); }
       if (f % 15 === 0) {
         map = await d.page('window.__shot.ink()');
         const high = Math.max(...map.top);
@@ -221,33 +248,53 @@ const scrub = (id, { coats, energy, over = 0, seconds = 5, seed, fresh = null, c
           if (cells.length) { const c = cells[Math.floor(rnd() * cells.length)]; hand.seek({ x: box.x + ((c % map.cols) + 0.5) * (box.w / map.cols), y: box.y + (Math.floor(c / map.cols) + 0.5) * (box.h / map.rows) }); aim = t + 0.5; }
         }
       }
-      if (fresh !== null && !landedFresh && t >= fresh) {
-        coverAtFresh = await d.page(COVER);
-        assert(coverAtFresh < start * 0.97, `the ink's cover fell under the hand (${start.toFixed(0)} to ${coverAtFresh.toFixed(0)})`);
-        await d.page(land(coats + 1));
-        d.mark('splat');
-        landedFresh = true;
+      for (const [i, b] of beats.entries()) {
+        if (done.has(i) || t < b.t) continue;
+        done.add(i);
+        if (b.land !== undefined) {
+          const before = await d.page(COVER);
+          assert(before < last * 0.97, `the ink's cover fell under the hand before the coat ${b.land} (${last.toFixed(0)} to ${before.toFixed(0)})`);
+          await d.page(land(b.land));
+          d.mark(coats === 0 ? 'splat' : `splat-${b.land - coats}`);
+          sample = { at: t + 0.7, before, n: b.land };
+        }
+        if (b.stun) { stunnedUntil = t + b.stun; if (down) { await d.cam.release(); down = false; } d.mark('stop'); }
       }
-      for (let half = 0; half < 2; half++) {
-        const p = hand.step(0.5 / d.F);
-        await d.put(p.x, p.y);
-        const ink = await d.page(`window.__shot.inkAt(${p.x}, ${p.y})`);
-        if (down && !ink) { await d.cam.release(); down = false; }
-        else if (!down && ink) { await d.cam.press(); down = true; }
+      if (sample && t >= sample.at) {
+        /* The coat is drawn in by now: the cover has risen with it. */
+        const after = await d.page(COVER);
+        assert(after > sample.before * 1.03, `the ink's cover rose with the coat ${sample.n} (${sample.before.toFixed(0)} to ${after.toFixed(0)})`);
+        covers.push([sample.before, after]);
+        last = after;
+        sample = null;
+      }
+      if (f % 60 === 0) console.log(`${id}: ${t.toFixed(0)} s, cover ${(await d.page(COVER)).toFixed(0)}`);
+      if (t >= stunnedUntil) {
+        for (let half = 0; half < 2; half++) {
+          const p = hand.step(0.5 / d.F);
+          await d.put(p.x, p.y);
+          const ink = await d.page(`window.__shot.inkAt(${p.x}, ${p.y})`);
+          if (down && !ink) { await d.cam.release(); down = false; }
+          else if (!down && ink) { await d.cam.press(); down = true; }
+        }
       }
       await d.frameOnce();
     }
     if (down) await d.release();
     const end = await d.page(COVER);
-    console.log(`${id}: cover ${start.toFixed(0)} -> ${coverAtFresh === null ? end.toFixed(0) : `${coverAtFresh.toFixed(0)} -> ${end.toFixed(0)}`}`);
-    if (fresh === null) assert(end < start * 0.97, `the ink's cover fell (${start.toFixed(0)} to ${end.toFixed(0)})`);
-    else assert(end > coverAtFresh, 'a fresh coat on top');
+    console.log(`${id}: cover ${start.toFixed(0)} ${covers.map(([a, b]) => `-> ${a.toFixed(0)} | ${b.toFixed(0)}`).join(' ')} -> ${end.toFixed(0)}`);
+    if (!beats.some((b) => b.land !== undefined)) assert(end < start * 0.99, `the ink's cover fell (${start.toFixed(0)} to ${end.toFixed(0)})`);
   },
 });
 
-const scrub1 = () => scrub('b-scrub-1', { coats: 2, energy: 0.35, seconds: 5, seed: 41 });
-const scrub2 = () => scrub('b-scrub-2', { coats: 2, energy: 0.75, over: 25, seconds: 5, seed: 82 });
-const scrub3 = () => scrub('b-scrub-3', { coats: 3, energy: 1, over: 60, seconds: 5, seed: 123, fresh: 3.6 });
+const scrubLong = () => scrub('b-scrub-long', {
+  coats: 1, seconds: 17.55, seed: 31,
+  phases: [{ t: 0, energy: 0.5 }, { t: 4, energy: 0.6 }, { t: 7.5, energy: 0.72, over: 10 }, { t: 11, energy: 0.85, over: 20 }, { t: 13.65, energy: 1, over: 70 }],
+  beats: [{ t: 10.5, land: 2 }, { t: 13, land: 3 }, { t: 13.15, stun: 0.5 }],
+});
+const scrub1 = () => scrub('b-scrub-1', { coats: 1, seconds: 3.55, seed: 41, phases: [{ t: 0, energy: 0.5 }] });
+const scrub2 = () => scrub('b-scrub-2', { coats: 2, seconds: 3.55, seed: 82, phases: [{ t: 0, energy: 0.85, over: 25 }] });
+const scrub3 = () => scrub('b-scrub-3', { coats: 3, seconds: 3.55, seed: 123, phases: [{ t: 0, energy: 1, over: 60 }], beats: [{ t: 2.7, land: 4 }] });
 
 /* ---------------------------------------------------------------------------------------------------------------------------------- */
 
@@ -334,17 +381,17 @@ const smokeWave = () => take('b-smoke-wave', {
     await d.put(words.x - 30, y(0));
     await d.go({ x: words.x + 8, y: y(0) }, 0.25, 4, false);
     const sweeps = [];
-    for (let i = 0; i < Math.min(3, lines); i++) {
-      const dir = i % 2 === 0 ? 1 : -1, from = dir > 0 ? words.x + 6 : words.x + words.w - 6, span = words.w - 12, secs = 1.1;
+    for (let i = 0; i < Math.min(2, lines); i++) {
+      const dir = i % 2 === 0 ? 1 : -1, from = dir > 0 ? words.x + 6 : words.x + words.w - 6, span = words.w - 12, secs = 0.85;
       await d.drag((t) => ({ x: from + dir * span * Math.min(1, t / secs), y: y(i) + 2.5 * Math.sin(t * 14) }), secs);
       if (i === 0) { sweeps.push(await d.page(fogOver(row(0)))); d.mark('cleared'); }
-      if (i < Math.min(3, lines) - 1) await d.drag((t) => ({ x: d.at.x, y: d.at.y }), 0.01);
-      if (i < Math.min(3, lines) - 1) { const to = { x: dir > 0 ? words.x + words.w - 6 : words.x + 6, y: y(i + 1) }; await d.go(to, 0.12, 20 + i, false); }
+      if (i < Math.min(2, lines) - 1) await d.drag((t) => ({ x: d.at.x, y: d.at.y }), 0.01);
+      if (i < Math.min(2, lines) - 1) { const to = { x: dir > 0 ? words.x + words.w - 6 : words.x + 6, y: y(i + 1) }; await d.go(to, 0.12, 20 + i, false); }
     }
     /* Then the hand leaves, and the smoke rolls back in over what was read. */
-    await d.go({ x: words.x + words.w * 0.5, y: words.y + words.h + 70 }, 0.35, 8, false);
+    await d.go({ x: words.x + words.w * 0.5, y: words.y + words.h + 70 }, 0.3, 8, false);
     const cleared = sweeps[0];
-    await d.shoot(2.8);
+    await d.shoot(2.1);
     const after = await d.page(fogOver(row(0)));
     d.mark('rolled-back');
     console.log(`b-smoke-wave: fog over line 1: ${before.toFixed(2)} -> ${cleared.toFixed(2)} -> ${after.toFixed(2)}`);
@@ -446,14 +493,20 @@ const LEVEL = `(() => { const f = document.querySelector('${HOLD} .kb-hold-fill'
  * camera's real ones (camera.mjs `wheel`).
  */
 const stickAround = () => take('b-stick-around', {
-  as: 'Ringside', skin: 'fan-site',
-  css: { width: 800, height: 450 },
-  async prep(cam) { await cam.evaluate(`(() => { const p = document.querySelector('#post-9'); p.scrollIntoView({ block: 'center' }); })()`); await settle(cam, 60); },
+  as: 'Ringside',
+  css: { width: 1440, height: 810 },
+  async prep(cam) {
+    /* The hold has taken the reader before the film starts (it takes a couple of seconds to arrive, which no cut needs): at the desktop layout the held view shows the post's own words in a strip above the Check box, with the Break Free bar below. */
+    await cam.evaluate(`(() => { const p = document.querySelector('#post-9'); p.scrollIntoView({ block: 'center' }); })()`);
+    await settle(cam, 60);
+    await cam.move(1440 * 0.5, 810 * 0.34);
+    await cam.evaluate(playOn(9, 'D-Guy', 'stick-around', { layer: 1, message: 'required reading', config: { sentence: 'I have read all nine parts and I feel changed.' } }));
+    await cam.until(`Boolean(document.querySelector('${HOLD}'))`, { label: 'the Stick Around view taking the reader' });
+    await settle(cam, 60);
+  },
   async body(d) {
-    await d.put(d.css.width * 0.5, d.css.height * 0.34);
-    await d.shoot(0.1);
-    await d.page(playOn(9, 'D-Guy', 'stick-around', { layer: 1, message: 'required reading', config: { sentence: 'I have read all nine parts and I feel changed.' } }));
-    await d.until(`Boolean(document.querySelector('${HOLD}'))`, 8, 'the Stick Around view taking the reader');
+    await d.put(d.css.width * 0.5, d.css.height * 0.62);
+    assert(await d.page(`(document.querySelector('${HOLD}')?.innerText ?? '').includes('Nobody leaves until part nine')`), "the held view showing the post's words");
     d.mark('held');
     await d.shoot(0.5);
     /* The reader reads down the post with the wheel to its end: only a push past the end counts against the bar. */
@@ -491,73 +544,72 @@ const stickAround = () => take('b-stick-around', {
 
 /* ---------------------------------------------------------------------------------------------------------------------------------- */
 
+/** One Steel Chair played on post `seq` by D-Guy, landing live on the open page (the thrower's seed is the reader's own: no two runs are alike). */
+const throwChair = (seq, layer) => `(() => { const { fake, cast, thread } = window.__kbStage; return fake.acts(thread, ${seq}, ${seq}).then(([a]) => { fake.clock.advance(60000); return fake.seed.card(cast['D-Guy'], a.id, 'steel-chair', { layer: ${layer}, message: '', live: true, ends: new Date(Date.now() + 3 * 86400000).toISOString() }); }); })()`;
+
+/** The chairs on post 4: each one's center (CSS px), its play, and whether it is asleep (at rest), and how many dents the post wears. */
+const CHAIRS = (seq) => `(() => [...document.querySelectorAll('#post-${seq} .dw-chair-group')].map((g) => { const r = g.getBoundingClientRect(); return { play: g.dataset.play, x: r.left + r.width / 2, y: r.top + r.height / 2, bottom: r.bottom, rest: g.hasAttribute('data-rest') }; }))()`;
+
 /**
- * b-glitter-drag: the Glitter Bomb on post 16 goes off as the post comes to the middle of the view, and the pointer is dragged through the
- * glitter, side to side, carrying it (the engine's cling: `canvas[data-kb-shine="cling"]` is the layer the first pickup makes); then it leaves
- * down the page's edge with what stuck, and the glitter drops.
+ * Steel Chairs thrown at a post of a few lines (post 4, Snuckles's update), `n` of them `gap` seconds apart (a post takes up to three at once;
+ * the world throws each 0.35 s after the last it knows of). The post's whole body is in frame with a margin, so the throw's arc, the hit, the dent
+ * bending the words, the bounce and the chair at rest on the post's floor are all seen. The beats are read from the page: `throw` (a chair
+ * enters), `hit` (the dent is drawn), `bounce` (a chair going down that turns upward again, after the hit), `rest` (the chair's group is asleep).
  */
-const glitterDrag = () => take('b-glitter-drag', {
-  skin: 'midnight',
-  css: { width: 540, height: 304 },
-  quiet: ['toasts', 'host', 'hud', 'selection'],
-  async prep(cam) { await cam.evaluate(placePost(16, 50)); await settle(cam, 60); },
-  async body(d) {
-    const box = await d.page('(() => { const r = document.querySelector("#post-16 .kb-act-main").getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()');
-    console.log('b-glitter-drag: body', box);
-    await d.put(d.css.width + 30, box.y + box.h * 0.5);
-    d.mark('burst-watched');
-    await d.shoot(0.9);
-    let clung = false;
-    const rng = seeded(16);
-    const path = glide(d.at, { x: box.x + box.w * 0.9, y: box.y + box.h * 0.5 }, 0.45, { seed: 16, settle: false });
-    await d.drag((t) => path.at(t), 0.45);
-    d.mark('enter');
-    /* Through the glitter side to side, a few px a move, as a hand passes over a post: wide arcs that wander down and up the body. */
-    const secs = 4.2;
-    await d.drag((t) => {
-      const u = t / secs;
-      return { x: box.x + box.w * (0.5 + 0.42 * Math.cos(u * Math.PI * 5.5)), y: box.y + box.h * (0.5 + 0.34 * Math.sin(u * Math.PI * 3.3 + 0.6)) };
-    }, secs, async () => {
-      if (!clung && (await d.page(`document.querySelectorAll('canvas[data-kb-shine="cling"]').length`)) > 0) { clung = true; d.mark('clinging'); }
-    });
-    assert(clung, 'the cling layer (glitter picked up by the pointer)');
-    const last = d.at;
-    const out = glide(last, { x: 2, y: box.y + box.h + 90 }, 0.6, { seed: 17, settle: false });
-    await d.drag((t) => out.at(t), 0.6);
-    await d.shoot(1.4);
-    void rng;
+const chairs = (id, { n, seconds, skin }) => take(id, {
+  skin: flag('skin', skin),
+  css: { width: 960, height: 540 },
+  async prep(cam) {
+    await cam.evaluate(placePost(4, 60));
+    /* The throw's seed is the reader's own (crypto.getRandomValues): a seeded stand-in makes a take repeatable, and --seed n tries another throw. */
+    await cam.evaluate(`(() => { let a = ${Number(flag('seed', 1))} * 2654435761 >>> 0; const g = (arr) => { for (let i = 0; i < arr.length; i++) { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); arr[i] = (t ^ (t >>> 14)) >>> 0; } return arr; }; crypto.getRandomValues = g; return 1; })()`);
+    await settle(cam, 80);
   },
-});
-
-/* ---------------------------------------------------------------------------------------------------------------------------------- */
-
-/**
- * b-chair: Steel Chairs thrown at Snuckles's update (post 4), in the Midnight skin, where the dents read: the first lands as the take starts,
- * and the second and third follow (a post takes up to three at once, each thrown 0.35 s of the world's time after the last it knows of). Each
- * chair is a play of the card on the post, landing live on the open page; the page's chair groups and dents are counted for each.
- */
-const chair = () => take('b-chair', {
-  skin: 'midnight',
-  css: { width: 720, height: 405 },
-  async prep(cam) { await cam.evaluate(placePost(4, 26)); await settle(cam, 80); },
   async body(d) {
     const post = '#post-4';
     const count = (/** @type {string} */ sel) => d.page(`document.querySelectorAll('${post} ${sel}').length`);
     assert((await count('.dw-chair-group')) === 0, 'no chair on the post before the take');
+    const main = await d.box(`document.querySelector('${post} .kb-act-main')`);
+    console.log(`${id}: the body`, main);
     await d.put(d.css.width + 30, d.css.height + 30);
-    await d.shoot(0.35);
-    const ends = '3 * 86400000';
-    for (let n = 1; n <= 3; n++) {
-      await d.page(`(() => { const { fake, cast, thread } = window.__kbStage; return fake.acts(thread, 4, 4).then(([a]) => { fake.clock.advance(60000); return fake.seed.card(cast['D-Guy'], a.id, 'steel-chair', { layer: ${n}, message: '', live: true, ends: new Date(Date.now() + ${ends}).toISOString() }); }); })()`);
-      await d.until(`document.querySelectorAll('${post} .dw-chair-group').length >= ${n}`, 3, `chair ${n} thrown`);
-      d.mark(`throw-${n}`);
-      await d.until(`document.querySelectorAll('${post} .dw-chair-dent').length >= ${n}`, 4, `the dent of chair ${n}`);
-      d.mark(`dent-${n}`);
-      assert((await count('.dw-chair-dent')) === n && (await count('.dw-chair-group')) === n, `${n} chair(s) and ${n} dent(s) on the post`);
-      await d.shoot(n < 3 ? 1.1 : 1.8);
+    await d.shoot(0.15);
+    await d.page(throwChair(4, 1));
+    const landedFrame = (/** @type {string} */ w) => d.landed.find((l) => l.what === w)?.frame ?? 0;
+    const seen = { throw: false, hit: false, bounce: false, rest: false };
+    let lastY = null, played = 1;
+    const trace = [];
+    for (let f = 0; f < seconds * d.F; f++) {
+      /* More chairs, `0.35 s` apart on the world's own clock, as the card's rule lets a post take them. */
+      if (played < n && f >= Math.round(played * 0.35 * d.F)) { played++; await d.page(throwChair(4, played)); }
+      const cs = await d.page(CHAIRS(4));
+      const dents = await count('.dw-chair-dent');
+      if (!seen.throw && cs.length > 0) { seen.throw = true; d.mark('throw'); }
+      if (!seen.hit && dents > 0) { seen.hit = true; d.mark('hit'); }
+      const c = cs[0];
+      if (c) {
+        trace.push(`${f}:${c.y.toFixed(0)}/${c.bottom.toFixed(0)}`);
+        lastY = c.y;
+      }
+      if (!seen.rest && cs.length >= n && cs.every((x) => x.rest)) { seen.rest = true; d.mark('rest'); }
+      await d.frameOnce();
     }
+    if (flag('trace', null)) console.log(trace.join(' '));
+    /* The chair's first floor contact, read back from where it came to rest: the first frame after the hit that it is within 4 px of its final height. */
+    const ys = trace.map((t) => ({ f: Number(t.split(':')[0]), y: Number(t.split(':')[1].split('/')[0]) }));
+    const rested = ys.at(-1).y, hitAt = landedFrame('hit');
+    const floor = ys.find((p) => p.f > hitAt && Math.abs(p.y - rested) <= 4);
+    if (floor) { seen.bounce = true; d.markAt('bounce', floor.f); }
+    console.log(`${id}: beats`, JSON.stringify(seen), 'dents', await count('.dw-chair-dent'), 'chairs', await count('.dw-chair-group'));
+    assert(seen.throw && seen.hit, 'a chair thrown and a dent made');
+    assert((await count('.dw-chair-dent')) === n && (await count('.dw-chair-group')) === n, `${n} chair(s) and ${n} dent(s) on the post`);
+    /* Three chairs in a pile can be still settling at four seconds: only the single chair must be asleep by the end. */
+    if (n === 1) assert(seen.rest, 'the chair at rest on the post');
+    assert(seen.bounce, 'a bounce seen');
   },
 });
+
+const chair = () => chairs('b-chair', { n: 1, seconds: 5, skin: 'midnight' });
+const chair3 = () => chairs('b-chair-3', { n: 3, seconds: 4, skin: 'midnight' });
 
 /* ---------------------------------------------------------------------------------------------------------------------------------- */
 
@@ -569,8 +621,8 @@ const CHIPS = `[...document.querySelectorAll('#post-2 .kb-reactions button, #pos
  * their four groups), the pointer looks along it and picks Fire; the picker closes and the post wears the new reaction.
  */
 const react = () => take('b-react', {
-  css: { width: 1100, height: 619 },
-  async prep(cam) { await cam.evaluate(`document.querySelector('#post-2').scrollIntoView({ block: 'start' }); scrollBy(0, -170)`); await settle(cam, 60); },
+  css: { width: 1440, height: 810 },
+  async prep(cam) { await cam.evaluate(`document.querySelector('#post-2').scrollIntoView({ block: 'start' }); scrollBy(0, -90)`); await settle(cam, 60); },
   async body(d) {
     const before = await d.page(CHIPS);
     const button = () => d.box(`[...document.querySelectorAll('#post-2 button')].find((e) => /React/.test(e.textContent))`);
@@ -594,38 +646,12 @@ const react = () => take('b-react', {
     await d.until(`!document.querySelector('[role="dialog"][aria-label^="React to"]')`, 3, 'the picker closed on a pick');
     d.mark('picked');
     await d.until(`${CHIPS} !== ${JSON.stringify(before)}`, 3, 'the post wearing the new reaction');
-    d.mark('stamp');
+    d.mark('chip');
+    /* The page holds a reaction for a grace of 5 s (its chip says "sending in 5 seconds"): the take is shorter than that, so it ends on the chip. */
+    console.log('b-react: post 2 now', JSON.stringify((await d.page(`document.querySelector('#post-2').innerText`)).slice(-200)));
+    assert(/Reacting with Fire .* in \d seconds?/.test(await d.page(`document.querySelector('#post-2').innerText`)), 'the chip saying the reaction is Reacting with Fire in 5 seconds');
     console.log('b-react: reaction chips', JSON.stringify(before), '->', JSON.stringify(await d.page(CHIPS)));
-    await d.shoot(1.3);
-  },
-});
-
-/* ---------------------------------------------------------------------------------------------------------------------------------- */
-
-/**
- * b-laugh: the Laugh Track on Human Josh's joke (post 10): its underlined cues are pressed with the pointer, the punchline's first (a laugh), then
- * "As a human" (a boo). The page marks a cue it has played (`dw-lt-fired`).
- */
-const laugh = () => take('b-laugh', {
-  skin: 'blue-steel',
-  css: { width: 480, height: 270 },
-  async prep(cam) { await cam.evaluate(placePost(10, 50)); await settle(cam, 60); },
-  async body(d) {
-    const cues = await d.page(`new Set([...document.querySelectorAll('#post-10 .dw-lt-cue')].map((e) => e.dataset.ltPlace)).size`);
-    assert(cues >= 2, `two cues drawn on post 10 (${cues})`);
-    await d.put(d.css.width + 30, d.css.height * 0.7);
-    await d.shoot(0.15);
-    for (const { n, who } of [{ n: 0, who: 'laugh' }, { n: 1, who: 'boo' }]) {
-      const find = `[...document.querySelectorAll('#post-10 .dw-lt-cue')].filter((e, i, a) => a.findIndex((x) => x.dataset.ltPlace === e.dataset.ltPlace) === i)[${n}]`;
-      const cue = await d.box(find);
-      assert(cue, `cue ${n + 1}`);
-      await d.go(async () => { const r = await d.page(`(() => { const r = (${find}).getClientRects()[0]; return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`); return r; }, n === 0 ? 0.6 : 0.4, 80 + n);
-      await d.shoot(0.12);
-      await d.tap();
-      await d.until(`new Set([...document.querySelectorAll('#post-10 .dw-lt-fired')].map((e) => e.dataset.ltPlace)).size >= ${n + 1}`, 3, `cue ${n + 1} played`);
-      d.mark(who);
-      await d.shoot(n === 0 ? 1.1 : 1.6);
-    }
+    await d.shoot(1.0);
   },
 });
 
@@ -662,32 +688,35 @@ const jimmy = () => take('b-jimmy', {
 /* ---------------------------------------------------------------------------------------------------------------------------------- */
 
 /**
- * b-fold: Below the Fold on Serious Deer's post (post 3), landed with `cast` before the take as the film's first player's Human Josh: the post
- * is one bar, and the pointer presses it once; the post opens (the bar says Hide, its words and its postbit show).
+ * b-fold: Below the Fold on Serious Deer's post (post 21, the thread's last, folded by Back Row's live card): the post is one bar reading
+ * "Show post"; the pointer presses that bar (the first button inside the post opens the Lens, so the bar is found by its name); the post opens
+ * on Serious Deer's line about generative AI.
  */
 const fold = () => take('b-fold', {
   css: { width: 640, height: 360 },
   async prep(cam) {
-    const r = await cam.evaluate(`window.__shot.cast('Human Josh', 3, 'below-the-fold', {}, '')`);
-    assert(r.caught === false || r.caught === undefined || !r.caught, 'the Below the Fold not caught by a back');
-    await settle(cam, 40);
-    await cam.until(`Boolean(document.querySelector('#post-3[data-kb-fold], #post-3 [data-kb-fold], article[data-kb-fold]'))`, { label: 'post 3 folded' });
-    await cam.evaluate(`(() => { const p = document.querySelector('article[data-kb-fold]'); p.scrollIntoView({ block: 'start' }); scrollBy(0, -40); })()`);
+    /* The thread's page size is 20: post 21 is the first of page 2, which the pager's link turns to in place. */
+    await cam.evaluate(`document.querySelector('a[aria-label="Page 2"]').click()`);
+    await cam.until(`Boolean(document.querySelector('#post-21[data-kb-fold="folded"]'))`, { label: 'post 21 folded, on page 2' });
+    await cam.evaluate(`(() => { scrollTo(0, 0); const r = document.querySelector('#post-21').getBoundingClientRect(); scrollBy(0, r.top - 70); return 1; })()`);
     await settle(cam, 40);
   },
   async body(d) {
-    const bar = `[...document.querySelectorAll('article[data-kb-fold] button')].find((b) => /^(Show|Hide) post #/.test(b.getAttribute('aria-label') ?? ''))`;
-    assert(await d.page(`${bar}?.getAttribute('aria-expanded') === 'false'`), 'a folded post: its bar says closed');
+    const bar = `[...document.querySelectorAll('#post-21 button')].find((b) => /^(Show|Hide) post/.test(b.getAttribute('aria-label') ?? b.textContent.trim()))`;
+    assert(await d.page(`${bar}?.getAttribute('aria-expanded') === 'false'`), 'post 21 folded: its bar says closed');
+    const words = `(document.querySelector('#post-21')?.innerText ?? '')`;
+    assert(!(await d.page(words)).includes('generative AI'), 'the words hidden while the post is closed');
     const b = await d.box(bar);
-    await d.put(d.css.width + 30, b.cy + 80);
-    await d.shoot(0.25);
-    await d.go({ x: b.x + b.w * 0.45, y: b.cy }, 0.6, 91);
+    await d.put(d.css.width + 30, b.cy + 90);
     await d.shoot(0.2);
+    await d.go({ x: b.x + b.w * 0.45, y: b.cy }, 0.55, 91);
+    await d.shoot(0.1);
     await d.tap();
     await d.until(`${bar}?.getAttribute('aria-expanded') === 'true'`, 3, 'the fold open');
     d.mark('open');
-    assert(await d.page(`(document.querySelector('article[data-kb-fold] [data-kb-cell="words"]')?.textContent ?? '').trim().length > 5`), 'the post\'s words showing');
-    await d.shoot(2.0);
+    await d.shoot(0.5);
+    assert((await d.page(words)).includes('generative AI'), "the post's words (the line about generative AI) showing");
+    await d.shoot(1.9);
   },
 });
 
@@ -806,5 +835,5 @@ const hand = () => take('b-hand', {
   },
 });
 
-const takes = [autocorrectPeel, scrub1, scrub2, scrub3, smokeWave, graffitiTag, stickAround, glitterDrag, chair, react, laugh, jimmy, fold, pack, hand, () => gpt2("b-gpt2", { from: 0, seconds: 8 }), () => gpt2('b-gpt2-end', { from: 1190, seconds: 4.5 })];
+const takes = [autocorrectPeel, scrubLong, scrub1, scrub2, scrub3, smokeWave, graffitiTag, stickAround, chair, chair3, react, jimmy, fold, pack, hand, () => gpt2("b-gpt2", { from: 0, seconds: 8 }), () => gpt2('b-gpt2-end', { from: 1190, seconds: 4.5 })];
 for (const t of takes) await t();
