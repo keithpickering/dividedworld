@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { timeline, captions, srt, framesBetween, wrap, duckExpression } from './edit-commentary.mjs';
+import { timeline, captions, srt, framesBetween, wrap, duckExpression, captionBand } from './edit-commentary.mjs';
 import { cutRect, moveRect, punchScale, refusePush, pushLimit, expressions, corners, maxPush } from './moves.mjs';
 
 const entries = (from, step) => Array.from({ length: 6 }, (_, i) => ({ t: from + i * step, confident: false, derived: true }));
@@ -151,12 +151,13 @@ test('each chord of the coda is a hard cut with a punch-in', () => {
   near(n11.cuts.at(-1).at + n11.cuts.at(-1).length, 25);
 });
 
-test('a landing in part three is a punch at its frame', () => {
+test('a landing in part three is a punch at its frame, wherever the retime has put it', () => {
   const t = timeline(clips, map, { landed: { n09: [{ what: 'steel-chair', frame: 150 }] } });
   const n09 = t.nodes.find((n) => n.id === 'n09');
-  const cut = n09.cuts.find((c) => c.at <= 2.5 && c.at + c.length > 2.5);
-  assert.deepEqual(cut.punches, [{ frame: Math.round((2.5 - cut.at) * F), percent: 5 }]);
-  assert.deepEqual(t.hits.map((h) => [h.what, Math.round((h.at - n09.start) * F)]), [['steel-chair', 150]]);
+  const at = n09.retime.placed[0].at;
+  const cut = n09.cuts.find((c) => c.at <= at + 1e-9 && c.at + c.length > at);
+  assert.deepEqual(cut.punches, [{ frame: Math.round((at - cut.at) * F), percent: 5 }]);
+  assert.deepEqual(t.hits.map((h) => [h.what, Math.round((h.at - n09.start) * F)]), [['steel-chair', Math.round(at * F)]]);
 });
 
 /* ---- captions ---- */
@@ -317,4 +318,65 @@ test('the music is 10 dB down under a clip, 150 ms to go down and 400 ms to come
   about(gain(e, 15.4), 1, 'back up 400 ms after');
   about(gain(e, 32), dip);
   about(gain(e, 91), 1, 'a clip in the coda does not duck it');
+});
+
+/* ---- where the caption band sits ---- */
+
+test('the caption band is at the top of the frame by default, two rows at most, and is the same height wherever it sits', () => {
+  const top = captionBand('top', 'A short line.');
+  assert.equal(top.y, 0, 'the top band starts at the top edge');
+  assert.equal(top.alignment, 8, 'the words are top-centered');
+  const one = top.h, two = captionBand('top', 'x'.repeat(86)).h;
+  assert.ok(two > one, 'a line that wraps to two rows has a taller band');
+  assert.ok(two <= 120, `two rows need no more than 120 px of the 1080, not ${two}`);
+  assert.equal(captionBand('top', 'x'.repeat(200)).h, two, 'never more than two rows');
+  const foot = captionBand('foot', 'A short line.');
+  assert.equal(foot.alignment, 2);
+  near(foot.y + foot.h, 1080, 'the foot band ends at the foot');
+  assert.equal(captionBand('off', 'anything'), null);
+});
+
+test('the top band never reaches the HUD at the foot, and the captions flag is read by name, --clean being off', async () => {
+  const { captionMode } = await import('./edit-commentary.mjs');
+  assert.equal(captionMode([]), 'top', 'the default is the top');
+  assert.equal(captionMode(['--captions', 'foot']), 'foot');
+  assert.equal(captionMode(['--captions', 'off']), 'off');
+  assert.equal(captionMode(['--clean']), 'off');
+  assert.throws(() => captionMode(['--captions', 'middle']), /foot, top or off/);
+});
+
+test('a node with landings in part three is retimed to the theme: speeds on its cuts, one clock for every framing, the voice untouched', () => {
+  const landed = { n09: [{ what: 'a', frame: 1 * 60 }, { what: 'b', frame: 4 * 60 }, { what: 'c', frame: 10 * 60 }, { what: 'd', frame: 16 * 60 }] };
+  const t = timeline(clips, map, { framings: { n09: ['wide', 'tight', 'turned'] }, landed });
+  const n09 = t.nodes.find((n) => n.id === 'n09');
+  assert.ok(n09.cuts.every((c) => typeof c.speed === 'number'), 'every cut of node 9 has a speed');
+  assert.ok(n09.cuts.every((c) => c.speed >= 2 / 3 - 1e-9 && c.speed <= 4 / 3 + 1e-9), 'never past a third');
+  assert.ok(n09.cuts.some((c) => Math.abs(c.speed - 1) > 1e-6), 'and at least one is not 1');
+  near(n09.cuts[0].from, 0);
+  for (let k = 1; k < n09.cuts.length; k++) near(n09.cuts[k].from, n09.cuts[k - 1].from + n09.cuts[k - 1].speed * n09.cuts[k - 1].length, 'the take is continuous across the cut');
+  assert.ok(n09.retime, 'the node carries what the retime did');
+  const plain = timeline(clips, map, { framings: { n09: ['wide', 'tight', 'turned'] } });
+  const p9 = plain.nodes.find((n) => n.id === 'n09');
+  assert.deepEqual(p9.voice, n09.voice, 'the voice is not retimed');
+  assert.equal(p9.cuts[0].speed, undefined, 'a node with no landings is not retimed');
+  assert.deepEqual(t.music, plain.music, 'nor is the music');
+});
+
+test('hand-set entries replace the derived ones: the cuts are on them', () => {
+  const w = timeline(clips, map).windows.find((x) => x.id === 'n09');
+  const hand = [w.start + 3, w.start + 9];
+  const t = timeline(clips, map, { entries: hand });
+  const n09 = t.nodes.find((n) => n.id === 'n09');
+  assert.equal(n09.cuts.length, 3);
+  near(n09.cuts[1].at, 3);
+  near(n09.cuts[2].at, 9);
+});
+
+test("a landing's sound is placed where its play now lands in the film", () => {
+  const landed = { n09: [{ what: 'steel-chair', frame: 6 * 60 }, { what: 'x', frame: 10 * 60 }] };
+  const t = timeline(clips, map, { landed });
+  const n09 = t.nodes.find((n) => n.id === 'n09');
+  const hit = t.hits.find((h) => h.what === 'steel-chair');
+  const r = n09.retime.placed.find((p) => p.what === 'steel-chair');
+  near(hit.at, n09.start + r.at);
 });

@@ -3,7 +3,8 @@
  * takes, the voice clips and the music assembled into one film, with captions.
  *
  *   node tools/hype/edit-commentary.mjs [--takes .runs/hype] [--voice .runs/hype/voice] [--music <recording>] [--circus <recording>]
- *       [--out .runs/hype/commentary.mp4] [--part one|two|three|out] [--clean] [--sheet] [--moves moves.json] [--preset veryfast]
+ *       [--out .runs/hype/commentary.mp4] [--part one|two|three|out] [--captions top|foot|off] [--clean] [--sheet] [--moves moves.json]
+ *       [--entries entries.json] [--preset veryfast]
  *
  * This file is run with plain `node`: Node 22.18 and later strips the types of the instance's `commentary.ts` as it imports it (as
  * tools/check-guide.mjs reads the instance's `.ts`), so no flag is needed. The pure parts (`timeline`, `captions`, `srt`) are exported
@@ -21,6 +22,13 @@
  *     "move": { "from": R, "to": R, "ease": "inOut" },          R is { "x", "y", "w", "roll" }: the top-left corner and width as
  *     "punch": 12,                                               shares of the frame, and a roll in degrees
  *     "punches": [{ "frame": 40, "percent": 8 }] }
+
+ * NODE 9's PLAYS ON THE THEME (the plan's Task 8): a node in part three that has `landed` (nodes 9 and 10) is retimed by `retime`: each theme
+ * entry inside its window takes the nearest play, and the stretch before it is played faster or slower (`speed` on each cut, `from` where
+ * the take is by then), never past a third either way, the same for every framing of the node. What cannot be placed is in the node's
+ * `retime.unplaced` and printed. Only the PICTURE is retimed: the voice and the music are laid from the clips' and the map's times on their own
+ * tracks, and the plays' game sounds follow their plays. The theme's entries are the map's (block 3, derived) unless block 3 of
+ * `music-map.json` has a `set` (seconds of the recording, hand-set) or `--entries <file>` gives a JSON array of them (a number, or `{ "t" }`).
  * A landing plays its game sound (`steel-chair` the chair's hit, `filing` a boo; any other kind none) at its frame of the node, and in
  * part three is a punch-in. `move`, `punch` and `punches` are the camera's: they apply to every cut of the node, are refused in part
  * one (locked off), and `--moves` takes the same fields by node id in one file, over the take's own.
@@ -33,8 +41,9 @@
  * note is on node 5's first frame, and the film is black and silent for 5 s from the final chord's end, then the end card for 10 s
  * (take `c-end`, else a rainbow with the card's words, in Comic Sans MS, else a stand-in saying so) under `--circus` if given.
  *
- * CAPTIONS: `<film>.srt` beside the film, and burned in (white on a translucent band at the foot, Verdana, else DejaVu Sans) unless
- * `--clean`. WITHOUT a voice folder each clip is silence of 150 words a minute and every frame says PLACEHOLDER SOUND; a slate's frames
+ * CAPTIONS: `<film>.srt` beside the film, and burned in (white on a translucent band, Verdana, else DejaVu Sans). `--captions top` (the
+ * default) puts the band at the TOP of the frame, since the game's HUD (the class tag, the forecast) is at the foot; `foot` is the old place; `off`
+ * burns nothing, and `--clean` is an alias of it. The band is as tall as its words need, one row or two. WITHOUT a voice folder each clip is silence of 150 words a minute and every frame says PLACEHOLDER SOUND; a slate's frames
  * say PLACEHOLDER PICTURE. `--sheet` prints the timing sheet and stops; `--part` assembles one part for a quick look.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -42,6 +51,7 @@ import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { windows, fit, sheet } from './windows.mjs';
 import { refusePush, corners } from './moves.mjs';
+import { retime } from './retime.mjs';
 import { run, duration, videoInfo, fontFile, flag } from './cutting.mjs';
 
 export const F = 60;
@@ -57,9 +67,9 @@ export const framesBetween = (a, b) => Math.round(b * F) - Math.round(a * F);
 
 /**
  * @typedef {import('./moves.mjs').Move} Move
- * @typedef {{ take: string, at: number, start: number, length: number, startFrame: number, frames: number, from: number, move?: Move, punch?: number, punches?: { frame: number, percent: number }[] }} Cut
+ * @typedef {{ take: string, at: number, start: number, length: number, startFrame: number, frames: number, from: number, speed?: number, move?: Move, punch?: number, punches?: { frame: number, percent: number }[] }} Cut
  * @typedef {{ start: number, length: number, line?: number, cut?: number }} Voice
- * @typedef {{ id: string, part: 1 | 2 | 3, start: number, end: number, length: number, frames: number, voice: Voice[], cuts: Cut[] }} NodeCut
+ * @typedef {{ id: string, part: 1 | 2 | 3, start: number, end: number, length: number, frames: number, voice: Voice[], cuts: Cut[], hits: { what: string, at: number }[], retime?: ReturnType<typeof retime> }} NodeCut
  * @typedef {{ move?: Move, punch?: number, punches?: { frame: number, percent: number }[] }} Camera
  */
 
@@ -72,11 +82,12 @@ export const framesBetween = (a, b) => Math.round(b * F) - Math.round(a * F);
  *
  * @param {Record<string, number | number[]>} clips seconds a node (node 11: one a line)
  * @param {Parameters<typeof windows>[0] & { firstNote: { t: number }, blocks: { entries: { t: number }[] }[] }} map
- * @param {{ breath?: number, moves?: Record<string, Camera>, framings?: Record<string, string[]>, sizes?: Record<string, number>, landed?: Record<string, { what: string, frame: number }[]>, black?: number, card?: number }} [options]
+ * @param {{ breath?: number, moves?: Record<string, Camera>, framings?: Record<string, string[]>, sizes?: Record<string, number>, landed?: Record<string, { what: string, frame: number }[]>, entries?: number[], black?: number, card?: number }} [options]
  *   `moves`: the camera's moves by node; `framings`: the takes a node is cut between, by node; `sizes`: each node's take's width in
- *   pixels (default 1920); `landed`: what lands in each node, and at which frame of its take.
+ *   pixels (default 1920); `landed`: what lands in each node, and at which frame of its take; `entries`: the theme's entries in seconds of the
+ *   music, hand-set (else block 3's `set`, else its derived entries).
  */
-export function timeline(clips, map, { breath = BREATH, moves = {}, framings = {}, sizes = {}, landed = {}, black = BLACK, card = CARD } = {}) {
+export function timeline(clips, map, { breath = BREATH, moves = {}, framings = {}, sizes = {}, landed = {}, entries: handSet, black = BLACK, card = CARD } = {}) {
   for (const id of [...PART_ONE, 'n05', 'n06', 'n07', 'n08', 'n09', 'n10', 'n11']) if (clips[id] === undefined) throw new Error(`${id} has no clip: a length in seconds is needed for every node`);
   for (const id of PART_ONE) if (moves[id] && Object.values(moves[id]).some((v) => v !== undefined)) throw new Error(`${id}: part one is locked off (the design, section 5a), so it carries no move, punch or landing punch`);
   const n11 = clips.n11;
@@ -89,27 +100,32 @@ export function timeline(clips, map, { breath = BREATH, moves = {}, framings = {
   /** @type {NodeCut[]} */
   const nodes = [];
   /** @param {string} id @param {1 | 2 | 3} part @param {number} start @param {number} end @param {Voice[]} voice @param {{ at: number }[]} bounds cut points inside the node */
-  const add = (id, part, start, end, voice, bounds) => {
+  const add = (id, part, start, end, voice, bounds, shifted = false) => {
     const times = [0, ...bounds.map((b) => b.at), end - start];
     const camera = moves[id] ?? {};
-    const hits = (landed[id] ?? []).map((h) => ({ ...h, t: h.frame / F }));
+    /* A node in part three with landings is retimed so its plays fall on the theme's entries (retime.mjs): the picture only. */
+    const plays = landed[id] ?? [];
+    const retimed = shifted && plays.length ? retime(plays.map((h) => ({ what: h.what, t: h.frame / F })), bounds.map((b) => b.at), end - start) : undefined;
+    const hits = plays.map((h, i) => ({ ...h, t: retimed ? retimed.placed[i].at : h.frame / F }));
     /** @type {Cut[]} */
     const cuts = times.slice(0, -1).map((at, k) => {
       const length = times[k + 1] - at;
       const startFrame = Math.round((start + at) * F), endFrame = k === times.length - 2 ? Math.round(end * F) : Math.round((start + times[k + 1]) * F);
       /** @type {Cut} */
       const cut = { take: part === 3 && framings[id] ? `${id}-${framings[id][k % framings[id].length]}` : id, at, start: start + at, length, startFrame, frames: endFrame - startFrame, from: at };
+      if (retimed) { cut.from = retimed.stretches[k].take[0]; cut.speed = retimed.stretches[k].speed; }
       if (camera.move) cut.move = camera.move;
       const punch = camera.punch ?? (k > 0 || id === 'n11' ? (id === 'n11' ? CHORD_PUNCH : THEME_PUNCH) : undefined);
       if (punch) cut.punch = punch;
       /** @type {{ frame: number, percent: number }[]} */
       const punches = [...(camera.punches ?? [])];
-      if (part === 3) for (const h of hits) if (h.t >= at - 1e-9 && h.t < at + length - 1e-9) punches.push({ frame: Math.round((h.t - at) * F), percent: LANDING_PUNCH });
+      /* A play on the cut's own first frame, in a cut that already punches on its entry, is that punch. */
+      if (part === 3) for (const h of hits) if (h.t >= at - 1e-9 && h.t < at + length - 1e-9 && !(cut.punch && h.t - at < 1.5 / F)) punches.push({ frame: Math.round((h.t - at) * F), percent: LANDING_PUNCH });
       if (punches.length) cut.punches = punches;
       if (cut.move || cut.punch || cut.punches) refusePush(`${id} cut ${k + 1}`, cut, sizes[id] ?? 1920);
       return cut;
     });
-    nodes.push({ id, part, start, end, length: end - start, frames: Math.round(end * F) - Math.round(start * F), voice, cuts });
+    nodes.push({ id, part, start, end, length: end - start, frames: Math.round(end * F) - Math.round(start * F), voice, cuts, hits: hits.map((h) => ({ what: h.what, at: h.t })), ...(retimed ? { retime: retimed } : {}) });
   };
 
   let t = 0;
@@ -119,7 +135,7 @@ export function timeline(clips, map, { breath = BREATH, moves = {}, framings = {
     t += clip + breath;
   }
   const p1 = t, at = (/** @type {number} */ musicTime) => p1 + (musicTime - map.firstNote.t);
-  const theme = map.blocks[2].entries.map((e) => e.t);
+  const theme = handSet ?? /** @type {{ set?: number[] }} */ (map.blocks[2]).set ?? map.blocks[2].entries.map((/** @type {{ t: number }} */ e) => e.t);
   for (const w of ws) {
     const start = at(w.start), end = at(w.end);
     if (w.gaps) {
@@ -129,12 +145,12 @@ export function timeline(clips, map, { breath = BREATH, moves = {}, framings = {
     } else {
       const part = Number(w.id.slice(1)) >= 9 ? 3 : 2;
       const inside = part === 3 ? theme.filter((e) => e > w.start + 1e-9 && e < w.start + w.length - 1e-9).map((e) => ({ at: e - w.start })) : [];
-      add(w.id, part, start, end, [{ start, length: /** @type {number} */ (clips[w.id]) }], inside);
+      add(w.id, part, start, end, [{ start, length: /** @type {number} */ (clips[w.id]) }], inside, part === 3);
     }
   }
   const blackStart = at(map.coda.end.t);
   const nine = nodes.find((n) => n.id === 'n09');
-  const hits = nodes.flatMap((n) => (landed[n.id] ?? []).filter((h) => h.frame / F < n.length).map((h) => ({ id: n.id, what: h.what, at: n.start + h.frame / F }))).sort((a, b) => a.at - b.at);
+  const hits = nodes.flatMap((n) => n.hits.filter((h) => h.at < n.length).map((h) => ({ id: n.id, what: h.what, at: n.start + h.at }))).sort((a, b) => a.at - b.at);
   return {
     nodes,
     windows: ws,
@@ -174,6 +190,28 @@ export function captions(commentary, tl) {
     }
   }
   return cues;
+}
+
+/**
+ * Where the burned-in caption band sits, for a cue's words: `top` (the default; the game's HUD is at the foot), `foot`, or `off` (null).
+ * The band is as tall as its words need, one row or two (a line of more than 70 characters wraps to a second; never a third): rows of 40 px
+ * (FontSize 9 on libass's 288-line page is 34 px) and a margin of 15 px above and 12 below. `marginV` is libass's, on that 288-line page.
+ * @param {'top' | 'foot' | 'off'} mode @param {string} text
+ * @returns {{ y: number, h: number, alignment: 2 | 8, marginV: number } | null}
+ */
+export function captionBand(mode, text) {
+  if (mode === 'off') return null;
+  const rows = text.length > 70 ? 2 : 1, h = 15 + rows * 40 + 12;
+  return mode === 'top' ? { y: 0, h, alignment: 8, marginV: 4 } : { y: 1080 - h, h, alignment: 2, marginV: 3 };
+}
+
+/** The caption mode the command line asks for: `--captions top|foot|off`, `--clean` being `off`. @param {string[]} args @returns {'top' | 'foot' | 'off'} */
+export function captionMode(args) {
+  const i = args.indexOf('--captions');
+  if (i < 0) return args.includes('--clean') ? 'off' : 'top';
+  const v = args[i + 1];
+  if (v !== 'top' && v !== 'foot' && v !== 'off') throw new Error(`--captions is foot, top or off, not ${v}`);
+  return v;
 }
 
 /** An .srt file's text. @param {{ start: number, end: number, text: string }[]} cues */
@@ -273,6 +311,9 @@ async function main() {
   const sizes = {};
   /** @type {Record<string, string[]>} */
   const framings = {};
+  const entriesFile = flag('entries', '');
+  /** @type {number[] | undefined} */
+  const entries = entriesFile ? JSON.parse(readFileSync(entriesFile, 'utf8')).map((/** @type {number | { t: number }} */ e) => (typeof e === 'number' ? e : e.t)) : undefined;
   const overrides = flag('moves', '') ? JSON.parse(readFileSync(flag('moves', ''), 'utf8')) : {};
   for (const node of commentary) {
     const id = node.id;
@@ -288,7 +329,8 @@ async function main() {
     if (camera.move || camera.punch || camera.punches) moves[id] = camera;
   }
 
-  const tl = timeline(clips, map, { moves, framings, sizes, landed });
+  const tl = timeline(clips, map, { moves, framings, sizes, landed, entries });
+  const CAPTIONS = captionMode(args);
   const cuesAll = captions(commentary, tl);
   if (has('sheet')) {
     console.log(sheet(windows(map, { fragments: /** @type {number[]} */ (clips.n11).length, clips })));
@@ -297,6 +339,11 @@ async function main() {
       const c = clips[w.id];
       if (w.gaps) /** @type {number[]} */ (c).forEach((s, i) => console.log(`${w.id}-${i + 1}`.padEnd(8) + s.toFixed(2).padStart(8) + w.gaps[i].length.toFixed(2).padStart(9) + (tl.slack.n11[i].cut ? `   cut ${tl.slack.n11[i].cut.toFixed(2)}` : `   ${tl.slack.n11[i].slack.toFixed(2)}`)));
       else console.log(w.id.padEnd(8) + /** @type {number} */ (c).toFixed(2).padStart(8) + w.length.toFixed(2).padStart(9) + /** @type {number} */ (tl.slack[w.id]).toFixed(2).padStart(8));
+    }
+    for (const n of tl.nodes) if (n.retime) {
+      console.log(`\n${n.id} retimed to the theme (speed = take seconds a film second):`);
+      n.retime.stretches.forEach((s, k) => console.log(`  cut ${k + 1}  film ${s.out[0].toFixed(2)}-${s.out[1].toFixed(2)}  take ${s.take[0].toFixed(2)}-${s.take[1].toFixed(2)}  speed ${s.speed.toFixed(3)}${s.anchor ? `  (${s.anchor.what} at ${s.anchor.t.toFixed(2)} on the entry at ${s.out[1].toFixed(2)})` : ''}`));
+      for (const u of n.retime.unplaced) console.log(`  NOT PLACED: ${u.what} (take ${u.t.toFixed(2)} s) needs ${u.needed.toFixed(3)} for its entry at ${u.entry.toFixed(2)}, gets ${u.speed.toFixed(3)}, plays ${u.late.toFixed(2)} s ${u.late < 0 ? 'before' : 'after'} it`);
     }
     console.log(`\npart one 0 to ${tl.part.one[1].toFixed(2)} s; two to ${tl.part.two[1].toFixed(2)}; three to ${tl.part.three[1].toFixed(2)}; black to ${tl.out.cardStart.toFixed(2)}; card to ${tl.out.end.toFixed(2)} s`);
     return;
@@ -333,7 +380,7 @@ async function main() {
   const cues = cuesAll.filter((c) => c.end > from && c.start < to);
   writeFileSync(OUT.replace(/\.mp4$/u, '.srt'), srt(cues.map((c) => ({ ...c, start: Math.max(0, c.start - from), end: c.end - from }))));
 
-  /* libass reads an .srt on a 288-line page, so FontSize 9 is 34 px of the 1080-line film, MarginV 12 is 45 px, and the margins 19 are 70 px. */
+  /* libass reads an .srt on a 288-line page, so FontSize 9 is 34 px of the 1080-line film, MarginV 4 is 15 px, and the margins 19 are 70 px. */
   /* One cut: its picture (the take or a slate, moved), its captions and its stamps, encoded once. */
   const encode = (/** @type {Piece} */ p, /** @type {number} */ i) => {
     const file = path.join(WORK, `cut-${String(i).padStart(3, '0')}.mp4`);
@@ -347,6 +394,7 @@ async function main() {
       srcWidth = info.width;
       const from0 = Math.min(p.cut?.from ?? 0, Math.max(0, duration(p.take) - 2 / F));
       input = ['-ss', from0.toFixed(4), '-i', p.take];
+      if (p.cut?.speed !== undefined && Math.abs(p.cut.speed - 1) > 1e-9) chain.push(`setpts=PTS/${p.cut.speed.toFixed(6)}`);
       chain.push(`fps=${F}`, `tpad=stop_mode=clone:stop_duration=${Math.ceil(seconds) + 2}`);
     } else if (p.black) {
       input = ['-f', 'lavfi', '-i', `color=c=black:s=1920x1080:r=${F}`];
@@ -381,11 +429,16 @@ async function main() {
     if (p.slate) chain.push(stamp('picture', 'PLACEHOLDER PICTURE', soundStamp ? 'x=24:y=84' : 'x=24:y=24', 'red'));
     if (soundStamp) chain.push(soundStamp);
     const local = cues.filter((c) => c.end > p.startFrame / F && c.start < (p.startFrame + p.frames) / F).map((c) => ({ ...c, start: Math.max(0, c.start - p.startFrame / F), end: c.end - p.startFrame / F }));
-    if (local.length && !has('clean')) {
+    if (local.length && CAPTIONS !== 'off') {
       const f = path.join(WORK, `cap-${String(i).padStart(3, '0')}.srt`);
       writeFileSync(f, srt(local));
-      chain.push(`drawbox=x=0:y=ih-140:w=iw:h=140:color=black@0.62:t=fill:enable='${local.map((c) => `between(t,${Math.max(0, c.start).toFixed(3)},${c.end.toFixed(3)})`).join('+')}'`);
-      chain.push(`subtitles=filename='${esc(f)}':original_size=1920x1080:force_style='FontName=${sans},FontSize=9,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,Outline=0.6,Shadow=0,BorderStyle=1,Alignment=2,MarginV=12,MarginL=19,MarginR=19'`);
+      /* One translucent band a cue, as tall as that cue's words need; the words are libass's, placed at the same edge. */
+      for (const c of local) {
+        const b = /** @type {NonNullable<ReturnType<typeof captionBand>>} */ (captionBand(CAPTIONS, c.text));
+        chain.push(`drawbox=x=0:y=${b.y}:w=iw:h=${b.h}:color=black@0.62:t=fill:enable='between(t,${Math.max(0, c.start).toFixed(3)},${c.end.toFixed(3)})'`);
+      }
+      const edge = /** @type {NonNullable<ReturnType<typeof captionBand>>} */ (captionBand(CAPTIONS, ''));
+      chain.push(`subtitles=filename='${esc(f)}':original_size=1920x1080:force_style='FontName=${sans},FontSize=9,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,Outline=0.6,Shadow=0,BorderStyle=1,Alignment=${edge.alignment},MarginV=${edge.marginV},MarginL=19,MarginR=19'`);
     }
     run([...input, '-vf', chain.join(','), '-frames:v', String(p.frames), '-r', String(F), '-an', '-c:v', 'libx264', '-preset', PRESET, '-crf', '17', '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', file], `encode ${p.name}`);
     console.log(`${(p.startFrame / F).toFixed(2).padStart(8)} s  ${p.name.padEnd(12)} ${p.frames} frames${p.take ? ` of ${path.basename(p.take)}` : p.slate ? ' (slate)' : ''}${p.cut?.move ? ' (move)' : ''}${p.cut?.punch || p.cut?.punches ? ' (punch)' : ''}`);
