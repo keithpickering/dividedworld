@@ -205,7 +205,7 @@ function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
     const card = cardName(locked.spring.payload.card, ctx);
     const lockSetter = locked.spring.character ?? null;
     const setterName = lockSetter === null ? null : ctx.names?.get(lockSetter) ?? null;
-    const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'lockedOut', setter: setterName, card, laid, span: null, setterStaff: lockSetter !== null && ctx.staff?.has(lockSetter) === true, until: locked.until });
+    const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'lockedOut', setter: setterName, card, laid, span: null, setterStaff: lockSetter !== null && ctx.staff?.has(lockSetter) === true, until: locked.until, ...(locked.ended === null ? {} : { ended: locked.ended }) });
     return {
       line: own ? [own.line] : [`${laid ? `Your ${laid}` : 'Your play'} set off ${setterName ? `${setterName}'s` : 'a'} face-down ${card ?? 'card'}`],
       detail: own ? sentences([own.detail], adminEnded(locked)) : sentences([`The ${card ?? 'card'} on ${where} locked ${who === 'Yours' ? 'your character' : who} out of this thread until ${locked.until}.`], adminEnded(locked), inTitle(row)),

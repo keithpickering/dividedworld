@@ -348,6 +348,18 @@ describe('a trap', () => {
       const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: () => ({ line: 'L', detail: 'Ha, locked.' }) } } } as unknown as WordsContext['ui'];
       expect(said(r, ctx([play, locked(), set(), post, end], { names: lockNames, ui })).detail).toBe('Ha, locked. An admin ended it at Nov 2 · 12:05 UTC.');
     });
+    test('struck (the caster): an instance voice is handed ended, the time an admin ended the lockout, and not otherwise', () => {
+      const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+      const end = act('end', { kind: 'card_end', character: null, targetActId: 'sp', createdAt: '2026-11-02T12:05:00.000Z' });
+      const seen: unknown[] = [];
+      const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: unknown) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+      said(r, ctx([play, locked(), set(), post, end], { names: lockNames, ui }));
+      expect(seen).toEqual([expect.objectContaining({ how: 'lockedOut', ended: 'Nov 2 · 12:05 UTC', until: 'Nov 3 · 09:41 UTC' })]);
+      seen.length = 0;
+      said(r, ctx([play, locked(), set(), post], { names: lockNames, ui }));
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).not.toHaveProperty('ended');
+    });
     test('struck (the caster): an admin ending it is named plainly', () => {
       const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
       const end = act('end', { kind: 'card_end', character: null, targetActId: 'sp', createdAt: '2026-11-02T12:05:00.000Z' });

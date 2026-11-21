@@ -178,6 +178,8 @@ export interface TrapStruckFacts {
   readonly setterStaff: boolean;
   /** For `lockedOut`: when the lockout ends, already written as the alerts write times ("Nov 3 · 09:41 UTC"). */
   readonly until?: string;
+  /** For `lockedOut`: when an admin ended the lockout early, already written as the alerts write times; absent where it has not been ended. */
+  readonly ended?: string;
   /** For a quote that met conditions: the passage the quoted excerpt held, already shortened and in quotation marks; null where none was set. Never an Anyone-but list. */
   readonly passage?: string | null;
   /** For a quote that met conditions: the phrase the quoting post said, already shortened and in quotation marks; null where none was set. */
