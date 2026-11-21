@@ -248,9 +248,9 @@ begin
   if not card_ended(pierce) then raise exception 'the thread cast did not spend the pierce'; end if;
   perform tests.unbecome();
 
-  -- Two live wards on a post, both passed: the older one is named. (pcwardb was played a day before pcward.)
-  perform tests.act(b, 'card', t, jsonb_build_object('card', 'pcwardb', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), two, now() - interval '2 days');
+  -- Two live wards on a post, both passed: the older one is named. The newer ward (pcward, played a day ago) is inserted first and the older (pcwardb, played two days ago) second, so insertion order disagrees with created_at.
   perform tests.act(b, 'card', t, jsonb_build_object('card', 'pcward', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), two, now() - interval '1 day');
+  perform tests.act(b, 'card', t, jsonb_build_object('card', 'pcwardb', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), two, now() - interval '2 days');
   perform tests.become_service();
   pierce := pg_temp.pierce(ann, a, pa);
   c := play_card(ann, 'pcmove', a, two, '{}', 0, '');
