@@ -35,7 +35,7 @@ import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { takeInOrigin } from '../spin/Origin.tsx';
-import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurfaces, TIMER_MOST, usePlays } from '../cards/plays.ts';
+import { createPlays, effectCards, hydrate, keepingKeys, readEffects, readSurface, rereadSurfaces, TIMER_MOST, usePlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
@@ -127,6 +127,9 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
    */
   const originPlays = useMemo(() => createPlays(), []);
   const originTicket = useRef(-1);
+  /* A post's `now` at its first billing while this thread is open: a re-read or a catch-up judges spent at that time,
+     so a clock never moves a mark (cards/billing.ts). */
+  const billedAt = useRef(new Map<Id, number>());
   const [origin, setOrigin] = useState<PageOrigin | null>(() => doc.origin);
   const effects = useMemo(() => effectCards(ui), [ui]);
   const effectList = useMemo(() => [...effects], [effects]);
@@ -315,9 +318,10 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     for (const t of page.spun) if (t.originActId !== null) from.set(t.originActId, [...(from.get(t.originActId) ?? []), t]);
     const spun = new Map<Id, Spun>();
     for (const id of ids) { loader.seed(id, from.get(id) ?? []); spun.set(id, loader.peek(id)!); }
+    const over = { now: api.now(), keeps: keepingKeys(instance.cards), billedAt: billedAt.current };
     /* The origin's plays join the box's store and are billed here, once for this read and outside any render, from the tallies and spins this page just put in the thread's stores. */
-    if (tookOrigin && page.thread.originActId) takeInOrigin(tookOrigin, page.thread.originActId, originPlays, tallies, spun);
-    for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
+    if (tookOrigin && page.thread.originActId) takeInOrigin(tookOrigin, page.thread.originActId, originPlays, tallies, spun, over);
+    for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);
     let moved = false;
     for (const v of page.visits) {
       const was = visitsHeld.current.get(v.post);
@@ -348,7 +352,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     if (back.size === 0) return page;
     const acts = [...page.acts, ...[...back.values()].filter((a) => !onPage.has(a.id))].sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0));
     return { ...page, acts, cut: page.cut.filter((c) => !back.has(c.seq)) };
-  }, [api, tallies, mine, plays, originPlays, veils, putNested, dropNested]);
+  }, [api, instance.cards, tallies, mine, plays, originPlays, veils, putNested, dropNested]);
 
   /* The first page: from the document, before the first render, so the first frame is whole. */
   /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first page only. */

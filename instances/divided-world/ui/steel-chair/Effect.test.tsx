@@ -1283,6 +1283,11 @@ describe('a moment', () => {
     expect(groups(), 'a live post drops it').toHaveLength(0);
   });
 
+  test('a single play whose end is after the moment says "Ends" in the way out, though the page\'s clock is past it', () => {
+    mount({ plays: [play(1, BEHIND)], moment: AT });
+    expect(lastView().ends).toMatch(/^Ends /u);
+  });
+
   test('the run waits for the post to be in view, and does not start before the arming wait', () => {
     mount({ plays: [play(1), play(2)], moment: AT });
     expect(groups(), 'nothing is drawn at mount').toHaveLength(0);

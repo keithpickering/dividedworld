@@ -12,7 +12,7 @@
  * bottom edge. Stick Around's story has Whoops! first and Stick Around second in billing, as the board's tabs have them.
  */
 import type { BoardManifest } from '../../board-match.ts';
-import { CHAMFER_CLEAR, dialog, part } from './28-lens.ts';
+import { CHAMFER_CLEAR, TAB_ICON_SHIFT, TAB_ICON_WIDTH, dialog, part } from './28-lens.ts';
 
 const under = (of: string) => ({ origin: of, originEdge: 'bottom' }) as const;
 
@@ -23,7 +23,7 @@ const manifest: BoardManifest = {
   landmarks: [
     dialog({ nth: 0, buildNth: 0 }),
     part('tab-whoops', 'tab', 'WHOOPS!', { box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
-    part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
+    part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position', buildShift: { x: TAB_ICON_SHIFT, y: CHAMFER_CLEAR } }),
     part('close', 'button', 'Close', { box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
     part('headline', 'text', 'Holding you on this post', { box: 'position', buildShift: { y: -18.5 + CHAMFER_CLEAR } }),
     part('ends', 'text', "Ends when you check the caster's sentence, scroll past either end of the post, or press Break free.", { box: 'position', buildShift: { y: -30 + CHAMFER_CLEAR } }),
@@ -38,8 +38,8 @@ const manifest: BoardManifest = {
       build: { story: 'boards-01-lens--lens-author-whoops-who' },
       landmarks: [
         dialog({ nth: 1, buildNth: 0 }),
-        part('tab-whoops', 'tab', 'WHOOPS!', { box: 'full', buildShift: { y: CHAMFER_CLEAR } }),
-        part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
+        part('tab-whoops', 'tab', 'WHOOPS!', { box: 'full', buildShift: { y: CHAMFER_CLEAR, width: TAB_ICON_WIDTH } }),
+        part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position', buildShift: { x: TAB_ICON_SHIFT, y: CHAMFER_CLEAR } }),
         part('headline', 'text', '41% washed for you', { buildName: '32% washed for you', box: 'position', buildShift: { y: -18.5 + CHAMFER_CLEAR } }),
         part('ends', 'text', 'Ends on your screen when you scrub every layer off. As its author, you can wash it for everyone.', { box: 'position', buildShift: { y: -30 + CHAMFER_CLEAR } }),
         part('tools', 'text', 'YOUR TOOLS, AS THE AUTHOR', { buildName: 'Your tools, as the author', ...under('ends'), box: 'position' }),

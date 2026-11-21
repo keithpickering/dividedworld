@@ -122,6 +122,20 @@ export function livePlays(plays: readonly CardPlay[], now: number): readonly Car
 }
 
 /**
+ * Whether a play is over (spent-marks design, section 1): caught, ended by an admin, didn't take, instant, spent by a filing, a back that sprang, or its
+ * time is up and its card does not keep. In a moment (`then`), a play named there is judged as it stood: its timed end does not count.
+ */
+export function playOver(p: CardPlay, now: number, keeps: ReadonlySet<string>, then?: ReadonlySet<Id>): boolean {
+  if (p.caught || p.reversed || p.untaken || p.instant || p.spent || p.revealed) return true;
+  if (then?.has(p.id)) return false;
+  return p.ends !== undefined && Date.parse(p.ends) <= now && !keeps.has(p.card);
+}
+
+/** Whether a kind is spent on a post: it has plays, and every one is over. */
+export const kindSpent = (plays: readonly CardPlay[], now: number, keeps: ReadonlySet<string>, then?: ReadonlySet<Id>): boolean =>
+  plays.length > 0 && plays.every((p) => playOver(p, now, keeps, then));
+
+/**
  * The plays that hold a place in a target's stack, which is what the form and the ghost marks ask the rules whether another card lands on: `livePlays`, and also a fall a filing has spent, as the
  * server counts it (`place_cast`, 0361: a spent fall holds its place unless an admin ended it, which `reversed` says). An instant play holds none. A spent fall is never drawn from this list; it is a mark, and
  * `livePlays` is what draws.
@@ -221,11 +235,11 @@ export function blindPlaysOf(plays: readonly CardPlay[], cards: readonly Pick<Ca
     .map((p) => ({ play: p.id, caster: p.caster, ends: p.ends! }));
 }
 
-/** The soonest end still ahead among plays beyond a post, as an epoch, or null: when what is drawn changes next by itself. */
+/** The soonest end still ahead among plays that have one (a play beyond a post, or a ward on a post), as an epoch, or null: when what is drawn, or what a mark says, changes next by itself. */
 export function nextEnd(plays: readonly CardPlay[], now: number): number | null {
   let soonest: number | null = null;
   for (const p of plays) {
-    if (!p.reach || p.ends === undefined) continue;
+    if (p.ends === undefined) continue;
     const at = Date.parse(p.ends);
     if (at > now && (soonest === null || at < soonest)) soonest = at;
   }
@@ -303,11 +317,16 @@ export function sameView(a: CardView, b: CardView): boolean {
  * else its `summary`, else the first sentence of what `describe` says under `settings`, else (no settings to describe under)
  * its name; no edge, no notch, no controls. A play that ends on a timer (`endsAt`, a Use's `ends`) gives the view its way out,
  * "Ends Nov 7, 9:14 PM", in the reader's zone; a card that keeps (`rules.keeps`) whose end has passed at `now` says "Ended Nov 7, 9:14 PM. Posts written while it was up keep it." A status that is a function is given the card's `plays` on the post.
+ * The overloads: with no `endsAt` there is no end to word and no clock is needed; with an `endsAt` (even one that may be `undefined`) a `now` is required, so the tense of "Ends" or "Ended" is never guessed.
+ * A strip showing a post in a moment passes a clock before the end, so the end reads as it stood then.
  */
-export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: string, plays: readonly CardPlay[] = [], now?: number): CardView {
+export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: undefined, plays?: readonly CardPlay[]): CardView;
+/** With an end that may be given, the clock is required: the tense of "Ends" or "Ended" is the clock's to give. */
+export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings: Settings | undefined, endsAt: string | undefined, plays: readonly CardPlay[], now: number): CardView;
+export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: string, plays: readonly CardPlay[] = [], now = 0): CardView {
   const described = ui && settings ? ui.describe(settings) : '';
   const first = /^.*?[.!?](?=\s|$)/s.exec(described.trim())?.[0] ?? described.trim();
-  return { progress: null, state: (typeof ui?.status === 'function' ? ui.status(plays) : ui?.status) ?? ui?.summary ?? (first || rules.name), ...(endsAt !== undefined ? { ends: rules.keeps === true && now !== undefined && Date.parse(endsAt) <= now ? keptEndedWords(endsAt) : endsWords(endsAt) } : {}), yours: false, controls: [], notes: {} };
+  return { progress: null, state: (typeof ui?.status === 'function' ? ui.status(plays) : ui?.status) ?? ui?.summary ?? (first || rules.name), ...(endsAt !== undefined ? { ends: rules.keeps === true && Date.parse(endsAt) <= now ? keptEndedWords(endsAt, now) : endsWords(endsAt, now) } : {}), yours: false, controls: [], notes: {} };
 }
 
 export interface Plays {
