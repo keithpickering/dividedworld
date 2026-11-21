@@ -49,11 +49,15 @@ declare
   rows_made bigint[];
 begin
   insert into admins (account) values (admin_a);
-  p1 := tests.post(ch_author, th, 'First words.', base);
+  p1 := tests.post(ch_author, th, 'Ada: First words. nested more again', base);
   p2 := tests.post(ch_author, th, 'Second words.', base + interval '1 minute');
   p3 := tests.post(ch_author, th, 'Third words.', base + interval '2 minutes');
-  p4 := tests.post(ch_other, th, 'Other words.', base + interval '3 minutes');
+  p4 := tests.post(ch_other, th, 'Other words. kept', base + interval '3 minutes');
   tally := tests.act(null, 'tally', th, '{}', null, base);
+  -- The quoting post is written before the hide: a quote written after one is a counterfeit (a hidden version's words are never compared), and its words stand as written. Its words are in the posts it quotes.
+  q := tests.post(ch_other, th,
+    format('[quote=%s user=%s]Ada: First words.[quote]nested[/quote] more[/quote] mine [quote="%s"]kept[/quote] and [QUOTE=%s]again[/QUOTE] end', p1, ch_author, p4, upper(p1::text)),
+    base + interval '5 minutes');
 
   -- ---- The code accepted ----
   perform tests.become(rep);
@@ -162,7 +166,7 @@ begin
   if words is not null or seen is not null then raise exception 'a hidden post''s words reached an ordinary player: current % original %', words, seen; end if;
   if hid is distinct from true then raise exception 'a hidden post does not say so'; end if;
   select (a.current_payload ->> 'body'), a.hidden into words, hid from acts_public a where a.id = p4;
-  if words is distinct from 'Other words.' or hid is distinct from false then raise exception 'a post nobody decided on changed: % %', words, hid; end if;
+  if words is distinct from 'Other words. kept' or hid is distinct from false then raise exception 'a post nobody decided on changed: % %', words, hid; end if;
   -- The table itself: a player reads no `payload` from it (words come through acts_public alone), whatever the row, so neither a hidden version's words nor the copy of them
   -- inside a post that quotes it can be read there. The rest of the row stays readable.
   seen := tests.refusal('select payload from acts');
@@ -176,15 +180,12 @@ begin
   perform tests.unbecome();
   -- Admins read the words, however hidden.
   perform tests.become(admin_a);
-  if admin_version(p1) is distinct from 'First words.' then raise exception 'an admin does not read a hidden version''s words'; end if;
+  if admin_version(p1) is distinct from 'Ada: First words. nested more again' then raise exception 'an admin does not read a hidden version''s words'; end if;
   select count(*) into n from acts a where a.id = p1;
   if n is distinct from 1 then raise exception 'an admin cannot read a hidden post''s row'; end if;
   perform tests.unbecome();
 
   -- A quote of the hidden post is emptied and keeps its id; the words around it stay; a quote of another post is whole.
-  q := tests.post(ch_other, th,
-    format('[quote=%s user=%s]Ada: First words.[quote]nested[/quote] more[/quote] mine [quote="%s"]kept[/quote] and [QUOTE=%s]again[/QUOTE] end', p1, ch_author, p4, upper(p1::text)),
-    base + interval '5 minutes');
   -- The database does not read BBCode. Until the conceal job has recorded the quoting post's layer, the post is withheld whole, with `concealing` true and no words of the hidden post anywhere.
   perform tests.become(rep);
   select a.current_payload ->> 'body', a.payload ->> 'body', a.concealing into words, seen, conc from acts_public a where a.id = q;
@@ -205,11 +206,11 @@ begin
     raise exception 'a quote of a hidden post was not served as its layer, or lost its id: % %', words, conc;
   end if;
   -- A body that quotes only a post nobody hid has no layer and needs no job: it is served as written, from the first read.
-  q2 := tests.post(ch_other, th, 'plain [quote=' || p4 || ']x[/quote]', base + interval '5 minutes 30 seconds');
+  q2 := tests.post(ch_other, th, 'plain [quote=' || p4 || ']kept[/quote]', base + interval '5 minutes 30 seconds');
   perform tests.become(rep);
   select a.current_payload ->> 'body', a.concealing into words, conc from acts_public a where a.id = q2;
   perform tests.unbecome();
-  if words is distinct from 'plain [quote=' || p4 || ']x[/quote]' or conc is distinct from false then raise exception 'a quote of an unhidden post was changed or withheld: % %', words, conc; end if;
+  if words is distinct from 'plain [quote=' || p4 || ']kept[/quote]' or conc is distinct from false then raise exception 'a quote of an unhidden post was changed or withheld: % %', words, conc; end if;
 
   -- History: an edit is its own version, hidden alone. p2 is edited twice; the first edit is hidden.
   e1 := tests.act(ch_author, 'edit', th, '{"body": "Second, edited."}', p2, base + interval '10 minutes');
@@ -232,7 +233,7 @@ begin
   perform tests.unbecome();
   perform tests.become(rep);
   select (a.current_payload ->> 'body'), a.hidden into words, hid from acts_public a where a.id = p1;
-  if words is distinct from 'First words.' or hid is distinct from false then raise exception 'an unhidden post is still hidden: % %', words, hid; end if;
+  if words is distinct from 'Ada: First words. nested more again' or hid is distinct from false then raise exception 'an unhidden post is still hidden: % %', words, hid; end if;
   select a.current_payload ->> 'body', a.concealing into words, conc from acts_public a where a.id = q;
   perform tests.unbecome();
   -- With nothing hidden among its quotes the post serves its own words again at once, with no job run: the layer of the hidden set no longer matches and is not read.
@@ -578,6 +579,6 @@ begin
     perform tests.become(rep);
     got := play_moment(play);
     perform tests.unbecome();
-    if got -> 'version' -> 'current_payload' ->> 'body' is distinct from 'Other words.' then raise exception 'a card''s moment lost the words of an unhidden version: %', got -> 'version' -> 'current_payload'; end if;
+    if got -> 'version' -> 'current_payload' ->> 'body' is distinct from 'Other words. kept' then raise exception 'a card''s moment lost the words of an unhidden version: %', got -> 'version' -> 'current_payload'; end if;
   end;
 end $$;

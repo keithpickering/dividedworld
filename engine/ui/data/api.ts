@@ -412,6 +412,10 @@ export interface Act {
    */
   readonly seq: number | null;
   readonly createdAt: string;
+  /**
+   * `payload.forged`, on a post, spin or edit that quotes: the verdict, the posts whose quotes in its words are doctored (lowercase ids, sorted, each once), written once when the Act was and absent when
+   * there is none. A version in History carries its own. `forgedList` (engine/bbcode/quoted.ts) reads it as a list; every screen that draws an Act's words hands it to `BbCode` and to `parse`.
+   */
   readonly payload: Readonly<Record<string, unknown>>;
   readonly currentPayload: Readonly<Record<string, unknown>>;
   readonly editedAt: string | null;
@@ -456,8 +460,9 @@ export interface Act {
  * until edited.
  */
 export type MyHiddenVersion =
-  | { readonly status: 'hiddenUntilEdited'; readonly version: Id; readonly words: string }
-  | { readonly status: 'waiting'; readonly version: Id; readonly words: string };
+  | { readonly status: 'hiddenUntilEdited'; readonly version: Id; readonly words: string; readonly forged?: readonly string[] }
+  | { readonly status: 'waiting'; readonly version: Id; readonly words: string; readonly forged?: readonly string[] };
+/* `forged` on either: that version's own verdict (its payload's `forged`), which the words are drawn with, as a version in History is. */
 
 /* ------------------------------------------------------------------------------ a visit (the Mod Bots design, sections 6 and 7) ---- */
 
@@ -2627,6 +2632,11 @@ export interface KayfaApi {
    * player's character, or an id that is no one's, reads none. Rejects when it cannot be read.
    */
   myApologies(character: Id): Promise<readonly Apology[]>;
+  /**
+   * The posts a draft's real quotes falsely name (`quote_check`, forged-quotes design section 8): the save's own check run on the words, so the composer can say so before the post is written. The same answer
+   * for every caller, computed from versions anyone can read; it never refuses a post. Rejects when it cannot be read.
+   */
+  quoteCheck(body: string): Promise<readonly string[]>;
   /**
    * The group moves of one of the player's characters that an appeal was made on and not refunded for a failed judgment (`my_appeals`): each is appealed once, so the barred box stops
    * offering Appeal on them. A character that is not the player's, or an id that is no one's, reads none. Rejects when it cannot be read.

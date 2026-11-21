@@ -82,7 +82,7 @@ declare
   ann uuid := tests.account('nq-ann'); bob uuid := tests.account('nq-bob');
   a uuid := tests.character(ann, 'Nq Ann'); b uuid := tests.character(bob, 'Nq Bob');
   t uuid := tests.thread('Nq thread'); t2 uuid := tests.thread('Nq other thread');
-  p uuid := tests.post(a, t, 'Stopped.'); p2 uuid := tests.post(a, t, 'Another post.');
+  p uuid := tests.post(a, t, 'Stopped. hi me x b'); p2 uuid := tests.post(a, t, 'Another post.');
   pb uuid := tests.post(b, t, 'Bob writes something.');
   earlier uuid := tests.act(b, 'post', t, jsonb_build_object('body', '[quote=' || p || ']hi[/quote] before'), p);
   lw uuid; want text; got text; other text; hint text;
@@ -239,7 +239,7 @@ declare
   a uuid := tests.character(ann, 'Nq Staff Ann');
   bot uuid;
   t uuid := tests.thread('Nq staff thread');
-  p uuid := tests.post(a, t, 'Stopped.'); p2 uuid := tests.post(a, t, 'Not stopped.');
+  p uuid := tests.post(a, t, 'Stopped. x'); p2 uuid := tests.post(a, t, 'Not stopped.');
   lw uuid; made jsonb; got text; reply uuid; bp uuid;
 begin
   perform pg_temp.cards();

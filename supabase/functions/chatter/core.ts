@@ -47,6 +47,7 @@
  * (`cardRefused`) and the post stands. The database then holds every rule it holds for a player's play.
  */
 import { writeTokensMost, withheld, atOrBelow, decideDraw, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffDrawOf, staffOffers, type DecidedDraw, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
+import { forgedList } from '../../../engine/bbcode/quoted.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
@@ -498,14 +499,14 @@ function beatsBoard(persona: Persona, slugs: ReadonlySet<string>, seed: string):
  * and `canApply` against the post's whole visible text, never the excerpt the persona was shown. `why` is the card's own words. A database
  * error is thrown, as any other; a target that cannot be read is a failure of the options, so the fallback plays.
  */
-async function decideOptions(db: Db, tuned: Instance, rules: Instance['cards'][number], target: string | null, on: 'reply' | 'own', config: unknown, first?: unknown):
+export async function decideOptions(db: Db, tuned: Instance, rules: Instance['cards'][number], target: string | null, on: 'reply' | 'own', config: unknown, first?: unknown):
   Promise<({ ok: true; config: unknown; draw?: DecidedDraw } | { ok: false; why: string }) & { trims: readonly Trim[] }> {
   if (target === null) return { ok: false, why: 'there is no post to read', trims: [] };
   const read = await db.rpc<(CardTarget & { effects: CardEffect[]; above?: EffectsAbove }) | null>('card_target_reach', { reach: 'post', target });
   if (!read) return { ok: false, why: 'there is no such post', trims: [] };
   const { effects: own, above = {}, ...said } = read;
-  const post = said as { act: string; kind: Parameters<typeof postTarget>[1]; body?: unknown; version?: string };
-  const t = postTarget(post.act, post.kind, post.body, post.version);
+  const post = said as { act: string; kind: Parameters<typeof postTarget>[1]; body?: unknown; version?: string; forged?: unknown };
+  const t = postTarget(post.act, post.kind, post.body, post.version, undefined, undefined, forgedList({ forged: post.forged }));
   const effects = effectsOnTarget(t, own ?? [], above);
   // The card's own repair of what the persona chose, against the post as its rules see it, before the options are decided; a player's play never comes here.
   // A repair that throws is no repair: the options are decided as given, and the throw is named like a trim, so a card's bug never costs the answer.

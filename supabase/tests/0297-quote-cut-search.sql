@@ -28,9 +28,6 @@ declare
 begin
   insert into admins (account) values (adm);
   hid := tests.post(ch_au, th, 'Hidden words zqxmarker.', base);
-  perform tests.become(adm);
-  perform decide(null, hid, 'hide', null, 'cqs');
-  perform tests.unbecome();
   -- a quote of the hidden post nested 20 deep behind bold tags (past the new cap of 16, under the old 32): written by hand as the old walk indexed it, with the quoted words
   deepq := tests.post(ch_qu, th, 'Ordinary alpha ' || pg_temp.deep(20, hid, 'Hidden words zqxmarker.'), base + interval '1 minute');
   perform pg_temp.old_row(deepq, 'ordinary alpha hidden words zqxmarker');
@@ -68,6 +65,10 @@ begin
   perform tests.unbecome();
   perform tests.act(ch_qu, 'edit', th, jsonb_build_object('body', 'Huenew zqxhue ' || pg_temp.deep(20, hid, 'Hidden words zqxmarker.')), hue, base + interval '12 minutes');
   perform pg_temp.old_row(hue, 'huebase zqxmarker');
+  -- the hide comes last: the quotes above are written while the post is not hidden, since a quote of a version already hidden is a counterfeit (0393)
+  perform tests.become(adm);
+  perform decide(null, hid, 'hide', null, 'cqs');
+  perform tests.unbecome();
   select p.words into before_hidden from post_search p where p.act = selfhid;
   select p.words into before_edhid from post_search p where p.act = edhid;
   if before_hidden::text like '%zqxown%' then raise exception 'the setup is wrong: a hidden post''s row holds its own words'; end if;
