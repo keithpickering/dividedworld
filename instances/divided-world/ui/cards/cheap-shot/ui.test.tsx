@@ -57,17 +57,19 @@ describe('Cheap Shot gets the next Move past a ward and a catching back', () => 
     const post = (await fake.actsById([fielded]))[0]!;
     const whoops = rulesOf('whoops');
     const now = fake.now();
-    /* `landing` reads the real clock where the fake's is fixed in October, so the ward is held up past both. */
+    /* `landing` reads the real clock where the fake's is fixed in October, so the ward is held up past both, on the plays handed to `waysOn` only:
+       the casts below go through the fake, on its own clock and the real Force Field. */
     const plays = (await playsOn(fake, fielded)).map((p) => ({ ...p, ends: '2999-01-01T00:00:00Z' }));
-    const upTo = cheapShot.gimmick?.kind === 'pierce' ? cheapShot.gimmick.upTo : undefined;
+    if (cheapShot.gimmick?.kind !== 'pierce') throw new Error('Cheap Shot is a pierce');
+    const upTo = cheapShot.gimmick.upTo;
     expect(plays.map((p) => p.id)).toContain(ward.id);
     expect(waysOn(whoops, post, plays, { cards: instance.cards, own: false, now }).cast).toBe(false);
-    expect(waysOn(whoops, post, plays, { cards: instance.cards, own: false, now, ...(upTo ? { pierce: upTo } : {}) }).cast).toBe(true);
+    expect(waysOn(whoops, post, plays, { cards: instance.cards, own: false, now, pierce: upTo }).cast).toBe(true);
     const landed = must(await fake.playCard('whoops', anaFace, fielded, { color: 'red' }, ''));
     expect(landed.payload.caught).toBeUndefined();
     expect(landed.payload.pierce).toEqual({ by: first.id, card: 'cheap-shot', ward: 'force-field' });
 
-    // The Lens row, from the public pierce alone, in the owner's words; and the status is gone.
+    // The Lens row, from the public pierce alone, in the owner's words (its mount in the Lens is engine/ui/cards/lens.test.tsx's); and the status is gone.
     const p = landed.payload.pierce as { card: string; ward: string };
     expect(pierceWords(nameOf(p.card), nameOf(p.ward))).toBe('Played on a Cheap Shot, past Force Field');
     expect(await aboveAna(fake, anaFace, first.id)).toEqual([]);
@@ -87,6 +89,7 @@ describe('Cheap Shot gets the next Move past a ward and a catching back', () => 
     const passed = must(await fake.playCard('whoops', anaFace, roped, { color: 'red' }, ''));
     expect(passed.payload.caught).toBeUndefined();
     expect(passed.payload.pierce).toEqual({ by: second.id, card: 'cheap-shot' });
+    expect(await aboveAna(fake, anaFace, second.id)).toEqual([]);
     expect((await fake.cardsOn(roped, 8)).some((a) => a.kind === 'spring')).toBe(false);
     expect((await fake.alerts()).filter((a) => a.kind === 'trapStruck')).toMatchObject([{ sub: 'passed', act: passed.id }]);
     fake.signInAs(bo);
