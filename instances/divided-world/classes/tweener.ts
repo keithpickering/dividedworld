@@ -121,8 +121,11 @@ function fuse(input: ClassInput, settings: Settings): Earning[] {
     .filter((d) => d.placed)
     .map((d): Earning => {
       const paid = d.paid['tweener.outvoted'] ?? 0;
+      /* Paid in an earlier window (the tally), or by this stretch's own fuse. A crossing paid by an earlier stretch of this same window is in
+         neither, so its refund waits a window and target − paid then catches it up whole. */
       const spent = (d.paid['tweener.litTheFuse'] ?? 0) > 0 || litNow.has(d.act);
       const standing = spent ? refundAt(d, input.to, d.standing.now, settings) : 0;
+      // The clamp: a stretch that starts once the debate is no longer followed only takes back. The stretch holding that moment is still followed.
       const target = input.from >= d.at + settings.debateDays * DAY ? Math.min(standing, paid) : standing;
       const inside = d.posts.filter((p) => p.at <= input.to);
       const latest = inside[inside.length - 1]?.at ?? input.to;

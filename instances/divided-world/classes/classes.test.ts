@@ -1000,7 +1000,7 @@ const dbCast = (twClasses: { class: string; from: number }[]) => [
   { id: 'k', player: 'pk', classes: [{ class: 'face', from: -1 }] },
   ...dbIds.map((id) => ({ id, player: `p-${id}`, classes: [{ class: 'face', from: -1 }] })),
 ];
-/** The spark `sp` at 1H and the posts that quote it: four other players, each back once, so it crosses at 7H and its latest member is at 10H. */
+/** The spark `sp` at 1H and the posts that quote it: three other players each back once and a fourth who posts once at 10H, so it crosses at 7H and its latest member is at 10H. */
 const dbActs = [
   { id: 'sp', character: 'tw', kind: 'post' as const, at: 1 * H, thread: 't' },
   ...[['a0', 'a', 3], ['a1', 'a', 4], ['b0', 'b', 5], ['b1', 'b', 6], ['c0', 'c', 7], ['c1', 'c', 8], ['d0', 'd', 10]].map(([id, character, at]) => ({ id: id as string, character: character as string, kind: 'post' as const, at: (at as number) * H, thread: 't' })),
