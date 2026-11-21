@@ -15,9 +15,9 @@ import popStealArt from './art.json';
 export const ui: CardUi = {
   key: 'pop-steal',
   art: { color: '#ff3d7f', ink: '#14030a', canvas: popStealCanvas, mark: popStealMark, credit: popStealArt.credit, tagline: 'Steal a Sweet Move.' },
-  summary: 'Set face down on your post. The first common Sweet Move cast on it is caught: it does nothing, and the card goes to your hand.',
+  summary: 'Set face down on your post. The first common Sweet Move played on it is caught: it does nothing, and the card goes to your hand.',
   /* As every Reversal's: the same words, so none can be told from another. */
   status: 'Set, face down to everyone else',
   describe: (settings: Settings) =>
-    `A Salty card, ${popSteal.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first ${alignmentTag(popSteal.trap!.match!.flavors![0]!)} ${popSteal.trap!.match!.upTo} card cast on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after ${setLastsWords(settings)}. It costs nothing more to set.`,
+    `A Salty card, ${popSteal.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first ${popSteal.trap!.match!.upTo} ${alignmentTag(popSteal.trap!.match!.flavors![0]!)} Move played on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after ${setLastsWords(settings)}. It costs nothing more to set.`,
 };

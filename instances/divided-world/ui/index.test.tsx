@@ -1219,11 +1219,11 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(rope.art.color).toBe('#2ee6ff');
     expect(rope.art.ink).toBe('#03141a');
     expect(rope.art.tagline).toBe('Catch a Salty Move.');
-    expect(rope.summary).toBe('Set face down on your post. The first common Salty Move cast on it is caught: it does nothing, and the card goes to your hand.');
+    expect(rope.summary).toBe('Set face down on your post. The first common Salty Move played on it is caught: it does nothing, and the card goes to your hand.');
     expect(rope.Effect).toBeUndefined();
     expect(rope.ConfigForm).toBeUndefined();
     const said = rope.describe(instance.settings);
-    expect(said).toBe(`A Sweet card, ${ropeBreak.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Salty common card cast on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
+    expect(said).toBe(`A Sweet card, ${ropeBreak.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first common Salty Move played on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
     expect(said).not.toContain('names');
     expect(rope.describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day.');
   });
@@ -1235,11 +1235,11 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(pop.art.color).toBe('#ff3d7f');
     expect(pop.art.ink).toBe('#14030a');
     expect(pop.art.tagline).toBe('Steal a Sweet Move.');
-    expect(pop.summary).toBe('Set face down on your post. The first common Sweet Move cast on it is caught: it does nothing, and the card goes to your hand.');
+    expect(pop.summary).toBe('Set face down on your post. The first common Sweet Move played on it is caught: it does nothing, and the card goes to your hand.');
     expect(pop.Effect).toBeUndefined();
     expect(pop.ConfigForm).toBeUndefined();
     const said = pop.describe(instance.settings);
-    expect(said).toBe(`A Salty card, ${popSteal.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Sweet common card cast on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
+    expect(said).toBe(`A Salty card, ${popSteal.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first common Sweet Move played on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
     expect(said).not.toContain('names');
     expect(pop.describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day.');
   });
