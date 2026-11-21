@@ -128,7 +128,7 @@ export type DisciplineEffect =
   | { readonly kind: 'watch'; readonly weight: number };                   // on a character: multiplies its weight in a patrol's draw while up
 export const DISCIPLINE_KINDS: readonly DisciplineEffect['kind'][] = Object.freeze(['relief', 'unban', 'fall', 'watch']);
 /** A play that is over when it lands: it leaves no effect, takes no place in a stack and has no time up. */
-export const instant = (rules: Pick<CardRules, 'discipline'>): boolean => rules.discipline?.kind === 'relief' || rules.discipline?.kind === 'unban';
+export const instant = (rules: Pick<CardRules, 'discipline' | 'cuts'>): boolean => rules.discipline?.kind === 'relief' || rules.discipline?.kind === 'unban' || rules.cuts !== undefined;
 
 /** What a cast set card matches, besides a named card (`catches`): the printed flavors, and the rarity it takes up to. Pepperoni is its own flavor. */
 export interface Match {
@@ -352,6 +352,11 @@ export interface CardRules<Config = unknown> {
    * keeps, skim, scoresAs, gimmick, draws, drive or needsMessage). A relief and an unban are over when they land; a fall waits on a post until a filing; a watch is up for its `lasts`.
    */
   readonly discipline?: DisciplineEffect;
+  /**
+   * A cast card's play ends one live Gimmick (a Use card's play) on its target, the one its checked configuration names (`play`), whose card is no rarer than `upTo`.
+   * It is over when it lands: no time up, no layer, no place in a stack. Cast face up, never set face down, never offered to a staff persona.
+   */
+  readonly cuts?: { readonly upTo: Rarity };
   /** The economy numbers its rules read. */
   readonly reads?: readonly EconomyRead[];
   /** The numbers in `Settings.cardSettings` its screens read, so an instance missing one, or holding one out of its bounds, is refused. */
@@ -500,7 +505,7 @@ function namedProblem(rules: CardRules, value: unknown): void {
 }
 
 /** What every play of a card decides: whether it lands, its configuration, the caster's message, its price. */
-function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date, surcharge = false): Verdict<Decided> {
+function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date, surcharge = false, context: PlayContext = {}): Verdict<Decided> {
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // The old voice's refusal is said first, then the landing's, then the configuration's; the configuration is checked first only so the landing can read it.
   const checked = rules.validateConfig(config);
@@ -509,6 +514,15 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   const lands = rules.canApply(target, effects, checked.ok ? checked.value : undefined, now);
   if (!lands.ok) return lands;
   if (!checked.ok) return checked;
+  // A card that cuts names the Gimmick it ends (`play`); with a `rulesOf` the engine reads that it is up on this target and not rarer than the card's `upTo`.
+  if (rules.cuts !== undefined && context.rulesOf !== undefined) {
+    const named = (checked.value as { play?: unknown } | null)?.play;
+    const found = cuttable({ cuts: { upTo: 'legendary' } }, effects, target, now, context.rulesOf).find((e) => e.act === named);
+    if (found === undefined) return refuse(`that Gimmick isn't up on this ${target.reach}`);
+    const card = found.card as string;
+    const rarity = context.rulesOf(card)!.rarity;
+    if (!atOrBelow(rarity, rules.cuts.upTo)) return refuse(`${rules.name} ends a Gimmick up to ${rules.cuts.upTo}, and ${context.nameOf?.(card) ?? card} is ${rarity}`);
+  }
   const said = casterMessage(message);
   if (!said.ok) return said;
   if (rules.needsMessage !== undefined && said.value === '') return refuse(rules.needsMessage);
@@ -570,6 +584,22 @@ export interface PlayContext {
   readonly pierce?: Rarity;
   /** A card's rarity by key, so a pierce can be weighed against the ward's own card. */
   readonly rarityOf?: (key: string) => Rarity | undefined;
+  /** A card's play and rarity by key, so a card that cuts can tell a live Gimmick (a Use card's effect) it may end from the other effects on its target. */
+  readonly rulesOf?: (key: string) => Pick<CardRules, 'play' | 'rarity'> | undefined;
+}
+
+/**
+ * The live Gimmicks on `target` that a card that cuts may end: its effects, on the target's own reach, that are up, whose card is a Use card (`rulesOf`) no rarer than `rules.cuts.upTo`.
+ * Empty for a card that does not cut.
+ */
+export function cuttable(rules: Pick<CardRules, 'cuts'>, effects: readonly CardEffect[], target: Pick<CardTarget, 'reach'>, now: Date, rulesOf: NonNullable<PlayContext['rulesOf']>): readonly CardEffect[] {
+  const cuts = rules.cuts;
+  if (cuts === undefined) return [];
+  return effects.filter((e) => {
+    if ((e.reach ?? 'post') !== target.reach || !isLive(e, now) || e.card === null) return false;
+    const card = rulesOf(e.card);
+    return card !== undefined && playOf(card) === 'use' && atOrBelow(card.rarity, cuts.upTo);
+  });
 }
 
 /**
@@ -594,9 +624,11 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   };
   const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules) && !pierced(e));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
+  // A card that cuts is refused where its target holds no Gimmick it may end, so the ghost marks offer it only where it could land; the named play is checked in `decided`.
+  if (rules.cuts !== undefined && context.rulesOf !== undefined && cuttable(rules, effects, target, now, context.rulesOf).length === 0) return refuse(`there's no Gimmick up on this ${target.reach} for ${rules.name} to end`);
   const staffed = disciplineRefusal(rules, target, context, now);
   if (staffed) return staffed;
-  const play = decided(rules, settings, target, effects, config, message, now, true);
+  const play = decided(rules, settings, target, effects, config, message, now, true, context);
   if (!play.ok || rules.surface === undefined) return play;
   const first = firstDraw(rules, settings, context.first);
   if (!first.ok) return first;
@@ -660,8 +692,8 @@ const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
  * its first tag is drawn on the post the caster chose, and a back would carry it blind to a quoting post's box nobody drew for. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
  * server holds the same on face_down (supabase/migrations/0153_drives.sql, face_down_never_writes).
  */
-export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface' | 'replies' | 'discipline'>): boolean =>
-  rules.discipline !== undefined || rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined || rules.replies !== undefined;
+export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface' | 'replies' | 'discipline' | 'cuts'>): boolean =>
+  rules.discipline !== undefined || rules.cuts !== undefined || rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined || rules.replies !== undefined;
 
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
@@ -894,6 +926,8 @@ export function staffOffers(card: CardRules): boolean {
   if (card.trap?.outcome?.kind === 'ride') return false;
   // A staff character's Acts are not settled, so an earn a persona cast would never be paid.
   if (card.gimmick !== undefined && (card.play ?? 'cast') === 'cast') return false;
+  // A card that cuts names a Gimmick by its play, which a persona does not choose (the Buzzkill design, section 2.5).
+  if (card.cuts !== undefined) return false;
   // A persona plays a card with no caster message, so a card that needs one could never land.
   if (card.needsMessage !== undefined) return false;
   // A card that replies carries a post a persona's play does not write.

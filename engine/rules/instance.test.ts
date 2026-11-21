@@ -1558,6 +1558,26 @@ test('a discipline is one of four kinds on a cast card, held apart from the effe
   for (const [what, over] of held) assert.match(bad({ discipline: { kind: 'fall' }, ...over }), /card "splat" has a fall and (writes|replies|keeps|a skim|scoresAs|a gimmick|draws|needsMessage|a drive|a surface); a card with a discipline has no other effect/, what);
 });
 
+test('a card that cuts is a cast card on a post or a character, with no time up and no other effect', () => {
+  const bad = (over: Record<string, unknown>) => instanceProblems(withCards({ rarity: 'rare', reaches: ['post', 'character'], cuts: { upTo: 'rare' }, ...over })).join('\n');
+  assert.equal(bad({}), '', 'a well-formed card that cuts: no time up asked, since it is over when it lands');
+  assert.equal(bad({ rarity: 'legendary', cuts: { upTo: 'legendary' } }), '');
+  assert.match(bad({ cuts: { upTo: 'mythic' } }), /card "splat" has cuts up to "mythic"; a rarity is common, uncommon, rare or legendary/);
+  assert.match(bad({ cuts: {} }), /card "splat" has cuts up to undefined; a rarity is common/);
+  assert.match(bad({ play: 'use', gimmick: { kind: 'ward', flavors: ['salty'] }, lasts: { unit: 'day', count: 1 } }), /card "splat" has cuts and is not a cast card/);
+  assert.match(bad({ rarity: 'uncommon' }), /card "splat" has cuts up to rare, rarer than the card/);
+  assert.match(bad({ reaches: ['post', 'thread'], lasts: { unit: 'day', count: 1 } }), /card "splat" has cuts and reaches a thread; a card that cuts reaches a post or a character/);
+  assert.match(bad({ reaches: ['board'], lasts: { unit: 'day', count: 1 } }), /card "splat" has cuts and reaches a board; a card that cuts reaches a post or a character/);
+  assert.match(bad({ lasts: { unit: 'day', count: 1 } }), /card "splat" has cuts and a time up \(lasts\); a card that cuts is over when it lands/);
+  const held: [string, Record<string, unknown>][] = [
+    ['a gimmick', { gimmick: { kind: 'earn', by: 1.2 } }], ['a skim', { skim: { share: 0.1 }, lasts: { unit: 'week', count: 1 } }], ['a discipline', { discipline: { kind: 'unban' } }],
+    ['writes', { writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } }], ['replies', { replies: true }], ['scoresAs', { scoresAs: true }],
+    ['draws', { draws: ['a'] }], ['a drive', { drive: {} }], ['a surface', { surface: {} }], ['needsMessage', { needsMessage: 'say why' }],
+  ];
+  for (const [what, over] of held) assert.match(bad(over), new RegExp(`card "splat" has cuts and ${what}; a card that cuts has no other effect`), what);
+  assert.doesNotMatch(bad({}), /time up/, 'the reach check that asks a card beyond a post for a time up skips a card that cuts');
+});
+
 // Fixed packs and the starting pack (docs/plans/2026-11-18-starter-pack-plan.md, Task 1).
 test('a fixed pack and a starting pack that agree have no problems', () => {
   const fixed = { key: 'starter', contents: ['a', 'a', 'c'] };
