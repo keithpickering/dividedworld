@@ -20,6 +20,7 @@ import { Pips } from '../postbit/Postbit.tsx';
 import { Link } from '../router.tsx';
 import { BbCode, type QuoteOf } from '../bbcode/render.tsx';
 import { statements, wording } from './statements.ts';
+import { forgedList } from '../../bbcode/quoted.ts';
 import './reveal.css';
 
 /** How a quote of an Act is linked: the thread knows where an Act is, so it hands the link in. */
@@ -68,7 +69,7 @@ export function TallyPost({ act, quoteHead }: { readonly act: Act; readonly quot
   const of = whole(payload.of);
   return (
     <section className="kb-tally-post kb-system-post" aria-label="The tally">
-      {body && <BbCode text={body} quoteHead={quoteHead} />}
+      {body && <BbCode text={body} quoteHead={quoteHead} forged={forgedList(payload)} />}
       {part !== null && of !== null && of > 1 && <p className="kb-small kb-muted">Part {part} of {of}</p>}
       <Debuts payload={payload} />
     </section>
@@ -107,7 +108,7 @@ export function RevealPost({ act, quoteHead }: { readonly act: Act; readonly quo
   if (id === null) {
     return (
       <div className="kb-reveal-post kb-system-post">
-        {body ? <BbCode text={body} quoteHead={quoteHead} /> : <p>The season’s reveal.</p>}
+        {body ? <BbCode text={body} quoteHead={quoteHead} forged={forgedList(payload)} /> : <p>The season’s reveal.</p>}
       </div>
     );
   }

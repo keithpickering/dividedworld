@@ -192,6 +192,14 @@ test('what an action wrote is broadcast as its public projection, on its thread\
       [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'p', thread } }]],
     [{ action: 'playCard', card: 'whoops', character: id, target: id, config: { color: 'red' } },
       { whoami: id, card_target_reach: { act: id, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'c', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread } }]],
+    // A ballot on a secret poll: the answer is the database's, with a null character, and the events are built from it alone, whatever the request named.
+    [{ action: 'castBallot', poll: id, character: id, picks: [1] }, { cast_ballot: { act: { id: 'b', thread, created_at: 't1', character: null, payload: { secret: true } }, poll: id, thread, counts: [0, 3], voters: 3, ends_at: 'e', closed: false } },
+      [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'b', thread, created_at: 't1', character: null, payload: { secret: true } } },
+       { topic: `thread:${thread}`, event: 'poll', payload: { poll: id, counts: [0, 3], voters: 3, ends_at: 'e', closed: false, at: 't1' } }]],
+    [{ action: 'closePoll', poll: id, character: id }, { close_poll: { act: { id: 'c', thread, created_at: 't2' }, poll: id, thread, counts: [1], voters: 1, ends_at: 'e', closed: true } },
+      [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread, created_at: 't2' } }, { topic: `thread:${thread}`, event: 'poll', payload: { poll: id, counts: [1], voters: 1, ends_at: 'e', closed: true, at: 't2' } }]],
+    [{ action: 'closePollAsAdmin', poll: id }, { close_poll_as_admin: { act: { id: 'c', thread, created_at: 't2' }, poll: id, thread, counts: [1], voters: 1, ends_at: 'e', closed: true } },
+      [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread, created_at: 't2' } }, { topic: `thread:${thread}`, event: 'poll', payload: { poll: id, counts: [1], voters: 1, ends_at: 'e', closed: true, at: 't2' } }]],
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread: null, tally: {} } }, []],
     // A reaction to a blind post: its totals are hidden, so the answer's tally is null and nothing is sent.
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread, tally: null } }, []],
@@ -267,7 +275,7 @@ test('a refused or failed action sends nothing live', async () => {
 test('only the reads and the writes that find their own earlier effect are safe to repeat after a lost answer', () => {
   for (const fn of ['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'play_landed_at', 'open_account', 'instance_settings']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
   // A save repeated after a newer one landed would bring back the older strokes.
-  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'apologize', 'react', 'turn', 'withdraw_turn', 'buy_card', 'buy_pack', 'play_card', 'create_character', 'set_debut', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
+  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'cast_ballot', 'close_poll', 'close_poll_as_admin', 'spin', 'apologize', 'react', 'turn', 'withdraw_turn', 'buy_card', 'buy_pack', 'play_card', 'create_character', 'set_debut', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
 });
 
 test('a write whose answer was lost says plainly it may have gone through', async () => {
@@ -1279,4 +1287,15 @@ test('each discipline card lands otherwise, and the RPC carries no argument beyo
   const post = { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [], author: whoami };
   // Another character's post: the same arguments as any card cast on a post (Stick Around's), and none of its own.
   assert.deepEqual(await sent('take-the-fall', post, 'post'), await sent('stick-around', post, 'post'));
+});
+
+test('a play on a phrase inside a quote lands when card_target_reach reports the post forged (a doctored quote is the poster\'s own words), and is refused inside an honest one', async () => {
+  const quoted = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const body = `[quote=${quoted}]cats[/quote] dogs`;
+  const play = async (forged?: string[]) => {
+    const { dbs } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: body.length, body, effects: [], ...(forged ? { forged } : {}) }, play_card: { id: 'k', kind: 'card' } });
+    return runAction(dbs, instance, { action: 'playCard', card: 'autocorrect', character: id, target, config: { phrase: 'cats', replacement: 'dogs' }, message: '' });
+  };
+  assert.equal((await play(undefined)).status, 400, 'an honest quote is another post\'s words');
+  assert.equal((await play([quoted])).status, 200, 'a forged one is the poster\'s own');
 });

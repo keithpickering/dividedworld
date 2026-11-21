@@ -18,6 +18,7 @@ export const defaults: Settings = deepFreeze<Settings>({
   halving: 0.5,
   /** A post's debate is followed for three days: long enough for a thread to catch fire over a weekend, short enough that a stale post is not a spark. */
   debateDays: 3,
+  revealPerk: 0.2,
   reactionCap: 3,
   /** Minus World's ratio: giving a reaction paid a fifth of getting one, and a vote is 10. */
   crowdPayEach: 2,
@@ -40,6 +41,12 @@ export const defaults: Settings = deepFreeze<Settings>({
   editGrace: { unit: 'minute', count: 2 },
   /** Long enough for an effortpost; short enough that one post is never a page of its own. */
   postMaxLength: 20_000,
+  /** A poll: at most ten options of a hundred characters under a question of two hundred; it lasts an hour at least, so a vote is not over before it is seen, and two weeks at most, so none sits open for good. */
+  pollOptionsMax: 10,
+  pollQuestionMax: 200,
+  pollOptionMax: 100,
+  pollLastsMin: { unit: 'hour', count: 1 },
+  pollLastsMax: { unit: 'day', count: 14 },
   titleMaxLength: 120,
   /** A page of a thread: long enough to read in one sitting, short enough to load at once. */
   postsPerPage: 20,
@@ -234,8 +241,12 @@ export const defaults: Settings = deepFreeze<Settings>({
     'tweener.catalystVoices': 3,
     'tweener.catalystReturned': 2,
     'heel.saltyOutdraws': 20,
+    /** What one vote of heat pays the Heel, in votes' worth. */
+    'heel.heatVotes': 2,
     'face.cardOutdraws': -20,
     'jabroni.saltyLanded': 20,
+    /** What one vote of the groan pays the Jabroni, in votes' worth. */
+    'jabroni.groanVotes': 2,
     /** Evergreen: what a calm-positive vote on an old post of the Technician's pays, on top of Respected. */
     'technician.evergreen': 5,
     /** How many whole days old a Technician's post is when a calm-positive vote on it first pays Evergreen. */

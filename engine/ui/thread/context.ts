@@ -4,6 +4,7 @@ import type { PronounSet } from '../../rules/pronouns.ts';
 import type { Act, Id, PageOrigin, ThreadSummary, Visit } from '../data/api.ts';
 import type { Plays } from '../cards/plays.ts';
 import type { Mine } from '../reactions/mine.ts';
+import type { Polls } from '../polls/store.ts';
 import type { Tallies } from './tallies.ts';
 
 /** A post of the reader's own that a card's author veil shows under the stand-in: which of their characters wrote it, the veil's play and when it ends (`ThreadPage.veiled`). */
@@ -16,6 +17,8 @@ export interface ThreadContext {
   readonly perPage: number;
   readonly summary: ThreadSummary;
   readonly tallies: Tallies;
+  /** The polls on the posts on screen (polls/store.ts), as the page read and heard them. Absent where a post is drawn outside the thread screen (a story's lone post), which then draws none. */
+  readonly polls?: Polls;
   /** The player's own reactions on the Acts on screen. */
   readonly mine: Mine;
   /** The card plays on the posts on screen, with what their effects keep (engine/ui/cards/plays.ts). */
@@ -27,6 +30,8 @@ export interface ThreadContext {
   readonly origin?: PageOrigin | null;
   /** The ORIGIN box's own store of plays, which the thread screen gives the saved states and releases the page carried for the origin's plays. Absent outside the thread screen. */
   readonly originPlays?: Plays;
+  /** The ORIGIN box's own store of polls, for a thread spun from a poll or a ballot: the page's origin parts and the origin thread's events go here, never into `polls`. Absent outside the thread screen. */
+  readonly originPolls?: Polls;
   /** The post a reply is drawn under, by the reply's id, or undefined for a post of the thread's own: what a card that replies reads to leave itself off a reply. Stable; a reply is drawn only after it is known. A thread drawn with none has no replies. */
   readonly underOf?: (act: Id) => Id | undefined;
   /** Each post's latest visit, by the post's id, as the pages read carried it. */

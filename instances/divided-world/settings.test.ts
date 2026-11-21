@@ -30,6 +30,11 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
   assert.equal(defaults.halving, 0.5);
   assert.equal(defaults.debateDays, 3);
   assert.equal(defaults.reactionCap, 3);
+  assert.equal(defaults.pollOptionsMax, 10);
+  assert.equal(defaults.pollQuestionMax, 200);
+  assert.equal(defaults.pollOptionMax, 100);
+  assert.deepEqual(defaults.pollLastsMin, { unit: 'hour', count: 1 });
+  assert.deepEqual(defaults.pollLastsMax, { unit: 'day', count: 14 });
   assert.equal(defaults.crowdPayEach, 2);
   assert.equal(defaults.crowdPayMost, 10);
   assert.equal(defaults.charactersPerPlayer, 6);
@@ -51,9 +56,9 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
     'lurker.earlyPlayers': 3, 'lurker.earlyMatch': 10, 'lurker.crowd': 3, 'lurker.spunThreadRepliers': 3, 'lurker.spunThread': 20,
     'lurker.postsAllowed': 3, 'lurker.overPosting': -10,
     'tweener.catalyst': 20, 'tweener.catalystVoices': 3, 'tweener.catalystReturned': 2,
-    'heel.saltyOutdraws': 20,
+    'heel.saltyOutdraws': 20, 'heel.heatVotes': 2,
     'face.cardOutdraws': -20,
-    'jabroni.saltyLanded': 20,
+    'jabroni.saltyLanded': 20, 'jabroni.groanVotes': 2,
     'technician.evergreen': 5, 'technician.evergreenDays': 3,
     'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostAdded': 200,
     'autocorrect.perVolume': 25, 'autocorrect.volumeStep': 50, 'autocorrect.mostAdded': 200, 'autocorrect.holdHours': 24,

@@ -6,11 +6,15 @@
  * edit stays. An answer that never came back is looked for in the post's History before the edit is
  * offered again ("Save again anyway"), because an edit is an Act and a blind resend is a second one.
  */
-import { useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useContext, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { text as textOf } from '../thread/lines.tsx';
+import { ThreadCtx } from '../thread/context.ts';
+import { draftOfPoll, PollEditor, problemOf, samePoll } from '../polls/PollDraft.tsx';
+import { usePoll } from '../polls/store.ts';
+import type { PollDraft } from '../data/api.ts';
 import { Editor } from './Editor.tsx';
 
 const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`;
@@ -24,6 +28,14 @@ export function EditPost({ act, seq, onDone, onSaved, start }: {
   const { characters } = usePlayer();
   const was = start ?? textOf(act.currentPayload.body);
   const [text, setText] = useState(was);
+  /* The post's poll, if it has one: with no ballot it opens filled and an edit may change or remove it; with one (or closed) it cannot change, and one plain line says so. */
+  const view = usePoll(useContext(ThreadCtx)?.polls, act.id);
+  const locked = view !== undefined && (view.poll.balloted || view.poll.voters > 0 || view.poll.closed || view.mine.length > 0 || view.poll.close !== null);
+  const [first] = useState<PollDraft | null>(() => (view === undefined || locked ? null : draftOfPoll(view.poll, settings)));
+  const [poll, setPollNow] = useState<PollDraft | null>(first);
+  const [pollProblem, setPollProblem] = useState<string | null>(null);
+  const setPoll = (next: PollDraft | null) => { setPollNow(next); setPollProblem(null); setRefusal(null); };
+  const pollChanged = !locked && !samePoll(poll, first);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
@@ -55,13 +67,15 @@ export function EditPost({ act, seq, onDone, onSaved, start }: {
 
   const save = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (busy || over || text.trim() === '' || text === was || act.character === null) return;
+    if (busy || over || text.trim() === '' || (text === was && !pollChanged) || act.character === null) return;
+    const problem = pollChanged && poll ? problemOf(poll, settings) : null;
+    if (problem !== null) { setPollProblem(problem); return; }
     const character = act.character;
     setBusy(true);
     setRefusal(null);
     try {
       let answer;
-      try { answer = await api.edit(act.id, character, text); } catch { await look(null, character); return; }
+      try { answer = await api.edit(act.id, character, text, ...(pollChanged ? [poll ?? { removed: true as const }] : [])); } catch { await look(null, character); return; }
       if (answer.ok) { onSaved(answer.value); onDone(); }
       else if (answer.uncertain) await look(answer.error, character);
       else setRefusal(answer.error);
@@ -80,9 +94,12 @@ export function EditPost({ act, seq, onDone, onSaved, start }: {
     <form className="kb-edit-post" aria-label={`Edit post ${seq}`} onSubmit={(e) => void save(e)} onKeyDown={key} noValidate>
       <p className="kb-small">Editing as <strong>{name}</strong></p>
       <Editor label="Your edit" value={text} onChange={change} max={settings.postMaxLength} submitVerb="saves" onSubmit={() => void save()} autoFocus>
-        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || over || text.trim() === '' || text === was}>{again ? 'Save again anyway' : 'Save'}</button>
+        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || over || text.trim() === '' || (text === was && !pollChanged)}>{again ? 'Save again anyway' : 'Save'}</button>
         <button type="button" className="kb-button" onClick={onDone}>Cancel</button>
       </Editor>
+      {locked
+        ? <p className="kb-small">{view.poll.closed || view.poll.close !== null ? "This poll is closed, so it can't change." : "This poll has ballots, so it can't change. You can still close it."}</p>
+        : <PollEditor value={poll} onChange={setPoll} settings={settings} problem={pollProblem} />}
       <p className="kb-small kb-muted">Every version stays in History. An edit within {grace} of posting does not show “Last edited”.</p>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
     </form>

@@ -23,6 +23,8 @@ export function mergeLogs(newer: Log, older: Log): Log {
     packs: [...newer.packs, ...older.packs],
     playsOnMine: [...newer.playsOnMine, ...older.playsOnMine],
     writes: [...newer.writes, ...older.writes],
+    ...(newer.ballots === undefined && older.ballots === undefined ? {} : { ballots: [...(newer.ballots ?? []), ...(older.ballots ?? [])] }),
+    ...(newer.pollCloses === undefined && older.pollCloses === undefined ? {} : { pollCloses: [...(newer.pollCloses ?? []), ...(older.pollCloses ?? [])] }),
     saves: [...newer.saves, ...older.saves],
     setEnds: [...newer.setEnds, ...older.setEnds],
     caught: [...newer.caught, ...older.caught],

@@ -819,6 +819,16 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     queueMicrotask(() => { anchor.current?.focus(); });
   };
   const [placed, setPlaced] = useState<FloatPlace>(narrow ? 'sheet' : 'dock');
+  /*
+   * While a play's moment shows (As it landed), the sheet is held low and keeps the moment's content area above it, not the post's mark: the replay is what the reader
+   * came to see, and the Lens still holds Back to now's press and its rows a scroll away. A moment goes with its Lens, so a shown one is this Lens's.
+   */
+  const replaying = useSyncExternalStore(store.subscribe, () => store.moment() !== null, () => false);
+  const keep = () => {
+    const post = anchor.current?.closest<HTMLElement>('article, .kb-origin') ?? null;
+    const moment = replaying ? post?.querySelector<HTMLElement>('.kb-moment') ?? null : null;
+    return moment?.closest<HTMLElement>('[data-kb-content-area]') ?? moment ?? post;
+  };
   /* On open, focus moves to the open tab. */
   useLayoutEffect(() => { tabs.current.get(open.card)?.focus({ preventScroll: true }); }, []);
   /* A form opened over the tab that was open (Appeal, from the visit's tab) takes the control that was pressed with it: focus goes to the form's tab. */
@@ -919,7 +929,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
 
   return (
     <Float
-      label={onForm ? (form.kind === REPORT_KIND ? `Report this ${where}` : `Appeal on this ${where}`) : visit ? (cardKinds.length === 0 ? `Visit to this ${where}` : `Visit and cards on this ${where}`) : `Cards on this ${where}`} surface="effect" anchor={anchor} keep={() => anchor.current?.closest<HTMLElement>('article, .kb-origin') ?? null} sheet={narrow} host={host}
+      label={onForm ? (form.kind === REPORT_KIND ? `Report this ${where}` : `Appeal on this ${where}`) : visit ? (cardKinds.length === 0 ? `Visit to this ${where}` : `Visit and cards on this ${where}`) : `Cards on this ${where}`} surface="effect" anchor={anchor} keep={keep} sheet={narrow} low={replaying} host={host}
       returnFocusTo={() => anchor.current} onClose={dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
       style={ink ? ({ '--kb-lens-ink': ink } as CSSProperties) : undefined}
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}

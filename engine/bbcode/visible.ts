@@ -6,7 +6,7 @@
  * offsets, so both sides agree on where a word is because both read this one walk.
  *
  * What counts. The text inside bold, italic, underline, strike, color, size, alignment, sub and superscript, a font, a marquee, glow, shadow, rainbow and highlight, list items and a
- * counterfeit quote, a spoiler and an inline spoiler (a name typed by hand or an id, not an Act) is the
+ * counterfeit quote (a forged real quote is one, `parse`'s `forged`), a spoiler and an inline spoiler (a name typed by hand or an id, not an Act) is the
  * post's own. A real quote holds another post's words, code holds text that is not prose, a link's words
  * are its target's name and an image or a video has none, and a rule (`[hr]`) has none either. A cut (real quotes nested past the parser's cap, not shown) has none too: each leaves one `\n` in its place and none of its
  * words, so no word is joined across it. Each list item starts with a `\n`, and a list ends with one,

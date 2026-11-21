@@ -36,8 +36,8 @@ const instance: Instance = {
     { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },
   ],
   settings: {
-    walletCap: 600, vote: 10, halving: 0.5, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
-    settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
+    walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
+    settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, pollOptionsMax: 10, pollQuestionMax: 200, pollOptionMax: 100, pollLastsMin: { unit: 'hour', count: 1 }, pollLastsMax: { unit: 'day', count: 14 }, titleMaxLength: 120, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
   ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
@@ -2693,4 +2693,85 @@ test('the estimate\'s crowd is the caller\'s row of crowd pay, never another pla
   assert.deepEqual(estimateForOwner(r, instance, 'dee').crowd, { acts: ['c1', 'c3'], amount: 4 });
   assert.equal(estimateForOwner(r, instance, 'cat').crowd, null, 'a player with no crowd Acts has none');
   assert.ok(!JSON.stringify(estimateForOwner(r, instance, 'ann').crowd).includes('c3'), 'Dee\'s Act is not in Ann\'s answer');
+});
+
+/* ---- The reveal perk (class balance design, section 2): what a class marks `fromReactions` earns `revealPerk` more while the reveal is current ---- */
+/** "flagged" marks the earnings a reaction caused: fire is a flagged gain, zzz a flagged loss; tea is a gain it does not mark. */
+const flagged: ClassRules = {
+  key: 'flagged',
+  name: 'Flagged',
+  earn: (input, settings) => input.received.map((r): Earning => {
+    if (r.quadrant === 'excitedPositive') return { reason: 'flagged.cheer', amount: settings.vote * r.votes, votes: r.votes, fromReactions: true, act: r.act, quadrant: r.quadrant, at: r.at };
+    if (r.quadrant === 'calmPositive') return { reason: 'flagged.calm', amount: settings.vote * r.votes, votes: r.votes, act: r.act, quadrant: r.quadrant, at: r.at };
+    return { reason: 'flagged.sting', amount: -settings.vote * r.votes, votes: r.votes, fromReactions: true, act: r.act, quadrant: r.quadrant, at: r.at };
+  }),
+};
+const perkWorld: Instance = { ...cushionWorld, classes: [...cushionWorld.classes, flagged], settings: { ...cushionWorld.settings, revealPerk: 0.2 } };
+const perkBoard = (classes: { class: string; from: number }[], reveals: number[], reactions: InputReaction[], gimmicks: InputAct[] = []): SettlementInput =>
+  flatBoard(gimmicks, reactions, [], {
+    characters: [
+      { id: 'tom-1', player: 'tom', classes, reveals },
+      { id: 'tom-2', player: 'tom', classes: [{ class: 'quiet', from: 0 }] },
+      { id: 'uma-1', player: 'uma', classes: [{ class: 'quiet', from: 0 }] },
+      ...['bob', 'cat', 'dee', 'eve', 'fay'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+  });
+const perksOf = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.reason === 'reveal.perk');
+const FLAG = [{ class: 'flagged', from: 0 }];
+
+test('a revealed character earns a fifth more on a flagged gain, and nothing on an unflagged gain or a loss', () => {
+  const r = settle(perkBoard(FLAG, [FROM - H], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'tea', FROM + 6 * H),
+    react('tp1', 'dee', 'dee-1', 'zzz', FROM + 7 * H),
+  ]), perkWorld);
+  assert.deepEqual(perksOf(r).map((e) => [e.character, e.amount, e.params]), [['tom-1', 2, { share: 0.2 }]]);
+  assert.equal(amountOf(r, 'tom-1', 'flagged.cheer'), 10, 'the class\'s own earning is whole');
+  assert.deepEqual(r.details.filter((d) => d.reason === 'reveal.perk').map((d) => [d.act, d.quadrant, d.at, d.amount]), [['tp1', 'excitedPositive', FROM + 5 * H, 2]]);
+});
+
+test('a character never revealed earns no perk', () => {
+  assert.equal(perksOf(settle(perkBoard(FLAG, [], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H)]), perkWorld)).length, 0);
+});
+
+test('a silent Turn ends the perk from the Turn\'s time, inside the window', () => {
+  const turned = [{ class: 'flagged', from: 0 }, { class: 'flagged', from: FROM + 8 * H }];
+  const r = settle(perkBoard(turned, [FROM - H], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'fire', FROM + 9 * H),
+  ]), perkWorld);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'reveal.perk').map((d) => d.at), [FROM + 5 * H], 'the vote before the Turn is perked, the one after is not');
+});
+
+test('a new reveal after the Turn starts the perk again', () => {
+  const turned = [{ class: 'flagged', from: 0 }, { class: 'flagged', from: FROM + 8 * H }];
+  const r = settle(perkBoard(turned, [FROM - H, FROM + 10 * H], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'fire', FROM + 9 * H),
+    react('tp1', 'dee', 'dee-1', 'fire', FROM + 11 * H),
+  ]), perkWorld);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'reveal.perk').map((d) => d.at), [FROM + 5 * H, FROM + 11 * H]);
+});
+
+test('a reveal made at a Turn\'s moment is current', () => {
+  const turned = [{ class: 'flagged', from: 0 }, { class: 'flagged', from: FROM + 8 * H }];
+  const r = settle(perkBoard(turned, [FROM + 8 * H], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'fire', FROM + 9 * H),
+  ]), perkWorld);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'reveal.perk').map((d) => d.at), [FROM + 9 * H], 'the later vote is perked; the one before the reveal is not');
+});
+
+test('revealPerk 0 pushes nothing', () => {
+  const r = settle(perkBoard(FLAG, [FROM - H], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H)]), { ...perkWorld, settings: { ...perkWorld.settings, revealPerk: 0 } });
+  assert.equal(perksOf(r).length, 0);
+});
+
+test('a Thick Skin up cushions the loss and gives nothing back on the perk entry', () => {
+  const r = settle(perkBoard(FLAG, [FROM - H], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 6 * H),
+    react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H),
+  ], [onTom('g1', 'softCushion', FROM + 2 * H)]), perkWorld);
+  assert.deepEqual(cushionsOf(r).map((e) => e.amount), [5], 'only the class\'s own loss is cushioned');
+  assert.deepEqual(perksOf(r).map((e) => e.amount), [2]);
 });

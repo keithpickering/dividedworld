@@ -20,7 +20,9 @@
  *  - A card's seeded settings are not drawn (a play carries no `seed`); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
  */
 import { isPost, type Instance, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
+import { pollHeard, type LogBallot, type LogPlace, type LogPollClose } from './api.ts';
 import { decide } from '../../rules/actions.ts';
+import { countedBallots, lastsHours, pickRefusal, pollCounts, pollDraftProblems, type PollDraft } from '../../rules/polls.ts';
 import { isFixed, rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
@@ -39,6 +41,7 @@ import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
 import { quotedActs, visibleText } from '../../bbcode/visible.ts';
+import { forgedList, forgedSet, holds, quoteHeld, quoteSource } from '../../bbcode/quoted.ts';
 import { parse } from '../../bbcode/parse.ts';
 import { concealQuotes } from '../../bbcode/conceal.ts';
 import { pageOf } from '../thread/pages.ts';
@@ -52,7 +55,7 @@ import type {
   Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment, PageOrigin,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
-  SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct,
+  SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct, Ballot, Poll, PollBallotsPage, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -80,7 +83,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled' | 'poll';
 }
 
 export interface Seed {
@@ -101,6 +104,10 @@ export interface Seed {
   /** A thread with its first Act; a null character is The System's, on its board only. */
   thread(board: string, character: Id | null, title: string, body?: string, options?: SeedAct): { thread: Id; act: Id };
   post(thread: Id, character: Id | null, body: string, options?: SeedAct & { quote?: Id }): Id;
+  /** A poll on a post, written by the post's own character dated `at` (else now) and closing at `at` plus `draft.lasts`; returns the poll's Act. A draft the settings refuse is thrown. */
+  poll(post: Id, draft: PollDraft, options?: { readonly at?: number }): Id;
+  /** A ballot of a character's on a poll, as its player, dated `at` (else now); refused in the server's words like any other. */
+  ballot(character: Id, poll: Id, picks: readonly number[], options?: { readonly at?: number }): Id;
   /** An edit of a post by its own character, as that character's player, dated `at` (else now); returns the edit's Act, which is the version the History lists. */
   edit(post: Id, character: Id, body: string, options?: SeedAct): Id;
   /** A reaction, refused in the server's words like any other. */
@@ -378,6 +385,8 @@ interface SeedAct {
   /** For The System's Acts: `tally` (default), `reveal`, or `post` (an Act written with no character, a post the staff's word names). */
   readonly kind?: 'tally' | 'reveal' | 'post';
   readonly payload?: Readonly<Record<string, unknown>>;
+  /** An Act written as one from before the verdict existed (0393 backfills no verdict): it is not judged, so its quotes are real quotes whatever their words. For a test of what the conceal layer does to such quotes. */
+  readonly unjudged?: boolean;
 }
 
 export interface Fake extends KayfaApi {
@@ -488,7 +497,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
 /** A `my_cosmetic_log` row with nothing said: each kind fills what it uses. */
 const NO_COSMETIC = { character: null, outcome: null, item: null, text: null, copies: null, trophy: null, name: null, by: null, byName: null, season: null, place: null, line: null, toName: null } as const;
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
-const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash']);
+const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash', 'poll', 'ballot', 'poll_close']);
 
 /**
  * The api's writes: the one split `failNextRead` and `offline` share. Every method that answers an `Answer` is one, and `markRead` (a
@@ -500,7 +509,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   holdMove: true, reverseMove: true, reverseCard: true, replaceSuccessor: true, replaceQueuedDescription: true, describeBoard: true, setSlot: true,
   moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
-  seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
+  seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, castBallot: true, closePoll: true, closePollAsAdmin: true, pollBallots: true, spin: true,
   apologize: true, buyCard: true, buyPack: true, openPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true, draw: true, wash: true,
   react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
   acceptConduct: true, reportPost: true, decideReport: true, decide: true,
@@ -527,7 +536,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap, crowdPayEach: settings.crowdPayEach, crowdPayMost: settings.crowdPayMost,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
-    registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, setLasts: settings.setLasts, oldVoiceWindow: settings.oldVoiceWindow, oldVoicePromptFloor: settings.oldVoicePromptFloor, cardSettings: settings.cardSettings,
+    pollOptionsMax: settings.pollOptionsMax, pollQuestionMax: settings.pollQuestionMax, pollOptionMax: settings.pollOptionMax, pollLastsMin: settings.pollLastsMin, pollLastsMax: settings.pollLastsMax, registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, setLasts: settings.setLasts, oldVoiceWindow: settings.oldVoiceWindow, oldVoicePromptFloor: settings.oldVoicePromptFloor, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
     /* What screen_settings's groups holds (0128): the ladder lowest first, then the groups a move confers. */
     groups: options.settings?.groups ?? [...options.instance.groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...options.instance.groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
@@ -807,11 +816,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const concealingActs = new Set<Id>();
   /** The posts with a hidden version, whose quotes the conceal job empties. */
   const hiddenPosts = (): Set<string> => new Set([...hiddenVersions.keys()].map((v) => (acts.get(v)?.kind === 'edit' ? acts.get(v)!.target : v)).filter((p): p is Id => p !== null));
-  /** A payload as a player reads it (`shown_payload`): a hidden version's body is null, and so is a body awaiting its layer; any other has its quotes of hidden posts emptied by the engine's own concealQuotes, as the job does. */
-  const publicPayload = (payload: Readonly<Record<string, unknown>>, hidden: boolean, version: Id): Readonly<Record<string, unknown>> =>
-    typeof payload['body'] !== 'string' ? payload : hidden || concealingActs.has(version) ? { ...payload, body: null } : { ...payload, body: concealQuotes(payload['body'], hiddenPosts()) };
+  /**
+   * A payload as a player reads it (`shown_payload`): a hidden version's body is null, and so is a body awaiting its layer; any other has its quotes of hidden posts emptied by the engine's own concealQuotes, as the job does.
+   * The job is asked for the hidden posts the Act quotes without a verdict against them (`hidden_refs` leaves its forged posts out), so a forged quote of a hidden post keeps its words: they are the poster's own.
+   */
+  const publicPayload = (payload: Readonly<Record<string, unknown>>, hidden: boolean, version: Id): Readonly<Record<string, unknown>> => {
+    if (typeof payload['body'] !== 'string') return payload;
+    if (hidden || concealingActs.has(version)) return { ...payload, body: null };
+    const asked = hiddenPosts();
+    for (const f of forgedList(payload) ?? []) asked.delete(f);
+    return { ...payload, body: concealQuotes(payload['body'], asked) };
+  };
 
+  /** An Act as a reader sees it: a ballot on a secret poll names no character and no picks, for every reader alike (acts_public, 0395). */
   function publicAct(a: ActRec): Act {
+    const shown = plainAct(a);
+    return a.kind === 'ballot' && a.target !== null && pollOf(a.target)?.payload.secret === true
+      ? { ...shown, character: null, payload: { secret: true }, currentPayload: { secret: true } } : shown;
+  }
+  function plainAct(a: ActRec): Act {
     const latest = a.kind === 'post' ? edits(a).at(-1) : undefined;
     const own = hiddenVersions.has(a.id);
     const cur = latest === undefined ? own : hiddenVersions.has(latest.id);
@@ -909,6 +932,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const from = origin.kind === 'card' && origin.payload.reach === 'character' && origin.target !== null ? postPlace(acts.get(origin.target)) : null;
       const pressed = first?.kind === 'spin' && typeof first.payload.at === 'string' ? postPlace(acts.get(first.payload.at)) : null;
       return { kind: 'play', card, on, from, at: pressed };
+    }
+    /* A poll, and a public ballot on one (0396): the question and the poll's post; a secret ballot has no character to name and is no origin. */
+    if (origin.kind === 'poll' || origin.kind === 'ballot') {
+      const poll = origin.kind === 'poll' ? origin : acts.get(origin.target!);
+      const post = poll?.target == null ? undefined : acts.get(poll.target);
+      const on = post === undefined || post.seq === null ? null : placeOf(post);
+      if (poll === undefined || on === null || on.kind !== 'post') return null;
+      if (origin.kind === 'poll') return { kind: 'poll', question: String(poll.payload.question), on };
+      const who = origin.character === null || poll.payload.secret === true ? undefined : characters.get(origin.character);
+      return who === undefined ? null : { kind: 'ballot', character: { id: who.id, name: who.name }, question: String(poll.payload.question), on };
     }
     return origin.seq !== null ? placeOf(origin) : null;
   }
@@ -1315,15 +1348,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /* -------------------------------------------------------------------- writing ---- */
   let order = 0;
+  /** Whether the verdict is worked out as an Act is written: off only while the seed writes an Act that predates it. */
+  let judging = true;
   /** The time a seeded player's Act is dated, while the seed runs it through the action (the clock otherwise). */
   let stamp: number | null = null;
   function write(a: { id?: Id; character: Id | null; kind: ActKind; thread: Id; target?: Id | null; payload: Record<string, unknown>; at?: number }): ActRec {
     const t = threads.get(a.thread)!;
+    /* acts_forged_quotes (Task 3), before the insert: a client's `forged` is dropped, the verdict is written when there is one, and a post whose target is forged is written with no target (so no back springs and no quote alert is written). */
+    let payload = a.payload;
+    let target = a.target ?? null;
+    if ((a.kind === 'post' || a.kind === 'spin' || a.kind === 'edit') && typeof payload['body'] === 'string') {
+      const { forged: _client, ...rest } = payload;
+      const verdict = forgedQuotes(payload['body'], a.at ?? stamp ?? now());
+      payload = verdict.length > 0 ? { ...rest, forged: verdict } : rest;
+      if (a.kind === 'post' && target !== null && verdict.includes(target)) target = null;
+    }
     /* An edit is a version of its post and a card is a tag on its post: neither takes a place in the thread (0035_card_takes_no_seq.sql). */
     const placedAct = !UNPLACED.has(a.kind);
     const rec: ActRec = {
-      id: a.id ?? uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target: a.target ?? null, seq: placedAct ? t.nextSeq++ : null,
-      at: a.at ?? stamp ?? now(), payload: a.payload,
+      id: a.id ?? uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target, seq: placedAct ? t.nextSeq++ : null,
+      at: a.at ?? stamp ?? now(), payload,
     };
     acts.set(rec.id, rec);
     if (rec.kind === 'card_end' && rec.target !== null) reversedPlays.add(rec.target);
@@ -1392,17 +1436,63 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * write_framed (0118): for each distinct id among the first 5 of `framing`, a debuted character whose id the body holds as `user=<id>` (case ignored)
    * is told through write_alert's rules, which skip a staff character (no owner) and the acting account's own masks. Any other id is skipped silently.
    */
-  function writeFramed(body: string, framing: readonly Id[] | undefined, act: ActRec) {
+  function writeFramed(body: string, framing: readonly Id[] | undefined, act: ActRec): { readonly counted: number; readonly told: ReadonlySet<Id>; readonly named: ReadonlySet<Id> } {
     const mine = me()?.id;
     const lowered = body.toLowerCase();
-    for (const named of new Set((framing ?? []).slice(0, 5))) {
+    const ids = new Set((framing ?? []).slice(0, 5));
+    const told = new Set<Id>();
+    for (const named of ids) {
       const c = characters.get(named);
       if (!c || c.debutedAt === null || !lowered.includes(`user=${named.toLowerCase()}`)) continue;
       if (!c.owner || c.owner === mine) continue;
-      seededAlerts.push({ account: c.owner, kind: 'framed', sub: null, act: act.id, character: named, at: act.at });
-      const live = { id: crypto.randomUUID(), kind: 'framed' as const, sub: null, act: act.id, character: named, at: iso(act.at) };
-      send(`account:${c.owner}`, 'alert', () => { for (const l of [...(accountListeners.get(c.owner) ?? [])]) l.onAlert?.(live); });
+      frame(c.owner, named, act);
+      told.add(named);
     }
+    return { counted: ids.size, told, named: ids };
+  }
+  /** One framed alert, written and heard live by the character's owner. */
+  function frame(owner: Id, character: Id, act: ActRec) {
+    seededAlerts.push({ account: owner, kind: 'framed', sub: null, act: act.id, character, at: act.at });
+    const live = { id: crypto.randomUUID(), kind: 'framed' as const, sub: null, act: act.id, character, at: iso(act.at) };
+    send(`account:${owner}`, 'alert', () => { for (const l of [...(accountListeners.get(owner) ?? [])]) l.onAlert?.(live); });
+  }
+  /**
+   * write_forged_framed (Task 4): the author of each post a forged quote names in the Act (its verdict, `payload.forged`) is told, as write_framed tells a character a counterfeit names, and the two lists count
+   * together toward the most 5: `framed` is what write_framed returned (the ids it counted, the characters it told), each character is told once, and an author who has not debuted, has no owner or is the acting
+   * account's own is skipped as there. Called for a post, a thread start and a spin, never an edit or a pool post.
+   */
+  function writeForgedFramed(act: ActRec, framed: { readonly counted: number; readonly told: ReadonlySet<Id>; readonly named: ReadonlySet<Id> }) {
+    const mine = me()?.id;
+    let counted = framed.counted;
+    const told = new Set(framed.told);
+    for (const quoted of forgedList(act.payload) ?? []) {
+      const rec = acts.get(quoted);
+      if (!rec || (rec.kind !== 'post' && rec.kind !== 'spin') || rec.character === null || told.has(rec.character) || framed.named.has(rec.character)) continue;
+      if (counted >= 5) break;
+      counted += 1;
+      const c = characters.get(rec.character);
+      if (!c || c.debutedAt === null || !c.owner || c.owner === mine) continue;
+      frame(c.owner, rec.character, act);
+      told.add(rec.character);
+    }
+  }
+
+  /**
+   * quote_forged (Task 3): the posts a body's real quotes name whose words do not stand in any eligible version, for an Act written at `at`: the post itself if it is a post or a spin, and its edits written at or before
+   * `at`, none of them hidden. A quote stands when every piece of its text is in a version's source in order (an empty quote of a real post stands); a post with one quote that stands in none is forged, and so is an id
+   * that is no post or has no version to read. Each version is read with its own verdict, as the database's sources are. Sorted, each once, as the database writes it.
+   */
+  function forgedQuotes(body: unknown, at: number): string[] {
+    if (!judging || typeof body !== 'string' || !/\[quote=/i.test(body)) return [];
+    const out: string[] = [];
+    for (const [id, quotes] of quoteHeld(parse(body))) {
+      const rec = acts.get(id);
+      const versions = rec === undefined ? [] : [...((rec.kind === 'post' || rec.kind === 'spin') && rec.at <= at ? [rec] : []), ...edits(rec).filter((e) => e.at <= at)];
+      const sources = versions.filter((v) => !hiddenVersions.has(v.id) && typeof v.payload.body === 'string')
+        .map((v) => quoteSource(parse(v.payload.body as string, undefined, forgedSet(forgedList(v.payload)))));
+      if (sources.length === 0 || quotes.some((pieces) => !sources.some((s) => holds(s, pieces)))) out.push(id);
+    }
+    return out.sort();
   }
 
   /**
@@ -1410,10 +1500,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The quoted Acts are the target (a post's `quoting`) and every real quote the body holds, less those the edited post's current body already held. `thread` is where the
    * Act is written (null for a thread not yet made), so a quote from another thread says so.
    */
-  function stoppedQuote(thread: Id | null, target: Id | null, body: string, already: string = ''): string | null {
+  function stoppedQuote(thread: Id | null, target: Id | null, body: string, already: string = '', forged: readonly Id[] = []): string | null {
     // As the guard on acts does, a body is walked only where it holds a quote tag, and the current body only where the first list holds an Act.
     const inBody = (text: string): string[] => (/\[quote=/i.test(text) ? quotedActs(parse(text)) : []);
-    const named = [...new Set([...(target === null ? [] : [target]), ...inBody(body)])];
+    /* acts_quote_guard leaves out the Act's forged posts, the target and the body's quotes alike: a doctored quote is a counterfeit, which No-quote never refused. */
+    const named = [...new Set([...(target === null ? [] : [target]), ...inBody(body)])].filter((q) => !forged.includes(q));
     if (named.length === 0) return null;
     const held = new Set(inBody(already));
     const quoted = named.filter((q) => !held.has(q));
@@ -1426,8 +1517,144 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return null;
   }
 
-  function post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Answer<Act> {
-    const bad = request({ action: 'post', thread, character, body, quote, ...(framing ? { framing } : {}) });
+  /* ----------------------------------------------------------------------- polls ---- */
+  /* A poll is an Act of kind `poll` on a post; its current poll is the latest on the post unless that is a removal. A ballot is an Act on a poll, a close an Act on a poll: all three take no place in the thread. The counts are `pollCounts`' (rules/polls.ts). */
+  const pollOf = (id: Id): ActRec | undefined => { const a = acts.get(id); return a?.kind === 'poll' && a.payload.removed !== true ? a : undefined; };
+  const byTime = (x: ActRec, y: ActRec) => x.at - y.at || x.order - y.order;
+  const pollsOn = (post: Id): ActRec[] => [...acts.values()].filter((a) => a.kind === 'poll' && a.target === post).sort(byTime);
+  const currentPoll = (post: Id): ActRec | undefined => { const latest = pollsOn(post).at(-1); return latest !== undefined && latest.payload.removed !== true ? latest : undefined; };
+  const closeOf = (poll: Id): ActRec | undefined => [...acts.values()].filter((a) => a.kind === 'poll_close' && a.target === poll).sort(byTime)[0];
+  const pollEnd = (p: ActRec): number => Math.min(Date.parse(String(p.payload.closes_at)), closeOf(p.id)?.at ?? Infinity);
+  const ballotsOn = (poll: Id): ActRec[] => [...acts.values()].filter((a) => a.kind === 'ballot' && a.target === poll).sort(byTime);
+  const asCounted = (b: ActRec) => ({ act: b.id, character: b.character, picks: b.payload.picks as readonly number[], at: iso(b.at) });
+  /** The poll's post as log_page names it ({thread, title, seq}), or null where the poll's post is not there. */
+  const pollPlace = (p: ActRec): LogPlace | null => {
+    const post = p.target === null ? undefined : acts.get(p.target);
+    return post === undefined || post.seq === null ? null : { thread: post.thread, title: threads.get(post.thread)?.title ?? '', seq: post.seq };
+  };
+  /** The caller's own ballots and the admin closes of their polls (my_ballots, my_poll_closes), each with the poll's words and place, in the rows log_page's sources hold. */
+  function pollLog(account: Id): { readonly ballots: { readonly ms: number; readonly order: number; readonly r: LogBallot }[]; readonly closes: { readonly ms: number; readonly order: number; readonly r: LogPollClose }[] } {
+    const ownedBy = (c: Id | null) => c !== null && characters.get(c)?.owner === account;
+    const ballots = [...acts.values()].filter((a) => a.kind === 'ballot' && ownedBy(a.character)).flatMap((a) => {
+      const p = pollOf(a.target ?? '');
+      const place = p === undefined ? null : pollPlace(p);
+      if (p === undefined || place === null) return [];
+      const previous = ballotsOn(p.id).filter((o) => o.character === a.character && (o.at < a.at || (o.at === a.at && o.order < a.order))).at(-1);
+      const changed = previous !== undefined && (previous.payload.picks as readonly number[]).length > 0;
+      return [{ ms: a.at, order: a.order, r: { act: a.id, poll: p.id, character: a.character!, picks: a.payload.picks as readonly number[], at: iso(a.at), question: String(p.payload.question), secret: p.payload.secret === true, options: p.payload.options as readonly string[], changed, place } }];
+    });
+    const closes = [...acts.values()].filter((a) => a.kind === 'poll_close' && a.payload.by === 'admin').flatMap((a) => {
+      const p = pollOf(a.target ?? '');
+      const place = p === undefined ? null : pollPlace(p);
+      if (p === undefined || place === null || !ownedBy(p.character)) return [];
+      return [{ ms: a.at, order: a.order, r: { act: a.id, poll: p.id, character: p.character!, at: iso(a.at), question: String(p.payload.question), place } }];
+    });
+    return { ballots, closes };
+  }
+  /** poll_counts: characters counted, the same for every caller. */
+  function countsOf(p: ActRec): PollCounts {
+    const endsAt = iso(pollEnd(p));
+    const { counts, voters } = pollCounts({ options: p.payload.options as readonly unknown[], endsAt }, ballotsOn(p.id).map(asCounted));
+    return { poll: p.id, counts, voters, endsAt, closed: now() >= pollEnd(p) };
+  }
+  /** The live `poll` event: counts, never who. */
+  const heardPoll = new WeakMap<ThreadListener, (e: PollEvent) => void>();
+  const sendPoll = (p: ActRec, by: ActRec) => {
+    const event: PollEvent = { ...countsOf(p), at: iso(by.at) };
+    send(`thread:${p.thread}`, 'poll', () => {
+      for (const l of [...(threadListeners.get(p.thread) ?? [])]) {
+        if (l.onPoll === undefined) continue;
+        if (!heardPoll.has(l)) heardPoll.set(l, pollHeard(l.onPoll));
+        heardPoll.get(l)!(event);
+      }
+    });
+  };
+  /** The poll Act of a draft, written for the post by its character (poll_written); the draft was read by `decide`, so only the end is made here. */
+  function writePoll(post: ActRec, character: Id, draft: PollDraft): ActRec {
+    const at = stamp ?? now();
+    return write({ character, kind: 'poll', thread: post.thread, target: post.id, at, payload: { question: draft.question, options: draft.options, pick: draft.pick, secret: draft.secret, closes_at: iso(at + lastsHours(draft.lasts)! * 3_600_000) } });
+  }
+  /** What cast_ballot and the closes refuse of a poll alike: not one, replaced or removed, closed. */
+  function pollRefusal(p: ActRec | undefined): Refusal | null {
+    if (p === undefined) return refuse('there is no such poll');
+    if (currentPoll(p.target!)?.id !== p.id) return refuse('that poll was replaced');
+    if (now() >= pollEnd(p)) return refuse('that poll has closed');
+    return null;
+  }
+  const wrote = (rec: ActRec, p: ActRec): Answer<PollWritten> => { sendAct(rec); sendPoll(p, rec); return ok({ act: publicAct(rec), counts: countsOf(p) }); };
+
+  function castBallot(poll: Id, character: Id, picks: readonly number[]): Answer<PollWritten> {
+    const bad = request({ action: 'castBallot', poll, character, picks });
+    if (bad) return bad;
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    const p = pollOf(poll);
+    if (p !== undefined && boards.find((b) => b.id === threads.get(p.thread)!.board)?.isSystem) return refuse(SYSTEM_BOARD);
+    const closed = pollRefusal(p);
+    if (closed) return closed;
+    const n = (p!.payload.options as readonly unknown[]).length;
+    const most = p!.payload.pick as number;
+    if (picks.length > most || picks.some((g) => g < 0 || g >= n) || new Set(picks).size !== picks.length) return refuse(pickRefusal(most));
+    const rec = write({ character, kind: 'ballot', thread: p!.thread, target: p!.id, payload: { picks: [...picks].sort((x, y) => x - y) } });
+    return wrote(rec, p!);
+  }
+  function closePollBy(poll: Id, character: Id | null): Answer<PollWritten> {
+    const p = pollOf(poll);
+    if (p === undefined) return refuse('there is no such poll');
+    if (character !== null && p.character !== character) return refuse('only a poll\'s author can close it');
+    const closed = pollRefusal(p);
+    if (closed) return closed;
+    return wrote(write({ character, kind: 'poll_close', thread: p.thread, target: p.id, payload: { by: character === null ? 'admin' : 'author' } }), p);
+  }
+  function closePoll(poll: Id, character: Id): Answer<PollWritten> {
+    const bad = request({ action: 'closePoll', poll, character });
+    if (bad) return bad;
+    const c = acting(character);
+    return isRefusal(c) ? c : closePollBy(poll, character);
+  }
+  function closePollAsAdmin(poll: Id): Answer<PollWritten> {
+    const bad = request({ action: 'closePollAsAdmin', poll });
+    if (bad) return bad;
+    return adminOnly('closes a poll') ?? closePollBy(poll, null);
+  }
+  /** poll_ballots: a public poll's ballots, the changes included, newest first, 50 a page by the keyset (at, act). */
+  function pollBallots(poll: Id, after?: { readonly at: string; readonly act: Id }): Answer<PollBallotsPage> {
+    if (!me()) return refuse('sign in to read');
+    const p = pollOf(poll);
+    if (p === undefined) return refuse('there is no such poll');
+    if (p.payload.secret === true) return refuse('that poll\'s ballots are secret');
+    const before = after === undefined ? Infinity : Date.parse(after.at);
+    const older = ballotsOn(poll).filter((b) => b.at < before || (b.at === before && after !== undefined && b.id < after.act)).sort((x, y) => byTime(y, x) || (x.id < y.id ? 1 : -1));
+    const page = older.slice(0, 50);
+    const named = core.characters([...new Set(page.map((b) => b.character!))]);
+    return ok({ ballots: page.map((b) => ({ act: b.id, character: named.find((x) => x.id === b.character)!, picks: b.payload.picks as readonly number[], at: iso(b.at) })), more: older.length > 50 });
+  }
+  /**
+   * The polls a set of posts draw, as thread_page reads them (0396): each post's current poll with its counts and close, a public poll's counted ballots with picks (the newest 50) and the polls with more,
+   * and the caller's own counted ballots, a secret one's and a withdrawal's too. `cast` names the voters listed.
+   */
+  function pollParts(posts: readonly Id[]): { polls: Poll[]; voters: PollVoter[]; votersMore: Id[]; myBallots: Ballot[]; cast: Id[] } {
+    const current = [...new Set(posts)].flatMap((post) => currentPoll(post) ?? []).sort(byTime);
+    const polls = current.map((p): Poll => {
+      const k = countsOf(p);
+      const close = closeOf(p.id);
+      return { post: p.target!, act: publicAct(p), counts: k.counts, voters: k.voters, endsAt: k.endsAt, closed: k.closed, close: close === undefined ? null : publicAct(close), balloted: ballotsOn(p.id).length > 0 };
+    });
+    const open = current.filter((p) => p.payload.secret !== true);
+    const voters = open.flatMap((p) => countedBallots(ballotsOn(p.id).map(asCounted), iso(pollEnd(p))).filter((b) => b.picks.length > 0)
+      .sort((x, y) => Date.parse(y.at) - Date.parse(x.at) || (x.act! < y.act! ? 1 : -1)).slice(0, 50)
+      .map((b): PollVoter => ({ poll: p.id, act: b.act!, character: b.character!, picks: b.picks, at: b.at })));
+    const mine = me()?.id;
+    const myBallots = current.flatMap((p) => countedBallots(ballotsOn(p.id).map(asCounted), iso(pollEnd(p))).filter((b) => characters.get(b.character!)?.owner === mine && mine !== undefined)
+      .map((b): Ballot => ({ act: b.act!, poll: p.id, character: b.character!, picks: b.picks, at: b.at }))).sort((x, y) => Date.parse(x.at) - Date.parse(y.at) || (x.act < y.act ? -1 : 1));
+    return {
+      polls, voters, votersMore: polls.filter((p) => acts.get(p.act.id)!.payload.secret !== true && p.voters > 50).map((p) => p.act.id), myBallots,
+      cast: [...new Set(voters.map((v) => v.character))].sort(),
+    };
+  }
+
+  function post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[], poll?: PollDraft): Answer<Act> {
+    const bad = request({ action: 'post', thread, character, body, quote, ...(framing ? { framing } : {}), ...(poll ? { poll } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1435,16 +1662,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(found)) return found;
     if (found.board.isSystem) return refuse(SYSTEM_BOARD);
     if (quote !== null && !acts.has(quote)) return refuse('there is no such Act to quote');
-    const stopped = stoppedQuote(thread, quote, body);
+    const verdict = forgedQuotes(body, stamp ?? now());
+    const stopped = stoppedQuote(thread, quote !== null && verdict.includes(quote) ? null : quote, body, '', verdict);
     if (stopped) return refuse(stopped);
     const written = write({ character, kind: 'post', thread, target: quote, payload: { body } });
+    if (poll) writePoll(written, character, poll);
     sendAct(written);
-    writeFramed(body, framing, written);
+    writeForgedFramed(written, writeFramed(body, framing, written));
     return ok(publicAct(written));
   }
 
-  function startThread(boardSlug: string, character: Id, title: string, body: string, framing?: readonly Id[]): Answer<{ thread: ThreadSummary; act: Act }> {
-    const bad = request({ action: 'startThread', board: boardSlug, character, title, body, ...(framing ? { framing } : {}) });
+  function startThread(boardSlug: string, character: Id, title: string, body: string, framing?: readonly Id[], poll?: PollDraft): Answer<{ thread: ThreadSummary; act: Act }> {
+    const bad = request({ action: 'startThread', board: boardSlug, character, title, body, ...(framing ? { framing } : {}), ...(poll ? { poll } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1458,13 +1687,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ? `this board was merged into ${went ? boardNow(went).name : 'another board'}${openEnd(board.id) !== closed.mergedInto && openEnd(board.id) !== null ? `, which was closed too; its threads are in ${boardNow(boards.find((b) => b.id === openEnd(board.id))!).name}, so start your thread there instead` : ', and its threads are there; start your thread there instead'}`
         : `this board was closed, and its threads are in ${boardNow(boards.find((b) => b.id === (openEnd(board.id) ?? closed.fallback))!).name}; start your thread there instead`);
     }
-    const stopped = stoppedQuote(null, null, body);
+    const stopped = stoppedQuote(null, null, body, '', forgedQuotes(body, stamp ?? now()));
     if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, null);
     const written = write({ character, kind: 'post', thread: t.id, payload: { body } });
+    if (poll) writePoll(written, character, poll);
     sendThread(t);
     sendAct(written);
-    writeFramed(body, framing, written);
+    writeForgedFramed(written, writeFramed(body, framing, written));
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
@@ -1475,6 +1705,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(c)) return c;
     const from = acts.get(origin);
     if (!from || from.kind === 'edit') return refuse('there is no such Act to spin from');
+    /* spin_written (0395): a close is not spun, a replaced or removed poll is not, and a secret ballot would have no one to name. */
+    if (from.kind === 'poll_close') return refuse('spin the poll');
+    if (from.kind === 'poll' && currentPoll(from.target!)?.id !== from.id) return refuse('that poll was replaced');
+    if (from.kind === 'ballot' && acts.get(from.target!)?.payload.secret === true) return refuse('a secret ballot cannot be spun');
     const home = boards.find((b) => b.id === threads.get(from.thread)!.board)!;
     const board = home.isSystem ? playersBoard! : home;
     /* spin_written (0351, 0357): a spin names a post only from a live character play, on a post of the character the play is on as the post shows its author (a veiled post is the stand-in's). Nothing here reads who owns either. */
@@ -1485,13 +1719,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         && reach.endsAt > now() && !reversedPlays.has(origin);
       if (!there) return refuse('that card is not on that post');
     }
-    const stopped = stoppedQuote(null, null, body);
+    const stopped = stoppedQuote(null, null, body, '', forgedQuotes(body, stamp ?? now()));
     if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, origin);
     const written = write({ character, kind: 'spin', thread: t.id, target: origin, payload: { title, body, ...(at === undefined ? {} : { at }) } });
     sendThread(t);
     sendAct(written);
-    writeFramed(body, framing, written);
+    writeForgedFramed(written, writeFramed(body, framing, written));
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
@@ -2073,9 +2307,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A card that replies carries its reply; its words and their length are the act function's, above, and the rest of the reply's refusals are play_card's, below (0348). */
     const carries = rules.replies === true;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
+    const forgedNow = forgedList(publicAct(on).currentPayload);
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, shownAuthor(on, false) ?? undefined), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first, caster: character });
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, shownAuthor(on, false) ?? undefined, forgedNow), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first, caster: character });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
     if (decided.value.draw) {
@@ -2436,7 +2671,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, when ?? {}, new Date(now()));
+    const forgedNow = forgedList(publicAct(on).currentPayload);
+    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, undefined, undefined, forgedNow), effectsOn(target), config, instance.cards, when ?? {}, new Date(now()));
     if (!decided.ok) return refuse(decided.why, 'config');
     /* As set_card (0144) says it: a named id that is not a debuted character, one message for a missing and an undebuted one, by its place in the list. */
     const unknown = (decided.value.who?.characters ?? []).findIndex((id) => characters.get(id)?.debutedAt == null);
@@ -2490,7 +2726,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideUse(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, message, { now: new Date(now()) });
+    const forgedNow = forgedList(publicAct(on).currentPayload);
+    const decided = decideUse(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, undefined, undefined, forgedNow), effectsOn(target), config, message, { now: new Date(now()) });
     if (!decided.ok) return refuse(decided.why, 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -2510,16 +2747,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
-  function edit(target: Id, character: Id, body: string): Answer<Act> {
-    const bad = request({ action: 'edit', post: target, character, body });
+  function edit(target: Id, character: Id, body: string, poll?: PollDraft | { readonly removed: true }): Answer<Act> {
+    const bad = request({ action: 'edit', post: target, character, body, ...(poll ? { poll } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
     const original = acts.get(target);
     if (!original || original.kind !== 'post' || original.character !== character) return refuse('that is not a post of this character\'s');
-    const stopped = stoppedQuote(original.thread, null, body, String(edits(original).at(-1)?.payload.body ?? original.payload.body ?? ''));
+    const stopped = stoppedQuote(original.thread, null, body, String(edits(original).at(-1)?.payload.body ?? original.payload.body ?? ''), forgedQuotes(body, stamp ?? now()));
     if (stopped) return refuse(stopped);
+    /* edit_post: a poll that has a ballot, or has closed, cannot change; the words still edit (a removal on a post with no poll writes nothing). */
+    const had = poll ? currentPoll(target) : undefined;
+    if (had !== undefined && ballotsOn(had.id).length > 0) return refuse('a poll cannot change once a ballot is cast; you can still close it');
+    if (had !== undefined && now() >= pollEnd(had)) return refuse('a closed poll cannot change');
     write({ character, kind: 'edit', thread: original.thread, target, payload: { body } });
+    if (poll && 'removed' in poll) { if (had !== undefined) write({ character, kind: 'poll', thread: original.thread, target, payload: { removed: true } }); }
+    else if (poll) writePoll(original, character, poll);
     sendAct(original);
     return ok(publicAct(original));
   }
@@ -3101,7 +3344,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (a.at < from || a.at >= to) continue;
       if (q.titlesOnly && a.seq !== 1) continue;
       const raw = (latest.get(a.id)?.payload ?? a.payload).body;
-      const body = visibleText(parse(typeof raw === 'string' ? raw : '')).replace(/\s+/g, ' ').trim();
+      const body = visibleText(parse(typeof raw === 'string' ? raw : '', undefined, forgedSet(forgedList(latest.get(a.id)?.payload ?? a.payload)))).replace(/\s+/g, ' ').trim();
       /* A thread's first post carries its title at the heaviest weight, so a title and a post match in one index. */
       const title = a.seq === 1 ? wordsOf(thread.title) : [];
       const here = q.titlesOnly ? title : [...title, ...wordsOf(body)];
@@ -3309,6 +3552,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const a = acts.get(id);
       if (!a || a.kind !== 'move') return null;
       return buildMoveNotice(publicAct(a), tallyOf(id), progressOf(a));
+    },
+    quoteCheck(body) {
+      /* quote_check refuses a body over the longest post, as post does (`within`); the composer takes a refusal as no answer. */
+      const bad = within('body', body, settings.postMaxLength);
+      if (bad) throw new Error(bad);
+      return forgedQuotes(body, now());
     },
     myApologies(character) {
       const account = me();
@@ -3803,6 +4052,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             draws: newest(surfaces.draws.filter((x) => fits(x.ms))).map(({ r }) => r),
             wallsDrawn: newest(surfaces.walls.filter((x) => fits(x.ms))).map(({ r }) => r),
           }))(account === undefined ? { draws: [], walls: [] } : surfaceLog(account)),
+          /* my_ballots and my_poll_closes (0395, 0396), as log_page's `ballots` and `pollCloses` read them: the caller's own ballots (a secret one's character and picks too, a withdrawal's picks empty, `changed` where the character's previous ballot on the poll picked something) and an admin's closes of the polls their characters wrote. */
+          ...((rows) => ({
+            ballots: newest(rows.ballots.filter((x) => fits(x.ms))).map(({ r }) => r),
+            pollCloses: newest(rows.closes.filter((x) => fits(x.ms))).map(({ r }) => r),
+          }))(account === undefined ? { ballots: [], closes: [] } : pollLog(account)),
           /* my_posts_written_on (0149): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
           writes: newest(texts.flatMap((t) => {
             const play = acts.get(t.play);
@@ -4229,11 +4483,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return {
           act, plays: [...shown, ...read.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId))], more: all.length > 20, moment,
           at: spot === null ? null : { thread: spot.thread, seq: spot.seq }, cast: core.characters([...new Set(named.filter((c): c is Id => c !== null))].sort()),
+          polls: [], voters: [], votersMore: [], myBallots: [],
         };
+      })();
+      /* A spun poll or ballot: the box draws the poll its post has, with the voters it lists (their faces join the origin's cast). */
+      const originPoll = ((): PageOrigin | null => {
+        const from = origin?.act ?? null;
+        const post = from === null ? undefined : from.kind === 'poll' ? from.targetActId : from.kind === 'ballot' ? acts.get(from.targetActId!)?.target : undefined;
+        if (origin === null || post == null) return origin;
+        const parts = pollParts([post]);
+        const spot = acts.get(post);
+        return { ...origin, at: spot === undefined ? origin.at : { thread: spot.thread, seq: spot.seq! }, cast: [...origin.cast, ...core.characters(parts.cast.filter((c) => !origin.cast.some((k) => k.id === c)))].sort((x, y) => (x.id < y.id ? -1 : 1)), polls: parts.polls, voters: parts.voters, votersMore: parts.votersMore, myBallots: parts.myBallots };
       })();
       const originPlays = origin === null ? [] : origin.plays.filter((a) => a.kind !== 'card_end');
       const wanted = [...played, ...originPlays].filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
       const ids = [...shownActs, ...under.map((u) => u.act), ...played, ...(origin?.act ? [origin.act] : []), ...originPlays].map((a) => a.id);
+      const pagePolls = pollParts(posts.map((a) => a.id));
       const visits = visitsOn(shownActs.filter((a) => a.kind === 'post' || a.kind === 'spin').concat(under.map((u) => u.act)).map((a) => a.id));
       /* A visit's Mod is named on the page (`who` in thread_page, 0108), though it has no post there. */
       const who = [...new Set([...shownActs, ...under.map((u) => u.act), ...played].flatMap((a) => (a.character === null ? [] : [a.character])).concat(visits.map((v) => v.mod)))].sort();
@@ -4247,8 +4512,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         plays, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), veiled: myVeiled(posts.map((a) => a.id)),
         states: core.effectStates(wanted), releases: core.myReleases(wanted), spent: plays.filter((a) => spentPlays().has(a.id)).map((a) => a.id),
         visits,
-        tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
-        board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(), origin,
+        tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany([...ids, ...pagePolls.polls.map((x) => x.act.id)], SPUN_FROM_MAX), reading: core.reading([thread]),
+        board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(), origin: originPoll,
+        polls: pagePolls.polls, voters: pagePolls.voters, votersMore: pagePolls.votersMore, voterCast: core.characters(pagePolls.cast), myBallots: pagePolls.myBallots,
       };
     },
     profilePage(id): ProfilePage | null {
@@ -4375,8 +4641,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p === undefined || p.kind !== 'post' || owner === undefined || owner === null || owner !== me()?.id) return null;
       const cur = edits(p).at(-1) ?? p;
       const how = hiddenVersions.get(cur.id);
-      if (how === 'hideUntilEdited') return { status: 'hiddenUntilEdited', version: cur.id, words: String(cur.payload['body'] ?? '') };
-      return how === 'waiting' ? { status: 'waiting', version: cur.id, words: String(cur.payload['body'] ?? '') } : null;
+      const forged = forgedList(cur.payload);
+      if (how === 'hideUntilEdited') return { status: 'hiddenUntilEdited', version: cur.id, words: String(cur.payload['body'] ?? ''), ...(forged ? { forged } : {}) };
+      return how === 'waiting' ? { status: 'waiting', version: cur.id, words: String(cur.payload['body'] ?? ''), ...(forged ? { forged } : {}) } : null;
     },
     decideReport(report, outcomes) {
       if (!me()?.admin) return refuse('only an admin decides a report');
@@ -4616,7 +4883,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     createInvite, reissueInvite,
 
-    startThread, post: lossy(post), edit: lossy(edit), spin: lossy(spin), react, turn, withdrawTurn, unmask, createCharacter, setDebut,
+    startThread, post: lossy(post), edit: lossy(edit), castBallot: lossy(castBallot), closePoll: lossy(closePoll), closePollAsAdmin: lossy(closePollAsAdmin), pollBallots, spin: lossy(spin), react, turn, withdrawTurn, unmask, createCharacter, setDebut,
     setProfile(character, title, signature, pipStyle, pronouns) {
       const c = acting(character);
       if (isRefusal(c)) return c;
@@ -4977,8 +5244,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     post(thread, character, body, o = {}) {
       if (character === null) return systemAct(thread, o, body).id;
-      const made = accepted(asAt(ownerOf(character), o.at, () => post(thread, character, body, o.quote ?? null)));
-      return made.id;
+      judging = o.unjudged !== true;
+      try {
+        return accepted(asAt(ownerOf(character), o.at, () => post(thread, character, body, o.quote ?? null))).id;
+      } finally { judging = true; }
+    },
+    poll(post, draft, o = {}) {
+      const on = acts.get(post);
+      if (on === undefined || on.character === null || !isPost(on.kind)) throw new Error('a poll is on a post of a character');
+      const problems = pollDraftProblems(draft, settings);
+      if (problems.length > 0) throw new Error(`the seed was refused: ${problems[0]}`);
+      return asAt(ownerOf(on.character), o.at, () => writePoll(on, on.character!, draft)).id;
+    },
+    ballot(character, poll, picks, o = {}) {
+      return accepted(asAt(ownerOf(character), o.at, () => castBallot(poll, character, picks))).act.id;
     },
     edit(post, character, body, o = {}) {
       accepted(asAt(ownerOf(character), o.at, () => edit(post, character, body)));

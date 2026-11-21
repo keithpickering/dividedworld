@@ -35,6 +35,7 @@ import type { FrontDoorCharacter } from '../types.ts';
 import { PersonaMark } from '../updates/Persona.tsx';
 import './front-door.css';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
+import { forgedList } from '../../bbcode/quoted.ts';
 
 /** The instant every staged Act and play carries: a made-up thread has no real time. */
 const STAGED_AT = '2026-01-01T00:00:00.000Z';
@@ -68,7 +69,7 @@ function Post({ staged, stores, nameOf }: { readonly staged: Staged; readonly st
         {person && <Postbit person={person} layout="side" link={false} />}
         <header className="kb-act-meta">{marks}<span className="kb-act-number">#{seq}</span></header>
         <div className="kb-act-main" data-kb-content-area>
-          <PostEffects plays={stores.plays} post={act} place="thread" marks={marks} nameOf={nameOf}><BbCode text={body} /></PostEffects>
+          <PostEffects plays={stores.plays} post={act} place="thread" marks={marks} nameOf={nameOf}><BbCode text={body} forged={forgedList(act.currentPayload)} /></PostEffects>
           <Reactions act={act.id} author={act.character} authorName={name} tallies={stores.tallies} mine={stores.mine} />
         </div>
       </div>

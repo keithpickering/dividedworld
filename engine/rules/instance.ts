@@ -27,7 +27,7 @@ import type { EventLine } from './cosmetics.ts';
 export const BRIBE_BOUNDS = { least: 25, most: 500 } as const;
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
-/** A card's time up may count hours: a use card for a day and a half. No setting does. */
+/** A card's time up may count hours: a use card for a day and a half. So may how long a poll lasts (`pollLastsMin`, `pollLastsMax`); no other setting does. */
 const LASTS_UNITS: readonly Span['unit'][] = ['hour', ...SPAN_UNITS];
 /** A grace may be minutes long (editGrace), and so may presence's window; nothing else is. */
 const GRACE_UNITS: readonly Span['unit'][] = ['minute', ...SPAN_UNITS];
@@ -271,6 +271,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   vote: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
   debateDays: whole(1, 'days', 365),
   halving: (v) => (typeof v === 'number' && v > 0 && v <= 1 ? null : 'a fraction above 0 and at most 1'),
+  revealPerk: (v) => (typeof v === 'number' && v >= 0 && v <= 1 ? null : 'a number from 0 to 1'),
   reactionCap: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   crowdPayEach: (v) => (isWhole(v, 0) ? null : 'a whole number of hundredths, at least 0'),
   crowdPayMost: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
@@ -285,6 +286,12 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   inviteLifetime: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
   editGrace: (v) => (isSpan(v, GRACE_UNITS) ? null : 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000'),
   postMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
+  // As SQL's settings_held holds them (0395): a poll has at least two options, and a span here may count hours.
+  pollOptionsMax: whole(2, 'options', 100),
+  pollQuestionMax: whole(1, 'characters'),
+  pollOptionMax: whole(1, 'characters'),
+  pollLastsMin: (v) => (isSpan(v, LASTS_UNITS) ? null : 'a span: a unit of hour, day, week or month and a whole count from 1 to 1000'),
+  pollLastsMax: (v) => (isSpan(v, LASTS_UNITS) ? null : 'a span: a unit of hour, day, week or month and a whole count from 1 to 1000'),
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   postsPerPage: (v) => (isWhole(v, 1) ? null : 'a whole number of posts, at least 1'),
   hotReplies: (v) => (isWhole(v, 1) ? null : 'a whole number of replies, at least 1'),
@@ -361,6 +368,12 @@ export function settingsProblems(settings: Settings): string[] {
     if (!(key in settings) || settings[key] === undefined) { out.push(`setting "${key}" is missing`); continue; }
     const why = rule(settings[key]);
     if (why) out.push(`setting "${key}" is ${JSON.stringify(settings[key])}; it must be ${why}`);
+  }
+  // The least a poll may last is no longer than the most (SQL's settings_held holds the same, against the other's row).
+  const hours = { minute: 1 / 60, hour: 1, day: 24, week: 168, month: 720 } as const;
+  if (isSpan(settings.pollLastsMin, LASTS_UNITS) && isSpan(settings.pollLastsMax, LASTS_UNITS)
+      && settings.pollLastsMin.count * hours[settings.pollLastsMin.unit] > settings.pollLastsMax.count * hours[settings.pollLastsMax.unit]) {
+    out.push(`setting "pollLastsMin" is ${JSON.stringify(settings.pollLastsMin)}; it must be a span no longer than pollLastsMax`);
   }
   // No sentence relates the window to the floor: SQL's settings_held checks each row alone, and writeTokensMost computes the most from the pair, never
   // below 1, so no pair of valid rows stops the instance (design section 4; the owner's answer on #582).

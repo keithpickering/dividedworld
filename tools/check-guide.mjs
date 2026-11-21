@@ -63,6 +63,14 @@ export const UNIT_WORDS = 'orbs?|characters?|reactions?|invites?|posts?|seconds?
 /** A number (digits, or a number word but one), at most one word, then a unit word: "6.00 orbs", "30-day", "up to six characters", "3 more reactions". */
 const RETYPED = new RegExp(`(?<![\\w.])(\\d[\\d,.]*%?|${NUMBER_WORDS})(?:-|\\s+)(?:[A-Za-z'’]+\\s+)?(${UNIT_WORDS})\\b`, 'giu');
 
+/**
+ * A multiplier or a fraction said in words: "double", "triple", "twice", "half", "a fifth", "two thirds", "a quarter", and a number word
+ * then "times" ("four times over"). "doubled" (a card frame) and "one" (a pronoun) are not these and are left alone.
+ */
+const FRACTIONS = 'half|halves|thirds?|fourths?|fifths?|sixths?|sevenths?|eighths?|ninths?|tenths?|quarters?';
+const COUNT_WORDS = `one|${NUMBER_WORDS}`;
+const RETYPED_WORD = new RegExp(`(?<![\\w-])(double|triple|quadruple|twice|thrice|half|(?:an?|${COUNT_WORDS})\\s+(?:${FRACTIONS})|(?:${COUNT_WORDS})\\s+times)(?![\\w-])`, 'giu');
+
 /** The words of a block, a setting marker said as a placeholder that is neither a digit nor a word, so a marker beside a unit is clean. */
 function words(block) {
   const say = () => '§';
@@ -161,6 +169,13 @@ export function guideFaults({ file, markdown, hints, hintsFile = file.replace(/s
     for (const text of words(block)) {
       for (const m of text.matchAll(RETYPED)) {
         fault(file, lineOf(markdown, m[0]) || lineOf(markdown, m[1]), `"${m[0]}" is a number typed into the prose beside "${m[2]}"; say it with {{setting:<path>}} so a retune cannot make it untrue`);
+      }
+    }
+  }
+  for (const block of blocks) {
+    for (const text of words(block)) {
+      for (const m of text.matchAll(RETYPED_WORD)) {
+        fault(file, lineOf(markdown, m[0]), `"${m[0]}" is a multiplier or a fraction typed into the prose; say it with {{setting:<path>}}, or without an amount, so a retune cannot make it untrue`);
       }
     }
   }

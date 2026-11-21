@@ -19,12 +19,12 @@ import { RouterProvider } from './router.tsx';
 import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../rules/test-system.ts';
 
 const settings: Settings = {
-  walletCap: 600, vote: 10, halving: 0.5, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 3,
+  walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 3,
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
   hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
-  postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'whoops.price': 100 }, ...systemSettings,
+  postMaxLength: 200, pollOptionsMax: 10, pollQuestionMax: 200, pollOptionMax: 100, pollLastsMin: { unit: 'hour', count: 1 }, pollLastsMax: { unit: 'day', count: 14 }, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'whoops.price': 100 }, ...systemSettings,
 };
 
 /* What screen_settings's groups holds (0128) for the test instance: the ladder lowest first, then the conferred groups. */
@@ -199,6 +199,7 @@ export function tapThread(fake: Fake): () => ThreadListener {
     onTally: (act, t) => (listener ? listener.onTally?.(act, t) : void waiting.push((l) => l.onTally?.(act, t))),
     onEffect: (p, at) => (listener ? listener.onEffect?.(p, at) : void waiting.push((l) => l.onEffect?.(p, at))),
     onUnder: (parent, play, a) => (listener ? listener.onUnder?.(parent, play, a) : void waiting.push((l) => l.onUnder?.(parent, play, a))),
+    onPoll: (e) => (listener ? listener.onPoll?.(e) : void waiting.push((l) => l.onPoll?.(e))),
   };
   return () => proxy;
 }
