@@ -33,7 +33,8 @@ const SOUNDS = 'instances/divided-world/ui/sounds';
 const music = flag('music', `${DIR}/music/dies-irae-icbsa.ogg`);
 const out = flag('out', `${DIR}/rough-cut.mp4`);
 
-/* [take, first frame, last frame, speed, extras] */
+/** @typedef {{ music?: string, hit?: number, clicks?: number[], sounds?: { file: string, at?: number }[] }} Extra */
+/** [take, first frame, last frame, speed, extras] @type {[string, number, number, number, Extra?][]} */
 const CUTS = [
   /* 1. Cold open: silence but for the mouse; a post, a reaction. The music starts on the stamp. */
   ['cold-open', 120, 400, 1.7, { clicks: [396] }],

@@ -166,7 +166,8 @@ const world: World = (fake, instance) => {
   if (viewer === undefined) throw new Error(`the stage has no character named "${AS}": the cast is ${Object.keys(owner).join(', ')}`);
   fake.signInAs(viewer);
   /* Brighter Effects is on (the owner, 2026-11-14): the film is of the effects. */
-  void fake.setPreferences({ theme: SKIN, tips: 'off', motion: 'full', effects: 'bright' });
+  void fake.setPreferences({ theme: SKIN, motion: 'full', effects: 'bright' });
+  void fake.skipTips();
   /* The film's player has met every card, as a player meets one (a card is met by its own call, not as a preference): no first-time tip opens over a shot. */
   for (const c of instance.cards) void fake.meetCard(c.key);
   made = { thread, target: { act: target, seq: 4, character: who('Snuckles') }, cast, me, scenes, threads: { main: thread, argued: argued.thread, goodbye: goodbye.thread }, staff: { fangame, qc, ontopic: mod } };

@@ -12,25 +12,40 @@
  */
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, existsSync } from 'node:fs';
-import { tmpdir, uptime } from 'node:os';
+import { homedir, tmpdir, uptime } from 'node:os';
 import { join } from 'node:path';
 
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
 
-/** The headless shell Playwright installed, newest first. */
-function headlessShell() {
-  const root = join(process.env.LOCALAPPDATA ?? '', 'ms-playwright');
-  const dirs = readdirSync(root).filter((d) => d.startsWith('chromium_headless_shell-')).sort().reverse();
-  for (const d of dirs) {
-    for (const sub of readdirSync(join(root, d))) {
-      for (const exe of ['chrome-headless-shell.exe', 'headless_shell.exe']) {
-        const p = join(root, d, sub, exe);
-        if (existsSync(p)) return p;
+/** Where Playwright keeps its browsers on this machine, in the order they are tried. */
+export function browserRoots(env = process.env, home = homedir()) {
+  return [
+    ...(env.PLAYWRIGHT_BROWSERS_PATH ? [env.PLAYWRIGHT_BROWSERS_PATH] : []),
+    '/opt/pw-browsers',
+    ...(env.LOCALAPPDATA ? [join(env.LOCALAPPDATA, 'ms-playwright')] : []),
+    join(home, '.cache', 'ms-playwright'),
+  ];
+}
+
+/** The headless shell under the first of `roots` that holds one, newest build first; throws naming every root looked in. */
+export function findHeadlessShell(roots, platform = process.platform) {
+  const exes = platform === 'win32' ? ['chrome-headless-shell.exe', 'headless_shell.exe'] : ['chrome-headless-shell', 'headless_shell'];
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    const dirs = readdirSync(root).filter((d) => d.startsWith('chromium_headless_shell-')).sort().reverse();
+    for (const d of dirs) {
+      for (const sub of readdirSync(join(root, d))) {
+        for (const exe of exes) {
+          const p = join(root, d, sub, exe);
+          if (existsSync(p)) return p;
+        }
       }
     }
   }
-  throw new Error(`no chromium headless shell under ${root}`);
+  throw new Error(`no chromium headless shell under ${roots.join(', ')}`);
 }
+
+const headlessShell = () => findHeadlessShell(browserRoots());
 
 /** A CDP connection over one WebSocket, with flat sessions. */
 class Cdp {
@@ -68,6 +83,8 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
   const profile = mkdtempSync(join(tmpdir(), 'kb-hype-'));
   const chrome = spawn(headlessShell(), [
     '--remote-debugging-port=0', `--user-data-dir=${profile}`,
+    /* A container runs as root, which Chromium refuses to sandbox. */
+    ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []),
     '--enable-begin-frame-control', '--run-all-compositor-stages-before-draw', '--disable-new-content-rendering-timeout',
     '--disable-threaded-animation', '--disable-threaded-scrolling', '--disable-checker-imaging',
     '--font-render-hinting=none', '--force-color-profile=srgb', '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', '--mute-audio',

@@ -30,6 +30,8 @@ export const BUILT = `(() => {
  * Opens the stage, in `skin`, signed in as the player of the character `as` names (Snuckles's when it names none). `quiet` names what is taken out of frame: `toasts`, `host` (the address in the banner, which is the preview server's)
  * `hud` (the glass along the foot, for a shot tight on a post) and `selection` (the post's words cannot be selected: a drag that outlives
  * its stroke, because the coat it was washing came clean under it, selects the words it passes over, and opens the quote button).
+ *
+ * @param {{ skin?: string, as?: string | null, view?: string | null, css?: { width: number, height: number }, scale?: number, quiet?: string[], port?: number }} [options]
  */
 export async function openStage({ skin = 'default', as = null, view = null, css, scale = 2, quiet = ['toasts', 'host'], port = Number(flag('port', 4319)) } = {}) {
   mkdirSync(OUT, { recursive: true });
