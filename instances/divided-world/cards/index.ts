@@ -29,6 +29,7 @@ import { heatMagnet, price as heatMagnetPrice } from './heat-magnet.ts';
 import { hotBox, price as hotBoxPrice } from './hot-box.ts';
 import { hypeUp, price as hypeUpPrice } from './hype-up.ts';
 import { jimmyWails, price as jimmyWailsPrice } from './jimmy-wails.ts';
+import { kickMe, price as kickMePrice } from './kick-me.ts';
 import { lastWord, price as lastWordPrice } from './last-word.ts';
 import { laughTrack, price as laughTrackPrice } from './laugh-track.ts';
 import { lineCutter, price as lineCutterPrice } from './line-cutter.ts';
@@ -36,6 +37,7 @@ import { mainEvent, price as mainEventPrice } from './main-event.ts';
 import { mooch, price as moochPrice } from './mooch.ts';
 import { offDay, price as offDayPrice } from './off-day.ts';
 import { overreaction, price as overreactionPrice } from './overreaction.ts';
+import { payItForward, price as payItForwardPrice } from './pay-it-forward.ts';
 import { publicityTour, price as publicityTourPrice } from './publicity-tour.ts';
 import { requiredReading, price as requiredReadingPrice } from './required-reading.ts';
 import { ropeBreak, price as ropeBreakPrice } from './rope-break.ts';
@@ -75,6 +77,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [hotBox as CardRules, hotBoxPrice],
   [hypeUp as CardRules, hypeUpPrice],
   [jimmyWails as CardRules, jimmyWailsPrice],
+  [kickMe as CardRules, kickMePrice],
   [lastWord as CardRules, lastWordPrice],
   [laughTrack as CardRules, laughTrackPrice],
   [lineCutter as CardRules, lineCutterPrice],
@@ -82,6 +85,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [mooch as CardRules, moochPrice],
   [offDay as CardRules, offDayPrice],
   [overreaction as CardRules, overreactionPrice],
+  [payItForward as CardRules, payItForwardPrice],
   [publicityTour as CardRules, publicityTourPrice],
   [requiredReading as CardRules, requiredReadingPrice],
   [ropeBreak as CardRules, ropeBreakPrice],
