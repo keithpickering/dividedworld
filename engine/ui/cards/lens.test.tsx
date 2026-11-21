@@ -2892,7 +2892,7 @@ describe('a card\'s icon on its tab', () => {
   const HOUR = 3_600_000;
   const iconOf = (name: string | RegExp) => tab(name as string).querySelector<HTMLElement>('.kb-lens-tab-icon');
   /** A post carrying the kinds' plays as the page would write them: a Use of k2 timed out, a back set face down and, where asked, sprung into k3. */
-  function laid(o: { ui?: readonly CardUi[]; spring?: boolean; use?: boolean; visit?: boolean } = {}) {
+  function laid(o: { ui?: readonly CardUi[]; spring?: boolean; use?: boolean; visit?: boolean; lit?: boolean } = {}) {
     const w = world();
     w.fake.clock.advance(60_000);
     const past = new Date(w.fake.clock.now() - HOUR).toISOString();
@@ -2900,7 +2900,7 @@ describe('a card\'s icon on its tab', () => {
     const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
     const act = (id: string, kind: 'card' | 'set' | 'spring', payload: Record<string, unknown>) => ({ ...base, id, kind, payload, currentPayload: payload });
     const acts = [
-      ...(o.use === false ? [] : [act('u', 'card', { card: 'k2', ends: past })]),
+      ...(o.use === false ? [] : [act('u', 'card', o.lit ? { card: 'k2' } : { card: 'k2', ends: past })]),
       act('b', 'set', {}),
       ...(o.spring ? [act('sp', 'spring', { card: 'k3', trigger: 'cast', outcome: { do: 'payout' }, set: 'b', by: 'u' })] : []),
     ];
@@ -2925,6 +2925,20 @@ describe('a card\'s icon on its tab', () => {
     expect(icon).toHaveAttribute('draggable', 'false');
     expect(within(lens()).getByRole('tab', { name: 'Card 2' })).toBeInTheDocument();
     expect(tab('Card 2').textContent).toBe('Card 2');
+  });
+
+  /* The tab at the Lens's top edge, in the frame's bar, is the one that carries the icon: a live kind's and a spent one's alike, the mark's own picture. */
+  test.each([['lit', true], ['spent', false]] as const)('the top tab of a %s kind carries its card\'s mark', async (state, lit) => {
+    width(false);
+    laid({ lit });
+    const mark = await screen.findByRole('button', { name: /^Card 2, \d plays?/u });
+    if (state === 'spent') expect(mark).toHaveAttribute('data-kb-spent', 'true');
+    else expect(mark).not.toHaveAttribute('data-kb-spent');
+    await userEvent.click(mark);
+    const top = within(lens()).getByRole('tab', { name: 'Card 2' });
+    expect(top.closest('.kb-glass-dialog-bar')).not.toBeNull();
+    expect(top).toHaveAttribute('aria-selected', 'true');
+    expect(top.querySelector('img.kb-lens-tab-icon')).toHaveAttribute('src', '/mark.svg');
   });
 
   test('a sprung back\'s tab shows the card it became; a face-down back\'s shows none', async () => {
