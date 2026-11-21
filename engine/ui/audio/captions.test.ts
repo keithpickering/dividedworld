@@ -6,8 +6,8 @@ beforeEach(() => { mock.timers.enable({ apis: ['setTimeout', 'Date'] }); });
 afterEach(() => { mock.timers.reset(); });
 
 type Store = ReturnType<typeof createCaptions>;
-const lines = (c: Store) => c.lines() ?? [];
-const anns = (c: Store) => c.announcements() ?? [];
+const lines = (c: Store) => c.lines();
+const anns = (c: Store) => c.announcements();
 const texts = (c: Store) => lines(c).map((l) => l.text);
 const shape = (c: Store) => lines(c).map((l) => `${l.text}${l.held ? ' (held)' : ''} x${l.count}`);
 
@@ -176,7 +176,6 @@ describe('the caption store', () => {
     c.say({ text: 'A', ms: 5000 });
     c.subscribe(() => { heard += 1; });
     const before = c.lines();
-    assert.ok(before);
     assert.equal(c.lines(), before);
     c.hold('a', { text: 'Loop', ink: 'red' });
     assert.equal(c.lines(), before);
@@ -190,10 +189,24 @@ describe('the caption store', () => {
     const c = createCaptions();
     c.say({ text: 'A', ms: 5000 });
     const before = c.announcements();
-    assert.ok(before);
     assert.equal(c.announcements(), before);
     mock.timers.tick(SAID_MS);
     assert.notEqual(c.announcements(), before);
+  });
+
+  test('a hold with the words of a said line is its own line, in either order', () => {
+    const c = createCaptions();
+    c.say({ text: 'X', ms: 5000 });
+    c.hold('h', { text: 'X' });
+    assert.deepEqual(shape(c), ['X x1', 'X (held) x1']);
+    c.release('h');
+    assert.deepEqual(shape(c), ['X x1']);
+    const d = createCaptions();
+    d.hold('h', { text: 'X' });
+    d.say({ text: 'X', ms: 5000 });
+    assert.deepEqual(shape(d), ['X (held) x1', 'X x1']);
+    mock.timers.tick(5000);
+    assert.deepEqual(shape(d), ['X (held) x1']);
   });
 
   test('subscribers hear each change, and stop when they unsubscribe', () => {
@@ -267,6 +280,46 @@ describe('the caption store', () => {
       assert.deepEqual(anns(c).map((a) => a.text), ['Once']);
     });
 
+    test('a fifth say after the total was announced announces "5 times" QUIET_MS later', () => {
+      const c = createCaptions();
+      c.say({ text: 'X', ms: 10000 });
+      for (let i = 0; i < 3; i++) c.say({ text: 'X', ms: 10000 });
+      mock.timers.tick(QUIET_MS);
+      assert.deepEqual(anns(c).map((a) => a.text), ['X', 'X, 4 times']);
+      c.say({ text: 'X', ms: 10000 });
+      mock.timers.tick(QUIET_MS - 1);
+      assert.deepEqual(anns(c).map((a) => a.text), ['X', 'X, 4 times']);
+      mock.timers.tick(1);
+      assert.deepEqual(anns(c).map((a) => a.text), ['X', 'X, 4 times', 'X, 5 times']);
+    });
+
+    test('a total announced by the quiet timer is not announced again when the line ends', () => {
+      const c = createCaptions();
+      c.say({ text: 'X', ms: 1500 });
+      c.say({ text: 'X', ms: 1500 });
+      mock.timers.tick(QUIET_MS);
+      assert.deepEqual(anns(c).map((a) => a.text), ['X', 'X, 2 times']);
+      mock.timers.tick(1500 - QUIET_MS);
+      assert.deepEqual(texts(c), []);
+      assert.deepEqual(anns(c).map((a) => a.text), ['X', 'X, 2 times']);
+    });
+
+    test('an eviction with the quiet timer pending announces the total once, at eviction, in one notification', () => {
+      const c = createCaptions();
+      c.say({ text: 'A', ms: 1000 });
+      c.say({ text: 'A', ms: 1000 });
+      c.say({ text: 'B', ms: 5000 });
+      c.say({ text: 'C', ms: 5000 });
+      let heard = 0;
+      c.subscribe(() => { heard += 1; });
+      c.say({ text: 'D', ms: 5000 });
+      assert.equal(heard, 1);
+      assert.equal(anns(c).filter((a) => a.text === 'A, 2 times').length, 1);
+      mock.timers.tick(1000);
+      assert.equal(anns(c).filter((a) => a.text === 'A, 2 times').length, 1);
+      assert.equal(heard, 1);
+    });
+
     test('a hold pushes nothing', () => {
       const c = createCaptions();
       c.hold('a', { text: 'Loop' });
@@ -306,5 +359,26 @@ describe('the caption store', () => {
     c.say({ text: 'Next', ms: 1000 });
     c.release('a');
     assert.deepEqual(texts(c), ['Next']);
+  });
+
+  test('reset on an empty store tells its subscribers once', () => {
+    const c = createCaptions();
+    let heard = 0;
+    c.subscribe(() => { heard += 1; });
+    c.reset();
+    assert.equal(heard, 1);
+  });
+
+  test('reset with an announcement pending removes it at once, and its timer firing later tells no one', () => {
+    const c = createCaptions();
+    c.say({ text: 'X', ms: 5000 });
+    assert.equal(anns(c).length, 1);
+    let heard = 0;
+    c.subscribe(() => { heard += 1; });
+    c.reset();
+    assert.deepEqual(anns(c), []);
+    assert.equal(heard, 1);
+    mock.timers.tick(SAID_MS + 1);
+    assert.equal(heard, 1);
   });
 });
