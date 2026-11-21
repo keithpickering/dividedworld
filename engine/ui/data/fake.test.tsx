@@ -2953,12 +2953,14 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
   });
 
   test('a cut Ward on a character no longer turns a cast away', async () => {
-    const { fake, bo, anaFace, bare, mine, cutOn } = cutSetup();
+    const { fake, bo, ana, anaFace, boFace, mine, cutOn } = cutSetup();
     const wall = must(await fake.useCard('cward', anaFace, anaFace, {}, '', 'character', mine));
     fake.signInAs(bo);
-    expect(await fake.playCard('spark', (await fake.myCharacters())[0]!.id, anaFace, {}, '', 'character', mine)).toMatchObject({ ok: false, error: expect.stringContaining('turns away') });
-    fake.signInAs((await fake.myCharacters()).length > 0 ? bo : bo);
-    void wall; void bare; void cutOn;
+    expect(await fake.playCard('spark', boFace, anaFace, {}, '', 'character', mine)).toMatchObject({ ok: false, error: expect.stringContaining('turns away') });
+    fake.signInAs(ana);
+    expect(must(await cutOn(wall.id, anaFace)).payload).toMatchObject({ cut: { play: wall.id, card: 'cward' } });
+    fake.signInAs(bo);
+    expect(await fake.playCard('spark', boFace, anaFace, {}, '', 'character', mine)).toMatchObject({ ok: true });
   });
 
   test('an admin who ends the card that cuts brings the Gimmick back, and reverse_card tells a cut, a spent and an ended play apart', async () => {
