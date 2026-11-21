@@ -60,6 +60,15 @@ comparison. Test in a new `supabase/tests/0399-turn-cooldown-floor.sql`.
 3. Poison: the clause that checks the `settlementLength` side removed, so only one of the two writes is held; the test
    goes red on that side. Recorded in the PR.
 
+**Changed after the final review (F-1).** Holding each write against the other row as it stands refuses a reseed from
+one good pair to another: `seed_instance` (0397) writes `turnCooldown` before `settlementLength`, so 60 days against 45
+reseeded to 7 against 1 passes through 7 against 45. So `settings_held` is left as 0395 wrote it, and the pair is held
+by a deferred constraint trigger, `settings_turn_cooldown_floor`, which reads both rows as they stand when the
+transaction that wrote either one ends (a pair with a row missing holds nothing). The test adds the reseed, taken, and a
+pair still refused at the transaction's end, refused; its poison is the trigger made `initially immediate`.
+`supabase/tests/0079-settings-held.sql` makes the check immediate before it alters the table, since a table with
+trigger events still pending is not altered.
+
 ## Review focus
 
 - The comparison is the same on both sides (TS and SQL), case for case.

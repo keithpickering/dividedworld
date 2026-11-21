@@ -1206,6 +1206,8 @@ begin
 
   -- The migration's last statement: a row that already broke a rule (written before the hold existed, here past it with the
   -- trigger off) fails the pass of every row through the hold, naming its key.
+  -- The Turn cooldown's pair check is deferred (0399), and a table with events still pending is not altered: it fires here, on the goods' good pair.
+  set constraints settings_turn_cooldown_floor immediate;
   alter table settings disable trigger settings_held;
   update settings set value = '5' where key = 'presencePollSeconds';
   alter table settings enable trigger settings_held;
