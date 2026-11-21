@@ -3,7 +3,7 @@
  * where a Gimmick is up and nowhere else, it ends the one the form lists, the sign, the Lens and both logs say so, a Sugar Coat turns it away where a
  * Force Field does not, and an admin's end of it brings the Gimmick back. The tests name no owner of the Gimmick: the offer and the refusal are the same whoever set it.
  */
-import { cleanup, screen, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Act, Refusal } from '../../../../../engine/ui/data/api.ts';
@@ -13,6 +13,8 @@ import { playOf } from '../../../../../engine/ui/cards/plays.ts';
 import { logRows, type LogData, type Words } from '../../../../../engine/ui/log/lines.ts';
 import { LoadedThread } from '../../../../../engine/ui/loaded.tsx';
 import { renderIn } from '../../../../../engine/ui/test-world.tsx';
+import { Frame } from '../../../../../engine/ui/frame/Frame.tsx';
+import { hudKey } from '../../../../../engine/ui/player.tsx';
 import { instance } from '../../../index.ts';
 import { instanceUi } from '../../index.ts';
 
@@ -45,6 +47,7 @@ function setup() {
   const bare = fake.seed.post(thread, boFace, 'Bo, with nothing up.');
   const warded = fake.seed.post(thread, boFace, 'Bo, with a ward.');
   fake.seed.cards(ana, { buzzkill: 4 });
+  fake.seed.wallet(ana, 500);
   fake.seed.cards(bo, { 'kick-me': 1, 'sugar-coat': 1, 'force-field': 1 });
   return { fake, ana, bo, boss, anaFace, boFace, thread, kicked, bare, warded };
 }
@@ -87,6 +90,7 @@ describe('a Buzzkill ends a Gimmick early, and an admin can bring it back', () =
     // 1. Bo's Kick Me is up; Ana's ghost mark offers Buzzkill there, and not on the post with no Gimmick.
     fake.signInAs(bo);
     const kick = must(await fake.useCard('kick-me', boFace, kicked, {}, ''));
+    fake.seed.card(boFace, kicked, 'whoops', { message: 'a Move, no Gimmick' });
     fake.signInAs(ana);
     expect(await offered(w, kicked)).toBe(true);
     expect(await offered(w, bare)).toBe(false);
@@ -94,12 +98,29 @@ describe('a Buzzkill ends a Gimmick early, and an admin can bring it back', () =
     expect(await screen.findAllByRole('img', { name: /^Kick Me sign/u })).toHaveLength(1);
     cleanup();
 
-    // 2. She plays it: the form's list holds the Kick Me, and it lands.
+    // 2. She plays it through the form on the rendered thread: arm the card, press its ghost mark on the Kick Me's post (and find none on the bare one),
+    // see the form list the Kick Me by name and not the Whoops! beside it, choose it, and play.
     fake.signInAs(ana);
-    const form = await fake.cardsOn(kicked, 8);
-    expect(form.map((a) => a.id)).toContain(kick.id);
+    localStorage.setItem(hudKey(ana), anaFace);
+    renderIn(fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards: instanceUi.cards });
+    const user = userEvent.setup();
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: /^Buzzkill, /u })[0]!);
+    const onKicked = document.getElementById('post-2')!;
+    await user.click(await within(onKicked).findByRole('button', { name: 'Play Buzzkill on post 2' }));
+    expect(within(document.getElementById('post-3')!).queryByRole('button', { name: 'Play Buzzkill on post 3' })).toBeNull();
+    const dialog = await screen.findByRole('dialog', { name: /Buzzkill/u });
+    const picks = within(dialog).getAllByRole('radio');
+    expect(picks).toHaveLength(1);
+    expect(picks[0]!.closest('label')!.textContent).toContain('Kick Me');
+    expect(dialog.textContent).not.toContain('Whoops');
+    await user.click(picks[0]!);
     fake.clock.advance(3_600_000);
-    const buzz = must(await fake.playCard('buzzkill', anaFace, kicked, { play: kick.id }, ''));
+    await user.click(within(dialog).getByRole('button', { name: /^Play\b/u }));
+    await waitFor(async () => expect((await fake.cardsOn(kicked, 8)).some((a) => a.payload.card === 'buzzkill')).toBe(true));
+    cleanup();
+    const buzz = (await fake.cardsOn(kicked, 8)).find((a) => a.payload.card === 'buzzkill')!;
     expect(buzz.payload).toMatchObject({ card: 'buzzkill', instant: true, cut: { play: kick.id, card: 'kick-me' } });
 
     // The sign is gone; the Lens rows say what ended what.
@@ -127,7 +148,7 @@ describe('a Buzzkill ends a Gimmick early, and an admin can bring it back', () =
     fake.signInAs(ana);
     const turned = await fake.playCard('buzzkill', anaFace, warded, { play: coat.id }, '');
     expect(turned.ok).toBe(false);
-    if (!turned.ok) expect(turned.error).toContain('Sugar Coat');
+    if (!turned.ok) expect(turned.error).toBe("this post's Sugar Coat turns away Salty cards");
 
     // With the Sugar Coat gone and a Force Field up in its place, the Buzzkill lands on the Force Field.
     fake.signInAs(w.boss);
