@@ -214,7 +214,7 @@ test('the masks of a secret poll hold in every read another account can make, an
   // ---- 7. Time ----
   // Four secret polls with the same thousands of voters: two open, two closed; on one open and one closed poll the voters are Ann's Timer's own characters, on the others Dee's. Timer casts a ballot on each open
   // poll and is refused on each closed one (each refusal is checked to be the closed poll's sentence), over and over, every try rolled back, interleaved. What each try read is counted by the tuples the transaction has
-  // fetched (exact, and the same every time), and the time by medians. Nothing a ballot or a refusal reads or takes may depend on who owns another character.
+  // fetched (medians, within a few of each other: see the asserts), and the time by medians. Nothing a ballot or a refusal reads or takes may depend on who owns another character.
   const n = 2000;
   const timer = make('timer', ['Timer One']);
   // (Past the six characters a player may run, which a trigger holds: the many here are only so that what a read of them costs is measurable. Disabled and enabled in one transaction.)
@@ -268,6 +268,7 @@ test('the masks of a secret poll hold in every read another account can make, an
       perform tests.unbecome();
       for k in 1..4 loop
         out := out || jsonb_build_object('ms' || k, (select (array_agg(x order by x))[tries / 2 + 1] from (select ms[k][g] x from generate_series(2, tries + 1) g) q),
+                                         'rowsMed' || k, (select (array_agg(x order by x))[tries / 2 + 1] from (select rows[k][g] x from generate_series(2, tries + 1) g) q),
                                          'rowsMin' || k, (select min(rows[k][g]) from generate_series(2, tries + 1) g), 'rowsMax' || k, (select max(rows[k][g]) from generate_series(2, tries + 1) g));
       end loop;
       return out;
@@ -277,8 +278,11 @@ test('the masks of a secret poll hold in every read another account can make, an
   const round = (v: number) => Math.round(v * 1000) / 1000;
   console.log(`# ballot timing, ${n} voters a poll, medians of ${tries} in ms: cast kin ${round(m.ms1!)} strangers ${round(m.ms2!)}; refused kin ${round(m.ms3!)} strangers ${round(m.ms4!)}; tuples read: cast ${m.rowsMin1}-${m.rowsMax1} / ${m.rowsMin2}-${m.rowsMax2}, refused ${m.rowsMin3}-${m.rowsMax3} / ${m.rowsMin4}-${m.rowsMax4}`);
   for (const [a, b, what] of [[1, 2, 'a ballot'], [3, 4, 'a refusal']] as const) {
-    assert.deepEqual([m[`rowsMin${a}`], m[`rowsMax${a}`]], [m[`rowsMin${b}`], m[`rowsMax${b}`]], `${what} reads the same tuples whoever owns the poll's other voters`);
-    assert.equal(m[`rowsMin${a}`], m[`rowsMax${a}`], `${what} reads the same tuples every time`);
+    // Not exact: every try is undone (an exception), and each undone ballot leaves a dead tuple and a dead index entry that a later try may or may not step over before the index marks it dead, so a try's
+    // idx_tup_fetch wanders by one or two mid-loop (CI printed 2023-2023 against 2023-2025). A read that grew with the poll's 2000 voters, or with who owns them, would be off by hundreds, so what is held is
+    // that the polls' median counts are within 3 of each other and that no poll's own spread passes 3.
+    assert.ok(Math.abs(m[`rowsMed${a}`]! - m[`rowsMed${b}`]!) <= 3, `${what} reads the same tuples whoever owns the poll's other voters (medians ${m[`rowsMed${a}`]} and ${m[`rowsMed${b}`]})`);
+    for (const k of [a, b]) assert.ok(m[`rowsMax${k}`]! - m[`rowsMin${k}`]! <= 3, `${what} reads about the same tuples every time (poll ${k} read ${m[`rowsMin${k}`]} to ${m[`rowsMax${k}`]})`);
     const ratio = m[`ms${a}`]! / m[`ms${b}`]!;
     assert.ok(ratio > 0.6 && ratio < 1.67, `${what} takes the same time whoever owns the other voters (medians ${m[`ms${a}`]} ms and ${m[`ms${b}`]} ms, ratio ${ratio.toFixed(2)})`);
   }
