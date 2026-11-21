@@ -1424,13 +1424,15 @@ declare
   returned text[] := '{}';
   open_id bigint;
   boss_was text;
-  boss_now text;
   handed text;
   mods_were bigint;
 begin
   -- Two seeds at once would each find no office row and both write one into the append-only office log. An advisory
   -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
   perform pg_advisory_xact_lock(hashtext('kayfabb.seed_instance'));
+  -- And then the offices lock, before any persona row is written: set_office and a handover take it first and then row-lock a persona, so a seed that took it after its persona upserts would wait on a row an admin
+  -- holds while the admin waits on this lock. One order everywhere: seed lock, offices lock, rows.
+  perform pg_advisory_xact_lock(hashtext('kayfabb.offices'));
   -- The settings trigger (settings_tuned) marks a row tuned for any write but a seed's: this transaction is the seed's, so its writes leave no mark.
   perform set_config('kayfabb.seeding', 'on', true);
   select count(*), min(e ->> 'slug') into flags, flagged
@@ -1749,24 +1751,23 @@ begin
   -- after the persona files, the roster setting, the season and its first Boss and the announcements thread are in place, so a departing Boss's handover reads the roster this seed wrote and says its farewell in the thread.
   -- It runs after (and not inside) the `firstStaff` hire above, which hires only a persona with no office row: a persona the seed benched has one, so it is brought back here and only by a roster that lists it. A seed that
   -- lists no persona (a partial seed) is not a roster and benches nobody, as it leaves `bossRoster` as it was.
-  listed := array(select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e);
+  listed := array(select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e where e ->> 'key' is not null);
   first_staff := array(select k from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k);
   if cardinality(listed) > 0 then
-    -- One at a time with a handover and with an admin's set_office, so what stands is what is read.
-    perform pg_advisory_xact_lock(hashtext('kayfabb.offices'));
+    -- The offices lock is held since the top of this function, so what stands is what is read.
     select s.id, s.boss into open_id, boss_was from seasons s where s.ends_at is null;
     mods_were := (select count(*) from staff_office_now o join characters c on c.staff = o.staff where o.office = 'mod' and c.retired_at is null);
     -- A persona listed again after a seed benched it comes back first, so a Boss that is leaving can hand the chair to it: a Mod where firstStaff names it, else a member. A member row debuts nothing; a Mod row debuts it,
     -- as the firstStaff hire does.
     returned := array(
       select k from unnest(listed) k
-      where exists (select 1 from characters c where c.staff = k and c.staff_kind = 'persona')
+      where exists (select 1 from characters c where c.staff = k and c.staff_kind = 'persona' and c.retired_at is null)
         and (select o.office = 'benched' and o.cause = 'seed' from staff_offices o where o.staff = k order by o.id desc limit 1));
     insert into staff_offices (staff, office, cause) select k, case when k = any (first_staff) then 'mod' else 'member' end, 'seed' from unnest(returned) k;
     update characters c set debuted_at = now() where c.debuted_at is null and c.staff_kind = 'persona' and c.staff = any (returned) and c.staff = any (first_staff);
     departing := array(
       select c.staff from characters c
-      where c.staff_kind = 'persona' and c.staff <> all (listed)
+      where c.staff_kind = 'persona' and c.retired_at is null and c.staff <> all (listed)
         and not coalesce((select o.office = 'benched' and o.cause = 'seed' from staff_offices o where o.staff = c.staff order by o.id desc limit 1), false)
       order by c.staff);
     -- The other departing personas first, so neither the rotation nor a standing nomination can seat one.

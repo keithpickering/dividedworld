@@ -54,6 +54,7 @@ export function openSeasonAhead(): () => void {
 export function scratchSeed(instance: Instance): ReturnType<typeof instanceSeed> {
   const seed = instanceSeed(instance, conduct);
   const heldStaff = JSON.parse(sql(`select coalesce(jsonb_agg(jsonb_build_object('key', staff, 'name', name) order by staff), '[]') from characters where staff_kind = 'persona'`)) as { key: string; name: string }[];
+  // Listing every held persona also re-lists any that an earlier e2e file left benched by a seed (a seed that omitted it), which brings it back, so no e2e file sees departure residue.
   const listed = new Set(seed.system.staff.map((p) => p.key));
   // The seed's persona type is the full file; seed_instance reads only the keys a persona has, so the held ones are key and name alone.
   const system = { ...seed.system, staff: [...seed.system.staff, ...heldStaff.filter((p) => !listed.has(p.key))] as unknown as typeof seed.system.staff };

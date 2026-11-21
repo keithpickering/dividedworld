@@ -15,6 +15,8 @@
 -- 8. Two identical reseeds after a departure: the second writes no office row and no handover.
 -- 7b. A persona the seed lists again is back before a leaving Boss's handover, so it can take the chair.
 -- 9. A seed that lists no persona at all leaves the staff as it was (a partial seed is not a roster).
+-- 10. A retired persona that leaves the roster gets no bench row and is not in `departed`.
+-- 11. A staff entry with no key is refused by the persona upsert (a character needs a name) before the departure block, so no null reaches `listed`; the null filter there is a second line.
 
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
 begin
@@ -123,10 +125,11 @@ begin
     select * into ho from season_handovers h where h.season = season_before.id and h.cause = 'departure';
     perform pg_temp.expect(ho.id is not null and ho.outgoing = 'a' and ho.boss = new_boss, 'there is no departure handover from a to the new Boss: ' || coalesce(to_jsonb(ho)::text, 'none'));
     perform pg_temp.expect(pg_temp.latest('a') is not distinct from 'benched/seed', 'a is not benched by the seed: ' || coalesce(pg_temp.latest('a'), 'no row'));
-    -- a's farewell (the stock line) was posted, and before the bench row was written.
+    -- a's farewell (the stock line) was posted, and before the bench row was written: write_staff_act refuses a benched persona (scenario 1), so a post that exists was written before the bench. The clock cannot show it,
+    -- since every `now()` in one transaction is the same instant; the office rows' ids show the handover row precedes the bench row.
     select a.created_at into farewell_at from acts a join characters c on c.id = a.character where c.staff = 'a' and a.kind = 'post' and a.thread = pg_temp.ann() and a.payload ->> 'body' = 'Farewell from P a.';
     perform pg_temp.expect(farewell_at is not null, 'a''s farewell was not posted: ' || (select string_agg(a.payload ->> 'body', ' | ') from acts a where a.thread = pg_temp.ann()));
-    perform pg_temp.expect((select o.at from staff_offices o where o.staff = 'a' and o.office = 'benched') >= farewell_at and (select o.id from staff_offices o where o.staff = 'a' and o.office = 'benched')
+    perform pg_temp.expect((select o.id from staff_offices o where o.staff = 'a' and o.office = 'benched')
       > (select o.id from staff_offices o where o.staff = 'a' and o.cause = 'handover'), 'a''s bench is not after its handover office row');
     perform pg_temp.expect(answer ->> 'handover' is not distinct from new_boss and answer -> 'departed' = '["w", "a"]'::jsonb and answer -> 'returned' = '[]'::jsonb, 'the answer does not name the departure: ' || answer::text);
     perform pg_temp.expect(not pg_temp.in_roster('a') and pg_temp.in_roster(new_boss), 'boss_roster() lists a or lacks the new Boss: ' || boss_roster()::text);
@@ -141,12 +144,17 @@ declare
   offices_was bigint := pg_temp.offices();
   handovers_was bigint := pg_temp.handovers();
   said_was bigint := pg_temp.said();
+  acts_was bigint := (select count(*) from acts);
+  moves_was bigint := (select count(*) from open_moves);
+  banks_was bigint := (select count(*) from move_bank);
   why text;
 begin
   -- Only the retired r is listed: a, b, c and w all leave, and no one in the roster can be seated.
   why := pg_temp.refused('select pg_temp.seed(array[''r''], array[]::text[], ''r'')');
   perform pg_temp.expect(why like '55000 the open season''s Boss a has left the roster, and no Boss in it can take the chair%', 'the seed was not refused with the reason: ' || coalesce(why, 'it went through'));
   perform pg_temp.expect(pg_temp.offices() = offices_was and pg_temp.handovers() = handovers_was and pg_temp.said() = said_was, 'the refused seed wrote something');
+  perform pg_temp.expect((select count(*) from acts) = acts_was and (select count(*) from open_moves) = moves_was and (select count(*) from move_bank) = banks_was,
+    'the refused seed spent a nomination, ended a move or wrote a bank row');
   perform pg_temp.expect(pg_temp.boss() = 'a' and pg_temp.latest('a') is null and pg_temp.latest('b') = 'member/admin', 'the refused seed moved the Boss or benched a persona');
 end $$;
 
@@ -269,4 +277,28 @@ declare
 begin
   perform pg_temp.seed(array[]::text[], array[]::text[]);
   perform pg_temp.expect(pg_temp.offices() = was and pg_temp.boss() = 'a', 'a seed with no persona changed the staff');
+end $$;
+
+-- ---- 10. A retired persona that leaves the roster gets no bench row and is not departed ----
+do $$
+declare
+  answer jsonb;
+begin
+  begin
+    answer := pg_temp.seed(array['a', 'b', 'c', 'w'], array['c']);
+    perform pg_temp.expect(pg_temp.latest('r') is null, 'the retired r was benched: ' || coalesce(pg_temp.latest('r'), 'no row'));
+    perform pg_temp.expect(answer -> 'departed' = '[]'::jsonb, 'the answer names a retired persona as departed: ' || answer::text);
+    raise exception using errcode = 'RB999', message = 'rolled back';
+  exception when sqlstate 'RB999' then null;
+  end;
+end $$;
+
+-- ---- 11. A staff entry with no key is refused before the roster is read; it never makes a null that stops anyone departing ----
+do $$
+declare
+  why text;
+begin
+  why := pg_temp.refused('select pg_temp.seed(array[''a'', ''c'', ''w'', ''r'', null], array[''c'']::text[])');
+  perform pg_temp.expect(why is not null, 'a keyless staff entry went through the seed');
+  raise notice 'keyless entry refused first by: %', why;
 end $$;
