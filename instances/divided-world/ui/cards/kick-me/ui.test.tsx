@@ -12,6 +12,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardPlay, EffectProps } from '../../../../../engine/ui/cards/types.ts';
 import { NO_INK } from '../../../../../engine/ui/cards/claims.ts';
 import type { Act } from '../../../../../engine/ui/data/api.ts';
+import { createFake } from '../../../../../engine/ui/data/fake.ts';
+import { logRows, type LogData, type Words } from '../../../../../engine/ui/log/lines.ts';
+import type { Refusal } from '../../../../../engine/ui/data/api.ts';
+import { instanceUi } from '../../../ui/index.ts';
+import { instance } from '../../../index.ts';
+import { whoops } from '../../../cards/whoops.ts';
 import { renderInWorld } from '../../../../../engine/ui/test-world.tsx';
 import { kickMe } from '../../../cards/kick-me.ts';
 import { KickMeEffect, LETTERS, LETTER_SCALE, LETTER_Y, MARKER, SIGN_H, SIGN_W, STROKES } from '../../kick-me/Effect.tsx';
@@ -150,5 +156,83 @@ describe('Kick Me\'s sign', () => {
 
   test('its entry in the screens\' card list is lazy: the effect it carries is not this module\'s own', () => {
     expect(ui.Effect).toBeDefined();
+  });
+});
+
+const must = <T,>(a: { ok: true; value: T } | Refusal): T => {
+  if (!a.ok) throw new Error(`refused: ${a.error}`);
+  return a.value;
+};
+
+describe('Kick Me hands the first three Salty cards back, end to end on the fake', () => {
+  /** Salty commons that reach a post and want only an ink: Whoops! (stacks to 3) and Hot Box, for the fourth cast. */
+  const ink = { color: 'red' };
+  function setup() {
+    const fake = createFake({ instance });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', instance.classes[0]!.key);
+    const boFace = fake.seed.character(bo, 'Bo Face', instance.classes[0]!.key);
+    const { act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'Point at these words here. '.repeat(20));
+    fake.seed.cards(ana, { 'kick-me': 2 });
+    fake.seed.cards(bo, { whoops: 3, 'hot-box': 2, this: 2 });
+    fake.seed.wallet(bo, 100_000);
+    fake.signInAs(ana);
+    return { fake, bo, anaFace, boFace, opener };
+  }
+  const held = async (fake: ReturnType<typeof setup>['fake'], card: string) => (await fake.myCards()).find((c) => c.card === card)?.held ?? 0;
+  const balance = async (fake: ReturnType<typeof setup>['fake']) => (await fake.wallet()).balance;
+
+  test('three Salty casts come back, handedOut reaches 3, the fourth does not, and each cast spends its price', async () => {
+    const { fake, bo, anaFace, boFace, opener } = setup();
+    const sign = must(await fake.useCard('kick-me', anaFace, opener, {}, ''));
+    fake.signInAs(bo);
+    const price = whoops.playPrice(instance.settings, { reach: 'post', length: 'Point at these words here. '.repeat(20).length } as never, ink);
+    expect(price).toBeGreaterThan(0);
+    const handed: unknown[] = [];
+    for (let i = 0; i < 3; i++) {
+      const before = await balance(fake);
+      const cast = must(await fake.playCard('whoops', boFace, opener, ink, ''));
+      handed.push(cast.payload.handedBack);
+      expect(await balance(fake), `price spent on cast ${i + 1}`).toBe(before - price);
+      expect(await held(fake, 'whoops'), `whoops held after cast ${i + 1}`).toBe(3);
+    }
+    expect(handed).toEqual([1, 2, 3].map(() => ({ by: sign.id, card: 'kick-me' })));
+    const used = (await fake.cardsOn(opener, 12)).filter((a) => (a.payload.handedBack as { by?: string } | undefined)?.by === sign.id);
+    expect(used).toHaveLength(3);
+    const fourthBefore = await balance(fake);
+    const fourth = must(await fake.playCard('hot-box', boFace, opener, ink, ''));
+    expect(fourth.payload.handedBack).toBeUndefined();
+    expect(fourth.payload.caught).toBeUndefined();
+    expect(await held(fake, 'hot-box')).toBe(1);
+    expect(await balance(fake)).toBe(fourthBefore);
+  });
+
+  test('THIS, a Pepperoni common, lands on the Kick Me post and is not handed back', async () => {
+    const { fake, bo, anaFace, boFace, opener } = setup();
+    must(await fake.useCard('kick-me', anaFace, opener, {}, ''));
+    fake.signInAs(bo);
+    const landed = must(await fake.playCard('this', boFace, opener, { phrase: 'these words', words: 'yes' }, ''));
+    expect(landed.payload.caught).toBeUndefined();
+    expect(landed.payload.handedBack).toBeUndefined();
+    expect(await held(fake, 'this')).toBe(1);
+  });
+
+  test('the caster\'s log says "The Kick Me on ... gave your card back." for each of the three', async () => {
+    const { fake, bo, anaFace, boFace, opener } = setup();
+    must(await fake.useCard('kick-me', anaFace, opener, {}, ''));
+    fake.signInAs(bo);
+    for (let i = 0; i < 3; i++) must(await fake.playCard('whoops', boFace, opener, ink, ''));
+    must(await fake.playCard('hot-box', boFace, opener, ink, ''));
+    const log = await fake.log();
+    const acts = new Map((await fake.cardsOn(opener, 12)).map((a) => [a.id, a]));
+    const data: LogData = { log, mine: await fake.myCharacters(), estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts, names: new Map(), titles: new Map(), states: new Map() };
+    const words = { instance, ui: instanceUi, postsPerPage: 20, economy: {}, now: Date.now() } as Words;
+    const rows = logRows(data, words, 600, null).filter((r) => r.kind === 'returned');
+    expect(rows).toHaveLength(3);
+    for (const r of rows) {
+      expect(r.details[0]).toBe('The Kick Me on ');
+      expect(r.details.at(-1)).toBe(' gave your card back.');
+    }
   });
 });
