@@ -59,6 +59,9 @@ test('a pierce gets a cast past a ward no rarer than it, and only that', () => {
   assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names }).ok, false, 'refused with no pierce');
   assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'uncommon' }).ok, true, 'lands past an uncommon ward');
   assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'rare' }).ok, false, 'a rare ward still holds');
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'common' }).ok, true, 'lands past a ward below it');
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => undefined }).ok, false, 'a ward of an unknown card still holds');
+  assert.equal(decidePlay(salty, settings, post, [{ ...ward, card: null }], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'common' }).ok, false, 'a ward with no card still holds');
 });
 
 test('an ended ward refuses nothing', () => {

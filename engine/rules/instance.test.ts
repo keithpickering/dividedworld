@@ -808,6 +808,8 @@ test('a pierce is a use card on a character alone, up to no rarer than itself', 
   assert.match(pierce({}, { upTo: 'mythic' }), /card "splat" has a pierce up to "mythic"; a rarity is common, uncommon, rare or legendary/);
   assert.match(pierce({ play: 'cast' }), /card "splat" has a pierce and is not a use card/);
   assert.match(pierce({ reaches: ['post'] }), /card "splat" has a pierce and reaches more than a character/);
+  assert.match(pierce({ reaches: ['character', 'post'] }), /card "splat" has a pierce and reaches more than a character/);
+  assert.doesNotMatch(pierce({}, { upTo: 'mythic' }), /rarer than the card/, 'an unknown rarity is one problem, not two');
   assert.match(pierce({}, { upTo: 'rare' }), /card "splat" has a pierce up to rare, rarer than the card/);
 });
 

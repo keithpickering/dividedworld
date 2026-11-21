@@ -585,8 +585,9 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   // A reply drawn under a post is a post of its own, and takes none under it: one reply under a post, never a chain.
   if (rules.replies === true && target.reach === 'post' && target.under !== undefined) return refuse('a reply drawn under a post takes no reply under it');
   const pierced = (e: CardEffect): boolean => {
-    const rarity = e.card === null || context.pierce === undefined ? undefined : context.rarityOf?.(e.card);
-    return rarity !== undefined && context.pierce !== undefined && atOrBelow(rarity, context.pierce);
+    if (e.card === null || context.pierce === undefined) return false;
+    const rarity = context.rarityOf?.(e.card);
+    return rarity !== undefined && atOrBelow(rarity, context.pierce);
   };
   const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules) && !pierced(e));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
