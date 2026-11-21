@@ -160,7 +160,9 @@ function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
   const rodeSet = act && typeof act.payload.rode === 'string' ? act.payload.rode : null;
   /* A cast a refund handed back names the play that handed it back (`handedBack.by`); the cast landed and its card went back to its caster. */
   const handed = act?.payload.handedBack;
-  const handedSet = typeof handed === 'object' && handed !== null && typeof (handed as { by?: unknown }).by === 'string' ? (handed as { by: string }).by : null;
+  /* Only a card set face down that handed it back, where no ride back or catch already names the cast: a ride back that let it land is the spring that sprang, and a sign refunding it after is a use card, no face-down card. */
+  const handedBy = typeof handed === 'object' && handed !== null && typeof (handed as { by?: unknown }).by === 'string' ? handed as { by: string; card?: unknown } : null;
+  const handedSet = caughtSet === null && rodeSet === null && handedBy !== null && ctx.instance.cards.find((c) => c.key === handedBy.card)?.play === 'set' ? handedBy.by : null;
   const set = ctx.acts.get(caughtSet ?? rodeSet ?? handedSet ?? (typeof spring?.payload.set === 'string' ? spring.payload.set : ''));
   const setterId = spring?.character ?? set?.character ?? null;
   const setter = setterId === null ? null : ctx.names?.get(setterId) ?? null;
