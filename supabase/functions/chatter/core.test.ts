@@ -13,6 +13,7 @@ import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../
 import type { Instance } from '../../../engine/rules/types.ts';
 import { autocorrect as autocorrectRules } from '../../../instances/divided-world/cards/autocorrect.ts';
 import { staffOffers } from '../../../engine/rules/cards.ts';
+import { instanceProblems } from '../../../engine/rules/instance.ts';
 import { laughTrack as laughTrackRules } from '../../../instances/divided-world/cards/laugh-track.ts';
 import { whoops as whoopsRules } from '../../../instances/divided-world/cards/whoops.ts';
 
@@ -276,6 +277,7 @@ test('a card out of print is not offered, so a Mod Bot never gives out a copy of
     packs: dividedWorld.packs.map((p) => ('contents' in p && p.contents ? { ...p, contents: p.contents.filter((k) => k !== 'whoops') } : p)),
     machine: dividedWorld.machine.filter((s) => !('card' in s.item) || s.item.card !== 'whoops'),
   } as Instance;
+  assert.deepEqual(instanceProblems(retired), [], 'the fixture is an instance the seed would take');
   const d = fakeDb({ pool: { threadsWeekly: 0 } });
   const m = fakeModels((r) => ({ words: 'x', card: { key: 'whoops', on: 'reply' } }));
   await run(d, m, retired);
