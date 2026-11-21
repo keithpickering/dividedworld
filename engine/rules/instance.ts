@@ -361,6 +361,18 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   cosmetics: cosmeticsRule,
 };
 
+/**
+ * Whether a Turn cooldown covers a settlement window, so that a Turn at any moment of a window leaves the next one past its close (#931).
+ * Both in months, the counts compare: month addition keeps order, a day past a month's end clamped to its last day, so a Turn at or after
+ * the window's opening plus M months is at or after the opening plus N months whenever M >= N. Otherwise they compare in days, a week 7, and
+ * a month at its shortest (28 days) in the cooldown and its longest (31) in the window. SQL's turn_cooldown_covers (0399) is the same.
+ */
+export function cooldownCoversWindow(cooldown: Span, win: Span): boolean {
+  if (cooldown.unit === 'month' && win.unit === 'month') return cooldown.count >= win.count;
+  const days = (s: Span, month: number): number => s.count * (s.unit === 'week' ? 7 : s.unit === 'month' ? month : 1);
+  return days(cooldown, 28) >= days(win, 31);
+}
+
 export function settingsProblems(settings: Settings): string[] {
   if (typeof settings !== 'object' || settings === null) return ['the settings are missing'];
   const out: string[] = [];
@@ -374,6 +386,10 @@ export function settingsProblems(settings: Settings): string[] {
   if (isSpan(settings.pollLastsMin, LASTS_UNITS) && isSpan(settings.pollLastsMax, LASTS_UNITS)
       && settings.pollLastsMin.count * hours[settings.pollLastsMin.unit] > settings.pollLastsMax.count * hours[settings.pollLastsMax.unit]) {
     out.push(`setting "pollLastsMin" is ${JSON.stringify(settings.pollLastsMin)}; it must be a span no longer than pollLastsMax`);
+  }
+  // A character never Turns twice within one settlement window (#931): the cooldown covers the window, as SQL's settings_held holds it (0399).
+  if (isSpan(settings.turnCooldown) && isSpan(settings.settlementLength) && !cooldownCoversWindow(settings.turnCooldown, settings.settlementLength)) {
+    out.push(`setting "turnCooldown" is ${JSON.stringify(settings.turnCooldown)}; it must be a span no shorter than settlementLength (${spanWords(settings.settlementLength)}), a month counting 28 days in the cooldown and 31 in the window`);
   }
   // No sentence relates the window to the floor: SQL's settings_held checks each row alone, and writeTokensMost computes the most from the pair, never
   // below 1, so no pair of valid rows stops the instance (design section 4; the owner's answer on #582).
