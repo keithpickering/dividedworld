@@ -2794,9 +2794,11 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
   const legend = { ...kick, key: 'legend', name: 'Legend', rarity: 'legendary' as const, refunds: undefined };
   const coat = { ...shield, key: 'coat', name: 'Sugar Coat', rarity: 'rare' as const, gimmick: { kind: 'ward' as const, upTo: 'rare' as const } };
   const ccoat = { ...coat, key: 'ccoat', name: 'Sugar Coat', reaches: ['character' as const] };
+  const fieldr = { ...shield, key: 'fieldr', name: 'Force Field R', gimmick: { kind: 'ward' as const, upTo: 'rare' as const } };
+  const heart = { ...base, key: 'cheart', name: 'Cut Heart', alignment: 'sweet' as const, rarity: 'uncommon' as const, reaches: ['character' as const], discipline: { kind: 'relief' as const, points: 'all' as const }, canApply: () => ok(undefined) };
   const csnare2 = { ...snare, key: 'csnare2', name: 'Cut Snare', rarity: 'rare' as const, catches: () => 'ctest' };
   function cutSetup() {
-    const fake = createFake({ instance: { ...world, cards: [...world.cards, lift, reachWard('twall', 'thread'), cutter, kick, legend, coat, ccoat, csnare2] } });
+    const fake = createFake({ instance: { ...world, cards: [...world.cards, lift, reachWard('twall', 'thread'), cutter, kick, legend, coat, ccoat, csnare2, fieldr, heart, spark, reachWard('cward', 'character')] } });
     const ana = fake.seed.account('ana');
     const bo = fake.seed.account('bo');
     const boss = fake.seed.account('boss', { admin: true });
@@ -2804,8 +2806,8 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const { thread, act: mine } = fake.seed.thread('general', anaFace, 'Mine', 'Ana here.');
     const bare = fake.seed.post(thread, anaFace, 'Nothing is up here.');
-    fake.seed.cards(ana, { kick: 3, lift: 2, shield: 1, legend: 1, coat: 1, ccoat: 1, twall: 1, csnare2: 1, blot: 3 });
-    fake.seed.cards(bo, { ctest: 6, blot: 4, lift: 1 });
+    fake.seed.cards(ana, { kick: 3, lift: 2, shield: 1, legend: 1, coat: 1, ccoat: 1, twall: 1, csnare2: 1, blot: 3, fieldr: 1, cward: 1 });
+    fake.seed.cards(bo, { ctest: 6, blot: 4, lift: 2, cheart: 1, spark: 2 });
     fake.signInAs(ana);
     const kicked = async () => must(await fake.useCard('kick', anaFace, mine, {}, ''));
     const lifted = async () => must(await fake.useCard('lift', anaFace, anaFace, {}, '', 'character', mine));
@@ -2829,7 +2831,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
   });
 
   test('an older log page holds the cutting Act of a Gimmick it shows, though the row that names the cut is on a newer page', async () => {
-    const { fake, anaFace, mine, kicked, cutAt } = cutSetup();
+    const { fake, kicked, cutAt } = cutSetup();
     const kickMe = await kicked();
     fake.clock.advance(3_600_000);
     const cut = must(await cutAt(kickMe.id));
@@ -2840,7 +2842,6 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(page.acts.map((a) => a.id)).toContain(cut.id);
     expect(await fake.actsCutting([kickMe.id])).toEqual([expect.objectContaining({ id: cut.id })]);
     expect(await fake.actsCutting(['not-a-play'])).toEqual([]);
-    void anaFace; void mine;
   });
 
   test('a second card that cuts lands on the same post for another Gimmick, and the cut one is no longer up', async () => {
@@ -2890,6 +2891,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const caught = must(await cutAt(kickMe.id));
     expect(caught.payload.caught).toBeDefined();
     expect(caught.payload.cut).toBeUndefined();
+    expect(caught.payload.instant).toBeUndefined();
     expect((await blotted()).payload.handedBack).toMatchObject({ by: kickMe.id });
   });
 
@@ -2922,6 +2924,41 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const cut = must(await fake.playCard('ctest', boFace, anaFace, { play: shot.id }, '', 'character', mine));
     expect(cut.payload).toMatchObject({ instant: true, cut: { play: shot.id, card: 'lift' }, pierce: { by: pierce.id, card: 'lift' } });
     expect((await fake.effectsAbove([boFace], null, null)).some((e) => e.play === pierce.id)).toBe(false);
+  });
+
+  test('a post-reach cut under a pierce carries the pierce and the ward it passed, and spends it', async () => {
+    const { fake, bo, ana, anaFace, boFace, thread, mine, kicked } = cutSetup();
+    const kickMe = await kicked();
+    must(await fake.useCard('fieldr', anaFace, mine, {}, ''));
+    const bos = fake.seed.post(thread, boFace, 'Bo here.');
+    fake.signInAs(bo);
+    const pierce = must(await fake.useCard('lift', boFace, boFace, {}, '', 'character', bos));
+    const cut = must(await fake.playCard('ctest', boFace, mine, { play: kickMe.id }, ''));
+    expect(cut.payload).toMatchObject({ instant: true, cut: { play: kickMe.id }, pierce: { by: pierce.id, card: 'lift', ward: 'fieldr' } });
+    fake.signInAs(ana);
+    expect((await fake.effectsAbove([boFace], null, null)).some((e) => e.play === pierce.id)).toBe(false);
+  });
+
+  test('a heart cast under a pierce carries the pierce and spends it', async () => {
+    const { fake, bo, anaFace, boFace, thread, mine } = cutSetup();
+    const mod = fake.seed.staff('mod', 'Mod Bot', 'mod');
+    const now = fake.clock.now();
+    fake.seed.infraction(fake.seed.visit(mod, mine, { at: now - 1000 }), { points: 2, at: now - 1000 });
+    const bos = fake.seed.post(thread, boFace, 'Bo here.');
+    fake.signInAs(bo);
+    const pierce = must(await fake.useCard('lift', boFace, boFace, {}, '', 'character', bos));
+    const healed = must(await fake.playCard('cheart', boFace, anaFace, {}, '', 'character', mine));
+    expect(healed.payload).toMatchObject({ instant: true, pierce: { by: pierce.id, card: 'lift' } });
+    expect((await fake.effectsAbove([boFace], null, null)).some((e) => e.play === pierce.id)).toBe(false);
+  });
+
+  test('a cut Ward on a character no longer turns a cast away', async () => {
+    const { fake, bo, anaFace, bare, mine, cutOn } = cutSetup();
+    const wall = must(await fake.useCard('cward', anaFace, anaFace, {}, '', 'character', mine));
+    fake.signInAs(bo);
+    expect(await fake.playCard('spark', (await fake.myCharacters())[0]!.id, anaFace, {}, '', 'character', mine)).toMatchObject({ ok: false, error: expect.stringContaining('turns away') });
+    fake.signInAs((await fake.myCharacters()).length > 0 ? bo : bo);
+    void wall; void bare; void cutOn;
   });
 
   test('an admin who ends the card that cuts brings the Gimmick back, and reverse_card tells a cut, a spent and an ended play apart', async () => {

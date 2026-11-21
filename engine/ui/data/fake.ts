@@ -1392,6 +1392,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     };
     acts.set(rec.id, rec);
     if (rec.kind === 'card_end' && rec.target !== null) reversedPlays.add(rec.target);
+    /* The landed card Acts that name a Gimmick they cut, by that play, in the order written (acts_cut_play): what cutBy reads. */
+    if (rec.kind === 'card' && rec.payload.caught === undefined && rec.payload.cut !== undefined) {
+      const named = String((rec.payload.cut as { play?: unknown }).play);
+      cutters.set(named, [...(cutters.get(named) ?? []), rec.id]);
+    }
     /* A play on a post's or on a character's (cast from a post, 0352) takes its moment; a thread's and a board's take none. */
     if ((rec.kind === 'card' || rec.kind === 'set' || rec.kind === 'spring') && rec.target !== null && (onPost(rec) || rec.payload.reach === 'character')) takeMoment(rec);
     if (rec.kind === 'spin' && typeof rec.payload.at === 'string') takeSpinMoment(rec);
@@ -1896,7 +1901,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The pierce plays a cast named in `pierce.by`: spent, which is ended for every reader as `card_ended` has it (0149 and Cheap Shot's pierce migration). */
   const spentPierces = new Set<Id>();
   /** card_cut_at (0403): the earliest landed card Act that names `play` in its `cut` and that no admin has ended, or undefined. It reads the admin's end itself, as card_cut_at reads `card_end`. */
-  const cutBy = (play: Id): ActRec | undefined => [...acts.values()].find((a) => a.kind === 'card' && a.payload.caught === undefined && a.payload.cut !== undefined && (a.payload.cut as { play?: unknown }).play === play && !reversedPlays.has(a.id));
+  const cutters = new Map<Id, Id[]>();
+  const cutBy = (play: Id): ActRec | undefined => (cutters.get(play) ?? []).map((id) => acts.get(id)!).find((a) => !reversedPlays.has(a.id));
   /** card_ended (0149, 0403): ended by an admin, or over because it did not take, was spent as a pierce or was cut. Every reader of "in force" asks this. */
   const over = (play: Id): boolean => reversedPlays.has(play) || untakenPlays.has(play) || spentPierces.has(play) || cutBy(play) !== undefined;
   /** post_under (0348): the reply each play of a card that replies carried, by the play: the post it was played on and the reply, a post of the thread with a number of its own. Never edited; the end is the play's own. */
@@ -2464,7 +2470,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     const drive = !lands ? undefined : driveOf(rules, target, playId);
     const wardPassed = shot === null ? undefined : passedWard(rules, effects, 'post', shot.upTo, at);
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(shot === null ? {} : { pierce: { by: shot.play, card: shot.card, ...(wardPassed === undefined ? {} : { ward: wardPassed }) } }), ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(!lands ? { caught: trap!.set } : cutting ? {} : { layer }), ...(cutting ? { instant: true } : {}), ...(cutting && lands ? { cut: { play: (decided.value.config as { play: string }).play, card: String(acts.get((decided.value.config as { play: string }).play)!.payload.card) } } : {}), ...(rides ? { rode: trap!.set } : {}), ...(spring && locks ? { lockedOut: spring.id } : {}), ...(handed ? { handedBack: handed } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && lands && !cutting ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(shot === null ? {} : { pierce: { by: shot.play, card: shot.card, ...(wardPassed === undefined ? {} : { ward: wardPassed }) } }), ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(!lands ? { caught: trap!.set } : cutting ? {} : { layer }), ...(cutting && lands ? { instant: true } : {}), ...(cutting && lands ? { cut: { play: (decided.value.config as { play: string }).play, card: String(acts.get((decided.value.config as { play: string }).play)!.payload.card) } } : {}), ...(rides ? { rode: trap!.set } : {}), ...(spring && locks ? { lockedOut: spring.id } : {}), ...(handed ? { handedBack: handed } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && lands && !cutting ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
     if (shot !== null) spentPierces.add(shot.play);
     if (passedBack) seededAlerts.push({ account: account.id, kind: 'trapStruck', sub: 'passed', act: written.id, character, at: written.at });
     /* What a landed play on a post writes beside its Act (land_rows, 0357): not for a caught one. */
@@ -2619,7 +2625,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The plays beyond a post (play_reach, 0055): each play's reach, its target and when it ends, never edited. */
   const reachPlays = new Map<Id, { reach: BeyondPost; target: Id; endsAt: number }>();
   /** The live plays on one target beyond a post, as effects (reach_effects, 0055). */
-  /* Beside reversedPlays, not over(): an untaken play has no play_reach row to read here, so only the ended and spent are asked (card_ended's reach readers). */
+  /* Beside reversedPlays, not over(): an untaken play has no play_reach row to read here, so only the ended, the spent and the cut are asked (card_ended's reach readers). */
   const reachEffects = (reach: BeyondPost, target: Id): CardEffect[] => [...reachPlays].filter(([play, r]) => r.reach === reach && r.target === target && r.endsAt > now() && !reversedPlays.has(play) && !spentPierces.has(play) && cutBy(play) === undefined)
     .map(([play, r]) => {
       const rules = instance.cards.find((c) => c.key === acts.get(play)!.payload.card);
@@ -4374,7 +4380,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .map(([play, r]) => ({ thread: summary(threads.get(r.target)!), play, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }))
       .sort((a, b) => acts.get(b.play)!.at - acts.get(a.play)!.at || acts.get(b.play)!.order - acts.get(a.play)!.order),
     effectsAbove: (chars, thread, board) => {
-      /* Beside reversedPlays, not over(): a reach play is never untaken, so the ended and the spent are the two asked, as in reachEffects. */
+      /* Beside reversedPlays, not over(): a reach play is never untaken, so the ended, the spent and the cut are asked, as in reachEffects. */
       const wanted = new Set(chars);
       return [...reachPlays].filter(([play, r]) => r.endsAt > now() && !reversedPlays.has(play) && !spentPierces.has(play) && cutBy(play) === undefined && (r.reach === 'character' ? wanted.has(r.target) : r.reach === 'thread' ? r.target === thread : r.target === board))
         .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }))
