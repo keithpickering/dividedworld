@@ -23,6 +23,8 @@ import fangamePortrait from '../avatars/fangame-portrait.webp?url';
 import fangameSquare from '../avatars/fangame-square.webp?url';
 import { frontDoor } from '../front-door.ts';
 import LINES from './staff-lines.json';
+import { GPT2_POST } from './gpt2.ts';
+import { tags } from './graffiti-shapes.ts';
 import { installForecast } from './forecast.ts';
 
 const HOUR = 3_600_000;
@@ -64,6 +66,8 @@ export interface Made {
   readonly crowd: readonly string[];
   /** The Boss's two boards, by slug: the one merged and the one it was merged into. */
   readonly boards: { readonly palace: string; readonly minus: string };
+  /** The boards the Staff's lines name (Help, Movies & TV, ...), by the name the Mods say, each its slug: they are on the stage's index, so a line about the premise of Help sits on a board called Help. */
+  readonly lineBoards: Readonly<Record<string, string>>;
   /** Settles when what is set face down, and the wall that is drawn, is done: a story draws nothing before. */
   readonly ready: Promise<void>;
 }
@@ -74,13 +78,17 @@ const CLASSES: Readonly<Record<string, string>> = { 'D-Guy': 'heel' };
 /** The crowd: the audience of the sprite sheet thread, and the authors of the five dressed posts at its foot. One player each. */
 export const CROWD = ['Ringside', 'Front Row', 'Nosebleeds', 'Aisle Seat', 'Back Row', 'Concessions'] as const;
 
-/** A wave across a post's body: a stroke with no two points on a line, as Graffiti's own wall story draws one. */
-function wave(y: number, x0: number, x1: number, amp: number, n = 24): [number, number][] {
-  return Array.from({ length: n + 1 }, (_, i) => {
-    const t = i / n;
-    return [Math.round((x0 + (x1 - x0) * t) * 1e4) / 1e4, Math.round((y + amp * Math.sin(t * Math.PI * 2)) * 1e4) / 1e4] as [number, number];
-  });
-}
+/**
+ * The boards the Staff's lines name, by the name the Mods say them: the stage makes each, so the Mod's opener "suspects the premise of Help"
+ * on a post that is on a board called Help (the instance's own boards are General and Staff Announcements alone).
+ */
+export const LINE_BOARDS: Readonly<Record<string, { readonly slug: string; readonly description: string }>> = {
+  Help: { slug: 'help', description: 'Stuck? Ask. This board is for asking.' },
+  'Movies & TV': { slug: 'movies-tv', description: 'What you watched, what you are watching, and what you wish you had not.' },
+  'Video Games': { slug: 'video-games', description: 'What you are playing.' },
+  'Arts & Crafts': { slug: 'arts-and-crafts', description: 'Show your work.' },
+  'Pointless Post Palace': { slug: 'pointless-post-palace', description: 'Posts with no point. Nonsense on a board that asks for nonsense.' },
+};
 
 /** Seeds the world on `fake`, for `instance`. */
 export function buildStage(fake: Fake, instance: Instance, options: StageOptions): Made {
@@ -115,6 +123,7 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
     owner[name] = account;
     cast[name] = fake.seed.character(account, name, instance.classes[0]!.key, { at: now - (20 - i) * 24 * HOUR });
   }
+  for (const [name, b] of Object.entries(LINE_BOARDS)) fake.seed.board(b.slug, name, b.description);
   const t0 = now - 5 * HOUR;
   const { thread, act: first } = fake.seed.thread('general', who('Snuckles'), 'my first sprite sheet (please be normal)',
     `Posting my first sprite sheet: a Wiggler. Twelve frames of walking, and parts to build yer own.\n\n${options.sheet ? '[img]https://dw.gripe/hype/wiggler-sheet.gif[/img]\n\n' : ''}I spent two weeks on the walk cycle. Please be normal about this.`, { at: t0 });
@@ -140,8 +149,9 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
   fake.seed.card(who('Serious Deer'), appeal, 'jimmy-wails', { layer: 1, message: 'Please. He spent two weeks on twelve frames.', drawn: 'blue-shirt', at: day + 0.85 * HOUR });
   const filed = fake.seed.post(thread, who('Snuckles'), 'Is this the right board for sprite sheets? I looked for a sprite board and there was not one.', { at: day + HOUR });
   const mod = fake.seed.staff('ontopic', 'ONTOPIC 5.0', 'mod');
-  const visit = fake.seed.visit(mod, filed, { at: day + 1.1 * HOUR, endsInMs: HOUR, line: 'A question about boards, asked on a board. I will allow that this is efficient.' });
-  fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Two stars. Filed.', at: day + 1.2 * HOUR });
+  /* Real words, both: the opener and the filing are lines ONTOPIC 5.0 wrote in the rehearsal (staff-lines.json), the opener the first arc's day one's (it names Movies & TV, and this post is on General: the filmed visits are on a board of the line's own, `staff.visit`). */
+  const visit = fake.seed.visit(mod, filed, { at: day + 1.1 * HOUR, endsInMs: HOUR, line: LINES.openerOtLooking.text });
+  fake.seed.visitEnd(visit, { outcome: 'filed', line: LINES.filingOtPatience.text, at: day + 1.2 * HOUR });
   fake.seed.infraction(visit, { points: 6, at: day + 1.2 * HOUR });
   /* A post whose one use is off camera: the title cards' strip of tape is a real Autocorrect, landed on this post's "friends" and copied from it (tools/hype/shot-cards.mjs). */
   fake.seed.post(thread, who('Chadluminum'), 'We are all friends here.', { at: day + 1.4 * HOUR });
@@ -163,6 +173,8 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
     { by: 'Concessions', card: 'autocorrect', text: 'we are all very supportive of this sprite sheet and its twelve frames.', config: { phrase: 'very supportive', replacement: 'deeply concerned' }, caster: 'Back Row' },
   ] as const;
   const dressedActs = dressed.map((d, i) => fake.seed.post(thread, who(d.by), d.text, { at: day + (1.6 + 0.07 * i) * HOUR }));
+  /* The post You Were Saying? ran on with in the owner's test instance, word for word (gpt2-tail.txt): the film types the card's real tail under it. */
+  const gpt2Act = fake.seed.post(thread, who('Human Josh'), GPT2_POST, { at: day + 2 * HOUR });
   /* Graffiti's wall is drawn by the caster, as a player; that is a call the backend answers after this seed returns, so it is in `ready`. */
   const walls: { play: string; by: string }[] = [];
   dressed.forEach((d, i) => {
@@ -203,8 +215,8 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
   fake.seed.staffPost(qc, argued.thread, LINES.declined.text, { at: now - 27 * HOUR });
   fake.seed.staffPost(mod, argued.thread, LINES.stars.text, { at: now - 26 * HOUR });
   const goodbye = fake.seed.thread('general', who('Snuckles'), 'so is the season over', 'Somebody said the Boss is leaving tonight. Does my sprite sheet still count?', { at: now - 4 * HOUR });
-  fake.seed.staffPost(fangame, goodbye.thread, LINES.farewell.text, { at: now - 3.5 * HOUR });
-  fake.seed.staffPost(qc, goodbye.thread, LINES.arrival.text, { at: now - 3.2 * HOUR });
+  fake.seed.staffPost(fangame, goodbye.thread, LINES.posted.text, { at: now - 3.5 * HOUR });
+  fake.seed.staffPost(qc, goodbye.thread, LINES.followup.text, { at: now - 3.2 * HOUR });
   /* The Boss's moves, each with the reason he gave for it: two boards made, and the two merged when nobody came to his. */
   const palace = { name: 'Plumber Platformer Palace', premise: 'Mario fangames.', description: 'A board for Mario fangames.' };
   const minus = { name: 'World -1', premise: 'Everything else.', description: 'Everything that is not a Mario fangame.' };
@@ -280,21 +292,20 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
     await setOf('fourDChess', second, '4d-chess', who('D-Guy'), dguy, { card: 'whoops', quadrant: 'excitedNegative' });
     await setOf('steelChair', second, 'steel-chair', who('Chadluminum'), kindWords, {}, { says: 'to be fair' });
     for (const wall of walls) {
-      const drawn = await as(owner[wall.by]!, () => fake.draw(wall.play, who(wall.by), { strokes: [
-        { can: 'pink', cap: 'fat', aspect: 3, points: wave(0.3, 0.04, 0.9, 0.08) },
-        { can: 'lime', cap: 'fat', aspect: 3, points: wave(0.6, 0.1, 0.95, 0.12) },
-        { can: 'orange', cap: 'stock', aspect: 3, points: wave(0.82, 0.05, 0.7, 0.06) },
-      ] }));
-      if (!drawn.ok) throw new Error(`the stage's wall was refused: ${drawn.error}`);
+      /* One draw to a shape, as a player's hand draws one: a word, an underline, an arrow, a face, a heart and a scribble-out (graffiti-shapes.ts). */
+      for (const shape of tags()) {
+        const drawn = await as(owner[wall.by]!, () => fake.draw(wall.play, who(wall.by), { strokes: shape.strokes.map((s) => ({ ...s })) }));
+        if (!drawn.ok) throw new Error(`the stage's wall (${shape.kind}) was refused: ${drawn.error}`);
+      }
     }
   })();
   const made: Made = {
     thread, target: { act: target, seq: 4, character: who('Snuckles') }, cast, me, scenes,
     threads: { main: thread, argued: argued.thread, goodbye: goodbye.thread }, staff: { fangame, qc, ontopic: mod },
     owners: { ...owner }, viewer, played,
-    posts: { first: 1, kind: 2, review: 14, hotBox: 15, glitter: 16, fab: 17, graffiti: 18, autocorrect: 19 },
-    acts: { first, kind: kindWords, review: dguy, hotBox: dressedActs[0]!, glitter: dressedActs[1]!, fab: dressedActs[2]!, graffiti: dressedActs[3]!, autocorrect: dressedActs[4]! },
-    sets, crowd: CROWD, boards, ready,
+    posts: { first: 1, kind: 2, review: 14, hotBox: 15, glitter: 16, fab: 17, graffiti: 18, autocorrect: 19, gpt2: 20 },
+    acts: { first, kind: kindWords, review: dguy, hotBox: dressedActs[0]!, glitter: dressedActs[1]!, fab: dressedActs[2]!, graffiti: dressedActs[3]!, autocorrect: dressedActs[4]!, gpt2: gpt2Act },
+    sets, crowd: CROWD, boards, lineBoards: Object.fromEntries(Object.entries(LINE_BOARDS).map(([name, b]) => [name, b.slug])), ready,
   };
   /* The story opens on the thread: its address is known only once it is seeded, so the seed sets it (the preview's `path` is fixed text). */
   const [view, of = ''] = options.view.split(':');
