@@ -22,7 +22,7 @@
  *
  * REFUSED: a statement whose beats do not add up to 16, or that the version has not got; a take that is neither on disk nor a slate; a shot
  * under 6 frames; a shot past its take's end without `hold`; two cuts on one frame; a first row that does not start the film; a landing named
- * that the take has not, or that has moved from `expect`; a start before the take's; a row's own move or punch in part one (locked off; a take's
+ * that the take has not, or that has moved from `expect`; a start before the take's; a row's own move or punch before node 4 (locked off; a take's
  * own camera is simply not applied there).
  *
  * A TAKE is `{ seconds, width?, landed?, move?, punch?, punches? }`: its notes (the edit reads them from `<take>.json`). Its own `move` and
@@ -109,7 +109,8 @@ export function resolveList(list, { tl, cues, takes }) {
     }
     if (!slate && !r.hold && from + frames / F > info.seconds + 0.5 / F) throw new Error(`${label(r, i)} runs to ${(from + frames / F).toFixed(2)} s of ${r.take}, which is ${info.seconds.toFixed(2)} s: add "hold": true to hold it on its last frame, or cut it shorter`);
     const node = tl.nodes.find((/** @type {{ start: number, end: number }} */ n) => startFrame >= Math.round(n.start * F) && startFrame < Math.round(n.end * F));
-    const part1 = startFrame < Math.round(tl.part.one[1] * F);
+    /* The lock-off is nodes 1 to 3: the camera first moves in node 4, where the edit first shows its hand (the owner's note on the film). */
+    const part1 = startFrame < Math.round(tl.nodes.find((/** @type {{ id: string }} */ n) => n.id === 'n04').start * F);
     /** @type {any} */
     const shot = { take: r.take, at: 0, start: startFrame / F, length: frames / F, startFrame, frames, from, node: node?.id, row: i + 1, slate, hold: r.hold === true };
     if (r.statement !== undefined) shot.statement = r.statement;

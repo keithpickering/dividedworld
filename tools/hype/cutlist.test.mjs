@@ -174,7 +174,13 @@ test('the committed list, read against the placeholder voice, falls: part one, t
     const at = (have[r.take] ??= { seconds: 1e6, landed: [] });
     if (r.sync && !at.landed.some((l) => l.what === r.sync)) at.landed.push({ what: r.sync, frame: r.expect });
   }
-  const { blocks, slates } = resolveList(list, { tl: t, cues: captions(text, t), takes: have });
+  const { blocks, slates, shots } = resolveList(list, { tl: t, cues: captions(text, t), takes: have });
+  /* The owner's note on the third cut: no shot holds on nothing, waiting for the music. From the second block on no shot is long, and the third block's are quick. */
+  const edges = [t.music.second.at, t.music.third.at];
+  const longest = shots.filter((x) => x.start >= edges[0]).reduce((a, x) => (x.length > a.length ? x : a));
+  assert.ok(longest.length <= 6, `the second and third blocks have no shot over 6 s, but row ${longest.row} (${longest.take}) runs ${longest.length.toFixed(2)} s`);
+  const third = blocks.find((b) => b.name === 'third block');
+  assert.ok(third.median < 1.5, `the third block's median shot is under 1.5 s, not ${third.median.toFixed(2)} s`);
   const medians = blocks.map((b) => b.median);
   console.log(blocks.map((b) => `${b.name}: ${b.count} shots, median ${b.median.toFixed(2)} s`).join('\n'));
   assert.ok(blocks.every((b) => b.count > 0), 'every stretch has shots');
@@ -193,6 +199,20 @@ test('part one is locked off: a row there with a move is refused, and a take`s o
   assert.deepEqual(out.shots[1].move, move, 'a shot of part two has its take`s');
   rows[0] = { node: 'n01', take: 'c-n01', move };
   assert.throws(() => read(rows), /part one.*locked off/);
+});
+
+test('the lock-off ends where node 4 begins: a row there may carry a move or punch, and one in node 3 may not', () => {
+  const move = { from: { x: 0, y: 0, w: 1, roll: 0 }, to: { x: 0.05, y: 0.03, w: 0.9, roll: 0 }, ease: 'inOut' };
+  const n4 = tl.nodes.find((n) => n.id === 'n04'), n3 = tl.nodes.find((n) => n.id === 'n03');
+  assert.ok(n4.start < tl.part.one[1], 'node 4 is inside part one, whose lock-off the film`s first design set');
+  const rows = [{ node: 'n01', take: 'c-n01' }, { node: 'n04', take: 'c-n05', move, punch: 8 }];
+  const out = read(rows, { takes: { ...takes, 'c-n05': { seconds: 1000, landed: [], move: { ...move, ease: 'linear' }, punches: [{ frame: 0, percent: 5 }] } } });
+  assert.deepEqual(out.shots[1].move, move, 'a row in node 4 has its move');
+  assert.equal(out.shots[1].punch, 8);
+  const own = read([rows[0], { node: 'n04', take: 'c-n05' }], { takes: { ...takes, 'c-n05': { seconds: 1000, landed: [], move } } });
+  assert.deepEqual(own.shots[1].move, move, 'and a take`s own camera is applied there');
+  assert.throws(() => read([rows[0], { node: 'n03', at: 0, take: 'c-n05', move }, rows[1]]), /part one.*locked off/);
+  assert.equal(n3.end, n4.start);
 });
 
 test('a synced landing must fall inside its shot: a next cut that comes before it is refused', () => {
