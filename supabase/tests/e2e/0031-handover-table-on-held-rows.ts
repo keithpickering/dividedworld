@@ -1,6 +1,6 @@
 /**
- * The handover tables' change on rows already held (supabase/migrations/0401_departed_personas.sql, "table part", docs/plans/2026-11-21-departed-personas-plan.md, Task 1).
- * The suite replays the migrations from zero, so season_handovers and handover_dismissals hold no rows when 0402 runs there, and the migration has already run on the database a
+ * The handover tables' change on rows already held (supabase/migrations/0403_departed_personas.sql, "table part", docs/plans/2026-11-21-departed-personas-plan.md, Task 1).
+ * The suite replays the migrations from zero, so season_handovers and handover_dismissals hold no rows when 0403 runs there, and the migration has already run on the database a
  * SQL assertion file reads. The honest proof is the migration's own lines run against rows written by the old schema: the table part is read out of the migration file between its two
  * marker comments (a copy in this file would be a subject this test built, free to drift from the one that ships), the old shapes (0051, 0063, 0082 and 0090: a handover keyed by its
  * season, a dismissal keyed by the season, its append-only guard firing always) are built in a schema of their own with a roll-over and a dismissal in them, and the extracted lines run
@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sql } from './psql-db.ts';
 
-const migration = fs.readFileSync(path.resolve(import.meta.dirname, '../../migrations/0401_departed_personas.sql'), 'utf8');
+const migration = fs.readFileSync(path.resolve(import.meta.dirname, '../../migrations/0403_departed_personas.sql'), 'utf8');
 
 /** The migration's own lines between its two markers. */
 export function tablePart(text: string): string {

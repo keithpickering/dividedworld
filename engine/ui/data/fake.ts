@@ -141,7 +141,7 @@ export interface Seed {
    */
   alert(account: Id, alert: { kind: WrittenKind; act: Id; character?: Id; sub?: string; at?: number }): void;
   /**
-   * A change of Boss at a season's roll-over, or (`cause: 'departure'`) when the outgoing Boss left the instance's roster mid-season (a `season_handovers` row, 0051; 0402 adds its id and cause, ids from 1 in the order seeded): the outgoing Boss (null at the first) and the arriving one, by staff key,
+   * A change of Boss at a season's roll-over, or (`cause: 'departure'`) when the outgoing Boss left the instance's roster mid-season (a `season_handovers` row, 0051; 0403 adds its id and cause, ids from 1 in the order seeded): the outgoing Boss (null at the first) and the arriving one, by staff key,
    * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
    * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words. A change of Boss is also a to-do in the admin queue
    * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted

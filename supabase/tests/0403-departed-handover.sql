@@ -1,4 +1,4 @@
--- One handover row per handover, and a departure (supabase/migrations/0401_departed_personas.sql; docs/plans/2026-11-21-departed-personas-plan.md, Task 1; its design, section 3).
+-- One handover row per handover, and a departure (supabase/migrations/0403_departed_personas.sql; docs/plans/2026-11-21-departed-personas-plan.md, Task 1; its design, section 3).
 --
 -- A persona that left the instance's roster and sits in the Boss's chair is handed over at once, in the open season, by the same hand_over a roll-over runs. So a season can hold two handovers: season_handovers is
 -- keyed by its own id, says why in `cause` (rollover or departure), and every reader that took "the handover of a season" now takes a handover.

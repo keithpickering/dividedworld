@@ -416,7 +416,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into pool_spends (day, staff, trigger, post_act, record) select '2030-01-07', 'exp-boss', 'named', id, '{"trims": []}' from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
       -- A handover's to-do an admin dismissed (0090): the handover is a Boss changing, the season it opened.
       insert into season_handovers (season, outgoing, boss, how) select (select id from seasons where ends_at is null), 'exp-boss', 'exp-bot', 'rotation' on conflict (season) where cause = 'rollover' do nothing;
-      -- A departure in the same season (0402): a second handover of it, its own id, dismissed on its own, so the ids and the dismissal's link to its handover are carried across (a restore that numbered the rows again would break the link).
+      -- A departure in the same season (0403): a second handover of it, its own id, dismissed on its own, so the ids and the dismissal's link to its handover are carried across (a restore that numbered the rows again would break the link).
       insert into season_handovers (season, outgoing, boss, how, cause) select (select id from seasons where ends_at is null), 'exp-bot', 'exp-boss', 'rotation', 'departure';
       insert into handover_dismissals (season, handover, admin) select season, id, ann from season_handovers order by id;
       -- A run's claim on a day (0089), which the pool's schedule would have taken.

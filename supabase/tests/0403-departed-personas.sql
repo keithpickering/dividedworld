@@ -1,4 +1,4 @@
--- A persona that leaves the roster leaves the staff (supabase/migrations/0401_departed_personas.sql; docs/plans/2026-11-21-departed-personas-plan.md, Task 2; its design, sections 2 and 3).
+-- A persona that leaves the roster leaves the staff (supabase/migrations/0403_departed_personas.sql; docs/plans/2026-11-21-departed-personas-plan.md, Task 2; its design, sections 2 and 3).
 --
 -- The seed's roster is the whole staff: a persona it does not list is benched (cause seed), and a departing Boss is handed over at once, in the open season, before it is benched. Each scenario below starts from the same
 -- world (a Boss `a`, a member `b`, a Mod `c`, a persona `w` that never debuted, and a retired `r`, so nothing is ever seated from it) and puts it back by raising a sentinel inside its own block, which Postgres rolls back.

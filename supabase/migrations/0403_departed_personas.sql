@@ -202,7 +202,7 @@ end $$;
 revoke execute on function dismiss_handover_todo(bigint) from public, anon;
 grant execute on function dismiss_handover_todo(bigint) to authenticated;
 
--- pool_context (0339_thread_places_at_scale.sql), the predecessor read from the open season's latest Boss-changing handover (a departure's, where one was the latest). Everything else as 0339_thread_places_at_scale.sql wrote it.
+-- pool_context (0402_thread_lockout.sql), the predecessor read from the open season's latest Boss-changing handover (a departure's, where one was the latest). Everything else as 0402_thread_lockout.sql wrote it.
 create or replace function pool_context() returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object(
@@ -214,7 +214,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
                     where h.boss = current_boss()),
     'offices', coalesce((select jsonb_object_agg(o.staff, o.office) from staff_office_now o join characters c on c.staff = o.staff where c.staff_kind = 'persona'), '{}'::jsonb),
     'characters', coalesce((select jsonb_object_agg(c.staff, c.id) from characters c where c.staff is not null and c.staff_kind = 'persona'), '{}'::jsonb),
-    'boards', coalesce((select jsonb_object_agg(b.id, b.slug) from boards b where not b.is_system and board_is_open(b.id)), '{}'::jsonb))
+    'boards', coalesce((select jsonb_object_agg(b.id, b.slug) from boards b where not b.is_system and board_is_open(b.id)), '{}'::jsonb),
+    -- Each persona's live lockouts, public as the springs are: the chatter offers no reply or card in a thread its persona is locked out of, so no paid answer goes to a post that would be refused. `staff` is the persona's
+    -- character id (the values of `characters` above) and `thread` the thread, both text.
+    'lockouts', coalesce((select jsonb_agg(jsonb_build_object('staff', c.id::text, 'thread', s.thread::text) order by s.created_at, s.id)
+                          from characters c join acts s on s.kind = 'spring' and s.payload ->> 'did' = 'lockedOut' and s.payload ->> 'locks' = c.id::text and (s.payload ->> 'until')::timestamptz > now()
+                          where c.staff is not null and c.staff_kind = 'persona' and lockout_ends(s.id) > now()), '[]'::jsonb))
 $$;
 
 -- admin_queue (0337_handoffs.sql), each to-do now one handover's: it carries the handover's id and cause, is dismissed by that id, and finds the outgoing Boss's handoff note and facts for the season that
