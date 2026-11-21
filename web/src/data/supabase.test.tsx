@@ -1104,6 +1104,18 @@ describe('failures', () => {
     }
   });
 
+  it('reads the cutting Acts of plays in one acts_public read, landed card Acts only, and never filters on a non-id', async () => {
+    const h = harness(() => rows([ACT_ROW]));
+    expect(await h.api.actsCutting([A, B])).toEqual([ACT]);
+    expect(h.to('acts_public')).toHaveLength(1);
+    const url = h.to('acts_public')[0]!.url.searchParams;
+    expect(url.get('payload->cut->>play')).toBe(`in.(${A},${B})`);
+    expect(url.get('kind')).toBe('eq.card');
+    expect(await h.api.actsCutting(['not an id', "1),(2"])).toEqual([]);
+    expect(await h.api.actsCutting([])).toEqual([]);
+    expect(h.to('acts_public')).toHaveLength(1);
+  });
+
   it('reads Acts by id in one acts_public read', async () => {
     const h = harness(() => rows([ACT_ROW]));
     expect(await h.api.actsById([A, B])).toEqual([ACT]);

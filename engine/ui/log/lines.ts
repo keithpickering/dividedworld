@@ -841,12 +841,9 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   /* A cutting card's player says what it ended; the Gimmick's player says what ended it, and when. Both from the Act's public `cut` alone. */
   const cutSaid = (play: Act | undefined): string[] => { const cut = cutOf(play); return cut ? [` It ended the ${cardName(cut.card)} there.`] : []; };
   const cutOnMine = (play: Act | undefined, when: string): string[] => { const cut = cutOf(play); return cut ? [` It ended your ${cardName(cut.card)} early, at ${utcWhen(when)} UTC.`] : []; };
-  /* The first landed cutting Act that names a play and that no admin reversed (a `card_end` on it, in `data.log.ended`): the play's real end. */
-  const cutting = (id: Id | null): Act | undefined => {
-    if (id === null) return undefined;
-    const reversed = new Set(data.log.ended.map((x) => x.play));
-    return [...data.acts.values()].filter((a) => a.kind === 'card' && !reversed.has(a.id) && cutOf(a)?.play === id).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0];
-  };
+  /* The first landed cutting Act that names a play and that no admin reversed: the play's real end. */
+  const cuts = cuttingIndex(data);
+  const cutting = (id: Id | null): Act | undefined => (id === null ? undefined : cuts.get(id)?.[0]);
   const mine = (id: Id | null | undefined) => id !== null && id !== undefined && data.mine.some((c) => c.id === id);
   const nameOf = (id: Id | null | undefined, unknown: string) => (id ? data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? unknown : unknown);
   const at = (iso: string) => micros(iso);
@@ -1153,6 +1150,17 @@ function surfaceRows(data: LogData, words: Words): LogRow[] {
   return rows;
 }
 
+/** The landed cutting Acts no admin reversed (a `card_end` in `data.log.ended`), by the play each names, earliest first: read once for a set of rows. */
+function cuttingIndex(data: LogData): ReadonlyMap<Id, readonly Act[]> {
+  const reversed = new Set(data.log.ended.map((x) => x.play));
+  const index = new Map<Id, Act[]>();
+  for (const a of [...data.acts.values()].filter((x) => x.kind === 'card' && !reversed.has(x.id)).sort((x, y) => Date.parse(x.createdAt) - Date.parse(y.createdAt))) {
+    const cut = cutOf(a);
+    if (cut) index.set(cut.play, [...(index.get(cut.play) ?? []), a]);
+  }
+  return index;
+}
+
 /**
  * What a landed cutting card's Act names (its public `cut`: the Gimmick's play and the Gimmick's card), or null for any other Act. Read from the Act's payload alone.
  */
@@ -1171,6 +1179,7 @@ function cutOf(play: Act | undefined): { readonly play: Id; readonly card: strin
  */
 function endedRows(data: LogData, words: Words): LogRow[] {
   const cardName = (key: unknown) => words.instance.cards.find((c) => c.key === key)?.name ?? 'a card';
+  const cuts = cuttingIndex(data);
   /* An admin's end of a lockout has its words in the lockout's own lines ("An admin ended it at {time}.", from the card_end this entry names), so it adds none. */
   return data.log.ended.filter((e) => data.acts.get(e.play)?.kind !== 'spring').map((e): LogRow => {
     const play = data.acts.get(e.play);
@@ -1194,7 +1203,9 @@ function endedRows(data: LogData, words: Words): LogRow[] {
     /* An admin's end of a cutting card brings its Gimmick back for the rest of its time: the Gimmick's player is told so, from the cut's public facts and the Gimmick's own `ends`. */
     const cut = mine ? cutOf(play) : null;
     const cutEnds = cut ? data.acts.get(cut.play)?.payload.ends : undefined;
-    const back = cut && typeof cutEnds === 'string'
+    /* Said only where nothing else ended the Gimmick: no other landed cutter names it, and no admin ended it itself (its own row tells that). */
+    const up = cut !== null && !cuts.has(cut.play) && !data.log.ended.some((x) => x.play === cut.play);
+    const back = up && cut && typeof cutEnds === 'string'
       ? [Date.parse(cutEnds) > words.now ? ` Your ${cardName(cut.card)} is back up until ${utcWhen(cutEnds)} UTC.` : ` Your ${cardName(cut.card)} came back and has since ended.`]
       : [];
     return {

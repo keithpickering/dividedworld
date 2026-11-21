@@ -2056,11 +2056,44 @@ describe('a cutting card in the Gimmick\'s player\'s and the cutter\'s logs', ()
       actsCutting: async (plays: readonly string[]) => { asked.push(plays); return [cutter]; },
     } as unknown as KayfaApi;
     const log = { ...empty, cards: [{ card: 'gm', kind: 'played' as const, act: 'g1', price: 0, at: gimmickAt }] };
-    const own = data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([post, gimmick('2026-10-31T10:00:00.000Z')].map((a) => [a.id, a])) });
+    const own = data({ log: empty, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([post, gimmick('2026-10-31T10:00:00.000Z')].map((a) => [a.id, a])) });
     const read = await around(api, log, own);
     expect(asked).toEqual([['g1']]);
     const ended = row(logRows(read, w, 600, null), 'gimmickEnded');
     expect([ended.at, text(ended)]).toEqual([cutAt, 'Some Card on your post #3. A Cutter ended it early.']);
+  });
+
+  test('a later page asks for the cutting Acts of its own plays only, and a failed read fails the page', async () => {
+    const asked: (readonly string[])[] = [];
+    let fail = false;
+    const api = {
+      actsById: async () => [], effectStates: async () => ({}), characters: async () => [], thread: async () => null, board: async () => null,
+      actsCutting: async (plays: readonly string[]) => { asked.push(plays); if (fail) throw new Error('down'); return []; },
+    } as unknown as KayfaApi;
+    const played = (act: string) => ({ card: 'gm', kind: 'played' as const, act, price: 0, at: gimmickAt });
+    const held = { ...empty, cards: [played('g1')] };
+    const own = data({ log: held, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([post, gimmick('2026-10-31T10:00:00.000Z')].map((a) => [a.id, a])) });
+    await around(api, { ...empty, cards: [played('g1'), played('g2')] }, own);
+    expect(asked).toEqual([['g2']]);
+    await around(api, held, own);
+    expect(asked).toEqual([['g2']]);
+    fail = true;
+    await expect(around(api, { ...empty, cards: [played('g1'), played('g3')] }, own)).rejects.toThrow('down');
+  });
+
+  describe('the back-up line of an ended cutting play', () => {
+    const second = act('c3', 'card', 'r', { targetActId: 'post3', createdAt: '2026-10-28T09:30:00.000Z', payload: { card: 'bk', cut: { play: 'g1', card: 'gm' } } });
+    const entry = (play: string) => ({ cardEnd: `e-${play}`, play, card: 'bk', at: '2026-10-29T10:00:00.000Z', side: 'onMine' as const, reach: 'post' as const, targetName: null, postAuthorName: 'Pipewrench', casterName: 'Quill', character: 'p' });
+    const run = (acts: Act[], ended: Log['ended']) => text(row(logRows(data({ log: { ...empty, ended }, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([post, gimmick('2026-12-15T10:00:00.000Z'), cutter, ...acts].map((a) => [a.id, a])) }), w, 600, null), 'ended'));
+    test('says nothing extra where another landed cutter still names the play', () => {
+      expect(run([second], [entry('c1')])).toBe('An admin ended Quill\'s Cutter on your post #3.');
+    });
+    test('says nothing extra where an admin ended the Gimmick itself', () => {
+      expect(run([], [entry('c1'), { ...entry('g1'), card: 'gm' }])).toBe('An admin ended Quill\'s Cutter on your post #3.');
+    });
+    test('says it where the other cutter was reversed too', () => {
+      expect(run([second], [entry('c1'), entry('c3')])).toContain('Your Some Card is back up until Dec 15 · 10:00 UTC.');
+    });
   });
 
   test('a cut play of a card that keeps still says the posts written while it was up keep it', () => {

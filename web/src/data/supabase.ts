@@ -1546,7 +1546,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async actsCutting(plays) {
       const wanted = [...new Set(plays)].filter(idOk);
       if (wanted.length === 0) return [];
-      return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('payload->cut->>play', part)))).map(toAct);
+      return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card').in('payload->cut->>play', part)))).map(toAct);
     },
     async openingActs(threads) {
       const wanted = [...new Set(threads)].filter(idOk);

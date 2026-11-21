@@ -233,7 +233,16 @@ export function loadLog(env: GlassEnv, preload: Preload): Promise<ScreenDoc<LogD
       },
       () => null,
     ).catch(() => null);
-    const page = await paged;
+    /* The Acts that cut the page's plays (actsCutting): a Gimmick's row says when it really ended, and the row that names its cut may be on no
+       page read. It decides a fact, not a decoration, so its failure fails the page as the page's own read does. */
+    const cutRead = paged.then(async (p) => {
+      const held = new Set(p.acts.map((a) => a.id));
+      const plays = [...new Set(p.log.cards.flatMap((c) => (c.act === null ? [] : [c.act])))];
+      return plays.length === 0 ? [] : (await env.api.actsCutting(plays)).filter((a) => !held.has(a.id));
+    });
+    const read = await paged;
+    const cutting = await cutRead;
+    const page = cutting.length === 0 ? read : { ...read, acts: [...read.acts, ...cutting] };
     const conduct = await conductRead;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const waited = await Promise.race([withActs, new Promise<'late'>((resolve) => { timer = setTimeout(() => resolve('late'), ESTIMATE_WAIT_MS); })]);
