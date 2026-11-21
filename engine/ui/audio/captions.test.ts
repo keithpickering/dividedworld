@@ -26,12 +26,12 @@ describe('the caption store', () => {
     const c = createCaptions();
     c.say({ text: 'Laughter', ink: 'var(--kb-glass-salty)', ms: 2500 });
     assert.equal(lines(c).length, 1);
-    const first = lines(c)[0];
+    const first = lines(c)[0]!;
     assert.deepEqual({ text: first.text, ink: first.ink, held: first.held, count: first.count }, { text: 'Laughter', ink: 'var(--kb-glass-salty)', held: false, count: 1 });
     c.say({ text: 'Laughter', ink: 'var(--kb-glass-salty)', ms: 2500 });
     assert.equal(lines(c).length, 1);
-    assert.equal(lines(c)[0].count, 2);
-    assert.equal(lines(c)[0].id, first.id);
+    assert.equal(lines(c)[0]!.count, 2);
+    assert.equal(lines(c)[0]!.id, first.id);
   });
 
   test('ink absent on both says counts as equal', () => {
