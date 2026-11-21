@@ -8,8 +8,8 @@ import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
 import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playsFallingOn, shownPlays } from './plays.ts';
-import type { CardView } from './types.ts';
+import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays } from './plays.ts';
+import type { CardPlay, CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
 const OTHER = '11111111-0000-4000-8000-000000000002';
@@ -271,7 +271,7 @@ describe('the default view', () => {
   });
   test('gives a play that ends on a timer an ends, "Ends Nov 7, 9:14 PM", in the reader\'s zone', () => {
     expect(process.env.TZ).toBe('America/Los_Angeles');
-    const view = defaultView(rules, { status: 'Pinned', describe: () => 'x' }, settings, '2026-11-08T05:14:00.000Z');
+    const view = defaultView(rules, { status: 'Pinned', describe: () => 'x' }, settings, '2026-11-08T05:14:00.000Z', [], Date.parse('2026-11-01T00:00:00.000Z'));
     expect(view.ends).toMatch(/^Ends Nov 7, 9:14\sPM$/u);
     expect(defaultView(rules, { status: 'Pinned', describe: () => 'x' }, settings).ends).toBeUndefined();
   });
@@ -714,11 +714,11 @@ describe('a play of a card that keeps, once its time is up', () => {
   });
 
   test('the Lens says how an ended keeping play ends, in the words of a live one\'s end', () => {
-    const live = defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS).ends!;
+    const live = defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS, [], Date.parse('2026-11-02T00:00:00.000Z')).ends!;
     expect(live).toMatch(/^Ends /u);
     expect(defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS, [], AFTER).ends).toBe(`${live.replace(/^Ends /u, 'Ended ')}. Posts written while it was up keep it.`);
     expect(defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS, [], Date.parse('2026-11-02T00:00:00.000Z')).ends, 'still up: the live words').toBe(live);
-    expect(defaultView({ name: 'Plain' }, undefined, undefined, ENDS, [], AFTER).ends, 'a card that does not keep says no such thing').toBe(live);
+    expect(defaultView({ name: 'Plain' }, undefined, undefined, ENDS, [], AFTER).ends, 'a card that does not keep says it ended, and no such thing').toBe(live.replace(/^Ends /u, 'Ended '));
   });
 });
 
@@ -812,5 +812,64 @@ describe('the discipline plays', () => {
     const plays = createPlays();
     plays.add([watch]);
     expect(plays.get(TARGET).plays.map((p) => p.id)).toEqual([watch.id]);
+  });
+});
+
+const NOW_MS = Date.parse('2026-10-30T12:00:00.000Z');
+const NO_KEEPS: ReadonlySet<string> = new Set();
+const play = (over: Partial<CardPlay> = {}): CardPlay => ({ ...playOf(card({ payload: { card: 'whoops', message: '', config: {} } }))!, ...over });
+
+describe('playOver', () => {
+  const at = (ms: number): string => new Date(ms).toISOString();
+
+  test.each<[string, Partial<CardPlay>]>([
+    ['caught', { caught: POST }],
+    ['reversed', { reversed: true }],
+    ['untaken', { untaken: true }],
+    ['instant', { instant: true }],
+    ['spent', { spent: true }],
+    ['revealed', { revealed: { card: 'whoops', spring: POST, at: at(NOW_MS) } }],
+  ])('a %s play is over', (_name, over) => {
+    expect(playOver(play(over), NOW_MS, NO_KEEPS)).toBe(true);
+  });
+
+  test('a play whose ends is one ms ahead is not over, and at its end it is', () => {
+    const ends = play({ ends: at(NOW_MS + 1) });
+    expect(playOver(ends, NOW_MS, NO_KEEPS)).toBe(false);
+    expect(playOver(ends, NOW_MS + 1, NO_KEEPS)).toBe(true);
+  });
+
+  test('a play whose ends has passed is not over where its card keeps', () => {
+    const kept = play({ card: 'stick-around', ends: at(NOW_MS - 1) });
+    expect(playOver(kept, NOW_MS, new Set(['stick-around']))).toBe(false);
+    expect(playOver(play({ card: 'stick-around', ends: at(NOW_MS - 1) }), NOW_MS, NO_KEEPS)).toBe(true);
+  });
+
+  test('a play in then whose ends has passed is not over, but one in then that is caught is', () => {
+    const timed = play({ ends: at(NOW_MS - 1) });
+    expect(playOver(timed, NOW_MS, NO_KEEPS, new Set([timed.id]))).toBe(false);
+    const caught = play({ ends: at(NOW_MS - 1), caught: POST });
+    expect(playOver(caught, NOW_MS, NO_KEEPS, new Set([caught.id]))).toBe(true);
+  });
+
+  test('a play with only starts ahead is not over', () => {
+    const later = playOf(card({ payload: { card: 'whoops', starts: at(NOW_MS + 60_000) } }))!;
+    expect(later.starts).toBe(at(NOW_MS + 60_000));
+    expect(later.ends).toBeUndefined();
+    expect(playOver(later, NOW_MS, NO_KEEPS)).toBe(false);
+  });
+});
+
+describe('kindSpent', () => {
+  test('is false for a kind with no plays', () => {
+    expect(kindSpent([], NOW_MS, NO_KEEPS)).toBe(false);
+  });
+
+  test('is false for one live play and one caught', () => {
+    expect(kindSpent([play(), play({ caught: POST })], NOW_MS, NO_KEEPS)).toBe(false);
+  });
+
+  test('is true for two plays that are both over', () => {
+    expect(kindSpent([play({ caught: POST }), play({ instant: true })], NOW_MS, NO_KEEPS)).toBe(true);
   });
 });

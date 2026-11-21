@@ -24,7 +24,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
-import { billPost, drawnOf } from '../cards/billing.ts';
+import { billPost, drawnOf, type BillOver } from '../cards/billing.ts';
 import { PostEffects, momentParts } from '../cards/Effects.tsx';
 import { useLensStore } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
@@ -63,13 +63,13 @@ const NOT_THERE: PageOrigin = { act: null, plays: [], more: false, moment: null,
  * once for this page read, from the tallies and the spins of the plays that the page put in the thread's stores (`spun` holds those it counted). The plays join the store only here, so their tags are first drawn
  * in billing order and never move. Called by the thread screen's `absorb`, outside any render.
  */
-export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: Tallies, spun: ReadonlyMap<Id, Spun>, polls?: Polls, ticket = 0): void {
+export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: Tallies, spun: ReadonlyMap<Id, Spun>, over?: BillOver, polls?: Polls, ticket = 0): void {
   /* A thread spun from a poll or a ballot: the poll, its voters and the caller's ballots go to the box's store of polls (where the box is drawn without one, `useOrigin` takes them in). */
   if (polls !== undefined) takeInPolls(origin, polls, ticket);
   const shown = origin.plays.filter((a) => a.kind !== 'card_end').slice(0, CARDS_SHOWN);
   const ends = origin.plays.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId));
   plays.add([...shown, ...ends, ...(origin.act ? [origin.act] : [])]);
-  billPost(plays, id, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
+  billPost(plays, id, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);
 }
 
 /** The origin's poll parts into a store of polls: the poll of the origin's post (a removed poll leaves none), with the voters' heads in `cast` as the page's voters are named. */
@@ -100,8 +100,10 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
     setAct((was) => (was && from.act ? newer(was, from.act) : from.act ?? was));
     setMore(from.more);
   }
-  /* The thread screen takes the page's origin into its store of the box's plays as it takes a page in (`takeInOrigin`, called by `absorb`), so the box's first frame has its tags. A box drawn without that store (a story) takes its own in here. */
-  useEffect(() => { if (!shared) takeInOrigin(from, origin, plays, tallies, new Map(), polls); }, [shared, from, origin, plays, tallies, polls]);
+  /* The thread screen takes the page's origin into its store of the box's plays as it takes a page in (`takeInOrigin`,
+     called by `absorb`), so the box's first frame has its tags. A box drawn without that store (a story) takes its own
+     in here, and a story box is not billed for spent: it bills by draws alone. */
+  useEffect(() => { if (!shared) takeInOrigin(from, origin, plays, tallies, new Map(), undefined, polls); }, [shared, from, origin, plays, tallies, polls]);
   useEffect(() => {
     const cards = effectCards(ui);
     return api.subscribeThread(thread, {
