@@ -22,7 +22,7 @@ export function trapStruckWords(f: TrapStruckFacts): { readonly line: string; re
   }
   /* A refund back's cast landed as usual and its card went back to its caster: the glass may be warm, and it says only what the spring shows everyone. Where the spring was not read (`f.card` null) it is only "card". */
   if (f.how === 'returned') {
-    return { line: 'Paid forward', detail: `Their face-down ${f.card ?? 'card'} sprang on your ${f.laid ?? 'cast'}. It landed as usual, and the card is back in your hand.` };
+    return { line: 'Paid forward', detail: `Their face-down ${f.card ?? 'card'} sprang on your ${f.laid ?? 'Move'}. It landed as usual, and the card is back in your hand.` };
   }
   if (f.card === null) return undefined;
   if (f.how === 'quote') {

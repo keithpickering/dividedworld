@@ -62,7 +62,7 @@ export { STROKES, W as SIGN_W, H as SIGN_H };
 const printX = (i: number, n: number) => ((i + 1) * W) / (n + 1);
 
 function Sign({ left, count }: { left: number; count: number }) {
-  const label = `Kick Me sign: ${left} of ${count} ${alignmentTag(kickMe.refunds!.flavors[0]!)} cards still go back to their casters`;
+  const label = `Kick Me sign: ${left} of ${count} ${alignmentTag(kickMe.refunds!.flavors[0]!)} Moves still go back to their players`;
   return (
     <svg className="dw-kick-sign" role="img" aria-label={label} viewBox={`0 0 ${W} ${H}`} focusable="false">
       {/* The cardboard, a little out of square, with its corrugation showing faintly. */}

@@ -26,15 +26,15 @@ const earn = () => {
   if (kickMe.gimmick?.kind !== 'earn' || !('flat' in kickMe.gimmick)) throw new Error('Kick Me has no flat earn gimmick');
   return `${kickMe.gimmick.flat === 1 ? 'one vote' : shareWords(kickMe.gimmick.flat)} more`;
 };
-const kicks = () => `${count(kickMe.refunds!.count)} ${alignmentTag(kickMe.refunds!.flavors[0]!)} cards`;
+const kicks = () => `${count(kickMe.refunds!.count)} ${alignmentTag(kickMe.refunds!.flavors[0]!)} Moves`;
 
 export const ui: CardUi = {
   key: 'kick-me',
   Effect: KickMeEffect,
   art: { color: '#d24a2c', ink: '#0d0301', canvas: kickMeCanvas, mark: kickMeMark, credit: kickMeArt.credit, tagline: 'Earn more when your post bombs.' },
-  summary: `Used on your post. For ${spanWords(kickMe.lasts!)}, each negative reaction to it pays ${earn()}, and the first ${kicks()} cast there go back to their casters' hands.`,
+  summary: `Used on your post. For ${spanWords(kickMe.lasts!)}, each negative reaction to it pays ${earn()}, and the first ${kicks()} played on it go back to their players' hands.`,
   status: 'Wearing a Kick Me sign',
   describe: (_settings: Settings) =>
-    `A ${alignmentTag(kickMe.alignment)} card, ${kickMe.rarity}, used on one of your own posts. For ${spanWords(kickMe.lasts!)} a Kick Me sign is taped on it. Each heat or groan vote on that post, from a player of any class, pays its author ${earn()}. The first ${kicks()} cast on that post land as usual, and each goes back to its caster's hand (the card, not any price paid to play it); a card set face down that catches or hands one back first, or a Mod Bot's cast, does not count. The sign stays up and keeps paying after the ${count(kickMe.refunds!.count)} are used, until it ends. A post carries one at a time. It costs nothing more to use.`,
-  logPlay: () => `Each negative reaction to that post pays ${earn()} until it ends, and the first ${kicks()} cast there go back to their casters.`,
+    `A ${alignmentTag(kickMe.alignment)} card, ${kickMe.rarity}, used on one of your own posts. For ${spanWords(kickMe.lasts!)} a Kick Me sign is taped on it. Each heat or groan vote on that post, from a player of any class, pays its author ${earn()}. The first ${kicks()} played on that post land as usual, and each card goes back to its player's hand (the card, not any price paid to play it). A Move that a card set face down catches or hands back first, or a Mod Bot's Move, does not count. The sign stays up and keeps paying after the ${count(kickMe.refunds!.count)} are used, until it ends. A post carries one at a time. It costs nothing more to use.`,
+  logPlay: () => `Each negative reaction to that post pays ${earn()} until it ends, and the first ${kicks()} played on it go back to their players.`,
 };

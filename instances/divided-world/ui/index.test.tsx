@@ -1206,15 +1206,15 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(pay.status).toBe(ui('rope-break').status);
     expect(pay.status).toBe('Set, face down to everyone else');
     expect([pay.art.color, pay.art.ink]).toEqual([ui('rope-break').art.color, ui('rope-break').art.ink]);
-    expect(pay.art.tagline).toBe('Give a Sweet card back to its caster.');
-    expect(pay.summary).toBe("Set face down on your post. The first Sweet cast there, up to uncommon, lands, and its card goes back to the caster's hand.");
+    expect(pay.art.tagline).toBe('Give a Sweet Move back to its player.');
+    expect(pay.summary).toBe("Set face down on your post. The first Sweet Move, up to uncommon, played on it lands, and the card goes back to its player's hand.");
     expect(pay.Effect).toBeUndefined();
     expect(pay.ConfigForm).toBeUndefined();
-    expect(pay.describe(instance.settings)).toBe(`A Sweet card, ${payItForward.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Sweet card, up to uncommon, cast there springs it and shows it: that card lands as usual and goes back to its caster's hand (the card, not any price paid to play it). A Mod Bot's cast passes over it. A rarer card passes over it, and a card your post's ward turns away never reaches it. It springs once, or comes back to your hand after 7 days. It costs nothing more to set.`);
+    expect(pay.describe(instance.settings)).toBe(`A Sweet card, ${payItForward.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Sweet Move, up to uncommon, played on that post springs it and shows it: that Move lands as usual, and the card goes back to its player's hand (the card, not any price paid to play it). A Mod Bot's Move passes over it. A rarer Move passes over it, and a Move your post's ward turns away never reaches it. It springs once, or comes back to your hand after 7 days. It costs nothing more to set.`);
     expect(pay.describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day.');
     /* The flavor and the rarity are the rules'. */
     retuned(payItForward, 'trap', { trigger: { on: 'cast' }, match: { flavors: ['salty'], upTo: 'common' }, outcome: { kind: 'refund' } }, () => {
-      expect(pay.describe(instance.settings)).toContain('The first Salty card, up to common, cast there');
+      expect(pay.describe(instance.settings)).toContain('The first Salty Move, up to common, played on that post');
     });
   });
 
@@ -1222,16 +1222,16 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     const kick = ui('kick-me');
     expect([kick.art.color, kick.art.ink]).toEqual([ui('whoopee-cushion').art.color, ui('whoopee-cushion').art.ink]);
     expect(kick.art.tagline).toBe('Earn more when your post bombs.');
-    expect(kick.summary).toBe("Used on your post. For 3 days, each negative reaction to it pays one vote more, and the first three Salty cards cast there go back to their casters' hands.");
+    expect(kick.summary).toBe("Used on your post. For 3 days, each negative reaction to it pays one vote more, and the first three Salty Moves played on it go back to their players' hands.");
     expect(kick.status).toBe('Wearing a Kick Me sign');
     expect(kick.Effect).toBeDefined();
     expect(kick.ConfigForm).toBeUndefined();
-    expect(kick.logPlay!({}, {})).toBe('Each negative reaction to that post pays one vote more until it ends, and the first three Salty cards cast there go back to their casters.');
+    expect(kick.logPlay!({}, {})).toBe('Each negative reaction to that post pays one vote more until it ends, and the first three Salty Moves played on it go back to their players.');
     const said = () => kick.describe(instance.settings);
-    expect(said()).toBe(`A Pepperoni card, ${kickMe.rarity}, used on one of your own posts. For 3 days a Kick Me sign is taped on it. Each heat or groan vote on that post, from a player of any class, pays its author one vote more. The first three Salty cards cast on that post land as usual, and each goes back to its caster's hand (the card, not any price paid to play it); a card set face down that catches or hands one back first, or a Mod Bot's cast, does not count. The sign stays up and keeps paying after the three are used, until it ends. A post carries one at a time. It costs nothing more to use.`);
+    expect(said()).toBe(`A Pepperoni card, ${kickMe.rarity}, used on one of your own posts. For 3 days a Kick Me sign is taped on it. Each heat or groan vote on that post, from a player of any class, pays its author one vote more. The first three Salty Moves played on that post land as usual, and each card goes back to its player's hand (the card, not any price paid to play it). A Move that a card set face down catches or hands back first, or a Mod Bot's Move, does not count. The sign stays up and keeps paying after the three are used, until it ends. A post carries one at a time. It costs nothing more to use.`);
     retuned(kickMe, 'refunds', { flavors: ['salty'], count: 2 }, () => {
-      expect(said()).toContain('The first two Salty cards cast on that post');
-      expect(kick.logPlay!({}, {})).toContain('the first two Salty cards');
+      expect(said()).toContain('The first two Salty Moves played on that post');
+      expect(kick.logPlay!({}, {})).toContain('the first two Salty Moves');
     });
     retuned(kickMe, 'gimmick', { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], flat: 2 }, () => expect(said()).toContain('pays its author 2 votes more'));
     retuned(kickMe, 'lasts', { unit: 'day', count: 1 }, () => {

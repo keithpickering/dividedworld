@@ -66,18 +66,18 @@ describe('Kick Me\'s sign', () => {
     expect(prints()).toHaveLength(kickMe.refunds!.count);
     expect(prints()).toHaveLength(3);
     expect(scuffed()).toHaveLength(0);
-    expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 3 of 3 Salty cards still go back to their casters');
+    expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 3 of 3 Salty Moves still go back to their players');
   });
 
   test('each card handed back scuffs one print out, and the label counts what is left', () => {
     mount({ plays: [play({ handedOut: 2 })] });
     expect(prints()).toHaveLength(3);
     expect(scuffed()).toHaveLength(2);
-    expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 1 of 3 Salty cards still go back to their casters');
+    expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 1 of 3 Salty Moves still go back to their players');
     cleanup();
     mount({ plays: [play({ handedOut: 3 })] });
     expect(scuffed()).toHaveLength(3);
-    expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 0 of 3 Salty cards still go back to their casters');
+    expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 0 of 3 Salty Moves still go back to their players');
   });
 
   test('the number of prints and the label follow the rules, not a number of its own', () => {
@@ -86,7 +86,7 @@ describe('Kick Me\'s sign', () => {
     try {
       mount({ plays: [play({ handedOut: 1 })] });
       expect(prints()).toHaveLength(5);
-      expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 4 of 5 Salty cards still go back to their casters');
+      expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 4 of 5 Salty Moves still go back to their players');
     } finally { (kickMe as { refunds?: unknown }).refunds = held; }
   });
 
@@ -104,7 +104,7 @@ describe('Kick Me\'s sign', () => {
     expect(scuffed()).toHaveLength(0);
     act(() => setPlays([play({ handedOut: 2 })]));
     expect(scuffed()).toHaveLength(2);
-    expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 1 of 3 Salty cards still go back to their casters');
+    expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 1 of 3 Salty Moves still go back to their players');
   });
 
   test('an inline paddingTop the area already had comes back when the sign goes, by the play ending or by unmounting', () => {

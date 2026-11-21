@@ -19,10 +19,10 @@ const flavor = () => alignmentTag(match().flavors![0]!);
 
 export const ui: CardUi = {
   key: 'pay-it-forward',
-  art: { color: '#2ee6ff', ink: '#03141a', canvas: payItForwardCanvas, mark: payItForwardMark, credit: payItForwardArt.credit, tagline: `Give a ${flavor()} card back to its caster.` },
-  summary: `Set face down on your post. The first ${flavor()} cast there, up to ${match().upTo}, lands, and its card goes back to the caster's hand.`,
+  art: { color: '#2ee6ff', ink: '#03141a', canvas: payItForwardCanvas, mark: payItForwardMark, credit: payItForwardArt.credit, tagline: `Give a ${flavor()} Move back to its player.` },
+  summary: `Set face down on your post. The first ${flavor()} Move, up to ${match().upTo}, played on it lands, and the card goes back to its player's hand.`,
   /* As every Reversal's: the same words, so none can be told from another. */
   status: 'Set, face down to everyone else',
   describe: (settings: Settings) =>
-    `A ${alignmentTag(payItForward.alignment)} card, ${payItForward.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first ${flavor()} card, up to ${match().upTo}, cast there springs it and shows it: that card lands as usual and goes back to its caster's hand (the card, not any price paid to play it). A Mod Bot's cast passes over it. A rarer card passes over it, and a card your post's ward turns away never reaches it. It springs once, or comes back to your hand after ${setLastsWords(settings)}. It costs nothing more to set.`,
+    `A ${alignmentTag(payItForward.alignment)} card, ${payItForward.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first ${flavor()} Move, up to ${match().upTo}, played on that post springs it and shows it: that Move lands as usual, and the card goes back to its player's hand (the card, not any price paid to play it). A Mod Bot's Move passes over it. A rarer Move passes over it, and a Move your post's ward turns away never reaches it. It springs once, or comes back to your hand after ${setLastsWords(settings)}. It costs nothing more to set.`,
 };

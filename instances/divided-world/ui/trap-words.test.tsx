@@ -50,7 +50,7 @@ describe('the trapStruck voice', () => {
     expect(trapStruckWords({ ...f, card: 'Pay It Forward' }))
       .toEqual({ line: 'Paid forward', detail: 'Their face-down Pay It Forward sprang on your Hype Up. It landed as usual, and the card is back in your hand.' });
     expect(trapStruckWords({ ...f, card: null })!.detail).toBe('Their face-down card sprang on your Hype Up. It landed as usual, and the card is back in your hand.');
-    expect(trapStruckWords({ ...f, card: 'Pay It Forward', laid: null })!.detail).toBe('Their face-down Pay It Forward sprang on your cast. It landed as usual, and the card is back in your hand.');
+    expect(trapStruckWords({ ...f, card: 'Pay It Forward', laid: null })!.detail).toBe('Their face-down Pay It Forward sprang on your Move. It landed as usual, and the card is back in your hand.');
     expect(trapStruckWords({ ...f, card: 'Pay It Forward', setter: null })).toBeUndefined();
     expect(JSON.stringify(trapStruckWords({ ...f, card: 'Pay It Forward' }))).not.toMatch(/account|owner|player|class/iu);
   });
