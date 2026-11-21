@@ -249,6 +249,14 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
     async wheel(dy) {
       sent(S('Input.dispatchMouseEvent', { type: 'mouseWheel', x: pointer.x, y: pointer.y, deltaX: 0, deltaY: dy, button: 'none', buttons: 0, pointerType: 'mouse' }));
     },
+    /** One key pressed and released on the focused field, as a keyboard makes it (keydown, input, keyup); a shot spaces the keys of a text over its frames itself. */
+    key(char) {
+      const NAMED = { Enter: { code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' }, ArrowDown: { code: 'ArrowDown', windowsVirtualKeyCode: 40 }, ArrowUp: { code: 'ArrowUp', windowsVirtualKeyCode: 38 }, Escape: { code: 'Escape', windowsVirtualKeyCode: 27 } };
+      const named = NAMED[char];
+      const down = named ? { key: char, ...named } : { key: char, text: char };
+      sent(S('Input.dispatchKeyEvent', { type: named && !named.text ? 'rawKeyDown' : 'keyDown', ...down }));
+      sent(S('Input.dispatchKeyEvent', { type: 'keyUp', key: down.key, ...(named ? { code: named.code, windowsVirtualKeyCode: named.windowsVirtualKeyCode } : {}) }));
+    },
     async press() {
       pointer.down = true;
       sent(S('Input.dispatchMouseEvent', { type: 'mousePressed', x: pointer.x, y: pointer.y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' }));
@@ -261,10 +269,10 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
   };
 }
 
-/** An ffmpeg that takes the frames on its stdin and writes the film: H.264, scaled to `out` with Lanczos. */
-export function openFilm({ path, fps, out = { width: 1920, height: 1080 } }) {
+/** An ffmpeg that takes the frames on its stdin and writes the film: H.264, scaled to `out` with Lanczos (a film at the frames' own size is not scaled in effect). */
+export function openFilm({ path, fps, out = { width: 1920, height: 1080 }, preset = 'slow' }) {
   const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-c:v', 'mjpeg', '-framerate', String(fps), '-i', '-',
-    '-vf', `scale=${out.width}:${out.height}:flags=lanczos`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '14', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', path], { stdio: ['pipe', 'inherit', 'inherit'] });
+    '-vf', `scale=${out.width}:${out.height}:flags=lanczos`, '-c:v', 'libx264', '-preset', preset, '-crf', '14', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', path], { stdio: ['pipe', 'inherit', 'inherit'] });
   const done = new Promise((resolve, reject) => { ff.on('exit', (c) => (c === 0 ? resolve() : reject(new Error(`ffmpeg left with ${c}`)))); });
   return {
     write: (jpeg) => new Promise((r) => { if (ff.stdin.write(jpeg)) r(); else ff.stdin.once('drain', r); }),

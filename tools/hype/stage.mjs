@@ -67,6 +67,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       told: (name, postSeq) => play.told(name, postSeq),
       /** A quote of the post that holds \`words\`, written by the named character, which springs the Steel Chair set on it: returns \`{ post, spring, play }\`. */
       quoteSprings: (name, postSeq, words) => play.quoteSprings(name, postSeq, words),
+      /** The spring and landed Move for a quoting post written some other way (the real composer): \`springsOn(2, actId)\` springs the Steel Chair set on post 2 onto that post. Returns \`{ spring, play }\`. */
+      springsOn: (quoted, quoting) => play.springsOn(quoted, quoting),
       /** The Staff's beats: \`staff('memo', where?)\` (FanGaME's memo, in the main thread), \`staff('merge')\` (the Boss merges the Palace into World -1, with his reason), \`staff('file', postSeq?)\` (a Mod files a post, Snuckles's first by default). */
       staff: Object.assign((key, ...args) => { if (!play.staff[key]) throw new Error('there is no staff beat "' + key + '": the beats are ' + Object.keys(play.staff).join(', ')); return play.staff[key](...args); }, play.staff),
       /** One step of node 9's pile on Snuckles's first post, in order (\`pileSteps\` names them): the first call is step 0. Returns the step's name. */
