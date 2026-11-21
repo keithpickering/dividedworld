@@ -446,6 +446,24 @@ html[data-kb-float='sheet'] .kb-frame {
 }
 
 /*
+ * A new mask takes the plate (Hud.tsx, the recast): its edge flares once, white-hot and lit from within, and cools to its rest over the
+ * feel's screen duration as the avatar, the name and the class line arrive. Only the start is drawn here; the end is the plate's own
+ * border and glow above. Hud.tsx sets the mark and the timing only when a feel is on, so under Off nothing flares.
+ */
+@keyframes kb-hud-recast {
+  from {
+    border-color: var(--kb-glass-text-hi);
+    box-shadow:
+      inset 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 45%, transparent),
+      0 0 22px color-mix(in srgb, var(--kb-glass-neon) 50%, transparent);
+  }
+}
+
+.kb-hud-plate--cast[data-kb-recast] {
+  animation: kb-hud-recast var(--kb-hud-recast-ms, 0ms) var(--kb-hud-recast-ease, ease);
+}
+
+/*
  * The plate's words are in its flow, to the avatar's right, at the board's places at 100% text
  * (the name 10px down, the class line under it, the mask picker under that), so a larger text size
  * grows the plate and stacks them rather than laying one over another.
