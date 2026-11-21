@@ -576,7 +576,7 @@ describe('R4: the Staff\'s helpers', () => {
     const { made, play } = await stage('Snuckles');
     expect(typeof play.staff.report).toBe('function');
     const r = await play.staff.report('Snuckles', made.posts['review']!);
-    expect(r.press[0]).toBe(`#post-${made.posts['review']} button "Report"`);
+    expect(r.press[0]).toContain(`#post-${made.posts['review']} button "Report"`);
     await expect(play.staff.report('Snuckles', made.posts['first']!)).rejects.toThrow(/own post/);
     await expect(play.staff.report('D-Guy', made.posts['review']!)).rejects.toThrow(/as=D-Guy/);
   });

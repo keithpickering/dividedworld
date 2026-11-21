@@ -82,7 +82,8 @@ export function word(text: string, x: number, y: number, height = 0.5, can: Can 
     const glyph = LETTERS[ch];
     if (glyph === undefined) throw new Error(`the stage's block capitals have no "${ch}": they have ${Object.keys(LETTERS).join('')}`);
     for (const g of glyph) {
-      const dense: Point[] = g.flatMap((p, j) => (j === 0 ? [p] : line(g[j - 1]!, p, 3).slice(1)));
+      /* Three steps along each segment, on the glyph's own grid (`line` clamps to the box, which a grid of 4 by 6 is not). */
+      const dense: [number, number][] = g.flatMap((p, j): [number, number][] => (j === 0 ? [[p[0], p[1]]] : [1, 2, 3].map((k) => [g[j - 1]![0] + ((p[0] - g[j - 1]![0]) * k) / 3, g[j - 1]![1] + ((p[1] - g[j - 1]![1]) * k) / 3])));
       strokes.push(stroke(can, 'stock', aspect, dense.map(([gx, gy]) => pt(x + (i * 5 + gx) * (unit / aspect) * 1.2, y + gy * unit))));
     }
   });
@@ -91,8 +92,8 @@ export function word(text: string, x: number, y: number, height = 0.5, can: Can 
 
 /** A scribble-out over a span: a back-and-forth zigzag, as a hand crosses a thing out. */
 export function scribbleOut(x0: number, x1: number, y: number, can: Can = 'black', aspect = WALL_ASPECT): Shape {
-  const points = Array.from({ length: 21 }, (_, i) => pt(x0 + ((x1 - x0) * i) / 20, y + (i % 2 === 0 ? -0.16 : 0.16) + 0.02 * Math.sin(i * 1.7)));
-  return { kind: 'scribble-out', strokes: [stroke(can, 'fat', aspect, points)] };
+  const points = Array.from({ length: 15 }, (_, i) => pt(x0 + ((x1 - x0) * i) / 14, y + (i % 2 === 0 ? -0.1 : 0.1) + 0.015 * Math.sin(i * 1.7)));
+  return { kind: 'scribble-out', strokes: [stroke(can, 'stock', aspect, points)] };
 }
 
 /** An underline: a slightly wavering stroke, with a short second one under it. */

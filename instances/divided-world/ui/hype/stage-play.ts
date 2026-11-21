@@ -400,18 +400,18 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
       const act = await actOf(postSeq);
       if (act.character === null || act.character === made.cast[name]) throw new Error(`post ${postSeq} is ${name}'s own post: a character reports another's`);
       if (act.character === characterOf(name) || Object.values(made.staff).includes(act.character)) throw new Error(`post ${postSeq} cannot be reported by ${name}`);
-      return { seq: postSeq, press: [`#post-${postSeq} button "Report"`, 'dialog "Report this post": a reason, then the button that sends it'] };
+      return { seq: postSeq, press: [`#post-${postSeq} button "Report" (the Lens opens: "Report post #${postSeq}")`, 'type a reason in the textarea (the send button stays dashed until there is one)', 'button "Report · 0.25 Aura" sends it'] };
     },
     /**
      * An appeal, ready to make: a Mod's filing against a post of `name`'s own (`as=name`; QC-1000's `filingQcHelp` unless `key` names another) is written as `filing` writes it, so the
-     * warn bar has risen and the visit's Lens holds the real Appeal button. A pointer presses the visit's mark on the post, then "Appeal", fills the plea and sends it.
+     * warn bar has risen and the visit's Lens holds the real Appeal button. A pointer presses the "Filed" mark on the post, then the "Appeal · 0.50 Aura" tile, types a plea and presses the same-named send button.
      * The Mod's ruling is not shown: the rehearsal never exercised an appeal, and the fake answers `upheld` (`seed.judging`).
      */
     async appeal(name: string, key = 'filingQcHelp'): Promise<Where & { readonly infraction: string; readonly press: readonly string[] }> {
       if (name !== made.played) throw new Error(`the film's player is ${made.played}: open the stage with as=${name} to appeal as ${name}`);
       const l = lineOf(key);
       const done = await filing(l.by === 'ontopic' ? 'ontopic' : 'qc', null, key, { by: name });
-      return { ...done, press: [`#post-${done.seq} the Mod's mark (the visit's tab)`, 'button "Appeal ·" in the Lens', 'the plea (a textbox), then the "Appeal ·" submit button'] };
+      return { ...done, press: [`#post-${done.seq} .kb-visit-mark (the "Filed" tab on the post: the Lens opens on the filing)`, 'the "Appeal · 0.50 Aura" tile in the Lens (the form: "Your plea (public)")', 'type a plea in the textarea, then the button "Appeal · 0.50 Aura" sends it'] };
     },
     /** A Mod's star review, posted in a thread of the stage: `stars` (ONTOPIC 5.0's one star, on a thread titled "a") or `fiveStars` (his five, on the Pointless Post Palace). Returns the thread, the review's Act and its key to `show('thread:<key>')`. */
     async review(key: string): Promise<{ readonly thread: string; readonly post: string; readonly key: string }> {
