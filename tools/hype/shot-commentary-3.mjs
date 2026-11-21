@@ -3,15 +3,14 @@
  * 5a): the full orchestra and the camera's loss of control. Every take is filmed at the camera's native double density (1440 x 810 CSS px at
  * 2x) and written at 2880 x 1620, so the edit's pushes and punches have room.
  *
- *   node tools/hype/shot-commentary-3.mjs [--only c-n09-wide|c-n09-tight|c-n09-turned|c-n10|c-n11] [--port 4319]
+ *   node tools/hype/shot-commentary-3.mjs [--only c-n09-wide|c-n09-tight|c-n09-turned|c-n11] [--port 4319]
  *
  *   c-n09-wide    "Everything, on one post": the plays of `pile` land on Snuckles's sprite sheet, a play about every 1.4 s, then Stick
  *   c-n09-tight   Around lands and the reader tries to wheel away twice and is held. One script, three framings: wide (the whole post
  *   c-n09-turned  and the glass, level), tight (the post's body fills the frame), and turned (the board a plane in space, turned further
  *                 with each landing and in a full slow spin from 15.8 s to 20.8 s). The three run the SAME script on the SAME
  *                 virtual clock, so frame N is the same moment of the page in all three; every landing's frame is written to c-n09.json.
- *   c-n10         "The Staff arrive": three beats of about 4.5 s, cut inside the take: FanGaME's memo, the merge (the index, then the
- *                 Staff Announcements thread, where the move's notice carries his reason), a Mod's filing of Snuckles's sprite post. The board turns a little in each.
+ *   (c-n10, "The Staff arrive", is retired: the Staff's takes are tools/hype/shot-staff-2.mjs's, each with a real line of the rehearsal's.)
  *   c-n11         "The chords": one take of five stretches of 3.5 s with a hard cut between them: three steel chairs tumbling in and denting (in the Midnight skin, for that stretch alone)
  *                 the body of post 1, filmed tight, the ink-covered
  *                 review, the Boss's post, the heap on post 1, and the settlement summary opening (the story "Boards/12 Log").
@@ -20,7 +19,7 @@
  * of a still page. The turned take never reads an element's place or aims the pointer: its plays all go through `pile`, and the per-frame step
  * reads only layout (offsets), which a transform does not change.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { openFilm } from './camera.mjs';
 import { OUT, flag, openStage, settle } from './stage.mjs';
 
@@ -30,9 +29,6 @@ const only = flag('only', null);
 /* The skin node 11's first stretch (the chairs) is filmed in: the chairs are pale gray on the default skin's white, so Midnight (dark) is used for that stretch alone (judged on stills: the dents and chairs read on it and not on the white; `--chairs-skin default` films the old way). */
 const CHAIRS_SKIN = flag('chairs-skin', 'midnight');
 
-/** The Boss's reason for the merge, as the Staff's lines hold it (the words after the board's tidiness): read, not copied. */
-const MERGED = JSON.parse(readFileSync('instances/divided-world/ui/hype/staff-lines.json', 'utf8')).merged.text;
-const REASON = MERGED.slice(MERGED.indexOf('Nobody posted on my board anyway'));
 /* The pile's steps are landed in the order the stage names (stage-play.ts's FILM_ORDER, which Stage.test.tsx holds to the rules: every play of it is one a real cast is allowed); a take reads it from the page. */
 /** The Rope Break set face down on post 1 catches the first Salty common cast there (as node 3 showed it do): the film springs it before the clock starts, with a real cast, so the plays that follow land as the rules let them. */
 const SPRING_ROPE = `window.__shot.cast('D-Guy', 1, 'whoops', { color: '#3d77ff' }).then((c) => { if (!c.caught) throw new Error('the Rope Break did not catch the first Whoops!'); })`;
@@ -159,85 +155,6 @@ const LAYOUT_JS = `(() => {
   };
 })()`;
 
-/** A slow drift of the turned board: degrees about each axis, a function of the seconds into a beat. */
-const drift = (t, seed) => ({
-  rx: 2.5 * Math.sin(t * 1.1 + seed),
-  ry: 7 * Math.sin(t * 0.9 + seed * 1.7),
-  rz: 1.5 * Math.sin(t * 0.7 + seed * 2.3),
-  scale: 0.94,
-});
-
-async function n10() {
-  const cam = await openStage({ quiet: ['toasts', 'host', 'selection'] });
-  try {
-    await cam.evaluate(LAYOUT_JS);
-    await cam.evaluate('window.__lay.scroll(1e9)');
-    await settle(cam, 40);
-    await cam.drawPointer();
-    const reelOf = reel(cam, 'c-n10');
-    console.log(`c-n10: the clocks are ${(await cam.freeze()).toFixed(2)}ms apart`);
-    await cam.move(cam.css.width + 40, cam.css.height * 0.4);
-    await cam.evaluate('window.__shot.zero()');
-    const landed = [];
-    const turn = (y, t, seed) => cam.evaluate(`(() => { window.__lay.scroll(${y}); window.__shot.turn(${JSON.stringify(drift(t, seed))}); })()`);
-    const BEAT = 270; // 4.5 s
-
-    /* Beat 1: the Boss's memo appears at the foot of the thread, and the view settles on his post. */
-    landed.push({ what: 'memo', frame: reelOf.f });
-    let y = await cam.evaluate('window.__lay.foot()');
-    await reelOf.frames(36, (i) => turn(y, i / FPS, 1));
-    await cam.evaluate(`window.__shot.staff('memo')`);
-    const memo = await cam.evaluate('window.__lay.last()');
-    if (memo.name !== 'FanGaME') throw new Error(`the last post of the thread is ${memo.name}'s, not FanGaME's: the memo did not land`);
-    const memoText = await cam.evaluate(`document.querySelector('article.kb-act:last-of-type, article.kb-act:last-child')?.innerText ?? ''`);
-    if (!memoText.includes('writing per my own initiative')) throw new Error(`the memo's words are not on the page: ${memoText.slice(0, 120)}`);
-    const from = y;
-    await reelOf.frames(BEAT - 36, async (i) => {
-      const goal = Math.max(0, memo.top - 70);
-      const u = easeInOut(i / 45);
-      await turn(from + (Math.min(goal, await cam.evaluate('window.__lay.foot()')) - from) * u, (i + 36) / FPS, 1);
-    });
-
-    /* Beat 2: the merge. The index, then the Staff Announcements thread, where the move's notice carries his reason. */
-    landed.push({ what: 'merge', frame: reelOf.f });
-    await cam.evaluate(`window.__shot.staff('merge')`);
-    await cam.evaluate(`window.__shot.show('index')`);
-    await cam.evaluate('window.__lay.scroll(0)');
-    await reelOf.frames(120, (i) => turn(0, i / FPS, 2));
-    await cam.evaluate(`window.__shot.show('thread:announcements')`);
-    await reelOf.frames(3, (i) => turn(0, (120 + i) / FPS, 2));
-    const reasonTop = await cam.evaluate(`window.__lay.textTop(${JSON.stringify(REASON)})`);
-    if (reasonTop === null) throw new Error(`the Staff Announcements thread does not show his reason: ${REASON}`);
-    await reelOf.frames(BEAT - 123, (i) => turn(Math.max(0, reasonTop - 200) * easeInOut(i / 30), (123 + i) / FPS, 2));
-    const merged = await cam.evaluate(`document.body.innerText.includes(${JSON.stringify(REASON)})`);
-    if (!merged) throw new Error('the reason is not legible on the page');
-
-    /* Beat 3: a Mod files Snuckles's sprite post: the visit's Filed mark and its finding on the post and the warn bar ticking up. */
-    landed.push({ what: 'filing', frame: reelOf.f });
-    await cam.evaluate(`window.__shot.show('thread')`);
-    await reelOf.frames(2, (i) => cam.evaluate('window.__lay.scroll(0)'));
-    const post1 = await cam.evaluate(`window.__lay.top('#post-1')`);
-    const warn = () => cam.evaluate(`document.querySelector('#post-1 .kb-postbit-warn')?.innerText.replace(/\\s+/g, ' ') ?? null`);
-    const before = await warn();
-    await reelOf.frames(36, (i) => turn(post1 - 12, (i + 2) / FPS, 3));
-    await cam.evaluate(`window.__shot.staff('file', 1)`);
-    await reelOf.frames(BEAT - 38, (i) => turn(post1 - 12 + 0.25 * i, (i + 38) / FPS, 3));
-    const after = await warn();
-    const text = await cam.evaluate(`document.querySelector('#post-1').innerText`);
-    console.log('c-n10: warn bar', before, '->', after);
-    if (before === after) throw new Error(`Snuckles's warn bar did not move: ${before}`);
-    if (!text.includes('Filed') || !text.includes('found in violation')) throw new Error(`the Mod's filing is not on the post: ${text.slice(0, 200)}`);
-
-    /* The take ends on a still page. */
-    await reelOf.frames(2 * FPS, (i) => turn(post1 - 12 + 0.25 * (BEAT - 38), (BEAT + i) / FPS, 3));
-    await reelOf.end();
-    writeFileSync(`${OUT}/c-n10.json`, JSON.stringify({ landed }, null, 2));
-    console.log(`c-n10: ${reelOf.f} frames; landed`, landed.map((l) => `${l.what}@${l.frame}`).join(' '), '; errors:', cam.errors);
-  } finally {
-    await cam.close();
-  }
-}
-
 async function n11() {
   const cam = await openStage({ quiet: ['toasts', 'host', 'selection'] });
   try {
@@ -325,7 +242,6 @@ const TAKES = {
   'c-n09-wide': () => n09('wide'),
   'c-n09-tight': () => n09('tight'),
   'c-n09-turned': () => n09('turned'),
-  'c-n10': n10,
   'c-n11': n11,
 };
 if (only !== null && !TAKES[only]) throw new Error(`there is no take "${only}": the takes are ${Object.keys(TAKES).join(', ')}`);

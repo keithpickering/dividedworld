@@ -256,7 +256,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
      * `postSeq` the helper writes the post the filing was aimed at: the log's own words, by the cast member the log's poster is recast as (`by` names another, so the film's own
      * character's bar can rise), in a thread on the board the line names. The bar shows on the HUD of the character's player (`as=`). Returns where it is and the infraction's Act.
      */
-  async function filing(mod: ModName, postSeq: number | null, key: string, options: { readonly by?: string } = {}): Promise<Where & { readonly infraction: string }> {
+  async function filing(mod: ModName, postSeq: number | null, key: string, options: { readonly by?: string; readonly hold?: boolean } = {}): Promise<Where & { readonly infraction: string }> {
       const l = lineOf(key);
       if (l.by !== MODS[mod].roster) throw new Error(`"${key}" is ${l.by}'s filing, not ${mod}'s`);
       if (l.post === undefined || l.post === null) throw new Error(`"${key}" is not a filing: it has no post it was aimed at`);
@@ -276,13 +276,30 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
       const line = lineOf(opener).text;
       const board = boardOf(line);
       const visit = await begin(mod, where.post, line, aimed.board, { kind: 'distraction' }, l.band ?? 'minor');
+      /* `hold`: the post is written and the visit is open, and nothing is filed yet (`endFiling(key, visit)` files it, so a film can see the filing arrive and the warn bar rise). */
+      if (options.hold === true) { fake.broadcast.rejoin(); return { ...where, visit, line, board, infraction: '' }; }
+      const infraction = await endFiling(key, visit);
+      return { ...where, visit, line, board, infraction };
+    }
+    /** The visit `visit` ends in the filing `key` (the log's own words, points and band), and its infraction is written: what `filing` does after the visit begins. Returns the infraction's Act. */
+    async function endFiling(key: string, visit: string): Promise<string> {
+      const l = lineOf(key);
       fake.clock.advance(1000);
       fake.seed.visitEnd(visit, { outcome: 'filed', line: l.text });
       const infraction = fake.seed.infraction(visit, { points: l.points ?? 2, band: l.band ?? 'minor', ruleNumber: null });
       fake.broadcast.rejoin();
       mark(`staff:filing:${key}`);
-      return { ...where, visit, line, board, infraction };
+      return infraction;
     }
+
+  async function springPass(set: string, visit: string): Promise<string> {
+    fake.clock.advance(1000);
+    const spring = fake.seed.spring(set, { trigger: 'visit' });
+    fake.seed.visitEnd(visit, { outcome: 'trapped', by: spring, line: '' });
+    fake.broadcast.rejoin();
+    mark('staff:hall-pass');
+    return spring;
+  }
 
   /** The Staff's beats, each as the seed writes it where the backend plays none, and the page told to catch up. */
   const staff = {
@@ -370,7 +387,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
      * visit begins and the pass springs and ends it. The fake never springs a Hall Pass (its comment: "a Hall Pass never ends a visit"), so the spring and the visit's end are written
      * as `spring_traps` and `end_visit` write them. With no `postSeq` the post is on a board's thread as in `visit`. Returns where it is, the set card's Act and the spring.
      */
-    async hallPass(postSeq: number | null = null, options: { readonly mod?: ModName; readonly by?: string } = {}): Promise<Where & { readonly set: string; readonly spring: string }> {
+    async hallPass(postSeq: number | null = null, options: { readonly mod?: ModName; readonly by?: string; readonly hold?: boolean } = {}): Promise<Where & { readonly set: string; readonly spring: string }> {
       const mod = options.mod ?? 'ontopic';
       const line = lineOf(MODS[mod].opener).text;
       const board = boardOf(line);
@@ -382,14 +399,15 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
       if (!done.ok) throw new Error(`${name}'s Hall Pass on post ${where.seq} was refused: ${done.error}`);
       const set = done.value.id;
       const visit = await begin(mod, where.post, line, board, { kind: 'distraction' });
-      fake.clock.advance(1000);
-      const spring = fake.seed.spring(set, { trigger: 'visit' });
-      fake.seed.visitEnd(visit, { outcome: 'trapped', by: spring, line: '' });
-      fake.broadcast.rejoin();
-      mark('staff:hall-pass');
+      /* `hold`: the visit has begun and the pass is set face down, and nothing has sprung yet (`springPass(set, visit)` springs it, so a film can see the back turn over). */
+      if (options.hold === true) { fake.broadcast.rejoin(); return { ...where, visit, line, board, set, spring: '' }; }
+      const spring = await springPass(set, visit);
       return { ...where, visit, line, board, set, spring };
     },
+    /** The Hall Pass `set` springs as the visit `visit` begins, and the visit ends: what `hallPass` does after the visit begins, for a film that held it (`hold`). Returns the spring's Act. */
+    springPass,
     filing,
+    endFiling,
     /**
      * A report, ready to send: nothing is written. The film's player (`as=name`) is a character that is not the post's author, so the real Report button is on the post; a pointer
      * presses it (the Lens opens on the report form), picks a reason, and presses the send button. Refuses where the film's player is not `name`, or the post is theirs.
