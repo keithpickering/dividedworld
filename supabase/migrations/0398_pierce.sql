@@ -9,11 +9,11 @@
 --   4. card_ended               copied whole from 0149_card_writes.sql, with a third way a play is over: a card Act names it in `pierce.by` (the cast that spent it). Its grants are as they were.
 --   5. wards_against            new: the body of ward_refusal (0148_card_types.sql) without its limit, one row for each live ward that turns the card away, with its play, time, card, printed rarity and words.
 --   6. ward_refusal             copied whole from 0148_card_types.sql as a call of wards_against, dropped and created with an optional fourth argument `passing`: a ward whose card is at or below it is skipped.
---                               Every caller (place_cast, spring_facts) passes three arguments and keeps its meaning. Its grants are as they were.
+--                               Every caller keeps its meaning: spring_facts passes three arguments, and place_cast a fourth, the pierce's upTo. Its grants are as they were.
 --   7. spring_traps             copied whole from 0397_refund_outcome.sql, dropped and created with an optional last argument `passing`: a cast back that would catch and is no rarer than it answers
 --                               {"passed": true} and writes nothing. spring_facts (0393_forged_quotes.sql) is unchanged: the back's rarity is read from card_kinds where it is decided. Callers use named arguments.
 --   8. place_cast               copied whole from 0397_refund_outcome.sql: a cast (never a Use, never a staff character's) reads its caster's live, unspent pierce, locks its play_reach row last before the Ward
---                               check in each reach's branch, passes its upTo to the Ward check and to spring_traps, names it in its payload, and tells the caster of a passed back. Its grants are as they were.
+--                               check in each reach's branch (one found spent after the lock sends it on to the caster's next live pierce, at most three tries), passes its upTo to the Ward check and to spring_traps, names it in its payload, and tells the caster of a passed back. Its grants are as they were.
 --
 -- Ways out: a pierce ends at its time (`lasts`), when a cast spends it, or by an admin (reverse_card), as any use card does. Masks: nothing private is read; a pierce play, the ward it passed and a back it passed
 -- are public Acts and facts, the caster's own alert is the only thing told, and it is told to the caster's account whatever the setter's.
@@ -268,6 +268,7 @@ $function$;
 
 -- ---- 3. acts_pierce_by ----
 
+-- Created plainly, not concurrently, as the repo's other indexes on acts are (0027_unmask.sql, 0105_visits.sql).
 create index acts_pierce_by on acts ((payload #>> '{pierce,by}')) where kind = 'card' and payload ? 'pierce';
 
 -- ---- 4. card_ended ----
@@ -457,6 +458,8 @@ declare
   shot_play uuid;
   shot_up_to text;
   shot_card text;
+  shot_tried uuid[] := '{}';
+  shot_try integer;
   passed_ward text;
   passed_back boolean := false;
 begin
@@ -528,14 +531,20 @@ begin
       raise exception '% stops quotes, and this post holds a card face down; take that card back first', kind_of.name using hint = 'kayfabb.refusal', errcode = '23505';
     end if;
     -- The caster's pierce, locked last before the Ward check (no other writer locks a play_reach row), so two casts by one character take it one after the other, and the second, reading after the
-    -- lock, finds it spent. A pierce is read by a cast alone (not a Use) and not by a staff character's, which holds none.
+    -- lock, finds it spent. A pierce is read by a cast alone (not a Use) and not by a staff character's, which holds none. A pierce found spent once the lock is held (a concurrent cast spent it) is
+    -- set aside and the next live, unspent one is locked and asked in turn, at most three tries; a caster holding no other pierce goes on with none.
     if kind_of.play = 'cast' and not staff_caster then
-      select r.play, ck.gimmick ->> 'upTo', k.payload ->> 'card' into shot_play, shot_up_to, shot_card
-      from play_reach r join acts k on k.id = r.play join card_kinds ck on ck.key = k.payload ->> 'card'
-      where r.character = caster and r.ends_at > now() and ck.gimmick ->> 'kind' = 'pierce' and not card_ended(r.play)
-      order by k.created_at, k.id limit 1 for update of r;
-      -- Asked again in a statement of its own, after the lock: a cast that held the row first may have spent it.
-      if shot_play is not null and card_ended(shot_play) then shot_play := null; shot_up_to := null; shot_card := null; end if;
+      shot_tried := '{}';
+      for shot_try in 1..3 loop
+        select r.play, ck.gimmick ->> 'upTo', k.payload ->> 'card' into shot_play, shot_up_to, shot_card
+        from play_reach r join acts k on k.id = r.play join card_kinds ck on ck.key = k.payload ->> 'card'
+        where r.character = caster and r.ends_at > now() and ck.gimmick ->> 'kind' = 'pierce' and not card_ended(r.play) and r.play <> all (shot_tried)
+        order by k.created_at, k.id limit 1 for update of r;
+        -- Asked again in a statement of its own, after the lock: a cast that held the row first may have spent it.
+        exit when shot_play is null or not card_ended(shot_play);
+        shot_tried := shot_tried || shot_play;
+        shot_play := null; shot_up_to := null; shot_card := null;
+      end loop;
     end if;
     -- A live ward Gimmick on the post turns away a cast its rarity, flavor or name covers, in the same words for everyone (cards.ts's wardWords). A pierce passes a ward whose card is no rarer than it.
     if kind_of.play = 'cast' then
@@ -681,14 +690,20 @@ begin
       end if;
     end if;
     -- The caster's pierce, locked last before the Ward check (no other writer locks a play_reach row), so two casts by one character take it one after the other, and the second, reading after the
-    -- lock, finds it spent. A pierce is read by a cast alone (not a Use) and not by a staff character's, which holds none.
+    -- lock, finds it spent. A pierce is read by a cast alone (not a Use) and not by a staff character's, which holds none. A pierce found spent once the lock is held (a concurrent cast spent it) is
+    -- set aside and the next live, unspent one is locked and asked in turn, at most three tries; a caster holding no other pierce goes on with none.
     if kind_of.play = 'cast' and not staff_caster then
-      select r.play, ck.gimmick ->> 'upTo', k.payload ->> 'card' into shot_play, shot_up_to, shot_card
-      from play_reach r join acts k on k.id = r.play join card_kinds ck on ck.key = k.payload ->> 'card'
-      where r.character = caster and r.ends_at > now() and ck.gimmick ->> 'kind' = 'pierce' and not card_ended(r.play)
-      order by k.created_at, k.id limit 1 for update of r;
-      -- Asked again in a statement of its own, after the lock: a cast that held the row first may have spent it.
-      if shot_play is not null and card_ended(shot_play) then shot_play := null; shot_up_to := null; shot_card := null; end if;
+      shot_tried := '{}';
+      for shot_try in 1..3 loop
+        select r.play, ck.gimmick ->> 'upTo', k.payload ->> 'card' into shot_play, shot_up_to, shot_card
+        from play_reach r join acts k on k.id = r.play join card_kinds ck on ck.key = k.payload ->> 'card'
+        where r.character = caster and r.ends_at > now() and ck.gimmick ->> 'kind' = 'pierce' and not card_ended(r.play) and r.play <> all (shot_tried)
+        order by k.created_at, k.id limit 1 for update of r;
+        -- Asked again in a statement of its own, after the lock: a cast that held the row first may have spent it.
+        exit when shot_play is null or not card_ended(shot_play);
+        shot_tried := shot_tried || shot_play;
+        shot_play := null; shot_up_to := null; shot_card := null;
+      end loop;
     end if;
     -- A live ward Gimmick on the character, thread or board turns away a cast its rarity, flavor or name covers, on its own target only. A pierce passes a ward whose card is no rarer than it.
     if kind_of.play = 'cast' then

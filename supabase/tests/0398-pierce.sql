@@ -26,6 +26,11 @@ begin
     ('pcpierce', 'Pc Pierce', 'pepperoni', 'uncommon', 'use', null, '{character}', interval '3 days', '{"kind": "pierce", "upTo": "uncommon"}', 1),
     ('pcward', 'Pc Ward', 'pepperoni', 'uncommon', 'use', null, '{post}', interval '3 days', '{"kind": "ward", "upTo": "common"}', 1),
     ('pcwardrare', 'Pc Ward Rare', 'pepperoni', 'rare', 'use', null, '{post}', interval '3 days', '{"kind": "ward", "upTo": "common"}', 1),
+    ('pcwardb', 'Pc Ward B', 'pepperoni', 'uncommon', 'use', null, '{post}', interval '3 days', '{"kind": "ward", "upTo": "common"}', 1),
+    ('pcwardx', 'Pc Ward X', 'pepperoni', 'uncommon', 'use', null, '{post,character,thread}', interval '3 days', '{"kind": "ward", "upTo": "common"}', 1),
+    ('pcchar', 'Pc Char Cast', 'salty', 'common', 'cast', null, '{character}', interval '1 day', null, 6),
+    ('pcthreadc', 'Pc Thread Cast', 'salty', 'common', 'cast', null, '{thread}', interval '1 day', null, 6),
+    ('pccatchunc', 'Pc Catch Uncommon', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null, null, 1),
     ('pcmove', 'Pc Move', 'salty', 'common', 'cast', null, '{post}', null, null, 6),
     ('pccatch', 'Pc Catch', 'salty', 'common', 'set', '{"trigger": {"on": "cast"}}', '{post}', null, null, 1),
     ('pccatchrare', 'Pc Catch Rare', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}', '{post}', null, null, 1),
@@ -137,15 +142,19 @@ declare
   t uuid := tests.thread('Pc backs');
   pa uuid := tests.post(a, t, 'Ann''s own post.');
   q1 uuid := tests.post(b, t, 'A common back.'); q2 uuid := tests.post(b, t, 'A rare back.'); q3 uuid := tests.post(b, t, 'A ride back.');
-  back1 uuid; back2 uuid; back3 uuid; pierce uuid; c jsonb; cp jsonb; sp jsonb;
+  a2 uuid := tests.character(ann, 'Pc B Ann Two'); q4 uuid := tests.post(b, t, 'An uncommon back.'); q5 uuid := tests.post(a2, t, 'Ann''s own other mask''s back.');
+  back1 uuid; back2 uuid; back3 uuid; back4 uuid; back5 uuid; pierce uuid; c jsonb; cp jsonb; sp jsonb;
 begin
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'pcpierce', 'pcmove');
-  perform pg_temp.hand(bob, 'pccatch', 'pccatchrare', 'pcride');
+  perform pg_temp.hand(bob, 'pccatch', 'pccatchrare', 'pcride', 'pccatchunc');
+  perform pg_temp.hand(ann, 'pccatch');
   perform tests.become_service();
   back1 := (set_card(bob, 'pccatch', b, q1, '{}', 0, 'pcmove') ->> 'id')::uuid;
   back2 := (set_card(bob, 'pccatchrare', b, q2, '{}', 0, 'pcmove') ->> 'id')::uuid;
   back3 := (set_card(bob, 'pcride', b, q3, '{}', 0, 'pcmove') ->> 'id')::uuid;
+  back4 := (set_card(bob, 'pccatchunc', b, q4, '{}', 0, 'pcmove') ->> 'id')::uuid;
+  back5 := (set_card(ann, 'pccatch', a2, q5, '{}', 0, 'pcmove') ->> 'id')::uuid;
 
   -- The common back is passed: the Move lands, no spring is written, the back is still set, and only the caster's account is told, with sub `passed`.
   pierce := pg_temp.pierce(ann, a, pa);
@@ -182,6 +191,85 @@ begin
   if sp is null or sp ->> 'did' is distinct from 'rode' then raise exception 'a ride back did not ride under a pierce: %', sp; end if;
   select x.payload into cp from acts x where x.id = (c ->> 'id')::uuid;
   if cp ->> 'rode' is distinct from back3::text or cp -> 'pierce' ->> 'by' is distinct from pierce::text then raise exception 'the ridden cast: %', cp; end if;
+
+  -- The boundary: an UNCOMMON back is passed by an uncommon pierce (a back no rarer than the pierce's upTo), so the test is at or below, not below.
+  pierce := pg_temp.pierce(ann, a, pa);
+  c := play_card(ann, 'pcmove', a, q4, '{}', 0, '');
+  select x.payload into cp from acts x where x.id = (c ->> 'id')::uuid;
+  if cp ? 'caught' or cp ->> 'layer' is null or cp -> 'pierce' ->> 'by' is distinct from pierce::text then raise exception 'an uncommon back was not passed by an uncommon pierce: %', cp; end if;
+  if exists (select 1 from acts s where s.kind = 'spring' and s.payload ->> 'set' = back4::text) then raise exception 'a passed uncommon back wrote a spring'; end if;
+  if not exists (select 1 from face_down f where f.play = back4 and f.ends_at > now()) then raise exception 'a passed uncommon back is no longer set'; end if;
+
+  -- The setter is the caster's own other mask: the pass is the same, and the caster is told as for any back (the alert reads no setter).
+  pierce := pg_temp.pierce(ann, a, pa);
+  c := play_card(ann, 'pcmove', a, q5, '{}', 0, '');
+  select x.payload into cp from acts x where x.id = (c ->> 'id')::uuid;
+  if cp ? 'caught' or cp ->> 'layer' is null or cp -> 'pierce' ->> 'by' is distinct from pierce::text then raise exception 'a back of one''s own other mask was not passed: %', cp; end if;
+  if exists (select 1 from acts s where s.kind = 'spring' and s.payload ->> 'set' = back5::text) then raise exception 'a passed own-mask back wrote a spring'; end if;
+  perform tests.unbecome();
+  if (select count(*) from alerts where account = ann and kind = 'trapStruck' and sub = 'passed') is distinct from 3::bigint then raise exception 'the caster was not told of each passed back (common, uncommon, own mask): %', (select jsonb_agg(to_jsonb(x)) from alerts x where account = ann); end if;
+end $$;
+
+-- ---- The reach branch, the oldest ward named, and a staff caster ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('pc-r-ann'); bob uuid := tests.account('pc-r-bob');
+  a uuid := tests.character(ann, 'Pc R Ann'); b uuid := tests.character(bob, 'Pc R Bob');
+  t uuid := tests.thread('Pc reach');
+  pa uuid := tests.post(a, t, 'Ann''s own post.'); bfirst uuid := tests.post(b, t, 'Bob started this.');
+  two uuid := tests.post(b, t, 'Two live wards.');
+  tb uuid := tests.thread('Pc reach, Bob''s thread'); tbfirst uuid := tests.post(b, tb, 'Bob started this thread.');
+  pierce uuid; c jsonb; cp jsonb; why text; ward_play uuid; staff uuid; r jsonb;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'pcpierce', 'pcchar', 'pcthreadc', 'pcmove');
+  perform pg_temp.hand(bob, 'pcwardx');
+  perform tests.become_service();
+
+  -- A ward on Bob's character turns a character cast away; a pierce gets it past, names the ward, and is spent.
+  ward_play := (play_card(bob, 'pcwardx', b, b, '{}', 0, '', 'character', bfirst) ->> 'id')::uuid;
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', ann, 'pcchar', a, b, '{}', '', 'character', bfirst));
+  if why is null or why not like '42501%Pc Ward X%' then raise exception 'a character cast under a character ward with no pierce: %', why; end if;
+  pierce := pg_temp.pierce(ann, a, pa);
+  c := play_card(ann, 'pcchar', a, b, '{}', 0, '', 'character', bfirst);
+  select x.payload into cp from acts x where x.id = (c ->> 'id')::uuid;
+  if cp -> 'pierce' is distinct from jsonb_build_object('by', pierce::text, 'card', 'pcpierce', 'ward', 'pcwardx') then raise exception 'the character cast past a ward did not name the pierce: %', cp; end if;
+  if not card_ended(pierce) then raise exception 'the character cast did not spend the pierce'; end if;
+
+  -- The same at a thread: Bob's own thread is warded, a thread cast is turned away, and under a pierce it lands.
+  perform play_card(bob, 'pcwardx', b, tb, '{}', 0, '', 'thread', tbfirst);
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ann, 'pcthreadc', a, tb, '{}', '', 'thread'));
+  if why is null or why not like '42501%Pc Ward X%' then raise exception 'a thread cast under a thread ward with no pierce: %', why; end if;
+  pierce := pg_temp.pierce(ann, a, pa);
+  c := play_card(ann, 'pcthreadc', a, tb, '{}', 0, '', 'thread');
+  select x.payload into cp from acts x where x.id = (c ->> 'id')::uuid;
+  if cp -> 'pierce' is distinct from jsonb_build_object('by', pierce::text, 'card', 'pcpierce', 'ward', 'pcwardx') then raise exception 'the thread cast past a ward did not name the pierce: %', cp; end if;
+  if not card_ended(pierce) then raise exception 'the thread cast did not spend the pierce'; end if;
+  perform tests.unbecome();
+
+  -- Two live wards on a post, both passed: the older one is named. (pcwardb was played a day before pcward.)
+  perform tests.act(b, 'card', t, jsonb_build_object('card', 'pcwardb', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), two, now() - interval '2 days');
+  perform tests.act(b, 'card', t, jsonb_build_object('card', 'pcward', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), two, now() - interval '1 day');
+  perform tests.become_service();
+  pierce := pg_temp.pierce(ann, a, pa);
+  c := play_card(ann, 'pcmove', a, two, '{}', 0, '');
+  select x.payload into cp from acts x where x.id = (c ->> 'id')::uuid;
+  if cp -> 'pierce' is distinct from jsonb_build_object('by', pierce::text, 'card', 'pcpierce', 'ward', 'pcwardb') then raise exception 'the oldest of two passed wards was not the one named: %', cp; end if;
+
+  -- A staff caster reads no pierce: a pierce is up on a character that is a staff character's (set up by hand, since no player can play one there), and its cast is still turned away by the ward.
+  perform tests.unbecome();
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Pc R Staff', 'pc-r-staff', 'persona', now()) returning id into staff;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  perform tests.act(staff, 'card', t, jsonb_build_object('card', 'pcpierce', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '3 days', 'reach', 'character', 'character', staff), pa);
+  perform set_config('kayfabb.staff_writer', '', true);
+  insert into play_reach (play, reach, character, ends_at)
+    select k.id, 'character', staff, now() + interval '3 days' from acts k where k.character = staff and k.kind = 'card' and k.payload ->> 'card' = 'pcpierce';
+  insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
+  perform tests.become_service();
+  why := pg_temp.coded(format('select staff_play_card(%L, %L, %L)', 'pc-r-staff', 'pcmove', two));
+  if why is null or why not like '42501%turns away%' then raise exception 'a staff cast read a pierce and got past a ward: %', why; end if;
+  perform tests.unbecome();
 end $$;
 
 -- ---- A Use and a Move landing from a quote read no pierce; the probe is one lookup of its index; the helper is no API's ----
