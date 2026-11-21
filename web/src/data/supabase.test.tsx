@@ -3057,6 +3057,11 @@ describe('a screen in one call', () => {
       character: BEA, posts: 12, standing: 340,
       reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T }], turns: [{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }],
     }]);
+    /* A person's locked_until (0401) is carried while it is ahead and left out once it has passed. */
+    const lockedPeople = async (until: string) => (await once('thread_page', { ...answer, people: [{ ...answer.people[0]!, character: { ...CHAR, locked_until: until } }] }).api.threadPage(T, { page: 1 }, 20, []))?.people[0]?.character;
+    const ahead = new Date(Date.now() + 3_600_000).toISOString();
+    expect((await lockedPeople(ahead))?.lockedUntil).toBe(ahead);
+    expect((await lockedPeople(new Date(Date.now() - 3_600_000).toISOString()))?.lockedUntil).toBeUndefined();
     expect(page?.plays[0]).toMatchObject({ id: SET, targetActId: A });
     expect(page?.above[0]).toMatchObject({ play: SPRING, target: T });
     expect(page?.faces).toEqual({ [SET]: 'splat' });

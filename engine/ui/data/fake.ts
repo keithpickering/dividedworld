@@ -1017,8 +1017,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   /** When a lockout spring ends (`lockout_ends`, 0401): the least of its `until` and the time of a `card_end` on it. */
   const lockoutEnds = (spring: ActRec): number => {
-    const end = [...acts.values()].find((x) => x.kind === 'card_end' && x.target === spring.id);
-    return Math.min(Date.parse(String(spring.payload.until)), end === undefined ? Infinity : end.at);
+    const ends = [...acts.values()].filter((x) => x.kind === 'card_end' && x.target === spring.id).map((x) => x.at);
+    return Math.min(Date.parse(String(spring.payload.until)), ...ends);
   };
   /** The live lockout springs that lock a character, with when each ends (`locked_out_until`): a `lockedOut` spring, public as the Move that sprang it is. */
   const lockoutsOf = (who: Id): { spring: ActRec; thread: Id; until: number }[] => [...acts.values()]
@@ -4394,6 +4394,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [...characters.values()].filter((c) => c.owner === account.id).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((c): MyCharacter => {
         const opens = turnOpens(c);
         const shown = classShownAt(c);
+        const locked = lockoutsOf(c.id);
         return {
           id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classShownAt: shown === null ? null : iso(shown), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
           turnOpensAt: opens === null ? null : iso(opens),
@@ -4402,7 +4403,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           presenceHidden: c.presenceHidden,
           ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
           ...(barsOf(c.id).length > 0 ? { bars: barsOf(c.id) } : {}),
-          ...(lockoutsOf(c.id).length > 0 ? { lockouts: lockoutsOf(c.id).map((l) => ({ thread: l.thread, until: iso(l.until) })) } : {}),
+          ...(locked.length > 0 ? { lockouts: locked.map((l) => ({ thread: l.thread, until: iso(l.until) })) } : {}),
         };
       });
     },
@@ -4617,7 +4618,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return {
         thread: summary, page, acts: shownActs,
         people: chars.map((character): ThreadPerson => ({
-          character: lockedOutUntil(character.id, thread) === null ? character : { ...character, lockedUntil: iso(lockedOutUntil(character.id, thread)!) }, posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
+          character: ((until) => (until === null ? character : { ...character, lockedUntil: iso(until) }))(lockedOutUntil(character.id, thread)), posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
         })),
         plays, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), veiled: myVeiled(posts.map((a) => a.id)),
