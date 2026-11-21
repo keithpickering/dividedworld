@@ -414,6 +414,8 @@ export function createPlays(): Plays {
   const taken = new Map<Id, number>();
   /* A spring that arrived before the back it reveals, kept for when it does. */
   const springs = new Map<Id, NonNullable<ReturnType<typeof springOf>>>();
+  /* The back each spring revealed, by the spring's id: an admin ends a lockout by a `card_end` on its spring, which ends the back it sprang from. */
+  const setOfSpring = new Map<Id, Id>();
   /* The backs their setters took back: a `take_back` that arrived before its back is kept here for when the back does. */
   const takenBacks = new Map<Id, string>();
   /* The plays an admin ended: a `card_end` that arrived before its play is kept here for when the play does. */
@@ -462,11 +464,12 @@ export function createPlays(): Plays {
         const sprung = springOf(act);
         if (sprung) {
           springs.set(sprung.set, sprung);
+          setOfSpring.set(sprung.spring, sprung.set);
           const post = postOf.get(sprung.set);
           const own = post === undefined ? undefined : byPost.get(post);
           const back = own?.get(sprung.set);
           if (own && back && !back.revealed) {
-            own.set(back.id, { ...back, card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at, ...(sprung.quadrant !== undefined ? { quadrant: sprung.quadrant } : {}) } });
+            own.set(back.id, { ...back, ...(ended.has(sprung.spring) ? { reversed: true as const } : {}), card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at, ...(sprung.quadrant !== undefined ? { quadrant: sprung.quadrant } : {}) } });
             touched.add(homeOf(back));
           }
           continue;
@@ -488,11 +491,13 @@ export function createPlays(): Plays {
         const target = endOf(act);
         if (target !== null) {
           ended.add(target);
-          const home = postOf.get(target);
+          /* The end of a spring (a lockout) ends the back it sprang from. */
+          const marked = setOfSpring.get(target) ?? target;
+          const home = postOf.get(marked);
           const own = home === undefined ? undefined : byPost.get(home);
-          const was = own?.get(target);
+          const was = own?.get(marked);
           if (own && was && !was.reversed) {
-            own.set(target, { ...was, reversed: true });
+            own.set(marked, { ...was, reversed: true });
             touched.add(home!);
           }
           continue;
@@ -512,7 +517,7 @@ export function createPlays(): Plays {
         const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at, ...(early.quadrant !== undefined ? { quadrant: early.quadrant } : {}) } } : found;
         const takenAt = found.faceDown ? takenBacks.get(found.id) : undefined;
         const withTaken = takenAt ? { ...withSpring, takenBack: { at: takenAt } } : withSpring;
-        const withEnd = ended.has(found.id) ? { ...withTaken, reversed: true as const } : withTaken;
+        const withEnd = ended.has(found.id) || (early !== undefined && ended.has(early.spring)) ? { ...withTaken, reversed: true as const } : withTaken;
         const play = spentPlays.has(found.id) ? { ...withEnd, spent: true as const } : withEnd;
         const home = homeOf(play);
         const own = byPost.get(home) ?? new Map<Id, CardPlay>();

@@ -318,6 +318,28 @@ describe('the warn meter and BANNED (the Mod Bots design, section 9)', () => {
     expect(screen.queryByText('BANNED')).toBeNull();
   });
 
+  test('LOCKED OUT is on the title line while the lockout holds, with its date as visible text, and beside BANNED where both hold', () => {
+    const hour = new Date(START + 3_600_000).toISOString();
+    const { unmount } = show(person({}, { lockedUntil: hour }));
+    const stamp = document.querySelector('.kb-postbit-locked')!;
+    expect(stamp.tagName).toBe('STRONG');
+    expect(stamp).toHaveTextContent(/^LOCKED OUT until .+/u);
+    expect(stamp.querySelector('span')).not.toHaveClass('kb-visually-hidden');
+    expect(screen.queryByText('BANNED')).toBeNull();
+    unmount();
+    show(person({}, { lockedUntil: hour, bannedUntil: hour }));
+    expect(document.querySelector('.kb-postbit-banned')).not.toBeNull();
+    expect(document.querySelector('.kb-postbit-locked')).not.toBeNull();
+  });
+
+  test('LOCKED OUT is not drawn for no lockout or a past one', () => {
+    const { unmount } = show(person());
+    expect(document.querySelector('.kb-postbit-locked')).toBeNull();
+    unmount();
+    show(person({}, { lockedUntil: new Date(START - 1000).toISOString() }));
+    expect(document.querySelector('.kb-postbit-locked')).toBeNull();
+  });
+
   test('passes axe with the meter and BANNED drawn', async () => {
     show(person({}, { warnPoints: 6, bannedUntil: new Date(START + 3_600_000).toISOString() }));
     const bad = await axeViolations(screen.getByRole('group', { name: 'About Pipewrench' }));

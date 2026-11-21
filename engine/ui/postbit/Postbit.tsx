@@ -13,6 +13,7 @@
 import { memo, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
+import { useAhead } from '../composer/until.ts';
 import { useNarrow } from '../media.ts';
 import type { Character } from '../data/api.ts';
 import { outfitOverhang } from '../../rules/cosmetics.ts';
@@ -115,6 +116,8 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   const joined = monthYear(c.joined);
   /* A ban holds while its time is in the future (characters_public.banned_until): the page read it, and the title line says so for as long as the page is open. */
   const banned = c.bannedUntil !== undefined && Date.parse(c.bannedUntil) > api.now();
+  /* A lockout from this thread holds while its time is in the future (`thread_page`'s locked_until), and goes by itself at its time. */
+  const locked = useAhead(c.lockedUntil);
   /* The side layout shows the chosen trophies and any belt under the rank; the stacked band and a phone show a held belt only, beside the name. */
   const shelf = counts ? postbitTrophies(c.trophies, instance.settings.cosmetics.trophies.shownMost) : [];
   const belts = counts ? [] : heldBelts(c.trophies);
@@ -129,10 +132,11 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
         {/* The group's bar under the name; a staff character's has its office title beside it. */}
         {!standIn && (group || showsStaffBadge(c)) && <span className="kb-postbit-group">{group && <GroupBar look={group} />}<StaffBadge character={c} /></span>}
         {marks && <span className="kb-postbit-marks">{marks}</span>}
-        {(c.title || banned) && (
+        {(c.title || banned || locked) && (
           <span className="kb-postbit-title kb-small kb-muted">
             {c.title}
             {banned && <>{c.title && ' '}<strong className="kb-postbit-banned">BANNED<span className="kb-visually-hidden"> until {shortDate(c.bannedUntil!)}</span></strong></>}
+            {locked && <>{(c.title || banned) && ' '}<strong className="kb-postbit-locked">LOCKED OUT <span>until {shortDate(c.lockedUntil!)}</span></strong></>}
           </span>
         )}
         {/* A staff character, and the stand-in, are not scored: no rank, no pips, and no class to reveal. */}

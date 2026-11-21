@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { tokensOf } from '../contrast.ts';
 import { ratio, MODES } from '../contrast.ts';
 import { bandOf, brightBand, luminanceOf, type Band, POST_INK, shineIsReadable, toLinear } from './band.ts';
-import { burst, burstProbe, drawBurst, GLINT_FLOOR, GLINT_SHARE, glintsAreFew, glintShare, landAll, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
+import { burst, burstProbe, drawBurst, GLINT_FLOOR, GLINT_SHARE, glintsAreFew, glintShare, landAll, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, take, type Flakes } from './flakes.ts';
 
 /* The bench's GLITTER inks (docs/research/2026-11-06-shine-bench/01-bench.html): seven rainbow inks, then silver for the
    holographic flakes from index 7. They are the reference inks for these tests, copied as literals. */
@@ -816,5 +816,64 @@ describe('landAll', () => {
     assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT, 'it used none of the cap');
     assert.equal(burst(b, 5), false, 'a landed post does not burst');
     assert.equal(burstProbe.inFlight(), MAX_IN_FLIGHT);
+  });
+});
+
+describe('a pickup takes a real flake (docs/plans/2026-11-21-glitter-hands-plan.md, task 1)', () => {
+  test('take removes the settled flake nearest the point within the reach, and returns it', () => {
+    const f = make();
+    landEverything(f);
+    const n = f.settled.length;
+    const at = f.settled[100]!;
+    const got = take(f, at.x + 0.5, at.y - 0.5, 14);
+    assert.ok(got);
+    assert.equal(f.settled.length, n - 1);
+    assert.ok(!f.settled.includes(got!), 'it left the post');
+    const d = Math.hypot(got!.x - at.x - 0.5, got!.y - at.y + 0.5);
+    for (const o of f.settled) assert.ok(Math.hypot(o.x - at.x - 0.5, o.y - at.y + 0.5) >= d, 'the nearest one');
+  });
+
+  test('take returns null where no settled flake lies within the reach, and leaves the post as it was', () => {
+    const f = make();
+    landEverything(f);
+    const n = f.settled.length;
+    assert.equal(take(f, -100, -100, 14), null);
+    assert.equal(f.settled.length, n);
+  });
+
+  test('a spot swept clean lends nothing more', () => {
+    const f = make();
+    landEverything(f);
+    let took = 0;
+    while (take(f, 400, 150, 14) && took < 1000) took++;
+    assert.ok(took > 0);
+    assert.equal(take(f, 400, 150, 14), null);
+  });
+
+  test('the base key changes on a take, even when a landing brings the settled count back', () => {
+    const f = make();
+    const k0 = f.baseKey(bands.light);
+    const at = f.settled[0]!;
+    take(f, at.x, at.y, 14);
+    assert.notEqual(f.baseKey(bands.light), k0);
+    /* One flake lands from the rest, as a burst's step would: the count is back where it was, the field is not. */
+    (f as unknown as { settled: unknown[]; rest: unknown[] }).settled.push((f as unknown as { rest: unknown[] }).rest.pop());
+    assert.notEqual(f.baseKey(bands.light), k0);
+  });
+
+  test('a flakes object built with the mount\'s taken set leaves those flakes out, before and after its burst', () => {
+    const taken = new Set<string>();
+    const opts = { seed: 'p1', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, taken };
+    const a = makeFlakes(opts);
+    landEverything(a);
+    const gone: Array<{ x: number; y: number }> = [];
+    for (const i of [10, 200, 900]) { const fl = a.settled[i]!; const t = take(a, fl.x, fl.y, 1); assert.ok(t); gone.push(t!); }
+    assert.equal(taken.size, 3);
+    const before = makeFlakes(opts);
+    for (const g of gone) assert.ok(!before.settled.some((o) => o.x === g.x && o.y === g.y));
+    const b = makeFlakes(opts);
+    landEverything(b);
+    assert.equal(b.settled.length, a.settled.length);
+    for (const g of gone) assert.ok(!b.settled.some((o) => o.x === g.x && o.y === g.y), 'still gone after a fresh build lands');
   });
 });
