@@ -393,6 +393,16 @@ describe('R4: the nodes, half again as large', () => {
   });
 });
 
+describe('R6: the author of the Autocorrect post may peel it', () => {
+  test('the strip on post 19 was played longer ago than its hold, so its author is out of the hold', async () => {
+    const { fake, made } = await stage();
+    const play = (await fake.cardsOn(made.acts['autocorrect']!, 60)).find((a) => a.kind === 'card')!;
+    const hours = instance.settings.economy['autocorrect.holdHours']!;
+    expect(hours).toBeGreaterThan(0);
+    expect(fake.clock.now() - new Date(play.createdAt).getTime()).toBeGreaterThan(hours * 3_600_000);
+  });
+});
+
 describe('R4: the graffiti shapes', () => {
   test('the stage\'s tags are at least five kinds of shape, and no two strokes are the same polyline', () => {
     const shapes = tags();

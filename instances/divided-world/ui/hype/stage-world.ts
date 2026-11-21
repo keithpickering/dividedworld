@@ -183,7 +183,8 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
       fake.seed.reach(who(d.caster), 'character', who(d.by), 'glitter-bomb', { post: act, ends: now + 5 * 24 * HOUR, message: 'You earned this.' });
       return;
     }
-    const play = fake.seed.card(who(d.caster), act, d.card, { layer: 1, config: d.config, message: '', ...(lasts(d.card) ? { ends } : {}) });
+    /* An Autocorrect's author may not peel it for 24 hours (`autocorrect.holdHours`): this one was played more than a day ago, so the film's author of the post peels it (tools/hype/shot-closeups.mjs, b-autocorrect-peel). */
+    const play = fake.seed.card(who(d.caster), act, d.card, { layer: 1, config: d.config, message: '', ...(lasts(d.card) ? { ends } : {}), ...(d.card === 'autocorrect' ? { at: now - 26 * HOUR } : {}) });
     if (d.card === 'graffiti') walls.push({ play, by: d.caster });
   });
 
