@@ -917,12 +917,15 @@ test('a refund outcome has a kind alone, and refunds is a use card on a post alo
   const set = (outcome: unknown) => instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match, outcome } })).join('\n');
   assert.equal(set({ kind: 'refund' }), '');
   assert.match(set({ kind: 'refund', share: 1 }), /card "splat" has a refund outcome with share; a refund outcome has a kind alone/);
+  assert.equal(set({ kind: 'refund', every: true }), 'card "splat" has a refund outcome with every; a refund outcome has a kind alone');
+  assert.equal(set({ kind: 'refund', every: 'x' }), 'card "splat" has a refund outcome with every; a refund outcome has a kind alone');
   assert.match(set({ kind: 'gift' }), /card "splat" has an outcome of kind "gift"; an outcome is ride or refund/);
   const lasts = { unit: 'day', count: 7 };
   const refunds = { flavors: ['salty'], count: 3 };
   const use = (r: unknown, more: Record<string, unknown> = {}) => instanceProblems(withCards({ play: 'use', reaches: ['post'], lasts, gimmick: { kind: 'ward', upTo: 'common' }, refunds: r, ...more })).join('\n');
   assert.equal(use(refunds), '');
   assert.match(use('x'), /card "splat" has refunds that are not an object/);
+  assert.match(use(null), /card "splat" has refunds that are not an object/);
   assert.match(instanceProblems(withCards({ play: 'cast', reaches: ['post'], lasts, refunds })).join('\n'), /card "splat" has refunds, and only a use card does/);
   assert.match(use(refunds, { reaches: ['post', 'thread'], rarity: 'rare' }), /card "splat" has refunds, and a card with refunds reaches a post alone/);
   assert.match(use(refunds, { lasts: undefined }), /card "splat" has refunds with no time up \(lasts\)/);

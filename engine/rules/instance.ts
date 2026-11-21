@@ -745,12 +745,15 @@ function outcomeProblems(o: unknown, who: string, play: string, on: unknown): st
   if (play !== 'set' || on !== 'cast') return [`${who} has an outcome, and only a set card that springs on a cast does`];
   const e = o as Record<string, unknown>;
   const out: string[] = [];
-  if (e.every !== undefined && e.every !== true) out.push(`${who} has an outcome whose every is ${JSON.stringify(e.every)}; every is true or left out`);
   if (e.kind === 'refund') {
     const extra = Object.keys(e).find((k) => k !== 'kind');
     if (extra !== undefined) out.push(`${who} has a refund outcome with ${extra}; a refund outcome has a kind alone`);
   } else if (e.kind !== 'ride') out.push(`${who} has an outcome of kind ${JSON.stringify(e.kind)}; an outcome is ride or refund`);
-  else { const why = shareProblem(e, who, 'an outcome', 'an outcome of share'); if (why) out.push(why); }
+  else {
+    // `every` is a ride's alone; a refund names it as a key it does not take.
+    if (e.every !== undefined && e.every !== true) out.push(`${who} has an outcome whose every is ${JSON.stringify(e.every)}; every is true or left out`);
+    const why = shareProblem(e, who, 'an outcome', 'an outcome of share'); if (why) out.push(why);
+  }
   return out;
 }
 
