@@ -53,6 +53,7 @@ import { backWords, CAUGHT_STATE, caughtWords, ENDED_STATE, endedWords, endsWord
 import { disciplineNote, FALL_ENDS } from './discipline.ts';
 import { asThen, backOver, defaultView, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, CardView } from './types.ts';
+import { onceFor } from './once.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
 import { useCaughtFate, useSprungWords } from './sprung.ts';
 import { ReportLink, type ReportTo } from '../conduct/Report.tsx';
@@ -473,7 +474,7 @@ export function EndCardDialog({ play, card, caster, onClose, onEnded, returnFocu
 }
 
 /** An admin's "End this card" in the Lens: the button, and the shared confirm. */
-function EndCard({ play, card, caster, store }: { readonly play: Id; readonly card: string; readonly caster: string; readonly store: Plays }) {
+function EndCard({ play, end, card, caster, store }: { readonly play: Id; /** What the End names to the server: the play, or for a lockout back its spring. */ readonly end: Id; readonly card: string; readonly caster: string; readonly store: Plays }) {
   const { api } = useKayfa();
   const opener = useRef<HTMLButtonElement>(null);
   const [asking, setAsking] = useState(false);
@@ -484,10 +485,10 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
       <Layers>
       {asking && (
         <EndCardDialog
-          play={play} card={card} caster={caster} onClose={close}
+          play={end} card={card} caster={caster} onClose={close}
           onEnded={(endId) => {
-            const end: Act = { id: endId, character: null, kind: 'card_end', thread: '', targetActId: play, seq: null, createdAt: new Date(api.now()).toISOString(), payload: { why: 'reversed', by: 'admin' }, currentPayload: {}, editedAt: null, shownEditedAt: null };
-            store.add([end]);
+            const ended: Act = { id: endId, character: null, kind: 'card_end', thread: '', targetActId: end, seq: null, createdAt: new Date(api.now()).toISOString(), payload: { why: 'reversed', by: 'admin' }, currentPayload: {}, editedAt: null, shownEditedAt: null };
+            store.add([ended]);
             setAsking(false);
           }}
           returnFocusTo={() => (opener.current?.isConnected ? opener.current : document.querySelector<HTMLElement>('.kb-lens [role="tab"][aria-selected="true"]'))}
@@ -542,9 +543,34 @@ function TakeBack({ play, store }: { readonly play: CardPlay; readonly store: Pl
   );
 }
 
-/** Whether a play is face up and still in force, so an admin can end it: not a back (`faceDown` is set for exactly the card backs, sprung or not), not caught, not ended by an admin, not over because it did not take, not worn off, unless its card keeps (`keeps`): the level it left stays on posts until an admin ends the play, which takes it off every post. */
-export const endable = (play: CardPlay, now: number, keeps: boolean): boolean =>
-  !play.faceDown && play.caught === undefined && !play.reversed && !play.untaken && (keeps || !(play.ends !== undefined && Date.parse(play.ends) <= now));
+/**
+ * Whether a play can be ended by an admin. A face-up play: not caught, not ended by an admin, not over because it did not take, not worn off, unless its card keeps (`keeps`): the level it left stays on
+ * posts until an admin ends the play, which takes it off every post. A card back stays unendable, but for one that sprang into a lockout (`lockout`, the spring's `until`, read by `useLockoutOf`)
+ * while that lockout is live: the lockout is what an admin ends, and it is not ended, past or caught.
+ */
+export const endable = (play: CardPlay, now: number, keeps: boolean, lockout?: { readonly until: string } | null): boolean => {
+  if (play.faceDown) return lockout != null && play.revealed !== undefined && play.takenBack === undefined && play.caught === undefined && !play.reversed && Date.parse(lockout.until) > now;
+  return play.caught === undefined && !play.reversed && !play.untaken && (keeps || !(play.ends !== undefined && Date.parse(play.ends) <= now));
+};
+
+/** The lockout a sprung back made, once its spring is read (a spring never changes, so it is read once for all viewers of it, as the Lens's other spring reads are: once.ts): `{ until }`, or null for a back that is not a lockout, is not read yet, or is shown to a reader who cannot end it (only an admin's Lens asks). */
+function useLockoutOf(play: CardPlay, admin: boolean): { readonly until: string } | null {
+  const { api } = useKayfa();
+  const spring = admin && play.faceDown ? play.revealed?.spring : undefined;
+  const [read, setRead] = useState<{ readonly spring: Id; readonly until: string | null } | null>(null);
+  useEffect(() => {
+    if (spring === undefined) return undefined;
+    let live = true;
+    /* The answer is an object either way, so a spring that is no lockout is kept too (a null answer is not kept). */
+    onceFor(api, spring, 'lockout', async () => {
+      const [found] = await api.actsById([spring]);
+      if (!found) return null;
+      return { until: found.kind === 'spring' && found.payload.did === 'lockedOut' && typeof found.payload.until === 'string' ? found.payload.until : null };
+    }).then((answer) => { if (live && answer) setRead({ spring, until: answer.until }); }, () => { /* nothing is offered until the spring is read */ });
+    return () => { live = false; };
+  }, [api, spring]);
+  return spring !== undefined && read?.spring === spring && read.until !== null ? { until: read.until } : null;
+}
 
 function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now, then }: RowProps) {
   const past = then?.has(play.id) === true;
@@ -559,6 +585,7 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
   const note = fate && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? trapCard, fate) : view.notes[play.id];
   /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
   const sprung = useSprungWords(play.spring);
+  const lockout = useLockoutOf(play, admin);
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* The setter's own back, still face down: not sprung, not taken back, not past its time (the same end every Set has). */
@@ -605,7 +632,7 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
             : <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(play, name)}><span className="kb-kit-tile-label">Spin thread</span></button>}
           {!past && moments && !play.reach && <AsItLanded play={play.id} />}
           {!past && backTakeable && <TakeBack play={play} store={store} />}
-          {!past && admin && endable(play, now, instance.cards.find((c) => c.key === play.card)?.keeps === true) && <EndCard play={play.id} card={card} caster={caster} store={store} />}
+          {!past && admin && endable(play, now, instance.cards.find((c) => c.key === play.card)?.keeps === true, lockout) && <EndCard play={play.id} end={lockout ? play.revealed!.spring : play.id} card={card} caster={caster} store={store} />}
           {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
         </div>
       </div>

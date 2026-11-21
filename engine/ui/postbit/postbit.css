@@ -426,7 +426,8 @@
 }
 
 /* BANNED on the title line: bold, in the board's own foreground, so it reads whatever the title's muted ink. */
-.kb-postbit-banned {
+.kb-postbit-banned,
+.kb-postbit-locked {
   color: var(--kb-fg);
   letter-spacing: 0.05em;
 }

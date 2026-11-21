@@ -1247,6 +1247,15 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     });
   });
 
+  test('So Very Happy is a face-down Reversal with every one\'s status, Salty\'s colors, no form and no effect, and its tagline is the glass\'s', () => {
+    const svh = ui('so-very-happy');
+    expect(svh.status).toBe('Set, face down to everyone else');
+    expect([svh.art.color, svh.art.ink]).toEqual([ui('steel-chair').art.color, ui('steel-chair').art.ink]);
+    expect(svh.art.tagline).toBe('Play it Sweet or get locked out');
+    expect(svh.Effect).toBeUndefined();
+    expect(svh.ConfigForm).toBeUndefined();
+  });
+
   test('Kick Me is a Gimmick with Pepperoni\'s colors and an effect, and its words read the earn, the refunds and the span from its rules', () => {
     const kick = ui('kick-me');
     expect([kick.art.color, kick.art.ink]).toEqual([ui('whoopee-cushion').art.color, ui('whoopee-cushion').art.ink]);

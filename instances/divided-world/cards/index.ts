@@ -43,6 +43,7 @@ import { popSteal, price as popStealPrice } from './pop-steal.ts';
 import { publicityTour, price as publicityTourPrice } from './publicity-tour.ts';
 import { requiredReading, price as requiredReadingPrice } from './required-reading.ts';
 import { ropeBreak, price as ropeBreakPrice } from './rope-break.ts';
+import { soVeryHappy, price as soVeryHappyPrice } from './so-very-happy.ts';
 import { steelChair, price as steelChairPrice } from './steel-chair.ts';
 import { stickAround, price as stickAroundPrice } from './stick-around.ts';
 import { sugarCoat, price as sugarCoatPrice } from './sugar-coat.ts';
@@ -93,6 +94,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [publicityTour as CardRules, publicityTourPrice],
   [requiredReading as CardRules, requiredReadingPrice],
   [ropeBreak as CardRules, ropeBreakPrice],
+  [soVeryHappy as CardRules, soVeryHappyPrice],
   [steelChair as CardRules, steelChairPrice],
   [stickAround as CardRules, stickAroundPrice],
   [sugarCoat as CardRules, sugarCoatPrice],
