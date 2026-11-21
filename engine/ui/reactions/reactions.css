@@ -8,7 +8,8 @@
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4em calc(2 * var(--kb-grace-reach));
+  /* A line that wraps under the tiles (the React button, the blind totals' note, a refusal) stands the reach further down, clear of a ring. */
+  gap: calc(0.4em + var(--kb-grace-reach)) calc(2 * var(--kb-grace-reach));
   align-items: center;
   /* The reach below keeps a pending tile's ring off the post's edge. It is a margin, not padding, so the row's own box (the picker's
      anchor, engine/ui/glass/Overlay.tsx) stays the tiles' box, and a place that sets the row's margin or takes its box away (the Lens's
