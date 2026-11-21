@@ -26,7 +26,7 @@ import { countedBallots, lastsHours, pickRefusal, pollCounts, pollDraftProblems,
 import { isFixed, rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
-import { atOrBelow, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { atOrBelow, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
 import { earnedGroup } from '../../rules/groups.ts';
@@ -1871,7 +1871,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The card plays whose first generation failed and were refunded (a row in card_write_refunds, 0149): over, as an ended play is, and public as `untaken`. */
   const untakenPlays = new Set<Id>();
   /** card_ended (0149): ended by an admin, or over because it did not take. Every reader of "in force" asks this. */
-  const over = (play: Id): boolean => reversedPlays.has(play) || untakenPlays.has(play);
+  /** The pierce plays a cast named in `pierce.by`: spent, which is ended for every reader as `card_ended` has it (0149 and Cheap Shot's pierce migration). */
+  const spentPierces = new Set<Id>();
+  const over = (play: Id): boolean => reversedPlays.has(play) || untakenPlays.has(play) || spentPierces.has(play);
   /** post_under (0348): the reply each play of a card that replies carried, by the play: the post it was played on and the reply, a post of the thread with a number of its own. Never edited; the end is the play's own. */
   const underPlays = new Map<Id, { parent: Id; reply: Id }>();
   /** A reply in force: the play that draws it under its parent, or undefined where the Act is no reply or its play is over. */
@@ -2294,6 +2296,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /**
+   * The caster's live, unspent pierce (place_cast's read of play_reach): a reach play on the character whose card's gimmick is a pierce, not ended and not named by a cast's `pierce.by`,
+   * the oldest first. Read only for a character of the caller's own and not a staff one, so no refusal differs with who owns it.
+   */
+  function pierceOf(character: Id): { play: Id; card: string; upTo: Rarity } | null {
+    const who = characters.get(character);
+    if (!who || who.staff !== undefined || who.owner !== me()?.id) return null;
+    const live = [...reachPlays].filter(([play, r]) => r.reach === 'character' && r.target === character && r.endsAt > (stamp ?? now()) && !over(play))
+      .map(([play]) => ({ play, act: acts.get(play)!, gimmick: instance.cards.find((k) => k.key === acts.get(play)!.payload.card)?.gimmick }))
+      .filter((p) => p.gimmick?.kind === 'pierce')
+      .sort((x, y) => x.act.at - y.act.at || (x.play < y.play ? -1 : x.play > y.play ? 1 : 0));
+    const first = live[0];
+    return first === undefined ? null : { play: first.play, card: String(first.act.payload.card), upTo: (first.gimmick as { upTo: Rarity }).upTo };
+  }
+  const rarityUndef = (key: string): Rarity | undefined => instance.cards.find((k) => k.key === key)?.rarity;
+  /** The oldest live ward the cast would have met without the pierce: one that turns the card away and whose card is at or below the pierce (place_cast's `passed_ward`). */
+  function passedWard(rules: CardRules, effects: readonly CardEffect[], reach: Reach, upTo: Rarity, at: number): string | undefined {
+    const e = effects.find((x) => x.gimmick?.kind === 'ward' && (x.reach ?? 'post') === reach && isLive(x, new Date(at)) && wardTurnsAway(x.gimmick, rules) && x.card !== null && atOrBelow(rarityUndef(x.card) ?? 'legendary', upTo));
+    return e?.card ?? undefined;
+  }
+  /**
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
    * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
    */
@@ -2309,8 +2331,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const forgedNow = forgedList(publicAct(on).currentPayload);
     const effects = effectsOn(target);
+    /* The caster's own live, unspent pierce (place_cast): the Ward check is given its `upTo`. */
+    const shot = pierceOf(character);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, shownAuthor(on, false) ?? undefined, forgedNow), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first, caster: character });
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, shownAuthor(on, false) ?? undefined, forgedNow), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first, caster: character, ...(shot ? { pierce: shot.upTo, rarityOf: rarityUndef } : {}) });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
     if (decided.value.draw) {
@@ -2358,7 +2382,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* The fake's acting() refuses a character with no owner, so a staff cast never reaches here; the guard mirrors place_cast. */
     const staffCaster = c.staff !== undefined;
     const outcome = trapRules?.trap?.outcome?.kind;
-    const catches = trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined && !(outcome === 'refund' && staffCaster);
+    const wouldCatch = trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined && !(outcome === 'refund' && staffCaster);
+    /* A pierce gets the cast past a catch no rarer than it: the back stays set and unsprung, and nothing is written or told to its setter. A ride or a refund springs as before (spring_traps, `passing`). */
+    const passedBack = shot !== null && !!wouldCatch && outcome === undefined && atOrBelow(trapRules!.rarity, shot.upTo);
+    const catches = wouldCatch && !passedBack;
     /* A back with an outcome rides instead of catching: the cast lands as usual and the spring says it rode (spring_traps, 0151). The setter takes no card. */
     const rides = catches && outcome === 'ride';
     /* A refund back lets the cast land too, and the spring says it returned: no quadrant, and the card goes back to the caster, not the setter. */
@@ -2398,7 +2425,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }
     }
     const drive = !lands ? undefined : driveOf(rules, target, playId);
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(!lands ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(handed ? { handedBack: handed } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && lands ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    const wardPassed = shot === null ? undefined : passedWard(rules, effects, 'post', shot.upTo, at);
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(shot === null ? {} : { pierce: { by: shot.play, card: shot.card, ...(wardPassed === undefined ? {} : { ward: wardPassed }) } }), ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(!lands ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(handed ? { handedBack: handed } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && lands ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    if (shot !== null) spentPierces.add(shot.play);
+    if (passedBack) seededAlerts.push({ account: account.id, kind: 'trapStruck', sub: 'passed', act: written.id, character, at: written.at });
     /* What a landed play on a post writes beside its Act (land_rows, 0357): not for a caught one. */
     if (lands) landRows(rules, written, on, decided.value.config, account.id, at);
     /* A cast that landed (a ride lets it) writes its reply, a post of the thread with a number of its own, and remembers it under its parent; a caught one writes none, and the id its Act names is no post's. */
@@ -2550,7 +2580,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The plays beyond a post (play_reach, 0055): each play's reach, its target and when it ends, never edited. */
   const reachPlays = new Map<Id, { reach: BeyondPost; target: Id; endsAt: number }>();
   /** The live plays on one target beyond a post, as effects (reach_effects, 0055). */
-  const reachEffects = (reach: BeyondPost, target: Id): CardEffect[] => [...reachPlays].filter(([play, r]) => r.reach === reach && r.target === target && r.endsAt > now() && !reversedPlays.has(play))
+  const reachEffects = (reach: BeyondPost, target: Id): CardEffect[] => [...reachPlays].filter(([play, r]) => r.reach === reach && r.target === target && r.endsAt > now() && !reversedPlays.has(play) && !spentPierces.has(play))
     .map(([play, r]) => {
       const rules = instance.cards.find((c) => c.key === acts.get(play)!.payload.card);
       return { card: String(acts.get(play)!.payload.card), act: play, reach, ends: iso(r.endsAt), ...(rules?.gimmick ? { gimmick: rules.gimmick } : {}) };
@@ -2635,7 +2665,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const goal = { reach, [reach]: target, ...warned } as unknown as CardTarget;
     const effects = effectsOnTarget(goal, reachEffects(reach, target), above, new Date(at));
     const nameOf = (k: string) => instance.cards.find((c) => c.key === k)?.name ?? k;
-    const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at), nameOf, caster: character });
+    /* Only a cast reads the caster's pierce (place_cast); a use never does. */
+    const shot = play === 'cast' ? pierceOf(character) : null;
+    const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at), nameOf, caster: character, ...(shot ? { pierce: shot.upTo, rarityOf: rarityUndef } : {}) });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -2668,8 +2700,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const bound = span(settings.reachLasts[reach]);
     /* A scored-as play lasts until its window closes, not a time from now, and names where the window starts. */
     const endsAt = window ? window.closes : at + Math.min(rules.lasts ? span(rules.lasts) : bound, bound);
-    const written = write({ character, kind: 'card', thread, target: on, at, payload: { card, message: decided.value.message, config: decided.value.config, reach, [reach]: target, ...(window ? { starts: iso(window.opens) } : {}), ends: iso(endsAt) } });
+    const wardPassed = shot === null ? undefined : passedWard(rules, effects, reach, shot.upTo, at);
+    const written = write({ character, kind: 'card', thread, target: on, at, payload: { card, message: decided.value.message, config: decided.value.config, reach, [reach]: target, ...(shot === null ? {} : { pierce: { by: shot.play, card: shot.card, ...(wardPassed === undefined ? {} : { ward: wardPassed }) } }), ...(window ? { starts: iso(window.opens) } : {}), ends: iso(endsAt) } });
     reachPlays.set(written.id, { reach, target, endsAt });
+    if (shot !== null) spentPierces.add(shot.play);
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
@@ -4229,7 +4263,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .sort((a, b) => acts.get(b.play)!.at - acts.get(a.play)!.at || acts.get(b.play)!.order - acts.get(a.play)!.order),
     effectsAbove: (chars, thread, board) => {
       const wanted = new Set(chars);
-      return [...reachPlays].filter(([play, r]) => r.endsAt > now() && !reversedPlays.has(play) && (r.reach === 'character' ? wanted.has(r.target) : r.reach === 'thread' ? r.target === thread : r.target === board))
+      return [...reachPlays].filter(([play, r]) => r.endsAt > now() && !reversedPlays.has(play) && !spentPierces.has(play) && (r.reach === 'character' ? wanted.has(r.target) : r.reach === 'thread' ? r.target === thread : r.target === board))
         .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }))
         .sort((a, b) => acts.get(a.play)!.at - acts.get(b.play)!.at || acts.get(a.play)!.order - acts.get(b.play)!.order);
     },
