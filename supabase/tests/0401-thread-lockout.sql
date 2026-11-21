@@ -390,6 +390,9 @@ declare
   w0 timestamptz := now() - interval '1 day'; w1 timestamptz := now() + interval '1 hour';
   back uuid; r jsonb; move uuid; spring uuid; input jsonb; est jsonb;
 begin
+  -- estimate_input's window starts at the last settled end, and an earlier file's race (0007) commits a settlement in 2027 through dblink, past
+  -- this window: moved a century back inside this file's rollback, as 0077 does, so the estimate's window holds now.
+  update settlements set starts_at = starts_at - interval '100 years', ends_at = ends_at - interval '100 years';
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'lkback');
   perform pg_temp.hand(bob, 'lksalty');
