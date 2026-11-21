@@ -114,7 +114,7 @@ begin
   if exists (select 1 from acts where kind = 'card' and target_act_id = p5 and payload ->> 'card' = 'rdmove' and not (payload ? 'caught')) then raise exception 'a caught cast landed as well'; end if;
 end $$;
 
--- ---- The spring's payload is held: a ride names its quadrant, and a catch names none ----
+-- ---- The spring's payload is held: a ride that names a quadrant names one of the four, and a catch names none ----
 select tests.unbecome();
 do $$
 declare
@@ -123,13 +123,15 @@ declare
 begin
   sset := tests.act(a, 'set', t, '{}', p);
   why := pg_temp.coded(format($q$select tests.act(%L, 'spring', %L, jsonb_build_object('card', 'rdchess', 'trigger', 'cast', 'did', 'rode', 'set', %L, 'by', %L), %L)$q$, a, t, sset::text, gen_random_uuid()::text, p));
-  if why is null or why not like '23514%acts_spring_payload%' then raise exception 'a rode spring with no quadrant was let in: %', why; end if;
+  -- Since 0392 a rode spring may name none: a ride that pays on every quadrant (supabase/tests/0392-ride-every.sql holds that); it is the quadrant that is checked, never its absence.
+  if why is not null then raise exception 'a rode spring with no quadrant was refused: %', why; end if;
   why := pg_temp.coded(format($q$select tests.act(%L, 'spring', %L, jsonb_build_object('card', 'rdchess', 'trigger', 'cast', 'did', 'rode', 'set', %L, 'by', %L, 'quadrant', 'wide'), %L)$q$, a, t, sset::text, gen_random_uuid()::text, p));
   if why is null or why not like '23514%acts_spring_payload%' then raise exception 'a rode spring with a quadrant that is none was let in: %', why; end if;
   why := pg_temp.coded(format($q$select tests.act(%L, 'spring', %L, jsonb_build_object('card', 'rdcatch', 'trigger', 'cast', 'did', 'caught', 'set', %L, 'by', %L, 'caught', %L, 'quadrant', 'calmPositive'), %L)$q$, a, t, sset::text, gen_random_uuid()::text, gen_random_uuid()::text, p));
   if why is null or why not like '23514%acts_spring_payload%' then raise exception 'a caught spring naming a quadrant was let in: %', why; end if;
   why := pg_temp.coded(format($q$select tests.act(%L, 'spring', %L, jsonb_build_object('card', 'rdchess', 'trigger', 'quote', 'did', 'rode', 'set', %L, 'by', %L, 'quadrant', 'calmPositive'), %L)$q$, a, t, sset::text, gen_random_uuid()::text, p));
   if why is null or why not like '23514%acts_spring_payload%' then raise exception 'a rode spring on a quote was let in: %', why; end if;
+  sset := tests.act(a, 'set', t, '{}', p);
   why := pg_temp.coded(format($q$select tests.act(%L, 'spring', %L, jsonb_build_object('card', 'rdchess', 'trigger', 'cast', 'did', 'rode', 'set', %L, 'by', %L, 'quadrant', 'calmPositive'), %L)$q$, a, t, sset::text, gen_random_uuid()::text, p));
   if why is not null then raise exception 'a rode spring with a quadrant was refused: %', why; end if;
   -- The index the settlement reads springs by.

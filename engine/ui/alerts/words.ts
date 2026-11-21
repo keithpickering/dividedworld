@@ -248,7 +248,7 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
         const m = springConditions(act?.payload ?? {});
         const quote = `A quote${m.passage ? ` of ${shortQuote(m.passage)}` : ''}${m.says ? ` saying ${shortQuote(m.says)}` : ''}`;
         const set = did === 'landed' ? `${quote} set it off, and it landed.` : did === 'caught' ? 'A cast it was waiting for set it off, and the card is now in your hand.'
-          : did === 'rode' ? 'A cast of the card it named set it off. The cast landed, and its reactions of the kind you named pay you at each settlement.' : 'A Mod Bot\'s visit set it off, and it ended the visit.';
+          : did === 'rode' ? (typeof act?.payload.quadrant === 'string' ? 'A cast of the card it named set it off. The cast landed, and its reactions of the kind you named pay you at each settlement.' : 'A card it was waiting for was cast there and set it off. The cast landed, and every reaction to it pays you at each settlement.') : 'A Mod Bot\'s visit set it off, and it ended the visit.';
         return { line: [card ? `Your face-down ${card} sprang` : 'Your face-down card sprang'], detail: sentences([set], inTitle(row)), ways: postWay(post, row, ctx), who };
       }
       return { line: ['Your trap sprang'], detail: sentences(card ? [`The trap was ${card}, in `, ...(row.title ? [{ em: row.title }] : ['a thread']), '.'] : inTitle(row)), ways: postWay(post ?? act, row, ctx), who };

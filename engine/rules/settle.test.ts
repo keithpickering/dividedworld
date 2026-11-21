@@ -1597,6 +1597,7 @@ const payWorld: Instance = {
     { ...splat, key: 'toll', gimmick: { kind: 'ride', share: 0.5 } },
     { ...splat, key: 'chess', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } }, catches: () => 'splat' },
     { ...splat, key: 'offday', scoresAs: true },
+    { ...splat, key: 'cushion', play: 'set', trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.25, every: true } } },
   ],
 };
 const WHO = ['tom', 'ann', 'bob', 'cat', 'dee', 'eve', 'fay'];
@@ -1709,6 +1710,25 @@ test('a ride spring pays a whole vote per vote in its quadrant on the cast that 
   const later = settle(payBoard([cast(), spring()], [...votes, react('cast', 'dee', 'dee-1', 'tea', TO + 2 * H)], { window: { id: 'w2', from: TO, to: TO + 24 * H } }), payWorld);
   assert.equal(ride(later, 'tom-1'), 10, 'a later window pays the votes it holds, with no end');
   assert.equal(ride(settle(payBoard([cast('cast', 'tom-2'), spring()], votes), payWorld), 'tom-1'), 0, 'a cast by the setter\'s own player');
+});
+test('an every ride spring with no quadrant pays a quarter of a vote per other player\'s vote in all four quadrants, and Ann keeps her own pay', () => {
+  const { quadrant: _q, ...noQuadrant } = spring({ card: 'cushion' });
+  const votes = [react('cast', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('cast', 'cat', 'cat-1', 'tea', FROM + 6 * H), react('cast', 'dee', 'dee-1', 'zzz', FROM + 7 * H), react('cast', 'eve', 'eve-1', 'tomato', FROM + 8 * H), react('cast', 'tom', 'tom-2', 'fire', FROM + 9 * H)];
+  const r = settle(payBoard([cast(), noQuadrant], votes), payWorld);
+  assert.equal(ride(r, 'tom-1'), 10, 'four votes by others at a quarter of a vote (2.5) each; Tom\'s own player\'s pays nothing');
+  assert.deepEqual(r.entries.find((e) => e.reason === 'card.ride')!.params, { card: 'cushion' });
+  assert.equal(r.details.filter((d) => d.reason === 'card.ride').length, 4);
+  assert.deepEqual(r.entries.filter((e) => e.character === 'ann-1'), settle(payBoard([cast()], votes), payWorld).entries.filter((e) => e.character === 'ann-1'), 'Ann is paid as without it');
+  const est = estimateForOwner(payBoard([cast(), noQuadrant], votes), payWorld, 'tom').lines.filter((l) => l.reason === 'card.ride');
+  assert.equal(est.length, 4, 'the estimate shows the same lines to Tom\'s player');
+  assert.equal(est.reduce((n, l) => n + l.amount, 0), 10);
+  assert.equal(ride(settle(payBoard([cast(), spring({ card: 'cushion' })], votes), payWorld), 'tom-1'), 10, 'a quadrant on an every ride\'s spring is not read');
+});
+test('a named ride spring pays only its quadrant, and one with no quadrant pays nothing', () => {
+  const votes = [react('cast', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('cast', 'cat', 'cat-1', 'fire', FROM + 6 * H)];
+  assert.equal(ride(settle(payBoard([cast(), spring()], votes), payWorld), 'tom-1'), 10, 'chess pays its calm vote only');
+  const { quadrant: _q, ...noQuadrant } = spring();
+  assert.equal(ride(settle(payBoard([cast(), noQuadrant], votes), payWorld), 'tom-1'), 0, 'a chess spring with no quadrant');
 });
 test('a ride spring pays nothing for a vote by the setter\'s own player, on another mask', () => {
   const r = settle(payBoard([cast(), spring()], [react('cast', 'tom', 'tom-2', 'tea', FROM + 5 * H), react('cast', 'bob', 'bob-1', 'tea', FROM + 6 * H)]), payWorld);

@@ -1312,6 +1312,16 @@ describe('the payout cards\' lines', () => {
     expect(text(logRows(data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), half, 600, null)[0]!)).toContain('pays you half a vote,');
   });
 
+  test('a ride that rode with no quadrant says each vote it draws pays, never "of the kind"', () => {
+    const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', rode: 'set1' } });
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'chess', trigger: 'cast', did: 'rode', set: 'set1', by: 'k1' } });
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'chess', post: 'post3', spring: 'sp', endedAt: later, endedBy: 'sprung' as const }] };
+    const quarter = { ...w, instance: { ...w.instance, cards: w.instance.cards.map((c) => (c.key === 'chess' ? { ...c, trap: { trigger: { on: 'cast' as const }, outcome: { kind: 'ride' as const, share: 0.25, every: true as const } } } : c)) } };
+    const t = text(logRows(data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), quarter, 600, null)[0]!);
+    expect(t).toContain('Each vote it draws pays you a quarter of a vote');
+    expect(t).not.toContain('of the kind');
+  });
+
   /* An Off Day on Pipewrench, played from post 3 by Pipewrench: it names a Heel for the window of Oct 29 to Oct 30. */
   const named = act('k1', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: day0, ends: day1 } });
   const scoredRow = { settlement: 1, character: 'p', classKey: 'heel', play: 'k1', card: 'offday', startsAt: day0, endsAt: day1 };

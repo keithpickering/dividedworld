@@ -194,8 +194,8 @@ declare
       'card "pr3" has a ride, and a card with a ride reaches a post alone'),
     jsonb_build_array('{"key": "pr4", "rarity": "common", "play": "use", "reaches": ["post"], "lasts": {"unit": "week", "count": 1}, "gimmick": {"kind": "boost"}}',
       'card "pr4" has a gimmick of kind "boost"; a gimmick is ward, earn, price, ride, noQuote or cushion'),
-    jsonb_build_array('{"key": "pr5", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}, "outcome": {"kind": "ride", "share": 1}}}',
-      'card "pr5" has an outcome beside a match; a ride outcome names its card (catches)'),
+    jsonb_build_array('{"key": "pr5", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}, "outcome": {"kind": "ride", "share": 1, "every": "yes"}}}',
+      'card "pr5" has an outcome whose every is "yes"; every is true or left out'),
     jsonb_build_array('{"key": "pr6", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "visit"}, "outcome": {"kind": "ride", "share": 1}}}',
       'card "pr6" has an outcome, and only a set card that springs on a cast does'),
     jsonb_build_array('{"key": "pr7", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "outcome": {"kind": "catch", "share": 1}}}',
@@ -225,7 +225,9 @@ declare
     '{"key": "ok2", "rarity": "legendary", "play": "cast", "reaches": ["character"], "lasts": {"unit": "day", "count": 2}, "scoresAs": true}',
     '{"key": "ok3", "rarity": "uncommon", "play": "use", "reaches": ["post"], "lasts": {"unit": "week", "count": 1}, "gimmick": {"kind": "ride", "share": 0.5}}',
     '{"key": "ok4", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "outcome": {"kind": "ride", "share": 1}}}',
-    '{"key": "ok5", "rarity": "uncommon", "play": "cast", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}}'
+    '{"key": "ok5", "rarity": "uncommon", "play": "cast", "reaches": ["post"], "lasts": {"unit": "day", "count": 3}}',
+    -- A ride that pays on every quadrant may sit beside a match (Whoopee Cushion).
+    '{"key": "ok6", "rarity": "common", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "match": {"upTo": "common"}, "outcome": {"kind": "ride", "share": 0.25, "every": true}}}'
   );
   p jsonb; got text; g jsonb;
 begin

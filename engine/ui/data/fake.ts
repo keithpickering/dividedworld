@@ -2294,7 +2294,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     let spring: ActRec | null = null;
     if (catches) {
       spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: rides
-        ? { card: trap.card, trigger: 'cast', did: 'rode', quadrant: faceDown.get(trap.set)!.quadrant, set: trap.set, by: playId }
+        ? { card: trap.card, trigger: 'cast', did: 'rode', ...(typeof faceDown.get(trap.set)!.quadrant === 'string' ? { quadrant: faceDown.get(trap.set)!.quadrant } : {}), set: trap.set, by: playId }
         : { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }

@@ -2549,14 +2549,15 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
   const named = { ...warding, key: 'namedward', name: 'Name Ward', gimmick: { kind: 'ward' as const, cards: ['sugar'] } };
   const vibes = { ...base, key: 'vibes', name: 'Vibes', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, reaches: ['thread' as const, 'board' as const], gimmick: { kind: 'price' as const, flavors: ['salty' as const], add: 25 }, lasts: { unit: 'day' as const, count: 3 }, canApply: () => ok(undefined) };
   const net = { ...base, key: 'net', name: 'Net', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const] } }, canApply: () => ok(undefined) };
+  const cushion = { ...base, key: 'cushion', name: 'Cushion', alignment: 'pepperoni' as const, rarity: 'common' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { upTo: 'common' as const }, outcome: { kind: 'ride' as const, share: 0.25, every: true as const } }, canApply: () => ok(undefined) };
   function setup2() {
-    const fake = createFake({ instance: { ...world, cards: [...world.cards, sugar, warding, named, vibes, net] } });
+    const fake = createFake({ instance: { ...world, cards: [...world.cards, sugar, warding, named, vibes, net, cushion] } });
     const ana = fake.seed.account('ana');
     const bo = fake.seed.account('bo');
     const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
     const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
-    fake.seed.cards(ana, { snare: 2, saltward: 1, namedward: 1, vibes: 1, net: 1 });
+    fake.seed.cards(ana, { snare: 2, saltward: 1, namedward: 1, vibes: 1, net: 1, cushion: 1 });
     fake.seed.cards(bo, { blot: 3, sugar: 3, vibes: 1 });
     fake.signInAs(ana);
     return { fake, ana, bo, anaFace, boFace, thread, opener };
@@ -2639,6 +2640,21 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     fake.signInAs(bo);
     expect(must(await fake.playCard('sugar', boFace, opener, {}, '')).payload.caught).toBeUndefined();
     expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBe(set.id);
+  });
+
+  test('a match ride back springs on a common card with no quadrant on the spring, and the setter takes nothing', async () => {
+    const { fake, ana, bo, anaFace, boFace, opener } = setup2();
+    const back = must(await fake.setCard('cushion', anaFace, opener, {}));
+    const before = (await fake.myCards()).find((c) => c.card === 'sugar')?.held;
+    fake.signInAs(bo);
+    const cast = must(await fake.playCard('sugar', boFace, opener, {}, ''));
+    expect(cast.payload).toMatchObject({ rode: back.id });
+    expect(cast.payload).not.toHaveProperty('caught');
+    const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+    expect(spring.payload).toMatchObject({ did: 'rode', set: back.id, by: cast.id });
+    expect(spring.payload).not.toHaveProperty('quadrant');
+    fake.signInAs(ana);
+    expect((await fake.myCards()).find((c) => c.card === 'sugar')?.held).toBe(before);
   });
 });
 
