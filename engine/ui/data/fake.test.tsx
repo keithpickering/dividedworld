@@ -4656,7 +4656,8 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
     const lkback = { ...lkBase, key: 'lkback', name: 'Lk Back', alignment: 'sweet' as const, rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const, 'pepperoni' as const], upTo: 'rare' as const }, outcome: { kind: 'lockout' as const, hours: 24 } }, canApply: () => ok(undefined) };
     const lksalty = { ...lkBase, key: 'lksalty', name: 'Lk Salty', alignment: 'salty' as const, rarity: 'common' as const, stack: 6, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lksalty', stack: 6 }, t, e, now) };
     const lkcutter = { ...lkBase, key: 'lkcutter', name: 'Lk Cutter', alignment: 'pepperoni' as const, rarity: 'rare' as const, replies: true as const, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lkcutter', reaches: ['post'] }, t, e, now) };
-    const lkWorld: Instance = { ...instance, cards: [lkback, lksalty, lkcutter] as unknown as CardRules[], machine: [], settings: { ...settings, economy: {} } };
+    const lkwide = { ...lkBase, key: 'lkwide', name: 'Lk Wide', alignment: 'sweet' as const, rarity: 'common' as const, reaches: ['post' as const, 'thread' as const, 'character' as const, 'board' as const], lasts: { unit: 'day' as const, count: 1 }, canApply: () => ok(undefined) };
+    const lkWorld: Instance = { ...instance, cards: [lkback, lksalty, lkcutter, lkwide] as unknown as CardRules[], machine: [], settings: { ...settings, postMaxLength: 500, economy: {} } };
     function lk() {
       const fake = createFake({ instance: lkWorld });
       const ana = fake.seed.account('ana');
@@ -4670,7 +4671,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       const other = fake.seed.thread('general', anaFace, 'T2', 'Post 2');
       fake.seed.wallet(ana, 900); fake.seed.wallet(bo, 900);
       fake.seed.cards(ana, { lkback: 3 });
-      fake.seed.cards(bo, { lksalty: 6, lkcutter: 2, lkback: 1 });
+      fake.seed.cards(bo, { lksalty: 6, lkcutter: 2, lkback: 1, lkwide: 6 });
       fake.signInAs(ana);
       return { fake, ana, bo, root, anaFace, boFace, boHeel, thread, post, otherThread: other.thread, otherPost: other.act };
     }
@@ -4718,6 +4719,22 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       must(await fake.playCard('lksalty', boFace, post, {}, ''));
       const until = String((await springOf(fake, post)).payload.until);
       expect(await fake.setCard('lkback', boFace, mine, {})).toMatchObject({ ok: false, error: lockedWords(until) });
+    });
+
+    test('a thread or character play in the locked thread is refused; a board play, an edit, a reaction and a quote from another thread are not', async () => {
+      const { fake, bo, anaFace, boFace, thread, post, otherThread } = lk();
+      const mine = fake.seed.post(thread, boFace, 'Mine');
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const until = String((await springOf(fake, post)).payload.until);
+      expect(await fake.playCard('lkwide', boFace, thread, {}, '', 'thread')).toMatchObject({ ok: false, error: lockedWords(until) });
+      expect(await fake.playCard('lkwide', boFace, anaFace, {}, '', 'character', post)).toMatchObject({ ok: false, error: lockedWords(until) });
+      const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+      must(await fake.playCard('lkwide', boFace, general.id, {}, '', 'board'));
+      must(await fake.edit(mine, boFace, 'Mine, edited'));
+      must(await fake.react(post, boFace, 'fire'));
+      must(await fake.post(otherThread, boFace, `[quote=${post}]Post 1[/quote]over here`, post));
     });
 
     test('an admin ends a live lockout once; a second end is refused; the page and my characters carry it only while it holds', async () => {
