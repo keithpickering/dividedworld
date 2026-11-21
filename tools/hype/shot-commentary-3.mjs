@@ -12,7 +12,7 @@
  *                 virtual clock, so frame N is the same moment of the page in all three; every landing's frame is written to c-n09.json.
  *   c-n10         "The Staff arrive": three beats of about 4.5 s, cut inside the take: FanGaME's memo, the merge (the index, then the
  *                 Staff Announcements thread, where the move's notice carries his reason), a Mod's filing of Snuckles's sprite post. The board turns a little in each.
- *   c-n11         "The chords": one take of five stretches of 3.5 s with a hard cut between them: three steel chairs tumbling in and denting
+ *   c-n11         "The chords": one take of five stretches of 3.5 s with a hard cut between them: three steel chairs tumbling in and denting (in the Midnight skin, for that stretch alone)
  *                 the body of post 1, filmed tight, the ink-covered
  *                 review, the Boss's post, the heap on post 1, and the settlement summary opening (the story "Boards/12 Log").
  *
@@ -27,6 +27,8 @@ import { OUT, flag, openStage, settle } from './stage.mjs';
 const SIZE = { width: 2880, height: 1620 };
 const FPS = 60;
 const only = flag('only', null);
+/* The skin node 11's first stretch (the chairs) is filmed in: the chairs are pale gray on the default skin's white, so Midnight (dark) is used for that stretch alone (judged on stills: the dents and chairs read on it and not on the white; `--chairs-skin default` films the old way). */
+const CHAIRS_SKIN = flag('chairs-skin', 'midnight');
 
 /** The Boss's reason for the merge, as the Staff's lines hold it (the words after the board's tidiness): read, not copied. */
 const MERGED = JSON.parse(readFileSync('instances/divided-world/ui/hype/staff-lines.json', 'utf8')).merged.text;
@@ -285,16 +287,18 @@ async function n11() {
     const pile = (s) => cam.evaluate(`window.__shot.pile(${at(s)})`);
 
     /* 1: three steel chairs, a few frames apart, tight on the body of Snuckles's first post (Brighter Effects is on, in the stage's costume): the throw, the dent and the chairs' fall. A chair takes about 1.2 s from its play to be seen, so the page runs 65 frames before the cut, unfilmed, and the first filmed frame has the first chair arriving; its dents then have the rest of the 3.5 s. */
+    if (CHAIRS_SKIN !== 'default') { await cam.evaluate(`window.__shot.skin(${JSON.stringify(CHAIRS_SKIN)})`); await settle(cam, 20); }
     const post1 = await cam.evaluate(`window.__lay.top('#post-1')`);
     const lay1 = await cam.evaluate(`(() => { const b = document.querySelector('#post-1 .kb-act-main'); const abs = (e) => { let x = 0, y = 0; for (; e; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; } return { x, y }; }; const q = abs(b); return { bx: q.x, by: q.y, bw: b.offsetWidth, bh: b.offsetHeight }; })()`);
     await stretch(lay1.by - 140, { rx: 4, ry: -9, rz: 1 }, chairs.map((s, k) => ({ at: 7 * k, run: () => pile(s) })), { lead: 65, tight: { lay: lay1, fx: 0.6, fy: 0.45, scale: 1.7 } });
+    if (CHAIRS_SKIN !== 'default') { await cam.evaluate(`window.__shot.skin('default')`); await settle(cam, 20); }
     /* 2: the ink-covered review: Whoops! lands on D-Guy's review, and rides in on 4D Chess's face-down move. */
     const review = await cam.evaluate(`window.__lay.top('#post-14')`);
     await stretch(review - 14, { rx: -3, ry: 6, rz: -4 }, [{ at: 6, run: () => cam.evaluate(`window.__shot.cast('Serious Deer', 14, 'whoops', { color: '#ff2bd6', seed: 77 })`) }]);
     /* 3: the Boss's post. */
     await stretch(boss.top - 40, { rx: 3, ry: 4, rz: 5 }, []);
     /* 4: the heap on post 1, built in a rush. */
-    await stretch(post1 - 14, { rx: -5, ry: -6, rz: -2 }, heap.map((s, k) => ({ at: 4 + 17 * k, run: () => pile(s) })));
+    await stretch((await cam.evaluate(`window.__lay.top('#post-1')`)) - 14, { rx: -5, ry: -6, rz: -2 }, heap.map((s, k) => ({ at: 4 + 17 * k, run: () => pile(s) })));
     /* 5: the settlement summary, opening on the glass (the story "Boards/12 Log", whose row is closed and opened again): a page of its own, so the stage is left. */
     landed.push({ what: 'cut', frame: r.f });
     await cam.evaluate(`location.href = ${JSON.stringify(`http://localhost:${flag('port', 4319)}/?fixture=boards&story=boards-12-log--open`)}`);

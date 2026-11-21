@@ -92,6 +92,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       landed: play.landed,
       /** Shows another screen of the stage in place, drawn afresh from what the fake holds now (no reload): \`show('profile:fangame')\`, \`show('index')\`, \`show('thread')\`. */
       show: (view) => window.__kbStage.show(view),
+      /** Puts another skin on the page in place, as the player's own preference: skin('midnight'). */
+      skin: (key) => window.__kbStage.skin(key),
       /** Starts the beats' clock: call it as the film starts, so \`landed\`'s frames count from the first frame. */
       zero: () => play.zero(),
     };

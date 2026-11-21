@@ -41,6 +41,8 @@ interface Stage extends Made {
   readonly camera: { readonly turn: typeof turnBoard; readonly level: typeof levelBoard };
   /** Shows another screen of the stage in place (`thread`, `thread:<key>`, `index`, `profile:<key>`), drawn afresh from what the fake holds now: a navigation without a reload, so what was played stays played. */
   readonly show: (view: string) => void;
+  /** Puts another skin on the page in place, as the player's own preference (`skin('midnight')`), for a stretch of a take that reads better in it. */
+  readonly skin: (key: string) => Promise<void>;
 }
 declare global { interface Window { __kbStage?: Stage } }
 
@@ -88,7 +90,7 @@ function Staged() {
   }, [api, ui, ready]);
   useEffect(() => {
     if (!made || !ready) return;
-    window.__kbStage = { ...made, fake: api as Fake, whoops: { packStroke, brushOf, BRUSH_PX }, play: playbook(api as Fake, instance, made), nodes, camera: { turn: turnBoard, level: levelBoard }, show: (view) => { setShown((s) => ({ view, epoch: s.epoch + 1 })); } };
+    window.__kbStage = { ...made, fake: api as Fake, whoops: { packStroke, brushOf, BRUSH_PX }, play: playbook(api as Fake, instance, made), nodes, camera: { turn: turnBoard, level: levelBoard }, show: (view) => { setShown((s) => ({ view, epoch: s.epoch + 1 })); }, skin: async (key) => { await api.setPreferences({ theme: key }); applyAppearance(document, await api.preferences(), ui.themes, ui.glass); const sheet = document.querySelector('link#kb-theme'); if (sheet) document.head.append(sheet); } };
     return () => { delete window.__kbStage; nodes.clear(); };
   }, [api, instance, ready]);
   if (!made || !ready) return <Frame><div aria-busy="true" /></Frame>;

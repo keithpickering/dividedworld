@@ -313,7 +313,12 @@ const n08 = () => take('c-n08', {
   async body(d) {
     /* Where each dressed post's effect is, so each can be seen to have drawn: the take throws for any of the five that did not (the film says they are dressed). */
     const EFFECTS = { 15: ['Hot Box', '.dw-hotbox-smoke'], 16: ['Glitter Bomb', '.dw-glitter-over'], 17: ["Feelin' Fab", '.dw-fab-foil'], 18: ['Graffiti', '.kb-graffiti-frame'], 19: ['Autocorrect', '.dw-ac-tape'] };
-    const drew = () => d.page(`Object.fromEntries(Object.entries(${JSON.stringify(EFFECTS)}).map(([seq, [, sel]]) => [seq, Boolean(document.querySelector('#post-' + seq + ' .kb-act-main ' + sel))]))`);
+    /* An effect is drawn while its post is near the viewport (the smoke is not kept for a post long scrolled past), so each is looked for while the page passes it: the posts in view now that wear theirs. */
+    const seenDrawn = {};
+    const sample = async () => {
+      const now = await d.page(`Object.fromEntries(Object.entries(${JSON.stringify(EFFECTS)}).map(([seq, [, sel]]) => { const r = document.querySelector('#post-' + seq).getBoundingClientRect(); return [seq, r.bottom > 0 && r.top < innerHeight && Boolean(document.querySelector('#post-' + seq + ' .kb-act-main ' + sel))]; }))`);
+      for (const [seq, on] of Object.entries(now)) if (on) seenDrawn[seq] = true;
+    };
     const y0 = await d.page(`scrollY`);
     const foot = await d.page(`document.documentElement.scrollHeight - innerHeight`);
     /* The scroll ends with post 19 (the taped-over words, the last dressed post) in frame, not on the empty reply box at the thread's foot: its top 100 px down the view, or the foot if that is nearer. */
@@ -329,6 +334,7 @@ const n08 = () => take('c-n08', {
     const started = [];
     d.mark('scroll');
     for (let i = 0; i <= n; i++) {
+      if (i % 8 === 0) await sample();
       /* Midway the pointer goes to a node that is in view (clear of the HUD), and follows it up the screen as the page moves. */
       await scrollTo();
       if (nodeId === null && i >= Math.round(n * 0.25)) {
@@ -355,9 +361,9 @@ const n08 = () => take('c-n08', {
     assert(started[0] === true && started[1] === false, `the node started and stopped by the two clicks: ${JSON.stringify(started)}`);
     const y1 = await d.page(`scrollY`);
     assert(Math.abs(y1 - yEnd) < 3, `the page scrolled itself to post 19 (${y1} of ${yEnd})`);
-    const fx = await drew();
-    console.log('c-n08: effects on the posts at the end', JSON.stringify(fx));
-    for (const [seq, [name]] of Object.entries(EFFECTS)) assert(fx[seq] === true, `post ${seq} drew its ${name}: ${JSON.stringify(fx)}`);
+    await sample();
+    console.log('c-n08: effects seen drawn on their posts as the page passed them', JSON.stringify(seenDrawn));
+    for (const [seq, [name]] of Object.entries(EFFECTS)) assert(seenDrawn[seq] === true, `post ${seq} drew its ${name} while in view: ${JSON.stringify(seenDrawn)}`);
     const seen = await d.page(`(() => { const r = document.querySelector('#post-19').getBoundingClientRect(); return Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) / r.height; })()`);
     assert(seen > 0.5, `post 19 is in frame at the end of the scroll (${(seen * 100).toFixed(0)}% of it)`);
     await d.shoot(0.5);
