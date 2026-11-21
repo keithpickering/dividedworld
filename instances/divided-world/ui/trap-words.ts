@@ -36,7 +36,7 @@ export function trapStruckWords(f: TrapStruckFacts): { readonly line: string; re
     /* Once an admin has ended the lockout, the voice says it was, in the past tense; the engine adds the time it was ended. */
     const until = f.until ? ` until ${f.until}` : '';
     return {
-      line: 'So very happy for you',
+      line: 'You should\'ve been nice...',
       detail: `Their face-down ${f.card ?? 'card'} sprang on your ${f.laid ?? 'Move'}. It landed as usual, and you ${f.ended ? 'were' : 'are'} locked out of this thread${until}.`,
     };
   }

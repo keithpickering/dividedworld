@@ -56,7 +56,7 @@ describe('the trapStruck voice', () => {
   test('a lockout back: the Move landed as usual and its player is locked out of the thread until the time it names, with the card named or "card" where unread', () => {
     const f = { how: 'lockedOut', setter: 'Pipewrench', card: 'SoVeryHappy', laid: 'Hype-Up', span: null, setterStaff: false, until: 'Nov 3 · 09:41 UTC' } as const;
     expect(trapStruckWords(f))
-      .toEqual({ line: 'So very happy for you', detail: 'Their face-down SoVeryHappy sprang on your Hype-Up. It landed as usual, and you are locked out of this thread until Nov 3 · 09:41 UTC.' });
+      .toEqual({ line: 'You should\'ve been nice...', detail: 'Their face-down SoVeryHappy sprang on your Hype-Up. It landed as usual, and you are locked out of this thread until Nov 3 · 09:41 UTC.' });
     expect(trapStruckWords({ ...f, card: null })!.detail).toBe('Their face-down card sprang on your Hype-Up. It landed as usual, and you are locked out of this thread until Nov 3 · 09:41 UTC.');
     expect(trapStruckWords({ ...f, laid: null })!.detail).toContain('sprang on your Move.');
     expect(trapStruckWords({ ...f, until: undefined })!.detail).toBe('Their face-down SoVeryHappy sprang on your Hype-Up. It landed as usual, and you are locked out of this thread.');
@@ -66,7 +66,7 @@ describe('the trapStruck voice', () => {
   test('a lockout back that an admin ended: the voice says the lockout was, past tense, until the time it named', () => {
     const f = { how: 'lockedOut', setter: 'Pipewrench', card: 'SoVeryHappy', laid: 'Hype-Up', span: null, setterStaff: false, until: 'Nov 3 · 09:41 UTC', ended: 'Nov 2 · 12:05 UTC' } as const;
     expect(trapStruckWords(f))
-      .toEqual({ line: 'So very happy for you', detail: 'Their face-down SoVeryHappy sprang on your Hype-Up. It landed as usual, and you were locked out of this thread until Nov 3 · 09:41 UTC.' });
+      .toEqual({ line: 'You should\'ve been nice...', detail: 'Their face-down SoVeryHappy sprang on your Hype-Up. It landed as usual, and you were locked out of this thread until Nov 3 · 09:41 UTC.' });
     expect(trapStruckWords({ ...f, until: undefined })!.detail).toBe('Their face-down SoVeryHappy sprang on your Hype-Up. It landed as usual, and you were locked out of this thread.');
   });
   test('a card handed back: the cast landed as usual and the card is back in its caster\'s hand, with the card named or "card" where unread', () => {
