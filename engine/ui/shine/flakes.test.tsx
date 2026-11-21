@@ -101,15 +101,19 @@ afterEach(() => {
 /** A sticky post at the left of the page, a plain one far to the right, and nothing between. */
 function page() {
   const flakes = makeFlakes({ seed: 'sticky', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+  /* Landed: a pickup takes real flakes (docs/plans/2026-11-21-glitter-hands-plan.md), so the post holds all of its own. */
+  landAll(flakes);
   const a = host(0, 0), b = host(2000, 0);
   let landed = 0;
   cling.register(a, { sticky: true, flakes });
   cling.register(b, { landed: () => landed++ });
-  return { a, b, landed: () => landed };
+  return { a, b, flakes, landed: () => landed };
 }
+/** Where the `i`th move of a sweep over a 300 px post goes: all over it, each move far from the last, so no one spot is swept bare. */
+const spread = (i: number): [number, number] => [10 + ((i * 37) % 280), 20 + ((i * 53) % 260)];
 /** Sweeps the pointer over the sticky post until it carries all it can. */
 function load() {
-  for (let i = 0; i < 400; i++) { cling.over(pointer('mouse', 10 + (i % 2) * 120, 100)); move(10 + (i % 2) * 120, 100); }
+  for (let i = 0; i < 400; i++) { const [x, y] = spread(i); cling.over(pointer('mouse', x, y)); move(x, y); }
 }
 /** Carries a load off the post onto the plain one, and steps time until all has landed. */
 function carryOver(x = 2100) {
@@ -209,16 +213,18 @@ describe('the cling layer', () => {
   it('a host that takes no pointer is picked up from and landed on through its hit, in the host\'s own px', () => {
     let surfaceMeasured = 0;
     const surfaceOn = (left: number, top: number): { body: HTMLElement; surface: HTMLElement } => {
+      const counts = left > 0;
       const body = host(left, top);
       const surface = document.createElement('div');
       for (const k of ['--kb-bg', ...POST_INK]) surface.style.setProperty(k, light[k]!);
       /* The body's padding box, inside its 2 px border. */
-      surface.getBoundingClientRect = () => (surfaceMeasured++, { left: left + 2, top: top + 2, right: left + 298, bottom: top + 298, width: 296, height: 296, x: left + 2, y: top + 2, toJSON() {} });
+      surface.getBoundingClientRect = () => (counts && surfaceMeasured++, { left: left + 2, top: top + 2, right: left + 298, bottom: top + 298, width: 296, height: 296, x: left + 2, y: top + 2, toJSON() {} });
       body.append(surface);
       return { body, surface };
     };
     const a = surfaceOn(0, 0), b = surfaceOn(2000, 0);
     const flakes = makeFlakes({ seed: 'sticky', box: { w: 296, h: 296 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    landAll(flakes);
     let landed = 0;
     cling.register(a.surface, { sticky: true, flakes, hit: a.body });
     cling.register(b.surface, { landed: () => landed++, hit: b.body });
@@ -268,10 +274,10 @@ describe('the cling layer', () => {
       body.append(el);
       return el;
     };
-    const mk = () => makeFlakes({ seed: 'sticky', box: { w: 296, h: 296 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    const mk = () => { const f = makeFlakes({ seed: 'sticky', box: { w: 296, h: 296 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT }); landAll(f); return f; };
     /** A pointer sweep over the page at x: how much of a host's glitter it picks up. */
     const sweepAt = (x: number): number => {
-      for (let i = 0; i < 400; i++) { const px = x + 10 + (i % 2) * 120; cling.over(pointer('mouse', px, 100)); move(px, 100); }
+      for (let i = 0; i < 400; i++) { const [dx, py] = spread(i); const px = x + dx; cling.over(pointer('mouse', px, py)); move(px, py); }
       return cling.carried();
     };
     /** Carries a load off a sticky post at the left and drops it at x, and steps time until all has landed. */
@@ -283,6 +289,8 @@ describe('the cling layer', () => {
       const flakes = mk();
       cling.register(s, { sticky: true, flakes, hit: x });
       cling.register(s, { sticky: true, flakes, hit: y });
+      /* The surface lies over its hit, now y: a pickup puts the pointer in the surface's px. */
+      s.getBoundingClientRect = () => y.getBoundingClientRect();
       expect(sweepAt(0)).toBe(0);
       expect(sweepAt(1000)).toBeGreaterThan(0);
     });
@@ -367,11 +375,12 @@ describe('the cling layer', () => {
 
   it('dropping a host frees its share of the 300 for the others', () => {
     const { b } = page();
-    for (let n = 0; n < 40; n++) carryOver();
+    /* Twelve loads of 26 fill the 300; a pickup takes real flakes, so the post has enough for two fills and no more than that is asked. */
+    for (let n = 0; n < 12; n++) carryOver();
     expect(loose(b)).toHaveLength(MAX_LOOSE);
     dropLoose(b);
     expect(loose(b)).toHaveLength(0);
-    for (let n = 0; n < 40; n++) carryOver();
+    for (let n = 0; n < 12; n++) carryOver();
     expect(loose(b)).toHaveLength(MAX_LOOSE);
     sweepLoose();
   });
@@ -414,11 +423,60 @@ describe('the cling layer', () => {
   });
 });
 
+describe('a pickup takes a real flake (docs/plans/2026-11-21-glitter-hands-plan.md, task 1)', () => {
+  beforeEach(() => { vi.stubGlobal('innerWidth', 8000); });
+
+  it('what is carried left the post: its settled count falls by as many', () => {
+    const { flakes } = page();
+    const n = flakes.settled.length;
+    load();
+    expect(cling.carried()).toBe(MAX_CARRIED);
+    expect(flakes.settled.length).toBe(n - MAX_CARRIED);
+  });
+
+  it('a spot swept bare lends nothing more', () => {
+    const { flakes } = page();
+    /* Take everything within reach of one spot, then sweep only there. */
+    for (let i = 0; i < 200; i++) { cling.over(pointer('mouse', 150 + (i % 2) * 2, 150)); move(150 + (i % 2) * 2, 150); }
+    const n = flakes.settled.length;
+    while (cling.carried()) { for (let i = 0; i < 50; i++) move(2100 + (i % 2) * 120, 100); for (let t = 0; t < 3000; t += 16) cling.tick(t); }
+    const before = flakes.settled.length;
+    expect(before).toBe(n);
+    for (let i = 0; i < 400; i++) { cling.over(pointer('mouse', 150 + (i % 2) * 50, 150)); move(150 + (i % 2) * 50, 150); }
+    const bare = flakes.settled.every((f) => Math.hypot(f.x - 150, f.y - 150) > 14 && Math.hypot(f.x - 200, f.y - 150) > 14);
+    expect(bare).toBe(true);
+    expect(before - flakes.settled.length).toBe(cling.carried());
+  });
+
+  it('a flake picked up starts on the layer where it lay on the post, then rides to the pointer', () => {
+    const small = makeFlakes({ seed: 'one', box: { w: 40, h: 40 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    landAll(small);
+    const left = 100, top = 50;
+    const el = host(left, top, 40, 40);
+    cling.register(el, { sticky: true, flakes: small });
+    const all = [...small.settled];
+    for (let i = 0; i < 50 && !cling.carried(); i++) { cling.over(pointer('mouse', left + 20 + (i % 2) * 2, top + 20)); move(left + 20 + (i % 2) * 2, top + 20); }
+    expect(cling.carried()).toBe(1);
+    const gone = all.find((f) => !small.settled.includes(f))!;
+    drawn.at.length = 0;
+    cling.tick(1000);
+    expect(drawn.at.some(([x, y]) => Math.abs(x - (left + gone.x)) < 0.01 && Math.abs(y - (top + gone.y)) < 0.01)).toBe(true);
+    for (let t = 1016; t < 2000; t += 16) cling.tick(t);
+    drawn.at.length = 0;
+    cling.tick(2000);
+    const [x, y] = drawn.at[drawn.at.length - 1]!;
+    const d = Math.hypot(x - (left + 22), y - (top + 20));
+    expect(d).toBeGreaterThan(4);
+    expect(d).toBeLessThan(26);
+  });
+});
+
 describe('what the layer asks the page', () => {
   beforeEach(() => { vi.stubGlobal('innerWidth', 8000); });
   /** A page of 20 posts, the first sticky. */
   function crowd() {
     const flakes = makeFlakes({ seed: 'crowd', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    landAll(flakes);
     const hs = Array.from({ length: 20 }, (_, i) => host(i * 400, 0));
     cling.register(hs[0]!, { sticky: true, flakes });
     for (const h of hs.slice(1)) cling.register(h, {});
@@ -434,10 +492,18 @@ describe('what the layer asks the page', () => {
     expect(early).toBeLessThanOrEqual(2);
   });
 
-  it('measures no post on a pointer move, however many are registered', () => {
-    crowd();
+  it('measures no post on a pointer move that picks nothing up, and only the post it takes from on one that does', () => {
+    const hs = crowd();
+    const picked = (): number => asked.rects;
+    let own = 0;
+    const was = hs[0]!.getBoundingClientRect;
+    hs[0]!.getBoundingClientRect = () => (own++, was());
     load();
     expect(cling.carried()).toBeGreaterThan(0);
+    /* Each pickup measured the post it took from, once; nothing else was measured. */
+    expect(picked()).toBe(own);
+    expect(own).toBeLessThanOrEqual(400);
+    asked.rects = 0;
     for (let i = 0; i < 400; i++) move(500 + (i % 2) * 120, 100);
     expect(asked.rects).toBe(0);
   });
@@ -798,7 +864,7 @@ describe('a fast scroll shakes glitter off', () => {
    sections 4 and 6). The host says so with `refuses`, the engine's `liftedOver` against its own hit. */
 describe('pickup through the live layer refuses a pointer over a lifted thing', () => {
   beforeEach(() => { vi.stubGlobal('innerWidth', 8000); });
-  const mk = (seed: string) => makeFlakes({ seed, box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+  const mk = (seed: string) => { const f = makeFlakes({ seed, box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT }); landAll(f); return f; };
   const refusing = (hit: HTMLElement) => (t: EventTarget | null) => liftedOver(t, hit);
   const div = (parent: HTMLElement, cls: string, lifted = false): HTMLElement => {
     const el = document.createElement('div');
@@ -811,8 +877,8 @@ describe('pickup through the live layer refuses a pointer over a lifted thing', 
   let flip = 0;
   const moveOver = (target: Element, n = 1): void => {
     for (let i = 0; i < n; i++) {
-      const x = 10 + (flip++ % 2) * 120;
-      const e = new MouseEvent('pointermove', { clientX: x, clientY: 100, bubbles: true });
+      const [x, y] = spread(flip++);
+      const e = new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true });
       Object.defineProperty(e, 'pointerType', { value: 'mouse' });
       Object.defineProperty(e, 'timeStamp', { value: (clock += 1) });
       Object.defineProperty(e, 'target', { value: target });
@@ -844,6 +910,7 @@ describe('pickup through the live layer refuses a pointer over a lifted thing', 
     /* One ink each, so what is drawn says whose flakes are carried. */
     const outerFlakes = makeFlakes({ seed: 'o', box: { w: 300, h: 300 }, inks: ['#2fd6ff'], holo: 0, density: 70, glint: GLINT });
     const innerFlakes = makeFlakes({ seed: 'i', box: { w: 300, h: 300 }, inks: ['#ff3b4a'], holo: 0, density: 70, glint: GLINT });
+    landAll(outerFlakes); landAll(innerFlakes);
     cling.register(outer, { sticky: true, flakes: outerFlakes, refuses: refusing(outer) });
     cling.register(area, { sticky: true, flakes: innerFlakes, refuses: refusing(area) });
     moveOver(innerWords, 400);

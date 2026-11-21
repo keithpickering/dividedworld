@@ -10,7 +10,8 @@
  *   back, never falling down the screen; docs/plans/2026-11-06-shine-design.md section 11). The host steps it with
  *   `stepBurst(flakes, now)` and paints it with `drawBurst(ctx, flakes, band, now)` on a second canvas over the words. Both return whether another frame is needed. At most `MAX_IN_FLIGHT` fly across the page; past that a
  *   burst lands its remainder at once. Under reduced motion there is no burst and every flake is placed at once.
- * - Cling: a mouse passing over a `sticky` registered host picks flakes up (at most 26), they ride the pointer, drop off over
+ * - Cling: a mouse passing over a `sticky` registered host, or a finger sliding over it, takes flakes off it (at most 26, the nearest
+ *   within `REACH_PICK` of the pointer, so a sweep clears a path: `take`), they ride the pointer, drop off over
  *   anything else, fly briefly and land on whichever registered host is under them after their hang. A host that takes no pointer names the element
  *   the pointer is over instead (`hit`), and is still where its flakes land, in its own px. Loose glitter is `loose(host)`, 300 across
  *   the page, oldest first, the reader's own and never saved. One page-fixed canvas draws the flakes in the air; it is made on
@@ -101,6 +102,12 @@ export interface FlakesOptions {
   readonly glint: string;
   /** The four-point flare drawn over the brightest flakes; by default one is made on first use, when a canvas can be made. */
   readonly star?: CanvasImageSource | null;
+  /**
+   * The places (`x,y`) of the flakes picked up from this post during its host's mount: `take` adds to it, and a flakes object built
+   * with it leaves those flakes out, so a post rebuilt from its seed on its return to view shows its gaps
+   * (docs/plans/2026-11-21-glitter-hands-plan.md). The host keeps one set a mount.
+   */
+  readonly taken?: Set<string>;
 }
 
 export interface Flakes {
@@ -150,6 +157,9 @@ interface Inner extends Flakes {
   last: number | null;
   star: CanvasImageSource | null | undefined;
   rng: () => number;
+  /** The mount's taken set, if the host keeps one, and how many flakes were taken from this object (the base key counts them). */
+  taken: Set<string> | undefined;
+  takes: number;
   /** The base layer's colors, one a settled flake, for the band and settled count in `key`; and where each flake sits, by bucket. */
   base: { key: string; names: string[]; start: Int32Array; items: Int32Array; cols: number; rows: number } | null;
   /** What `drawLit` left on its canvas: the context and size, and the square each flake it drew covers (device px, x0 y0 x1 y1). */
@@ -234,12 +244,15 @@ export function makeFlakes(opts: FlakesOptions): Flakes {
     all.push(flake(r, x, y, pal));
   }
   const keep = Math.round(all.length * SHOWN_BEFORE);
+  /* What was taken is left out after the split, so the 15% shown before the burst are the same flakes, less the gaps. */
+  const gone = opts.taken, here = (f: Flake): boolean => !gone?.has(placeOf(f));
   const self: Inner = {
     box: opts.box, palette: pal, origin, total: all.length,
-    settled: all.slice(0, keep), rest: all.slice(keep),
+    settled: gone?.size ? all.slice(0, keep).filter(here) : all.slice(0, keep), rest: gone?.size ? all.slice(keep).filter(here) : all.slice(keep),
     fired: false, flying: 0, parts: [], puff: null, last: null, star: opts.star, rng: seededRng(`${opts.seed}:burst`), base: null, shown: null,
+    taken: gone, takes: 0,
     draw: (ctx, light, band, now, idle, density = 1) => drawList(ctx, self.settled, light, band, now, idle, starOf(self), density),
-    baseKey: (band) => `${band.board}:${band.bright ? 'bright' : 'standard'}:${band.lo}:${band.hi}:${self.settled.length}`,
+    baseKey: (band) => `${band.board}:${band.bright ? 'bright' : 'standard'}:${band.lo}:${band.hi}:${self.settled.length}:${self.takes}`,
     drawBase: (ctx, band, density = 1) => {
       baseOf(self, band);
       drawList(ctx, self.settled, REST_LIGHT, band, 0, false, null, density, null, true);
@@ -247,6 +260,33 @@ export function makeFlakes(opts: FlakesOptions): Flakes {
     drawLit: (ctx, light, band, now, idle, density = 1, span = null) => drawLit(self, ctx, light, band, now, idle, density, span),
   };
   return self;
+}
+
+/** A flake's place, the key the taken set holds: the same seed puts the same flake at the same place on every build. */
+const placeOf = (f: Flake): string => `${f.x},${f.y}`;
+
+/**
+ * Takes the settled flake nearest `x, y` (the post's px) within `r` px out of the post and returns it, or null where none lies that
+ * close: a pickup that really lifts glitter, so a sweep clears a path and an emptied spot lends nothing
+ * (docs/plans/2026-11-21-glitter-hands-plan.md). The flake is noted in the mount's taken set; the base layer's key changes.
+ */
+export function take(flakes: Flakes, x: number, y: number, r: number): Flake | null {
+  const f = flakes as Inner, list = f.settled;
+  let at = -1, best = r * r;
+  for (let i = 0; i < list.length; i++) {
+    const fl = list[i]!, dx = fl.x - x, dy = fl.y - y;
+    if (Math.abs(dx) > r || Math.abs(dy) > r) continue;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= best) { best = d2; at = i; }
+  }
+  if (at < 0) return null;
+  const fl = list[at]!;
+  /* Order does not matter to the field: the last one takes its slot. */
+  list[at] = list[list.length - 1]!;
+  list.pop();
+  f.takes++;
+  f.taken?.add(placeOf(fl));
+  return fl;
 }
 
 const starOf = (f: Inner): CanvasImageSource | null => (f.star === undefined ? (f.star = starSprite(f.palette)) : f.star);
@@ -983,7 +1023,9 @@ export interface ClingOptions {
 /* The cling layer is page-fixed and has no host of its own, so each flake keeps the band of the host it was picked up from
    (`bandFor` on that host's element at pickup): that is the board whose post inks it was lent against, and the layer is only
    ever drawn over registered hosts' boards. The page's root would be wrong the day a card themes a board of its own. */
-interface Carried { f: Flake; ox: number; oy: number; ph: number; band: Band }
+/* `ox, oy` is where it is from the pointer now and `tx, ty` where it rides: a flake taken off a post starts where it lay and eases to its
+   place by the pointer (docs/plans/2026-11-21-glitter-hands-plan.md). */
+interface Carried { f: Flake; ox: number; oy: number; tx: number; ty: number; ph: number; band: Band }
 /* A flake in the air (docs/plans/2026-11-11-shake-design.md section 3): `vx, vy` in px a second, `ph` its turn, `spin` how fast it
    turns, `age` the seconds since it left and `hang` the seconds before it may land. It is drawn at full alpha always. */
 interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; ph: number; spin: number; age: number; hang: number; next: number; band: Band }
@@ -1132,27 +1174,47 @@ function onMove(e: PointerEvent): void {
   mouse = { x: e.clientX, y: e.clientY, speed: moved, t: e.timeStamp };
   const host = hostOf(e.target);
   const opts = host ? hosts.get(host) : undefined;
-  if (opts?.sticky && opts.flakes) {
-    /* The roll comes first, so the host's refusal is asked only of a move that would pick up: a refusal can cost a walk up the document. */
-    if (carried.length < MAX_CARRIED && cr() < Math.min(0.6, moved / 40) && !opts.refuses?.(e.target)) {
-      /* A board whose band cannot be computed gets no glitter lent from it: nothing is drawn that has no band to hold. */
-      const band = bandAt(host!, e.timeStamp);
-      if (band) {
-        ensure();
-        const a = cr() * Math.PI * 2, d = 4 + cr() * 14;
-        carried.push({ f: flake(cr, 0, 0, opts.flakes.palette), ox: Math.cos(a) * d + 6, oy: Math.sin(a) * d + 10, ph: cr() * 6, band });
-      }
-    }
-  } else {
-    for (let i = carried.length - 1; i >= 0; i--) {
-      if (cr() < moved * 0.006) {
-        const c = carried.splice(i, 1)[0]!;
-        /* The cursor's numbers: up to 20 px a second sideways, 30 to 80 down, a hang of 0.15 to 0.5 s. */
-        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vx: (cr() - 0.5) * 40, vy: 30 + cr() * 50, ph: c.ph, spin: 6 + cr() * 10, age: 0, hang: 0.15 + cr() * 0.35, next: 0, band: c.band });
-      }
+  if (opts?.sticky && opts.flakes) pickUp(host!, opts, e.clientX, e.clientY, moved, e.target, e.timeStamp, false);
+  else dropOff(e.clientX, e.clientY, moved);
+  if ((carried.length || falling.length) && !frame) frame = requestAnimationFrame(loop);
+}
+
+/**
+ * How far from the pointer, in px, a pickup reaches for a settled flake: the nearest within it is taken off the post, and a pointer
+ * over a spot with none that close lifts nothing.
+ */
+export const REACH_PICK = 14;
+/** How quickly a flake taken off a post eases to its place by the pointer: the share left after a second is e^-PICK_EASE. */
+const PICK_EASE = 14;
+
+/**
+ * A move of `moved` px over a sticky host may pick a flake up: the roll, then the host's refusal (it can cost a walk up the document, so
+ * it is asked only of a move that would pick up), then the one measure a pickup costs, the host's box, to put the pointer in its px.
+ * The settled flake nearest the pointer within `REACH_PICK` is taken off the post (`take`) and starts where it lay. A finger's flakes
+ * ride in a ring outside its contact (`ring`), a mouse's below and right of the arrow's tip.
+ */
+function pickUp(host: HTMLElement, opts: ClingOptions, x: number, y: number, moved: number, target: EventTarget | null, t: number, ring: boolean): void {
+  if (carried.length >= MAX_CARRIED || !(cr() < Math.min(0.6, moved / 40)) || opts.refuses?.(target)) return;
+  /* A board whose band cannot be computed gets no glitter lent from it: nothing is drawn that has no band to hold. */
+  const band = bandAt(host, t);
+  if (!band) return;
+  const r = host.getBoundingClientRect();
+  const f = take(opts.flakes!, x - r.left, y - r.top, REACH_PICK);
+  if (!f) return;
+  ensure();
+  const a = cr() * Math.PI * 2, d = ring ? 12 + cr() * 12 : 4 + cr() * 14;
+  carried.push({ f: { ...f }, ox: r.left + f.x - x, oy: r.top + f.y - y, tx: Math.cos(a) * d + (ring ? 0 : 6), ty: Math.sin(a) * d + (ring ? 0 : 10), ph: f.rot * 6, band });
+}
+
+/** Off a sticky host, carried flakes drop off the pointer at `x, y` at a chance per px moved, and fall as a cursor's do. */
+function dropOff(x: number, y: number, moved: number): void {
+  for (let i = carried.length - 1; i >= 0; i--) {
+    if (cr() < moved * 0.006) {
+      const c = carried.splice(i, 1)[0]!;
+      /* The cursor's numbers: up to 20 px a second sideways, 30 to 80 down, a hang of 0.15 to 0.5 s. */
+      falling.push({ f: c.f, x: x + c.ox, y: y + c.oy, vx: (cr() - 0.5) * 40, vy: 30 + cr() * 50, ph: c.ph, spin: 6 + cr() * 10, age: 0, hang: 0.15 + cr() * 0.35, next: 0, band: c.band });
     }
   }
-  if ((carried.length || falling.length) && !frame) frame = requestAnimationFrame(loop);
 }
 
 /* ---------------------------------------------------------------- shake ---- */
@@ -1161,8 +1223,8 @@ function onMove(e: PointerEvent): void {
  * A scroll this fast (CSS px a second) shakes glitter off the posts on screen: the touch reader's way to move it, where a mouse
  * picks it up. What is shaken off flies on the page-fixed layer, thrown the way the page was moving, so it leaves the post's box,
  * tumbles through air drag, settles and lands on whichever registered host is under it after its hang, or leaves the screen: it
- * never fades. As a mouse's pickup does, it takes a copy of a flake on screen (its ink, size and turn, where it lies) and leaves the
- * post as it was: taking the flake itself would repaint the post's whole base layer on every frame of a fast scroll, the most
+ * never fades. Unlike a pointer's pickup, which takes the flake itself, it takes a copy of a flake on screen (its ink, size and turn,
+ * where it lies) and leaves the post as it was: taking the flake itself would repaint the post's whole base layer on every frame of a fast scroll, the most
  * expensive time to (e2e/shine.spec.ts's raster share went from 0.67 to 8.5 of the posts in view).
  */
 export const SHAKE_SPEED = 2200;
@@ -1396,7 +1458,12 @@ export const cling = {
     clearDirty(ctx);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     if (mouse) {
-      for (const c of carried) { c.ph += dt * (2 + mouse.speed * 0.4); paint(ctx, c.f, mouse.x + c.ox, mouse.y + c.oy, c.ph, 1, c.band, ratio); }
+      const ease = 1 - Math.exp(-PICK_EASE * dt);
+      for (const c of carried) {
+        c.ox += (c.tx - c.ox) * ease; c.oy += (c.ty - c.oy) * ease;
+        c.ph += dt * (2 + mouse.speed * 0.4);
+        paint(ctx, c.f, mouse.x + c.ox, mouse.y + c.oy, c.ph, 1, c.band, ratio);
+      }
       mouse.speed *= Math.exp(-dt * 8);
     }
     const vw = innerWidth, vh = innerHeight;

@@ -51,8 +51,20 @@ const move = (x: number, y: number) => window.dispatchEvent(pointer('mouse', x, 
 
 /** A sticky host far off the screen that lends flakes, so a drop can be aimed. */
 let source: HTMLElement;
+let lent: Flakes;
+let swept = 0;
+/* A pickup takes real flakes off the source (docs/plans/2026-11-21-glitter-hands-plan.md), so the sweep moves all over it and a source
+   running low is given a fresh, landed field. */
 function lend(): void {
-  for (let i = 0; i < 400; i++) { cling.over(pointer('mouse', 5010 + (i % 2) * 120, 100)); move(5010 + (i % 2) * 120, 100); }
+  if (lent.settled.length < 200) {
+    lent = makeFlakes({ seed: `lend${swept}`, box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    landAll(lent);
+    cling.register(source, { sticky: true, flakes: lent });
+  }
+  for (let i = 0; i < 400; i++) {
+    const n = swept++, x = 5010 + ((n * 37) % 280), y = 20 + ((n * 53) % 260);
+    cling.over(pointer('mouse', x, y)); move(x, y);
+  }
 }
 /** Picks up 26 and drops them in one move at (x, y): a move this far lets go of all of them. */
 function drop(x: number, y: number): void {
@@ -142,6 +154,7 @@ beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = (function (this: HTMLCanvasElement) { return fakeCtx(this); }) as never;
   const flakes: Flakes = makeFlakes({ seed: 'lend', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
   landAll(flakes);
+  lent = flakes;
   source = box(5000, 0, 300, 300);
   cling.register(source, { sticky: true, flakes });
 });
