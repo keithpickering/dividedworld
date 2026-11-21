@@ -254,11 +254,13 @@ describe('a post\'s history version nests the same way', () => {
 
 describe('a play is handed how many casts name it (the refund outcome)', () => {
   test('an Effect on a post with a sign play and two casts naming it is given the sign\'s play with handedOut: 2', () => {
-    const seen: (number | undefined)[] = [];
-    const Spy = ({ plays, children }: EffectProps): ReactNode => { for (const p of plays) seen.push(p.handedOut); return <>{children}</>; };
+    const seen = new Map<string, number | undefined>();
+    const Spy = ({ plays, children }: EffectProps): ReactNode => { for (const p of plays) seen.set(p.id, p.handedOut); return <>{children}</>; };
     const named = (id: string, n: number): Act => ({ ...play('two', n), id, payload: { card: 'two', message: '', config: {}, layer: n, handedBack: { by: 'play-one', card: 'one' } } });
-    drawn([ui('one', { Effect: Spy }), ui('two')], ['one', named('cast-a', 2), named('cast-b', 3)]);
-    expect(seen.at(-1)).toBe(2);
+    drawn([ui('one', { Effect: Spy }), ui('two', { Effect: Spy })], ['one', named('cast-a', 2), named('cast-b', 3)]);
+    expect(seen.get('play-one')).toBe(2);
+    expect(seen.get('cast-a')).toBeUndefined();
+    expect(seen.get('cast-b')).toBeUndefined();
   });
 });
 
