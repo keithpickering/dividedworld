@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardPlay, EffectProps } from '../../../../../engine/ui/cards/types.ts';
+import { playOf, withHandedOut } from '../../../../../engine/ui/cards/plays.ts';
 import { NO_INK } from '../../../../../engine/ui/cards/claims.ts';
 import type { Act } from '../../../../../engine/ui/data/api.ts';
 import { createFake } from '../../../../../engine/ui/data/fake.ts';
@@ -96,6 +97,28 @@ describe('Kick Me\'s sign', () => {
     act(() => setPlays([play({ ends: PAST })]));
     expect(sign()).toBeNull();
     expect(area().style.paddingTop).toBe('');
+  });
+
+  test('a sign that stays mounted scuffs a print as each card is handed back, live', () => {
+    mount();
+    expect(scuffed()).toHaveLength(0);
+    act(() => setPlays([play({ handedOut: 2 })]));
+    expect(scuffed()).toHaveLength(2);
+    expect(sign()!.getAttribute('aria-label')).toBe('Kick Me sign: 1 of 3 Salty cards still go back to their casters');
+  });
+
+  test('an inline paddingTop the area already had comes back when the sign goes, by the play ending or by unmounting', () => {
+    const { unmount } = mount({ plays: [play({ ends: PAST })] });
+    const a = area();
+    a.style.paddingTop = '5px';
+    act(() => setPlays([play()]));
+    expect(a.style.paddingTop).toBe('32px');
+    act(() => setPlays([play({ ends: PAST })]));
+    expect(a.style.paddingTop).toBe('5px');
+    act(() => setPlays([play()]));
+    expect(a.style.paddingTop).toBe('32px');
+    unmount();
+    expect(a.style.paddingTop).toBe('5px');
   });
 
   test('a wide area caps the sign at 160 px, so its half-height is 36 px', () => {
@@ -200,6 +223,9 @@ describe('Kick Me hands the first three Salty cards back, end to end on the fake
     expect(handed).toEqual([1, 2, 3].map(() => ({ by: sign.id, card: 'kick-me' })));
     const used = (await fake.cardsOn(opener, 12)).filter((a) => (a.payload.handedBack as { by?: string } | undefined)?.by === sign.id);
     expect(used).toHaveLength(3);
+    /* The sign's own play, as the screens build it from the post's Acts (there is no helper that reads a post's plays off the fake), carries the count that scuffs its prints. */
+    const plays = withHandedOut((await fake.cardsOn(opener, 12)).flatMap((a) => playOf(a) ?? []));
+    expect(plays.find((p) => p.id === sign.id)?.handedOut).toBe(3);
     const fourthBefore = await balance(fake);
     const fourth = must(await fake.playCard('hot-box', boFace, opener, ink, ''));
     expect(fourth.payload.handedBack).toBeUndefined();

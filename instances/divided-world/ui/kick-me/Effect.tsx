@@ -12,6 +12,8 @@
  * fits a phone. While it is up the area's top padding grows by half the sign's height (the area's own padding and the inline growth, put back when the
  * sign goes), so no word sits under it; the sign's tilt reaches a few px past that, into the padding the area already has.
  *
+ * The sign assumes it is the only effect writing the area's inline paddingTop while it is up: it puts back what the area had when it goes.
+ *
  * Nothing in it is pressable and it covers nothing pressable: the layer takes no press (kick-me.css) and holds no control. The sign is a picture
  * with a label that says how many kicks are left; the prints are decoration inside it. The count of scuffed prints is public (what a cast's
  * flavor and caster already show), so the effect reads nothing about who is looking.
@@ -116,22 +118,24 @@ function Taped({ handedOut, met, children }: EffectProps & { handedOut: number }
   useLayoutEffect(() => {
     const el = host.current!, lay = layer.current!;
     let area: HTMLElement = bodyOf(el) ?? el;
-    const before = area.style.paddingTop;
-    el.toggleAttribute('data-kb-bleed', area !== el);
+    /* Each area's own inline paddingTop, taken the first time the sign meets it (never again: it would then be the sign's own growth), and put back when the sign leaves it. */
+    const own = new Map<HTMLElement, string>();
+    const meet = (a: HTMLElement): void => { if (!own.has(a)) own.set(a, a.style.paddingTop); };
+    meet(area);
     const fit = (): void => {
       const next = bodyOf(el) ?? el;
-      if (next !== area) { area.style.paddingTop = before; area = next; }
-      /* Put the area's own padding back first, so what is read is that and not the sign's growth, which a narrower screen would otherwise stack. */
-      area.style.paddingTop = '';
-      const own = Number.parseFloat(getComputedStyle(area).paddingTop) || 0;
-      area.style.paddingTop = `${Math.round((own + signHeight(area.clientWidth) / 2) * 100) / 100}px`;
+      if (next !== area) { area.style.paddingTop = own.get(area) ?? ''; area = next; meet(area); }
+      /* Put the area's own padding back first (an inline one it had, else the sheet's), so what is read is that and not the sign's growth, which a narrower screen would otherwise stack. */
+      area.style.paddingTop = own.get(area) ?? '';
+      const base = Number.parseFloat(getComputedStyle(area).paddingTop) || 0;
+      area.style.paddingTop = `${Math.round((base + signHeight(area.clientWidth) / 2) * 100) / 100}px`;
       placeLayer(lay, bodyBox(el, area === el ? null : area));
     };
     fit();
     const size = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
     size?.observe(area);
     if (area !== el) size?.observe(el);
-    return () => { size?.disconnect(); area.style.paddingTop = before; el.removeAttribute('data-kb-bleed'); };
+    return () => { size?.disconnect(); for (const [a, was] of own) a.style.paddingTop = was; };
   }, []);
 
   return (
