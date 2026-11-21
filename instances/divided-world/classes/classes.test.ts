@@ -4,6 +4,7 @@
  * how Acts reach a class run the whole settlement.
  */
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { face } from './face.ts';
 import { heel } from './heel.ts';
@@ -87,7 +88,12 @@ test('Face is unmoved by the quadrants it does not read', () => {
 
 /* ---- Heel ---- */
 test('Heel earns from excited-negative reactions (heat) on its own posts and cards', () => {
-  assert.equal(total(heel, input({ received: [got('excitedNegative'), got('excitedNegative', 1, 'card', 'k1')] })), 20);
+  assert.equal(total(heel, input({ received: [got('excitedNegative'), got('excitedNegative', 1, 'card', 'k1')] })), 40, 'two votes of heat, each paying two votes\' worth');
+});
+test('a Heel\'s heat pays double and its shrug costs one: one heat and one calm vote net 2 * vote - vote', () => {
+  assert.equal(total(heel, input({ received: [got('excitedNegative'), got('calmPositive')] })), 2 * settings.vote - settings.vote);
+  const tuned = withOverrides(settings, { economy: { 'heel.heatVotes': 1.5 } });
+  assert.equal(heel.earn(input({ received: [got('excitedNegative')] }), tuned).find((e) => e.reason === 'heel.drewHeat')?.amount, 15);
 });
 test('Heel earns from a Salty card that outdraws the post it landed on', () => {
   assert.equal(total(heel, input({ cardsPlayed: [card({ votes: 3, targetVotes: 1 })] })), 20);
@@ -111,7 +117,7 @@ const held = (over: Partial<HeldVote>): HeldVote => ({ act: 'p1', quadrant: 'exc
 test('Lurker earns from reacting early in the direction a post ends up, once three other players have reacted', () => {
   assert.equal(total(lurker, input({ held: [held({ rank: 3 })] })), 10, 'third to react is early');
   assert.equal(total(lurker, input({ held: [held({ rank: 4 })] })), 0, 'fourth is not');
-  assert.equal(total(lurker, input({ held: [held({ endsUp: 'boredNegative' })] })), 0, 'the wrong direction pays nothing');
+  assert.equal(total(lurker, input({ held: [held({ endsUp: 'boredNegative' })] }), 'lurker.calledIt'), 0, 'the wrong direction pays nothing');
   assert.equal(total(lurker, input({ held: [held({ endsUp: null })] })), 0, 'a post with no direction pays nothing');
   assert.equal(total(lurker, input({ held: [held({ othersBefore: 1, othersNow: 2 })] })), 0, 'two other players are not yet a crowd');
   assert.equal(total(lurker, input({ held: [held({ othersBefore: 3, othersNow: 4 })] })), 0, 'a call is paid once, in the window its crowd arrives');
@@ -136,7 +142,29 @@ test('an override of the Lurker\'s call changes what a call pays, and the class 
 
 test('Lurker\'s early call is paid by its share, so hedging across quadrants pays a part', () => {
   const hedged = [held({ share: 1 / 3 }), held({ quadrant: 'boredNegative', share: 1 / 3 }), held({ quadrant: 'calmPositive', share: 1 / 3 })];
-  assert.ok(Math.abs(total(lurker, input({ held: hedged })) - 10 / 3) < 1e-9);
+  assert.ok(Math.abs(total(lurker, input({ held: hedged }), 'lurker.calledIt') - 10 / 3) < 1e-9);
+});
+test('Lurker\'s early call in another quadrant than where the post ends up costs what a right one pays', () => {
+  assert.equal(total(lurker, input({ held: [held({ endsUp: 'boredNegative' })] }), 'lurker.misread'), -10, 'a miss costs a hit\'s pay');
+  assert.equal(total(lurker, input({ held: [held({ endsUp: 'excitedPositive' })] }), 'lurker.misread'), 0, 'a hit costs nothing');
+  assert.equal(total(lurker, input({ held: [held({ endsUp: 'boredNegative', share: 0.5 })] })), -5, 'a miss is by its share');
+  const [e] = lurker.earn(input({ held: [held({ endsUp: 'boredNegative' })] }), settings);
+  assert.equal(e?.reason, 'lurker.misread');
+  assert.equal(e?.votes, undefined, 'not a reaction the character received, so no cushion reads it');
+});
+test('a post that ties costs the Lurker nothing', () => {
+  assert.equal(total(lurker, input({ held: [held({ endsUp: null })] })), 0);
+});
+test('a vote split over three quadrants, one of them right, nets minus a third of the early match', () => {
+  const split = [held({ share: 1 / 3 }), held({ quadrant: 'boredNegative', share: 1 / 3 }), held({ quadrant: 'calmPositive', share: 1 / 3 })];
+  assert.ok(Math.abs(total(lurker, input({ held: split })) - (-10 / 3)) < 1e-9);
+});
+test('a miss before the crowd arrives costs nothing yet, and costs in the window it arrives', () => {
+  const miss = { endsUp: 'boredNegative' as const };
+  assert.equal(total(lurker, input({ held: [held({ ...miss, othersBefore: 1, othersNow: 2 })] })), 0, 'two other players are not yet a crowd');
+  assert.equal(total(lurker, input({ held: [held({ ...miss, othersBefore: 2, othersNow: 3 })] })), -10, 'the window the crowd arrives');
+  assert.equal(total(lurker, input({ held: [held({ ...miss, othersBefore: 3, othersNow: 4 })] })), 0, 'and not again');
+  assert.equal(total(lurker, input({ held: [held({ ...miss, rank: 4 })] })), 0, 'a late vote is no early call');
 });
 const spin = (over: Partial<SpunThread>): SpunThread => ({ act: 's1', thread: 't', at: 10, fromOthers: true, repliersBefore: 0, repliersNow: 3, ...over });
 test('Lurker earns from a thread it spins from another\'s Act once three other players reply, in the window that happens', () => {
@@ -159,7 +187,12 @@ test('Lurker\'s weakness: each post beyond three in a window', () => {
 /* ---- Jabroni ---- */
 const landed = (alignment: 'sweet' | 'salty' | 'pepperoni', readsAs = alignment): LandedCard => ({ act: 'k1', card: 'x', alignment, readsAs, at: 5, on: 'p1' });
 test('Jabroni earns from bored-negative reactions (the groan) on its own posts and cards', () => {
-  assert.equal(total(jabroni, input({ received: [got('boredNegative'), got('boredNegative', 0.5, 'card', 'k1')] })), 15);
+  assert.equal(total(jabroni, input({ received: [got('boredNegative'), got('boredNegative', 0.5, 'card', 'k1')] })), 30, 'a vote and a half of groan, each paying two votes\' worth');
+});
+test('a Jabroni\'s groan pays double and being taken sincerely costs one: one groan and one hype vote net 2 * vote - vote', () => {
+  assert.equal(total(jabroni, input({ received: [got('boredNegative'), got('excitedPositive')] })), 2 * settings.vote - settings.vote);
+  const tuned = withOverrides(settings, { economy: { 'jabroni.groanVotes': 1.5 } });
+  assert.equal(jabroni.earn(input({ received: [got('boredNegative')] }), tuned).find((e) => e.reason === 'jabroni.drewTheGroan')?.amount, 15);
 });
 test('Jabroni earns from Salty cards landing on its posts (selling the L)', () => {
   assert.equal(total(jabroni, input({ cardsLanded: [landed('salty'), landed('salty')] })), 40);
@@ -202,7 +235,7 @@ test('a calm vote withdrawn from an old post takes the bonus back; from a young 
 });
 test('Evergreen names the Act, the quadrant and the reaction\'s time, for the log and the estimate', () => {
   const e = technician.earn(input({ received: [calmAged(4 * DAY)] }), settings).find((x) => x.reason === 'technician.evergreen');
-  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10, kind: 'reaction', votes: 1 });
+  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10, kind: 'reaction', votes: 1, fromReactions: true });
 });
 test('an override of the Technician\'s numbers changes the age and the amount', () => {
   const sooner = withOverrides(settings, { economy: { 'technician.evergreenDays': 1 } });
@@ -250,7 +283,7 @@ const sum = (s: ReturnType<typeof settle>, character: string) => s.entries.filte
 test('reactions to a card count for the card\'s player, under their class', () => {
   const r = settle(board(), world);
   assert.equal(sum(r, 'lu'), 20, 'the Lurker: two votes on its card; its tomato on p1, alone there, calls nothing');
-  assert.equal(sum(r, 'he'), 10, 'the Heel: heat from the Lurker\'s tomato, nothing from the card\'s reactions');
+  assert.equal(sum(r, 'he'), 20, 'the Heel: heat from the Lurker\'s tomato, paid two votes\' worth, nothing from the card\'s reactions');
 });
 
 /* A Lurker's call needs a crowd (the plan's Task E; the owner's answer 15, on #4). */
@@ -305,6 +338,22 @@ test('a hedged call is paid its exact share: a third of 7.5 is 2.5, which rounds
   assert.equal(called(settle(crowd(hedged), tuned)), 3);
 });
 
+test('a wrong early call costs in the window the crowd arrives, and a Thick Skin up on the Lurker gives nothing back', () => {
+  const lost = (s: ReturnType<typeof settle>) => s.entries.filter((e) => e.character === 'lu' && e.reason === 'lurker.misread').reduce((t, e) => t + e.amount, 0);
+  const day1 = [by('lu', 'fire', H), by('o1', 'facepalm', 2 * H), by('o2', 'facepalm', 3 * H)];
+  const w1 = settle(crowd(day1), world);
+  assert.equal(lost(w1), 0, 'two other players are not yet a crowd');
+  const day2 = [...day1, by('o3', 'facepalm', 25 * H)];
+  const w2 = settle(crowd(day2, D2, upTo(w1)), world);
+  assert.equal(lost(w2), -10, 'the third arrives: the post leans bored-negative without the Lurker');
+  const cushion = { ...world.cards[0]!, key: 'thick', reaches: ['character'] as const, gimmick: { kind: 'cushion' as const, share: 1 } };
+  const withCushion = { ...world, cards: [...world.cards, cushion] };
+  const up = { id: 'c1', character: 'lu', kind: 'card' as const, at: 24 * H + 1, thread: 't', card: 'thick', reach: 'character' as const, on: 'lu', ends: 40 * H };
+  const input2 = crowd(day2, D2, upTo(w1));
+  const w2c = settle({ ...input2, acts: [...input2.acts, up] }, withCushion);
+  assert.equal(lost(w2c), -10, 'the miss is whole under a cushion');
+  assert.equal(w2c.entries.filter((e) => e.reason === 'card.cushion').length, 0, 'nothing given back');
+});
 test('a Lurker reacting first to sixty fresh posts earns nothing from them alone', () => {
   const sixty = Array.from({ length: 60 }, (_, i) => by('lu', 'fire', 2 * H + i, `p${i + 1}`));
   assert.deepEqual(settle(crowd(sixty), world).entries.filter((e) => e.character === 'lu'), []);
@@ -342,7 +391,7 @@ test('reactions to a card count for the card\'s player under whichever class the
   assert.deepEqual(asHeel.entries.filter((e) => e.character === 'lu').map((e) => [e.reason, e.amount]), [['heel.stoleThunder', 20]]);
   const b = board('heel');
   const heated: SettlementInput = { ...b, reactions: [...b.reactions, { act: 'k1', player: 'pf', character: 'fa', kind: 'tomato', at: 5 * H }] };
-  assert.equal(sum(settle(heated, world), 'lu'), 25, 'and the Face\'s player\'s tomato on the card is half their vote, of heat');
+  assert.equal(sum(settle(heated, world), 'lu'), 30, 'and the Face\'s player\'s tomato on the card is half their vote, of heat, paid two votes\' worth');
 });
 
 test('a Lurker\'s spun thread is not a post', () => {
@@ -995,4 +1044,76 @@ test('an earning carries its reaction\'s votes signed, so a vote that moved away
       for (const e of paid) assert.equal(e.votes, votesOf.get(e.act!), `${reason} on ${e.act} carries the reaction's signed votes`);
     }
   }
+});
+
+test('a Face\'s lifts in a window halve in the order played: 2v, v, v/2; a dud Fab between them does not halve the next', () => {
+  const v = settings.vote;
+  const fab = (act: string, at: number, hype: number) => card({ act, at, alignment: 'sweet', targetAfter: { ...none, excitedPositive: hype } });
+  const lifts = (cards: PlayedCard[]) => face.earn(input({ cardsPlayed: cards }), settings).filter((e) => e.reason === 'face.liftedAPost').map((e) => [e.act, e.amount]);
+  assert.deepEqual(lifts([fab('k3', 30, 2), fab('k1', 10, 2), fab('k2', 20, 2)]), [['k1', 2 * v], ['k2', v], ['k3', v / 2]]);
+  assert.deepEqual(lifts([fab('k1', 10, 2), fab('k2', 20, 0), fab('k3', 30, 2)]), [['k1', 2 * v], ['k3', v]]);
+  assert.equal(total(face, input({ cardsPlayed: [fab('k1', 10, 2)], from: 0, to: 50 }), 'face.liftedAPost'), 2 * v);
+  assert.equal(total(face, input({ cardsPlayed: [fab('k2', 60, 2)], from: 50, to: 100 }), 'face.liftedAPost'), 2 * v);
+});
+test('a Tweener\'s stirs in a window halve in the order played; a stir that draws nothing does not halve the next; one stir per window pays in full', () => {
+  const v = settings.vote;
+  const stir = (act: string, at: number, hype: number, heat: number) => card({ act, at, drawnAfter: { at: at + 1, now: room(hype, heat) } });
+  const stirs = (cards: PlayedCard[]) => tweener.earn(input({ cardsPlayed: cards }), settings).filter((e) => e.reason === 'tweener.stirredThePot').map((e) => [e.act, e.amount]);
+  assert.deepEqual(stirs([stir('k3', 30, 2, 2), stir('k1', 10, 2, 2), stir('k2', 20, 2, 2)]), [['k1', 4 * v], ['k2', 2 * v], ['k3', v]]);
+  assert.deepEqual(stirs([stir('k1', 10, 2, 2), stir('k2', 20, 3, 0), stir('k3', 30, 2, 2)]), [['k1', 4 * v], ['k3', 2 * v]]);
+  assert.equal(total(tweener, input({ cardsPlayed: [stir('k1', 10, 2, 2)], from: 0, to: 50 }), 'tweener.stirredThePot'), 4 * v);
+  assert.equal(total(tweener, input({ cardsPlayed: [stir('k2', 60, 2, 2)], from: 50, to: 100 }), 'tweener.stirredThePot'), 4 * v);
+});
+
+/* ---- Which earnings the reveal perk reads (class balance design, section 2; plan Task 7) ---- */
+/*
+ * The perk is a fifth more on what reactions earned. An earning carries `fromReactions` when a reaction to the character's own Acts,
+ * or its own early call, caused it. This list is the design's section 2: a new reason is a decision, so a reason a class emits that
+ * is not here fails the test until someone chooses whether it is read.
+ */
+const PERK_READS: Readonly<Record<string, boolean>> = {
+  'face.cheered': true, 'face.liftedAPost': false, 'face.boredTheRoom': false, 'face.stoleThunder': false,
+  'heel.drewHeat': true, 'heel.stoleThunder': false, 'heel.shrugged': false,
+  'jabroni.drewTheGroan': true, 'jabroni.soldTheL': false, 'jabroni.takenSincerely': false,
+  'technician.respected': true, 'technician.evergreen': true, 'technician.draggedIn': false,
+  'tweener.splitTheRoom': true, 'tweener.stirredThePot': false, 'tweener.shrugged': false, 'tweener.litTheFuse': false, 'tweener.outvoted': false,
+  'lurker.calledIt': true, 'lurker.misread': false, 'lurker.spunAThread': false, 'lurker.cardDrew': true, 'lurker.postedTooMuch': false,
+};
+test('the earnings the reveal perk reads are exactly the design\'s list, and every reason a class has is in the fixture', () => {
+  const sweetCard = card({ act: 'k1', alignment: 'sweet', votes: 3, targetVotes: 2, targetLean: 1, targetAfter: { ...none, excitedPositive: 2 }, drawnAfter: { at: 8, now: room(3, 3) } });
+  const saltyCard = card({ act: 'k2', alignment: 'salty', votes: 3, targetVotes: 1, drawnAfter: { at: 9, now: room(3, 3) } });
+  const everything = input({
+    from: 0, to: 100 * H,
+    posts: [1, 2, 3, 4].map((n) => ({ act: `post${n}`, at: n })),
+    received: [
+      got('excitedPositive'), got('excitedNegative'), got('boredNegative'), got('calmPositive'),
+      got('calmPositive', 1, 'post', 'old', 0, 'reaction'), { ...got('calmPositive', 1, 'post', 'old'), at: 4 * DAY },
+      got('excitedPositive', 1, 'card', 'k1'),
+    ],
+    cardsPlayed: [sweetCard, saltyCard],
+    cardsLanded: [landed('salty')],
+    held: [held({ act: 'h1' }), held({ act: 'h2', endsUp: 'excitedNegative' })],
+    threadsSpun: [spin({})],
+    standings: [standing([], room(6, 6))],
+    debates: [spark([1, 2, 1, 2, 3], { standing: { before: [], now: calm(4) } })],
+  });
+  const seen: Record<string, boolean> = {};
+  for (const rules of classes) {
+    for (const e of rules.earn(everything, settings)) {
+      const flag = e.fromReactions === true;
+      assert.ok(seen[e.reason] === undefined || seen[e.reason] === flag, `${e.reason} is flagged on some lines and not others`);
+      seen[e.reason] = flag;
+    }
+  }
+  assert.deepEqual(Object.keys(seen).sort(), Object.keys(PERK_READS).sort(), 'the fixture makes every reason, and the list names every one');
+  assert.deepEqual(seen, PERK_READS);
+  const negatives = classes.flatMap((r) => r.earn(everything, settings)).filter((e) => e.fromReactions && e.amount < 0);
+  assert.deepEqual(negatives.map((e) => e.reason), [], 'a loss is never read by the perk');
+  /* Against the source: a reason a class file names that this list does not is a decision nobody made. */
+  const named = new Set<string>();
+  for (const f of ['face', 'heel', 'jabroni', 'technician', 'tweener', 'lurker']) {
+    const text = readFileSync(new URL(`./${f}.ts`, import.meta.url), 'utf8');
+    for (const m of text.matchAll(/reason: '([a-z]+\.[A-Za-z]+)'|perVote\([^\n]*?'([a-z]+\.[A-Za-z]+)'/g)) named.add((m[1] ?? m[2])!);
+  }
+  assert.deepEqual([...named].sort(), Object.keys(PERK_READS).sort());
 });

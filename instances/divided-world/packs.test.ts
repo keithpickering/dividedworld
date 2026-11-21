@@ -1,6 +1,7 @@
 /**
  * Divided World's packs: the Starter Pack (docs/plans/2026-11-18-starter-pack-design.md) is six common cards, two of each
- * flavor, and every one plays free on a target the settings price at nothing.
+ * flavor, and every one plays free on a target the settings price at nothing; it holds no Reversal that catches a Salty card
+ * (docs/plans/2026-11-20-class-balance-design.md, section 3).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -51,4 +52,12 @@ test('the free targets sit just under the step: one character more costs Aura', 
 
 test('the instance with the starter has no problems', () => {
   assert.deepEqual(instanceProblems(instance), []);
+});
+
+// docs/plans/2026-11-20-class-balance-design.md, section 3: a Reversal in every new player's hand that catches Salty cards taxes
+// the Salty classes' own starter cards, so the pack holds none; changing that is a decision this test makes someone state.
+test('the starter holds no Reversal that catches a Salty card', () => {
+  for (const card of held()) {
+    assert.ok(!card.trap?.match?.flavors?.includes('salty'), `${card.key} catches Salty cards`);
+  }
 });
