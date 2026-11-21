@@ -21,6 +21,7 @@ export function tablePart(text: string): string {
   const end = text.split('-- table part: end\n');
   assert.equal(begin.length, 2, 'the migration has one "-- table part: begin" marker');
   assert.equal(end.length, 2, 'the migration has one "-- table part: end" marker');
+  assert.ok(text.indexOf('-- table part: begin\n') < text.indexOf('-- table part: end\n'), 'the begin marker comes before the end marker');
   const part = begin[1]!.split('-- table part: end\n')[0]!;
   assert.ok(part.includes('season_handovers') && part.includes('handover_dismissals') && part.trim().length > 200, 'the lines between the markers are the table part');
   return part;
