@@ -75,9 +75,11 @@ begin
     'machine', machine);
 end $$;
 
-create function pg_temp.hand(who uuid, key text, n integer) returns void language sql as $$
-  insert into card_ledger (account, card, kind, price) select who, key, 'bought', 0 from generate_series(1, n)
-$$;
+-- plpgsql, not sql: a sql function's body is analyzed when it is created, which would hold a row lock on the ledger for this file's whole transaction and stall the races that run first.
+create function pg_temp.hand(who uuid, key text, n integer) returns void language plpgsql as $$
+begin
+  insert into card_ledger (account, card, kind, price) select who, key, 'bought', 0 from generate_series(1, n);
+end $$;
 
 -- ---- Race first: a seed counts a key's copies only once it holds every account that has them ----
 -- The race runs before this file's own transaction touches a row (a row it wrote and a session waits on would deadlock the two), and commits what it needs: an account holding 2 copies of a card
@@ -99,7 +101,7 @@ begin
   perform * from extensions.dblink('cr_a', format('select 1 from accounts where id = %L for no key update', r)) as t(x integer);
   perform extensions.dblink_send_query('cr_b', 'select card_leaves(''crrold'', ''crrnew'', null)');
   while blocked = 0 and waited < 100 loop
-    perform pg_sleep(0.1);
+    perform pg_sleep(0.1); perform pg_stat_clear_snapshot();
     waited := waited + 1;
     select count(*) into blocked from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%card_leaves%' and pid <> pg_backend_pid();
   end loop;
@@ -111,6 +113,63 @@ begin
   perform extensions.dblink_disconnect('cr_b');
   if got is distinct from 3 then raise exception 'the move counted before it held the account: % copies moved, 3 held', got; end if;
   if card_held(r, 'crrold') <> 0 or card_held(r, 'crrnew') <> 3 then raise exception 'the race left % and % copies', card_held(r, 'crrold'), card_held(r, 'crrnew'); end if;
+end $$;
+
+-- A second account: a copy inserted by a session that is still in flight when a card leaves is counted (the seed waits for it), and one inserted after the seed took its table lock waits for it and is refused at its commit.
+do $$
+declare
+  r constant uuid := gen_random_uuid(); url text := current_setting('kayfabb.scratch_url'); waited integer; blocked integer; got bigint; said text;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'cr-race2@test.invalid');
+    insert into accounts (id, created_at) values (%1$L, '2000-01-01T00:00:00Z');
+    insert into card_kinds (key, name, alignment, rarity, play, stack) values ('crsold', 'Crs Old', 'salty', 'common', 'cast', 3), ('crsnew', 'Crs New', 'salty', 'common', 'cast', 3);
+    insert into card_ledger (account, card, kind, price) select %1$L, 'crsold', 'bought', 0 from generate_series(1, 2);
+  $sql$, r));
+  perform extensions.dblink_connect('cr_s', url); perform extensions.dblink_connect('cr_b', url); perform extensions.dblink_connect('cr_s2', url);
+  -- S buys a third copy and has not committed: it holds a row lock on the ledger. The move begins and must wait for it.
+  perform extensions.dblink_exec('cr_s', 'begin');
+  perform extensions.dblink_exec('cr_s', format('insert into card_ledger (account, card, kind, price) values (%L, ''crsold'', ''bought'', 0)', r));
+  perform extensions.dblink_exec('cr_b', 'begin');
+  perform extensions.dblink_send_query('cr_b', 'select card_leaves(''crsold'', ''crsnew'', null)');
+  waited := 0; blocked := 0;
+  while blocked = 0 and waited < 100 loop
+    perform pg_sleep(0.1); perform pg_stat_clear_snapshot(); waited := waited + 1;
+    select count(*) into blocked from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%card_leaves%' and pid <> pg_backend_pid();
+  end loop;
+  if blocked = 0 then raise exception 'the move did not wait for an insert in flight: a copy bought as a card leaves is missed'; end if;
+  perform extensions.dblink_exec('cr_s', 'commit');
+  select t.r into got from extensions.dblink_get_result('cr_b') as t(r bigint);
+  perform * from extensions.dblink_get_result('cr_b') as t(r bigint);
+  if got is distinct from 3 then raise exception 'the move missed the copy that was in flight: % moved, 3 held', got; end if;
+  -- B has not committed and holds the ledger: S2 buys a copy of the card that is leaving, and waits.
+  perform extensions.dblink_exec('cr_s2', 'begin');
+  perform extensions.dblink_send_query('cr_s2', format('insert into card_ledger (account, card, kind, price) values (%L, ''crsold'', ''bought'', 0)', r));
+  waited := 0; blocked := 0;
+  while blocked = 0 and waited < 100 loop
+    perform pg_sleep(0.1); perform pg_stat_clear_snapshot(); waited := waited + 1;
+    select count(*) into blocked from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%insert into card_ledger%' and pid <> pg_backend_pid();
+  end loop;
+  if blocked = 0 then raise exception 'an insert into the ledger did not wait for the move''s table lock'; end if;
+  perform extensions.dblink_exec('cr_b', 'commit');
+  perform * from extensions.dblink_get_result('cr_s2') as t(x text);
+  perform * from extensions.dblink_get_result('cr_s2') as t(x text);
+  begin
+    perform extensions.dblink_exec('cr_s2', 'commit');
+    said := null;
+  exception when others then
+    said := sqlerrm;
+  end;
+  -- The moves are let in at commit where any other row for the gone card is not: a renamedOut or withdrawn row of it (a seed's, an opened pack's), and a row of the card it became.
+  perform extensions.dblink_exec('cr_s', 'begin');
+  perform extensions.dblink_exec('cr_s', format('insert into card_ledger (account, card, kind, price) values (%1$L, ''crsold'', ''renamedOut'', 0), (%1$L, ''crsold'', ''withdrawn'', 150), (%1$L, ''crsnew'', ''bought'', 0)', r));
+  perform extensions.dblink_exec('cr_s', 'commit');
+  if (select count(*) from card_ledger where account = r and card = 'crsold' and kind = 'renamedOut') is distinct from 4 or (select count(*) from card_ledger where account = r and card = 'crsold' and kind = 'withdrawn') is distinct from 1
+     or (select count(*) from card_ledger where account = r and card = 'crsnew' and kind = 'bought') is distinct from 1 then raise exception 'a move of a gone card, or a row of the card it became, was refused at commit'; end if;
+  perform extensions.dblink_disconnect('cr_s'); perform extensions.dblink_disconnect('cr_b'); perform extensions.dblink_disconnect('cr_s2');
+  if said is null or said not like '%left the game%' then raise exception 'a copy bought after the card left was let in at commit: %', said; end if;
+  if (select count(*) from card_ledger where account = r and card = 'crsold' and kind = 'bought') is distinct from 3 then raise exception 'the refused copy was kept'; end if;
+  if card_held(r, 'crsold') <> -2 or card_held(r, 'crsnew') <> 4 then raise exception 'the race left % and % copies', card_held(r, 'crsold'), card_held(r, 'crsnew'); end if;
 end $$;
 
 select tests.unbecome();
@@ -157,7 +216,7 @@ begin
       jsonb_build_object('pack', 'cr-pull', 'availability', 'onSale', 'price', 140), jsonb_build_object('pack', 'cr-other', 'availability', 'onSale', 'price', 150))));
   perform pg_temp.expect(got ? 'retired' and got ? 'renamed' and got ? 'withdrawn', format('the seed answer lacks retired, renamed or withdrawn: %s', got));
   perform pg_temp.expect(got -> 'renamed' = '[]'::jsonb and got -> 'withdrawn' = '[]'::jsonb and got -> 'retired' = '[]'::jsonb, format('a first seed with nothing leaving reported leaving: %s', got));
-  perform pg_temp.expect((select count(*) from card_kinds where key like 'cr%' and key not like 'crr%') = 7, 'the seed wrote the cards');
+  perform pg_temp.expect((select count(*) from card_kinds where key like 'cr%' and key !~ '^cr[rs]') = 7, 'the seed wrote the cards');
 end $$;
 
 -- ---- 1. The columns and their checks ----
@@ -319,7 +378,12 @@ begin
   perform pg_temp.expect(why like '22023%' and why like '%cralt%', format('a seed that drops a card was not refused naming it: %s', why));
   why := pg_temp.coded($q$select seed_instance(pg_temp.pl(drop_keys => array['cralt', 'crcatch']))$q$);
   perform pg_temp.expect(why like '22023%' and why like '%cralt%' and why like '%crcatch%', format('a seed that drops two cards was not refused naming both: %s', why));
-  perform pg_temp.expect(not exists (select 1 from card_kinds where gone_at is not null and key not like 'crr%') and (select count(*) from card_ledger) = ledger_before, 'a refused seed wrote');
+  perform pg_temp.expect(not exists (select 1 from card_kinds where gone_at is not null and key !~ '^cr[rs]') and (select count(*) from card_ledger) = ledger_before, 'a refused seed wrote');
+  -- The guard is for what a seed wrote: a card row put in directly (a test's, a hand's) is not the seed's to account for, and a seeded one dropped is.
+  insert into card_kinds (key, name, alignment, rarity, play) values ('crdirect', 'Cr Direct', 'salty', 'common', 'cast');
+  perform pg_temp.expect((select from_seed from card_kinds where key = 'cralt') and not (select from_seed from card_kinds where key = 'crdirect'), 'from_seed is true for a seeded card and false for one inserted directly');
+  perform pg_temp.expect(pg_temp.coded($q$select seed_instance(pg_temp.pl(drop_keys => array['crdirect']))$q$) is null, 'a seed refused a row it never wrote');
+  perform pg_temp.expect((select not from_seed from card_kinds where key = 'crdirect'), 'a seed marked a row it did not list');
   -- A key in more than one list is refused too, and a renaming into a card the seed does not list.
   why := pg_temp.coded($q$select seed_instance(pg_temp.pl(rename => '[{"key": "crold", "name": "Cr Old", "became": "crnew"}]', withdraw => '[{"key": "crold", "name": "Cr Old", "refund": 100}]'))$q$);
   perform pg_temp.expect(why like '22023%' and why like '%crold%', format('a key in two lists was not refused naming it: %s', why));
@@ -521,6 +585,18 @@ begin
   perform pg_temp.expect(not exists (select 1 from machine_now where slot in (s_keep, s_hit)), 'a flash sale or a Pull shows a slot of a card out of print');
   perform pg_temp.expect(pg_temp.coded(format($q$select buy_card(%L, %L, 130)$q$, buyer, s_keep)) = 'P0002 kayfabb.refusal the machine has no such slot', 'a flash sale sold a card out of print');
   perform pg_temp.expect(pg_temp.coded(format($q$select slot_for_sale(%L, 'card', 100)$q$, s_hit)) = 'P0002 kayfabb.refusal the machine has no such slot', 'a Pull sold a card out of print');
+
+  -- The Boss's meeting reads only slots that are in print: neither its machine list nor a move's own check finds a slot of a card out of print or gone (a slot machine_now hides), so no Pull or flash sale is queued on one.
+  perform pg_temp.moves(null, null);
+  perform pg_temp.expect(machine_move_problem('pullSlot', jsonb_build_object('slot', s_hit), '{}'::jsonb, now(), now() + interval '1 day', true) = 'the machine has no such slot', 'a Pull was let land on a slot of a card out of print');
+  perform pg_temp.expect(machine_move_problem('flashSale', jsonb_build_object('slot', s_keep, 'hours', 24), null, now(), now() + interval '24 hours', true) = 'the machine has no such slot', 'a flash sale was let land on a slot of a card out of print');
+  perform pg_temp.expect(machine_move_problem('repriceSlot', jsonb_build_object('slot', s_old, 'percent', 80), null, now(), now() + interval '1 day', true) = 'the machine has no such slot', 'a Reprice was let land on a slot of a card that left');
+  perform pg_temp.expect(not exists (select 1 from jsonb_array_elements(meeting_context() -> 'machine') e where (e ->> 'id')::uuid in (s_hit, s_keep, s_old, s_bye)), 'the meeting''s machine lists a slot of a card out of print or gone');
+  perform pg_temp.expect(exists (select 1 from jsonb_array_elements(meeting_context() -> 'machine') e where (e ->> 'id')::uuid = s_pull), 'the meeting''s machine lost a slot in print');
+  perform seed_instance(pg_temp.pl(unretire => array['crhit', 'crkeep']));
+  perform pg_temp.expect(machine_move_problem('pullSlot', jsonb_build_object('slot', s_hit), '{}'::jsonb, now(), now() + interval '1 day', true) is null, 'a Pull on a slot in print was refused');
+  perform pg_temp.expect(machine_move_problem('flashSale', jsonb_build_object('slot', s_keep, 'hours', 24), null, now(), now() + interval '24 hours', true) is null, 'a flash sale on a hidden slot in print was refused');
+  perform pg_temp.expect(exists (select 1 from jsonb_array_elements(meeting_context() -> 'machine') e where (e ->> 'id')::uuid = s_hit), 'the meeting''s machine lost a slot that is in print again');
 end $$;
 
 -- ---- 10. Nothing here edited a row, and the triggers are as they were ----

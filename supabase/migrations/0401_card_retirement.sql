@@ -14,6 +14,7 @@
 --   4. draw_pool                (0207's) leaves out a card with retired_at or gone_at: one change covers roll_pack, buy_pack and the Random Event's card outcome.
 --   5. machine_now              (0140's) leaves out a slot whose card has retired_at or gone_at, or whose pack kind has retired_at, a flash sale or a Pull open on it included: slot_for_sale, buy_card and buy_pack then refuse it
 --                               in the words a missing slot has. The slot row is untouched, so listing the card again brings it back as it was.
+--   5b. machine_move_problem, meeting_context  (0140's and 0364's) read only slots in print (slot_in_print, new): a Pull, Reprice or flash sale is never queued on a slot of a card out of print or gone, and the Boss's list leaves it out.
 --   6. admin_machine            (0141's, with 0368's plan settings) carries `retired`, `became` (the new card's KEY, null otherwise; the client names it) and `withdrawn` for a card slot, and `retired` for a pack slot.
 --   7. open_pack                (0377's) takes the account's row first (as play_card does), writes a card with `became` as `pulled` under the new key and a withdrawn one as a `withdrawn` row with its refund as price, credits the pack's
 --                               refunds in one wallet_move ('withdrawal'), and answers its contents with the new keys and `refunds: [{index, refund}]` (0-based, hundredths).
@@ -28,6 +29,8 @@
 --                                 d. a pack kind the payload does not list is retired, one it lists is not;
 --                                 e. the answer gains `retired` (keys), `renamed` [{from, to, copies}] and `withdrawn` [{key, copies, refunded}]: totals of this seed, never a row per account.
 --
+--   Races: the first seed a key leaves takes the ledger's table lock (share row exclusive) after the account rows, and a deferred constraint trigger refuses a row for a card that has gone (except the moves'), so a copy bought or
+--   found by a session that decided before the seed is counted if it commits first and refused if it commits after.
 -- Ways out: nothing here is a state a player is in. A held copy of an out-of-print card plays as ever; a copy of a card that left is a copy of the new card or an orb refund at once; a back of such a card ends by itself at its time and
 -- adds nothing. Masks: the pools and the machine read the catalog alone; the rows are each account's own; the seed answers the service role with totals; take_back's new refusal is reached by the back's own setter alone.
 
@@ -42,6 +45,10 @@ alter table card_kinds add constraint card_kinds_gone_one_way check (became is n
 alter table card_kinds add constraint card_kinds_gone_says check (gone_at is null or became is not null or refund is not null);
 alter table card_kinds add constraint card_kinds_gone_not_retired check (retired_at is null or gone_at is null);
 alter table pack_kinds add column retired_at timestamptz;
+-- Whether a seed wrote the row. The seed's guard (below) accounts for the cards a seed wrote and no others: a row put in directly (an assertion file's, an admin's by hand) is not the instance's to list. A row that exists when this
+-- migration runs was written by a seed (no instance is deployed with any other kind), so they are backfilled true; seed_instance sets it on every card it lists.
+alter table card_kinds add column from_seed boolean not null default false;
+update card_kinds set from_seed = true;
 
 -- ---- 2. card_ledger, wallet_events ----
 
@@ -123,6 +130,129 @@ create or replace view machine_now as
   left join (select distinct on (m.slot) m.* from machine_moves_open m where m.slot is not null order by m.slot, m.landed_at desc, m.move_act desc) mv on mv.slot = s.id
   where (s.availability <> 'hidden' or mv.kind = 'flashSale')
     and k.retired_at is null and k.gone_at is null and pk.retired_at is null;
+
+-- ---- 5b. slot_in_print, machine_move_problem, meeting_context ----
+
+-- Whether a slot exists and is in print: its card is not out of print or gone, and its pack kind is not out of print (the filter machine_now lays on every slot, for the readers that need the slot an admin hid as well).
+create function slot_in_print(slot uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (select 1 from machine_slots s left join card_kinds k on k.key = s.card left join pack_kinds pk on pk.key = s.pack
+                 where s.id = slot_in_print.slot and k.retired_at is null and k.gone_at is null and pk.retired_at is null)
+$$;
+revoke execute on function slot_in_print(uuid) from public, anon, authenticated;
+grant execute on function slot_in_print(uuid) to service_role;
+
+-- machine_move_problem (0140's), a slot that is not in print (a card out of print or gone, a pack kind out of print) is no slot to a move: the Boss's Pull, Reprice and flash sale never find it. Everything else as 0140 wrote it.
+create or replace function machine_move_problem(kind text, params jsonb, demand jsonb, go_live timestamptz, expires timestamptz, landing boolean) returns text
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  target machine_slots%rowtype;
+  days numeric := machine_limit('moveDaysMost');
+  pct numeric;
+  hrs numeric;
+  lo numeric;
+  hi numeric;
+begin
+  if kind is null or kind not in ('pullSlot', 'repriceSlot', 'flashSale') then return null; end if;
+  if jsonb_typeof(params -> 'slot') is distinct from 'string' or (params ->> 'slot') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    return 'a machine move names a slot of the machine';
+  end if;
+  select * into target from machine_slots s where s.id = lower(params ->> 'slot')::uuid;
+  if not found or not slot_in_print(target.id) then return 'the machine has no such slot'; end if;
+  if expires is null then return 'a machine move has an expiry'; end if;
+  if expires > go_live + (days * 24) * interval '1 hour' then return format('a machine move lasts at most %s days', days); end if;
+
+  if kind = 'pullSlot' then
+    if jsonb_typeof(demand) is distinct from 'object' then return 'a pull carries a demand the characters can meet'; end if;
+  elsif kind = 'repriceSlot' then
+    if jsonb_typeof(params -> 'percent') is distinct from 'number' or (params ->> 'percent')::numeric <> trunc((params ->> 'percent')::numeric) then return 'a reprice names a whole percent'; end if;
+    pct := (params ->> 'percent')::numeric;
+    lo := machine_limit('repriceLeast');
+    hi := machine_limit('repriceMost');
+    if pct < lo then return format('a reprice is at least %s percent', lo); end if;
+    if pct > hi then return format('a reprice is at most %s percent', hi); end if;
+    if pct = 100 then return 'a reprice of 100 percent changes nothing'; end if;
+    if pct > 100 and jsonb_typeof(demand) is distinct from 'object' then return 'a markup carries a demand the characters can meet'; end if;
+    if pct < 100 and demand is not null then return 'a markdown carries no demand'; end if;
+  else
+    if jsonb_typeof(params -> 'hours') is distinct from 'number' or (params ->> 'hours')::numeric <> trunc((params ->> 'hours')::numeric) then return 'a flash sale names whole hours'; end if;
+    hrs := (params ->> 'hours')::numeric;
+    lo := machine_limit('flashHoursLeast');
+    hi := machine_limit('flashHoursMost');
+    if hrs < lo then return format('a flash sale lasts at least %s hours', lo); end if;
+    if hrs > hi then return format('a flash sale lasts at most %s hours', hi); end if;
+    if demand is not null then return 'a flash sale carries no demand'; end if;
+    if expires <> go_live + hrs * interval '1 hour' then return 'a flash sale lasts its hours and no longer'; end if;
+  end if;
+
+  if not landing then return null; end if;
+
+  -- The machine as it is now.
+  if expires <= now() then return 'it ran out before it could land'; end if;
+  if exists (select 1 from machine_moves_open m where m.slot = target.id) then return 'the slot already has a move in force'; end if;
+  if kind = 'pullSlot' then
+    if target.card is null then return 'a pack is never pulled'; end if;
+    if target.availability <> 'onSale' then return 'only a slot on sale is pulled'; end if;
+    if not card_in_open_pack(target.card) then return 'no pack on sale can still give that card'; end if;
+    if (select count(*) from machine_moves_open m where m.kind = 'pullSlot') >= machine_limit('pullMost') then
+      return format('at most %s slots are pulled at once', machine_limit('pullMost'));
+    end if;
+  elsif kind = 'repriceSlot' then
+    if target.availability <> 'onSale' then return 'only a slot on sale is repriced'; end if;
+  else
+    if target.availability <> 'hidden' then return 'a flash sale opens a slot an admin hid'; end if;
+    if exists (select 1 from machine_moves_open m where m.kind = 'flashSale') then return 'one flash sale runs at a time'; end if;
+  end if;
+  return null;
+end $$;
+
+-- meeting_context (0364's), its `machine` list leaves out a slot that is not in print, so the Boss cannot name one. Everything else as 0364 wrote it.
+create or replace function meeting_context() returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object(
+    'season', (select jsonb_build_object('startsAt', (extract(epoch from s.starts_at) * 1000)::bigint,
+        'endsAt', (extract(epoch from coalesce(s.ends_at, s.starts_at + span_interval(setting('seasonLength')))) * 1000)::bigint)
+      from seasons s where s.ends_at is null order by s.starts_at desc limit 1),
+    'boss', current_boss(),
+    -- The Boss's arc (0334): the beats unlocked and not yet played, each with whether it is due, and the kinds still held back. Never a locked beat, a brief or a template.
+    'arc', arc_for_meeting(current_boss(), (select x.id from seasons x where x.ends_at is null)),
+    -- The farewell and the handoff (0337, above): a meeting within farewellWindowHours of the season's end is shown what the code knows of the season (`handoffFacts`), to write its handoff from;
+    -- the new Boss is handed its predecessor's facts and note (`predecessor`) for inheritanceGraceDays after the handover. Both are null otherwise.
+    'handoffFacts', case when in_farewell_window() then handoff_facts((select x.id from seasons x where x.ends_at is null)) end,
+    'predecessor', predecessor_handoff(),
+    -- The Boss's standing nomination (the rehearsal patch design, section 5): its latest nameSuccessor, waiting or landed and not ended, that no admin held or refused.
+    'nomination', (select jsonb_build_object('boss', q.params ->> 'boss', 'at', (extract(epoch from m.started_at) * 1000)::bigint)
+      from queued_moves q join meetings m on m.id = q.meeting
+      where q.kind = 'nameSuccessor' and q.staff = current_boss() and q.held_at is null and q.refused_at is null
+        and (q.landed_act is null or not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = q.landed_act))
+      order by q.id desc limit 1),
+    'lastSlot', (select m.slot from meetings m where m.outcome in ('ok', 'failed', 'rejected') order by m.slot desc limit 1),
+    'boards', coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name) order by b.name, b.id)
+      from (select n.id, n.name from boards_now n where not n.is_system and not n.closed order by n.name, n.id limit 50) b), '[]'),
+    'successors', to_jsonb(array(select r from unnest(boss_roster()) with ordinality x(r, ord) where r is distinct from current_boss() order by x.ord)),
+    'inheritanceDue', coalesce((select jsonb_agg(jsonb_build_object('act', d.act, 'kind', d.payload ->> 'kind', 'params', d.payload -> 'params',
+        'landedAt', d.landed_at, 'expiresAt', d.payload -> 'expires_at', 'by', d.author, 'boardName', d.board_name) order by d.landed_at, d.act)
+      from inheritance_due(current_boss(), 20) d), '[]'),
+    -- The Mods on staff: what the Boss's meeting needs to order each (its latest order, the allowance it has not spent, and so what returns to the bank).
+    'mods', coalesce((select jsonb_agg(jsonb_build_object('key', n.staff, 'since', n.since, 'allowance', order_unspent(n.staff), 'granted', o.allowance,
+        'boards', coalesce(to_jsonb(o.boards), '[]'::jsonb), 'order', o.order_line) order by n.staff)
+      from staff_now n left join lateral (select x.allowance, x.boards, x.order_line from staff_orders x where x.staff = n.staff order by x.id desc limit 1) o on true), '[]'),
+    -- The rules in force, so the meeting drops a rule that would leave no compliant post before the queue would refuse it.
+    'rules', coalesce((select jsonb_agg(jsonb_build_object('board', r.board, 'predicate', r.predicate, 'param', r.param, 'number', r.number) order by r.board nulls last, r.number)
+      from rules_now r), '[]'),
+    -- The groups (member groups design, section 5): the catalog a move may confer, and the characters the meeting may not choose. A character is held while a group move is
+    -- in force on it or queued and not held (the guard's one-at-a-time rule), and capped while staff_punishments is at the cap; each is listed with the group it is in now.
+    -- Only those two kinds are listed, which a busy instance keeps to a handful; every other character is in its earned group and free to be chosen.
+    'groups', jsonb_build_object(
+      'conferred', coalesce((select jsonb_agg(jsonb_build_object('key', g.key, 'name', g.name, 'tone', g.tone) order by g.tone desc, g.key) from group_kinds g where g.source = 'conferred'), '[]'),
+      'characters', group_move_bars()),
+    -- The machine, so the Boss can name a slot: the admins' own word on each (hidden ones too, for a flash sale), whether a pull of it could land, and the Boss's move
+    -- in force on it. Slots and moves only: no purchase, no buyer, nothing computed from who owns what.
+    'machine', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'position', s.position, 'card', s.card, 'pack', s.pack, 'availability', s.availability, 'price', s.price,
+        'pullable', s.card is not null and s.availability = 'onSale' and card_in_open_pack(s.card),
+        'move', (select jsonb_build_object('kind', m.kind, 'act', m.move_act) from machine_moves_open m where m.slot = s.id order by m.landed_at desc, m.move_act desc limit 1)) order by s.position)
+      from (select x.* from machine_slots x where slot_in_print(x.id) order by x.position limit 60) s), '[]'))
+$$;
 
 -- ---- 6. admin_machine ----
 
@@ -357,9 +487,15 @@ declare
   copies bigint := 0;
 begin
   if (card_leaves.became is null) = (card_leaves.refund is null) then raise exception 'a card leaves renamed or withdrawn, not both and not neither' using errcode = '22023'; end if;
+  if exists (select 1 from card_kinds k where k.key = card_leaves.old and k.gone_at is not null) then return 0; end if;
   perform 1 from accounts a
   where a.id in (select l.account from card_ledger l where l.card = card_leaves.old union select f.account from face_down f where f.card = card_leaves.old and f.account is not null)
   order by a.id for no key update;
+  -- The ledger's table lock (share row exclusive): it waits for every insert in flight to commit, so a copy bought, found or caught as the card leaves is counted, and it makes later inserts wait until this commits, where the
+  -- constraint trigger below refuses a copy of a card that has left. Taken after the account rows, never before: a play holds its account row and then inserts, so a seed that held the table first and waited for the account would
+  -- wait on a play that waits for the table. Taken this way round, whoever holds a ledger row in flight and is waited for holds no account row this waits on (play_card and take_back lock the account before they insert), and
+  -- a copy that reaches an account this did not lock is stopped by the table lock all the same. Once per key ever: a key already gone returned above, and the lock is let go at commit.
+  lock table card_ledger in share row exclusive mode;
   -- After the locks, so a card that left while this waited is seen.
   update card_kinds k set gone_at = now(), became = card_leaves.became, refund = card_leaves.refund, retired_at = null where k.key = card_leaves.old and k.gone_at is null;
   if not found then return 0; end if;
@@ -401,6 +537,20 @@ begin
 end $$;
 revoke execute on function card_leaves(text, text, integer) from public, anon, authenticated;
 grant execute on function card_leaves(text, text, integer) to service_role;
+
+-- Nothing is written for a card that has left, but the moves of the seed (renamedOut, and renamedIn on the new key) and an opened pack's withdrawn row: any other row for a card with gone_at is refused. Deferred to commit, so an insert
+-- that waited on card_leaves's table lock (a session that decided before the seed ran) sees the card gone when it commits, and rolls back in plain words. A bulk import writes as a replica (session_replication_role) and fires no
+-- trigger, so a restored history of a gone card goes in whole.
+create function card_ledger_gone_card() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if new.kind not in ('renamedOut', 'withdrawn') and exists (select 1 from card_kinds k where k.key = new.card and k.gone_at is not null) then
+    raise exception 'that card has left the game' using hint = 'kayfabb.refusal', errcode = 'P0001';
+  end if;
+  return null;
+end $$;
+revoke execute on function card_ledger_gone_card() from public, anon, authenticated;
+create constraint trigger card_ledger_gone_card after insert on card_ledger deferrable initially deferred for each row execute function card_ledger_gone_card();
 
 -- seed_instance (0397's), with the three ways a card leaves (see the header, 9): the guard before the cards are written, the steps after them and after the packs, and the answer's three lists. Everything else as 0397 wrote it.
 create or replace function public.seed_instance(payload jsonb)
@@ -473,12 +623,12 @@ begin
   -- naming the card. The reaches are read against reachRarity and reachLasts as the settings above have just written them.
   select nullif(concat_ws('; ', card_kinds_problem(payload -> 'cards'), card_reach_problem(payload -> 'cards')), '') into unknown;
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
-  -- The three ways a card leaves (0401). A seed that carries `formerly` or `withdrawn` says where every card the database holds stands, and is refused, naming the keys, where it does not: a key in none of cards, formerly and withdrawn,
+  -- The three ways a card leaves (0401). A seed that carries `formerly` or `withdrawn` says where every card a seed wrote stands (from_seed), and is refused, naming the keys, where it does not: a key in none of cards, formerly and withdrawn,
   -- a key in more than one, a renaming into a card the seed does not list (or into itself), a refund that is not a positive whole number, and a card that left listed as a card again (a card that comes back takes a new key).
   -- The refusal does not depend on who holds what. Nothing is written before it.
   if retiring then
     select string_agg(k.key, ', ' order by k.key) into unknown from card_kinds k
-    where not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) e where e ->> 'key' = k.key)
+    where k.from_seed and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) e where e ->> 'key' = k.key)
       and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) e where e ->> 'key' = k.key)
       and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) e where e ->> 'key' = k.key);
     if unknown is not null then
@@ -505,7 +655,7 @@ begin
   end if;
   -- A card's stack, whether it is seeded and the economy numbers its rules read are the code's, as its name is; so
   -- are its rarity, its play, its trap (with its match), its gimmick, its discipline, how long a Use of it is up, where it reaches, whether it pins, whether it writes, whether it replies, whether it keeps, its skim, whether it scores as a class, what it draws, its drive and the words it refuses a blank message with.
-  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, refunds, discipline, lasts, reaches, pins, writes, replies, keeps, skim, scores_as, draws, drive, needs_message, veil, adds_reaction, surface)
+  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, refunds, discipline, lasts, reaches, pins, writes, replies, keeps, skim, scores_as, draws, drive, needs_message, veil, adds_reaction, surface, from_seed)
   select e ->> 'key', e ->> 'name', e ->> 'alignment', coalesce((e ->> 'stack')::integer, 1), coalesce((e ->> 'seeded')::boolean, false),
     coalesce(array(select jsonb_array_elements_text(e -> 'reads')), '{}'),
     e ->> 'rarity', coalesce(e ->> 'play', 'cast'), nullif(e -> 'trap', 'null'), nullif(e -> 'gimmick', 'null'), nullif(e -> 'refunds', 'null'), nullif(e -> 'discipline', 'null'), span_interval(e -> 'lasts'),
@@ -513,13 +663,13 @@ begin
     coalesce((e ->> 'replies')::boolean, false), coalesce((e ->> 'keeps')::boolean, false),
     nullif(e -> 'skim', 'null'), coalesce((e ->> 'scoresAs')::boolean, false),
     case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null'), nullif(e ->> 'needsMessage', ''),
-    nullif(e ->> 'veil', ''), coalesce((e ->> 'addsReaction')::boolean, false), coalesce((e ->> 'surface')::boolean, false)
+    nullif(e ->> 'veil', ''), coalesce((e ->> 'addsReaction')::boolean, false), coalesce((e ->> 'surface')::boolean, false), true
   from jsonb_array_elements(payload -> 'cards') e
   on conflict (key) do update set name = excluded.name, alignment = excluded.alignment,
     stack = excluded.stack, seeded = excluded.seeded, reads = excluded.reads,
     rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, refunds = excluded.refunds, discipline = excluded.discipline, lasts = excluded.lasts,
     reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, replies = excluded.replies, keeps = excluded.keeps, skim = excluded.skim, scores_as = excluded.scores_as,
-    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface;
+    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface, from_seed = true;
   -- Out of print (0401): the flag sets retired_at, kept while it stays and cleared when it goes.
   update card_kinds k set retired_at = case when coalesce((e.c ->> 'retired')::boolean, false) then coalesce(k.retired_at, now()) end
   from jsonb_array_elements(payload -> 'cards') e(c)
