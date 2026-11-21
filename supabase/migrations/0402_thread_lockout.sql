@@ -1313,7 +1313,7 @@ create or replace view my_cards_ended as
     join acts e on e.target_act_id = k.id and e.kind = 'card_end'
     where k.character not in (select id from mine)
     union all
-    -- A lockedOut spring an admin ended (0401): the setter's own Act ('cast', the setter's character) and, for the locked character's player, the spring that locks it ('onMine'); each is read only by the player whose character the line is about, and a spring both own is one row, the setter's.
+    -- A lockedOut spring an admin ended (0402): the setter's own Act ('cast', the setter's character) and, for the locked character's player, the spring that locks it ('onMine'); each is read only by the player whose character the line is about, and a spring both own is one row, the setter's.
     select e.id, k.id, k.payload ->> 'card', e.created_at, 'cast', k.character, 'post', k.target_act_id, null, null, null, null, k.character
     from mine
     join acts k on k.character = mine.id and k.kind = 'spring' and k.payload ->> 'did' = 'lockedOut'

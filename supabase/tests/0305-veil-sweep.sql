@@ -189,7 +189,7 @@ select 'function', n, m, w from (values
   ('apologize', 'no author', 'a write: answers the Act it wrote, to the caller who wrote it'),
   ('banned_until', 'no author', 'a character''s ban: a public fact of the character'),
   ('ban_ends', 'no author', 'when one ban ends (0361): a public fact of the ban and its character, never of a post'),
-  ('lockout_ends', 'no author', 'when one lockout ends (0401): a public fact of the spring and its character, never of a post'),
+  ('lockout_ends', 'no author', 'when one lockout ends (0402): a public fact of the spring and its character, never of a post'),
   ('locked_out_until', 'no author', 'a character''s lockout in a thread: a public fact of the character, never of a post'),
   ('barred', 'no author', 'a character''s bar from a board: a public fact of the character'),
   ('card_relief', 'no author', 'the points the cards played on a character took off one infraction (0361): a public fact of the character, never of a post'),

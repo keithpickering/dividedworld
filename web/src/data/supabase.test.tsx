@@ -517,7 +517,7 @@ describe('reads and their rows', () => {
     expect(plays.map((p) => [p.id, p.endsAt])).toEqual([[A, END], [C, undefined]]);
     expect(plays.slice(1)).toSatisfy((rest: readonly object[]) => rest.every((p) => !('endsAt' in p)));
   });
-  it('reads the end of a lockout (a card_end on a lockedOut spring, 0401) with the plays, and no end of any other spring', async () => {
+  it('reads the end of a lockout (a card_end on a lockedOut spring, 0402) with the plays, and no end of any other spring', async () => {
     const END = { ...ACT_ROW, id: D, kind: 'card_end', target_act_id: A };
     const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([END]) : rows([{ ...ACT_ROW, id: A, kind: 'spring', target_act_id: B, payload: { did: 'lockedOut', locks: C, until: '2026-11-22T00:00:00+00:00' } }, { ...ACT_ROW, id: C, kind: 'spring', target_act_id: B, payload: { did: 'rode' } }])));
     const plays = await h.api.cardsOnMany([B], 10);
@@ -3079,7 +3079,7 @@ describe('a screen in one call', () => {
       character: BEA, posts: 12, standing: 340,
       reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T }], turns: [{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }],
     }]);
-    /* A person's locked_until (0401) is carried while it is ahead and left out once it has passed. */
+    /* A person's locked_until (0402) is carried while it is ahead and left out once it has passed. */
     const lockedPeople = async (until: string) => (await once('thread_page', { ...answer, people: [{ ...answer.people[0]!, character: { ...CHAR, locked_until: until } }] }).api.threadPage(T, { page: 1 }, 20, []))?.people[0]?.character;
     const ahead = new Date(Date.now() + 3_600_000).toISOString();
     expect((await lockedPeople(ahead))?.lockedUntil).toBe(ahead);

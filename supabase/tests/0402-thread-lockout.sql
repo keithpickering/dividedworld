@@ -1,4 +1,4 @@
--- The thread lockout (supabase/migrations/0401_thread_lockout.sql; docs/plans/2026-11-21-so-very-happy-plan.md, Task 2; design docs/plans/2026-11-21-so-very-happy-design.md, section 3).
+-- The thread lockout (supabase/migrations/0402_thread_lockout.sql; docs/plans/2026-11-21-so-very-happy-plan.md, Task 2; design docs/plans/2026-11-21-so-very-happy-design.md, section 3).
 -- A Reversal with `outcome: {kind: lockout, hours}` lets a cast land and locks the caster's character out of the post's thread: the spring is `did: lockedOut` with `locks` (the character) and `until`, and
 -- not_locked_out refuses that character's posts, plays and sets there until `until` or an admin's card_end on the spring. Other characters, other threads, edits, spins and reactions are untouched.
 -- Cards, accounts and characters here are this file's own (lk...).

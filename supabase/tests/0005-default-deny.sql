@@ -106,7 +106,7 @@ declare
                            'staff_career(text)',
                            -- How players reach an admin (0081): a visitor and a player read the contact, an admin writes it.
                            'admin_contact()', 'set_admin_contact(jsonb)',
-                           -- The bar and the ban (0104): columns of characters_public, whose reader executes the functions that compute them; public facts, the same for any id. The lockout (0401) is the same: thread_page and my_characters read lockout_ends and locked_out_until as their readers.
+                           -- The bar and the ban (0104): columns of characters_public, whose reader executes the functions that compute them; public facts, the same for any id. The lockout (0402) is the same: thread_page and my_characters read lockout_ends and locked_out_until as their readers.
                            'warn_points(uuid)', 'banned_until(uuid)', 'lockout_ends(uuid)', 'locked_out_until(uuid,uuid)',
                            -- The group (0128): a column of characters_public and my_characters, whose reader executes the function; public facts, the same for any id.
                            'group_now(uuid)', 'move_expires_at(uuid)',

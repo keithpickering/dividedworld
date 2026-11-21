@@ -1017,7 +1017,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return latest;
   };
-  /** When a lockout spring ends (`lockout_ends`, 0401): the least of its `until` and the time of a `card_end` on it. */
+  /** When a lockout spring ends (`lockout_ends`, 0402): the least of its `until` and the time of a `card_end` on it. */
   const lockoutEnds = (spring: ActRec): number => {
     const ends = [...acts.values()].filter((x) => x.kind === 'card_end' && x.target === spring.id).map((x) => x.at);
     return Math.min(Date.parse(String(spring.payload.until)), ...ends);
@@ -1031,7 +1031,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const mine = lockoutsOf(who).filter((l) => l.thread === thread).map((l) => l.until);
     return mine.length === 0 ? null : Math.max(...mine);
   };
-  /** `not_locked_out` (0401): the refusal a locked-out character meets in its thread, in the SQL's words, the time rounded up to the minute as `not_banned` says it. */
+  /** `not_locked_out` (0402): the refusal a locked-out character meets in its thread, in the SQL's words, the time rounded up to the minute as `not_banned` says it. */
   const lockedOutRefusal = (who: Id, thread: Id): Refusal | null => {
     const until = lockedOutUntil(who, thread);
     return until === null ? null : refuse(`${characters.get(who)?.name ?? 'this character'} is locked out of this thread until ${refusalTime(iso(Math.ceil(until / 60_000) * 60_000))}; the lockout ends by itself then, and it holds only this character, not your other characters`);
@@ -3900,7 +3900,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     reverseCard(play) {
       if (!me()?.admin) return refuse('only an admin ends a card');
       const p = acts.get(play);
-      /* A live lockout spring is ended as a card play is (reverse_card, 0401), with the same refusals. */
+      /* A live lockout spring is ended as a card play is (reverse_card, 0402), with the same refusals. */
       if (p?.kind === 'spring' && p.payload.did === 'lockedOut') {
         if (reversedPlays.has(play)) return refuse('an admin has already ended that card');
         if (Date.parse(String(p.payload.until)) <= now()) return refuse('that card has already worn off');
@@ -4220,7 +4220,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
              (`onMine`); a reversal between two other players is in neither's view. */
           ended: newest([...acts.values()].filter((e) => e.kind === 'card_end' && e.target !== null && fits(e.at)).flatMap((e) => {
             const play = acts.get(e.target!);
-            /* A lockedOut spring an admin ended (my_cards_ended, 0401): the setter's player reads it as 'cast', the locked character's player as 'onMine'; no one else does. */
+            /* A lockedOut spring an admin ended (my_cards_ended, 0402): the setter's player reads it as 'cast', the locked character's player as 'onMine'; no one else does. */
             if (play?.kind === 'spring' && play.payload.did === 'lockedOut') {
               const setter = characters.get(play.character ?? '')?.owner === account;
               const locked = typeof play.payload.locks === 'string' ? play.payload.locks : '';
