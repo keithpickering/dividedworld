@@ -73,6 +73,12 @@ naming a take, where in the take it starts, and its move. A shot of a node's own
 narration instead of a beat, so the chair still lands as he says "phrase". The edit refuses a statement whose beats
 do not add up, and prints the median shot length of each block, which a test holds to be falling.
 
+**Nothing is held to be read.** The owner, before the list was written: "it's okay not to hold on text long enough to
+read all of it, leaving some of this stuff as only fully legible with a pause. The cuts should be fast-paced, and
+trying to let the viewer sit there and read this whole thing from start to finish would work against that." A shot's
+length comes from the music's beats and never from how long its words take to read; what a take owes its words is a
+sharp frame.
+
 ## 3. The narrator's pointer
 
 In nodes 1 to 4 the camera stays locked off and the pointer does what a person's does while talking over a screen: it
