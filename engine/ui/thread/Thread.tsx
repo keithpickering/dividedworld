@@ -163,6 +163,19 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const people = useRef(new Map<Id, PostbitPerson>());
   const asked = useRef(new Map<Id, Promise<void>>());
   const [, bump] = useState(0);
+  /* The lockout springs heard live in this thread: who each locks and until when, so an admin's end of one (a `card_end` on it) can lift the stamp. */
+  const lockouts = useRef(new Map<Id, { readonly who: Id; readonly until: string }>());
+  /** Put on a person the latest end of the lockouts heard for them, or take the stamp off when none is left ahead. A person not read yet takes it when they are (the page's own read says it too). */
+  const markLocked = useCallback((who: Id) => {
+    const held = people.current.get(who);
+    if (!held) return;
+    const ahead = [...lockouts.current.values()].filter((l) => l.who === who && Date.parse(l.until) > api.now()).map((l) => l.until);
+    const until = ahead.length > 0 ? ahead.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a)) : undefined;
+    if (held.character.lockedUntil === until) return;
+    const { lockedUntil: _was, ...rest } = held.character;
+    people.current.set(who, { ...held, character: until === undefined ? rest : { ...rest, lockedUntil: until } });
+    bump((n) => n + 1);
+  }, [api]);
   const ensurePeople = useCallback(async (ids: readonly (Id | null)[]): Promise<void> => {
     const wanted = [...new Set(ids.filter((c): c is Id => c !== null))];
     const need = wanted.filter((id) => !asked.current.has(id));
@@ -735,6 +748,17 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         /* An admin's end of a play is no tag: it marks its play reversed in the store, wherever the play is (or waits for it). The end of a veil changes the page the same way. */
         if (a.kind === 'card_end') {
           plays.add([a]);
+          /* The end of a lockout spring lifts the stamp it put on; the back it sprang from is ended with it. */
+          if (typeof a.targetActId === 'string') {
+            const spring = a.targetActId;
+            const held = lockouts.current.get(spring);
+            if (held) { lockouts.current.delete(spring); markLocked(held.who); }
+            void api.actsById([spring]).then(([found]) => {
+              if (!found || found.kind !== 'spring' || found.payload.did !== 'lockedOut') return;
+              if (typeof found.payload.set === 'string') plays.setEnded([found.payload.set]);
+              if (!held && typeof found.payload.locks === 'string') markLocked(found.payload.locks);
+            }, quietly);
+          }
           if (endsVeil(plays, feedRef.current.shown.keys(), veils, a)) askCatchUp.current();
           /* The end of a play that drew a reply under a post sets the reply on its number: the feed takes it where its number is shown. */
           const ended = typeof a.targetActId === 'string' ? dropNested(a.targetActId) : undefined;
@@ -744,6 +768,12 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         }
         /* A card set face down is a back on its post; a spring reveals the back in its place, moving no mark (the card mechanic's design). */
         if (a.kind === 'set' || a.kind === 'spring') {
+          /* A lockout spring stamps LOCKED OUT on the character it locks, for this thread, until its time (or an admin's end of it). */
+          if (a.kind === 'spring' && a.payload.did === 'lockedOut' && typeof a.payload.locks === 'string' && typeof a.payload.until === 'string') {
+            const who = a.payload.locks;
+            lockouts.current.set(a.id, { who, until: a.payload.until });
+            void ensurePeople([who]).then(() => markLocked(who), quietly);
+          }
           void ensurePeople([a.character]).then(() => {
             plays.add([a]);
             if (a.kind === 'set') return api.myFaceDown([a.id]).then((faces) => { plays.setFaces(faces); }, () => {});
@@ -806,7 +836,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     };
     const off = api.subscribeThread(thread, listener);
     return () => { off(); joined.current.thread = false; };
-  }, [api, thread, ensurePeople, tallies, polls, plays, effects, veils, ui.copy.staffWord, joinedAt, nestedBy, putNested, dropNested, heard]);
+  }, [api, thread, ensurePeople, tallies, polls, plays, effects, veils, ui.copy.staffWord, joinedAt, nestedBy, putNested, dropNested, heard, markLocked]);
 
   /* A play beyond a post is announced on `reach`, which every signed-in page hears, since it is played from a post in some other thread
      as often as this one (a character's) and on The System's announcements thread (a board's). This page keeps the plays whose target it

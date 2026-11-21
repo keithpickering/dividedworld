@@ -10,7 +10,7 @@
  * (postbit.css) lays that markup out for the narrow screen. The square is for the stacked band and
  * for a mask with no portrait.
  */
-import { memo, type CSSProperties, type ReactNode } from 'react';
+import { memo, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import { useNarrow } from '../media.ts';
@@ -91,6 +91,19 @@ export function Pips({ ranks, index, name, style }: { readonly ranks: number; re
   );
 }
 
+/** Re-renders once when `until` passes, so a stamp that holds until a time goes by itself (as `useBannedUntil` drops the composer's note), in as many timers as a long wait takes. */
+function useHeldUntil(until: string | undefined, api: { now(): number }): boolean {
+  const [ticks, tick] = useState(0);
+  useEffect(() => {
+    if (until === undefined) return;
+    const left = Date.parse(until) - api.now();
+    if (left <= 0) return;
+    const timer = setTimeout(() => tick((n) => n + 1), Math.min(left, 2 ** 31 - 1));
+    return () => clearTimeout(timer);
+  }, [until, api, ticks]);
+  return until !== undefined && Date.parse(until) > api.now();
+}
+
 export const Postbit = memo(function Postbit({ person, layout, marks = null, link = true }: {
   readonly person: PostbitPerson; readonly layout: PostbitLayout;
   /** The name links to the character's profile; false draws it as text, for a made-up character with no profile behind it (the front door). */
@@ -115,6 +128,8 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   const joined = monthYear(c.joined);
   /* A ban holds while its time is in the future (characters_public.banned_until): the page read it, and the title line says so for as long as the page is open. */
   const banned = c.bannedUntil !== undefined && Date.parse(c.bannedUntil) > api.now();
+  /* A lockout from this thread holds while its time is in the future (`thread_page`'s locked_until), and goes by itself at its time. */
+  const locked = useHeldUntil(c.lockedUntil, api);
   /* The side layout shows the chosen trophies and any belt under the rank; the stacked band and a phone show a held belt only, beside the name. */
   const shelf = counts ? postbitTrophies(c.trophies, instance.settings.cosmetics.trophies.shownMost) : [];
   const belts = counts ? [] : heldBelts(c.trophies);
@@ -129,10 +144,11 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
         {/* The group's bar under the name; a staff character's has its office title beside it. */}
         {!standIn && (group || showsStaffBadge(c)) && <span className="kb-postbit-group">{group && <GroupBar look={group} />}<StaffBadge character={c} /></span>}
         {marks && <span className="kb-postbit-marks">{marks}</span>}
-        {(c.title || banned) && (
+        {(c.title || banned || locked) && (
           <span className="kb-postbit-title kb-small kb-muted">
             {c.title}
             {banned && <>{c.title && ' '}<strong className="kb-postbit-banned">BANNED<span className="kb-visually-hidden"> until {shortDate(c.bannedUntil!)}</span></strong></>}
+            {locked && <>{(c.title || banned) && ' '}<strong className="kb-postbit-locked">LOCKED OUT <span>until {shortDate(c.lockedUntil!)}</span></strong></>}
           </span>
         )}
         {/* A staff character, and the stand-in, are not scored: no rank, no pips, and no class to reveal. */}

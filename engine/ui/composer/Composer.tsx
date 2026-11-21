@@ -26,6 +26,8 @@ import { text as textOf } from '../thread/lines.tsx';
 import { BannedNote } from './BannedNote.tsx';
 import { BarredNote, useBar } from './BarredNote.tsx';
 import { useBannedUntil } from './ban.ts';
+import { LockedOutNote } from './LockedOutNote.tsx';
+import { useLockedOutUntil } from './lockout.ts';
 import { draftKey, readDraft, useWhoPosts, writeDraft } from './draft.ts';
 import { PollEditor, problemOf, samePoll } from '../polls/PollDraft.tsx';
 import type { PollDraft } from '../data/api.ts';
@@ -86,6 +88,9 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   const hud = hudCharacter?.id ?? null;
   const who = useWhoPosts(hud, text.trim() !== '', kept?.as ?? null);
   const bannedUntil = useBannedUntil(hudCharacter);
+  /* A lockout holds this thread alone; a ban's note says its own first where both hold. */
+  const lockedUntil = useLockedOutUntil(hudCharacter, thread);
+  const lockedOut = lockedUntil !== null;
   const bar = useBar(hudCharacter, board);
 
   const { adopt } = who;
@@ -162,7 +167,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (busy || blank || over || bannedUntil !== null) return;
+    if (busy || blank || over || bannedUntil !== null || lockedOut) return;
     if (who.changed) { who.confirm(); return; }
     const problem = poll ? problemOf(poll, settings) : null;
     if (problem !== null) { setPollProblem(problem); return; }
@@ -188,6 +193,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
       <h2 className="kb-box-head" id={`composer-head-${thread}`}>Reply</h2>
       <p className="kb-composer-as kb-small" id={`composer-as-${thread}`}>Posting as <strong>{hudCharacter.name}</strong></p>
       {bannedUntil !== null && <BannedNote character={hudCharacter} until={bannedUntil} />}
+      {bannedUntil === null && lockedUntil !== null && <LockedOutNote character={hudCharacter} until={lockedUntil} />}
       <div className="kb-composer-now-region" role="status">
         {who.changed && (
           <p className="kb-notice kb-composer-now">
@@ -206,7 +212,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
         onQuote={latest ? () => quote(latest.id, latest.body) : undefined}
         onSubmit={() => void submit()}
       >
-        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || blank || over || bannedUntil !== null}>
+        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || blank || over || bannedUntil !== null || lockedOut}>
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Send again anyway' : 'Send'}
         </button>
       </Editor>
