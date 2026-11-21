@@ -199,7 +199,7 @@ declare
     jsonb_build_array('{"key": "pr6", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "visit"}, "outcome": {"kind": "ride", "share": 1}}}',
       'card "pr6" has an outcome, and only a set card that springs on a cast does'),
     jsonb_build_array('{"key": "pr7", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "outcome": {"kind": "catch", "share": 1}}}',
-      'card "pr7" has an outcome of kind "catch"; an outcome is ride or refund'),
+      'card "pr7" has an outcome of kind "catch"; an outcome is ride, refund or lockout'),
     jsonb_build_array('{"key": "pr8", "rarity": "uncommon", "play": "set", "reaches": ["post"], "trap": {"trigger": {"on": "cast"}, "outcome": {"kind": "ride", "share": 0}}}',
       'card "pr8" has an outcome of share 0; share is above 0 and at most 1'),
     jsonb_build_array('{"key": "pr9", "rarity": "uncommon", "play": "use", "reaches": ["post"], "lasts": {"unit": "week", "count": 1}, "gimmick": {"kind": "ward", "upTo": "common"}, "skim": {"share": 0.1}}',

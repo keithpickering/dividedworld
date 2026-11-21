@@ -313,7 +313,7 @@ begin
   if has_function_privilege('authenticated', 'wards_against(text, uuid, card_kinds)', 'execute') or has_function_privilege('anon', 'wards_against(text, uuid, card_kinds)', 'execute')
      or has_function_privilege('service_role', 'wards_against(text, uuid, card_kinds)', 'execute') then raise exception 'wards_against is granted to an API role'; end if;
   if has_function_privilege('authenticated', 'ward_refusal(text, uuid, card_kinds, text)', 'execute') or has_function_privilege('service_role', 'ward_refusal(text, uuid, card_kinds, text)', 'execute') then raise exception 'ward_refusal is granted to an API role'; end if;
-  if has_function_privilege('authenticated', 'spring_traps(text, uuid, uuid, text, uuid[], uuid, text)', 'execute') or has_function_privilege('service_role', 'spring_traps(text, uuid, uuid, text, uuid[], uuid, text)', 'execute') then raise exception 'spring_traps is granted to an API role'; end if;
+  if has_function_privilege('authenticated', 'spring_traps(text, uuid, uuid, text, uuid[], uuid, text, uuid)', 'execute') or has_function_privilege('service_role', 'spring_traps(text, uuid, uuid, text, uuid[], uuid, text, uuid)', 'execute') then raise exception 'spring_traps is granted to an API role'; end if;
   -- card_ended keeps the grant it had.
   if not has_function_privilege('authenticated', 'card_ended(uuid)', 'execute') then raise exception 'card_ended lost its grant'; end if;
 end $$;

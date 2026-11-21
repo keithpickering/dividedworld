@@ -150,7 +150,7 @@ begin
     raise exception 'the spring of a lockout back: %', sp;
   end if;
   if (sp ->> 'until')::timestamptz is distinct from (select x.created_at + interval '24 hours' from acts x where x.id = sp_id) then raise exception 'the lockout is not 24 hours long: %', sp; end if;
-  if exists (select 1 from card_ledger where kind = 'caught') then raise exception 'a lockout wrote a caught row'; end if;
+  if exists (select 1 from card_ledger where kind = 'caught' and act = sp_id) or exists (select 1 from card_ledger where act = (r ->> 'id')::uuid and kind <> 'played') then raise exception 'a lockout wrote a caught row'; end if;
   until_b := (sp ->> 'until')::timestamptz;
   -- The play names its spring, as a ride's names the set it rode, so the caster's alert and log line can read it on from the play.
   if cp ->> 'lockedOut' is distinct from sp_id::text then raise exception 'the landed play does not name its lockedOut spring: % (spring %)', cp, sp_id; end if;
