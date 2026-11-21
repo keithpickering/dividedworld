@@ -134,7 +134,7 @@ export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyChara
 
   /* The page's first rows: a trapStruck alert's spring, set and setter are read beside the document, and fill in when they arrive. */
   useEffect(() => {
-    if (!doc.alerts.some((r) => r.kind === 'trapStruck')) return;
+    if (!doc.alerts.some((r) => r.kind === 'trapStruck' || r.kind === 'trapSprang')) return;
     let live = true;
     void readTrapActs(api, doc.alerts, new Map(doc.acts.map((a) => [a.id, a]))).then((got) => {
       if (!live || (got.acts.size === 0 && got.names.size === 0)) return;

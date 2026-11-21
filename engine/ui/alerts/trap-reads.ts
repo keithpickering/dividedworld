@@ -5,13 +5,16 @@
  */
 import type { Act, Alert, Id, KayfaApi } from '../data/api.ts';
 
+/** Plays read per post when looking for a lockout's end (oldest first, so the cut must leave room). */
+const LOCKOUT_PLAYS_PER_POST = 100;
+
 const text = (v: unknown): Id | null => (typeof v === 'string' && v !== '' ? v : null);
 
 /**
  * The Acts, the character names and the staff among them to add for these rows' trapStruck alerts, beyond `acts` already held: the spring, the set it
  * names, and the setter's character. Reads in two rounds (the card's Act names the spring, the spring names the set), each in one call.
  */
-export async function readTrapActs(api: Pick<KayfaApi, 'actsById' | 'characters'>, rows: readonly Alert[], acts: ReadonlyMap<Id, Act>): Promise<{ acts: Map<Id, Act>; names: Map<Id, string>; staff: Set<Id> }> {
+export async function readTrapActs(api: Pick<KayfaApi, 'actsById' | 'characters' | 'cardsOnMany'>, rows: readonly Alert[], acts: ReadonlyMap<Id, Act>): Promise<{ acts: Map<Id, Act>; names: Map<Id, string>; staff: Set<Id> }> {
   const gotActs = new Map<Id, Act>();
   const gotNames = new Map<Id, string>();
   const gotStaff = new Set<Id>();
@@ -24,6 +27,14 @@ export async function readTrapActs(api: Pick<KayfaApi, 'actsById' | 'characters'
     };
     await read(struck.map((a) => text(a.payload.spring) ?? text(a.payload.lockedOut)));
     const handedBackBy = (a: Act): Id | null => { const h = a.payload.handedBack; return typeof h === 'object' && h !== null ? text((h as { by?: unknown }).by) : null; };
+    /* A lockout an admin ended: the card_end on each lockedOut spring (a struck play's, or a trapSprang alert's own spring), read with the plays on its post in one call. */
+    try {
+      const springs = new Map<Id, Act>();
+      for (const a of struck) { const id = text(a.payload.lockedOut); const sp = id === null ? undefined : held(id); if (sp) springs.set(sp.id, sp); }
+      for (const r of rows) { const sp = r.kind === 'trapSprang' && r.act !== null ? held(r.act) : undefined; if (sp?.kind === 'spring' && sp.payload.did === 'lockedOut') springs.set(sp.id, sp); }
+      const posts = [...new Set([...springs.values()].map((sp) => sp.targetActId).filter((id): id is Id => id !== null))];
+      if (posts.length > 0) for (const a of await api.cardsOnMany(posts, posts.length * LOCKOUT_PLAYS_PER_POST)) if (a.kind === 'card_end' && a.targetActId !== null && springs.has(a.targetActId)) gotActs.set(a.id, a);
+    } catch { /* the lockout reads "until" alone */ }
     const setOf = (a: Act) => text(a.payload.caught) ?? text(a.payload.rode) ?? handedBackBy(a) ?? text(held(text(a.payload.spring) ?? text(a.payload.lockedOut) ?? '')?.payload.set);
     await read(struck.map(setOf));
     const setters = struck.map((a) => held(setOf(a) ?? '')?.character ?? held(text(a.payload.spring) ?? text(a.payload.lockedOut) ?? '')?.character ?? null);
