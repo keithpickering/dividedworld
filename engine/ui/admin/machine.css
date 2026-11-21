@@ -92,6 +92,17 @@
   color: var(--kb-glass-text-2);
 }
 
+.kb-machine-retired {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 0 6px;
+  border: 1px solid var(--kb-glass-text-2);
+  border-radius: 4px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
 .kb-machine-field {
   box-sizing: border-box;
   min-height: 52px;
