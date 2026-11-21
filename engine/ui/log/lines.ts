@@ -138,11 +138,25 @@ export const utcWhen = (iso: string) => {
   const d = new Date(iso);
   return `${utcDay(iso)} · ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 };
-/** When a lockout ends and when an admin ended it early (a `card_end` on its spring, where the Act is held), as the log writes times: "until Nov 1 · 10:00 UTC", "An admin ended it at Oct 31 · 12:30 UTC." */
-function lockoutTimes(spring: Act, data: LogData): { until: string; ended: string } {
-  const end = [...data.acts.values()].find((a) => a.kind === 'card_end' && a.targetActId === spring.id);
-  const until = typeof spring.payload.until === 'string' ? `${utcWhen(spring.payload.until)} UTC` : 'it ends';
-  return { until, ended: end ? ` An admin ended it at ${utcWhen(end.createdAt)} UTC.` : '' };
+/** An admin's `card_end` Acts by the Act each ends (a lockout's spring), indexed once for each set of Acts. */
+const endsCache = new WeakMap<ReadonlyMap<Id, Act>, Map<Id, Act>>();
+const endsByTarget = (acts: ReadonlyMap<Id, Act>): Map<Id, Act> => {
+  let ends = endsCache.get(acts);
+  if (!ends) {
+    ends = new Map();
+    for (const a of acts.values()) if (a.kind === 'card_end' && a.targetActId !== null) ends.set(a.targetActId, a);
+    endsCache.set(acts, ends);
+  }
+  return ends;
+};
+
+/**
+ * When a lockout ends and when an admin ended it early (a `card_end` on its spring, where the Act is held), as the log and the alerts write times:
+ * `until` is "Nov 1 · 10:00 UTC" (or "it ends" where the spring names none), `ended` "Oct 31 · 12:30 UTC" or null.
+ */
+export function lockoutEnd(spring: Act, acts: ReadonlyMap<Id, Act>): { readonly until: string; readonly ended: string | null } {
+  const end = endsByTarget(acts).get(spring.id);
+  return { until: typeof spring.payload.until === 'string' ? `${utcWhen(spring.payload.until)} UTC` : 'it ends', ended: end ? `${utcWhen(end.createdAt)} UTC` : null };
 }
 
 /** A reason's name, the instance's words before their colon ("Drew heat"), and the whole of them (what it pays for). */
@@ -986,11 +1000,11 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const sprungBy = e.act ? data.acts.get(e.act)?.payload.lockedOut : undefined;
     const locking = typeof sprungBy === 'string' && data.acts.get(sprungBy)?.payload.did === 'lockedOut' ? data.acts.get(sprungBy) : undefined;
     if (locking) {
-      const t = lockoutTimes(locking, data);
+      const t = lockoutEnd(locking, data.acts);
       const trapped = locking.targetActId ? data.acts.get(locking.targetActId) : undefined;
       rows.push({
         key: `lockedOut:${e.act}`, kind: 'struck', at: locking.createdAt, what: `A face-down card locked you out of a thread`,
-        details: [`The ${cardName(locking.payload.card)} on `, (trapped && actLink(trapped, data, words, caster ?? undefined)) ?? link ?? 'a post', ` locked ${nameOf(typeof locking.payload.locks === 'string' ? locking.payload.locks : caster, 'one of your characters')} out of this thread until ${t.until}.${t.ended}`],
+        details: [`The ${cardName(locking.payload.card)} on `, (trapped && actLink(trapped, data, words, caster ?? undefined)) ?? link ?? 'a post', ` locked ${nameOf(typeof locking.payload.locks === 'string' ? locking.payload.locks : caster, 'one of your characters')} out of this thread until ${t.until}.${t.ended === null ? '' : ` An admin ended it at ${t.ended}.`}`],
         aura: 0, wallet: null, characters: caster ? [caster] : [],
       });
     }
@@ -1212,10 +1226,10 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
         const played = by;
         const move = cardName(played?.payload.card);
         const who = nameOf(typeof spring.payload.locks === 'string' ? spring.payload.locks : played?.character);
-        const t = lockoutTimes(spring, data);
+        const t = lockoutEnd(spring, data.acts);
         rows.push({
           key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
-          details: [`${cardName(e.card)} on `, on, ` sprang when ${who} played ${move} on it. ${move} landed, and ${who} is locked out of the thread until ${t.until}.${t.ended}`],
+          details: [`${cardName(e.card)} on `, on, ` sprang when ${who} played ${move} on it. ${move} landed, and ${who} ${t.ended === null ? 'is' : 'was'} locked out of the thread until ${t.until}.${t.ended === null ? '' : ` An admin ended it at ${t.ended}.`}`],
           aura: 0, wallet: null, characters,
         });
         continue;

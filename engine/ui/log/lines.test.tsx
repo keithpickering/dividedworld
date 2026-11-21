@@ -272,7 +272,7 @@ describe('cards set face down, traps and catches', () => {
       expect([row.aura, row.wallet]).toEqual([0, null]);
     });
     test('an admin who ended it early is named plainly, with the time, in either line', () => {
-      expect(text(setter([end]))).toContain('until Nov 1 · 10:00 UTC. An admin ended it at Oct 31 · 12:30 UTC.');
+      expect(text(setter([end]))).toContain('Spritey was locked out of the thread until Nov 1 · 10:00 UTC. An admin ended it at Oct 31 · 12:30 UTC.');
       const rows = caster([end]);
       expect(text(rows.find((r) => r.kind === 'struck')!)).toContain('until Nov 1 · 10:00 UTC. An admin ended it at Oct 31 · 12:30 UTC.');
     });

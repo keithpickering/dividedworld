@@ -9,7 +9,7 @@ import { ALIGNMENTS, QUADRANTS } from '../../rules/types.ts';
 import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarget, atOrBelow, matchWords, playOf as playOfRules, RARITIES, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Rarity, type Verdict } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
-import { shareWords } from '../copy-words.ts';
+import { shareWords, upperFirst } from '../copy-words.ts';
 import type { Act } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
 import { stackPlays } from './plays.ts';
@@ -124,9 +124,8 @@ function lockoutMatchWords(match: NonNullable<CardRules['trap']>['match'], own: 
   if (!match) return ' that it names';
   const rarity = match.upTo !== undefined && atOrBelow(match.upTo, own) ? match.upTo : own;
   const flavors = ALIGNMENTS.filter((a) => match.flavors?.includes(a));
-  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   const left = ALIGNMENTS.filter((a) => !flavors.includes(a));
-  const kind = flavors.length === 0 || left.length === 0 ? null : left.length === 1 ? `isn't ${cap(left[0]!)}` : `is ${flavors.map(cap).join(' or ')}`;
+  const kind = flavors.length === 0 || left.length === 0 ? null : left.length === 1 ? `isn't ${upperFirst(left[0]!)}` : `is ${flavors.map(upperFirst).join(' or ')}`;
   const upTo = rarity === RARITIES[RARITIES.length - 1] ? '' : `up to ${rarity}`;
   return kind === null ? (upTo ? ` that is ${upTo}` : '') : ` that ${kind}${upTo ? `, ${upTo}` : ''}`;
 }

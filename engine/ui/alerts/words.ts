@@ -11,7 +11,7 @@ import { FOLLOWED_COUNT_CAP } from '../data/api.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { shortQuote, springConditions } from '../cards/lens-words.ts';
 import { upperFirst } from '../copy-words.ts';
-import { inSentence, utcWhen } from '../log/lines.ts';
+import { inSentence, lockoutEnd } from '../log/lines.ts';
 
 /** A run of words: plain, or a title set in italics, as the board draws it. */
 export type Part = string | { readonly em: string };
@@ -68,8 +68,6 @@ const aboutPost = (a: Act | undefined, ctx: WordsContext): Act | undefined => (a
 
 const cardName = (key: unknown, ctx: WordsContext): string | null => ctx.instance.cards.find((c) => c.key === key)?.name ?? null;
 
-/** A time as the alerts write it ("Nov 3 · 09:41 UTC"). */
-const utcTime = (iso: string): string => `${utcWhen(iso)} UTC`;
 
 /**
  * A lockout back's spring: the Move it let land locks its character out of the spring's thread until `until` (public as the Move is). `play` is the spring's `by`;
@@ -79,8 +77,8 @@ function lockoutOf(spring: Act | undefined, ctx: WordsContext): { spring: Act; u
   if (!spring || spring.kind !== 'spring' || spring.payload.did !== 'lockedOut' || typeof spring.payload.until !== 'string') return null;
   const play = typeof spring.payload.by === 'string' ? ctx.acts.get(spring.payload.by) : undefined;
   const locks = typeof spring.payload.locks === 'string' ? spring.payload.locks : play?.character ?? null;
-  const end = [...ctx.acts.values()].find((a) => a.kind === 'card_end' && a.targetActId === spring.id);
-  return { spring, until: utcTime(spring.payload.until), play, caster: locks === null ? null : ctx.names?.get(locks) ?? null, ended: end ? utcTime(end.createdAt) : null };
+  const t = lockoutEnd(spring, ctx.acts);
+  return { spring, until: t.until, play, caster: locks === null ? null : ctx.names?.get(locks) ?? null, ended: t.ended };
 }
 const adminEnded = (l: { ended: string | null }): string[] => (l.ended === null ? [] : [`An admin ended it at ${l.ended}.`]);
 
@@ -317,7 +315,7 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
         const where = post && post.seq !== null ? `your post #${post.seq}` : 'your post';
         return {
           line: [card ? `Your face-down ${card} sprang` : 'Your face-down card sprang'],
-          detail: sentences([`${card ?? 'A card'} on ${where} sprang when ${who2} played ${move} on it. ${upperFirst(move)} landed, and ${who2} is locked out of the thread until ${locked.until}.`], adminEnded(locked), inTitle(row)),
+          detail: sentences([`${card ?? 'A card'} on ${where} sprang when ${who2} played ${move} on it. ${upperFirst(move)} landed, and ${who2} ${locked.ended === null ? 'is' : 'was'} locked out of the thread until ${locked.until}.`], adminEnded(locked), inTitle(row)),
           ways: postWay(post, row, ctx), who,
         };
       }

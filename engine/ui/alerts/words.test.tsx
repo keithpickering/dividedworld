@@ -330,7 +330,7 @@ describe('a trap', () => {
       const r = row({ kind: 'trapSprang', act: 'sp', character: 'cPipe', name: 'Pipewrench', title: 'Hobbies' });
       const end = act('end', { kind: 'card_end', character: null, targetActId: 'sp', createdAt: '2026-11-02T12:05:00.000Z' });
       expect(said(r, ctx([locked(), play, post, end], { names: lockNames })).detail)
-        .toContain('until Nov 3 · 09:41 UTC. An admin ended it at Nov 2 · 12:05 UTC. In Hobbies.');
+        .toContain('Spritey was locked out of the thread until Nov 3 · 09:41 UTC. An admin ended it at Nov 2 · 12:05 UTC. In Hobbies.');
     });
     test('struck (the caster): the default words, and the instance voice is handed how: lockedOut with the time', () => {
       const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
