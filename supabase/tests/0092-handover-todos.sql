@@ -45,10 +45,13 @@ begin
   perform tests.unbecome();
 end $$;
 create function pg_temp.dismiss(n integer) returns jsonb language plpgsql as $$
-declare r jsonb;
+declare
+  r jsonb;
+  -- A to-do is a handover's (0401): the season's number names its roll-over, read before the admin is put on (no client reads the table); a season with none (the first) names no handover, which is refused in words.
+  roll bigint := (select h.id from season_handovers h join seasons s on s.id = h.season where s.number = n and h.cause = 'rollover');
 begin
   perform pg_temp.as_admin();
-  r := dismiss_handover_todo(n);
+  r := dismiss_handover_todo(roll);
   perform tests.unbecome();
   return r;
 end $$;
@@ -151,9 +154,7 @@ begin
   if (select count(*) from handover_dismissals) is distinct from 1 then raise exception 'a second dismissal wrote a second row'; end if;
   if r ->> 'season' is distinct from '2' then raise exception 'a second dismissal was not answered: %', r; end if;
   -- A season with no to-do (the first has no handover) is refused in words.
-  perform pg_temp.as_admin();
-  said := pg_temp.refused('select dismiss_handover_todo(1)');
-  perform tests.unbecome();
+  said := pg_temp.refused('select pg_temp.dismiss(1)');
   if said is null or said not like '%no to-do%' then raise exception 'a dismissal of a season with no to-do was not refused in words: %', said; end if;
   -- The ledger is append-only and no client's.
   said := pg_temp.refused('update handover_dismissals set at = now()');

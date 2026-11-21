@@ -415,8 +415,8 @@ test('an instance exported and imported into a fresh database is the same instan
       -- The day it posted, in the pool's ledger (0089).
       insert into pool_spends (day, staff, trigger, post_act, record) select '2030-01-07', 'exp-boss', 'named', id, '{"trims": []}' from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
       -- A handover's to-do an admin dismissed (0090): the handover is a Boss changing, the season it opened.
-      insert into season_handovers (season, outgoing, boss, how) select (select id from seasons where ends_at is null), 'exp-boss', 'exp-bot', 'rotation' on conflict (season) do nothing;
-      insert into handover_dismissals (season, admin) select season, ann from season_handovers order by season limit 1;
+      insert into season_handovers (season, outgoing, boss, how) select (select id from seasons where ends_at is null), 'exp-boss', 'exp-bot', 'rotation' on conflict (season) where cause = 'rollover' do nothing;
+      insert into handover_dismissals (season, handover, admin) select season, id, ann from season_handovers order by id limit 1;
       -- A run's claim on a day (0089), which the pool's schedule would have taken.
       insert into pool_run_claims (day) values ('2030-01-07');
       -- The developer persona (0062): a staff character of its own kind, its avatar key, the updates thread The System's board never lists (updatesThread),
