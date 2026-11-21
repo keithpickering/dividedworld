@@ -546,7 +546,7 @@ function toHandoffFacts(v: unknown): HandoffFacts {
 
 function toTodo(r: Row): HandoverTodo {
   return {
-    season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossPronouns: pronounsOrDefault(r['bossPronouns']), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
+    handover: num(r['handover']), cause: r['cause'] === 'departure' ? 'departure' : 'rollover', season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossPronouns: pronounsOrDefault(r['bossPronouns']), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
     outgoingName: orNull(r['outgoingName']), outgoingPronouns: pronounsOrDefault(r['outgoingPronouns']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
     note: orNull(r['note']), facts: toHandoffFacts(r['facts']),
   };
@@ -1425,9 +1425,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async adminQueue(): Promise<AdminQueue> {
       return toAdminQueue((await read(() => client.rpc('admin_queue'))).data);
     },
-    async dismissHandoverTodo(season) {
-      const a = await rpcWrite(() => client.rpc('dismiss_handover_todo', { season_number: season }));
-      return a.ok ? { ok: true, value: { season: num(a.value['season']) } } : a;
+    async dismissHandoverTodo(handover) {
+      const a = await rpcWrite(() => client.rpc('dismiss_handover_todo', { handover }));
+      return a.ok ? { ok: true, value: { handover: num(a.value['handover']), season: num(a.value['season']) } } : a;
     },
     /* A page of the Updates (`updates`, 0062): public, the same for every reader, newest first. */
     async updates(before) {
