@@ -88,11 +88,18 @@ export function Captions({ store = captions }: { readonly store?: Store }) {
     const boxes = () => [...document.querySelectorAll<HTMLElement>('.kb-glass-overlay .kb-glass-dialog')];
     const sees = new ResizeObserverOf(() => place());
     const place = () => {
+      /* An empty stack has nothing to place: it drops its raise and lift, watches no dialog, and reads no layout. */
+      if (el.childElementCount === 0) {
+        lift = 0;
+        el.removeAttribute('data-over-scrim'); el.style.removeProperty('--kb-captions-lift');
+        sees.watch([]);
+        return;
+      }
       const open = boxes();
       const r = el.getBoundingClientRect();
       const rest = { left: r.left, right: r.right, top: r.top + lift, bottom: r.bottom + lift };
       const laid = open.map(laidOut);
-      const over = el.childElementCount === 0 ? null : placeOver(rest, laid.map((l) => l.box), { top: Math.max(0, ...laid.map((l) => l.top)) });
+      const over = placeOver(rest, laid.map((l) => l.box), { top: Math.max(0, ...laid.map((l) => l.top)) });
       lift = over?.lift ?? 0;
       if (over) { el.setAttribute('data-over-scrim', 'true'); el.style.setProperty('--kb-captions-lift', `${over.lift}px`); }
       else { el.removeAttribute('data-over-scrim'); el.style.removeProperty('--kb-captions-lift'); }
@@ -105,6 +112,7 @@ export function Captions({ store = captions }: { readonly store?: Store }) {
     /* A dialog opening or closing (a change to the body's children), or the window changing size, is read now and once more a frame on: the overlay places an anchored box after it mounts. The read needs no waiting for the open animation, for it is of the laid-out box (laidOut). */
     let after: number | null = null;
     const changed = () => {
+      if (el.childElementCount === 0) return;
       place();
       if (after !== null) cancelAnimationFrame(after);
       after = requestAnimationFrame(() => { after = null; place(); });

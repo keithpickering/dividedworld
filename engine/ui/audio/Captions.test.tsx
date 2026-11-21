@@ -163,6 +163,49 @@ describe('the caption bar', () => {
       scrim.remove();
     });
 
+    test('a line that goes while the dialog stays open takes the raise and the lift with it', async () => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) { return measure(this); });
+      const scrim = withDialog({ left: 0, top: 400, right: 1280, bottom: 790 });
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'Cheers', ms: 80 }));
+      await waitFor(() => expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px'));
+      await waitFor(() => expect(bar()).toBeNull(), { timeout: 2000 });
+      expect(scrim.isConnected).toBe(true);
+      expect(stack()?.getAttribute('data-over-scrim')).toBeNull();
+      expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
+      scrim.remove();
+    });
+
+    test('three lines meeting a dialog with no room above stay under the scrim', async () => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) { return measure(this); });
+      const scrim = withDialog({ left: 0, top: 20, right: 1280, bottom: 790 });
+      render(<Captions store={store} />);
+      act(() => { store.say({ text: 'One', ms: 60_000 }); store.say({ text: 'Two', ms: 60_000 }); store.say({ text: 'Three', ms: 60_000 }); });
+      expect(bars()).toHaveLength(3);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+      expect(stack()?.getAttribute('data-over-scrim')).toBeNull();
+      expect((stack() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
+      scrim.remove();
+    });
+
+    test('with no line the stack does no layout work: a dialog opening, closing or a resize reads nothing and asks for no frame', async () => {
+      const reads = vi.fn();
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        if (this.classList.contains('kb-captions')) reads();
+        return measure(this);
+      });
+      render(<Captions store={store} />);
+      const frames = vi.spyOn(window, 'requestAnimationFrame');
+      reads.mockClear();
+      const scrim = withDialog({ left: 0, top: 400, right: 1280, bottom: 790 });
+      window.dispatchEvent(new Event('resize'));
+      await new Promise((r) => setTimeout(r, 0));
+      scrim.remove();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(reads).not.toHaveBeenCalled();
+      expect(frames).not.toHaveBeenCalled();
+    });
+
     test('with no dialog the bar is not raised and carries no lift', () => {
       render(<Captions store={store} />);
       act(() => store.say({ text: 'Cheers', ms: 60_000 }));
