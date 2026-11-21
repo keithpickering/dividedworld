@@ -77,9 +77,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
   const inAs = <T,>(account: string, call: () => Promise<T>): Promise<T> => {
     if (account === made.viewer) return call();
     fake.signInAs(account);
-    const answer = call();
-    fake.signInAs(made.viewer);
-    return answer;
+    try { return call(); } finally { fake.signInAs(made.viewer); }
   };
   /** Gives the account one more of a card when its hand holds none, and a wallet that covers a play: the film's casts are not about the economy. */
   const stocked = async (account: string, card: string) => {
@@ -167,7 +165,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     async merge(): Promise<string> {
       const { palace, minus } = made.boards;
       for (const [slug, name, description] of [[palace, 'Plumber Platformer Palace', 'A board for Mario fangames.'], [minus, 'World -1', 'Everything that is not a Mario fangame.']] as const) {
-        try { fake.seed.board(slug, name, description); } catch { /* made already */ }
+        try { fake.seed.board(slug, name, description); } catch (e) { if (!/already/.test(String(e))) throw e; /* made already: the world's own seed says "there is a board … already" */ }
       }
       fake.clock.advance(1000);
       const move = fake.seed.move('fangame', { board: '', name: '', body: LINES.merged.text, lasting: { kind: 'mergeBoard', params: { board: palace, into: minus } } });

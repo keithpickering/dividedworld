@@ -165,6 +165,36 @@ describe('a real cast', () => {
   });
 });
 
+describe('a call that throws', () => {
+  test('a part\'s call that throws leaves the film\'s player signed in, not the other player the call was made as', async () => {
+    const { fake, made, play } = await stage('D-Guy');
+    const original = fake.react.bind(fake);
+    fake.react = (() => { throw new Error('the backend threw'); }) as typeof fake.react;
+    await expect(play.react('Snuckles', made.posts['review']!, 'tomato')).rejects.toThrow(/the backend threw/);
+    expect((await fake.session()).account, 'the page is the film\'s player again').toBe(made.viewer);
+    fake.react = original;
+  });
+
+  test('so does the world\'s own setting of a card face down: a throw there leaves the film\'s player signed in', async () => {
+    const fake: Fake = createFake({ instance });
+    const set = fake.setCard.bind(fake);
+    fake.setCard = ((card: string, ...rest: Parameters<typeof fake.setCard> extends [string, ...infer R] ? R : never) => { if (card === '4d-chess') throw new Error('the backend threw'); return set(card, ...rest); }) as typeof fake.setCard;
+    const made = buildStage(fake, instance, { skin: 'default', as: null, view: 'thread', sheet: false });
+    await expect(made.ready).rejects.toThrow(/the backend threw/);
+    expect((await fake.session()).account).toBe(made.viewer);
+  });
+
+  test('the merge makes a board that is not there and skips one that is, and says nothing of any other failure', async () => {
+    const { fake, made, play } = await stage();
+    fake.seed.board(made.boards.palace, 'Plumber Platformer Palace', 'A board for Mario fangames.');
+    await expect(play.staff.merge()).resolves.toBeTypeOf('string');
+    const seeded = fake.seed.board.bind(fake.seed);
+    fake.seed.board = () => { throw new Error('the database is gone'); };
+    await expect(play.staff.merge()).rejects.toThrow(/the database is gone/);
+    fake.seed.board = seeded;
+  });
+});
+
 describe('a spring on a post written another way', () => {
   test('a quoting post the composer wrote gets the chair and the spring, as one `quoteSprings` writes', async () => {
     const { fake, made, play } = await stage('Human Josh');

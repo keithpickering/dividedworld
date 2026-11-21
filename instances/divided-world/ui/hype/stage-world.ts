@@ -259,9 +259,7 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
   /** One call as `account`: the session is theirs while it is made, and the film's player's at once (the backend runs a call's body as it is made). */
   const as = <T,>(account: string, call: () => Promise<T>): Promise<T> => {
     fake.signInAs(account);
-    const answer = call();
-    fake.signInAs(viewer);
-    return answer;
+    try { return call(); } finally { fake.signInAs(viewer); }
   };
   /*
    * The page is told of the film's player's session and no other's: a part that signs in as another player for one call (stage-play.ts) would
