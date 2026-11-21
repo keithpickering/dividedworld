@@ -180,6 +180,22 @@ describe('the report form', () => {
     await waitFor(() => expect(panel).toHaveTextContent('Pipewrench has 2 reports left today.'));
   });
 
+  test('a visit judged on a post already visited after a report on that charge says no visit opened and the Aura came back, then the Mod\'s line, and the count of reports left is one less', async () => {
+    const w = world();
+    /* An earlier visit on the post, charged for a report, has ended (filed, not reversed): a post is not charged twice for one breach. */
+    const earlier = w.fake.seed.visit(w.clerk, w.second, { at: Date.now() - 7_200_000, charges: [{ cause: 'report' }] });
+    w.fake.seed.visitEnd(earlier, { outcome: 'filed', line: 'Filed.', at: Date.now() - 3_600_000 });
+    const { panel } = await opened(w);
+    w.fake.seed.judging({ report: 'visit' });
+    await userEvent.type(within(panel).getByRole('textbox'), 'a repeat');
+    await userEvent.click(within(panel).getByRole('button', { name: /^Report ·/u }));
+    const status = within(panel).getByRole('status');
+    await waitFor(() => expect(status).toHaveTextContent('Your report was judged a visit, but no visit opened: post #2 was already visited after a report on that charge. Your 0.25 Aura came back. It still counts toward Pipewrench\'s reports today.'));
+    expect(status.textContent).not.toContain('is spent');
+    expect(status.textContent).toMatch(/counts toward Pipewrench's reports today\. A Moderator said: /u);
+    await waitFor(() => expect(panel).toHaveTextContent('Pipewrench has 2 reports left today.'));
+  });
+
   test('says a visit is on its way, and that a backfire went to the reporter\'s latest post', async () => {
     const a = await opened();
     a.w.fake.seed.judging({ report: 'visit' });
