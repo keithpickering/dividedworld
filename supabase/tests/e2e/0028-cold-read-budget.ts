@@ -175,13 +175,16 @@ const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: nu
  * Each screen function, one real call that answers a document. The budgets are the workflow's measurements (PR 720's sql job, 2026-11-15; index_page's and board_page's, PR 727's, the same day,
  * the first with who is online pinned: 5.954 and 8.498 MB, every other figure within 0.001 MB of PR 720's), each rounded up to one decimal plus 0.3 MB; a search read
  * is called with a term and no filter, since the plan it keeps does not depend on the term.
+ * Re-recorded on the workflow's Postgres 17 for the polls migration (0395 redefines acts_public with a third select, so planning keeps more): board_page 9.789, boot 8.770,
+ * index_page 6.870 and thread_page 17.172 MB, each rounded up to one decimal plus 0.3 MB; every other budget is unchanged. thread_page again for 0396's
+ * poll_latest_ballots reads (poll_counts, poll_voter_acts and my_latest_ballots in its poll block): 21.198 MB, so 21.5.
  */
 export const BUDGETS: Record<string, Budget> = {
   alerts_page: budget(() => 'public.alerts_page(null)', player, 5.7),
-  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 8.8),
-  boot: budget(() => 'public.boot()', player, 6.4),
+  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 10.1),
+  boot: budget(() => 'public.boot()', player, 9.1),
   drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 3.0),
-  index_page: budget(() => 'public.index_page()', player, 6.3),
+  index_page: budget(() => 'public.index_page()', player, 7.2),
   log_page: budget(() => 'public.log_page(null)', player, 15.7),
   my_characters_page: budget(() => 'public.my_characters_page()', player, 4.8),
   profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 6.6),
@@ -192,7 +195,7 @@ export const BUDGETS: Record<string, Budget> = {
   search_suggest: budget(() => `public.search_suggest('co', null, null, false, 5)`, player, 3.7),
   search_threads: budget(() => `public.search_threads('cold', null, null, null, null, false, null, null, 5)`, player, 6.2),
   season_page: budget(() => `public.season_page('rankings', null, null, 1)`, player, 3.5),
-  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 17.0),
+  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 21.5),
   updates_page: budget(() => 'public.updates_page(null, null, null)', player, 2.8),
 };
 

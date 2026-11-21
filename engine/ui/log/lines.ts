@@ -22,7 +22,7 @@ import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pron
 import { matchWords, playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
-import type { Act, CardEvent, ConductLogRow, LogCosmetic, MyBan, SurfaceLogRow, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
+import type { Act, CardEvent, ConductLogRow, LogCosmetic, LogPlace, MyBan, SurfaceLogRow, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { officeRole } from '../board/move-words.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
@@ -56,7 +56,9 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   /* A drive's gift, the giver's and the post's author's (docs/plans/2026-11-03-jimmy-wails-design.md, section 10). */
   | 'gift'
   /* A surface (docs/plans/2026-11-11-graffiti-design.md, sections 3 and 11): a draw on one, and a wash of one. */
-  | 'drew' | 'washed';
+  | 'drew' | 'washed'
+  /* The polls plan, Task 8: the player's own ballot (cast, changed or withdrawn) and an admin's close of their poll. */
+  | 'ballot' | 'pollClose';
 
 /** One row of the log. */
 export interface LogRow {
@@ -396,8 +398,9 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...giftRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...conductRows(data).filter((r) => inTab(r.characters)));
   rows.push(...surfaceRows(data, words).filter((r) => inTab(r.characters)));
+  rows.push(...pollRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, crowd: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, crowd: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4, ballot: 4, pollClose: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -1273,6 +1276,39 @@ function estimateRows(data: LogData, words: Words, tab: Id | null): LogRow[] {
       key: `estimate:${i}`, kind: 'estimate' as const, at, what: 'Estimate', details: estimateWords(l, data, words, tab),
       aura: l.amount, wallet: null, characters: [l.character],
     }))];
+}
+
+/**
+ * The poll lines, for the player's own characters (`my_ballots`, `my_poll_closes`), in plain words and true, never in character: a ballot cast, changed or withdrawn, with the picks said from the poll's own options and
+ * "(secret ballot)" where the poll is, and an admin's close of a poll the character wrote. A line says what the character did and names no one else who voted; the picks of a secret ballot are the player's own fact,
+ * read only through `my_ballots`. A row for a character that is not the player's is none.
+ */
+function pollRows(data: LogData, words: Words): LogRow[] {
+  const rows: LogRow[] = [];
+  const mine = (id: Id) => data.mine.some((c) => c.id === id);
+  const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? '';
+  const where = (p: LogPlace): Segment => ({ text: `#${p.seq} in ${p.title}`, href: threadHref(p.thread, pageOf(p.seq, words.postsPerPage), p.seq) });
+  const list = (xs: readonly string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+  for (const b of data.log.ballots ?? []) {
+    if (!mine(b.character)) continue;
+    const name = nameOf(b.character);
+    const their = pronounsIn(data, b.character).their;
+    const picked = list(b.picks.map((i) => b.options[i] ?? `option ${i + 1}`));
+    const ballot = b.picks.length === 0 ? `${name} withdrew ${their} ballot` : b.changed ? `${name} changed ${their} ballot` : `${name} cast a ballot`;
+    const choice = b.picks.length === 0 ? '' : b.changed ? ` to ${picked}` : ` for ${picked}`;
+    rows.push({
+      key: `ballot:${b.act}`, kind: 'ballot', at: b.at, what: ballot, aura: 0, wallet: null, characters: [b.character],
+      details: [`${ballot}${choice} in the poll \u201c${b.question}\u201d on `, where(b.place), `${b.secret ? ' (secret ballot)' : ''}.`],
+    });
+  }
+  for (const c of data.log.pollCloses ?? []) {
+    if (!mine(c.character)) continue;
+    rows.push({
+      key: `pollClose:${c.act}`, kind: 'pollClose', at: c.at, what: `An admin closed ${nameOf(c.character)}'s poll`, aura: 0, wallet: null, characters: [c.character],
+      details: [`An admin closed ${nameOf(c.character)}'s `, { text: `poll \u201c${c.question}\u201d`, href: threadHref(c.place.thread, pageOf(c.place.seq, words.postsPerPage), c.place.seq) }, '.'],
+    });
+  }
+  return rows;
 }
 
 /**

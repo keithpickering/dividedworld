@@ -31,6 +31,8 @@ const onHref = (on: PlaceOn, perPage: number): string => {
 /** One stretch of the phrase: its words, where it goes (null for plain words), and, for a character's name, that character's id. */
 export interface PlacePart { readonly words: string; readonly href: string | null; readonly character?: string }
 
+/** A poll's question as a place names it: at most 60 characters, then an ellipsis. */
+const cut = (question: string): string => { const chars = [...question]; return chars.length > 60 ? `${chars.slice(0, 60).join('')}…` : question; };
 const postWords = (p: PostPlace): string => `#${p.seq} in ${p.title}`;
 const cardWords = (card: string | null, cardName: (key: string) => string | undefined): string => card === null ? 'a face-down card' : cardName(card) ?? 'a card';
 
@@ -41,6 +43,11 @@ const cardWords = (card: string | null, cardName: (key: string) => string | unde
  * card. This is the one place the words are worked out: `placeWords` and `placeHref` read it.
  */
 export function placeParts(place: OriginPlace, cardName: (key: string) => string | undefined, perPage: number): readonly PlacePart[] {
+  /* A poll and a ballot are one link, to the poll's post, whose words are the whole phrase. */
+  if (place.kind === 'poll' || place.kind === 'ballot') {
+    const poll = `the poll “${cut(place.question)}” on ${postWords(place.on)}`;
+    return [{ words: place.kind === 'poll' ? poll : `${place.character.name}'s ballot in ${poll}`, href: onHref(place.on, perPage) }];
+  }
   if (place.kind !== 'play') return [{ words: onWords(place), href: onHref(place, perPage) }];
   const card = cardWords(place.card, cardName);
   if (place.on === null) return [{ words: card, href: null }];

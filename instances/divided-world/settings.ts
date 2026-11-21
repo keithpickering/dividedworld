@@ -41,6 +41,12 @@ export const defaults: Settings = deepFreeze<Settings>({
   editGrace: { unit: 'minute', count: 2 },
   /** Long enough for an effortpost; short enough that one post is never a page of its own. */
   postMaxLength: 20_000,
+  /** A poll: at most ten options of a hundred characters under a question of two hundred; it lasts an hour at least, so a vote is not over before it is seen, and two weeks at most, so none sits open for good. */
+  pollOptionsMax: 10,
+  pollQuestionMax: 200,
+  pollOptionMax: 100,
+  pollLastsMin: { unit: 'hour', count: 1 },
+  pollLastsMax: { unit: 'day', count: 14 },
   titleMaxLength: 120,
   /** A page of a thread: long enough to read in one sitting, short enough to load at once. */
   postsPerPage: 20,

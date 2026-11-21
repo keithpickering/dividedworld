@@ -13,6 +13,8 @@ import { BannedNote } from '../composer/BannedNote.tsx';
 import { BarredNote, useBar } from '../composer/BarredNote.tsx';
 import { useBannedUntil } from '../composer/ban.ts';
 import { Editor } from '../composer/Editor.tsx';
+import { PollEditor, problemOf } from '../polls/PollDraft.tsx';
+import type { PollDraft } from '../data/api.ts';
 import { Icon } from './Icons.tsx';
 import { Link, useNavigate } from '../router.tsx';
 
@@ -23,6 +25,8 @@ export function NewThread({ board, boardId }: { readonly board: string; /** The 
   const id = useId();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [poll, setPoll] = useState<PollDraft | null>(null);
+  const [pollProblem, setPollProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -43,10 +47,12 @@ export function NewThread({ board, boardId }: { readonly board: string; /** The 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
     if (!hudCharacter || busy || over) return;
+    const problem = poll ? problemOf(poll, settings) : null;
+    if (problem !== null) { setPollProblem(problem); return; }
     setBusy(true);
     setRefusal(null);
     try {
-      const answer = await api.startThread(board, hudCharacter.id, title, body, ...framingArgs(body));
+      const answer = poll ? await api.startThread(board, hudCharacter.id, title, body, framingArgs(body)[0] ?? [], poll) : await api.startThread(board, hudCharacter.id, title, body, ...framingArgs(body));
       if (!answer.ok) { setRefusal(answer.error); return; }
       void refresh();
       navigate(`/t/${answer.value.thread.id}`);
@@ -98,6 +104,7 @@ export function NewThread({ board, boardId }: { readonly board: string; /** The 
                 <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || over}>Start thread</button>
               </Editor>
             </div>
+            <PollEditor value={poll} onChange={(next) => { setPoll(next); setPollProblem(null); }} settings={settings} problem={pollProblem} />
             {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
           </>
         )}

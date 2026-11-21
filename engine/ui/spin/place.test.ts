@@ -24,6 +24,9 @@ const rows: readonly (readonly [string, OriginPlace, string, string | null])[] =
   ['a play on a board', { kind: 'play', card: 'whoops', on: { kind: 'board', slug: 'gen eral', name: 'General' }, from: null, at: null }, 'Whoops! on the board General', '/b/gen%20eral'],
   ['a play that cannot be placed', { kind: 'play', card: 'whoops', on: null, from: null, at: null }, 'Whoops!', null],
   ['a face-down play that cannot be placed', { kind: 'play', card: null, on: null, from: null, at: null }, 'a face-down card', null],
+  ['a poll', { kind: 'poll', question: 'Best kart in the series?', on: post }, 'the poll “Best kart in the series?” on #12 in Title', '/t/t1?page=1#post-12'],
+  ['a poll whose question is cut at 60 characters', { kind: 'poll', question: 'Q'.repeat(70), on: post }, `the poll “${'Q'.repeat(60)}…” on #12 in Title`, '/t/t1?page=1#post-12'],
+  ['a public ballot', { kind: 'ballot', character: { id: 'c1', name: 'Wario' }, question: 'Best kart?', on: post }, 'Wario\'s ballot in the poll “Best kart?” on #12 in Title', '/t/t1?page=1#post-12'],
   ['a card the instance no longer has', { kind: 'play', card: 'gone', on: post, from: null, at: null }, 'a card on #12 in Title', '/t/t1?page=1#post-12'],
 ];
 
@@ -88,4 +91,14 @@ test('placeParts: a face-down card and a key the instance lacks never name a car
   const on = (card: string | null) => placeParts({ kind: 'play', card, on: onWario, from: null, at: pressed }, glintName, 20)[0];
   assert.deepEqual(on(null), { words: 'a face-down card on ', href: null });
   assert.deepEqual(on('gone'), { words: 'a card on ', href: null });
+});
+
+test('placeParts: a poll and a ballot are one link to the poll\'s post, the words never split', () => {
+  assert.deepEqual(placeParts({ kind: 'poll', question: 'Q?', on: post }, cardName, 20), [{ words: 'the poll “Q?” on #12 in Title', href: '/t/t1?page=1#post-12' }]);
+  assert.equal(placeParts({ kind: 'ballot', character: { id: 'c1', name: 'Wario' }, question: 'Q?', on: post }, cardName, 20).length, 1);
+});
+
+test('the 60-character cut counts characters, never half a surrogate pair', () => {
+  const words = placeWords({ kind: 'poll', question: '😀'.repeat(61), on: post }, cardName);
+  assert.equal(words, `the poll “${'😀'.repeat(60)}…” on #12 in Title`);
 });

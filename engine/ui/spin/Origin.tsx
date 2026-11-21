@@ -34,6 +34,10 @@ import type { CardPlay, CardView } from '../cards/types.ts';
 import { useKayfa } from '../context.tsx';
 import { PLAY_FROM, type Act, type Character, type Id, type OriginPlace, type PageOrigin, type ThreadSummary } from '../data/api.ts';
 import { CharacterLink } from '../mini.tsx';
+import { Poll } from '../polls/Poll.tsx';
+import { createPolls, usePoll, type Polls } from '../polls/store.ts';
+import { ballotLine } from '../polls/words.ts';
+import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
 import { AnnounceLine, LastEdited, SystemPost, UnmaskLine, quoteHead, text, useHistory, when } from '../thread/lines.tsx';
@@ -53,18 +57,28 @@ import './spin.css';
 const CARDS_SHOWN = 20;
 
 /** What the box draws where the thread screen holds no origin for it (no page read has carried one): the Act is not there. */
-const NOT_THERE: PageOrigin = { act: null, plays: [], more: false, moment: null, at: null, cast: [] };
+const NOT_THERE: PageOrigin = { act: null, plays: [], more: false, moment: null, at: null, cast: [], polls: [], voters: [], votersMore: [], myBallots: [] };
 
 /**
  * Take a page's origin into the box's store of plays: the shown plays and their ends (and the Act, when it is a card play: the box's one mark; the store ignores any other Act), then the billing,
  * once for this page read, from the tallies and the spins of the plays that the page put in the thread's stores (`spun` holds those it counted). The plays join the store only here, so their tags are first drawn
  * in billing order and never move. Called by the thread screen's `absorb`, outside any render.
  */
-export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: Tallies, spun: ReadonlyMap<Id, Spun>, over?: BillOver): void {
+export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: Tallies, spun: ReadonlyMap<Id, Spun>, over?: BillOver, polls?: Polls, ticket = 0): void {
+  /* A thread spun from a poll or a ballot: the poll, its voters and the caller's ballots go to the box's store of polls (where the box is drawn without one, `useOrigin` takes them in). */
+  if (polls !== undefined) takeInPolls(origin, polls, ticket);
   const shown = origin.plays.filter((a) => a.kind !== 'card_end').slice(0, CARDS_SHOWN);
   const ends = origin.plays.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId));
   plays.add([...shown, ...ends, ...(origin.act ? [origin.act] : [])]);
   billPost(plays, id, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);
+}
+
+/** The origin's poll parts into a store of polls: the poll of the origin's post (a removed poll leaves none), with the voters' heads in `cast` as the page's voters are named. */
+function takeInPolls(origin: PageOrigin, polls: Polls, ticket: number): void {
+  /* The poll's post, so a poll taken away is dropped on a read again: a poll origin names it; a ballot origin names the poll, whose post the store knows. */
+  const target = origin.act?.kind === 'poll' || origin.act?.kind === 'ballot' ? origin.act.targetActId : null;
+  const spun = target === null ? null : origin.act!.kind === 'poll' ? target : polls.postOf(target) ?? null;
+  polls.take({ polls: origin.polls, voters: origin.voters, votersMore: origin.votersMore, myBallots: origin.myBallots, voterCast: origin.cast }, ticket, [...origin.polls.map((p) => p.post), ...(spun === null ? [] : [spun])]);
 }
 
 /**
@@ -72,8 +86,12 @@ export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: 
  * in kind, so the post's effects draw here as they do there. The page's origin is taken in as it arrives (`takeIn`, before the box's first frame and again for each page read); a play, an edit, a saved
  * state and a tally are heard on the origin thread's channel. `more` says there were more plays than the box lists.
  */
-function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies, shared: boolean): { readonly act: Act | null; readonly more: boolean } {
+function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies, shared: boolean, polls: Polls): { readonly act: Act | null; readonly more: boolean } {
   const { api, ui } = useKayfa();
+  /* The player's own characters: a ballot of theirs heard here is their own ballot on the poll. */
+  const { characters } = usePlayer();
+  const own = useRef<ReadonlySet<Id>>(new Set());
+  own.current = new Set(characters.map((c) => c.id));
   const [act, setAct] = useState<Act | null>(from.act);
   const [more, setMore] = useState(from.more);
   /* A page read again brings the origin again: the newer of the Act held and the Act read (an edit heard since is never undone), and what the page says of the rest. */
@@ -86,19 +104,28 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
   /* The thread screen takes the page's origin into its store of the box's plays as it takes a page in (`takeInOrigin`,
      called by `absorb`), so the box's first frame has its tags. A box drawn without that store (a story) takes its own
      in here, and a story box is not billed for spent: it bills by draws alone. */
-  useEffect(() => { if (!shared) takeInOrigin(from, origin, plays, tallies, new Map()); }, [shared, from, origin, plays, tallies]);
+  useEffect(() => { if (!shared) takeInOrigin(from, origin, plays, tallies, new Map(), undefined, polls); }, [shared, from, origin, plays, tallies, polls]);
   useEffect(() => {
     const cards = effectCards(ui);
     return api.subscribeThread(thread, {
       onAct(a) {
+        if (a.kind === 'poll') { polls.pollAct(a); if (a.id === origin) setAct((was) => (was ? newer(was, a) : a)); return; }
+        if (a.kind === 'poll_close') { polls.closeAct(a); return; }
+        if (a.kind === 'ballot') {
+          const stranger = polls.ballotAct(a, own.current);
+          if (stranger !== null) void api.characters([stranger]).then((found) => polls.named(found), () => { /* named on the next ballot */ });
+          return;
+        }
         if (a.id === origin) setAct((was) => (was ? newer(was, a) : a));
         else if (a.kind === 'card' && a.targetActId === origin) { plays.add([a]); void readEffects(api, plays, [a], cards); }
       },
       onEffect(play) { void api.effectStates([play]).then((saved) => plays.setStates(saved), () => { /* the next save is heard again */ }); },
       /* A reaction to the origin, or to a play on it, counts on its tag here as it does in its thread. */
       onTally(act, t) { if (act === origin || plays.get(origin).plays.some((p) => p.id === act)) tallies.merge(act, t); },
+      /* The origin post's poll: its counts, a replacement, a close and a ballot, as the origin's thread hears them (the same events the thread screen applies to its own polls). */
+      onPoll(e) { polls.counts(e); },
     });
-  }, [api, ui, origin, thread, plays, tallies]);
+  }, [api, ui, origin, thread, plays, tallies, polls]);
   return { act, more };
 }
 
@@ -169,15 +196,39 @@ function postOf(place: Extract<OriginPlace, { kind: 'play' }>, which: 'at' | typ
   return part && part.href !== null ? { words: part.words, href: part.href } : null;
 }
 
+/**
+ * The origin when it is a poll or a public ballot: the poll's author and date (or, for a ballot, its line, "Wario picked Badwagon, Nov 20, 3:12 PM", above the table), then the poll as it stands now in the box's store.
+ * It can be voted in while open and is final once closed (the `Poll` is the one the board draws). A bar is checked by the server alone: the box does not know the poll's board.
+ */
+function PollOrigin({ act, post, polls, name }: { readonly act: Act; readonly post: Id | null; readonly polls: Polls; readonly name: string }) {
+  const view = usePoll(polls, post ?? '');
+  /* The poll this origin is: the Act itself, or the poll a ballot is on. A replacement heard or read on the post is another poll, and is never drawn under this one's head. */
+  const origin = act.kind === 'poll' ? act.id : act.targetActId;
+  if (post === null || view === undefined) return <p className="kb-notice kb-small">That poll is no longer on its post.</p>;
+  if (view.poll.act.id !== origin) return <p className="kb-notice kb-small">That poll was replaced on its post.</p>;
+  const options = Array.isArray(view.poll.act.payload.options) ? (view.poll.act.payload.options as readonly unknown[]).map(String) : [];
+  const picks = Array.isArray(act.payload.picks) ? (act.payload.picks as readonly number[]) : [];
+  return (
+    <>
+      {act.kind === 'poll'
+        ? <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
+        : <p className="kb-small kb-origin-ballot" data-kb-over-ink>{ballotLine(name, picks.map((p) => options[p] ?? ''), null, act.createdAt)}</p>}
+      <Poll post={post} polls={polls} board={null} />
+    </>
+  );
+}
+
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {
-  const { perPage, tallies, mine, origin: held, originPlays } = useThread();
+  const { perPage, tallies, mine, origin: held, originPlays, originPolls } = useThread();
   const { api, instance, ui } = useKayfa();
   const originId = summary.originActId!;
   const from = held ?? NOT_THERE;
   /* The box's store is the thread screen's, which gives it the saved states and releases the page carried; a box drawn without one keeps a store of its own. */
   const own = useMemo(() => createPlays(), []);
   const plays = originPlays ?? own;
-  const { act, more } = useOrigin(from, originId, summary.originThread!, plays, tallies, originPlays !== undefined);
+  const ownPolls = useMemo(() => createPolls(), []);
+  const polls = originPolls ?? ownPolls;
+  const { act, more } = useOrigin(from, originId, summary.originThread!, plays, tallies, originPlays !== undefined && originPolls !== undefined, polls);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { if (takeOrigin(summary.id)) box.current?.focus(); }, [summary.id]);
   const played = usePlays(plays, originId).plays;
@@ -189,6 +240,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const target = from.at;
   const { nameOf, faceOf, characterOf } = useCast(from.cast, [act?.character ?? null, ...played.map((p) => p.caster), ...(cardPlay ? [cardPlay.caster, ...(cardPlay.reach === 'character' && cardPlay.on ? [cardPlay.on] : [])] : [])]);
   const history = useHistory(originId);
+  /* A thread spun from a poll or a public ballot draws the poll of the post it is on, as it stands now: the page carried it (`from.polls`), and the box's store keeps it current. */
+  const pollPost = from.polls[0]?.post ?? (act?.kind === 'poll' ? act.targetActId : null);
   /* A play in the box is spun from in a form of the box's own, under it: the box's post is in another thread. */
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   const drafts = useSpinDrafts();
@@ -287,6 +340,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
           <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null} onView={onView} listInto={foot}
             bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />} />
         );
+      case 'poll':
+      case 'ballot': return <PollOrigin act={act} post={pollPost} polls={polls} name={name} />;
       case 'draw':
       case 'wash': return null;
       case 'unmask': return <UnmaskLine act={act} name={name} />;
