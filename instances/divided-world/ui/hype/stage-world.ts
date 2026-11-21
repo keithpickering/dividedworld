@@ -11,8 +11,8 @@
  * the posts at the foot of the thread, each wearing one live effect.
  *
  * What is set face down before a camera runs is set through the backend's own `setCard`, as its owner (the seed's `set` keeps no catch,
- * no quadrant and no phrase, so a Rope Break so set would catch nothing): Rope Break on Snuckles's first post, 4D Chess on D-Guy's review
- * naming Whoops! and the Heat quadrant, and a Steel Chair on Chadluminum's kind post, waiting for "to be fair". `Made.ready` settles when
+ * no quadrant and no phrase, so a Rope Break so set would catch nothing): Rope Break on Snuckles's first post, 4D Chess on D-Guy's reply
+ * naming Whoops! and the Heat quadrant, and a Steel Chair on Chadluminum's post, waiting for "to be fair". `Made.ready` settles when
  * that, and the drawing of Graffiti's wall, is done; the story draws nothing before it.
  */
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
@@ -28,6 +28,9 @@ import { tags } from './graffiti-shapes.ts';
 import { installForecast } from './forecast.ts';
 
 const HOUR = 3_600_000;
+
+/** The phrase the Steel Chair on Chadluminum's post waits for: a post that quotes it and says this springs the chair. */
+export const CHAIR_PHRASE = 'to be fair';
 
 /** What the world's address asks for: the skin, whose player is signed in, which screen, and whether Snuckles's post shows its sprite sheet. */
 export interface StageOptions {
@@ -126,8 +129,8 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
   for (const [name, b] of Object.entries(LINE_BOARDS)) fake.seed.board(b.slug, name, b.description);
   const t0 = now - 5 * HOUR;
   const { thread, act: first } = fake.seed.thread('general', who('Snuckles'), 'my first sprite sheet (please be normal)',
-    `Posting my first sprite sheet: a Wiggler. Twelve frames of walking, and parts to build yer own.\n\n${options.sheet ? '[img]https://dw.gripe/hype/wiggler-sheet.gif[/img]\n\n' : ''}I spent two weeks on the walk cycle. Please be normal about this.`, { at: t0 });
-  const kindWords = fake.seed.post(thread, who('Chadluminum'), 'This is wonderful and you should be proud. The walk has real warmth.', { at: t0 + 0.4 * HOUR });
+    `Hi divided world, it's ya boy Snuckles here with my first ever sprite sheet. He's an original character I invented after I saw him in a Mario game.\n\n${options.sheet ? '[img]https://dw.gripe/hype/wiggler-sheet.gif[/img]\n\n' : ''}When he walks his legs move.`, { at: t0 });
+  const kindWords = fake.seed.post(thread, who('Chadluminum'), 'Some go their whole lives wondering. Only a few among us truly achieve the greatness of making a Sprite Sheet', { at: t0 + 0.4 * HOUR });
   fake.seed.post(thread, who('Serious Deer'), 'Frame six of the walk has eleven colors. The palette you posted has ten.\n\nI am not upset. I am noting it.', { at: t0 + 0.9 * HOUR });
   const target = fake.seed.post(thread, who('Snuckles'),
     'Updated the sheet. The Wiggler blinks now, and I think the blink is really working.\n\nI also fixed frame six. Ten colors. You can count them.\n\nThank you all for being so normal about this.', { at: t0 + 2 * HOUR });
@@ -164,9 +167,9 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
    * another player than its author's, as a player's play is).
    */
   const dguy = fake.seed.post(thread, who('D-Guy'),
-    'ok i watched the sprite sheet so you do not have to. 2/10.\n\ntwelve frames and none of them are walking. they are all just standing there in different poses.\n\ni respect the effort. i do not respect the result.', { at: day + 1.5 * HOUR });
+    'OF COURSE YOUR SPRITES LOOK LIKE THIS WITH THOSE STEAMBOAT WILLIE ASS FINGERS', { at: day + 1.5 * HOUR });
   const dressed = [
-    { by: 'Front Row', card: 'hot-box', text: 'ok i am just going to say it, the wiggler is the best thing posted here all week. i have been refreshing this thread for an hour.', config: { color: '#9370db' }, caster: 'Aisle Seat' },
+    { by: 'Front Row', card: 'hot-box', text: 'ok i am just going to say it: this wiggler is making me wiggle in all kinds of ways \u{1F440}', config: { color: '#9370db' }, caster: 'Aisle Seat' },
     { by: 'Nosebleeds', card: 'glitter-bomb', text: 'this thread is the only reason i logged in today. 10/10 would refresh again.', config: {}, caster: 'Chadluminum' },
     { by: 'Aisle Seat', card: 'feelin-fab', text: 'snuckles you are a legend and i will not be taking questions.', config: {}, caster: 'Chadluminum' },
     { by: 'Back Row', card: 'graffiti', text: 'magenta forever. magenta or nothing.', config: {}, caster: 'Front Row' },
@@ -175,6 +178,12 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
   const dressedActs = dressed.map((d, i) => fake.seed.post(thread, who(d.by), d.text, { at: day + (1.6 + 0.07 * i) * HOUR }));
   /* The post You Were Saying? ran on with in the owner's test instance, word for word (gpt2-tail.txt): the film types the card's real tail under it. */
   const gpt2Act = fake.seed.post(thread, who('Human Josh'), GPT2_POST, { at: day + 2 * HOUR });
+  /*
+   * Serious Deer's post, folded by a live Below the Fold that Back Row played (a character of another player than its author's, as a player's play is). It is the thread's last, so no
+   * number the shots name moves: the folded bar shows to a reader as the one bar, and a press on it opens the words.
+   */
+  const foldAct = fake.seed.post(thread, who('Serious Deer'), "I've analyzed this sprite sheet's pixels and come to the unfortunate conclusion that it was created using generative AI.", { at: day + 2.1 * HOUR });
+  fake.seed.card(who('Back Row'), foldAct, 'below-the-fold', { layer: 1, config: {}, message: '', ...(lasts('below-the-fold') ? { ends } : {}) });
   /* Graffiti's wall is drawn by the caster, as a player; that is a call the backend answers after this seed returns, so it is in `ready`. */
   const walls: { play: string; by: string }[] = [];
   dressed.forEach((d, i) => {
@@ -291,7 +300,7 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
     await forecast.rest();
     await setOf('ropeBreak', me, 'rope-break', who('Snuckles'), first, {});
     await setOf('fourDChess', second, '4d-chess', who('D-Guy'), dguy, { card: 'whoops', quadrant: 'excitedNegative' });
-    await setOf('steelChair', second, 'steel-chair', who('Chadluminum'), kindWords, {}, { says: 'to be fair' });
+    await setOf('steelChair', second, 'steel-chair', who('Chadluminum'), kindWords, {}, { says: CHAIR_PHRASE });
     for (const wall of walls) {
       /* One draw to a shape, as a player's hand draws one: a word, an underline, an arrow, a face, a heart and a scribble-out (graffiti-shapes.ts). */
       for (const shape of tags()) {
@@ -304,8 +313,9 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
     thread, target: { act: target, seq: 4, character: who('Snuckles') }, cast, me, scenes,
     threads: { main: thread, argued: argued.thread, goodbye: goodbye.thread }, staff: { fangame, qc, ontopic: mod },
     owners: { ...owner }, viewer, played,
-    posts: { first: 1, kind: 2, review: 14, hotBox: 15, glitter: 16, fab: 17, graffiti: 18, autocorrect: 19, gpt2: 20 },
-    acts: { first, kind: kindWords, review: dguy, hotBox: dressedActs[0]!, glitter: dressedActs[1]!, fab: dressedActs[2]!, graffiti: dressedActs[3]!, autocorrect: dressedActs[4]!, gpt2: gpt2Act },
+    /* `review` is the key D-Guy's reply to the sheet keeps, though it is no longer a review (the owner's words, section 9 of the video's revision): the shots name it. */
+    posts: { first: 1, kind: 2, review: 14, hotBox: 15, glitter: 16, fab: 17, graffiti: 18, autocorrect: 19, gpt2: 20, fold: 21 },
+    acts: { first, kind: kindWords, review: dguy, hotBox: dressedActs[0]!, glitter: dressedActs[1]!, fab: dressedActs[2]!, graffiti: dressedActs[3]!, autocorrect: dressedActs[4]!, gpt2: gpt2Act, fold: foldAct },
     sets, crowd: CROWD, boards, lineBoards: Object.fromEntries(Object.entries(LINE_BOARDS).map(([name, b]) => [name, b.slug])), ready,
   };
   /* The story opens on the thread: its address is known only once it is seeded, so the seed sets it (the preview's `path` is fixed text). */

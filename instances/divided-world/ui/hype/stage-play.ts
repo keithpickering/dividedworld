@@ -14,7 +14,7 @@ import type { Instance } from '../../../../engine/rules/types.ts';
 import LINES from './staff-lines.json';
 import { GPT2_TAIL } from './gpt2.ts';
 import { pendingOf } from './forecast.ts';
-import type { Made } from './stage-world.ts';
+import { CHAIR_PHRASE, type Made } from './stage-world.ts';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -73,7 +73,7 @@ export const PILE: readonly { readonly what: string; readonly by: string; readon
   { what: 'steel-chair-3', by: 'Chadluminum', card: 'steel-chair' },
   /* The smoke thins as the card's days pass; the film's pile lets it last seconds, so the heap under it comes back into view. */
   { what: 'hot-box', by: 'D-Guy', card: 'hot-box', config: { color: '#32cd32' }, lastsMs: 7000 },
-  { what: 'laugh-track', by: 'Serious Deer', card: 'laugh-track', config: { cues: [{ phrase: 'walk cycle', sound: 'laugh' }], seed: 7 }, message: 'Laugh Track' },
+  { what: 'laugh-track', by: 'Serious Deer', card: 'laugh-track', config: { cues: [{ phrase: 'his legs move', sound: 'laugh' }], seed: 7 }, message: 'Laugh Track' },
   { what: 'jimmy-wails', by: 'Serious Deer', card: 'jimmy-wails', message: 'Please. He spent two weeks on twelve frames.' },
   { what: 'you-were-saying', by: 'Serious Deer', card: 'you-were-saying', config: { steps: 0 }, message: '' },
   { what: 'off-day', by: 'D-Guy', card: 'off-day', config: { class: 'face' }, reach: 'character' },
@@ -152,26 +152,39 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     return { play: done.value.id, caught: payload.caught !== undefined, rode: payload.rode !== undefined };
   }
 
+  /** A post's own words, as a rule that reads words reads them: what is outside its real quotes. */
+  const ownWords = (body: string): string => body.replace(/\[quote=[^\]]*\][\s\S]*?\[\/quote\]/gi, ' ');
+  const bodyOf = (act: Act): string => String((act.currentPayload as { body?: unknown }).body ?? '');
+
   /**
    * The quoting post that springs a Move waiting on a phrase. The backend does not play a Move from a quote (its stories seed the
-   * spring), so the post is written as the player writes it, quoting the post, and the spring and the card it landed are written as the
-   * server's `spring_traps` writes them: a spring on the quoted post's back, and the Move played on the quoting one by the back's setter.
+   * spring), so the post is written as the composer writes it (the Quote button's text, the whole post in a real quote, then the words, with
+   * the quoted post as its `quoting`), and the spring and the card it landed are written as the server's `spring_traps` writes them: a spring
+   * on the quoted post's back, and the Move played on the quoting one by the back's setter. A REAL quote springs a back; a forged one does not
+   * (`forgedQuote`, below), and the words must say the phrase the back waits for (`CHAIR_PHRASE`).
    */
   async function quoteSprings(name: string, post: number, words: string): Promise<{ readonly post: string; readonly spring: string; readonly play: string }> {
+    if (!words.toLowerCase().includes(CHAIR_PHRASE)) throw new Error(`${name}'s words do not say "${CHAIR_PHRASE}", so the chair waiting on post ${post} would not spring`);
     const quoted = await actOf(post);
-    const wrote = await inAs(ownerOf(name), () => fake.post(made.thread, characterOf(name), words, quoted.id));
+    const wrote = await inAs(ownerOf(name), () => fake.post(made.thread, characterOf(name), `[quote=${quoted.id}]${bodyOf(quoted)}[/quote]\n${words}`, quoted.id));
     if (!wrote.ok) throw new Error(`${name}'s quote of post ${post} was refused: ${wrote.error}`);
     return { post: wrote.value.id, ...(await springsOn(post, wrote.value.id)) };
   }
 
   /**
-   * The spring and the landed Move for a quoting post that already exists (written by the real composer, say): the half of `quoteSprings`
-   * after the writing. `quoted` is the number of the post it quotes.
+   * The spring and landed Move for a quoting post that already exists (written by the real composer, say): the half of `quoteSprings`
+   * after the writing. `quoted` is the number of the post it quotes. The rule the film follows is the database's (0393_forged_quotes.sql, a post
+   * whose target is forged is written with no target, so no back springs): a post that quotes with no target, a forged quote, springs nothing,
+   * and is refused here; so are words that do not say the back's phrase.
    */
   async function springsOn(quoted: number, quoting: string): Promise<{ readonly spring: string; readonly play: string }> {
     const quotedAct = await actOf(quoted);
     const set = made.sets['steelChair'];
     if (set === undefined) throw new Error('the stage has no Steel Chair set face down');
+    const [on] = await fake.acts(made.thread, 1, 1000).then((all) => all.filter((a) => a.id === quoting));
+    if (on === undefined) throw new Error(`there is no post ${quoting} in the thread to spring a chair on`);
+    if (on.targetActId !== quotedAct.id) throw new Error(`post ${quoting} quotes no post (its quote is forged, or it quotes nothing): a forged quote springs nothing, so no chair is sprung on it`);
+    if (!ownWords(bodyOf(on)).toLowerCase().includes(CHAIR_PHRASE)) throw new Error(`post ${quoting} does not say "${CHAIR_PHRASE}" outside its quote, so the chair would not spring`);
     fake.clock.advance(1000);
     const spring = fake.seed.spring(set, { trigger: 'quote' });
     const setter = quotedAct.character;
@@ -180,6 +193,22 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     fake.broadcast.rejoin();
     mark('spring');
     return { spring, play };
+  }
+
+  /**
+   * A FORGED quote of a post, written as the composer writes it: a real quote tag naming the post, the words the post does not hold, then
+   * the comment, with the quoted post as its `quoting`. The backend works the verdict out as the database does (`payload.forged`, and no target,
+   * so nothing springs). Refuses words that do stand in the post, which would be a real quote. Returns the post's Act, its number and the verdict.
+   */
+  async function forgedQuote(name: string, post: number, forgedWords: string, comment: string): Promise<{ readonly post: string; readonly seq: number; readonly forged: readonly string[] }> {
+    const quoted = await actOf(post);
+    if (bodyOf(quoted).includes(forgedWords)) throw new Error(`"${forgedWords}" stands in post ${post}, so a quote of it is a real quote and would not be forged`);
+    const wrote = await inAs(ownerOf(name), () => fake.post(made.thread, characterOf(name), `[quote=${quoted.id}]${forgedWords}[/quote]\n${comment}`, quoted.id));
+    if (!wrote.ok) throw new Error(`${name}'s forged quote of post ${post} was refused: ${wrote.error}`);
+    const forged = (wrote.value.payload as { forged?: readonly string[] }).forged ?? [];
+    if (!forged.includes(quoted.id)) throw new Error(`the backend did not judge the quote of post ${post} forged (verdict: ${JSON.stringify(forged)})`);
+    mark(`forged:${name}`);
+    return { post: wrote.value.id, seq: wrote.value.seq!, forged };
   }
 
   /**
@@ -509,7 +538,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     return pendingOf(await fake.estimate());
   }
 
-  return { react, cast, told, quoteSprings, springsOn, staff, gpt2, pile, steps, order: FILM_ORDER, forecast, landed, zero: () => { zero = performance.now(); landed.length = 0; layers.clear(); } };
+  return { react, cast, told, quoteSprings, springsOn, forgedQuote, staff, gpt2, pile, steps, order: FILM_ORDER, forecast, landed, zero: () => { zero = performance.now(); landed.length = 0; layers.clear(); } };
 }
 
 export type Playbook = ReturnType<typeof playbook>;

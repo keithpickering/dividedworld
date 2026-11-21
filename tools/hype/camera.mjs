@@ -251,7 +251,7 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
     },
     /** One key pressed and released on the focused field, as a keyboard makes it (keydown, input, keyup); a shot spaces the keys of a text over its frames itself. */
     key(char) {
-      const NAMED = { Enter: { code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' }, ArrowDown: { code: 'ArrowDown', windowsVirtualKeyCode: 40 }, ArrowUp: { code: 'ArrowUp', windowsVirtualKeyCode: 38 }, Escape: { code: 'Escape', windowsVirtualKeyCode: 27 } };
+      const NAMED = { Enter: { code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' }, ArrowDown: { code: 'ArrowDown', windowsVirtualKeyCode: 40 }, ArrowUp: { code: 'ArrowUp', windowsVirtualKeyCode: 38 }, ArrowLeft: { code: 'ArrowLeft', windowsVirtualKeyCode: 37 }, ArrowRight: { code: 'ArrowRight', windowsVirtualKeyCode: 39 }, Backspace: { code: 'Backspace', windowsVirtualKeyCode: 8 }, Escape: { code: 'Escape', windowsVirtualKeyCode: 27 } };
       const named = NAMED[char];
       const down = named ? { key: char, ...named } : { key: char, text: char };
       sent(S('Input.dispatchKeyEvent', { type: named && !named.text ? 'rawKeyDown' : 'keyDown', ...down }));

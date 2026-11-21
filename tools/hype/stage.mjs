@@ -66,9 +66,15 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       cast: (name, postSeq, card, config = {}, message = '') => play.cast(name, postSeq, card, config, message),
       /** The alert a caught cast writes its caster (the in-memory backend writes none): \`told('D-Guy', 1)\`, after the cast. Returns the caught play's id. */
       told: (name, postSeq) => play.told(name, postSeq),
-      /** A quote of the post that holds \`words\`, written by the named character, which springs the Steel Chair set on it: returns \`{ post, spring, play }\`. */
+      /** A REAL quote of the post (the whole post in a quote tag, then \`words\`, which must say "to be fair"), written by the named character, which springs the Steel Chair set on it: returns \`{ post, spring, play }\`. */
       quoteSprings: (name, postSeq, words) => play.quoteSprings(name, postSeq, words),
-      /** The spring and landed Move for a quoting post written some other way (the real composer): \`springsOn(2, actId)\` springs the Steel Chair set on post 2 onto that post. Returns \`{ spring, play }\`. */
+      /**
+       * A FORGED quote of a post, as the composer writes it: \`forgedQuote('Human Josh', 2, forgedWords, comment)\`. It springs nothing (the rules write a post whose quote is forged with no target, so no back springs):
+       * the chair on post 2 stays face down. Refuses words that stand in the post. Returns \`{ post, seq, forged }\`. A shot films it through the real composer instead (see shot notes in the design, section 9):
+       * the Quote button on the post, ArrowLeft nine times (the newline and \`[/quote]\`), Backspace over the words after "Only a few among us ", the forged words, ArrowRight nine times, the comment, Send.
+       */
+      forgedQuote: (name, postSeq, forgedWords, comment) => play.forgedQuote(name, postSeq, forgedWords, comment),
+      /** The spring and landed Move for a quoting post written some other way (the real composer): \`springsOn(2, actId)\` springs the Steel Chair set on post 2 onto that post, only where it quotes post 2 for real (a target) and says "to be fair" outside the quote; a forged quote is refused. Returns \`{ spring, play }\`. */
       springsOn: (quoted, quoting) => play.springsOn(quoted, quoting),
       /**
        * The Staff's beats (stage-play.ts, every word a line of the rehearsal's, staff-lines.json): call them as \`staff('merge')\` or \`staff.merge()\`. A thread a beat makes is named in its result

@@ -74,28 +74,39 @@ describe('the seats', () => {
 });
 
 describe('the thread', () => {
-  test('the words the shots wait on are in it: the review, the kind post, "walk cycle" in Snuckles\'s first post, and the dressed posts at the foot', async () => {
+  test('the owner\'s words are in it: Snuckles\'s first post, D-Guy\'s reply, the smoked post and Chadluminum\'s, and the dressed posts at the foot', async () => {
     const { fake, made } = await stage();
     const body = async (seq: number) => ((await fake.acts(made.thread, seq, seq))[0]!.currentPayload as { body: string }).body;
-    expect(await body(made.posts['first']!)).toContain('walk cycle');
-    expect(await body(made.posts['review']!)).toContain('2/10');
-    expect(await body(made.posts['review']!)).toContain('twelve frames and none of them are walking');
-    expect(await body(made.posts['kind']!)).toContain('wonderful');
+    expect(await body(made.posts['first']!)).toBe("Hi divided world, it's ya boy Snuckles here with my first ever sprite sheet. He's an original character I invented after I saw him in a Mario game.\n\nWhen he walks his legs move.");
+    expect(await body(made.posts['review']!)).toBe('OF COURSE YOUR SPRITES LOOK LIKE THIS WITH THOSE STEAMBOAT WILLIE ASS FINGERS');
+    expect(await body(made.posts['hotBox']!)).toBe('ok i am just going to say it: this wiggler is making me wiggle in all kinds of ways \u{1F440}');
+    expect(await body(made.posts['kind']!)).toBe('Some go their whole lives wondering. Only a few among us truly achieve the greatness of making a Sprite Sheet');
+    expect(await body(made.posts['fold']!)).toBe("I've analyzed this sprite sheet's pixels and come to the unfortunate conclusion that it was created using generative AI.");
     const authors = new Map((await fake.acts(made.thread, 1, 30)).map((a) => [a.seq, a.character]));
     expect(authors.get(made.posts['review']!)).toBe(made.cast['D-Guy']);
     expect(authors.get(made.posts['kind']!)).toBe(made.cast['Chadluminum']);
     /* Round 1's posts are where its shots left them. */
     expect(made.scenes).toEqual({ kind: 7, recount: 8, review: 9, joke: 10, appeal: 11, filed: 12, friends: 13 });
-    for (const key of ['hotBox', 'glitter', 'fab', 'graffiti', 'autocorrect']) expect(made.posts[key]).toBeGreaterThan(made.posts['review']!);
+    for (const key of ['hotBox', 'glitter', 'fab', 'graffiti', 'autocorrect', 'fold']) expect(made.posts[key]).toBeGreaterThan(made.posts['review']!);
+    expect(authors.get(made.posts['fold']!)).toBe(made.cast['Serious Deer']);
   });
 
-  test('each of the five dressed posts wears its one live effect', async () => {
+  test('the sheet stands between the first post\'s two paragraphs when it shows', async () => {
+    const fake: Fake = createFake({ instance });
+    const made = buildStage(fake, instance, { skin: 'default', as: null, view: 'thread', sheet: true });
+    const body = ((await fake.acts(made.thread, 1, 1))[0]!.currentPayload as { body: string }).body;
+    expect(body).toBe("Hi divided world, it's ya boy Snuckles here with my first ever sprite sheet. He's an original character I invented after I saw him in a Mario game.\n\n[img]https://dw.gripe/hype/wiggler-sheet.gif[/img]\n\nWhen he walks his legs move.");
+    await made.ready;
+  });
+
+  test('each of the six dressed posts wears its one live effect', async () => {
     const { fake, made } = await stage();
     const on = async (key: string) => (await fake.cardsOn(made.acts[key]!, 20)).filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card);
     expect(await on('hotBox')).toEqual(['hot-box']);
     expect(await on('fab')).toEqual(['feelin-fab']);
     expect(await on('graffiti')).toEqual(['graffiti']);
     expect(await on('autocorrect')).toEqual(['autocorrect']);
+    expect(await on('fold')).toEqual(['below-the-fold']);
     /* Glitter Bomb sits on its author, and shows on the author's post. */
     const reach = await fake.effectsAbove([made.cast['Nosebleeds']!], made.thread, null);
     expect(reach.map((r) => (r.act.payload as { card: string }).card)).toEqual(['glitter-bomb']);
@@ -167,7 +178,7 @@ describe('a real cast', () => {
 
   test('a spring on a quote lands the chair on the quoting post, and says so', async () => {
     const { fake, made, play } = await stage();
-    const quoted = await play.quoteSprings('Human Josh', made.posts['kind']!, 'to be fair, it is a good walk cycle.');
+    const quoted = await play.quoteSprings('Human Josh', made.posts['kind']!, 'to be fair, it is a good sprite sheet.');
     const on = await fake.cardsOn(quoted.post, 30);
     expect(on.filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card)).toEqual(['steel-chair']);
     expect((await fake.cardsOn(made.acts['kind']!, 30)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'steel-chair', trigger: 'quote', did: 'landed' });
@@ -209,11 +220,68 @@ describe('a spring on a post written another way', () => {
     const { fake, made, play } = await stage('Human Josh');
     const quoted = (await fake.acts(made.thread, made.posts['kind']!, made.posts['kind']!))[0]!;
     fake.signInAs(made.viewer);
-    const wrote = await fake.post(made.thread, made.cast['Human Josh']!, 'to be fair, it is a good walk cycle.', quoted.id);
+    const wrote = await fake.post(made.thread, made.cast['Human Josh']!, 'to be fair, it is a good sprite sheet.', quoted.id);
     if (!wrote.ok) throw new Error(wrote.error);
     const sprang = await play.springsOn(made.posts['kind']!, wrote.value.id);
     expect((await fake.cardsOn(wrote.value.id, 30)).filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card)).toEqual(['steel-chair']);
     expect((await fake.cardsOn(made.acts['kind']!, 30)).find((a) => a.id === sprang.spring)?.payload).toMatchObject({ card: 'steel-chair', trigger: 'quote', did: 'landed' });
+  });
+});
+
+const FORGED = 'Some go their whole lives wondering. Only a few among us are Wiggler Freaks enough to do something about it';
+
+describe('a forged quote and a real one of Chadluminum\'s post', () => {
+  test('Human Josh\'s forged quote is stored as the rules store one: a quote tag of words the post does not hold, the post named in its verdict, and no target', async () => {
+    const { fake, made, play } = await stage('Human Josh');
+    const quoted = (await fake.acts(made.thread, made.posts['kind']!, made.posts['kind']!))[0]!;
+    const wrote = await play.forgedQuote('Human Josh', made.posts['kind']!, FORGED, 'what did he mean by this');
+    const act = (await fake.acts(made.thread, wrote.seq, wrote.seq))[0]!;
+    expect(act.character).toBe(made.cast['Human Josh']);
+    expect((act.payload as { body: string }).body).toBe(`[quote=${quoted.id}]${FORGED}[/quote]\nwhat did he mean by this`);
+    expect((act.payload as { forged?: string[] }).forged).toEqual([quoted.id]);
+    expect(act.targetActId, 'a forged quote is no reply: the rules write it with no target').toBeNull();
+    expect(wrote.forged).toEqual([quoted.id]);
+  });
+
+  test('a forged quote springs nothing: the chair stays face down, and the helper that springs it refuses the forged post', async () => {
+    const { fake, made, play } = await stage('Human Josh');
+    const wrote = await play.forgedQuote('Human Josh', made.posts['kind']!, FORGED, 'what did he mean by this, to be fair');
+    expect((await fake.cardsOn(made.acts['kind']!, 30)).some((a) => a.kind === 'spring')).toBe(false);
+    expect((await fake.cardsOn(wrote.post, 30)).filter((a) => a.kind === 'card')).toEqual([]);
+    await expect(play.springsOn(made.posts['kind']!, wrote.post)).rejects.toThrow(/forged|quotes no post|no target/i);
+    expect((await fake.cardsOn(made.acts['kind']!, 30)).some((a) => a.kind === 'spring')).toBe(false);
+  });
+
+  test('words that stand in the post are no forgery: `forgedQuote` refuses them, naming the real quote', async () => {
+    const { made, play } = await stage('Human Josh');
+    await expect(play.forgedQuote('Human Josh', made.posts['kind']!, 'Only a few among us truly achieve the greatness of making a Sprite Sheet', 'x')).rejects.toThrow(/stands in post/);
+  });
+
+  test('Ringside\'s real quote of the post, saying "to be fair", springs the chair: a target, no verdict, the chair on his post', async () => {
+    const { fake, made, play } = await stage();
+    const quoted = (await fake.acts(made.thread, made.posts['kind']!, made.posts['kind']!))[0]!;
+    const sprang = await play.quoteSprings('Ringside', made.posts['kind']!, 'to be fair he probably did mean that');
+    const act = (await fake.acts(made.thread, 1, 40)).find((a) => a.id === sprang.post)!;
+    expect(act.targetActId).toBe(quoted.id);
+    expect((act.payload as { forged?: unknown }).forged).toBeUndefined();
+    expect((act.payload as { body: string }).body).toMatch(/^\[quote=[0-9a-f-]+\]Some go their whole lives wondering\. Only a few among us truly achieve the greatness of making a Sprite Sheet\[\/quote\]\n/);
+    expect((act.payload as { body: string }).body).toMatch(/\nto be fair he probably did mean that$/);
+    expect((await fake.cardsOn(sprang.post, 30)).filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card)).toEqual(['steel-chair']);
+  });
+
+  test('a quote that does not say the phrase springs no chair', async () => {
+    const { made, play } = await stage();
+    await expect(play.quoteSprings('Ringside', made.posts['kind']!, 'he meant something else entirely')).rejects.toThrow(/to be fair/);
+  });
+});
+
+describe('the laugh track\'s cue', () => {
+  test('is on "his legs move", words that are in Snuckles\'s first post', async () => {
+    const step = PILE.find((p) => p.what === 'laugh-track')!;
+    expect(step.config).toMatchObject({ cues: [{ phrase: 'his legs move', sound: 'laugh' }] });
+    const { fake, made } = await stage();
+    const body = ((await fake.acts(made.thread, 1, 1))[0]!.currentPayload as { body: string }).body;
+    expect(body).toContain('his legs move');
   });
 });
 
