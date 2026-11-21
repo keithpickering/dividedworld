@@ -91,7 +91,7 @@ const list = (words: readonly string[]): string => (words.length <= 2 ? words.jo
  * A use card's words, as the Lens's status for a live one: what it does while it is up, and when it ends (or ended), the end in the
  * reader's zone. They are read from the effect's own numbers: a ward says everything it turns away (a card by the name `nameOf` gives), a price what a cast
  * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%) or pays (its `flat` is a share of a vote), a cushion the share of a loss it gives back, a ride the share of a vote's price it pays its
- * author for a card another player casts there, and a no-quote only that the post cannot be quoted. It is said only of a live gimmick: a spent one is the Lens's `ENDED_STATE`, and `now` only says "Ends" or "Ended" of the end (`endsWords`).
+ * author for a card another player casts there, a no-quote only that the post cannot be quoted, and a pierce what its character's next Move gets past. It is said only of a live gimmick: a spent one is the Lens's `ENDED_STATE`, and `now` only says "Ends" or "Ended" of the end (`endsWords`).
  */
 export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date, nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string; readonly report?: string } {
   const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends, now.getTime()) } : {}), ...(report !== undefined ? { report } : {}) });
@@ -105,6 +105,8 @@ export function gimmickWords(effect: GimmickEffect, ends: string | undefined, no
   if (effect.kind === 'noQuote') return finish('Cannot be quoted');
   /* A ride pays the post's author, from the cards others cast on it: the heading is the short status, and the report says how much, from the effect's own share. */
   if (effect.kind === 'ride') return finish('Pays its author for votes here', `Each vote on a card another player casts here pays its author ${shareWords(effect.share)}.`);
+  /* A pierce gets its character's next Move past the cards no rarer than its own rarity, and that Move spends it: the heading is the short status, and the report says both. */
+  if (effect.kind === 'pierce') return finish('Next Move slips past defenses', `This character's next Move can't be turned away or caught by a card up to ${effect.upTo}, and that Move uses it up.`);
   /* A ward turns away a card that meets any one of its conditions, so it says every one, in the order the rules read them. When that is more than a heading may run, the heading is the short "some cards" and the whole list is the detail. */
   const away = [...(effect.upTo !== undefined ? [`cards up to ${effect.upTo}`] : []), ...(effect.flavors?.length ? [`${list(effect.flavors.map(capital))} cards`] : []), ...(effect.cards?.map(nameOf) ?? [])];
   const full = `Turns away ${away.length > 0 ? list(away) : 'some cards'}`;

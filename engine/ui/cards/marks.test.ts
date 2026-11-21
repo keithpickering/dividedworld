@@ -79,7 +79,9 @@ describe('a card back, a ward and a caught play, in words', () => {
     /* A no-quote says what it stops while it is up, in a heading within the Lens's word rule; a ward's words are unchanged beside it. */
     assert.deepEqual(gimmickWords({ kind: 'noQuote' }, end, now), { state: 'Cannot be quoted', ends: `Ends ${dayAndTime(end)}` });
     assert.deepEqual(gimmickWords({ kind: 'ward', upTo: 'uncommon' }, end, now), { state: 'Turns away cards up to uncommon', ends: `Ends ${dayAndTime(end)}` });
-    for (const effect of [{ kind: 'noQuote' }, { kind: 'ward', upTo: 'uncommon' }, { kind: 'price', flavors: ['salty'], add: 25 }, { kind: 'earn', by: 0.1 }, { kind: 'earn', flat: 0.5 }, { kind: 'cushion', share: 0.5 }, { kind: 'ride', share: 0.5 }] as const) {
+    /* A pierce says what its character's next Move gets past, from the effect's own rarity, and that the Move spends it. */
+    assert.deepEqual(gimmickWords({ kind: 'pierce', upTo: 'uncommon' }, end, now), { state: 'Next Move slips past defenses', ends: `Ends ${dayAndTime(end)}`, report: "This character's next Move can't be turned away or caught by a card up to uncommon, and that Move uses it up." });
+    for (const effect of [{ kind: 'pierce', upTo: 'uncommon' }, { kind: 'noQuote' }, { kind: 'ward', upTo: 'uncommon' }, { kind: 'price', flavors: ['salty'], add: 25 }, { kind: 'earn', by: 0.1 }, { kind: 'earn', flat: 0.5 }, { kind: 'cushion', share: 0.5 }, { kind: 'ride', share: 0.5 }] as const) {
       assert.deepEqual(wordsProblems('state', gimmickWords(effect, undefined, now).state), [], effect.kind);
     }
   });
