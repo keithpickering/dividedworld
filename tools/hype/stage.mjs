@@ -77,8 +77,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
        *   merge() / created(name?) / moved()            the Boss's move notices, each with his reason; moved() returns { move, thread }
        *   file(postSeq = 1)                             a Mod files a post of the main thread (round 1's beat, now with real words)
        *   visit(mod, postSeq | null, { quiz, line, by })  a visit opens: with null, on a post of a thread of the board the opener names; quiz asks the fixture's quiz. Returns { thread, key, post, seq, visit, line, board }
-       *   hallPass(postSeq | null, { mod, by })         the author sets a real Hall Pass; a visit begins and it springs. Returns that plus { set, spring }
-       *   filing(mod, postSeq | null, key, { by })      the filing's aimed-at post is written (null) and filed; key is filingQcHelp, filingQcGames, filingQcGotcha, filingOtThematic, filingOtPatience or filingOtPalace. Adds { infraction }
+       *   hallPass(postSeq | null, { mod, by, hold })   the author sets a real Hall Pass; a visit begins and it springs. Returns that plus { set, spring }; with hold the spring waits for springPass(set, visit)
+       *   filing(mod, postSeq | null, key, { by, hold })  (hold: the visit stays open until endFiling(key, visit) files it)  the filing's aimed-at post is written (null) and filed; key is filingQcHelp, filingQcGames, filingQcGotcha, filingOtThematic, filingOtPatience or filingOtPalace. Adds { infraction }
        *   report(name, postSeq)                         names what to press for a report; the film's player must be name (\`as=name\`), and not the post's author. Returns { seq, press }
        *   appeal(name, key = 'filingQcHelp')            a filing against name's own post, appeal still to make; the film's player must be name (\`as=name\`). Returns the filing's and { press }
        *   review(key)                                   ONTOPIC 5.0's review: stars or fiveStars. Returns { thread, post, key }

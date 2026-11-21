@@ -547,6 +547,24 @@ describe('R4: the Staff\'s helpers', () => {
     fake.signInAs(made.viewer);
   });
 
+  test('hallPass() with hold leaves the visit open and the pass face down, and springPass() then traps and ends it', async () => {
+    const { fake, play } = await stage();
+    const h = await play.staff.hallPass(null, { hold: true });
+    expect((await fake.visitStory(h.thread, h.visit, h.post)).end).toBeNull();
+    expect((await fake.cardsOn(h.post, 30)).some((a) => a.kind === 'spring')).toBe(false);
+    await play.staff.springPass(h.set, h.visit);
+    expect((await fake.visitStory(h.thread, h.visit, h.post)).end?.outcome).toBe('trapped');
+    expect((await fake.cardsOn(h.post, 30)).some((a) => a.kind === 'spring')).toBe(true);
+  });
+
+  test('filing() with hold writes the post and opens the visit, and endFiling() then files it', async () => {
+    const { fake, play } = await stage();
+    const f = await play.staff.filing('qc', null, 'filingQcHelp', { hold: true });
+    expect((await fake.visitStory(f.thread, f.visit, f.post)).end).toBeNull();
+    await play.staff.endFiling('filingQcHelp', f.visit);
+    expect((await fake.visitStory(f.thread, f.visit, f.post)).end).toMatchObject({ outcome: 'filed', line: LINES.filingQcHelp.text });
+  });
+
   test('filing() writes the post the filing was aimed at, with the log\'s own words, and files it: the line, the points and the warn bar', async () => {
     const { fake, made, play } = await stage();
     expect(typeof play.staff.filing).toBe('function');
