@@ -11,7 +11,9 @@
 -- 9. A backfire refunds nothing, with no post to visit or a hidden one.
 -- 10. What the reporter reads (my_reports.refund) and what the Mod's log reads (moves_log's `visited`).
 -- 11. start_visit names every no-visit.
--- 12. A reason close_report cannot name is a fault: it raises, nothing is written (the staff function then refunds it as failed).
+-- 12. pay_report_back is unreachable to the service and to a player, and writes nothing.
+-- 13. refund_report with no reason refunds as failed (0107's default, kept by 0401).
+-- 14. A reason close_report cannot name is a fault: it raises, nothing is written (the staff function then refunds it as failed).
 -- The veil card is this file's own (t-rn-veil), never an instance's.
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
@@ -428,7 +430,46 @@ begin
   if got is distinct from '{"visit": null, "veiled": true}'::jsonb then raise exception 'start_visit on a veiled post answered %', got; end if;
 end $$;
 
--- ---- 12. A reason close_report cannot name is a fault (last: it replaces start_visit for the rest of the transaction) ----
+-- ---- 12. pay_report_back is reachable by no role: the service and a player are refused, and nothing is written ----
+do $$
+declare
+  t uuid := tests.thread('Rn paid back');
+  ann uuid := pg_temp.player('pb-ann');
+  bob uuid := pg_temp.player('pb-bob');
+  rep uuid := pg_temp.report(ann, pg_temp.say(bob, t));
+  before text := pg_temp.written();
+  got text;
+begin
+  perform tests.become_service();
+  got := pg_temp.coded(format('select pay_report_back(%L, ''failed'')', rep));
+  perform tests.unbecome();
+  if got is null or got not like '42501 %' then raise exception 'pay_report_back as the service answered %', got; end if;
+  perform tests.become(pg_temp.owner(ann));
+  got := pg_temp.coded(format('select pay_report_back(%L, ''failed'')', rep));
+  perform tests.unbecome();
+  if got is null or got not like '42501 %' then raise exception 'pay_report_back as a player answered %', got; end if;
+  if pg_temp.refunds(rep) is distinct from 0::bigint or pg_temp.refund_events(rep) is distinct from 0::bigint or pg_temp.written() is distinct from before then raise exception 'a refused pay_report_back wrote something'; end if;
+end $$;
+
+-- ---- 13. refund_report with no reason refunds a fresh, unjudged report as failed ----
+do $$
+declare
+  t uuid := tests.thread('Rn default');
+  ann uuid := pg_temp.player('df-ann');
+  bob uuid := pg_temp.player('df-bob');
+  rep uuid := pg_temp.report(ann, pg_temp.say(bob, t));
+  w0 integer := pg_temp.wallet(pg_temp.owner(ann));
+  got jsonb;
+begin
+  perform tests.become_service();
+  got := refund_report(rep, null);
+  perform tests.unbecome();
+  if got is distinct from '{"refunded": true, "amount": 25}'::jsonb then raise exception 'refund_report(null) answered %', got; end if;
+  if (select why from report_refunds where report_act = rep) is distinct from 'failed' then raise exception 'the default refund''s why is %', (select why from report_refunds where report_act = rep); end if;
+  if pg_temp.refund_events(rep) is distinct from 1::bigint or pg_temp.wallet(pg_temp.owner(ann)) is distinct from w0 + 25 then raise exception 'the default refund did not pay the price back'; end if;
+end $$;
+
+-- ---- 14. A reason close_report cannot name is a fault (last: it replaces start_visit for the rest of the transaction) ----
 do $$
 declare
   t uuid := tests.thread('Rn unnamed');
