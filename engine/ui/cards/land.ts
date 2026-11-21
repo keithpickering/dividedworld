@@ -6,7 +6,7 @@
  * the play (`decidePlay`), whatever this said.
  */
 import { QUADRANTS } from '../../rules/types.ts';
-import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarget, matchWords, playOf as playOfRules, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
+import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarget, matchWords, playOf as playOfRules, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Rarity, type Verdict } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
 import { shareWords } from '../copy-words.ts';
@@ -45,6 +45,8 @@ export interface LandingContext {
   readonly faceDown?: true;
   /** The post the one asked about is drawn under, where it is a reply a play carries: a card that replies takes none under it. */
   readonly under?: string;
+  /** The caster's live pierce (a Cheap Shot's `upTo`): a ward whose card is at or below it does not turn the cast away (`decidePlay`). */
+  readonly pierce?: Rarity;
 }
 
 /**
@@ -67,7 +69,7 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
  * where its play is a cast, since a set card is set by its own play. A faceUpOnly card is never set: landing's lenient reading sets a
  * needed message aside, so decideSet would not refuse it here.
  */
-export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string }): { readonly cast: boolean; readonly set: boolean } {
+export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string; readonly pierce?: Rarity }): { readonly cast: boolean; readonly set: boolean } {
   const live = stackPlays(plays, context.now);
   const cast = landing(rules, post, live, context).ok;
   const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
@@ -99,7 +101,7 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
   const play = context.faceDown ? 'set' : playOfRules(rules);
   const decided = play === 'set' ? decideSet({ ...lenient, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)
     : play === 'use' ? decideUse(lenient, {} as never, target, effects, {}, '')
-    : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf });
+    : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf, ...(context.pierce === undefined ? {} : { pierce: context.pierce, rarityOf: (key: string) => context.cards.find((c) => c.key === key)?.rarity }) });
   return decided.ok ? { ok: true, value: undefined } : decided;
 }
 

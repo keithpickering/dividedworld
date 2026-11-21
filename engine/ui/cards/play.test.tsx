@@ -184,6 +184,45 @@ describe('where the ghost mark stands', () => {
   });
 });
 
+/* A Cheap Shot up (the Cheap Shot design, section 3.4): the cast form says the Move uses it up, and the ward it gets past no longer hides the card. */
+describe('with a pierce up', () => {
+  const shotRules: CardRules = { key: 'cheap-shot', name: 'Cheap Shot', alignment: 'salty', rarity: 'rare', play: 'use', gimmick: { kind: 'pierce', upTo: 'uncommon' }, playPrice: () => 0, canApply: (t, e, _config, now) => landsOn({ key: 'cheap-shot' }, t, e, now), validateConfig: (c) => ok(c) };
+  const withShot: Instance = { ...instance, cards: [...instance.cards, shotRules] };
+  const asked = async (w: ReturnType<typeof world>, up: boolean) => {
+    const real = w.fake.effectsAbove.bind(w.fake);
+    const above = vi.spyOn(w.fake, 'effectsAbove').mockImplementation(async (...args) => {
+      const read = await real(...args);
+      if (!up || !args[0].includes(w.pipe)) return read;
+      const act = { id: 'shot-1', character: w.pipe, kind: 'card', thread: w.thread, targetActId: null, seq: null, createdAt: '2026-10-29T21:00:00Z', payload: { card: 'cheap-shot', reach: 'character', character: w.pipe, ends: '2999-01-01T00:00:00.000Z' }, currentPayload: {}, editedAt: null, shownEditedAt: null } as const;
+      return [...read, { play: act.id, reach: 'character' as const, target: w.pipe, endsAt: '2999-01-01T00:00:00.000Z', act }];
+    });
+    const user = userEvent.setup();
+    await open(w, cards, withShot);
+    await arm(user);
+    await waitFor(() => expect(above).toHaveBeenCalled());
+    return { user, above };
+  };
+  test('the form says the Move uses up the Cheap Shot, and not without one', async () => {
+    const w = world();
+    const { user } = await asked(w, true);
+    await user.click(await within(post(2)).findByRole('button', { name: 'Play Whoops! on post 2' }));
+    const form = await screen.findByRole('dialog', { name: /Whoops!/u });
+    expect(within(form).getByText('This Move uses up your Cheap Shot.')).toBeInTheDocument();
+    cleanup();
+    const bare = world();
+    const next = await asked(bare, false);
+    await next.user.click(await within(post(2)).findByRole('button', { name: 'Play Whoops! on post 2' }));
+    const plain = await screen.findByRole('dialog', { name: /Whoops!/u });
+    expect(within(plain).queryByText(/uses up your/u)).toBeNull();
+  });
+  test('every ghost mark on the page shares one read of the acting character\'s plays', async () => {
+    const w = world();
+    const { above } = await asked(w, true);
+    await screen.findByRole('button', { name: 'Play Whoops! on post 2' });
+    expect(above.mock.calls.filter(([chars]) => chars.length === 1 && chars[0] === w.pipe)).toHaveLength(1);
+  });
+});
+
 describe('the form opens whole', () => {
   test('the ghost mark is busy while the post is read, nothing opens until it lands, and the form\'s first render holds its content', async () => {
     const user = userEvent.setup();

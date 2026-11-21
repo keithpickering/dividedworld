@@ -24,6 +24,7 @@ import { playOf, reachesOf, type BeyondPost, type CardRules, type CardTarget, ty
 import { useRest } from '../glass/prepared.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
 import { livePlays, stackPlays, usePlays, type Plays } from './plays.ts';
+import { usePierce } from './pierce.ts';
 import type { Id } from '../data/api.ts';
 import { lowerFirst } from '../copy-words.ts';
 
@@ -46,6 +47,8 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const { api, instance, settings, ui } = useKayfa();
   const { plays, underOf } = useThread();
   const here = usePlays(plays, act.id);
+  /* The acting character's live pierce, read once for the page and shared by every post's mark. */
+  const pierce = usePierce(hudCharacter?.id ?? null, plays, play?.armed != null)?.upTo;
   const target = useTarget(act);
   const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
   /* Rest or focus on the mark reads the post early, so the press that follows opens the form at once (glass/prepared.ts). */
@@ -60,7 +63,7 @@ export function GhostMark({ act }: { readonly act: Act }) {
   /* A reply drawn under a post takes no card that replies: asked of the rules with the post it is under, so no ghost mark is drawn for one. */
   const under = underOf?.(act.id);
   /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. The play form reads the same answer (waysOn). */
-  const { cast: casts, set: sets } = waysOn(rules, act, here.plays, { cards: instance.cards, own, now: api.now(), ...(under === undefined ? {} : { under }) });
+  const { cast: casts, set: sets } = waysOn(rules, act, here.plays, { cards: instance.cards, own, now: api.now(), ...(under === undefined ? {} : { under }), ...(pierce === undefined ? {} : { pierce }) });
   if (!casts && !sets) return null;
   const down = sets && (play.faceDown || !casts);
   const cardUi = ui.cards.find((c) => c.key === rules.key);
@@ -141,6 +144,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   const here = usePlays(at.plays, at.target);
   const onThread = usePlays(at.plays, at.thread ?? '');
   const onBoard = usePlays(at.plays, at.board ?? '');
+  const pierce = usePierce(hudCharacter?.id ?? null, at.plays, play?.armed != null)?.upTo;
   const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
   const rest = useRest(() => (play && rules ? play.readyForm(rules.key, { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know }) : undefined));
   if (!play || !hudCharacter || !rules || !reachesOf(rules).includes(at.reach)) return null;
@@ -157,7 +161,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
     ...(at.board ? { board: livePlays(onBoard.plays, api.now()).filter((p) => p.reach === 'board').map(effect) } : {}),
   };
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
-  if (!landingOn(rules, goal, stackPlays(here.plays, api.now()), { cards: instance.cards, above }).ok) return null;
+  if (!landingOn(rules, goal, stackPlays(here.plays, api.now()), { cards: instance.cards, above, ...(pierce === undefined ? {} : { pierce }) }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
   const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, ...(at.pronouns ? { pronouns: at.pronouns } : {}), above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (

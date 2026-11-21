@@ -160,3 +160,6 @@ export function surfaceShare(cells: number, surface: string): string {
 export function olderWords(count: number, words: SurfaceWords): string {
   return `and ${count} older ${count === 1 ? words.noun : words.nouns}, washed or painted over`;
 }
+
+/** The Lens's line under a Move that got past a ward with a pierce (a Cheap Shot): the card it was played on, and the Ward it got past where there was one. Both are card names. */
+export const pierceWords = (card: string, ward?: string): string => `Played on a ${card}${ward === undefined ? '' : `, past ${ward}`}`;

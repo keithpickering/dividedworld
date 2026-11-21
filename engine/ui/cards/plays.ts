@@ -67,6 +67,16 @@ function handedBackOf(raw: unknown): { readonly handedBack?: NonNullable<CardPla
   return typeof by === 'string' && typeof card === 'string' ? { handedBack: { by, card } } : {};
 }
 
+/** A cast's `pierce` (the pierce play it spent, that play's card and the Ward it got past), as `{ pierce }` where the payload's is an object with a string `by` and `card` (`ward` is kept only where a string), else nothing. */
+function pierceOf(raw: unknown): { readonly pierce?: NonNullable<CardPlay['pierce']> } {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  const { by, card, ward } = raw as Record<string, unknown>;
+  return typeof by === 'string' && typeof card === 'string' ? { pierce: { by, card, ...(typeof ward === 'string' ? { ward } : {}) } } : {};
+}
+
+/** The pierce play a card Act's payload names as spent (`pierce.by`), or null for any other Act. */
+const spendsOf = (act: Act): Id | null => (act.kind === 'card' ? pierceOf(act.payload.pierce).pierce?.by ?? null : null);
+
 /**
  * Each play with `handedOut`: how many of these plays' casts name it in `handedBack` (the refund sign's count). Set only where it is above zero, so a play nobody names
  * carries no key; the same array where none is named.
@@ -115,6 +125,7 @@ export function playOf(act: Act): CardPlay | null {
     ...(typeof act.payload.drawn === 'string' ? { drawn: act.payload.drawn } : {}),
     ...(typeof act.payload.targetName === 'string' ? { targetName: act.payload.targetName } : {}),
     ...(handedBackOf(act.payload.handedBack)),
+    ...(pierceOf(act.payload.pierce)),
     ...(instant ? {
       instant: true as const,
       ...(typeof act.payload.took === 'number' && Number.isSafeInteger(act.payload.took) ? { took: act.payload.took } : {}),
@@ -488,6 +499,15 @@ export function createPlays(): Plays {
         }
         const found = playOf(act);
         if (!found) continue;
+        /* A Move that got past a ward with a pierce spends that play (as `setSpent` does for a filing's fall): marked now, or held for when the play arrives. */
+        const spends = spendsOf(act);
+        if (spends !== null) {
+          spentPlays.add(spends);
+          const at = postOf.get(spends);
+          const mine = at === undefined ? undefined : byPost.get(at);
+          const was = mine?.get(spends);
+          if (mine && was && !was.spent) { mine.set(spends, { ...was, spent: true }); touched.add(at!); }
+        }
         const early = found.faceDown ? springs.get(found.id) : undefined;
         const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at, ...(early.quadrant !== undefined ? { quadrant: early.quadrant } : {}) } } : found;
         const takenAt = found.faceDown ? takenBacks.get(found.id) : undefined;

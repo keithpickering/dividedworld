@@ -42,6 +42,7 @@ import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
 import { caughtWords } from './marks.ts';
 import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf, waysOn } from './land.ts';
 import type { CardPlay } from './types.ts';
+import { usePierce } from './pierce.ts';
 import { effectCards, livePlays, PLAYS_PER_POST, readEffects, stackPlays, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
 import { conditionWords, countOf, fieldOfRefusal, noConditions, SetConditions, whenOf, type ConditionsDraft, type Field, type Problems } from './SetConditions.tsx';
@@ -150,10 +151,13 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
    * on a post. A faceUpOnly card (it writes, needs a message, draws or runs a drive) is only cast face up, by decideSet.
    * A remembered Set face down never opens a card as a set that cannot be one, since `setting` follows `ways`. A set card is set there alone.
    */
+  /* The acting character's live pierce, if any: a ward at or below it does not turn this cast away, and the cast spends it. */
+  const pierceUp = usePierce(player.hudCharacter?.id ?? null, target.plays);
+  const pierce = pierceUp?.upTo;
   const ownPost = !beyond && post !== null && player.actingCharacters.some((c) => c.id === post.character);
   /* A card that replies writes its reply with the play, face up (`faceUpOnly`): its form holds the editor and offers no face-down choice, and waysOn never says it sets. */
   const replying = rules?.replies === true;
-  const ways = rules && post && !beyond && how === 'cast' ? waysOn(rules, post, carried, { cards: instance.cards, own: ownPost, now: api.now() }) : { cast: false, set: false };
+  const ways = rules && post && !beyond && how === 'cast' ? waysOn(rules, post, carried, { cards: instance.cards, own: ownPost, now: api.now(), ...(pierce === undefined ? {} : { pierce }) }) : { cast: false, set: false };
   const choosing = how === 'cast' && ownPost && ways.cast && ways.set;
   const setting = how === 'set' || (how === 'cast' && ownPost && ways.set && (!ways.cast || down));
   /* A Set is the post author's own: the character that wrote it sets it, which is the HUD's unless the post is another mask's. */
@@ -163,7 +167,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const hud = player.hudCharacter;
   const wallet = player.wallet;
 
-  const context = { cards: instance.cards, ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
+  const context = { cards: instance.cards, ...(pierce === undefined ? {} : { pierce }), ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
     : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);
   /* The live price effects above the target, from the plays the page holds on its thread, board and author (a post's) or the ones the reach was read with: each says which card adds what, where. */
@@ -410,6 +414,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
                 {raises.map((r) => <div key={r.key}><dt>{r.words}</dt><dd className="kb-num">{orbs(r.add)}</dd></div>)}
                 <div className="kb-play-total"><dt>To pay now</dt><dd className="kb-num">{orbs(price)}</dd></div>
               </dl>
+              {how === 'cast' && pierceUp && <p className="kb-play-fine">{`This Move uses up your ${instance.cards.find((c) => c.key === pierceUp.card)?.name ?? pierceUp.card}.`}</p>}
               {wallet && after !== null && (
                 <div className="kb-play-wallet">
                   <Orbs settled={wallet.balance} pending={-price} cap={wallet.cap} figures={false} label={`Wallet after playing: ${orbs(Math.max(0, after))} of ${orbs(wallet.cap)}`} />

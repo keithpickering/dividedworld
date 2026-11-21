@@ -48,7 +48,7 @@ import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, momentParts, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { olderWords, surfaceShare, surfaceWords } from './lens-words.ts';
+import { olderWords, pierceWords, surfaceShare, surfaceWords } from './lens-words.ts';
 import { backWords, CAUGHT_STATE, caughtWords, ENDED_STATE, endedWords, endsWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
 import { disciplineNote, FALL_ENDS } from './discipline.ts';
 import { asThen, backOver, defaultView, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
@@ -551,6 +551,7 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
   const { characters } = usePlayer();
   const { instance } = useKayfa();
   const name = playName(caster, card);
+  const nameOfCard = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
   /* A caught play says where its card went, once the spring that caught it is read: the view's note, which claims nothing of the card, stands until then. */
   const springOfCatch = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.spring : undefined;
   const fate = useCaughtFate(springOfCatch);
@@ -592,6 +593,7 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
         <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
         <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
       </div>
+      {play.pierce && <p className="kb-lens-note">{pierceWords(nameOfCard(play.pierce.card), play.pierce.ward === undefined ? undefined : nameOfCard(play.pierce.ward))}</p>}
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {!past && more && <p className="kb-lens-more">More reactions than the post</p>}
       {!past && yours && <p className="kb-lens-yours">Your play</p>}
