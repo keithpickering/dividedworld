@@ -15,7 +15,7 @@ import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { POSTING_OFFICES, TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
 import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
 import { pronounProblems } from './pronouns.ts';
-import { BEYOND_POST, DISCIPLINE_KINDS, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, instant, spanMs, withheld } from './cards.ts';
+import { BEYOND_POST, DISCIPLINE_KINDS, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, inPrint, instant, spanMs, withheld } from './cards.ts';
 import type { CardRules } from './cards.ts';
 import { isFixed, type Pull, type SlotSeed } from './packs.ts';
 import type { EventLine } from './cosmetics.ts';
@@ -461,20 +461,25 @@ function packProblems(instance: Instance): string[] {
       else for (const k of new Set(pack.contents)) {
         const card = instance.cards.find((c) => c.key === k);
         if (!card) out.push(`pack "${pack.key}" holds "${k}", and the instance has no such card`);
+        else if (!inPrint(card)) out.push(`pack "${pack.key}" holds "${k}", which is out of print; no pack gives out a card that is out of print`);
         else if (withheld(card, instance.settings)) out.push(`pack "${pack.key}" holds "${k}", which this instance withholds`);
       }
       if ('leaves' in pack) out.push(`pack "${pack.key}" is fixed and has a leaves list; a fixed pack leaves nothing out`);
       continue;
     }
     if (!Array.isArray(pack.pulls) || !pack.pulls.length) { out.push(`pack "${pack.key}" has no pulls`); continue; }
-    for (const k of pack.leaves ?? []) if (!instance.cards.some((c) => c.key === k)) out.push(`pack "${pack.key}" leaves out "${k}", and the instance has no such card`);
+    for (const k of pack.leaves ?? []) {
+      const card = instance.cards.find((c) => c.key === k);
+      if (!card) out.push(`pack "${pack.key}" leaves out "${k}", and the instance has no such card`);
+      else if (!inPrint(card)) out.push(`pack "${pack.key}" leaves out "${k}", which is out of print; a card out of print is never reached, so there is nothing to leave out`);
+    }
     (pack.pulls as readonly Pull[]).forEach((pull, i) => {
       const where = `pack "${pack.key}", pull ${i + 1}`;
       const weights = Object.entries(pull.weights ?? {});
       if (!weights.length) out.push(`${where} has no weights`);
       for (const [rarity, w] of weights) {
         if (!isWhole(w, 1)) out.push(`${where} has a weight of ${JSON.stringify(w)} for ${rarity}; a weight is a positive whole number`);
-        const eligible = instance.cards.some((c) => c.rarity === rarity && !(pack.leaves ?? []).includes(c.key));
+        const eligible = instance.cards.some((c) => inPrint(c) && c.rarity === rarity && !(pack.leaves ?? []).includes(c.key));
         if (!eligible) out.push(`${where} names ${rarity}, and the pack has no eligible card of that rarity`);
       }
     });
@@ -488,7 +493,11 @@ function packProblems(instance: Instance): string[] {
   const names = (s: SlotSeed) => ('card' in s.item ? `card "${s.item.card}"` : `pack "${s.item.pack}"`);
   for (const slot of machine) {
     const who = `the slot for ${names(slot)}`;
-    if ('card' in slot.item) { if (!instance.cards.some((c) => c.key === (slot.item as { card: string }).card)) out.push(`${who} names a card, and the instance has no such card`); }
+    if ('card' in slot.item) {
+      const card = instance.cards.find((c) => c.key === (slot.item as { card: string }).card);
+      if (!card) out.push(`${who} names a card, and the instance has no such card`);
+      else if (!inPrint(card)) out.push(`${who} names a card that is out of print; the machine sells no card that is out of print`);
+    }
     else if (!packs.some((p) => p.key === (slot.item as { pack: string }).pack)) out.push(`${who} names a pack, and the instance has no such pack`);
     if (!isWhole(slot.price, 1) || slot.price > INT4_MAX) out.push(`${who} has a price of ${JSON.stringify(slot.price)}; a price is a whole number of hundredths from 1 to ${INT4_MAX}`);
     if (!['onSale', 'soldOut', 'hidden'].includes(slot.availability)) out.push(`${who} has the availability ${JSON.stringify(slot.availability)}; it is onSale, soldOut or hidden`);
@@ -556,6 +565,7 @@ export function instanceProblems(instance: Instance): string[] {
   if (!instance.classes.length) out.push('the instance has no class');
   for (const k of duplicates(instance.classes, (c) => c.key)) out.push(`class key "${k}" is used twice`);
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
+  out.push(...leftProblems(instance));
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
     out.push(...surfaceProblems(c));
@@ -620,6 +630,35 @@ export function instanceProblems(instance: Instance): string[] {
     }
   }
   out.push(...systemProblems(instance));
+  return out;
+}
+
+const CARD_KEY = /^[a-z][a-z0-9-]*$/;
+
+/**
+ * Cards that have left (card retirement design, section 1): a key is in one of the instance's cards, a card's `formerly` and its `withdrawn`,
+ * never two; a `formerly` or `withdrawn` key is shaped like a card key; a refund is a positive whole number of hundredths. Out of print
+ * is the card's own flag and needs nothing here; the packs and the machine refuse it in `packProblems`.
+ */
+function leftProblems(instance: Instance): string[] {
+  const out: string[] = [];
+  const withdrawn = Array.isArray(instance.withdrawn) ? instance.withdrawn : (out.push('the instance has no withdrawn list'), []);
+  const cardKeys = new Set(instance.cards.map((c) => c.key));
+  const formerly = instance.cards.flatMap((c) => (Array.isArray(c.formerly) ? c.formerly : []));
+  for (const f of formerly) {
+    if (typeof f.key !== 'string' || !CARD_KEY.test(f.key)) out.push(`formerly key "${String(f.key)}" is not lowercase words joined by hyphens`);
+    if (typeof f.name !== 'string' || f.name.trim() === '') out.push(`formerly key "${String(f.key)}" has no name`);
+  }
+  for (const k of duplicates(formerly, (f) => f.key)) out.push(`key "${k}" is a card's formerly twice`);
+  for (const k of new Set(formerly.map((f) => f.key))) if (cardKeys.has(k)) out.push(`key "${k}" is a card and was a card's formerly; a key that has been renamed away is never a card again`);
+  for (const k of duplicates(withdrawn, (w) => w.key)) out.push(`withdrawn key "${k}" is used twice`);
+  for (const w of withdrawn) {
+    if (typeof w.key !== 'string' || !CARD_KEY.test(w.key)) out.push(`withdrawn key "${String(w.key)}" is not lowercase words joined by hyphens`);
+    if (typeof w.name !== 'string' || w.name.trim() === '') out.push(`withdrawn "${w.key}" has no name`);
+    if (!isWhole(w.refund, 1)) out.push(`withdrawn "${w.key}" refunds ${JSON.stringify(w.refund)}; a refund is a positive whole number of hundredths`);
+    if (cardKeys.has(w.key)) out.push(`key "${w.key}" is a card and withdrawn; a withdrawn card is gone`);
+    if (formerly.some((f) => f.key === w.key)) out.push(`key "${w.key}" is a card's formerly and withdrawn; a card has left one way`);
+  }
   return out;
 }
 

@@ -34,7 +34,7 @@ const settings: Settings = {
 
 const earn = () => [];
 const instance: Instance = {
-  key: 'test', name: 'Test',
+  key: 'test', name: 'Test', withdrawn: [],
   copy: { announcementsThreadTitle: 'Promos {season}' },
   packs: [], machine: [], ...testCosmeticsContent,
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }, { key: 'lurker', name: 'Lurker', earn }],

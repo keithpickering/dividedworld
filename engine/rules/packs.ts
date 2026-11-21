@@ -3,7 +3,7 @@
  * of pulls, each a set of weights over rarities, and a slot is one place in the machine's grid, holding a card or a pack at a
  * price. Pure: the fake backend rolls with `rollPack`, the SQL rolls on its own, and the screens show `packOdds`.
  */
-import { RARITIES, withheld, type CardRules, type Rarity } from './cards.ts';
+import { RARITIES, inPrint, withheld, type CardRules, type Rarity } from './cards.ts';
 import type { Settings } from './types.ts';
 
 /** One pull of a pack: a weight for each rarity it can roll, positive whole numbers. */
@@ -52,10 +52,10 @@ export interface RarityOdds {
   readonly cards: readonly { readonly card: string; readonly chance: number }[];
 }
 
-/** The cards a pack can hand out at a rarity: the instance's, in its order, less what the pack leaves out and what the instance withholds (a card that writes, with no old voice); the SQL roll leaves the same ones out. */
+/** The cards a pack can hand out at a rarity: the instance's, in its order, less what is out of print, what the pack leaves out and what the instance withholds (a card that writes, with no old voice); the SQL roll leaves the same ones out. */
 function eligible(pack: PullPack, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>, rarity: Rarity): string[] {
   const left = new Set(pack.leaves ?? []);
-  return cards.filter((c) => c.rarity === rarity && !left.has(c.key) && !withheld(c, settings)).map((c) => c.key);
+  return cards.filter((c) => inPrint(c) && c.rarity === rarity && !left.has(c.key) && !withheld(c, settings)).map((c) => c.key);
 }
 
 /** The rarities of a pull that have a card to give, with their weights, in rarity order. A rarity with none is not rolled. */

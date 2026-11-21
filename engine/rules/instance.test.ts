@@ -133,6 +133,7 @@ const packCards = [
 const good: Instance = {
   key: 'test-world',
   name: 'Test World',
+  withdrawn: [],
   classes: [{ key: 'a', name: 'A', earn: () => [] }],
   cards: packCards,
   reactions: [
@@ -1595,4 +1596,49 @@ test('a Turn cooldown is never shorter than a settlement window (#931), a month 
   assert.deepEqual(settingsProblems(settings), [], 'the whole of the test settings, unfiltered');
   // A row that is not a span is its own refusal, never this one.
   assert.deepEqual(pair({ unit: 'day', count: 0 }, { unit: 'week', count: 1 }), []);
+});
+
+// Cards that have left: out of print, renamed (formerly) and withdrawn (docs/plans/2026-11-20-card-retirement-plan.md, Task 1).
+const leftWith = (over: Partial<Instance>): Instance => stocked({ packs: [], machine: [], ...over });
+const retiredB = [packCards[0]!, { ...packCards[1]!, retired: true }, packCards[2]!] as Instance['cards'];
+
+test('an instance with a retired card, a formerly and a withdrawn key has no problems', () => {
+  const cards = [packCards[0]!, { ...packCards[1]!, retired: true }, { ...packCards[2]!, formerly: [{ key: 'old-c', name: 'Old C' }] }] as Instance['cards'];
+  assert.deepEqual(instanceProblems(leftWith({ cards, withdrawn: [{ key: 'gone', name: 'Gone', refund: 100 }] })), []);
+});
+
+test('a key is in one of cards, formerly and withdrawn, never two', () => {
+  const formerly = (key: string) => [packCards[0]!, { ...packCards[1]!, formerly: [{ key, name: 'X' }] }, packCards[2]!] as Instance['cards'];
+  assert.match(said(leftWith({ cards: formerly('a') })), /key "a" is a card and was a card's formerly/);
+  assert.match(said(leftWith({ withdrawn: [{ key: 'a', name: 'A', refund: 100 }] })), /key "a" is a card and withdrawn/);
+  assert.match(said(leftWith({ cards: formerly('old'), withdrawn: [{ key: 'old', name: 'Old', refund: 100 }] })), /key "old" is a card's formerly and withdrawn/);
+  const twice = [{ ...packCards[0]!, formerly: [{ key: 'old', name: 'Old' }] }, { ...packCards[1]!, formerly: [{ key: 'old', name: 'Old' }] }, packCards[2]!] as Instance['cards'];
+  assert.match(said(leftWith({ cards: twice })), /key "old" is a card's formerly twice/);
+  assert.match(said(leftWith({ withdrawn: [{ key: 'g', name: 'G', refund: 1 }, { key: 'g', name: 'G', refund: 1 }] })), /withdrawn key "g" is used twice/);
+});
+
+test('a formerly or withdrawn key is a valid card key', () => {
+  const formerly = [{ ...packCards[0]!, formerly: [{ key: 'Not A Key', name: 'X' }] }, packCards[1]!, packCards[2]!] as Instance['cards'];
+  assert.match(said(leftWith({ cards: formerly })), /formerly key "Not A Key" is not lowercase words joined by hyphens/);
+  assert.match(said(leftWith({ withdrawn: [{ key: '9x', name: 'X', refund: 1 }] })), /withdrawn key "9x" is not lowercase words joined by hyphens/);
+});
+
+test('a refund is a positive whole number of hundredths', () => {
+  for (const refund of [0, -5, 1.5, Number.NaN]) assert.match(said(leftWith({ withdrawn: [{ key: 'gone', name: 'Gone', refund }] })), /withdrawn "gone" refunds .*; a refund is a positive whole number of hundredths/, String(refund));
+});
+
+test('a pack never names a card that is out of print, in its contents or its leaves, and a pull pack reaches none', () => {
+  assert.match(said(leftWith({ cards: retiredB, packs: [{ key: 'f', contents: ['a', 'b'] }] })), /pack "f" holds "b", which is out of print/);
+  assert.match(said(leftWith({ cards: retiredB, packs: [{ key: 'p', pulls: [{ weights: { common: 1 } }], leaves: ['b'] }] })), /pack "p" leaves out "b", which is out of print/);
+  assert.match(said(leftWith({ cards: retiredB, packs: [{ key: 'p', pulls: [{ weights: { uncommon: 1 } }] }] })), /pack "p".*uncommon.*no eligible card/);
+  assert.deepEqual(instanceProblems(leftWith({ cards: retiredB, packs: [{ key: 'p', pulls: [{ weights: { common: 1 } }, { weights: { rare: 1 } }] }] })), []);
+});
+
+test('a pack never names a card that has been renamed or withdrawn', () => {
+  assert.match(said(leftWith({ withdrawn: [{ key: 'gone', name: 'Gone', refund: 100 }], packs: [{ key: 'f', contents: ['a', 'gone'] }] })), /pack "f" holds "gone", and the instance has no such card/);
+});
+
+test('a machine slot never names a card that is out of print', () => {
+  const slot = { item: { card: 'b' }, availability: 'onSale', price: 100 } as const;
+  assert.match(said(leftWith({ cards: retiredB, machine: [slot] })), /the slot for card "b" names a card that is out of print/);
 });
