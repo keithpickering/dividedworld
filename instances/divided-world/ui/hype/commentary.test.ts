@@ -1,29 +1,35 @@
 /**
  * The commentary video's script, exactly as docs/plans/2026-11-21-commentary-video-design.md (section 4) words it:
- * eleven nodes in order, each caption at most 90 characters (two rows), and the end card's sentence with WROLD in it.
+ * the nodes in order, each caption at most 90 characters (two rows), and the end card's sentence with WROLD in it.
  * The captions of a node, joined with single spaces, are the node's full text, so a dropped or altered caption fails.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { commentary, END_CARD } from './commentary.ts';
+import { commentary, TITLE, TITLE_NOTE } from './commentary.ts';
 
 const SCRIPT: readonly { id: string; part: number; text: string; firstSix: string }[] = [
   {
     id: 'n01',
     part: 1,
-    text: "Hi, my name is Gabe, and welcome to Divided World. After nine years in development, hopefully it will have been worth the wait. The last forum ran on code I wrote when I was twenty, and it's not easy to open that up and wonder what you were thinking. This is, I think, better. To listen to a commentary node, put your cursor over the floating commentary symbol and click. To stop a commentary node, click it again. Some commentary nodes may take control of the forum in order to show something to you. In these cases, simply click again to stop the commentary.",
-    firstSix: 'Hi, my name is Gabe, and',
+    text: "Hi, I'm Gabe. Over the last few years, people have been asking me what our company has been up to. Why haven't we been making any games? Well, I'm happy to announce that the indefinite delay of Half-Life: Nuts & Bolts has not been in vain. For the last nine years, we've been putting all of our resources into this: Divided World. And nobody can ever get that time back. To listen to a commentary node, put your cursor over the floating commentary symbol and click. To stop one, click it again. Some commentary nodes may take temporary control over the forum in order to show you something. It's best to just let those ones happen.",
+    firstSix: "Hi, I'm Gabe. Over the last",
   },
   {
     id: 'n02',
     part: 1,
-    text: 'Early playtests showed that people on a forum want to be liked. We considered this a design problem. So every character has a secret class, and some classes are paid for being disliked. This one is a Heel. Playtesters threw tomatoes at him and he made money. We then found they could hurt him by agreeing with him, politely. We didn\'t design that. We kept it.',
-    firstSix: 'Early playtests showed that people on',
+    text: 'Early playtests showed us that people posting on a forum want to be liked. We found this resulted in a positive, nurturing environment - So instead, every character has a secret class, and some classes are paid for being disliked. This one is a Heel. Playtesters threw tomatoes at him and he made money. We then found they could hurt him by agreeing with him, politely.',
+    firstSix: 'Early playtests showed us that people',
+  },
+  {
+    id: 'n02b',
+    part: 1,
+    text: 'And that REALLY got him going!',
+    firstSix: 'And that REALLY got him going!',
   },
   {
     id: 'n03',
     part: 1,
-    text: "Sometimes we need to stop a player from doing something. In our other games we use what we call a gate. Here, the gate is another player. Every card back looks the same, so you can't know what's waiting on a post. Playtesters described this as unfair. We agree.",
+    text: "Sometimes we need to stop a player from doing something. In our other games we use what we call a gate. Here, the gate is another player. Every card back looks the same, so you can't know what's waiting on a post. Playtesters described this as unfair.",
     firstSix: 'Sometimes we need to stop a',
   },
   {
@@ -35,7 +41,7 @@ const SCRIPT: readonly { id: string; part: number; text: string; firstSix: strin
   {
     id: 'n05',
     part: 2,
-    text: 'This is a training arc. The player learns that a card can be caught, and then learns that being caught can be the plan. We found that about one playtester in five understood this. He won everything, and we couldn\'t work out who he was.',
+    text: 'This is a training arc. The player learns that a card can be caught, and then learns that being caught can be the plan. We found 1 in 5 players understood this. He took the other four for everything they had, and none of them ever logged in again.',
     firstSix: 'This is a training arc. The',
   },
   {
@@ -59,24 +65,24 @@ const SCRIPT: readonly { id: string; part: number; text: string; firstSix: strin
   {
     id: 'n09',
     part: 3,
-    text: "So the, the way we think about this is, any time you do something new there's a normal distribution of pain, and this is— that's a chair. This is not in the middle of the curve. Okay. This is GPT-2 finishing someone's post. Do we... do we have a filter on that? My god, there are laws about this stuff, you know.",
+    text: "So the, the way we think about this is, any time you do something new there's a normal distribution of pain, and this is— that's a chair. This is not in the middle of the curve. Okay. This is... somebody's post continuing itself? I guess? Okay, I'm hoping at one point one of the, uh...",
     firstSix: 'So the, the way we think',
   },
   {
     id: 'n10',
     part: 3,
-    text: "That's the moderator. He's a Personality Core, we found him in a pile, he's the permanent Boss, and nothing will go— he's merging the boards. To stop a commentary node, put your cursor over— I'm doing that.",
-    firstSix: "That's the moderator. He's a Personality",
+    text: "Okay good, here's a Moderator. He's a personality core we pulled out of a pile, he should be able to clean some of this up, aaand.... he's merging all the boards together.",
+    firstSix: "Okay good, here's a Moderator. He's",
   },
   {
     id: 'n11',
     part: 3,
-    text: 'Please let me know— —what you think— —after you have had a chance—',
-    firstSix: 'Please let me know— —what you',
+    text: 'Please let me know... what you think.... after you\'ve had a chance.... to figure this stupid thing out!',
+    firstSix: 'Please let me know... what you',
   },
 ];
 
-test('the script has eleven nodes, n01 to n11, in order, in parts one to three', () => {
+test('the script has twelve nodes, n01 to n11 with n02b after n02, in order, in parts one to three', () => {
   assert.deepEqual(commentary.map((n) => n.id), SCRIPT.map((s) => s.id));
   assert.deepEqual(commentary.map((n) => n.part), SCRIPT.map((s) => s.part));
 });
@@ -114,14 +120,21 @@ test('no caption says "The System" or "nobody can see"', () => {
   }
 });
 
-test('node 11 has exactly its three fragments, one to a line', () => {
-  const n11 = commentary.find((n) => n.id === 'n11');
-  assert.ok(n11, 'node n11 is missing');
-  assert.deepEqual(n11.lines, ['Please let me know—', '—what you think—', '—after you have had a chance—']);
+test('n02b is its own node, one line, spoken after a pause of three seconds; every other node takes the usual breath', () => {
+  const n = commentary.find((x) => x.id === 'n02b');
+  assert.ok(n, 'n02b is missing');
+  assert.equal(n.after, 3);
+  assert.deepEqual(commentary.filter((x) => x.after !== undefined).map((x) => x.id), ['n02b']);
+  assert.ok(!commentary.find((x) => x.id === 'n02')?.lines.some((l) => /REALLY/.test(l)), 'n02 no longer says it');
 });
 
-test('the end card keeps WROLD and not the correct spelling', () => {
-  assert.ok(END_CARD.includes('WROLD'), 'END_CARD must contain WROLD');
-  assert.ok(!END_CARD.includes('WORLD ('), 'END_CARD must not contain "WORLD ("');
-  assert.equal(END_CARD, "DIVIDED WROLD (misspelled) (put the misspelled word 'world' in there for real)");
+test('node 11 has exactly its four fragments, one to a line', () => {
+  const n11 = commentary.find((n) => n.id === 'n11');
+  assert.ok(n11, 'node n11 is missing');
+  assert.deepEqual(n11.lines, ['Please let me know...', 'what you think....', "after you've had a chance....", 'to figure this stupid thing out!']);
+});
+
+test('the title is DIVIDED WROLD, and its note is the owner\'s parenthetical to the letter', () => {
+  assert.equal(TITLE, 'DIVIDED WROLD');
+  assert.equal(TITLE_NOTE, "(misspelled) (put the misspelled word 'world' in there for real)");
 });

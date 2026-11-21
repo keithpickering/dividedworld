@@ -89,7 +89,7 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
     ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []),
     '--enable-begin-frame-control', '--run-all-compositor-stages-before-draw', '--disable-new-content-rendering-timeout',
     '--disable-threaded-animation', '--disable-threaded-scrolling', '--disable-checker-imaging',
-    '--font-render-hinting=none', '--force-color-profile=srgb', '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', '--mute-audio',
+    '--blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2', '--font-render-hinting=none', '--force-color-profile=srgb', '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', '--mute-audio',
     'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
   const wsUrl = await new Promise((resolve, reject) => {
@@ -221,6 +221,17 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
       if (Math.abs(left) > dt) throw new Error(`the frame's clock and the page's are ${left.toFixed(1)}ms apart after being set together`);
       return left;
     },
+    /**
+     * The page's time runs `ms` on with no frame drawn in it (a countdown that ticks by the minute is seen to tick in a take of seconds): its timers fire, and the frame clock moves
+     * with it, so the page's time and the frame's stay one clock. Only after \`freeze()\`.
+     */
+    async skip(ms) {
+      if (!virtual) throw new Error('skip: the page\'s time is not the film\'s yet');
+      const done = cdp.once('Emulation.virtualTimeBudgetExpired', sessionId);
+      await S('Emulation.setVirtualTimePolicy', { policy: 'advance', budget: ms });
+      await done;
+      ticks += ms;
+    },
     /** A drawn arrow that follows the pointer (the page's CSP takes no style sheet, so it is styled through the CSSOM). */
     async drawPointer() {
       await evaluate(`(() => {
@@ -251,7 +262,7 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
     },
     /** One key pressed and released on the focused field, as a keyboard makes it (keydown, input, keyup); a shot spaces the keys of a text over its frames itself. */
     key(char) {
-      const NAMED = { Enter: { code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' }, ArrowDown: { code: 'ArrowDown', windowsVirtualKeyCode: 40 }, ArrowUp: { code: 'ArrowUp', windowsVirtualKeyCode: 38 }, Escape: { code: 'Escape', windowsVirtualKeyCode: 27 } };
+      const NAMED = { Enter: { code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' }, ArrowDown: { code: 'ArrowDown', windowsVirtualKeyCode: 40 }, ArrowUp: { code: 'ArrowUp', windowsVirtualKeyCode: 38 }, ArrowLeft: { code: 'ArrowLeft', windowsVirtualKeyCode: 37 }, ArrowRight: { code: 'ArrowRight', windowsVirtualKeyCode: 39 }, Backspace: { code: 'Backspace', windowsVirtualKeyCode: 8 }, Escape: { code: 'Escape', windowsVirtualKeyCode: 27 } };
       const named = NAMED[char];
       const down = named ? { key: char, ...named } : { key: char, text: char };
       sent(S('Input.dispatchKeyEvent', { type: named && !named.text ? 'rawKeyDown' : 'keyDown', ...down }));
