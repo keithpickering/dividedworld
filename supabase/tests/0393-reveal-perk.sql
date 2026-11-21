@@ -16,7 +16,8 @@ declare
   w0 timestamptz; w1 timestamptz;
   t uuid := tests.thread('Rv settlement thread');
   first_at timestamptz; second_at timestamptz; late_at timestamptz; bobs_at timestamptz;
-  bobs_post uuid;
+  bobs_post uuid; di_post uuid;
+  cy uuid; di uuid; cy_at timestamptz; di_at timestamptz;
   input jsonb; est jsonb; got jsonb;
 begin
   if not exists (select 1 from settlements) then
@@ -34,9 +35,23 @@ begin
   perform write_unmask(a, t, 'act', late_at, '');
   perform write_unmask(b, t, 'act', bobs_at, '');
 
+  -- Two more verified reveals that are not unmasks: Cy debuts with its class named, and Di's announced Turn names its new class. Both are announce Acts carrying a class
+  -- (write_announce, 0100) and so rows of class_reveals; each is read as a reveal. Di is Bob's, Cy is Ann's.
+  cy := tests.character(ann, 'Rv Cy'); di := tests.character(bob, 'Rv Di');
+  cy_at := w0 + interval '90 minutes'; di_at := w0 + interval '1 hour';
+  update class_history set started_at = first_at - interval '1 day' where character in (cy, di);
+  perform write_announce(cy, t, 'debut', null, 'alpha', cy_at);
+  insert into class_history (character, class_key, started_at) values (di, 'beta', di_at);
+  perform write_announce(di, t, 'turn', 'alpha', 'beta', di_at);
+  if (select count(*) from class_reveals where character in (cy, di)) is distinct from 2 then raise exception 'the setup: class_reveals does not hold the debut and the Turn'; end if;
+
   -- Bob posts inside the window and Ann reacts to it, so Ann's estimate names his character (as another player's).
   bobs_post := tests.post(b, t, 'Bob''s post.', w0 + interval '4 hours');
   insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values (bobs_post, a, ann, 'up', 1, w0 + interval '5 hours');
+
+  -- Ann reacts to a post of Di's too, so her estimate names Di as another player's character.
+  di_post := tests.post(di, t, 'Di''s post.', w0 + interval '4 hours');
+  insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values (di_post, a, ann, 'up', 1, w0 + interval '5 hours');
 
   input := settlement_input(w0, w1);
   got := pg_temp.char_of(input, a) -> 'reveals';
@@ -45,6 +60,12 @@ begin
   end if;
   if pg_temp.char_of(input, b) -> 'reveals' is distinct from jsonb_build_array(pg_temp.ms(bobs_at)) then
     raise exception 'the settlement does not give Bob''s reveal: %', pg_temp.char_of(input, b) -> 'reveals';
+  end if;
+  if pg_temp.char_of(input, cy) -> 'reveals' is distinct from jsonb_build_array(pg_temp.ms(cy_at)) then
+    raise exception 'the settlement does not give a debut that names its class as a reveal: %', pg_temp.char_of(input, cy) -> 'reveals';
+  end if;
+  if pg_temp.char_of(input, di) -> 'reveals' is distinct from jsonb_build_array(pg_temp.ms(di_at)) then
+    raise exception 'the settlement does not give a Turn that names its new class as a reveal: %', pg_temp.char_of(input, di) -> 'reveals';
   end if;
   -- A character that never revealed has an empty list, not a missing one.
   if exists (select 1 from jsonb_array_elements(input -> 'characters') c where c -> 'reveals' is null or jsonb_typeof(c -> 'reveals') <> 'array') then
@@ -55,6 +76,12 @@ begin
   got := pg_temp.char_of(est, a) -> 'reveals';
   if got is distinct from jsonb_build_array(pg_temp.ms(first_at), pg_temp.ms(second_at)) then
     raise exception 'the caller''s estimate does not give the caller''s own reveals: %', got;
+  end if;
+  if pg_temp.char_of(est, cy) -> 'reveals' is distinct from jsonb_build_array(pg_temp.ms(cy_at)) then
+    raise exception 'the caller''s estimate does not give the caller''s own debut reveal: %', pg_temp.char_of(est, cy) -> 'reveals';
+  end if;
+  if pg_temp.char_of(est, di) -> 'reveals' is distinct from '[]'::jsonb then
+    raise exception 'an estimate shows another player''s Turn reveal: %', pg_temp.char_of(est, di);
   end if;
   got := pg_temp.char_of(est, b);
   if got is null or got -> 'reveals' is distinct from '[]'::jsonb then

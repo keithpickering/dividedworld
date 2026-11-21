@@ -1,14 +1,14 @@
 -- The reveal perk's input (docs/plans/2026-11-20-class-balance-design.md, section 2; docs/plans/2026-11-20-class-balance-plan.md, Task 6). While a character's reveal is current,
--- what its class earns from reactions counts `revealPerk` more (engine/rules/settle.ts). The engine reads a reveal as the time of an `unmask` Act (0027), so:
+-- what its class earns from reactions counts `revealPerk` more (engine/rules/settle.ts). The engine reads a reveal as the time of a verified reveal, a `class_reveals` row (0027, 0100): an unmask, a debut naming its class, or an announced Turn naming its new class, so:
 --
 --   1. settings_held         copied whole from 0391_debates_crowd_settings.sql (which holds `debateDays` and crowd pay's settings) with one new key: `revealPerk` is a number from 0 to 1 (engine/rules/instance.ts, SETTINGS), as the engine checks it.
---   2. settlement_input      copied whole from 0390_debates.sql, with one field added to each character: `reveals`, the epoch milliseconds of its `unmask` Acts created before window_end, oldest first.
+--   2. settlement_input      copied whole from 0390_debates.sql, with one field added to each character: `reveals`, the epoch milliseconds of its `class_reveals` rows made before window_end, oldest first.
 --   3. estimate_input        copied whole from 0390_debates.sql, with the same field: the caller's own characters carry their reveals; another player's character gets [], as its `classes` does,
 --                            so the estimate proves nothing about who revealed.
 --
 -- Ways out. Nothing here adds a state; a reveal is current until a Turn, and a new reveal starts it again, which the engine decides.
 -- Masks. `reveals` is read only by settlement (The System's scoring, the exception CLAUDE.md names) and by the caller's own estimate, for the caller's own characters.
--- Cost at a busy instance's scale: one indexed read of acts (acts_unmask, 0027) per character in each function, the same shape as the class history read beside it.
+-- Cost at a busy instance's scale: one indexed read of acts (acts_unmask, 0027, and acts_announce_character, 0100, through class_reveals) per character in each function, the same shape as the class history read beside it.
 -- Grants are kept by create or replace.
 
 
@@ -320,8 +320,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
       select jsonb_agg(jsonb_build_object('id', c.id, 'player', c.owner, 'classes', coalesce((
         select jsonb_agg(jsonb_build_object('class', h.class_key, 'from', (extract(epoch from h.started_at) * 1000)::bigint) order by h.started_at)
         from class_history h where h.character = c.id and h.started_at < window_end), '[]'),
-        'reveals', coalesce((select jsonb_agg((extract(epoch from u.created_at) * 1000)::bigint order by u.created_at, u.id)
-          from acts u where u.character = c.id and u.kind = 'unmask' and u.created_at < window_end), '[]')) order by c.id)
+        'reveals', coalesce((select jsonb_agg((extract(epoch from u.at) * 1000)::bigint order by u.at, u.act)
+          from class_reveals u where u.character = c.id and u.at < window_end), '[]')) order by c.id)
       from characters c join named n on n.id = c.id), '[]'),
     'acts', coalesce((
       select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', a.id, 'character', a.character, 'kind', a.kind,
@@ -622,8 +622,8 @@ begin
         select jsonb_build_object('id', c.id, 'player', you, 'classes', coalesce((
           select jsonb_agg(jsonb_build_object('class', h.class_key, 'from', (extract(epoch from h.started_at) * 1000)::bigint) order by h.started_at)
           from class_history h where h.character = c.id and h.started_at < window_end), '[]'),
-          'reveals', coalesce((select jsonb_agg((extract(epoch from u.created_at) * 1000)::bigint order by u.created_at, u.id)
-            from acts u where u.character = c.id and u.kind = 'unmask' and u.created_at < window_end), '[]')) as x
+          'reveals', coalesce((select jsonb_agg((extract(epoch from u.at) * 1000)::bigint order by u.at, u.act)
+            from class_reveals u where u.character = c.id and u.at < window_end), '[]')) as x
         from characters c join mine m on m.id = c.id
         union all
         select jsonb_build_object('id', o.id, 'player', o.player, 'classes', '[]'::jsonb, 'reveals', '[]'::jsonb) from others o
