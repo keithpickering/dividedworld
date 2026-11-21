@@ -8,13 +8,9 @@
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  /* A line that wraps under the tiles (the React button, the blind totals' note, a refusal) stands the reach further down, clear of a ring. */
-  gap: calc(0.4em + var(--kb-grace-reach)) calc(2 * var(--kb-grace-reach));
+  gap: 0.4em calc(2 * var(--kb-grace-reach));
   align-items: center;
-  /* The reach below keeps a pending tile's ring off the post's edge. It is a margin, not padding, so the row's own box (the picker's
-     anchor, engine/ui/glass/Overlay.tsx) stays the tiles' box, and a place that sets the row's margin or takes its box away (the Lens's
-     foot, `display: contents`) keeps its own spacing. Above the row, 0.6em clears the ring already. */
-  margin: 0.6em 0 var(--kb-grace-reach);
+  margin: 0.6em 0 0;
 }
 
 /* The one plain line a card puts under a row (who can see the totals, and until when): the board's own small text, on a line of its own. */
@@ -54,11 +50,11 @@
 .kb-reaction-list {
   display: flex;
   flex-wrap: wrap;
-  /* Two pending tiles side by side, or a wrapped line under one, keep their rings apart; the row's margin keeps the ring off the post's edge. */
+  /* Two pending tiles side by side, or a wrapped line under one, keep their rings apart; the block padding keeps the ring off the post's edge. */
   gap: calc(2 * var(--kb-grace-reach));
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: var(--kb-grace-reach) 0;
 }
 
 /* A reaction's tile: the line is a calm, with no glow; the emoji take the system's emoji faces before the body face. */
