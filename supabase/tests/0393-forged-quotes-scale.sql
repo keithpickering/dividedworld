@@ -56,6 +56,8 @@ begin
       perform tests.act(ch, 'edit', th, jsonb_build_object('body', format('Post %s of the busy instance, edited %s times, says other words.', i, j)), ids[i], base + interval '1 hour' + make_interval(secs => i * 10 + j));
     end loop;
   end loop;
+  -- the fixture is analyzed, as a busy instance's tables are: the version scan is an ordered index scan whose plan the statistics choose (final review G1)
+  analyze acts; analyze quote_sources;
   -- doctored: every version of every post searched
   parts := '{}';
   for i in 1..POSTS loop parts := parts || format('[quote=%s]Post %s of the busy instance said these words in no version, number %s.[/quote]', ids[i], i, i * 7); end loop;

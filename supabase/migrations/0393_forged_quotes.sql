@@ -1496,6 +1496,9 @@ declare
   left_over jsonb[];
   q jsonb;
   v record;
+  vers refcursor;
+  ph integer;
+  dig text;
   src text;
   started timestamptz;
   cap constant interval := quote_search_cap();
@@ -1515,32 +1518,38 @@ begin
     any_version := false;
     seen_digests := '{}';
     -- The eligible versions, newest first, a text seen already (by digest) once, a hidden one skipped before its text is read (only a visible version's digest is remembered, so a hidden copy of a text does not hide a visible one).
-    for v in
-      select x.id, s.digest
-      from (
-        select a.id, a.created_at from acts a where a.id = k::uuid and a.kind in ('post', 'spin') and a.created_at <= at
-        union all
-        select e.id, e.created_at from acts e where e.kind = 'edit' and e.target_act_id = k::uuid and e.created_at <= at
-      ) x
-      join quote_sources s on s.act = x.id
-      order by x.created_at desc, x.id desc
-    loop
-      exit when cardinality(pending) = 0;
-      -- The clock, before every version looked at (a hidden one and a text seen already included: the row is found and its hiding asked), so a long history of small versions is bounded as well.
-      if clock_timestamp() - started > cap then spent := true; exit; end if;
-      continue when v.digest = any (seen_digests) or version_hidden(v.id, k::uuid);
-      seen_digests := seen_digests || v.digest;
-      any_version := true;
-      -- The text is read only now, once, for a version that is not hidden.
-      select s.source into src from quote_sources s where s.act = v.id;
-      left_over := '{}';
-      foreach q in array pending loop
-        -- The clock again, before each quote is tested: the unit that can be slow is one strpos.
+    -- They are STREAMED, so the clock bounds reading them as well as testing them: the edits come from the ordered index acts_edits (target_act_id, created_at desc, id desc; no sort, no join) one row at a time, then the
+    -- post's own Act, the oldest version. Each row's source is looked up by its key in the loop, after the clock is read; a query that joined and sorted every version first would spend a time linear in the post's edits
+    -- before the first read (final review G1).
+    for ph in 1..2 loop
+      if ph = 1 then
+        open vers for select e.id, e.created_at from acts e where e.kind = 'edit' and e.target_act_id = k::uuid and e.created_at <= at order by e.created_at desc, e.id desc;
+      else
+        open vers for select a.id, a.created_at from acts a where a.id = k::uuid and a.kind in ('post', 'spin') and a.created_at <= at;
+      end if;
+      loop
+        exit when cardinality(pending) = 0;
+        -- The clock, before every version is fetched (a hidden one and a text seen already included: the row is found and its hiding asked), so a long history of small versions is bounded as well.
         if clock_timestamp() - started > cap then spent := true; exit; end if;
-        if not quote_holds(src, q) then left_over := left_over || q; end if;
+        fetch vers into v;
+        exit when not found;
+        select s.digest into dig from quote_sources s where s.act = v.id;
+        continue when dig is null or dig = any (seen_digests) or version_hidden(v.id, k::uuid);
+        seen_digests := seen_digests || dig;
+        any_version := true;
+        -- The text is read only now, once, for a version that is not hidden.
+        select s.source into src from quote_sources s where s.act = v.id;
+        left_over := '{}';
+        foreach q in array pending loop
+          -- The clock again, before each quote is tested: the unit that can be slow is one strpos.
+          if clock_timestamp() - started > cap then spent := true; exit; end if;
+          if not quote_holds(src, q) then left_over := left_over || q; end if;
+        end loop;
+        exit when spent;
+        pending := left_over;
       end loop;
-      exit when spent;
-      pending := left_over;
+      close vers;
+      exit when spent or cardinality(pending) = 0;
     end loop;
     if not any_version or cardinality(pending) > 0 then forged := forged || k::uuid; end if;
   end loop;
