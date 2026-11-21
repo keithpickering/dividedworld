@@ -17,18 +17,18 @@
  * no post (every spin made before this, and any made another way), it is the cast-from post as the play landed (the play's moment, "As it landed"; a play from
  * before the snapshot reads the version current then, and says what else was on the post was not recorded), and the head says "as it landed" on one line:
  * never an error or an empty box. In both the character's name and avatar are one link to its profile, the box has a byline (that link and the version's date)
- * above the words, the card's effect is drawn on the words as a live one (a moment is playable), and the mark's Go to post leads to the pressed post where there is one, else the cast-from
+ * in a band of its own between the head and the words, the card's effect is drawn on the words as a live one (a moment is playable), and the mark's Go to post leads to the pressed post where there is one, else the cast-from
  * post. A thread's play and a board's play draw no mark of their own in the box today (the mark is keyed by a post they have not): the box is the head and
- * nothing under it. Everything under the band stands in one content area (`div.kb-origin-area`, marked `data-kb-content-area`, drawn only where something stands there), which is what an
+ * nothing under it. Everything under the band and the byline (`Byline`, a band of the box's own) stands in one content area (`div.kb-origin-area`, marked `data-kb-content-area`, drawn only where something stands there), which is what an
  * effect on the box fills and finds as its body; the History button, its panel and the "More than" note are lifted over it, and the box itself over the opening post's effect (spin.css). What a moment says under its post stands in the box's foot (`div.kb-origin-foot`), under the content area and outside it, so no effect that fills the area passes under it and nothing arrives late inside the area an effect has measured. The moment the page carried is kept in the Lens's store under the key the frame reads it by (`seedMoment`), so the frame reads nothing.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { billPost, drawnOf, type BillOver } from '../cards/billing.ts';
 import { PostEffects, momentParts } from '../cards/Effects.tsx';
 import { useLensStore } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
-import { MomentView, useMomentRead } from '../cards/Moment.tsx';
+import { MomentView } from '../cards/Moment.tsx';
 import { createPlays, effectCards, holdsEffects, homeOf, keepingKeys, markedPlays, playOf, readEffects, shownPlays, usePlays, type Plays } from '../cards/plays.ts';
 import type { CardPlay, CardView } from '../cards/types.ts';
 import { useKayfa } from '../context.tsx';
@@ -153,31 +153,40 @@ function useCast(cast: readonly Character[], ids: readonly (Id | null)[]): { rea
 }
 
 /**
- * The box of a thread spun from a card on a character: a byline (the character's avatar and name, one link to its profile, and the
- * version's date), then the post as a moment, drawn with the card's effect on it, playable. `spin` is the spin's own Act where the spin was
+ * The box of a thread spun from a card on a character: the post as a moment (its byline is the box's, `Byline`), drawn with the card's effect on it, playable. `spin` is the spin's own Act where the spin was
  * pressed on a post (its moment, "As it was spun"); without it the play's own moment is the cast-from post as it landed. The moment is
  * read through the same store the frame reads it by, so it is read once.
  */
-function CharacterMoment({ play, spin, nameOf, characterOf, onView, listInto }: {
+function CharacterMoment({ play, spin, nameOf, onView, listInto }: {
   readonly play: CardPlay; readonly spin: Id | null; readonly onView: (card: string, view: CardView | null) => void;
   /** The box's foot, where the moment's list stands. */
   readonly listInto: HTMLElement | null;
-  readonly nameOf: (id: Id | null) => string; readonly characterOf: (id: Id) => Character | undefined;
+  readonly nameOf: (id: Id | null) => string;
 }) {
-  const { api } = useKayfa();
-  const read = useMomentRead(spin ?? play.id, () => (spin ? api.spinMoment(spin) : api.playMoment(play.id)));
-  const version = read.status === 'read' ? read.moment?.version ?? null : null;
-  const who = play.on!;
   return (
     <>
-      <p className="kb-small kb-muted">
-        <CharacterLink id={who} character={characterOf(who)} name={nameOf(who)} />
-        {version && <> · <time dateTime={version.editedAt ?? version.createdAt}>{when(version.editedAt ?? version.createdAt)}</time></>}
-      </p>
       <MomentView play={play} place="origin" nameOf={nameOf} now={null} onView={onView} listInto={listInto} {...(spin ? { source: { spin } } : {})}
         bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />} />
     </>
   );
+}
+
+/**
+ * Who wrote what the box shows, and when: a band of the box's own between its head and its content area, as a post's date bar stands above its body, so the byline is
+ * the box's and never part of the post an effect fills (the owner, 2026-11-21: "an impromptu postbit which is not part of the post itself").
+ */
+function Byline({ who, at }: { readonly who: ReactNode; readonly at: string | null }) {
+  return (
+    <p className="kb-origin-byline">
+      {who}
+      {at !== null && <> · <time dateTime={at}>{when(at)}</time></>}
+    </p>
+  );
+}
+
+/** Whether the box draws an Act of this kind as a post, its words under a byline: every kind the box's switch leaves to its default. */
+function isPostLike(kind: Act['kind']): boolean {
+  return !['update', 'card', 'draw', 'wash', 'unmask', 'announce', 'tally', 'reveal'].includes(kind);
 }
 
 /** The post a part of a play's place names, as its words and its address: `at` (the pressed post) or, with `at` left out, `from` (the cast-from post). */
@@ -310,7 +319,6 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         const u = updateOf(act);
         return (
           <>
-            <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
             <p className="kb-origin-update-title"><b>{u.title}</b></p>
             <Prose body={u.body} />
             {u.changes.length > 0 && <ChangedList changes={u.changes} label="What changed" />}
@@ -326,7 +334,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
          */
         if (cardPlay.reach === 'character' && cardPlay.on !== undefined) {
           /* A card on a character: a post of that character, as it was spun where the spin names one, else as the play landed on the cast-from post. */
-          return <CharacterMoment play={cardPlay} spin={spinAt} nameOf={nameOf} characterOf={characterOf} onView={onView} listInto={foot} />;
+          return <CharacterMoment play={cardPlay} spin={spinAt} nameOf={nameOf} onView={onView} listInto={foot} />;
         }
         return cardPlay.reach ? null : (
           <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null} onView={onView} listInto={foot}
@@ -343,7 +351,6 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
       default:
         return (
           <>
-            <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
             <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small" data-kb-over-ink>{history.button}</p>}
@@ -356,6 +363,22 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
 
   /* What stands under the band: the area is drawn only where there is something to put in it (a draw, a wash and a play on a thread or a board leave the box the head alone). */
   const content = body();
+  /*
+   * The byline over the area, where the box shows a post: an update's and a post's author and date, and for a card on a character the character (one link to its profile) and the date of the
+   * version the moment shows, once read. A card play on a post draws none: its moment is the post as the play found it, and the head already names the play.
+   */
+  const byline = (() => {
+    if (!act || content === null) return null;
+    if (act.kind === 'card') {
+      if (!onCharacter || !cardPlay?.on) return null;
+      const version = kept ? kept.version : null;
+      return <Byline who={<CharacterLink id={cardPlay.on} character={characterOf(cardPlay.on)} name={nameOf(cardPlay.on)} />} at={version ? version.editedAt ?? version.createdAt : null} />;
+    }
+    if (act.kind === 'update' || isPostLike(act.kind)) return <Byline who={<b>{nameOf(act.character)}</b>} at={act.createdAt} />;
+    return null;
+  })();
+  /* The area keeps a post's room where it shows a post's words, live or as a moment, so an effect on a short post has room to play (spin.css). */
+  const roomy = act !== null && content !== null && (act.kind === 'card' || isPostLike(act.kind));
   const note = act !== null && act.kind !== 'card' && more;
   return (
     <>
@@ -369,8 +392,9 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
           {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}
           {marks}{postMarks}
         </p>
+        {byline}
         {(content !== null || note) && (
-          <div className="kb-origin-area" data-kb-content-area>
+          <div className="kb-origin-area" data-kb-content-area data-kb-room={roomy ? '' : undefined}>
             {content}
             {note && <p className="kb-small kb-muted kb-origin-note" data-kb-over-ink>More than {CARDS_SHOWN} cards were played on this Act; the rest are in {link}.</p>}
           </div>

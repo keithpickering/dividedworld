@@ -8,8 +8,10 @@
  * what a reader does inside it is their own screen's, nothing is broadcast, and the log is unchanged.
  *
  * Shown over a live post (As it landed, with Reset and Back to now) it is glass laid on a board post, in plain words and never in character: a chamfered ring in the play's ink
- * (`inkOf`), or its card's alignment's color, with its glow; a tag at the ring's top ("As it landed · Reset · Back to now", the time being the Lens's); and under the words, what
- * no mark says (design, section 7): what became of the play, the plays on the post then, and that nothing done here is saved. A drawn card has no line: its mark names it, its
+ * (`inkOf`), or its card's alignment's color, with its glow, which is also a mask: what the moment draws is cut to it, chamfers and all (the owner, 2026-11-21); a tag at the
+ * ring's top ("As it landed · Reset · Back to now", in sentence case, the time being the Lens's); and, as a strip first in the post's foot, under the content area and out of
+ * it, what no mark says (design, section 7): what became of the play, the plays on the post then, and that nothing done here is saved (the owner, 2026-11-21: it "interferes
+ * with the post content area" drawn inside it). A drawn card has no line: its mark names it, its
  * Lens says its state then and its way out (each effect's `show` reaches the strip of the post the moment is drawn on, `onView`), and its effect speaks as it does on a live post.
  * Where the moment is the content (a play-spun ORIGIN box, with no Back to now) the box's own border and head already frame it and say "as it landed" with its own Reset, so it
  * draws no ring and no tag, and what it says is the board's own small print in the box's foot, under the content area and outside it, so no effect that fills the area passes
@@ -93,9 +95,13 @@ export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As 
   const status = read === 'read' ? null : read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.';
   const said = content && status !== null;
   /* The list is said only of a moment that is read and shown: it ends with the line that nothing done to this post is saved (the Game sounds toggle in the Lens is the reader's own preference, and is). */
+  /* Where it stands: the caller's element (an ORIGIN box's foot), else in the thread the post's own foot (`ring.foot`), else the frame's own foot (Stick Around's view, which lifts the words out of every post). */
+  /* A strip portaled out of the frame takes the frame's ink with it, its alignment's color where the play has none (as `.kb-moment` falls back in moment.css). */
+  const stripInk = ink ?? (rules?.alignment === 'salty' ? 'var(--kb-glass-salty)' : 'var(--kb-glass-sweet)');
+  const into = listInto !== undefined ? listInto : !content && ring.foot !== null ? ring.foot : undefined;
   const list = read === 'read' ? (
-    <div className={content ? 'kb-moment-list kb-small kb-muted' : 'kb-moment-list'}>
-      {own !== null && <p>{own}.</p>}
+    <div className="kb-moment-list" data-kb-strip={into !== undefined ? '' : undefined} style={{ '--kb-moment-ink': stripInk } as CSSProperties}>
+      {own !== null && <p className="kb-moment-own">{own}.</p>}
       {named.length > 0 && <p>Also on the post then: {named.join(', ')}</p>}
       {unrecorded && <p>What else was on the post then wasn't recorded.</p>}
       <p>Nothing you do to this post is saved.</p>
@@ -106,7 +112,7 @@ export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As 
       {said && <p className="kb-moment-status kb-small kb-muted">{status}</p>}
       {/* Said on each run above 0: the text alternates by a no-break space so a second Reset is a change a screen reader says again. */}
       <p role="status" className="kb-visually-hidden">{run > 0 ? `As it landed again.${run % 2 === 0 ? ' ' : ''}` : ''}</p>
-      <div className="kb-moment-body" data-kb-quotable="hidden">{children}</div>
+      <div ref={ring.clip} className="kb-moment-body" data-kb-quotable="hidden">{children}</div>
       {!content && <div ref={ring.ring} className="kb-moment-ring" aria-hidden="true" />}
       {!content && (
         <p ref={ring.tag} className="kb-moment-tag">
@@ -117,7 +123,7 @@ export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As 
           {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
         </p>
       )}
-      {list !== null && (listInto === undefined ? list : listInto !== null && createPortal(list, listInto))}
+      {list !== null && (into === undefined ? list : into !== null && createPortal(list, into))}
     </div>
   );
 }
@@ -139,16 +145,21 @@ function useRing() {
   const host = useRef<HTMLDivElement | null>(null);
   const ring = useRef<HTMLDivElement>(null);
   const tag = useRef<HTMLParagraphElement>(null);
+  const clip = useRef<HTMLDivElement>(null);
   const measure = useRef<(() => void) | null>(null);
+  /* The post's own foot (its action row), where the list stands in the thread, under the content area and out of it; null where the moment stands in no post's body. */
+  const [foot, setFoot] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
-    const el = host.current, r = ring.current, t = tag.current;
-    if (!el || !r || !t) return;
+    const el = host.current, r = ring.current, t = tag.current, c = clip.current;
+    if (!el || !r || !t || !c) return;
     let body: HTMLElement | null = null;
     let bar: HTMLElement | null = null;
     let box: BodyBox | null = null;
+    let cut: BodyBox | null = null;
     const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(() => measure.current?.()) : null;
     watch?.observe(el);
     const unhang = () => { t.removeAttribute('data-kb-hung'); t.removeAttribute('style'); };
+    const unclip = () => { c.removeAttribute('data-kb-clipped'); for (const k of ['left', 'top', 'w', 'h']) c.style.removeProperty(`--kb-moment-clip-${k}`); cut = null; };
     measure.current = () => {
       const now = bodyOf(el);
       /* The bar is the date bar beside the body, in the body's own post: an ORIGIN box's area is no post's body, so the post the box stands in lends its moment no bar, and the tag stands in the moment's flow. */
@@ -160,11 +171,27 @@ function useRing() {
         if (nowBar) watch?.observe(nowBar);
         body = now;
         bar = nowBar;
-        if (!body) { r.removeAttribute('style'); box = null; unhang(); }
+        if (!body) { r.removeAttribute('style'); box = null; unhang(); unclip(); }
+        /* The foot is the bar's sibling at the other end of the body: found only where there is a bar, so an ORIGIN box's moment never lends its list to the opening post's foot. */
+        setFoot(bar?.parentElement?.querySelector<HTMLElement>(':scope > .kb-act-foot') ?? null);
       }
       if (!body) return;
       const next = bodyBox(el, body);
       if (!box || !sameBox(box, next)) { box = next; placeLayer(r, box); }
+      /*
+       * The ring is a mask, not only a frame (the owner, 2026-11-21: the chamfered area "does not act as a true mask, the effect area overflows it"): what the moment draws is
+       * cut along the ring's outer edge, its two chamfers with it, so no ink stands outside the ring or past its cut corners. The cut is the body's box measured from the
+       * words' own wrapper, which holds every effect drawn in the moment; the hung tag and the list are outside the wrapper, so it never cuts them.
+       */
+      const nextCut = bodyBox(c, body);
+      if (!cut || !sameBox(cut, nextCut)) {
+        cut = nextCut;
+        c.style.setProperty('--kb-moment-clip-left', `${cut.left}px`);
+        c.style.setProperty('--kb-moment-clip-top', `${cut.top}px`);
+        c.style.setProperty('--kb-moment-clip-w', `${cut.w}px`);
+        c.style.setProperty('--kb-moment-clip-h', `${cut.h}px`);
+        c.setAttribute('data-kb-clipped', '');
+      }
       if (!bar) { unhang(); return; }
       /* The tag: from the date's left to the first thing right of it on the bar, its foot on the body's top edge. */
       const h = el.getBoundingClientRect(), b = body.getBoundingClientRect(), barBox = bar.getBoundingClientRect();
@@ -189,7 +216,7 @@ function useRing() {
   }, []);
   /* Each render: a moment moved (into Stick Around's view and back) with no size change wakes no observer. */
   useLayoutEffect(() => { measure.current?.(); });
-  return { host, ring, tag };
+  return { host, ring, tag, clip, foot };
 }
 
 /**
