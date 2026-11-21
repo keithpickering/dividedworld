@@ -633,7 +633,7 @@ test('an instance exported and imported into a fresh database is the same instan
     (select string_agg(key || ':' || (retired_at is not null)::text, ',' order by key) from pack_kinds where key in ('exppack', 'expretiredpack')) || '|' ||
     (select string_agg(card || ':' || kind || ':' || price::text, ',' order by card, kind) from card_ledger where card in ('expold', 'expnew', 'expgone')) || '|' ||
     (select string_agg(w.kind || ':' || w.change::text || ':' || w.overflow::text, ',' order by w.kind) from wallet_events w join auth.users u on u.id = w.account and u.email = 'exp-bob@test.invalid' where w.kind = 'withdrawal')`);
-  const RETIREMENT_HELD = 'expgone:false:true:-:41,expnew:false:false:-:-,expold:false:true:expnew:-,expretired:true:false:-:-|exppack:false,expretiredpack:true|expgone:bought:0,expgone:withdrawn:40,expnew:renamedIn:0,expold:bought:0,expold:renamedOut:0|withdrawal:40:0';
+  const RETIREMENT_HELD = 'expgone:false:true:-:40,expnew:false:false:-:-,expold:false:true:expnew:-,expretired:true:false:-:-|exppack:false,expretiredpack:true|expgone:bought:0,expgone:withdrawn:40,expnew:renamedIn:0,expold:bought:0,expold:renamedOut:0|withdrawal:40:0';
   assert.equal(retirement(from), RETIREMENT_HELD, 'the fixture holds an out-of-print card, a renamed pair with its ledger rows, a withdrawn card with its refund and withdrawal, and an out-of-print pack kind');
   // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows
   // whatever else this database holds (#136 F1).
