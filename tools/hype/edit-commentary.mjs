@@ -4,7 +4,7 @@
  *
  *   node tools/hype/edit-commentary.mjs [--takes .runs/hype] [--voice .runs/hype/voice] [--music <recording>] [--circus <recording>]
  *       [--out .runs/hype/commentary.mp4] [--part one|two|three|out] [--captions top|foot|off] [--clean] [--sheet] [--moves moves.json]
- *       [--entries entries.json] [--preset veryfast]
+ *       [--entries entries.json] [--preset veryfast] [--any-recording]
  *
  * This file is run with plain `node`: Node 22.18 and later strips the types of the instance's `commentary.ts` as it imports it (as
  * tools/check-guide.mjs reads the instance's `.ts`), so no flag is needed. The pure parts (`timeline`, `captions`, `srt`) are exported
@@ -36,6 +36,10 @@
  * MOVES (moves.mjs): for every output frame at 60 fps `perspective` samples the rectangle (turned by its roll) out of the take at a
  * fractional position (`zoompan` and `crop` step by whole pixels, which shows as judder); a push past twice the take's pixels is refused naming the cut.
  *
+ * `--music` must be the recording the map was measured on: its length is checked against `music-map.json`'s `seconds` (0.05 s) and its sha1
+ * against `sha1` (`--any-recording` waives the sha1 only). The run prints a NOTE for every stand-in (no voice, no music, a slate, a missing
+ * `c-end`, a node 9 with only some of its framings), HELD for a take shorter than its cut and CUT for a node 11 line the chord takes.
+ *
  * SOUND: the voice at full level; the music 10 dB down under each clip, 150 ms to go down and 400 ms to come
  * back, and never ducked from the coda's first chord; the game's sounds on their landings. Part one has no music; the music's first
  * note is on node 5's first frame, and the film is black and silent for 5 s from the final chord's end, then the end card for 10 s
@@ -47,9 +51,10 @@
  * say PLACEHOLDER PICTURE. `--sheet` prints the timing sheet and stops; `--part` assembles one part for a quick look.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { windows, fit, sheet } from './windows.mjs';
+import { windows, fit, sheet, checkMap } from './windows.mjs';
 import { refusePush, corners } from './moves.mjs';
 import { retime } from './retime.mjs';
 import { run, duration, videoInfo, fontFile, flag } from './cutting.mjs';
@@ -88,6 +93,7 @@ export const framesBetween = (a, b) => Math.round(b * F) - Math.round(a * F);
  *   music, hand-set (else block 3's `set`, else its derived entries).
  */
 export function timeline(clips, map, { breath = BREATH, moves = {}, framings = {}, sizes = {}, landed = {}, entries: handSet, black = BLACK, card = CARD } = {}) {
+  checkMap(map);
   for (const id of [...PART_ONE, 'n05', 'n06', 'n07', 'n08', 'n09', 'n10', 'n11']) if (clips[id] === undefined) throw new Error(`${id} has no clip: a length in seconds is needed for every node`);
   for (const id of PART_ONE) if (moves[id] && Object.values(moves[id]).some((v) => v !== undefined)) throw new Error(`${id}: part one is locked off (the design, section 5a), so it carries no move, punch or landing punch`);
   const n11 = clips.n11;
@@ -239,6 +245,99 @@ export function wrap(text, width) {
 /** Seconds of silence for the words at 150 a minute. @param {string} text */
 export const spoken = (text) => (text.split(/\s+/u).filter(Boolean).length * 60) / WPM;
 
+/* ---- what the film is made of: the guards against one that looks finished and is not ---- */
+
+/**
+ * Which voice clips, takes and framings a run uses, and what it refuses or must say (pure: it is given the folders' listings).
+ *
+ * - `voiceFiles` is the voice folder's file names, or null when there is no folder. No folder: every clip is silence the length of
+ *   its words and `placeholderSound` is set. A folder that is missing any one clip (`n01` to `n10`, `n11-1` to `n11-N`, whatever
+ *   extension) is refused naming that clip: a re-voice replaces the whole folder, and one clip silent in a film of voice is a film
+ *   that looks finished and is not.
+ * - `haveMusic` false also sets `placeholderSound`.
+ * - `takeFiles` is the takes folder's file names. A node with no `c-<id>.mp4` is a slate (`slates`); node 9 is not if it has any
+ *   of its framings (`c-n09-wide`, `-tight`, `-turned`), and has only some of them is reported in `notes`, naming the missing;
+ *   `c-end` missing is reported (`endCard: 'stand-in'`).
+ * @param {{ commentary: { id: string, lines: readonly string[] }[], voiceFiles: string[] | null, takeFiles: string[], haveMusic: boolean }} input
+ * @returns {{ voice: Record<string, string | null | (string | null)[]>, placeholderSound: boolean, framings: Record<string, string[]>, slates: string[], endCard: 'take' | 'stand-in', notes: string[] }}
+ */
+export function resolveInputs({ commentary, voiceFiles, takeFiles, haveMusic }) {
+  /** @type {string[]} */
+  const notes = [];
+  const clipFile = (/** @type {string} */ stem) => {
+    if (!voiceFiles) return null;
+    const hit = voiceFiles.find((f) => f.replace(/\.[^.]+$/u, '') === stem);
+    if (!hit) throw new Error(`the voice folder has no clip named ${stem}: a re-voice replaces the whole folder`);
+    return hit;
+  };
+  /** @type {Record<string, string | null | (string | null)[]>} */
+  const voice = {};
+  for (const node of commentary) voice[node.id] = node.id === 'n11' ? node.lines.map((_, i) => clipFile(`n11-${i + 1}`)) : clipFile(node.id);
+  const placeholderSound = !voiceFiles || !haveMusic;
+  if (!voiceFiles) notes.push('no voice folder: every clip is silence the length of its words, and every frame says PLACEHOLDER SOUND');
+  else if (!haveMusic) notes.push('no music: every frame says PLACEHOLDER SOUND');
+
+  const has = (/** @type {string} */ name) => takeFiles.includes(`c-${name}.mp4`);
+  /** @type {Record<string, string[]>} */
+  const framings = {};
+  const all = ['wide', 'tight', 'turned'], have = all.filter((f) => has(`n09-${f}`));
+  if (have.length) framings.n09 = have;
+  if (have.length && have.length < all.length) notes.push(`node 9 has only ${have.join(', ')} of its three framings (missing ${all.filter((f) => !have.includes(f)).join(', ')}): its cuts rotate through those alone`);
+  const slates = commentary.map((n) => n.id).filter((id) => (id === 'n09' ? !have.length && !has('n09') : !has(id)));
+  for (const id of slates) notes.push(`${id} has no take: a slate stands in for it, marked PLACEHOLDER PICTURE`);
+  const endCard = has('end') ? 'take' : 'stand-in';
+  if (endCard === 'stand-in') notes.push('c-end is missing: the end card is a generated stand-in, marked PLACEHOLDER PICTURE');
+  return { voice, placeholderSound, framings, slates, endCard, notes };
+}
+
+/**
+ * The red stamps a piece of the film carries, and whether its picture is a slate: `PLACEHOLDER SOUND` on every frame when the sound
+ * is a stand-in, `PLACEHOLDER PICTURE` on a slate and on a stand-in end card. A real take with real sound carries none.
+ * @param {ReturnType<typeof resolveInputs>} resolved
+ * @param {{ take?: string, black?: boolean, card?: boolean }} piece `take` is the take's name, as `n09-wide`
+ * @param {string[]} takeFiles
+ * @returns {{ slate: boolean, stamps: string[] }}
+ */
+export function stampsFor(resolved, piece, takeFiles) {
+  const stamps = resolved.placeholderSound ? ['PLACEHOLDER SOUND'] : [];
+  const slate = Boolean(piece.take) && !takeFiles.includes(`c-${piece.take}.mp4`);
+  if (slate || (piece.card && resolved.endCard === 'stand-in')) stamps.push('PLACEHOLDER PICTURE');
+  return { slate, stamps };
+}
+
+/**
+ * The recording the music map was measured on: refuses another by its length (always) and its sha1 (unless `anyRecording`), naming
+ * both the file's and the map's.
+ * @param {{ seconds: number, sha1: string }} map
+ * @param {{ seconds: number, sha1: () => string }} recording the length read from the file, and a way to hash it
+ * @param {boolean} [anyRecording] allow another recording of the same length (the sha1 check only)
+ */
+export function checkRecording(map, recording, anyRecording = false) {
+  if (Math.abs(recording.seconds - map.seconds) > 0.05) throw new Error(`the music is ${recording.seconds.toFixed(3)} s but the map was measured on a recording of ${map.seconds} s: this is not the recording the music map describes`);
+  if (anyRecording) return;
+  const sha1 = recording.sha1();
+  if (sha1 !== map.sha1) throw new Error(`the music's sha1 is ${sha1} but the map was measured on ${map.sha1} (--any-recording allows another recording of the same length)`);
+}
+
+/**
+ * The timing sheet and the clips against their windows, built before anything that can throw on an overrun, so that a clip that
+ * does not fit is diagnosed by the sheet and not hidden by the refusal: an overrunning clip is marked OVER by how much.
+ * @param {Parameters<typeof windows>[0]} map
+ * @param {Record<string, number | number[]>} clips
+ */
+export function sheetText(map, clips) {
+  const n11 = clips.n11;
+  const ws = windows(map, { fragments: Array.isArray(n11) ? n11.length : 3, clips: Object.fromEntries(Object.entries(clips).filter(([id]) => !PART_ONE.includes(id))) });
+  const rows = ['', 'clip     seconds   window   slack'];
+  for (const w of ws) {
+    const c = clips[w.id];
+    if (c === undefined) continue;
+    if (w.gaps && Array.isArray(c)) c.forEach((s, i) => { const g = w.gaps?.[i]; if (g) rows.push(`${w.id}-${i + 1}`.padEnd(8) + s.toFixed(2).padStart(8) + g.length.toFixed(2).padStart(9) + (s > g.length ? `   cut ${(s - g.length).toFixed(2)}` : `   ${(g.length - s).toFixed(2)}`)); });
+    else if (typeof c === 'number') rows.push(w.id.padEnd(8) + c.toFixed(2).padStart(8) + w.length.toFixed(2).padStart(9) + (c > w.length + 1e-9 ? `   OVER by ${(c - w.length).toFixed(2)}` : `${(w.length - c).toFixed(2).padStart(8)}`));
+  }
+  return `${sheet(ws)}\n${rows.join('\n')}`;
+}
+
 /* ================================================================================================================================ */
 /* Everything below runs ffmpeg, and runs only when this file is the command. */
 
@@ -251,13 +350,22 @@ const MUSIC_LEVEL = 0.8;
 /**
  * The music's gain over the film as one expression of `t`: down by `db` while any clip plays (a ramp of `attack` s before it, a
  * ramp of `release` s after), and never from `until` on (the coda). Pure.
+ *
+ * The music's first note is never already ducked: a clip that begins with the music (node 5's does) starts its `attack` ramp at `from`,
+ * the music's first frame, so the first 150 ms ramp down rather than starting low. (The other choice, delaying the voice, would
+ * move a clip inside a window that is already fitted to its length.) And a clip whose release would run into the coda releases
+ * fully before it: its duck ends `release` s before `until`, so the music is back to full level when the coda's first chord sounds.
  * @param {{ start: number, length: number }[]} spans
  * @param {{ db: number, attack: number, release: number }} duck
  * @param {number} until
+ * @param {number} [from] the film second the music begins
  */
-export function duckExpression(spans, { db, attack, release }, until) {
+export function duckExpression(spans, { db, attack, release }, until, from = -Infinity) {
   const dip = 1 - 10 ** (db / 20);
-  const ramps = spans.filter((s) => s.start < until).map((s) => `min(clip((t-${(s.start - attack).toFixed(4)})/${attack},0,1),clip((${(s.start + s.length + release).toFixed(4)}-t)/${release},0,1))`);
+  const ramps = spans.filter((s) => s.start < until).map((s) => {
+    const down = Math.max(s.start - attack, from), end = Math.min(s.start + s.length, until - release);
+    return `min(clip((t-${down.toFixed(4)})/${attack},0,1),clip((${(end + release).toFixed(4)}-t)/${release},0,1))`;
+  });
   if (!ramps.length) return '1';
   const deep = ramps.reduce((a, b) => `max(${a},${b})`);
   return `1-${dip.toFixed(6)}*(${deep})*lt(t,${until.toFixed(4)})`;
@@ -280,27 +388,30 @@ async function main() {
   const WORK = path.join(path.dirname(OUT), 'work');
   mkdirSync(WORK, { recursive: true });
 
-  /* The voice: a folder of clips, or silence the length of the words. */
+  /* The voice: a folder of clips, or silence the length of the words; which takes there are; what the run must say (resolveInputs). */
+  const takeFiles = existsSync(TAKES) ? readdirSync(TAKES) : [];
   const haveVoice = existsSync(VOICE), haveMusic = existsSync(MUSIC);
-  const voiceFile = (/** @type {string} */ stem) => {
-    if (!haveVoice) return null;
-    const hit = readdirSync(VOICE).find((f) => f.replace(/\.[^.]+$/u, '') === stem);
-    if (!hit) throw new Error(`${VOICE} has no clip named ${stem}: a re-voice replaces the whole folder`);
-    return path.join(VOICE, hit);
-  };
+  const resolved = resolveInputs({ commentary, voiceFiles: haveVoice ? readdirSync(VOICE) : null, takeFiles, haveMusic });
+  for (const note of resolved.notes) console.log(`NOTE ${note}`);
+  if (haveMusic) checkRecording(map, { seconds: duration(MUSIC), sha1: () => createHash('sha1').update(readFileSync(MUSIC)).digest('hex') }, has('any-recording'));
+  const voiceFile = (/** @type {string | null} */ name) => (name ? path.join(VOICE, name) : null);
   /** @type {Record<string, number | number[]>} */
   const clips = {};
   /** @type {Record<string, string | string[] | null>} */
   const voices = {};
   for (const node of commentary) {
+    const named = resolved.voice[node.id];
     if (node.id === 'n11') {
-      voices.n11 = node.lines.map((_, i) => voiceFile(`n11-${i + 1}`));
-      clips.n11 = node.lines.map((/** @type {string} */ l, /** @type {number} */ i) => (voices.n11[i] ? duration(voices.n11[i]) : spoken(l)));
+      const files = /** @type {(string | null)[]} */ (named).map(voiceFile);
+      voices.n11 = /** @type {string[]} */ (files);
+      clips.n11 = node.lines.map((/** @type {string} */ l, /** @type {number} */ i) => (files[i] ? duration(files[i]) : spoken(l)));
     } else {
-      voices[node.id] = voiceFile(node.id);
+      voices[node.id] = voiceFile(/** @type {string | null} */ (named));
       clips[node.id] = voices[node.id] ? duration(/** @type {string} */ (voices[node.id])) : spoken(node.lines.join(' '));
     }
   }
+  /* The sheet goes out before anything that can throw on an overrun, so it can diagnose one. */
+  if (has('sheet')) console.log(sheetText(map, clips));
 
   /* The takes, their notes, and the camera's moves. */
   const takePath = (/** @type {string} */ name) => path.join(TAKES, `c-${name}.mp4`);
@@ -311,15 +422,14 @@ async function main() {
   /** @type {Record<string, number>} */
   const sizes = {};
   /** @type {Record<string, string[]>} */
-  const framings = {};
+  const framings = resolved.framings;
   const entriesFile = flag('entries', '');
   /** @type {number[] | undefined} */
   const entries = entriesFile ? JSON.parse(readFileSync(entriesFile, 'utf8')).map((/** @type {number | { t: number }} */ e) => (typeof e === 'number' ? e : e.t)) : undefined;
   const overrides = flag('moves', '') ? JSON.parse(readFileSync(flag('moves', ''), 'utf8')) : {};
   for (const node of commentary) {
     const id = node.id;
-    const names = id === 'n09' ? ['wide', 'tight', 'turned'].filter((f) => existsSync(takePath(`n09-${f}`))) : [];
-    if (names.length) framings.n09 = names;
+    const names = framings[id] ?? [];
     const probe = [takePath(id), ...names.map((f) => takePath(`${id}-${f}`))].find((f) => existsSync(f));
     if (probe) sizes[id] = videoInfo(probe).width;
     const notes = path.join(TAKES, `c-${id}.json`);
@@ -334,13 +444,6 @@ async function main() {
   const CAPTIONS = captionMode(args);
   const cuesAll = captions(commentary, tl);
   if (has('sheet')) {
-    console.log(sheet(windows(map, { fragments: /** @type {number[]} */ (clips.n11).length, clips })));
-    console.log('\nclip     seconds   window   slack');
-    for (const w of tl.windows) {
-      const c = clips[w.id];
-      if (w.gaps) /** @type {number[]} */ (c).forEach((s, i) => console.log(`${w.id}-${i + 1}`.padEnd(8) + s.toFixed(2).padStart(8) + w.gaps[i].length.toFixed(2).padStart(9) + (tl.slack.n11[i].cut ? `   cut ${tl.slack.n11[i].cut.toFixed(2)}` : `   ${tl.slack.n11[i].slack.toFixed(2)}`)));
-      else console.log(w.id.padEnd(8) + /** @type {number} */ (c).toFixed(2).padStart(8) + w.length.toFixed(2).padStart(9) + /** @type {number} */ (tl.slack[w.id]).toFixed(2).padStart(8));
-    }
     for (const n of tl.nodes) if (n.retime) {
       console.log(`\n${n.id} retimed to the theme (speed = take seconds a film second):`);
       n.retime.stretches.forEach((s, k) => console.log(`  cut ${k + 1}  film ${s.out[0].toFixed(2)}-${s.out[1].toFixed(2)}  take ${s.take[0].toFixed(2)}-${s.take[1].toFixed(2)}  speed ${s.speed.toFixed(3)}${s.anchor ? `  (${s.anchor.what} at ${s.anchor.t.toFixed(2)} on the entry at ${s.out[1].toFixed(2)})` : ''}`));
@@ -356,7 +459,7 @@ async function main() {
   const comic = fontFile('Comic Sans MS');
   const stampFile = (/** @type {string} */ name, /** @type {string} */ text) => { const f = path.join(WORK, `${name}.txt`); writeFileSync(f, text); return f; };
   const stamp = (/** @type {string} */ name, /** @type {string} */ text, /** @type {string} */ place, /** @type {string} */ color) => `drawtext=fontfile='${esc(bold)}':textfile='${esc(stampFile(name, text))}':fontsize=34:fontcolor=white:box=1:boxcolor=${color}@0.85:boxborderw=10:${place}`;
-  const soundStamp = haveVoice && haveMusic ? null : stamp('sound', 'PLACEHOLDER SOUND', 'x=24:y=24', 'red');
+  const soundStamp = resolved.placeholderSound ? stamp('sound', 'PLACEHOLDER SOUND', 'x=24:y=24', 'red') : null;
 
   /* Which of the film's pieces this run makes. */
   const [from, to] = PART ? tl.part[/** @type {'one'} */ (PART)] : [0, tl.total];
@@ -370,12 +473,12 @@ async function main() {
     const first = commentary.find((/** @type {{ id: string }} */ c) => c.id === n.id)?.lines[0] ?? '';
     for (const [k, c] of n.cuts.entries()) {
       const take = takePath(c.take);
-      const real = existsSync(take);
+      const real = !stampsFor(resolved, { take: c.take }, takeFiles).slate;
       pieces.push({ name: `${n.id} cut ${k + 1}`, startFrame: c.startFrame, frames: c.frames, take: real ? take : undefined, slate: real ? undefined : [c.take, ...wrap(first, 36)], cut: c });
     }
   }
   pieces.push({ name: 'black', startFrame: Math.round(tl.out.blackStart * F), frames: framesBetween(tl.out.blackStart, tl.out.cardStart), black: true });
-  pieces.push({ name: 'end card', startFrame: Math.round(tl.out.cardStart * F), frames: framesBetween(tl.out.cardStart, tl.out.end), card: true, take: existsSync(takePath('end')) ? takePath('end') : undefined });
+  pieces.push({ name: 'end card', startFrame: Math.round(tl.out.cardStart * F), frames: framesBetween(tl.out.cardStart, tl.out.end), card: true, take: resolved.endCard === 'take' ? takePath('end') : undefined });
   const mine = pieces.filter(inPart);
 
   const cues = cuesAll.filter((c) => c.end > from && c.start < to);
@@ -394,6 +497,9 @@ async function main() {
       const info = videoInfo(p.take);
       srcWidth = info.width;
       const from0 = Math.min(p.cut?.from ?? 0, Math.max(0, duration(p.take) - 2 / F));
+      /* A take shorter than its cut is frozen on its last frame (tpad): say so, and by how long. */
+      const speed = p.cut?.speed ?? 1, have = Math.max(0, (duration(p.take) - from0) / speed), short = seconds - have;
+      if (short > 1 / F) console.log(`HELD ${p.name}: ${path.basename(p.take)} runs ${have.toFixed(2)} s of its ${seconds.toFixed(2)} s, held ${short.toFixed(2)} s on its last frame`);
       input = ['-ss', from0.toFixed(4), '-i', p.take];
       if (p.cut?.speed !== undefined && Math.abs(p.cut.speed - 1) > 1e-9) chain.push(`setpts=PTS/${p.cut.speed.toFixed(6)}`);
       chain.push(`fps=${F}`, `tpad=stop_mode=clone:stop_duration=${Math.ceil(seconds) + 2}`);
@@ -427,7 +533,7 @@ async function main() {
       } else chain.push('scale=1920:1080:flags=lanczos');
     }
     chain.push('format=yuv420p', 'setsar=1');
-    if (p.slate) chain.push(stamp('picture', 'PLACEHOLDER PICTURE', soundStamp ? 'x=24:y=84' : 'x=24:y=24', 'red'));
+    if (p.slate || (p.card && !p.take)) chain.push(stamp('picture', 'PLACEHOLDER PICTURE', soundStamp ? 'x=24:y=84' : 'x=24:y=24', 'red'));
     if (soundStamp) chain.push(soundStamp);
     const local = cues.filter((c) => c.end > p.startFrame / F && c.start < (p.startFrame + p.frames) / F).map((c) => ({ ...c, start: Math.max(0, c.start - p.startFrame / F), end: c.end - p.startFrame / F }));
     if (local.length && CAPTIONS !== 'off') {
@@ -446,6 +552,7 @@ async function main() {
     return file;
   };
 
+  for (const n of tl.nodes) if (n.id === 'n11') (/** @type {{ cut: number }[]} */ (tl.slack.n11)).forEach((l, i) => { if (l.cut > 0) console.log(`CUT n11 line ${i + 1}: cut off by the chord by ${l.cut.toFixed(2)} s`); });
   const files = mine.sort((a, b) => a.startFrame - b.startFrame).map(encode);
   writeFileSync(path.join(WORK, 'list.txt'), files.map((f) => `file '${path.basename(f)}'`).join('\n'));
   const picture = path.join(WORK, 'picture.mp4');
@@ -467,7 +574,7 @@ async function main() {
   if (voiceOut.length) { filters.push(`${voiceOut.join('')}amix=inputs=${voiceOut.length}:normalize=0:duration=longest[voice]`); mix.push('[voice]'); }
   if (haveMusic) {
     const k = input(MUSIC), m = tl.music;
-    const duck = duckExpression(tl.nodes.flatMap((n) => n.voice).filter(() => haveVoice), DUCK, m.codaStart);
+    const duck = duckExpression(tl.nodes.flatMap((n) => n.voice).filter(() => haveVoice), DUCK, m.codaStart, m.start);
     filters.push(`[${k}:a]atrim=start=${m.from}:end=${m.until},asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,afade=t=out:st=${(m.until - m.from - 0.25).toFixed(3)}:d=0.25,adelay=${ms(m.start)}:all=1,volume=${MUSIC_LEVEL}[mu]`);
     filters.push(`[mu]volume='${duck}':eval=frame[music]`);
     mix.push('[music]');

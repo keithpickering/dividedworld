@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { timeline, captions, srt, framesBetween, wrap, duckExpression, captionBand } from './edit-commentary.mjs';
+import * as ec from "./edit-commentary.mjs";
 import { cutRect, moveRect, punchScale, refusePush, pushLimit, expressions, corners, maxPush } from './moves.mjs';
 
 const entries = (from, step) => Array.from({ length: 6 }, (_, i) => ({ t: from + i * step, confident: false, derived: true }));
@@ -379,4 +380,122 @@ test("a landing's sound is placed where its play now lands in the film", () => {
   const hit = t.hits.find((h) => h.what === 'steel-chair');
   const r = n09.retime.placed.find((p) => p.what === 'steel-chair');
   near(hit.at, n09.start + r.at);
+});
+
+/* ---- the guards against a film that looks finished and is not ---- */
+
+const nodes = [...['n01', 'n02', 'n03', 'n04', 'n05', 'n06', 'n07', 'n08', 'n09', 'n10'].map((id) => ({ id, lines: ['a line.'] })), { id: 'n11', lines: ['one', 'two', 'three'] }];
+const fullVoice = [...nodes.slice(0, 10).map((n) => `${n.id}.mp3`), 'n11-1.mp3', 'n11-2.mp3', 'n11-3.mp3'];
+const fullTakes = [...nodes.slice(0, 8).map((n) => `c-${n.id}.mp4`), 'c-n09-wide.mp4', 'c-n09-tight.mp4', 'c-n09-turned.mp4', 'c-n10.mp4', 'c-n11.mp4', 'c-end.mp4'];
+const resolve = (over = {}) => ec.resolveInputs({ commentary: nodes, voiceFiles: fullVoice, takeFiles: fullTakes, haveMusic: true, ...over });
+
+test('a full voice folder, every take and the music resolve with no stand-in, no note and no stamp', () => {
+  const r = resolve();
+  assert.deepEqual(r.notes, []);
+  assert.equal(r.placeholderSound, false);
+  assert.deepEqual(r.slates, []);
+  assert.deepEqual(r.framings.n09, ['wide', 'tight', 'turned']);
+  assert.deepEqual(r.voice.n11, ['n11-1.mp3', 'n11-2.mp3', 'n11-3.mp3']);
+  assert.equal(r.voice.n05, 'n05.mp3');
+  assert.deepEqual(ec.stampsFor(r, { take: 'n05' }, fullTakes), { slate: false, stamps: [] });
+  assert.deepEqual(ec.stampsFor(r, { card: true }, fullTakes), { slate: false, stamps: [] });
+});
+
+test('one clip missing from an otherwise full voice folder is refused, naming the clip', () => {
+  assert.throws(() => resolve({ voiceFiles: fullVoice.filter((f) => f !== 'n07.mp3') }), /no clip named n07\b/);
+  assert.throws(() => resolve({ voiceFiles: fullVoice.filter((f) => f !== 'n11-2.mp3') }), /no clip named n11-2\b/);
+});
+
+test('no voice folder is PLACEHOLDER SOUND on every frame, and so is music that is absent', () => {
+  for (const [what, over] of [['no voice folder', { voiceFiles: null }], ['no music', { haveMusic: false }]]) {
+    const r = resolve(over);
+    assert.equal(r.placeholderSound, true, what);
+    assert.ok(r.notes.some((n) => /PLACEHOLDER SOUND/.test(n)), what);
+    for (const piece of [{ take: 'n05' }, { black: true }, { card: true }]) assert.ok(ec.stampsFor(r, piece, fullTakes).stamps.includes('PLACEHOLDER SOUND'), `${what}: ${JSON.stringify(piece)}`);
+  }
+  assert.deepEqual(resolve({ voiceFiles: null }).voice.n11, [null, null, null], 'a clip with no folder is silence, not a file');
+});
+
+test('a missing take is a slate that carries PLACEHOLDER PICTURE; a take that is there does not', () => {
+  const takes = fullTakes.filter((f) => f !== 'c-n06.mp4');
+  const r = resolve({ takeFiles: takes });
+  assert.deepEqual(r.slates, ['n06']);
+  assert.ok(r.notes.some((n) => /n06 has no take/.test(n)));
+  assert.deepEqual(ec.stampsFor(r, { take: 'n06' }, takes), { slate: true, stamps: ['PLACEHOLDER PICTURE'] });
+  assert.deepEqual(ec.stampsFor(r, { take: 'n05' }, takes).stamps, []);
+  assert.deepEqual(ec.stampsFor(resolve({ takeFiles: takes, voiceFiles: null }), { take: 'n06' }, takes).stamps, ['PLACEHOLDER SOUND', 'PLACEHOLDER PICTURE'], 'both stamps, on a slate with no sound');
+});
+
+test('node 9 with only some of its three framings is reported naming the missing; with none it is a slate', () => {
+  const some = fullTakes.filter((f) => f !== 'c-n09-tight.mp4' && f !== 'c-n09-turned.mp4');
+  const r = resolve({ takeFiles: some });
+  assert.deepEqual(r.framings.n09, ['wide']);
+  assert.deepEqual(r.slates, [], 'a framing that is there is a take');
+  assert.ok(r.notes.some((n) => /node 9 has only wide.*missing tight, turned/.test(n)), r.notes.join('|'));
+  const none = resolve({ takeFiles: fullTakes.filter((f) => !/n09/.test(f)) });
+  assert.deepEqual(none.slates, ['n09']);
+  assert.equal(none.framings.n09, undefined);
+});
+
+test('a missing c-end is reported and stamped PLACEHOLDER PICTURE on the end card', () => {
+  const takes = fullTakes.filter((f) => f !== 'c-end.mp4');
+  const r = resolve({ takeFiles: takes });
+  assert.equal(r.endCard, 'stand-in');
+  assert.ok(r.notes.some((n) => /c-end is missing/.test(n)));
+  assert.deepEqual(ec.stampsFor(r, { card: true }, takes).stamps, ['PLACEHOLDER PICTURE']);
+  assert.deepEqual(ec.stampsFor(r, { black: true }, takes).stamps, [], 'the black is not a stand-in');
+});
+
+/* ---- the recording, the map's anchors, the sheet ---- */
+
+test('the music must be the recording the map was measured on: its length within 0.05 s and its sha1, named in the refusal', () => {
+  const m = { seconds: 154.09, sha1: 'aaa' };
+  assert.doesNotThrow(() => ec.checkRecording(m, { seconds: 154.091, sha1: () => 'aaa' }));
+  assert.throws(() => ec.checkRecording(m, { seconds: 154.2, sha1: () => 'aaa' }), /154\.200.*154\.09/);
+  assert.throws(() => ec.checkRecording(m, { seconds: 154.09, sha1: () => 'bbb' }), /bbb.*aaa/);
+  assert.doesNotThrow(() => ec.checkRecording(m, { seconds: 154.09, sha1: () => 'bbb' }, true), '--any-recording waives the sha1');
+  assert.throws(() => ec.checkRecording(m, { seconds: 160, sha1: () => 'aaa' }, true), /160\.000/, 'but never the length');
+});
+
+test("a map whose first note is not block 1's start, or whose block 3 does not end on the first chord, is refused by the timeline", () => {
+  assert.throws(() => timeline(clips, { ...map, firstNote: { t: 11 } }), /first note/);
+  assert.throws(() => timeline(clips, { ...map, blocks: [map.blocks[0], map.blocks[1], { ...map.blocks[2], end: 129 }] }), /block 3 ends/);
+});
+
+test('the sheet is made before an overrun can throw, and marks the clip that overruns by how much', () => {
+  const text = ec.sheetText(map, { ...clips, n05: 60 });
+  assert.match(text, /n05 +60\.00 +\d+\.\d+ +OVER by/);
+  assert.match(text, /line 1/, 'the timing sheet is above the table');
+  assert.throws(() => timeline({ ...clips, n05: 60 }, map), /n05 runs/, 'and the timeline still refuses');
+});
+
+/* ---- ducking at the edges ---- */
+
+test("the music's first note is not already ducked: a clip that begins with it ramps the duck down over the first 150 ms", () => {
+  const gain = (/** @type {string} */ source, /** @type {number} */ t) =>
+    new Function('t', 'clip', 'min', 'max', 'lt', `return ${source};`)(t, (/** @type {number} */ v, /** @type {number} */ a, /** @type {number} */ b) => Math.min(b, Math.max(a, v)), Math.min, Math.max, (/** @type {number} */ a, /** @type {number} */ b) => +(a < b));
+  const dip = 10 ** (-10 / 20);
+  const e = ec.duckExpression([{ start: 27.6, length: 20 }], { db: -10, attack: 0.15, release: 0.4 }, 100, 27.6);
+  assert.ok(Math.abs(gain(e, 27.6) - 1) < 1e-6, `at the first note the gain is ${gain(e, 27.6)}, not 1`);
+  assert.ok(Math.abs(gain(e, 27.675) - (1 + dip) / 2) < 1e-5, 'half down at 75 ms');
+  assert.ok(Math.abs(gain(e, 27.75) - dip) < 1e-5, 'fully down at 150 ms');
+});
+
+test('a clip whose release would run into the coda releases fully before it', () => {
+  const gain = (/** @type {string} */ source, /** @type {number} */ t) =>
+    new Function('t', 'clip', 'min', 'max', 'lt', `return ${source};`)(t, (/** @type {number} */ v, /** @type {number} */ a, /** @type {number} */ b) => Math.min(b, Math.max(a, v)), Math.min, Math.max, (/** @type {number} */ a, /** @type {number} */ b) => +(a < b));
+  const e = ec.duckExpression([{ start: 70, length: 9.9 }], { db: -10, attack: 0.15, release: 0.4 }, 80, 0);
+  assert.ok(Math.abs(gain(e, 79.999) - 1) < 5e-3, `just before the coda the gain is ${gain(e, 79.999)}, not back to full`);
+  assert.ok(Math.abs(gain(e, 79.8) - (1 + 10 ** (-10 / 20)) / 2) < 1e-3, 'half way up 200 ms before the coda: the release began 400 ms before it');
+  assert.ok(gain(e, 75) < 0.7, 'and down in the middle of the clip');
+});
+
+test('a move of one frame is its from rectangle, as the ffmpeg expression has it', () => {
+  const from = { x: 0.1, y: 0.2, w: 0.5, roll: 0 }, to = { x: 0.3, y: 0.3, w: 0.4, roll: 0 };
+  assert.deepEqual(moveRect({ from, to }, 0, 1), from);
+  const cut = { frames: 1, move: { from, to } };
+  const e = expressions(cut);
+  /* The expression's progress is on/max(1, n - 1): at frame 0 of one frame, 0. */
+  assert.match(e.w, /min\(1,on\/1\)/);
+  near(cutRect(cut, 0).w, from.w);
 });

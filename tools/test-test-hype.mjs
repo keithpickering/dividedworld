@@ -29,6 +29,9 @@ const test = (/** @type {string} */ body) => `import { test } from 'node:test';\
 expect('empty-directory', {}, false);
 expect('file-with-no-tests', { 'a.test.mjs': 'export {};\n' }, false);
 expect('failing-test', { 'a.test.mjs': test('assert.equal(1, 2)') }, false);
+expect('every-test-skipped', { 'a.test.mjs': "import { test } from 'node:test';\ntest.skip('t', () => {});\n" }, false);
+expect('every-test-todo', { 'a.test.mjs': "import { test } from 'node:test';\ntest.todo('t');\n" }, false);
+expect('one-skipped-one-passing', { 'a.test.mjs': "import { test } from 'node:test';\ntest.skip('s', () => {});\ntest('t', () => {});\n" }, true);
 expect('passing-test', { 'a.test.mjs': test('assert.equal(1, 1)') }, true);
 rmSync(root, { recursive: true, force: true });
 if (failures) {

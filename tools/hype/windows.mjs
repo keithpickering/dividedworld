@@ -48,6 +48,19 @@ export function windows(map, { fragments = 3, shares = DEFAULT_SHARES, clips = {
 }
 
 /**
+ * The map's two anchors must be the film's: the first note is where block 1 starts (the film's music begins on node 5's first frame, so
+ * every later time is measured from it) and the first coda chord is where block 3 ends (node 10's window runs to it, node 11's begins
+ * there). A map where they differ would put every node off its window silently. Refuses naming both times.
+ * @param {{ firstNote: { t: number }, blocks: { start: number, end: number }[], coda: { chords: { t: number }[] } }} map
+ */
+export function checkMap(map) {
+  const near = (/** @type {number} */ a, /** @type {number} */ b) => Math.abs(a - b) < 1e-6;
+  const first = map.blocks[0].start, last = map.blocks[map.blocks.length - 1].end, chord = map.coda.chords[0].t;
+  if (!near(map.firstNote.t, first)) throw new Error(`the map's first note (${map.firstNote.t}) is not where block 1 starts (${first})`);
+  if (!near(last, chord)) throw new Error(`the map's block 3 ends at ${last}, not on the first coda chord (${chord})`);
+}
+
+/**
  * Each clip's slack in its window: a number a node, or an array a line, `{ slack, cut }`, for node 11, whose lines are meant to be cut
  * off by the chords (design, section 5): a line longer than its gap is returned with `cut`, the seconds the chord takes. Any other
  * clip longer than its window throws, naming the node, the window's length and the overrun, as does a clip with no window and a clip
@@ -57,6 +70,7 @@ export function windows(map, { fragments = 3, shares = DEFAULT_SHARES, clips = {
  * @returns {Record<string, number | { slack: number, cut: number }[]>}
  */
 export function fit(ws, clips) {
+  for (const [k, v] of Object.entries(clips)) for (const seconds of Array.isArray(v) ? v : [v]) if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) throw new Error(`${k} has a clip length of ${JSON.stringify(seconds)}: a clip is a number of seconds, zero or more`);
   for (const k of Object.keys(clips)) if (!ws.some((w) => w.id === k)) throw new Error(`${k} has a clip but no window: the windows are ${ws.map((w) => w.id).join(', ')}`);
   /** @type {Record<string, any>} */
   const slack = {};

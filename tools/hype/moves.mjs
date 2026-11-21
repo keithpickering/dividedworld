@@ -38,9 +38,9 @@ export function ease(name, p) {
 /** @typedef {{ x: number, y: number, w: number, roll: number }} Rect */
 /** @typedef {{ from: Rect, to: Rect, ease?: string }} Move */
 
-/** The rectangle of a move at frame `i` of `n`: `from` at 0, `to` at n - 1. @param {Move} move @param {number} i @param {number} n @returns {Rect} */
+/** The rectangle of a move at frame `i` of `n`: `from` at 0, `to` at n - 1; a cut of one frame is its `from` (as the ffmpeg expression has it: `on/max(1,n-1)`). @param {Move} move @param {number} i @param {number} n @returns {Rect} */
 export function moveRect(move, i, n) {
-  const e = ease(move.ease ?? 'linear', n <= 1 ? 1 : i / (n - 1));
+  const e = ease(move.ease ?? 'linear', n <= 1 ? 0 : i / (n - 1));
   const a = move.from, b = move.to;
   const mix = (/** @type {number} */ u, /** @type {number} */ v) => u + (v - u) * e;
   return { x: mix(a.x, b.x), y: mix(a.y, b.y), w: mix(a.w, b.w), roll: mix(a.roll ?? 0, b.roll ?? 0) };

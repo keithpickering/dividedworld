@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { windows, fit, sheet } from './windows.mjs';
+import { windows, fit, sheet, checkMap } from './windows.mjs';
 
 const entries = (from, step) => Array.from({ length: 6 }, (_, i) => ({ t: from + i * step, confident: false, derived: true }));
 const map = {
@@ -118,4 +118,18 @@ test('the timing sheet marks a window with an unsure or chosen end with a tilde'
   assert.match(lines.find((l) => l.startsWith('n05')), /~$/);
   assert.doesNotMatch(lines.find((l) => l.startsWith('n11')), /~/);
   assert.doesNotMatch(lines.find((l) => l.includes('line 1')), /~/);
+});
+
+test('fit refuses a clip length that is NaN, negative, infinite or not a number, naming the node', () => {
+  const ws = windows(map, { fragments: 3 });
+  for (const bad of [NaN, -1, Infinity, '5', null]) assert.throws(() => fit(ws, { n05: bad }), /n05 has a clip length/, String(bad));
+  assert.throws(() => fit(ws, { n11: [1, NaN, 2] }), /n11 has a clip length/);
+  assert.throws(() => fit(ws, { n11: [1, -2, 2] }), /n11 has a clip length/);
+  assert.doesNotThrow(() => fit(ws, { n05: 0, n11: [1, 2, 3] }));
+});
+
+test("a map whose first note is not block 1's start, or whose block 3 does not end on the first coda chord, is refused naming both times", () => {
+  assert.doesNotThrow(() => checkMap(map));
+  assert.throws(() => checkMap({ ...map, firstNote: { t: 10.5 } }), /first note \(10\.5\).*block 1 starts \(10\)/);
+  assert.throws(() => checkMap({ ...map, blocks: [map.blocks[0], map.blocks[1], { ...map.blocks[2], end: 129 }] }), /block 3 ends at 129.*first coda chord \(130\)/);
 });
