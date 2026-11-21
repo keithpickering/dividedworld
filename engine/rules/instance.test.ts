@@ -1642,3 +1642,10 @@ test('a machine slot never names a card that is out of print', () => {
   const slot = { item: { card: 'b' }, availability: 'onSale', price: 100 } as const;
   assert.match(said(leftWith({ cards: retiredB, machine: [slot] })), /the slot for card "b" names a card that is out of print/);
 });
+
+test('a formerly or withdrawn entry has a name, and the instance has a withdrawn list', () => {
+  const formerly = [{ ...packCards[0]!, formerly: [{ key: 'old', name: ' ' }] }, packCards[1]!, packCards[2]!] as Instance['cards'];
+  assert.match(said(leftWith({ cards: formerly })), /formerly key "old" has no name/);
+  assert.match(said(leftWith({ withdrawn: [{ key: 'gone', name: '', refund: 100 }] })), /withdrawn "gone" has no name/);
+  assert.match(said(leftWith({ withdrawn: undefined as never })), /the instance has no withdrawn list/);
+});
