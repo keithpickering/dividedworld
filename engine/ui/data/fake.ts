@@ -78,6 +78,8 @@ const CODE_MESSAGE = 'If this address can sign in here, a code and a link to sig
 const ALREADY_PUBLIC = 'that character\'s class is already public; after a Turn, the new class can be revealed';
 const SYSTEM_BOARD = 'only the staff post here; spin a thread from what they said';
 const MINUTE = 60_000;
+/** The charge a report's visit carries: the match against earlier visits and the visit it opens share it. */
+const REPORT_CHARGE = { rule: 'Rule 2: No double posting', rule_number: 2 } as const;
 const DAY = 86_400_000;
 export const START = Date.UTC(2026, 9, 29, 12);
 
@@ -3943,27 +3945,30 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (short) return short;
       const report = write({ character: through, kind: 'report', thread: p.thread, target: post, payload: { reason: said } });
       spend(account, settings.modBots.reportPrice, 'report', report.id);
+      /* The window hook is taken and cleared here, so a judgment that failed never leaves it for the next report; it runs only when there is a verdict to come. */
+      const run = meanwhile;
+      meanwhile = undefined;
       /* A judgment that failed: the price goes back, the report stays with no verdict, and it can be made again (staff/report.ts). */
       if (judged.report === 'failed') {
         giveBack(account, settings.modBots.reportPrice, report.id);
         refundedReports.set(report.id, 'failed');
         return refuse('The Mod could not hear this report. Your Aura has been refunded, and you can make it again.');
       }
-      if (meanwhile) { const run = meanwhile; meanwhile = undefined; run(); }
+      run?.();
       const verdict = judged.report;
       /* A visit verdict opens no visit where the author is now hidden (`veiled`) or an earlier visit of the post carries this charge (`visited`, once it has ended not reversed; an open one is joined). The price goes back, the quota stays spent. */
       let visit: Id | null = null;
       let why: NoVisit | null = null;
       if (verdict === 'visit') {
-        const rule = 'Rule 2: No double posting';
-        const carried = [...acts.values()].filter((v) => v.kind === 'visit' && v.target === post && ((v.payload.charges ?? []) as { cause?: string; rule?: string; rule_number?: number | null }[])
-          .some((c) => c.cause === 'report' && (c.rule_number === 2 || (c.rule_number == null && c.rule === rule)))).sort((x, y) => y.at - x.at);
+        /* Mirrors start_visit (0357): the author veiled opens nothing; a repeat of the charge on a non-reversed visit of the post (ended or open) answers the post's open visit, any charge, or is `visited` when none is open; else a new one starts (the fake does not model a join). */
+        const onPost = [...acts.values()].filter((v) => v.kind === 'visit' && v.target === post).sort((x, y) => y.at - x.at);
         const ended = (v: ActRec) => [...acts.values()].find((e) => e.kind === 'visit_end' && e.target === v.id);
-        const live = carried.find((v) => { const e = ended(v); return !e || e.payload.outcome !== 'reversed'; });
+        const open = onPost.find((v) => !ended(v));
+        const repeats = onPost.some((v) => ended(v)?.payload.outcome !== 'reversed' && ((v.payload.charges ?? []) as { cause?: string; rule?: string; rule_number?: number | null }[])
+          .some((c) => c.cause === 'report' && (c.rule_number === REPORT_CHARGE.rule_number || (c.rule_number == null && c.rule === REPORT_CHARGE.rule))));
         if (liveVeils(post, 'author').length > 0) why = 'veiled';
-        else if (live && !ended(live)) visit = live.id;
-        else if (live) why = 'visited';
-        else visit = seed.visit(mod.id, post, { charges: [{ cause: 'report' }] });
+        else if (repeats) { if (open) visit = open.id; else why = 'visited'; }
+        else visit = seed.visit(mod.id, post, { charges: [{ cause: 'report', rule: REPORT_CHARGE.rule, ruleNumber: REPORT_CHARGE.rule_number }] });
       }
       let refund: ReportResult['refund'] = null;
       if (why) {

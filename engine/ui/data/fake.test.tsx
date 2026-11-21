@@ -5495,8 +5495,10 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     };
     test('a veil that lands while the Mod judges: no visit, refund veiled, the wallet back, the quota spent, the log and no visit Act', async () => {
       const w = noVisitWorld();
-      w.fake.seed.judging({ meanwhile: () => { void w.fake.playCard('whodunnit', w.anaFace, w.post, {}, ''); } });
+      let played: ReturnType<typeof w.fake.playCard> | undefined;
+      w.fake.seed.judging({ meanwhile: () => { played = w.fake.playCard('whodunnit', w.anaFace, w.post, {}, ''); } });
       const a = await w.fake.fileReport(w.anaFace, w.post, 'rude');
+      must(await played!);
       expect(a).toMatchObject({ ok: true, value: { verdict: 'visit', visit: null, refund: { why: 'veiled', amount: 25 } } });
       expect(await w.fake.wallet()).toEqual({ balance: 500, cap: 600 });
       expect(await w.fake.reportsLeft(w.anaFace)).toBe(2);
@@ -5520,6 +5522,25 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
       expect(b).toMatchObject({ ok: true, value: { verdict: 'visit', refund: null } });
       expect(b.ok && b.value.visit).not.toBeNull();
       expect(b.ok && b.value.visit).not.toBe(gone);
+    });
+    test('a failed judgment clears the meanwhile hook: the next report does not run it', async () => {
+      const w = noVisitWorld();
+      let ran = 0;
+      w.fake.seed.judging({ report: 'failed', meanwhile: () => { ran += 1; } });
+      expect(await w.fake.fileReport(w.anaFace, w.post, 'rude')).toMatchObject({ ok: false });
+      w.fake.seed.judging({ report: 'visit' });
+      expect(await w.fake.fileReport(w.anaFace, w.post, 'rude')).toMatchObject({ ok: true, value: { verdict: 'visit' } });
+      expect(ran).toBe(0);
+    });
+    test('a repeat while an older visit is still open answers it, though a newer one ended: no refund', async () => {
+      const w = noVisitWorld();
+      const older = w.fake.seed.visit(w.mod, w.post, { charges: [{ cause: 'report' }] });
+      w.fake.clock.advance(1000);
+      const newer = w.fake.seed.visit(w.mod, w.post, { charges: [{ cause: 'report' }] });
+      w.fake.seed.visitEnd(newer, { outcome: 'filed' });
+      const a = await w.fake.fileReport(w.anaFace, w.post, 'rude');
+      expect(a).toMatchObject({ ok: true, value: { verdict: 'visit', visit: older, refund: null } });
+      expect(await w.fake.wallet()).toEqual({ balance: 475, cap: 600 });
     });
     test('with that visit still open: the report joins it, no new visit Act, no refund', async () => {
       const w = noVisitWorld();
