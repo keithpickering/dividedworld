@@ -234,7 +234,9 @@ export function SteelChairEffect(props: EffectProps) {
   const { plays, show, children } = props;
   const inMoment = props.moment !== null;
   const ends = useMemo(() => plays.flatMap((p) => (p.ends !== undefined ? [Date.parse(p.ends)] : [])), [plays]);
-  const now = useAt(inMoment ? [] : ends);
+  const clock = useAt(inMoment ? [] : ends);
+  /* In a moment the way out is worded at the moment's time, not the page's. */
+  const now = props.moment ? props.moment.at : clock;
   /* A moment draws every play it is handed, as they stood; a live post drops the plays whose end has passed (the engine goes on handing them over). */
   const live = useMemo(
     () => (inMoment ? plays : plays.filter((p) => p.ends === undefined || Date.parse(p.ends) > now)).slice(0, MOST),
@@ -243,7 +245,7 @@ export function SteelChairEffect(props: EffectProps) {
   /* What holds for the life of the effect on the page, not of one stretch of live plays (the chairs component below unmounts when the last
      play ends and mounts again when a new one lands): whether the card has been met. */
   const memory = useRef<Memory>({ met: false });
-  return live.length > 0 ? <Chairs {...props} live={live} memory={memory.current} /> : <Bare show={show}>{children}</Bare>;
+  return live.length > 0 ? <Chairs {...props} live={live} memory={memory.current} now={now} /> : <Bare show={show}>{children}</Bare>;
 }
 
 /** No live play: the words alone, and nothing to show. */
@@ -252,8 +254,8 @@ function Bare({ show, children }: { show: EffectProps['show']; children: EffectP
   return <>{children}</>;
 }
 
-function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory }) {
-  const { live, show, met, children, memory } = props;
+function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory; now: number }) {
+  const { live, show, met, children, memory, now } = props;
   const inMoment = props.moment !== null;
   const reduced = useMotionReduced();
   const sound = useSound();
@@ -657,7 +659,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   const view = useMemo<CardView>(() => {
     const at = soonest === null ? null : new Date(soonest).toISOString();
     const ends = at === null ? undefined
-      : n === 1 ? endsWords(at)
+      : n === 1 ? endsWords(at, now)
       : `The first chair is gone ${dayAndTime(at)}; each lasts ${spanWords(STEEL_CHAIR_LASTS)}.`;
     return {
       progress: null,
@@ -670,7 +672,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       ],
       notes: {},
     };
-  }, [n, soonest, replay, gameSound.on, gameSound.set]);
+  }, [n, soonest, now, replay, gameSound.on, gameSound.set]);
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 

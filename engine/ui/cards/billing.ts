@@ -5,9 +5,16 @@
  *
  * Only public counts are read, never who reacted or who owns a play ("A response never proves a private fact"). The
  * order is only the tags': the order the effects wrap a post's words in is `inPlayOrder` (plays.ts), unchanged.
+ *
+ * Spent kinds go last when a page is read (docs/plans/2026-11-20-spent-marks-design.md, section 4): `billPost` puts
+ * the kinds with a play still up before the spent ones, each part in billing order, so live cards fill a strip's marks
+ * before "+N". The spent judgment for a post is made at the `now` of that post's first billing in this page's life
+ * (`over.billedAt` keeps it), so a re-read or a catch-up never moves a mark because a clock passed; a kind that goes
+ * spent while the page is open keeps its place, and no mark moves under a reader's pointer. A change that comes from
+ * Acts (a catch, an admin's end, a draw) may still re-bill. `billing` itself is only the order by draws.
  */
 import type { Id, Tally } from '../data/api.ts';
-import type { Plays } from './plays.ts';
+import { kindSpent, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 
 /** A play's draw: the sum of its public tally, plus the threads spun from it. */
@@ -27,13 +34,29 @@ export function billing(plays: readonly CardPlay[], drawn: (play: Id) => number)
     || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
+/** What `billPost` judges spent by: the keeping kinds, the clock, and where a post's first-billed time is kept. */
+export interface BillOver {
+  readonly now: number;
+  readonly keeps: ReadonlySet<string>;
+  /** A post's `now` at its first billing in this page's life; set here when it bills, read on every later billing. */
+  readonly billedAt?: Map<Id, number>;
+}
+
 /**
  * Bill a post's plays once its page's reads are in: the plays the read counted (`counted`), most drawn first. A play
  * that arrived while the reads were out was not counted, and keeps its place after them, as any play that arrives
  * live does; so a read never has to know what came meanwhile, and nothing is asked of a count it does not have.
+ * With `over`, kinds that are not spent (`kindSpent`, judged on all the post's counted plays of the kind, at the
+ * post's first-billed time) come first, then the spent ones, each in billing order; without it, billing order alone.
  */
-export function billPost(plays: Plays, post: Id, counted: { has(play: Id): boolean }, drawn: (play: Id) => number): void {
+export function billPost(plays: Plays, post: Id, counted: { has(play: Id): boolean }, drawn: (play: Id) => number, over?: BillOver): void {
   const here = plays.get(post).plays.filter((p) => counted.has(p.id));
   if (here.length === 0) return;
-  plays.setBilling(post, billing(here, drawn).map((p) => p.id));
+  const order = billing(here, drawn);
+  if (!over) { plays.setBilling(post, order.map((p) => p.id)); return; }
+  const now = over.billedAt?.get(post) ?? over.now;
+  over.billedAt?.set(post, now);
+  const spent = new Set<string>();
+  for (const kind of new Set(here.map((p) => p.card))) if (kindSpent(here.filter((p) => p.card === kind), now, over.keeps)) spent.add(kind);
+  plays.setBilling(post, [...order.filter((p) => !spent.has(p.card)), ...order.filter((p) => spent.has(p.card))].map((p) => p.id));
 }

@@ -5,7 +5,7 @@
  * its marks: `OnePlay` (the fixture's one play, its card met before so no callout hangs), `Callout` (the same for a reader who has
  * never met the card, so its one-line callout hangs off the mark), `SixKinds` (six kinds of card on one post: four marks and
  * "+2"), and `Armed` (Whoops! armed the way pressing its card in the hand arms it: the dashed ghost mark ends the strip of every post it
- * can land on, #41 and #42 among them), `AsItLanded` (the fixture's play's moment shown in #41's body, from its Lens's As it landed), `EndThisCard` (an admin's Lens, with its End this card), `EndedByAnAdmin` (the same play after an admin ended it) and `SpunFromAPlay` (a thread spun from a takeover card's play on #41, over its Whoops!: the play's moment in the ORIGIN box). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
+ * can land on, #41 and #42 among them), `AsItLanded` (the fixture's play's moment shown in #41's body, from its Lens's As it landed), `EndThisCard` (an admin's Lens, with its End this card), `EndedByAnAdmin` (the same play after an admin ended it), `Spent` (a live mark, an unlit one whose time ran out, an unlit heart and the ghost, side by side) and `SpunFromAPlay` (a thread spun from a takeover card's play on #41, over its Whoops!: the play's moment in the ORIGIN box). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
  *
  * The cards are the instance's own, each named by its key (so a card added later changes no board here), and the kinds past them are keys
  * no card has, which a mark draws as a swatch under the key's name, so six kinds are six distinct cards on the post.
@@ -33,9 +33,12 @@ const TAKEOVER = 'stick-around';
 type Kinds = 1 | 6;
 /** An admin looking at #41's play: its Lens offers "End this card" (`admin`), or the play was ended already and its Lens says so (`ended`). */
 type Ending = 'none' | 'admin' | 'ended';
+/** The key of the instant card the spent story plays (the instance's heart), and the card whose play on #41 has run out. */
+const INSTANT = 'happy-heart';
+const TIMED = 'hall-pass';
 
 /** Hand #41 its plays (and, for `quiet`, say every card met), then say the thread is ready to be read. */
-function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: Ending): boolean {
+function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: Ending, spent: boolean): boolean {
   const { api, instance } = useKayfa();
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -57,6 +60,17 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: 
           fake.seed.card(casters[i]!, target.id, card, { layer: 2 + i, message: '' });
         });
       }
+      if (spent) {
+        /* A live mark (the fixture's play), and beside it a play whose time ran out and an instant: the last two are unlit. */
+        const acts = await api.acts(thread, 41, 45);
+        const target = acts.find((a) => a.seq === 41);
+        const casters = [45, 44].map((n) => acts.find((a) => a.seq === n)?.character ?? null);
+        if (!target || casters.some((c) => c === null)) throw new Error('the boards fixture has no #41, or no author for a post around it');
+        fake.clock.advance(MINUTE);
+        fake.seed.card(casters[0]!, target.id, cardOf(instance.cards, TIMED).key, { layer: 2, message: '', ends: new Date(fake.clock.now() - MINUTE).toISOString() });
+        fake.clock.advance(MINUTE);
+        fake.seed.card(casters[1]!, target.id, cardOf(instance.cards, INSTANT).key, { message: '', instant: true });
+      }
       if (ending !== 'none') {
         /* The reader is made an admin before the thread is read, as the account is; an ended play is ended by that admin, as the Lens would. */
         const account = (await api.session()).account;
@@ -74,7 +88,7 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: 
       /* A seed the fake refuses leaves the story loading (aria-busy), and says why, rather than showing fewer kinds than its name. */
     })().catch((e: unknown) => { console.error('the marks story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, instance, thread, kinds, quiet, ending]);
+  }, [api, instance, thread, kinds, quiet, ending, spent]);
   return ready;
 }
 
@@ -203,10 +217,10 @@ function SpunFromPlay() {
   );
 }
 
-function Marked({ kinds, armed, quiet, landed = false, ending = 'none' }: { readonly kinds: Kinds; readonly armed: boolean; readonly quiet: boolean; readonly landed?: boolean; readonly ending?: Ending }) {
+function Marked({ kinds, armed, quiet, landed = false, ending = 'none', spent = false }: { readonly kinds: Kinds; readonly armed: boolean; readonly quiet: boolean; readonly landed?: boolean; readonly ending?: Ending; readonly spent?: boolean }) {
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
-  const ready = useSeeded(thread, kinds, quiet, ending);
+  const ready = useSeeded(thread, kinds, quiet, ending, spent);
   return (
     <Frame>
       {armed && <Arm />}
@@ -249,6 +263,9 @@ export const EndThisCard: Story = { args: { kinds: 1, armed: false, quiet: true,
 export const EndedByAnAdmin: Story = { args: { kinds: 1, armed: false, quiet: true, ending: 'ended' } };
 export const EndThisCardPhone: Story = { args: { kinds: 1, armed: false, quiet: true, ending: 'admin' }, ...phone };
 export const EndedByAnAdminPhone: Story = { args: { kinds: 1, armed: false, quiet: true, ending: 'ended' }, ...phone };
+/** A live mark, an unlit one (a play whose time ran out), an unlit instant (a heart) and the dashed ghost (Whoops! armed), side by side on #41. */
+export const Spent: Story = { args: { kinds: 1, armed: true, quiet: true, spent: true } };
+export const SpentPhone: Story = { args: { kinds: 1, armed: true, quiet: true, spent: true }, ...phone };
 /** A thread spun from a takeover card's play on #41: its ORIGIN box draws the play's moment, #41 as it read then. */
 export const SpunFromAPlay: Story = { render: () => <SpunFromPlay /> };
 export const SpunFromAPlayPhone: Story = { render: () => <SpunFromPlay />, ...phone };

@@ -56,7 +56,7 @@ describe('Whodunnit? while it is up', () => {
   test('says the reader\'s view: the author is hidden from everyone, and when the name comes back', () => {
     const { show } = setup();
     const view = last(show);
-    expect(view).toMatchObject({ progress: null, state: 'Author hidden from everyone', ends: `${endsWords(UP)} The author's name comes back then.`, yours: false, notes: {} });
+    expect(view).toMatchObject({ progress: null, state: 'Author hidden from everyone', ends: `${endsWords(UP, NOW)} The author's name comes back then.`, yours: false, notes: {} });
     expect(view.report).toBeUndefined();
   });
 
@@ -78,8 +78,6 @@ describe('Whodunnit? while it is up', () => {
       expect(viewProblems(last(show), { holds: false, covers: false })).toEqual([]);
       unmount();
     }
-    const { show } = setup({ plays: [play({ ends: OVER })] });
-    expect(viewProblems(last(show), { holds: false, covers: false })).toEqual([]);
   });
 
   test('meets the card once', () => {
@@ -111,12 +109,12 @@ describe('Whodunnit? once it has worn off', () => {
     /* The read that carries the true character arrives. */
     again({ post, plays: [play({ ends: '2026-11-12T11:59:59Z' })] });
     expect(container.querySelector('.dw-whodunnit-wore')).toHaveTextContent("This post was Gloomba's all along.");
-    expect(last(show).state).toBe('The name is back');
+    expect(show.mock.calls.at(-1)![0]).toBeNull();
   });
 
-  test('says the name is back to the Lens, with no controls', () => {
+  test('gives the Lens no view once it is over: the engine says a spent kind\'s heading', () => {
     const { show } = setup({ plays: [play({ ends: OVER })] });
-    expect(last(show)).toMatchObject({ state: 'The name is back', controls: [], yours: false });
+    expect(show.mock.calls.at(-1)![0]).toBeNull();
   });
 
   test('draws the line when the time passes while the page is open', () => {
@@ -160,7 +158,7 @@ describe('Whodunnit? in a play\'s moment', () => {
   test('on a live post with the same clock the wore-off line shows: only a moment stops the clock', () => {
     const { container, show } = setup({ moment: null, plays: [play({ ends: OVER })] });
     expect(container.querySelector('.dw-whodunnit-wore')).not.toBeNull();
-    expect(last(show).state).toBe('The name is back');
+    expect(show.mock.calls.at(-1)![0]).toBeNull();
   });
 
   test('a stale `still` flag on a live post changes nothing: the line shows and the card is met', () => {
