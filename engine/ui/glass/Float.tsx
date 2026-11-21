@@ -50,6 +50,11 @@ export interface FloatProps {
   readonly keep?: () => HTMLElement | null;
   /** The narrow width's sheet on the HUD, whatever the window's room. */
   readonly sheet: boolean;
+  /**
+   * A sheet held low (`SHEET_LOW_SHARE`), for while what the float is about plays on the page above it (a moment shown from the Lens): the page, not the float, is
+   * then what the reader watches. The dock ignores it.
+   */
+  readonly low?: boolean;
   /** Where it renders; the page's body by default. */
   readonly host?: HTMLElement | null;
   /** Where focus goes on close when what opened it is no longer on the page. */
@@ -80,6 +85,11 @@ const DOCK_SHARE = 0.32;
 export const dockWidth = (viewport: number): number => Math.round(Math.min(DOCK_MAX, Math.max(DOCK_MIN, viewport * DOCK_SHARE)));
 /** A sheet's share of the room above the HUD, so the post stays in view above it. */
 const SHEET_SHARE = 0.55;
+/**
+ * A low sheet's share (`FloatProps.low`): its bar and a few lines, so a moment replayed above it has most of a phone's window (the owner, 2026-11-21: at the full
+ * share the Lens "takes up about 75% of the screen", and a quick effect such as Steel Chair plays out of sight). What it holds still scrolls inside it.
+ */
+const SHEET_LOW_SHARE = 0.28;
 
 /**
  * Where a placement put the float, and for a sheet how far the page must scroll (`over`, in px; none or less is none) to bring the
@@ -95,7 +105,7 @@ export interface Placement {
 }
 
 /** Places `wrap` (the float and its glow) as the module comment says, measured from its unplaced state; returns where it took. */
-export function placeFloat(wrap: HTMLElement, box: HTMLElement, anchor: HTMLElement, sheet: boolean, keep?: HTMLElement | null): Placement {
+export function placeFloat(wrap: HTMLElement, box: HTMLElement, anchor: HTMLElement, sheet: boolean, keep?: HTMLElement | null, low = false): Placement {
   for (const k of ['top', 'left', 'right', 'bottom', 'maxWidth', 'width', 'height'] as const) wrap.style[k] = '';
   box.style.maxHeight = '';
   box.style.height = '';
@@ -116,7 +126,7 @@ export function placeFloat(wrap: HTMLElement, box: HTMLElement, anchor: HTMLElem
      * the bar hidden. It is never more than the window shows above the HUD.
      */
     const foot = Math.max(0, viewport.height - hudTop);
-    const room = Math.max(0, Math.min(hudTop - MARGIN, Math.floor((largeViewportHeight() - foot - MARGIN) * SHEET_SHARE)));
+    const room = Math.max(0, Math.min(hudTop - MARGIN, Math.floor((largeViewportHeight() - foot - MARGIN) * (low ? SHEET_LOW_SHARE : SHEET_SHARE))));
     box.style.maxHeight = `${room}px`;
     const top = hudTop - Math.min(room, box.scrollHeight + (box.offsetHeight - box.clientHeight));
     /* The whole post is brought above the sheet where it fits there; a post taller than that keeps its mark above it. */
@@ -152,7 +162,7 @@ function withdrawRoom(): void {
   root.removeAttribute('data-kb-float');
 }
 
-export function Float({ label, surface, onClose, children, anchor, keep, sheet, host, returnFocusTo, onPlace, onKeyDown, className, style, wrapStyle, data }: FloatProps) {
+export function Float({ label, surface, onClose, children, anchor, keep, sheet, low = false, host, returnFocusTo, onPlace, onKeyDown, className, style, wrapStyle, data }: FloatProps) {
   const wrap = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const calm = useSurfaceStyle(surface);
@@ -216,12 +226,12 @@ export function Float({ label, surface, onClose, children, anchor, keep, sheet, 
       /* Placing is measuring and writing; with the anchor, the post, the window and the float's own size where they were, it is skipped. */
       const a = target.getBoundingClientRect();
       const viewport = [document.documentElement.clientWidth || window.innerWidth, window.innerHeight];
-      const key = [a.top, a.left, a.right, a.bottom, b.offsetWidth, b.scrollHeight, sheet, viewport[0], viewport[1], hudTopOf(viewport[1]!)].join(',');
+      const key = [a.top, a.left, a.right, a.bottom, b.offsetWidth, b.scrollHeight, sheet, low, viewport[0], viewport[1], hudTopOf(viewport[1]!)].join(',');
       if (key === lastKey) return;
       lastKey = key;
       /* Unplaced for the measuring, what scrolls inside the box (the box, the Lens's body) is as tall as its content and cannot be scrolled, so where each was scrolled to is put back after. */
       const scrolled = [b, ...b.querySelectorAll<HTMLElement>('*')].filter((el) => el.scrollTop > 0).map((el) => [el, el.scrollTop] as const);
-      const placed = placeFloat(w, b, target, sheet, latest.current.keep?.() ?? null);
+      const placed = placeFloat(w, b, target, sheet, latest.current.keep?.() ?? null, low);
       for (const [el, top] of scrolled) el.scrollTop = top;
       /* The page gives up the room, and where that moved the post (a narrower column is a taller one) it is brought back into the window. */
       publishRoom(placed);
@@ -266,7 +276,7 @@ export function Float({ label, surface, onClose, children, anchor, keep, sheet, 
       grown?.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [anchor, sheet, present]);
+  }, [anchor, sheet, low, present]);
 
   /* Enters from its anchor; no dim (it blocks nothing). The wrapper keeps its glow, so the box is what moves. Its close plays out on this same tree (layer.tsx). */
   const lifted = useLayer({ box, kind: 'overlay', anchor, overrides: ui.glass.motion, rootOnly: true });
