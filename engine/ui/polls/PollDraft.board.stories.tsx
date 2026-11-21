@@ -30,7 +30,7 @@ function ReplyWithPoll() {
   return id ? <LoadedThread thread={id} /> : <div aria-busy="true" />;
 }
 
-const meta: Meta<typeof ReplyWithPoll> = { title: 'Polls/Draft', component: ReplyWithPoll };
+const meta: Meta<typeof ReplyWithPoll> = { title: 'Boards/29 Poll draft', component: ReplyWithPoll };
 export default meta;
 type Story = StoryObj<typeof ReplyWithPoll>;
 
