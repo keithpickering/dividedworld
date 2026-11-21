@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it, mock } from 'node:test';
 import { createMixer, EDGE_MS } from './mixer.ts';
+import * as mixerModule from './mixer.ts';
 import type { SoundSlot } from './types.ts';
 
 const finite = (n: number, what: string) => { if (!Number.isFinite(n)) throw new TypeError(`${what}: ${n} is not a finite number`); };
@@ -63,8 +64,20 @@ class FakeGain {
   gain: FakeParam;
   constructor(gain: FakeParam = new FakeParam()) { this.gain = gain; }
   disconnected = false;
-  connect() {}
+  /** The node this gain was connected to: a bus gain's is the output. */
+  to: unknown;
+  connect(to?: unknown) { this.to = to; }
   disconnect() { this.disconnected = true; }
+}
+class FakeCompressor {
+  threshold = { value: 0 };
+  knee = { value: 0 };
+  ratio = { value: 0 };
+  attack = { value: 0 };
+  release = { value: 0 };
+  to: unknown;
+  connect(to?: unknown) { this.to = to; }
+  disconnect() {}
 }
 class FakeSource {
   buffer: { duration: number } | null = null;
@@ -93,6 +106,16 @@ class FakeContext {
   sources: FakeSource[] = [];
   decoded = 0;
   failDecode = false;
+  compressors: FakeCompressor[] = [];
+  /** Set by a test: `noCompressor` deletes the method (an old WebKit), `throwCompressor` makes it throw. */
+  noCompressor = false;
+  throwCompressor = false;
+  createDynamicsCompressor?: () => FakeCompressor = () => {
+    if (this.throwCompressor) throw new Error('no compressor');
+    const c = new FakeCompressor();
+    this.compressors.push(c);
+    return c;
+  };
   resume = mock.fn(async () => {});
   suspend = mock.fn(async () => {});
   createGain() {
@@ -851,5 +874,126 @@ describe('mixer', () => {
       assert.equal(fetchBytes.mock.callCount(), 1);
       assert.equal(ctx.decoded, 1);
     });
+  });
+  describe('voices and the limiter', () => {
+    /** An unlocked mixer with the game bus on; `play` of one slot in group g with the given options, n times. */
+    const unlocked = async () => {
+      const m = make();
+      await m.unlock();
+      m.setBus('game', { on: true, volume: 100 });
+      return m;
+    };
+    const stoppedAts = () => ctx.sources.map((s) => s.stoppedAt);
+
+    it('47. with voices 3, three plays in a group start three sources and stop none', async () => {
+      const m = await unlocked();
+      for (let i = 0; i < 3; i++) await m.play(boo, { group: 'g', fadeMs: 100, voices: 3 });
+      assert.equal(ctx.sources.length, 3);
+      assert.deepEqual(stoppedAts(), [undefined, undefined, undefined]);
+    });
+
+    it('48. with voices 3, a fourth play stops the first source only, over max(fadeMs, EDGE_MS)', async () => {
+      const m = await unlocked();
+      for (let i = 0; i < 3; i++) await m.play(boo, { group: 'g', fadeMs: 100, voices: 3 });
+      await m.play(cheer, { group: 'g', fadeMs: 100, voices: 3 });
+      assert.equal(ctx.sources.length, 4);
+      assert.ok(Math.abs(ctx.sources[0]!.stoppedAt! - (10 + Math.max(100, EDGE_MS) / 1000)) < 1e-9, 'the oldest fades out over the fade');
+      assert.deepEqual(stoppedAts().slice(1), [undefined, undefined, undefined], 'the second, third and fourth are not stopped');
+    });
+
+    it('49. with voices 3, a voice that ended by itself leaves the pool, so a fourth play stops nothing', async () => {
+      const m = await unlocked();
+      for (let i = 0; i < 3; i++) await m.play(boo, { group: 'g', fadeMs: 100, voices: 3 });
+      ctx.sources[0]!.onended?.();
+      await m.play(cheer, { group: 'g', fadeMs: 100, voices: 3 });
+      assert.equal(ctx.sources.length, 4);
+      assert.deepEqual(stoppedAts(), [undefined, undefined, undefined, undefined]);
+    });
+
+    it('50. a voices that is NaN, 0, -1 or Infinity is read as 1, and 2.7 as 2', async () => {
+      for (const voices of [Number.NaN, 0, -1, Number.POSITIVE_INFINITY]) {
+        const m = await unlocked();
+        await m.play(boo, { group: 'g', fadeMs: 100, voices });
+        await m.play(cheer, { group: 'g', fadeMs: 100, voices });
+        assert.ok(ctx.sources[0]!.stoppedAt !== undefined, `voices ${voices}: the second play stops the first`);
+      }
+      const m = await unlocked();
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 2.7 });
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 2.7 });
+      assert.deepEqual(stoppedAts(), [undefined, undefined], 'two fit under 2.7');
+      await m.play(cheer, { group: 'g', fadeMs: 100, voices: 2.7 });
+      assert.ok(ctx.sources[0]!.stoppedAt !== undefined, 'the third stops the first');
+      assert.equal(ctx.sources[1]!.stoppedAt, undefined);
+    });
+
+    it('51. the cap is the newest play\'s: a play with voices 1 after three with voices 3 stops all three', async () => {
+      const m = await unlocked();
+      for (let i = 0; i < 3; i++) await m.play(boo, { group: 'g', fadeMs: 100, voices: 3 });
+      await m.play(cheer, { group: 'g', fadeMs: 100, voices: 1 });
+      assert.ok(ctx.sources.slice(0, 3).every((s) => s.stoppedAt !== undefined), 'all three stopped');
+      assert.equal(ctx.sources[3]!.stoppedAt, undefined);
+    });
+
+    it('52. a late play into a full pool stops nothing', async () => {
+      const m = await unlocked();
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 2 });
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 2 });
+      let open: () => void = () => {};
+      const gate = new Promise<void>((r) => { open = r; });
+      ctx.decodeAudioData = (async () => { await gate; return { duration: 1.5 }; }) as never;
+      const pending = m.play(cheer, { group: 'g', fadeMs: 100, voices: 2, lateMs: 0 });
+      clock = 50;
+      open();
+      assert.equal(await pending, null);
+      assert.equal(ctx.sources.length, 2);
+      assert.deepEqual(stoppedAts(), [undefined, undefined]);
+    });
+
+    it('53. a loop in a group stops every voice in it; it counts as a voice to later plays, and the cap stops it as a replaced loop', async () => {
+      const m = await unlocked();
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 2 });
+      await m.play(boo, { group: 'g', fadeMs: 100, voices: 2 });
+      const onStop = mock.fn();
+      await m.loop(slot('build', { loop: true }), { group: 'g', onStop });
+      assert.ok(ctx.sources[0]!.stoppedAt !== undefined && ctx.sources[1]!.stoppedAt !== undefined, 'the loop stopped both plays');
+      const loopSource = ctx.sources[2]!;
+      await m.play(cheer, { group: 'g', fadeMs: 100, voices: 2 });
+      assert.equal(loopSource.stoppedAt, undefined, 'a play with room leaves the loop sounding');
+      assert.equal(onStop.mock.callCount(), 0);
+      await m.play(cheer, { group: 'g', fadeMs: 100, voices: 2 });
+      assert.ok(loopSource.stoppedAt !== undefined, 'the third voice stops the loop');
+      assert.deepEqual(onStop.mock.calls.map((c) => c.arguments), [['replaced']]);
+    });
+
+    it('54. on the first play one compressor is made with the limiter values, connected to the destination, and the bus gain to it; a second bus makes no second', async () => {
+      const m = await unlocked();
+      m.setBus('interface', { on: true, volume: 100 });
+      await m.play(boo);
+      assert.equal(ctx.compressors.length, 1);
+      const comp = ctx.compressors[0]!;
+      const values = { threshold: comp.threshold.value, knee: comp.knee.value, ratio: comp.ratio.value, attack: comp.attack.value, release: comp.release.value };
+      assert.deepEqual(values, { threshold: -1, knee: 0, ratio: 20, attack: 0.002, release: 0.1 });
+      assert.deepEqual(values, mixerModule.LIMITER, 'the exported LIMITER is those values');
+      assert.equal(comp.to, ctx.destination);
+      assert.equal(ctx.gains[0]!.to, comp, 'the game bus gain feeds the compressor');
+      await m.play(slot('click', { bus: 'interface' }));
+      assert.equal(ctx.compressors.length, 1, 'no second compressor');
+      assert.equal(ctx.gains.find((g) => g !== ctx.gains[0] && g.to === comp) !== undefined, true, 'the interface bus feeds the same compressor');
+    });
+
+    for (const [name, arrange] of [
+      ['55. a context with no createDynamicsCompressor', () => { ctx.noCompressor = true; delete ctx.createDynamicsCompressor; }],
+      ['56. a createDynamicsCompressor that throws', () => { ctx.throwCompressor = true; }],
+    ] as const) {
+      it(`${name} connects the bus gain to the destination, and the play resolves`, async () => {
+        const m = make();
+        arrange();
+        await m.unlock();
+        m.setBus('game', { on: true, volume: 100 });
+        assert.deepEqual(await m.play(boo), { lengthMs: 1500 });
+        assert.equal(ctx.gains[0]!.to, ctx.destination);
+        assert.equal(ctx.compressors.length, 0);
+      });
+    }
   });
 });

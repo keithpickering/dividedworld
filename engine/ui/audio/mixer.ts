@@ -11,8 +11,10 @@
  * `lateMs`: if its sound cannot start within that long of the call, it is dropped and resolves null rather than sounding late. A
  * `lateMs` of 0 or less drops a play that had to wait at all (a file already decoded, with the clock unmoved, still sounds), and one that is not a finite number is ignored.
  *
- * `fadeMs` on `play` is the cross-fade between sounds of one group, so it does nothing without a `group`: a sound in no group
- * overlaps whatever else sounds. No voice ever steps, though: a voice starts at 0 and ramps to its level, and ramps back to 0 when
+ * `fadeMs` on `play` is the cross-fade between sounds of one group, so it does nothing without a `group`. A group holds up to `voices`
+ * voices (1 when the play names none) and fades out its oldest to make room for a new one; a sound in no group overlaps whatever else
+ * sounds. The two buses meet in a limiter before the speakers, so overlapping sounds press down instead of clipping, and a sound at or under
+ * -1 dBFS passes it unchanged (where a context cannot make one, the buses go straight to the speakers). No voice ever steps, though: a voice starts at 0 and ramps to its level, and ramps back to 0 when
  * it ends or is replaced, over at least `EDGE_MS`, because a level that jumps is a click in the speaker. A play may ask for a `tailMs`,
  * a fade to nothing over the last of its file, so a take ends by fading, not by stopping. A bus's volume moves to its new level over
  * a few milliseconds for the same reason. Each slot's `gain` multiplies the level its voice ramps to, so an instance levels its files
@@ -23,8 +25,11 @@
 import type { SoundBus, SoundSlot } from './types.ts';
 /** The shortest ramp any voice gets in or out, in milliseconds. */
 export const EDGE_MS = 8;
+/** The limiter's settings: a sound at or under its threshold passes unchanged, and a pile of them is pressed down instead of clipping. */
+export const LIMITER = { threshold: -1, knee: 0, ratio: 20, attack: 0.002, release: 0.1 } as const;
 export interface AudioParamLike { value: number; cancelScheduledValues(t: number): unknown; setValueAtTime(v: number, t: number): unknown; linearRampToValueAtTime(v: number, t: number): unknown; setTargetAtTime(v: number, t: number, c: number): unknown }
 export interface GainNodeLike { gain: AudioParamLike; connect(to: unknown): unknown; disconnect(): unknown }
+export interface CompressorLike { threshold: { value: number }; knee: { value: number }; ratio: { value: number }; attack: { value: number }; release: { value: number }; connect(to: unknown): unknown; disconnect(): unknown }
 export interface SourceLike { buffer: unknown; loop: boolean; onended: (() => void) | null; connect(to: unknown): unknown; disconnect(): unknown; start(when?: number): unknown; stop(when?: number): unknown }
 export interface AudioContextLike {
   readonly currentTime: number; readonly destination: unknown;
@@ -32,6 +37,8 @@ export interface AudioContextLike {
   /** The promise form, or the legacy callback form (old WebKit) that returns nothing: the mixer takes either. */
   decodeAudioData(bytes: ArrayBuffer, ok?: (b: { readonly duration: number }) => void, fail?: (e: unknown) => void): Promise<{ readonly duration: number }> | void;
   createGain(): GainNodeLike; createBufferSource(): SourceLike;
+  /** Absent on an old WebKit: the buses then connect straight to the destination. */
+  createDynamicsCompressor?(): CompressorLike;
 }
 export interface MixerDeps { makeContext(): AudioContextLike; fetchBytes(src: string): Promise<ArrayBuffer>; now?: () => number }
 /** Why a loop ended: its own `stop`, its bus turned off, or another sound of its group replacing it. */
@@ -42,13 +49,14 @@ export interface Mixer {
   /** Resolves whether the mixer is now unlocked: false when the browser refused, so the next gesture may try again. */
   unlock(): Promise<boolean>; suspend(): Promise<void>; resume(): Promise<void>;
   warm(slots: readonly SoundSlot[]): void;
-  play(slot: SoundSlot, o?: { group?: string; fadeMs?: number; tailMs?: number; lateMs?: number }): Promise<{ lengthMs: number } | null>;
+  play(slot: SoundSlot, o?: { group?: string; fadeMs?: number; tailMs?: number; lateMs?: number; voices?: number }): Promise<{ lengthMs: number } | null>;
   /**
    * A loop starts at gain 0, silent until its owner's `setGain` raises it. `cancelled` is asked once the sound is decoded: true resolves null
    * with no source made and no group voice replaced, for an owner that gave up while the file loaded.
    */
   loop(slot: SoundSlot, o?: { group?: string; onStop?: (why: LoopStop) => void; cancelled?: () => boolean }): Promise<LoopHandle | null>;
 }
+interface Voice { source: SourceLike; end(fadeMs: number): void }
 export function createMixer(deps: MixerDeps): Mixer {
   /** The context once made; `ctx` is the same context once it has resumed, and only then may anything sound. */
   let made: AudioContextLike | null = null;
@@ -58,8 +66,10 @@ export function createMixer(deps: MixerDeps): Mixer {
     interface: { on: false, volume: 100, node: null },
   };
   const loops: Record<SoundBus, Set<(why: LoopStop) => void>> = { game: new Set(), interface: new Set() };
-  /** A group's current voice, and the way to end it over `fadeMs` (a play fades out, a loop stops). A play's fade-out ends by its file's end, but never takes less than `EDGE_MS`, so a play replaced in its last few milliseconds outlasts its file by up to that. */
-  const groups = new Map<string, { source: SourceLike; end(fadeMs: number): void }>();
+  /** A group's voices, oldest first, each with the way to end it over `fadeMs` (a play fades out, a loop stops). A voice leaves the list when its source ends. A play's fade-out ends by its file's end, but never takes less than `EDGE_MS`, so a play replaced in its last few milliseconds outlasts its file by up to that. */
+  const groups = new Map<string, Voice[]>();
+  /** The output both buses connect to, by context: the limiter, or the destination where there is none. */
+  const outputs = new WeakMap<AudioContextLike, unknown>();
   /** A file's fetch, by src; it needs no context. `decodeAudioData` detaches the bytes it is given, so an entry goes once its decode starts. */
   const bytes = new Map<string, Promise<ArrayBuffer | null>>();
   /** A file's decode, by src; filled only once a context exists. */
@@ -73,12 +83,34 @@ export function createMixer(deps: MixerDeps): Mixer {
   const level = (b: SoundBus): number => (buses[b].on && Number.isFinite(buses[b].volume) ? Math.min(Math.max(buses[b].volume, 0), 100) / 100 : 0);
   /** A slot's own level: its `gain`, or 1 when it has none or it is not a finite number above 0. */
   const gainOf = (slot: SoundSlot): number => (typeof slot.gain === 'number' && Number.isFinite(slot.gain) && slot.gain > 0 ? slot.gain : 1);
+  /** What the buses connect to, made once a context: a limiter into the destination, or the destination itself where the context cannot make one or it throws. */
+  function output(c: AudioContextLike): unknown {
+    if (outputs.has(c)) return outputs.get(c);
+    let out: unknown = c.destination;
+    try {
+      const comp = c.createDynamicsCompressor?.();
+      if (comp) {
+        for (const k of Object.keys(LIMITER) as Array<keyof typeof LIMITER>) comp[k].value = LIMITER[k];
+        comp.connect(c.destination);
+        out = comp;
+      }
+    } catch { out = c.destination; }
+    outputs.set(c, out);
+    return out;
+  }
+  /** Take a voice out of its group's list, by its source, and drop the group when it is empty. */
+  function leave(group: string, source: SourceLike): void {
+    const list = groups.get(group);
+    if (!list) return;
+    const rest = list.filter((v) => v.source !== source);
+    if (rest.length) groups.set(group, rest); else groups.delete(group);
+  }
   function busNode(c: AudioContextLike, b: SoundBus): GainNodeLike {
     let node = buses[b].node;
     if (!node) {
       node = c.createGain();
       node.gain.value = level(b);
-      node.connect(c.destination);
+      node.connect(output(c));
       buses[b].node = node;
     }
     return node;
@@ -223,14 +255,17 @@ export function createMixer(deps: MixerDeps): Mixer {
         if (typeof o.lateMs === 'number' && Number.isFinite(o.lateMs) && clockMs() - asked > o.lateMs) return null;
         const { c, buffer } = r;
         const fadeMs = o.fadeMs ?? 0;
-        const prior = o.group === undefined ? undefined : groups.get(o.group);
-        if (prior) prior.end(fadeMs);
+        const cap = typeof o.voices === 'number' && Number.isFinite(o.voices) && o.voices >= 1 ? Math.floor(o.voices) : 1;
+        if (o.group !== undefined) {
+          const list = groups.get(o.group);
+          while (list && list.length >= cap) list.shift()!.end(fadeMs);
+        }
         const { source, voice, naturalEnd } = start(c, slot, buffer, false, o.group === undefined ? 0 : fadeMs, o.tailMs);
         if (o.group !== undefined) {
           const group = o.group;
-          groups.set(group, { source, end: (ms) => fadeOut(c, voice, source, ms, naturalEnd) });
+          groups.set(group, [...(groups.get(group) ?? []), { source, end: (ms) => fadeOut(c, voice, source, ms, naturalEnd) }]);
           const done = source.onended;
-          source.onended = () => { done?.(); if (groups.get(group)?.source === source) groups.delete(group); };
+          source.onended = () => { done?.(); leave(group, source); };
         }
         return { lengthMs: Math.round(buffer.duration * 1000) };
       } catch { return null; }
@@ -240,15 +275,14 @@ export function createMixer(deps: MixerDeps): Mixer {
         const r = await ready(slot);
         if (!r || o.cancelled?.()) return null;
         const { c, buffer } = r;
-        const prior = o.group === undefined ? undefined : groups.get(o.group);
-        if (prior) prior.end(0);
+        if (o.group !== undefined) for (const v of [...(groups.get(o.group) ?? [])]) v.end(0);
         const { source, voice } = start(c, slot, buffer, true, 0);
         let stopped = false;
         const end = (why: LoopStop, fadeMs: number): void => {
           if (stopped) return;
           stopped = true;
           loops[slot.bus].delete(endNow);
-          if (o.group !== undefined && groups.get(o.group)?.source === source) groups.delete(o.group);
+          if (o.group !== undefined) leave(o.group, source);
           fadeOut(c, voice, source, fadeMs);
           o.onStop?.(why);
         };
@@ -264,7 +298,7 @@ export function createMixer(deps: MixerDeps): Mixer {
           stop(fadeMs) { end('stopped', fadeMs); },
         };
         loops[slot.bus].add(endNow);
-        if (o.group !== undefined) groups.set(o.group, { source, end: (ms) => end('replaced', ms) });
+        if (o.group !== undefined) groups.set(o.group, [{ source, end: (ms) => end('replaced', ms) }]);
         return handle;
       } catch { return null; }
     },

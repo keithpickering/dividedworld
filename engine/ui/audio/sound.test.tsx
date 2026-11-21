@@ -168,6 +168,17 @@ describe('the page sound', () => {
     expect(voice.linearRampToValueAtTime).toHaveBeenLastCalledWith(0, 1.5);
   });
 
+  test('play(key, { group, voices }) hands the cap to the mixer: two plays of one slot with voices 2 both sound', async () => {
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture();
+    await act(async () => { await result.current.play('boo', { group: 'g', fadeMs: 100, voices: 2 }); });
+    await act(async () => { await result.current.play('boo', { group: 'g', fadeMs: 100, voices: 2 }); });
+    expect(sources).toHaveLength(2);
+    expect(sources.every((s) => (s.start as ReturnType<typeof vi.fn>).mock.calls.length === 1)).toBe(true);
+    expect(sources.map((s) => (s.stop as ReturnType<typeof vi.fn>).mock.calls.length)).toEqual([0, 0]);
+  });
+
   test('a loop holds its caption while the gain is above HELD_FROM and releases it below', async () => {
     const { result } = renderHook(() => useSound(), { wrapper: wrap });
     on('game');
