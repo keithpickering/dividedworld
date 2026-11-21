@@ -27,6 +27,8 @@ create table tallied_lines (
   primary key (settlement, act, reason)
 );
 create index tallied_lines_act on tallied_lines (act);
+-- The cushion plays on a character (a play with reach 'character' names the character it lies on in its payload), by that character and creation time: the probe of `cushion_plays` for each spark in the inputs below, whatever the spark's age.
+create index acts_card_on_character on acts ((payload ->> 'character'), created_at) where kind = 'card' and payload ->> 'reach' = 'character';
 create trigger tallied_lines_no_update before update or delete on tallied_lines for each row execute function ledger_append_only();
 create trigger tallied_lines_no_truncate before truncate on tallied_lines for each statement execute function ledger_append_only();
 alter table tallied_lines enable always trigger tallied_lines_no_update;
@@ -423,7 +425,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
       offset 0) p),
   members as (select id from down union select id from spun_spins union select id from spun_posts),
   -- Each cushion play (Thick Skin) on a spark or on its character that ended after the spark was made, whether or not it is still up: the engine cuts the refund by the largest share that was ever up on the spark.
-  -- A play on the post is found by its key (acts_layers); one on the character by creation time through acts_card_created, a window of the longest cushion `lasts` before the earliest spark. A caught play is never in effect.
+  -- A play on the post is found by its key (acts_layers); one on the character by a probe for each spark, through acts_card_on_character (the character it lies on, then creation time), from the longest cushion `lasts` before that spark's own
+  -- creation, whatever its age (an old paid spark has no cutoff): a play made earlier than that ended before the spark was made. A caught play is never in effect.
   cushion_plays as (
     select k.id from sparks s cross join lateral (
       select k.id from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.gimmick ->> 'kind' = 'cushion'
@@ -431,11 +434,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
         and k.created_at < window_end and not (k.payload ? 'caught') and (k.payload ->> 'ends')::timestamptz > s.at and k.id not in (select id from ended)
       offset 0) k
     union
-    select k.id from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.gimmick ->> 'kind' = 'cushion'
-    join sparks s on s.character::text = k.payload ->> 'character'
-    where k.kind = 'card' and k.payload ->> 'reach' = 'character'
-      and k.created_at < window_end and k.created_at >= (select at from cutoff) - (select max(c.lasts) from card_kinds c where c.gimmick ->> 'kind' = 'cushion')
-      and not (k.payload ? 'caught') and (k.payload ->> 'ends')::timestamptz > s.at and k.id not in (select id from ended)),
+    select k.id from sparks s cross join lateral (
+      select k.id from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.gimmick ->> 'kind' = 'cushion'
+      where k.kind = 'card' and k.payload ->> 'reach' = 'character' and k.payload ->> 'character' = s.character::text
+        and k.created_at < window_end and k.created_at >= s.at - (select max(c.lasts) from card_kinds c where c.gimmick ->> 'kind' = 'cushion')
+        and not (k.payload ? 'caught') and (k.payload ->> 'ends')::timestamptz > s.at and k.id not in (select id from ended)
+      offset 0) k),
   -- What each play of the window is scored against (0378): the Act a card or a spring lies on, and the cast a spring caught (`by`). A class's rule reads how the room took that Act (engine/rules/settle.ts, targetLean), and a
   -- reaction before the window counts as much as one inside it, so the Act's earlier reactions are sent whether or not a reaction reached it today. One probe by Act for each play of the window, never a scan of reactions.
   scored as (
@@ -734,11 +738,12 @@ begin
         and k.created_at < window_end and not (k.payload ? 'caught') and (k.payload ->> 'ends')::timestamptz > s.at and k.id not in (select id from ended)
       offset 0) k
     union
-    select k.id from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.gimmick ->> 'kind' = 'cushion'
-    join sparks s on s.character::text = k.payload ->> 'character'
-    where k.kind = 'card' and k.payload ->> 'reach' = 'character'
-      and k.created_at < window_end and k.created_at >= (select at from cutoff) - (select max(c.lasts) from card_kinds c where c.gimmick ->> 'kind' = 'cushion')
-      and not (k.payload ? 'caught') and (k.payload ->> 'ends')::timestamptz > s.at and k.id not in (select id from ended)),
+    select k.id from sparks s cross join lateral (
+      select k.id from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.gimmick ->> 'kind' = 'cushion'
+      where k.kind = 'card' and k.payload ->> 'reach' = 'character' and k.payload ->> 'character' = s.character::text
+        and k.created_at < window_end and k.created_at >= s.at - (select max(c.lasts) from card_kinds c where c.gimmick ->> 'kind' = 'cushion')
+        and not (k.payload ? 'caught') and (k.payload ->> 'ends')::timestamptz > s.at and k.id not in (select id from ended)
+      offset 0) k),
   targets as (select target_act_id as id from win_acts where kind in ('card', 'spin', 'spring') and target_act_id is not null and coalesce(payload ->> 'reach', 'post') = 'post'),
   -- The casts the caller's window springs caught (settlement_input's `scored`, 0378): a spring is scored against the cast it caught, so the cast's reactions are read. They go through `all_reactions`, `keyed` and
   -- `totals_withheld` as every other does, and nothing here is keyed by who owns the cast or its reactors.
