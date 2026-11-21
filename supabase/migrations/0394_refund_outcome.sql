@@ -10,7 +10,7 @@
 --                              no quadrant. It only loosens, so every spring already written still passes.
 --   5. spring_traps            copied whole from 0357_post_veils.sql (its latest): a cast trap whose outcome is a refund springs `did: returned` (a ride `rode`, any other `caught`), and does not spring on a cast with
 --                              no paying account (a staff cast), so a refund back stays set over it. It writes no card_ledger row for a returned spring: place_cast writes the refund's. Its grants are as they were.
---   6. place_set               copied whole from 0392_ride_every.sql (its latest): the refusal "this card names a reaction quadrant" is asked of a ride outcome alone (not of a refund), and still not of a ride that
+--   6. place_set               copied whole from 0393_forged_quotes.sql (its latest): the refusal "this card names a reaction quadrant" is asked of a ride outcome alone (not of a refund), and still not of a ride that
 --                              says `every: true`. Its grants are as they were (replaced in place).
 --   7. place_cast              copied whole from 0374_cards_on_a_spun_thread.sql (its latest): a new local `lands` (no spring, or a ride or a refund) replaces each (sprung is null or rode) test; a new local
 --                              `handed` names what hands a landed cast on a post back to a non-staff caster, the refund back's own spring or else the post's live refunds Gimmick with a kick left and the cast's flavor;
@@ -726,6 +726,7 @@ declare
   rounds integer;
   staff_setter boolean;
   body text;
+  body_forged uuid[];
   off_board integer;
   nq_name text;
   nq_ends timestamptz;
@@ -806,8 +807,8 @@ begin
   if author is distinct from setter then raise exception 'a card is set face down on a post of your own character''s' using hint = 'kayfabb.refusal', errcode = '42501'; end if;
   -- The passage must be in the post's current words (its latest edit's body, else its own), read as the probe reads them. The post is public, so the refusal reads nothing private.
   if passage is not null then
-    select p.current_payload ->> 'body' into body from acts_public p where p.id = target;
-    if not phrase_in(bbcode_plain(coalesce(body, '')), passage) then raise exception 'that passage is not in this post''s words' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    select p.current_payload ->> 'body', act_forged(p.current_payload) into body, body_forged from acts_public p where p.id = target;
+    if not phrase_in(bbcode_plain(coalesce(body, ''), body_forged), passage) then raise exception 'that passage is not in this post''s words' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   end if;
   -- Public, since the back is.
   -- A back is live until it springs, is taken back or its time passes; the three are public.
