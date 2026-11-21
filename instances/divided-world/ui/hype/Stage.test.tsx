@@ -5,6 +5,8 @@
  */
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync, readdirSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { afterEach, describe, expect, test } from 'vitest';
 import { createFake, type Fake } from '../../../../engine/ui/data/fake.ts';
 import { instance } from '../../index.ts';
@@ -14,6 +16,12 @@ import { pendingOf } from './forecast.ts';
 import { FILM_ORDER, PILE, playbook } from './stage-play.ts';
 import { postTarget, type CardEffect, type CardTarget } from '../../../../engine/rules/cards.ts';
 import { buildStage } from './stage-world.ts';
+import { tags } from './graffiti-shapes.ts';
+import LINES from './staff-lines.json';
+import tailFile from './gpt2-tail.txt?raw';
+import nodesCss from './hype.css?raw';
+import worldSource from './stage-world.ts?raw';
+import playSource from './stage-play.ts?raw';
 
 /** The stage, seeded and ready, with the film's player signed in as `as` (Snuckles's player when none). */
 async function stage(as: string | null = null) {
@@ -279,7 +287,7 @@ describe('the Staff\'s beats', () => {
     const announced = (await fake.acts((await fake.boardPage('announcements', 1, []))!.threads[0]!.id, 1, 60)).find((a) => a.id === move)!;
     expect(announced.kind).toBe('move');
     expect(made.threads['announcements']).toBe((await fake.boardPage('announcements', 1, []))!.threads[0]!.id);
-    expect(JSON.stringify(announced.payload)).toContain('Nobody posted on my board anyway');
+    expect(JSON.stringify(announced.payload)).toContain('Per the consolidation plan, the Palace joins World -1');
   });
 
   test('a Mod files Snuckles\'s first post: its visit ends filed, and a warning lands on him', async () => {
@@ -369,5 +377,267 @@ describe('the camera', () => {
     expect(plane.hasAttribute('data-kb-turned')).toBe(false);
     expect(document.body.style.background).toContain('rgb(10, 20, 30)');
     document.body.style.background = '';
+  });
+});
+
+/** The tail as the file holds it: after its `#` header line, every character, the leading space and the blank lines kept. */
+const tailOf = (file: string) => file.slice(file.indexOf('\n') + 1);
+const LOGS = 'docs/research/2026-11-13-season-rehearsal-run-2/logs';
+
+describe('R4: the nodes, half again as large', () => {
+  test('a node is 84 px across (56 px was the first build\'s), centered on its point', () => {
+    const rule = /\.dw-hype-node \{([^}]*)\}/u.exec(nodesCss)?.[1] ?? '';
+    expect(rule).toMatch(/width:\s*84px/u);
+    expect(rule).toMatch(/height:\s*84px/u);
+    expect(rule).toMatch(/margin:\s*-42px 0 0 -42px/u);
+  });
+});
+
+describe('R4: the graffiti shapes', () => {
+  test('the stage\'s tags are at least five kinds of shape, and no two strokes are the same polyline', () => {
+    const shapes = tags();
+    expect(new Set(shapes.map((s) => s.kind)).size).toBeGreaterThanOrEqual(5);
+    const polylines = shapes.flatMap((s) => s.strokes).map((st) => JSON.stringify(st.points));
+    expect(new Set(polylines).size).toBe(polylines.length);
+    for (const st of shapes.flatMap((s) => s.strokes)) expect(st.points.length).toBeGreaterThan(1);
+  });
+
+  test('the graffiti post\'s wall holds a draw for each shape, and the card accepted them all', async () => {
+    const { fake, made } = await stage();
+    const play = (await fake.cardsOn(made.acts['graffiti']!, 60)).find((a) => a.kind === 'card')!;
+    const draws = (await fake.surfaceActs(play.id))!.acts;
+    expect(draws.length).toBeGreaterThanOrEqual(5);
+    const strokes = draws.map((d) => JSON.stringify((d.payload as { strokes?: unknown }).strokes ?? []));
+    expect(new Set(strokes).size).toBe(strokes.length);
+  });
+});
+
+describe('R4: the Staff\'s lines are the rehearsal\'s', () => {
+  const logs = new Map<string, string>();
+  const text = (arc: string) => {
+    if (!logs.has(arc)) logs.set(arc, JSON.stringify(JSON.parse(gunzipSync(readFileSync(`${LOGS}/${arc}.json.gz`)).toString('utf8'))));
+    return logs.get(arc)!;
+  };
+  const found = (arc: string, said: string) => text(arc).includes(JSON.stringify(said).slice(1, -1));
+
+  test('every `said` (and every filing\'s aimed-at post\'s) is found, character for character, in the log it names', () => {
+    expect(readdirSync(LOGS).length).toBeGreaterThanOrEqual(5);
+    const entries = Object.entries(LINES) as [string, { said: string; arc: string; post?: { said: string } | null }][];
+    expect(entries.length).toBeGreaterThanOrEqual(27);
+    for (const [key, line] of entries) {
+      expect(found(line.arc, line.said), `${key}: "${line.said.slice(0, 60)}" is in ${line.arc}`).toBe(true);
+      if (line.post) expect(found(line.arc, line.post.said), `${key}'s aimed-at post is in ${line.arc}`).toBe(true);
+    }
+  });
+
+  test('the check is not vacuous: a line with one word changed is not found', () => {
+    expect(found(LINES.openerQcHelp.arc, LINES.openerQcHelp.said.replace('clipboard', 'clipboards'))).toBe(false);
+  });
+
+  test('the wanted lines are there by key: two openers each, three filings each, the moves, memos, two reviews, the handover', () => {
+    for (const key of ['openerQcHelp', 'openerQcArts', 'openerOtBreathing', 'openerOtLooking', 'filingQcHelp', 'filingQcGames', 'filingQcGotcha', 'filingOtThematic', 'filingOtPatience', 'filingOtPalace',
+      'created', 'moved', 'merged', 'mergeFailed', 'memo', 'orderNoAllowance', 'orderHoneymoon', 'stars', 'fiveStars', 'successor', 'farewell', 'handoff', 'posted', 'arrival', 'followup']) {
+      expect((LINES as Record<string, unknown>)[key], key).toBeDefined();
+    }
+    expect(LINES.filingQcHelp.post!.text).toBe('respectfully, no.');
+    expect(LINES.mergeFailed).toMatchObject({ failure: 'that move cannot land: that board is already closed' });
+    expect(LINES.farewell.text).toContain('Robots in the Draw event do not cry');
+  });
+
+  test('the recast keeps the words: no rehearsal poster\'s name is left in `text`', () => {
+    for (const [key, line] of Object.entries(LINES) as [string, { text: string }][]) {
+      for (const name of ['Ironpudding', 'Cobaltpretzel', 'Barnacle Jim', 'Waffleknight', 'Plumber Wick', 'Sodapop Rex', 'Quillfern', 'Gravelbyte', 'Zephyrgoat', 'Mothwire', 'Dingleberry Ox', 'Crumpetmoon', 'Marmaladedrift', 'Bolthole', 'Lanternfish 97', 'Tanukibrine']) {
+        expect(line.text, `${key} still names ${name}`).not.toContain(name);
+      }
+    }
+  });
+
+  test('the two round-1 lines that are in no log are gone from the stage\'s sources', () => {
+    for (const gone of ['A question about boards, asked on a board. I will allow that this is efficient.', 'Two stars. Filed.']) {
+      expect(worldSource.includes(gone), `stage-world.ts still has "${gone}"`).toBe(false);
+      expect(playSource.includes(gone), `stage-play.ts still has "${gone}"`).toBe(false);
+    }
+  });
+
+  test('the world\'s filed post carries a real opener, and the boards the lines name are on the stage', async () => {
+    const { fake, made } = await stage();
+    const visits = (await fake.threadPage(made.thread, { page: 1 }, 50, []))!.visits;
+    expect(visits.map((v) => v.line)).toEqual([LINES.openerOtLooking.text]);
+    expect(Object.keys(made.lineBoards)).toEqual(expect.arrayContaining(['Help', 'Movies & TV', 'Video Games', 'Arts & Crafts', 'Pointless Post Palace']));
+    for (const slug of Object.values(made.lineBoards)) expect(await fake.boardPage(slug, 1, []), slug).not.toBeNull();
+  });
+});
+
+describe('R4: the GPT-2 text', () => {
+  test('the file has a `#` header, then the instance\'s real tail, 1373 characters with its leading space and blank lines', () => {
+    expect(tailFile.startsWith('# Real output of the You Were Saying? card: card_texts id 14')).toBe(true);
+    expect(tailFile).toContain('2026-11-21');
+    const tail = tailOf(tailFile);
+    expect(tail.length).toBe(1373);
+    expect(tail.startsWith(' coming up. All those people')).toBe(true);
+  });
+
+  test('the post is exactly the instance\'s post, by Human Josh, in the main thread after the dressed posts', async () => {
+    const { fake, made } = await stage();
+    expect(made.posts['gpt2']).toBeGreaterThan(made.posts['autocorrect']!);
+    const [act] = await fake.acts(made.thread, made.posts['gpt2']!, made.posts['gpt2']!);
+    expect((act!.currentPayload as { body: string }).body).toBe('Seriously what the fuck is a video game');
+    expect(act!.character).toBe(made.cast['Human Josh']);
+    expect(act!.id).toBe(made.acts['gpt2']);
+    expect(tailFile.split('\n')[0]).toContain('"Seriously what the fuck is a video game"');
+  });
+
+  test('gpt2() types exactly the file\'s tail under that post, as the card\'s own tail', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.gpt2).toBe('function');
+    const card = await play.gpt2();
+    const tails = await fake.tails([made.acts['gpt2']!]);
+    expect(tails.map((t) => t.play)).toEqual([card]);
+    expect(tails[0]!.text).toBe(tailOf(tailFile));
+  });
+
+  test('the pile\'s You Were Saying? on post 1 types the first 300 characters of the same tail', async () => {
+    const { fake, made, play } = await stage();
+    for (let i = 0; i < play.steps.length; i++) if (play.steps[i] === 'you-were-saying') await play.pile(i);
+    const tails = await fake.tails([made.acts['first']!]);
+    expect(tails).toHaveLength(1);
+    expect(tails[0]!.text).toBe(tailOf(tailFile).slice(0, 300));
+  });
+});
+
+describe('R4: the Staff\'s helpers', () => {
+  test('visit() opens a Mod\'s visit with a real opener on a post of the board the line names, and a quiz when asked', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.visit).toBe('function');
+    const v = await play.staff.visit('qc', null, { quiz: true });
+    expect(v.line).toBe(LINES.openerQcHelp.text);
+    const page = await fake.boardPage(made.lineBoards['Help']!, 1, []);
+    expect(page?.threads.map((t) => t.id)).toContain(v.thread);
+    const story = await fake.visitStory(v.thread, v.visit, v.post);
+    expect(story.end).toBeNull();
+    const seen = (await fake.threadPage(v.thread, { page: 1 }, 50, []))!.visits.find((x) => x.id === v.visit)!;
+    expect(seen.line).toBe(LINES.openerQcHelp.text);
+    expect(seen.charges[0]!.rule).toBe('the premise of Help');
+    expect(seen.challenge).toMatchObject({ kind: 'quiz', question: 'Which form is used to request another form?', choices: ['Form 1-A', 'Form 0', 'Form 27-B/6'] });
+    expect(JSON.stringify(seen.challenge)).not.toContain('answer');
+    expect((await fake.visitStory(v.thread, v.visit, v.post)).attempts).toHaveLength(0);
+  });
+
+  test('visit() on a post of the main thread, with ONTOPIC 5.0 and no quiz, is the distraction', async () => {
+    const { fake, made, play } = await stage();
+    const v = await play.staff.visit('ontopic', 4, { line: 'openerOtBreathing' });
+    expect(v.thread).toBe(made.thread);
+    expect(v.line).toBe(LINES.openerOtBreathing.text);
+    const seen = (await fake.threadPage(made.thread, { page: 1 }, 50, []))!.visits.find((x) => x.id === v.visit)!;
+    expect(seen.challenge.kind).toBe('distraction');
+  });
+
+  test('hallPass() has the post\'s author set a real Hall Pass, then a visit that it traps and ends', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.hallPass).toBe('function');
+    const h = await play.staff.hallPass(null);
+    const story = await fake.visitStory(h.thread, h.visit, h.post);
+    expect(story.end?.outcome).toBe('trapped');
+    expect(story.infraction).toBeNull();
+    const on = await fake.cardsOn(h.post, 30);
+    expect(on.find((a) => a.kind === 'set')?.id).toBe(h.set);
+    expect(on.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'hall-pass', trigger: 'visit', did: 'ended' });
+    fake.signInAs(made.owners['Snuckles']!);
+    expect((await fake.myFaceDown([h.set]))[h.set]).toBe('hall-pass');
+    fake.signInAs(made.viewer);
+  });
+
+  test('filing() writes the post the filing was aimed at, with the log\'s own words, and files it: the line, the points and the warn bar', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.filing).toBe('function');
+    const f = await play.staff.filing('qc', null, 'filingQcHelp');
+    const page = await fake.boardPage(made.lineBoards['Help']!, 1, []);
+    expect(page?.threads.map((t) => t.id)).toContain(f.thread);
+    const [aimed] = await fake.acts(f.thread, f.seq, f.seq);
+    expect((aimed!.currentPayload as { body: string }).body).toBe('respectfully, no.');
+    expect(aimed!.character).toBe(made.cast['D-Guy']);
+    const story = await fake.visitStory(f.thread, f.visit, f.post);
+    expect(story.end).toMatchObject({ outcome: 'filed', line: LINES.filingQcHelp.text });
+    expect(story.infraction?.points).toBe(2);
+    expect(story.warnPoints).toBe(2);
+  });
+
+  test('filing() with `by` writes the aimed post as the named character, so the film\'s own bar can rise', async () => {
+    const { fake, made, play } = await stage();
+    const f = await play.staff.filing('ontopic', null, 'filingOtPalace', { by: 'Snuckles' });
+    const [aimed] = await fake.acts(f.thread, f.seq, f.seq);
+    expect(aimed!.character).toBe(made.cast['Snuckles']);
+    expect((aimed!.currentPayload as { body: string }).body).toBe(LINES.filingOtPalace.post!.text);
+    /* Snuckles's bar already holds the 6 points of the world's own filed post. */
+    expect((await fake.visitStory(f.thread, f.visit, f.post)).warnPoints).toBe(8);
+  });
+
+  test('report() puts the page where the real Report button is on another character\'s post, and says what to press', async () => {
+    const { made, play } = await stage('Snuckles');
+    expect(typeof play.staff.report).toBe('function');
+    const r = await play.staff.report('Snuckles', made.posts['review']!);
+    expect(r.press[0]).toContain(`#post-${made.posts['review']} button "Report"`);
+    await expect(play.staff.report('Snuckles', made.posts['first']!)).rejects.toThrow(/own post/);
+    await expect(play.staff.report('D-Guy', made.posts['review']!)).rejects.toThrow(/as=D-Guy/);
+  });
+
+  test('appeal() writes a filing against the named character\'s own post, with the appeal still to make', async () => {
+    const { fake, made, play } = await stage('Serious Deer');
+    expect(typeof play.staff.appeal).toBe('function');
+    const a = await play.staff.appeal('Serious Deer');
+    const story = await fake.visitStory(a.thread, a.visit, a.post);
+    expect(story.end?.outcome).toBe('filed');
+    expect(story.appeal).toBeNull();
+    expect(story.infraction?.points).toBe(2);
+    expect(a.press.join(' ')).toMatch(/Appeal/);
+    await expect(play.staff.appeal('Snuckles')).rejects.toThrow(/as=Snuckles/);
+    expect(made.played).toBe('Serious Deer');
+  });
+
+  test('review() posts a star review in a thread: the one-star on the thread titled "a", and a five-star', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.review).toBe('function');
+    const one = await play.staff.review('stars');
+    const review = (await fake.acts(one.thread, 1, 20)).find((p) => p.id === one.post)!;
+    expect(review.character).toBe(made.staff['ontopic']);
+    expect((review.currentPayload as { body: string }).body).toBe(LINES.stars.text);
+    const opener = (await fake.acts(one.thread, 1, 1))[0]!;
+    expect((opener.currentPayload as { title?: string; body: string }).body).toBeDefined();
+    const five = await play.staff.review('fiveStars');
+    expect(((await fake.acts(five.thread, 1, 20)).find((p) => p.id === five.post)!.currentPayload as { body: string }).body).toBe(LINES.fiveStars.text);
+    await expect(play.staff.review('nope')).rejects.toThrow(/review/);
+  });
+
+  test('memo() posts the Boss\'s memos to his Mods in a thread, each a real one', async () => {
+    const { fake, made, play } = await stage();
+    const id = await play.staff.memo('main', 'orderNoAllowance');
+    const memo = (await fake.acts(made.thread, 1, 60)).find((a) => a.id === id)!;
+    expect((memo.currentPayload as { body: string }).body).toBe(LINES.orderNoAllowance.text);
+  });
+
+  test('created() and moved() are the Boss\'s notices with his reasons: a board made, a thread moved to World -1', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.created).toBe('function');
+    const board = await play.staff.created();
+    const moved = await play.staff.moved();
+    const announcements = (await fake.boardPage('announcements', 1, []))!.threads[0]!.id;
+    const acts = await fake.acts(announcements, 1, 80);
+    expect(JSON.stringify(acts.find((a) => a.id === board)!.payload)).toContain('The board is arguing whether a fangame is a video game.');
+    expect(JSON.stringify(acts.find((a) => a.id === moved.move)!.payload)).toContain('a monster movie is a boss fight with no controller');
+    const page = await fake.boardPage(made.boards.minus, 1, []);
+    expect(page?.threads.map((t) => t.id)).toContain(moved.thread);
+  });
+
+  test('handover() names the new Boss and posts the farewell and the arrival where the season news reads them', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.handover).toBe('function');
+    const h = await play.staff.handover();
+    const announcements = (await fake.boardPage('announcements', 1, []))!.threads[0]!.id;
+    const posts = await fake.acts(announcements, 1, 80);
+    expect((posts.find((p) => p.id === h.farewell)!.currentPayload as { body: string }).body).toBe(LINES.farewell.text);
+    expect((posts.find((p) => p.id === h.arrival)!.currentPayload as { body: string }).body).toBe(LINES.arrival.text);
+    expect(posts.find((p) => p.id === h.farewell)!.character).toBe(made.staff['fangame']);
+    expect(posts.find((p) => p.id === h.arrival)!.character).toBe(made.staff['qc']);
+    expect(h.note).toBe(LINES.handoff.text);
   });
 });
