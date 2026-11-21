@@ -2081,6 +2081,18 @@ describe('a cutting card in the Gimmick\'s player\'s and the cutter\'s logs', ()
     await expect(around(api, { ...empty, cards: [played('g1'), played('g3')] }, own)).rejects.toThrow('down');
   });
 
+  test('a later page asks for the play a cut it reads names, so an ended cutter\'s row knows whether another still holds it', async () => {
+    const asked: (readonly string[])[] = [];
+    const reversed = act('c9', 'card', 'r', { targetActId: 'post3', createdAt: '2026-10-28T09:30:00.000Z', payload: { card: 'bk', cut: { play: 'g9', card: 'gm' } } });
+    const api = {
+      actsById: async (ids: readonly string[]) => (ids.includes('c9') ? [reversed] : []), effectStates: async () => ({}), characters: async () => [], thread: async () => null, board: async () => null,
+      actsCutting: async (plays: readonly string[]) => { asked.push(plays); return []; },
+    } as unknown as KayfaApi;
+    const ended = [{ cardEnd: 'e-c9', play: 'c9', card: 'bk', at: '2026-10-29T10:00:00.000Z', side: 'onMine' as const, reach: 'post' as const, targetName: null, postAuthorName: 'Pipewrench', casterName: 'Quill', character: 'p' }];
+    await around(api, { ...empty, ended }, data({ mine: [char('p', 'Pipewrench', 'heel')] }));
+    expect(asked).toEqual([['g9']]);
+  });
+
   describe('the back-up line of an ended cutting play', () => {
     const second = act('c3', 'card', 'r', { targetActId: 'post3', createdAt: '2026-10-28T09:30:00.000Z', payload: { card: 'bk', cut: { play: 'g1', card: 'gm' } } });
     const entry = (play: string) => ({ cardEnd: `e-${play}`, play, card: 'bk', at: '2026-10-29T10:00:00.000Z', side: 'onMine' as const, reach: 'post' as const, targetName: null, postAuthorName: 'Pipewrench', casterName: 'Quill', character: 'p' });

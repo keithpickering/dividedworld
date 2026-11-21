@@ -264,13 +264,17 @@ describe('the alerts, updates, queue and log loaders', () => {
   });
 
   test('the log reads the Acts that cut its page\'s plays, past those the page holds, and a failed read fails the page', async () => {
-    const logPage = () => Promise.resolve({ acts: [{ id: 'k1' }, { id: 'c0' }], log: { cards: [{ act: 'k1' }, { act: 'k1' }, { act: 'k2' }] } });
+    /* c0 is a reversed cutter the page names (its ended row): the play it cut is asked too, as another cutter may still hold it. */
+    const logPage = () => Promise.resolve({ acts: [{ id: 'k1' }, { id: 'c0', kind: 'card', payload: { cut: { play: 'g9', card: 'kick' } } }], log: { cards: [{ act: 'k1' }, { act: 'k1' }, { act: 'k2' }, { act: null }] } });
     const estimate = () => Promise.resolve({ lines: [] });
     const actsCutting = vi.fn(() => Promise.resolve([{ id: 'c0' }, { id: 'c1' }]));
     const doc = await loadLog({ api: apiOf({ logPage, estimate, actsCutting }), signedIn: signed(true) }, chunk);
-    expect(actsCutting).toHaveBeenCalledWith(['k1', 'k2']);
+    expect(actsCutting).toHaveBeenCalledWith(['k1', 'k2', 'g9']);
     expect((doc as { page: { acts: readonly { id: string }[] } }).page.acts.map((a) => a.id)).toEqual(['k1', 'c0', 'c1']);
     await expect(loadLog({ api: apiOf({ logPage, estimate, actsCutting: () => Promise.reject(new Error('down')) }), signedIn: signed(true) }, chunk)).rejects.toThrow('down');
+    const cutting = vi.fn(() => Promise.resolve([]));
+    await expect(loadLog({ api: apiOf({ logPage: () => Promise.reject(new Error('lost')), estimate, actsCutting: cutting }), signedIn: signed(true) }, chunk)).rejects.toThrow('lost');
+    expect(cutting).not.toHaveBeenCalled();
   });
 
   test('a failed estimate leaves the log without one, and a slow one is not waited for past its bound', async () => {
