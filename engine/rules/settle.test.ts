@@ -2591,6 +2591,12 @@ test('a tallied earning comes back in `tallied`, summed by Act and reason across
   assert.deepEqual(settle(debateBoard([post('p1', 'ann-1', FROM + 1 * H)], []), debateWorld(spy().rules)).tallied, []);
 });
 
+test('a tallied earning with no act is refused, since a tally is kept by Act', () => {
+  const bare: ClassRules = { key: 'quiet', name: 'Quiet', earn: (i) => (i.character !== 'ann-1' ? [] : [{ reason: 'quiet.fuse', amount: 5, tally: true }]) };
+  const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H)], [quote('a', 'p1')]);
+  assert.throws(() => settle(b, debateWorld(bare)), /tallied quiet\.fuse with no act/);
+});
+
 test('a spark older than debateDays with a nonzero tallied sum and a vote moved on it in the window is handed with its paid; without the sum it is not', () => {
   const run = (tallied?: SettlementInput['tallied']) => {
     const { rules, inputs } = spy();
