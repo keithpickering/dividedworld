@@ -548,6 +548,8 @@ export interface SettlementInput {
   readonly scoredAs?: readonly { readonly character: string; readonly class: string; readonly play: string }[];
   /** Each quote among the input's Acts: `act` quotes `quoted`. */
   readonly quotes?: readonly { readonly act: string; readonly quoted: string }[];
+  /** The sums of the tallied earnings (`Earning.tally`) of earlier windows, by Act and reason, for the Acts the input hands as sparks. */
+  readonly tallied?: readonly { readonly act: string; readonly reason: string; readonly amount: number }[];
   /**
    * What earlier windows paid for each player's vote on each Act this window's reactions touch
    * (engine/rules/votes.ts's payVotes): its weight, and each quadrant's share at it.
@@ -709,6 +711,10 @@ export interface SparkedDebate {
   readonly standing: { readonly before: readonly Standing[]; readonly now: readonly Standing[] };
   /** The largest share of a cushion play that has been up on the post or on its character at any time since the post was made; 0 with none. */
   readonly cushioned: number;
+  /** What earlier windows' tallied earnings (`Earning.tally`) summed to on this post, by reason; `{}` with none. */
+  readonly paid: Readonly<Record<string, number>>;
+  /** True in the one stretch this debate is placed in: the one its latest member, or its latest moved vote, falls in. Every spark is handed to every stretch of the window. */
+  readonly placed: boolean;
 }
 
 /**
@@ -728,7 +734,7 @@ export interface ClassInput {
   readonly threadsSpun: readonly SpunThread[];
   /** The character's own Acts with a vote moved in the window, each with every other player's vote there. */
   readonly standings: readonly ActStanding[];
-  /** The character's posts whose debate a post reached in this stretch, or on which a vote moved in it while the debate is followed, each with its debate. */
+  /** Every one of the character's posts whose debate a post reached in the window, or on which a vote moved with a tally or a debate still followed, each with its debate, in every stretch; `placed` says which stretch it falls in. */
   readonly debates: readonly SparkedDebate[];
 }
 
@@ -749,6 +755,11 @@ export interface Earning {
    */
   readonly params?: Readonly<Record<string, number | string>>;
   readonly act?: string;
+  /**
+   * Keep this earning's window sum by (`act`, `reason`): the settlement returns it as `tallied`, the store holds the running sums and hands them
+   * back as `SettlementInput.tallied`, and a class reads them as `SparkedDebate.paid`. Needs `act`. The engine names no reason: it sums what a class marks.
+   */
+  readonly tally?: true;
   readonly quadrant?: Quadrant;
   /** The kind of the one reaction it pays for, where it pays for one: an earn gimmick that names reactions boosts by it. */
   readonly kind?: string;
