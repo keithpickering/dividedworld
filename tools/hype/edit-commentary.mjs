@@ -199,10 +199,12 @@ export function captions(commentary, tl) {
 }
 
 /**
- * Where the burned-in caption band sits, for a cue's words: `top` (the default; the game's HUD is at the foot), `foot`, or `off` (null).
- * The band is as tall as its words need, one row or two (a line of more than 70 characters wraps to a second; never a third): rows of 40 px
- * (FontSize 9 on libass's 288-line page is 34 px). `force_style`'s Alignment is the legacy SSA numbering: 2 is bottom-center and 6 top-center (8 would be
- * mid-height: the first cut's captions came out in the middle of the frame) and a margin of 8 px above and below. `marginV` is libass's, on that 288-line page.
+ * Where the burned-in caption sits, for a cue's words: `top` (the default; the game's HUD is at the foot), `foot`, or `off` (null).
+ * The band is a pill, no wider than its words plus their padding (libass's own opaque box, BorderStyle 3, which hugs each row of text), so as little
+ * of the page as the words need is covered: the first cut's full-width bar dimmed the breadcrumb and brushed the thread title. It is as tall as its
+ * words need, one row or two (a line of more than 70 characters wraps to a second; never a third): rows of 40 px (FontSize 9 on libass's 288-line
+ * page is 34 px). `force_style`'s Alignment is the legacy SSA numbering: 2 is bottom-center and 6 top-center (8 would be mid-height) and a margin of
+ * 8 px above and below. `marginV` is libass's, on that 288-line page; `h` is the band's height in the film's pixels (the most it can cover).
  * @param {'top' | 'foot' | 'off'} mode @param {string} text
  * @returns {{ y: number, h: number, alignment: 2 | 6, marginV: number } | null}
  */
@@ -210,6 +212,19 @@ export function captionBand(mode, text) {
   if (mode === 'off') return null;
   const rows = text.length > 70 ? 2 : 1, h = 8 + rows * 40 + 8;
   return mode === 'top' ? { y: 0, h, alignment: 6, marginV: 2 } : { y: 1080 - h, h, alignment: 2, marginV: 3 };
+}
+
+/**
+ * The filters that burn a cut's captions in: one `subtitles` filter, its words in a translucent pill (an opaque box libass draws behind each
+ * row, in the outline's color: black at 62%) with the padding of its outline, and no full-width bar. Pure.
+ * @param {'top' | 'foot' | 'off'} mode @param {string} srtFile @param {string} font the family
+ * @returns {string[]}
+ */
+export function captionFilters(mode, srtFile, font) {
+  const edge = captionBand(mode, '');
+  if (!edge) return [];
+  const style = `FontName=${font},FontSize=9,PrimaryColour=&HFFFFFF&,OutlineColour=&H61000000&,BackColour=&HFF000000&,BorderStyle=3,Outline=2,Shadow=0,Alignment=${edge.alignment},MarginV=${edge.marginV},MarginL=19,MarginR=19`;
+  return [`subtitles=filename='${esc(srtFile)}':original_size=1920x1080:force_style='${style}'`];
 }
 
 /** The caption mode the command line asks for: `--captions top|foot|off`, `--clean` being `off`. @param {string[]} args @returns {'top' | 'foot' | 'off'} */
@@ -539,13 +554,7 @@ async function main() {
     if (local.length && CAPTIONS !== 'off') {
       const f = path.join(WORK, `cap-${String(i).padStart(3, '0')}.srt`);
       writeFileSync(f, srt(local));
-      /* One translucent band a cue, as tall as that cue's words need; the words are libass's, placed at the same edge. */
-      for (const c of local) {
-        const b = /** @type {NonNullable<ReturnType<typeof captionBand>>} */ (captionBand(CAPTIONS, c.text));
-        chain.push(`drawbox=x=0:y=${b.y}:w=iw:h=${b.h}:color=black@0.62:t=fill:enable='between(t,${Math.max(0, c.start).toFixed(3)},${c.end.toFixed(3)})'`);
-      }
-      const edge = /** @type {NonNullable<ReturnType<typeof captionBand>>} */ (captionBand(CAPTIONS, ''));
-      chain.push(`subtitles=filename='${esc(f)}':original_size=1920x1080:force_style='FontName=${sans},FontSize=9,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,Outline=0.6,Shadow=0,BorderStyle=1,Alignment=${edge.alignment},MarginV=${edge.marginV},MarginL=19,MarginR=19'`);
+      chain.push(...captionFilters(CAPTIONS, f, sans));
     }
     run([...input, '-vf', chain.join(','), '-frames:v', String(p.frames), '-r', String(F), '-an', '-c:v', 'libx264', '-preset', PRESET, '-crf', '17', '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', file], `encode ${p.name}`);
     console.log(`${(p.startFrame / F).toFixed(2).padStart(8)} s  ${p.name.padEnd(12)} ${p.frames} frames${p.take ? ` of ${path.basename(p.take)}` : p.slate ? ' (slate)' : ''}${p.cut?.move ? ' (move)' : ''}${p.cut?.punch || p.cut?.punches ? ' (punch)' : ''}`);

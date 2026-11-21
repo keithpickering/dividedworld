@@ -499,3 +499,14 @@ test('a move of one frame is its from rectangle, as the ffmpeg expression has it
   assert.match(e.w, /min\(1,on\/1\)/);
   near(cutRect(cut, 0).w, from.w);
 });
+
+test('the caption is a pill no wider than its words: libass\'s own box, never a bar the width of the frame', () => {
+  const [filter, ...rest] = ec.captionFilters('top', '/tmp/cap.srt', 'Verdana');
+  assert.equal(rest.length, 0, 'one filter: no drawbox beside it');
+  assert.doesNotMatch(filter, /drawbox/);
+  assert.match(filter, /BorderStyle=3/, 'an opaque box drawn behind each row of text, as wide as that row');
+  assert.match(filter, /Alignment=6/);
+  assert.match(filter, /OutlineColour=&H61000000&/, 'black at 62%, as the band was');
+  assert.deepEqual(ec.captionFilters('off', '/tmp/cap.srt', 'Verdana'), []);
+  assert.match(ec.captionFilters('foot', '/tmp/cap.srt', 'Verdana')[0], /Alignment=2/);
+});
