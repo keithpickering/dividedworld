@@ -231,6 +231,43 @@ describe('placing again', () => {
     expect(s.box.style.maxHeight).toBe(`${700 - 4}px`);
   });
 
+  test('a low sheet takes the low share of the room, and a dock ignores it (the owner, 2026-11-21: a replay is hard to see under the full sheet)', () => {
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this.hasAttribute(PROBE_ATTRIBUTE) ? new DOMRect(0, 0, 0, 856) : real.call(this);
+    });
+    height = 600;
+    const s = stage();
+    placeFloat(s.wrap, s.box, s.anchor, true, null, true);
+    const low = Math.floor((856 - 100 - 4) * 0.28);
+    expect(s.box.style.maxHeight).toBe(`${low}px`);
+    placeFloat(s.wrap, s.box, s.anchor, true, null, false);
+    expect(s.box.style.maxHeight).toBe(`${Math.floor((856 - 100 - 4) * 0.55)}px`);
+    placeFloat(s.wrap, s.box, s.anchor, false, null, true);
+    expect(s.box.style.height).toBe(`${700 - 2 * DOCK_INSET}px`);
+  });
+
+  test('a sheet held low is placed again, and the page scrolled for its new height', async () => {
+    const scroll = vi.fn();
+    window.scrollBy = scroll as unknown as typeof window.scrollBy;
+    height = 600;
+    const s = stage({ anchor: { top: 620, left: 300, right: 330, bottom: 650 } });
+    const anchor = { current: s.anchor as HTMLElement | null };
+    const shown = (low: boolean) => (
+      <KayfaProvider value={kayfa}>
+        <Float label="Lens" surface="effect" anchor={anchor} sheet low={low} onClose={() => {}}>words</Float>
+      </KayfaProvider>
+    );
+    const view = render(shown(false));
+    const box = document.querySelector<HTMLElement>('.kb-float-box')!;
+    const tall = box.style.maxHeight;
+    expect(scroll).toHaveBeenCalledTimes(1);
+    view.rerender(shown(true));
+    await frame();
+    expect(parseFloat(box.style.maxHeight)).toBeLessThan(parseFloat(tall));
+    expect(scroll).toHaveBeenCalledTimes(2);
+  });
+
   test('nothing moved, nothing is placed: a scroll with the anchor and the float where they were leaves the placement alone', async () => {
     const s = stage();
     const view = mount(s, false);
