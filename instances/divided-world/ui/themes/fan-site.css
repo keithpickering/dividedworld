@@ -1,6 +1,7 @@
 /*
- * Fan Site, a tribute: classic MFGG blue, as a fan-game board wore it. A black page under a dim tile of navy rectangles (where a row gap and
- * a column gap of black cross, drawn from plain gradients, never a sprite and never a fetch), royal-blue panels with pale-blue text, a teal
+ * Fan Site, a tribute: classic MFGG blue, as a fan-game board wore it. A black page under a dim tile of navy mushrooms, one to each 40px
+ * square (top layer first: three black spots, a stout stem, a black cut that halves the cap's oval, the cap, the black ground; drawn from
+ * plain gradients, never a sprite and never a fetch), royal-blue panels with pale-blue text, a teal
  * bar, yellow links in the boards' bar, and column heads in the old grid-of-squares texture. Dark only, so it sets its tokens on :root and
  * in both dark blocks alike (the board look design, section 1). The game's own pieces keep the house theme's colors.
  */
@@ -43,7 +44,7 @@
   --kb-vignette-foot: 0.45;
   --kb-fg: #c4d8ff;
   --kb-bg: #000;
-  --kb-page-bg: repeating-linear-gradient(0deg, #000 0 18px, transparent 18px 30px), repeating-linear-gradient(90deg, #000 0 24px, transparent 24px 40px), #0a1448;
+  --kb-page-bg: radial-gradient(circle 3px at 20px 11px, #000 98%, transparent 100%) 0 0 / 40px 40px, radial-gradient(circle 2.5px at 11px 17px, #000 98%, transparent 100%) 0 0 / 40px 40px, radial-gradient(circle 2.5px at 29px 17px, #000 98%, transparent 100%) 0 0 / 40px 40px, radial-gradient(9px 11px at 20px 20px, #0a1448 98%, transparent 100%) 0 0 / 40px 40px, linear-gradient(transparent 20px, #000 20px) 0 0 / 40px 40px, radial-gradient(16px 14px at 20px 20px, #0a1448 98%, transparent 100%) 0 0 / 40px 40px, #000;
   --kb-rule: #7f9cf0;
   --kb-muted: #a2bcf2;
   --kb-link: #fff;
@@ -141,7 +142,7 @@
     --kb-vignette-foot: 0.45;
     --kb-fg: #c4d8ff;
     --kb-bg: #000;
-    --kb-page-bg: repeating-linear-gradient(0deg, #000 0 18px, transparent 18px 30px), repeating-linear-gradient(90deg, #000 0 24px, transparent 24px 40px), #0a1448;
+    --kb-page-bg: radial-gradient(circle 3px at 20px 11px, #000 98%, transparent 100%) 0 0 / 40px 40px, radial-gradient(circle 2.5px at 11px 17px, #000 98%, transparent 100%) 0 0 / 40px 40px, radial-gradient(circle 2.5px at 29px 17px, #000 98%, transparent 100%) 0 0 / 40px 40px, radial-gradient(9px 11px at 20px 20px, #0a1448 98%, transparent 100%) 0 0 / 40px 40px, linear-gradient(transparent 20px, #000 20px) 0 0 / 40px 40px, radial-gradient(16px 14px at 20px 20px, #0a1448 98%, transparent 100%) 0 0 / 40px 40px, #000;
     --kb-rule: #7f9cf0;
     --kb-muted: #a2bcf2;
     --kb-link: #fff;
@@ -239,7 +240,7 @@
   --kb-vignette-foot: 0.45;
   --kb-fg: #c4d8ff;
   --kb-bg: #000;
-  --kb-page-bg: repeating-linear-gradient(0deg, #000 0 18px, transparent 18px 30px), repeating-linear-gradient(90deg, #000 0 24px, transparent 24px 40px), #0a1448;
+  --kb-page-bg: radial-gradient(circle 3px at 20px 11px, #000 98%, transparent 100%) 0 0 / 40px 40px, radial-gradient(circle 2.5px at 11px 17px, #000 98%, transparent 100%) 0 0 / 40px 40px, radial-gradient(circle 2.5px at 29px 17px, #000 98%, transparent 100%) 0 0 / 40px 40px, radial-gradient(9px 11px at 20px 20px, #0a1448 98%, transparent 100%) 0 0 / 40px 40px, linear-gradient(transparent 20px, #000 20px) 0 0 / 40px 40px, radial-gradient(16px 14px at 20px 20px, #0a1448 98%, transparent 100%) 0 0 / 40px 40px, #000;
   --kb-rule: #7f9cf0;
   --kb-muted: #a2bcf2;
   --kb-link: #fff;

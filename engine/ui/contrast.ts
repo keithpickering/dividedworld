@@ -181,7 +181,9 @@ function substitute(tokens: Tokens, value: string, seen: readonly string[]): str
   }
 }
 
-const GRADIENT = /^(?:repeating-)?(?:linear|radial|conic)-gradient\((.*)\)$/isu;
+/* A layer is a gradient, then optionally where it sits and how big one tile of it is (`0 0 / 40px 40px`), as the
+   background shorthand takes them; the tail holds no color, so only its shape is checked. */
+const GRADIENT = /^(?:repeating-)?(?:linear|radial|conic)-gradient\((.*)\)((?:\s*\/\s*|\s+(?:[-+]?\d*\.?\d+(?:%|px|em|rem)?|left|right|top|bottom|center|auto|cover|contain|repeat|no-repeat|repeat-x|repeat-y|space|round))*)$/isu;
 /** What a gradient's argument may be when it holds no color: a direction, a shape or position, an interpolation, a hint. */
 const WORD = '(?:to|in|from|at|circle|ellipse|closest-side|closest-corner|farthest-side|farthest-corner|left|right|top|bottom|center'
   + '|srgb|srgb-linear|lab|oklab|lch|oklch|hsl|hwb|xyz|xyz-d50|xyz-d65|shorter|longer|increasing|decreasing|hue)';
@@ -191,8 +193,8 @@ const NO_COLOR = new RegExp(`^(?:${WORD}|${NUM})(?:\\s+(?:${WORD}|${NUM}))*$`, '
 const COLOR = /^(#[0-9a-f]{3,6}|rgba?\([^)]*\)|transparent)(?:\s+[-+]?\d*\.?\d+(?:%|px|em|rem|deg|turn)?){0,2}$/iu;
 
 /**
- * Every color a background value paints, stop by stop: a plain color, a gradient (linear, radial, conic, repeating) or
- * layers of them separated by commas; a `transparent` stop is skipped, and is refused in the last layer, which has nothing
+ * Every color a background value paints, stop by stop: a plain color, a gradient (linear, radial, conic, repeating),
+ * which may be followed by its position, tile size and repeat, or layers of them separated by commas; a `transparent` stop is skipped, and is refused in the last layer, which has nothing
  * under it to read. A value that holds anything else (a url(), a named color, a color with alpha, a
  * gradient it cannot take apart) throws, so the check fails on it rather than passing over it.
  */

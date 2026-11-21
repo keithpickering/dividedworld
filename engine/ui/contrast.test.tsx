@@ -233,6 +233,14 @@ describe('the page\'s own ground (--kb-page-bg) is held as the page is', () => {
       expect(f.some((x) => x.includes(what) && /page ground/u.test(x)), `${what} on the page ground\n${f.join('\n')}`).toBe(true);
     }
   });
+  test('a layer may carry its own position and tile size, and its stops are still held', () => {
+    const inks = '--kb-bg: #000; --kb-fg: #fff; --kb-muted: #fff; --kb-link: #fff; --kb-link-visited: #fff; --kb-link-hover: #fff; --kb-rule: #fff; --kb-focus: #fff; --kb-pip: #fff;';
+    const sized = (c: string) => `radial-gradient(16px 14px at 20px 20px, ${c} 98%, transparent 100%) 0 0 / 40px 40px, #000`;
+    expect(pageFails(`${inks} --kb-page-bg: ${sized('#0a1448')};`)).toEqual([]);
+    expect(pageFails(`${inks} --kb-page-bg: ${sized('#cccccc')};`).length).toBeGreaterThan(0);
+    /* What follows the gradient may only place and size it: anything else is not read past. */
+    expect(pageFails(`${inks} --kb-page-bg: radial-gradient(#000, #000) banana, #000;`).some((x) => /cannot (be )?read/u.test(x))).toBe(true);
+  });
   test('a page ground it cannot read fails closed', () => {
     expect(pageFails('--kb-page-bg: url(x.png);').some((x) => /cannot (be )?read/u.test(x))).toBe(true);
   });
