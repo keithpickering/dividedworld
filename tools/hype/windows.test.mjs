@@ -5,18 +5,10 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { windows, fit, sheet, checkMap } from './windows.mjs';
+import { windows, fit, sheet } from './windows.mjs';
+import { madeUp } from './made-up.mjs';
 
-const entries = (from, step) => Array.from({ length: 6 }, (_, i) => ({ t: from + i * step, confident: false, derived: true }));
-const map = {
-  firstNote: { t: 10, confident: true },
-  blocks: [
-    { id: 1, start: 10, end: 70, confident: false, entries: entries(10, 10) },
-    { id: 2, start: 70, end: 100, confident: false, entries: entries(70, 5) },
-    { id: 3, start: 100, end: 130, confident: true, entries: entries(100, 5) },
-  ],
-  coda: { chords: [130, 132, 140, 141, 150].map((t) => ({ t, confident: true })), end: { t: 155, confident: true } },
-};
+const map = madeUp();
 const FRAME = 1 / 60;
 
 test('the windows cover the music from the first note to the last chord with no gap and no overlap', () => {
@@ -126,10 +118,4 @@ test('fit refuses a clip length that is NaN, negative, infinite or not a number,
   assert.throws(() => fit(ws, { n11: [1, NaN, 2] }), /n11 has a clip length/);
   assert.throws(() => fit(ws, { n11: [1, -2, 2] }), /n11 has a clip length/);
   assert.doesNotThrow(() => fit(ws, { n05: 0, n11: [1, 2, 3] }));
-});
-
-test("a map whose first note is not block 1's start, or whose block 3 does not end on the first coda chord, is refused naming both times", () => {
-  assert.doesNotThrow(() => checkMap(map));
-  assert.throws(() => checkMap({ ...map, firstNote: { t: 10.5 } }), /first note \(10\.5\).*block 1 starts \(10\)/);
-  assert.throws(() => checkMap({ ...map, blocks: [map.blocks[0], map.blocks[1], { ...map.blocks[2], end: 129 }] }), /block 3 ends at 129.*first coda chord \(130\)/);
 });

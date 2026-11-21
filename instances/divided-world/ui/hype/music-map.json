@@ -1,166 +1,223 @@
 {
   "source": "https://archive.org/download/MusopenCollectionAsFlac/Greig_PeerGynt/EdvardGrieg-PeerGyntSuiteNo.1Op.46-04-InTheHallOfTheMountainKing.flac",
-  "note": "This file was fetched from the Internet Archive's Musopen collection because Wikimedia Commons rate-limited the fetch; it is the same recording the design names (the Czech National Symphony Orchestra's, 2012), the same length, 154.09 s.",
+  "note": "The Czech National Symphony Orchestra's recording (Musopen, 2012), fetched from the Internet Archive's Musopen collection. Measured by the analysis in .runs/hype/musiccut (README.md there): the statements' starts are the downbeat transients, good to about 10 ms in block 1 and 40 ms in block 2 (slow string attacks); statements 14 to 18 (block 3, a continuous tutti with no rest to measure) were ESTIMATED ON A BEAT GRID, good to about 70 ms. A statement is 16 beats, four bars; its length runs to the next one's start (statement 18's to the end of its sixteenth beat, 0.9 s before the coda's first chord). The coda's chords are the transient nearest each in the first measurement, within 100 ms. Nobody listened; every number is measured. Times are seconds of the recording; `versions` are the recipes music-cut.mjs renders.",
   "seconds": 154.09,
   "sha1": "7d34c97620149eff83bc14a1e838ef5d8e66746b",
-  "firstNote": {
-    "t": 0.5,
+  "drone": {
+    "start": 0.5,
+    "end": 4.378,
     "confident": true
   },
-  "blocks": [
+  "statements": [
     {
-      "id": 1,
-      "start": 0.5,
-      "end": 64.35,
-      "confident": false,
-      "entries": [
-        {
-          "t": 0.5,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 11.14,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 21.78,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 32.42,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 43.07,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 53.71,
-          "confident": false,
-          "derived": true
-        }
-      ]
+      "n": 1,
+      "block": 1,
+      "start": 4.378,
+      "length": 9.077,
+      "beats": 16,
+      "confident": true
     },
     {
-      "id": 2,
-      "start": 64.35,
-      "end": 100.3,
-      "confident": false,
-      "entries": [
-        {
-          "t": 64.35,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 70.34,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 76.33,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 82.33,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 88.32,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 94.31,
-          "confident": false,
-          "derived": true
-        }
-      ]
+      "n": 2,
+      "block": 1,
+      "start": 13.455,
+      "length": 8.884,
+      "beats": 16,
+      "confident": true
     },
     {
-      "id": 3,
-      "start": 100.3,
-      "end": 135.15,
-      "confident": true,
-      "entries": [
-        {
-          "t": 100.3,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 106.11,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 111.92,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 117.73,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 123.53,
-          "confident": false,
-          "derived": true
-        },
-        {
-          "t": 129.34,
-          "confident": false,
-          "derived": true
-        }
-      ]
+      "n": 3,
+      "block": 1,
+      "start": 22.339,
+      "length": 8.83,
+      "beats": 16,
+      "confident": true
+    },
+    {
+      "n": 4,
+      "block": 1,
+      "start": 31.169,
+      "length": 9.03,
+      "beats": 16,
+      "confident": true
+    },
+    {
+      "n": 5,
+      "block": 1,
+      "start": 40.199,
+      "length": 8.946,
+      "beats": 16,
+      "confident": true
+    },
+    {
+      "n": 6,
+      "block": 1,
+      "start": 49.145,
+      "length": 8.983,
+      "beats": 16,
+      "confident": true
+    },
+    {
+      "n": 7,
+      "block": 2,
+      "start": 58.128,
+      "length": 8.385,
+      "beats": 16,
+      "confident": false
+    },
+    {
+      "n": 8,
+      "block": 2,
+      "start": 66.513,
+      "length": 7.946,
+      "beats": 16,
+      "confident": false
+    },
+    {
+      "n": 9,
+      "block": 2,
+      "start": 74.459,
+      "length": 7.602,
+      "beats": 16,
+      "confident": false
+    },
+    {
+      "n": 10,
+      "block": 2,
+      "start": 82.061,
+      "length": 7.212,
+      "beats": 16,
+      "confident": false
+    },
+    {
+      "n": 11,
+      "block": 2,
+      "start": 89.273,
+      "length": 6.634,
+      "beats": 16,
+      "confident": false
+    },
+    {
+      "n": 12,
+      "block": 2,
+      "start": 95.907,
+      "length": 6.425,
+      "beats": 16,
+      "confident": false
+    },
+    {
+      "n": 13,
+      "block": 3,
+      "start": 102.332,
+      "length": 5.802,
+      "beats": 16,
+      "confident": true
+    },
+    {
+      "n": 14,
+      "block": 3,
+      "start": 108.134,
+      "length": 5.592,
+      "beats": 16,
+      "confident": false
+    },
+    {
+      "n": 15,
+      "block": 3,
+      "start": 113.727,
+      "length": 5.338,
+      "beats": 16,
+      "confident": false
+    },
+    {
+      "n": 16,
+      "block": 3,
+      "start": 119.064,
+      "length": 5.283,
+      "beats": 16,
+      "confident": false
+    },
+    {
+      "n": 17,
+      "block": 3,
+      "start": 124.347,
+      "length": 5.078,
+      "beats": 16,
+      "confident": false
+    },
+    {
+      "n": 18,
+      "block": 3,
+      "start": 129.426,
+      "length": 4.834,
+      "beats": 16,
+      "confident": false
     }
   ],
   "coda": {
     "chords": [
       {
-        "t": 135.15,
+        "t": 135.146,
         "confident": true
       },
       {
-        "t": 136.1,
+        "t": 136.114,
         "confident": true
       },
       {
-        "t": 139.05,
-        "confident": false
-      },
-      {
-        "t": 140,
+        "t": 139.076,
         "confident": true
       },
       {
-        "t": 142.95,
-        "confident": false
-      },
-      {
-        "t": 143.9,
+        "t": 140.026,
         "confident": true
       },
       {
-        "t": 144.85,
+        "t": 142.951,
         "confident": true
       },
       {
-        "t": 148.25,
-        "confident": false
+        "t": 143.894,
+        "confident": true
+      },
+      {
+        "t": 144.841,
+        "confident": true
+      },
+      {
+        "t": 148.252,
+        "confident": true
       }
     ],
     "end": {
-      "t": 151.3,
+      "t": 151.302,
       "confident": true
+    }
+  },
+  "versions": {
+    "mk-a": {
+      "remove": [
+        2,
+        3
+      ],
+      "join": {
+        "from": 13.408,
+        "to": 31.134667
+      },
+      "crossfadeMs": 40,
+      "note": "2:16.4; the join is in the rest before statement 2's downbeat and enters in the rest before statement 4's, 40 ms equal-power crossfade; the analysis's mk-A (tempo step 1.007, level +0.1 dB)."
+    },
+    "mk-b": {
+      "remove": [
+        2,
+        5
+      ],
+      "join": {
+        "from": 13.408,
+        "to": 49.103583
+      },
+      "crossfadeMs": 40,
+      "note": "1:58.4; as mk-a but entering before statement 6's downbeat (tempo step 1.007, level -0.6 dB); the best join of the set, and the one the owner chose by ear."
     }
   }
 }

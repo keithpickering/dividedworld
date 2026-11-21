@@ -1,7 +1,7 @@
 /**
  * The music's windows: where each commentary node of parts two and three sits in the recording, which cannot stretch, so a voice clip
- * must fit the window it is given (docs/plans/2026-11-21-commentary-video-design.md, section 5). Pure: it reads a map (music-map.mjs's
- * output) and arguments, and touches nothing else.
+ * must fit the window it is given (docs/plans/2026-11-21-commentary-video-design.md, section 5). Pure: it reads a map (music-map.json's
+ * shape: music.mjs's) and arguments, and touches nothing else.
  *
  * Nodes 5 and 6 share block 1, 7 and 8 block 2, 9 and 10 block 3. A block is split between its two nodes by `shares` (default
  * [0.5, 0.5], [0.6, 0.4], [0.57, 0.43]), or, when `clips` gives the nodes' lengths in seconds, in proportion to those lengths with
@@ -9,6 +9,9 @@
  * overlap. Node 11 is the coda: one gap between two chords to each of its lines (`fragments`, default 3). When the coda has more gaps
  * than the node has lines, the longest gaps are used, in the order they come, since a line is spoken into a gap and the longer the gap
  * the more of the line survives the next chord.
+ *
+ * The map is music-map.json's (the recording's measured `statements`): a block is its six statements, the first from the drone's start, and
+ * block 3 ends on the first coda chord.
  *
  * Each window and each gap carries `confident`: false when either of its ends is a time the music-map is not sure of or one this
  * function chose (the split between two nodes of a block is chosen, so those windows are always false).
@@ -22,15 +25,27 @@ const DEFAULT_SHARES = [[0.5, 0.5], [0.6, 0.4], [0.57, 0.43]];
 const FLOOR = 0.35;
 const id = (/** @type {number} */ n) => `n${String(n).padStart(2, '0')}`;
 
+/** @typedef {{ drone: { start: number }, statements: { block: number, start: number, confident: boolean }[], coda: { chords: { t: number, confident?: boolean }[], end: { t: number, confident?: boolean } } }} Map */
+
 /**
- * @param {{ firstNote?: { confident: boolean }, blocks: { start: number, end: number, confident?: boolean }[], coda: { chords: { t: number, confident?: boolean }[], end: { t: number, confident?: boolean } } }} map
+ * The three blocks of a map: where each begins and ends, and whether both of those are measured. Block 1 begins at the drone, block 3 ends on the first coda chord.
+ * @param {Map} map
+ */
+export function blocksOf(map) {
+  const first = (/** @type {number} */ b) => /** @type {{ start: number, confident: boolean }} */ (map.statements.find((s) => s.block === b));
+  const edges = [{ t: map.drone.start, confident: true }, ...[2, 3].map((b) => ({ t: first(b).start, confident: first(b).confident })), { t: map.coda.chords[0].t, confident: map.coda.chords[0].confident !== false }];
+  return [0, 1, 2].map((i) => ({ id: i + 1, start: edges[i].t, end: edges[i + 1].t, confident: edges[i].confident && edges[i + 1].confident }));
+}
+
+/**
+ * @param {Map} map
  * @param {{ fragments?: number, shares?: number[][], clips?: Record<string, number | number[]> }} [options]
  * @returns {Window[]}
  */
 export function windows(map, { fragments = 3, shares = DEFAULT_SHARES, clips = {} } = {}) {
   /** @type {Window[]} */
   const out = [];
-  map.blocks.forEach((block, i) => {
+  blocksOf(map).forEach((block, i) => {
     const a = id(5 + 2 * i), b = id(6 + 2 * i);
     const length = block.end - block.start;
     let share = shares[i][0] / (shares[i][0] + shares[i][1]);
@@ -45,19 +60,6 @@ export function windows(map, { fragments = 3, shares = DEFAULT_SHARES, clips = {
   const keep = new Set([...all].sort((x, y) => y.length - x.length).slice(0, fragments));
   out.push({ id: 'n11', ...span(chords[0].t, map.coda.end.t, chords[0].confident !== false && map.coda.end.confident !== false), gaps: all.filter((g) => keep.has(g)) });
   return out;
-}
-
-/**
- * The map's two anchors must be the film's: the first note is where block 1 starts (the film's music begins on node 5's first frame, so
- * every later time is measured from it) and the first coda chord is where block 3 ends (node 10's window runs to it, node 11's begins
- * there). A map where they differ would put every node off its window silently. Refuses naming both times.
- * @param {{ firstNote: { t: number }, blocks: { start: number, end: number }[], coda: { chords: { t: number }[] } }} map
- */
-export function checkMap(map) {
-  const near = (/** @type {number} */ a, /** @type {number} */ b) => Math.abs(a - b) < 1e-6;
-  const first = map.blocks[0].start, last = map.blocks[map.blocks.length - 1].end, chord = map.coda.chords[0].t;
-  if (!near(map.firstNote.t, first)) throw new Error(`the map's first note (${map.firstNote.t}) is not where block 1 starts (${first})`);
-  if (!near(last, chord)) throw new Error(`the map's block 3 ends at ${last}, not on the first coda chord (${chord})`);
 }
 
 /**

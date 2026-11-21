@@ -27,8 +27,8 @@
  * entry inside its window takes the nearest play, and the stretch before it is played faster or slower (`speed` on each cut, `from` where
  * the take is by then), never past a third either way, the same for every framing of the node. What cannot be placed is in the node's
  * `retime.unplaced` and printed. Only the PICTURE is retimed: the voice and the music are laid from the clips' and the map's times on their own
- * tracks, and the plays' game sounds follow their plays. The theme's entries are the map's (block 3, derived) unless block 3 of
- * `music-map.json` has a `set` (seconds of the recording, hand-set) or `--entries <file>` gives a JSON array of them (a number, or `{ "t" }`).
+ * tracks, and the plays' game sounds follow their plays. The theme's entries are the starts of the map's block 3 statements unless
+ * `--entries <file>` gives a JSON array of them (a number, or `{ "t" }`).
  * A landing plays its game sound (`steel-chair` the chair's hit, `filing` a boo; any other kind none) at its frame of the node, and in
  * part three is a punch-in. `move`, `punch` and `punches` are the camera's: they apply to every cut of the node, are refused in part
  * one (locked off), and `--moves` takes the same fields by node id in one file, over the take's own.
@@ -54,7 +54,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { windows, fit, sheet, checkMap } from './windows.mjs';
+import { windows, fit, sheet } from './windows.mjs';
 import { refusePush, corners } from './moves.mjs';
 import { retime } from './retime.mjs';
 import { run, duration, videoInfo, fontFile, flag } from './cutting.mjs';
@@ -86,14 +86,13 @@ export const framesBetween = (a, b) => Math.round(b * F) - Math.round(a * F);
  * final chord's end there are `black` seconds of black and then `card` seconds of the end card.
  *
  * @param {Record<string, number | number[]>} clips seconds a node (node 11: one a line)
- * @param {Parameters<typeof windows>[0] & { firstNote: { t: number }, blocks: { entries: { t: number }[] }[] }} map
+ * @param {Parameters<typeof windows>[0]} map
  * @param {{ breath?: number, moves?: Record<string, Camera>, framings?: Record<string, string[]>, sizes?: Record<string, number>, landed?: Record<string, { what: string, frame: number }[]>, entries?: number[], black?: number, card?: number }} [options]
  *   `moves`: the camera's moves by node; `framings`: the takes a node is cut between, by node; `sizes`: each node's take's width in
  *   pixels (default 1920); `landed`: what lands in each node, and at which frame of its take; `entries`: the theme's entries in seconds of the
- *   music, hand-set (else block 3's `set`, else its derived entries).
+ *   music, hand-set (else the starts of block 3's statements).
  */
 export function timeline(clips, map, { breath = BREATH, moves = {}, framings = {}, sizes = {}, landed = {}, entries: handSet, black = BLACK, card = CARD } = {}) {
-  checkMap(map);
   for (const id of [...PART_ONE, 'n05', 'n06', 'n07', 'n08', 'n09', 'n10', 'n11']) if (clips[id] === undefined) throw new Error(`${id} has no clip: a length in seconds is needed for every node`);
   for (const id of PART_ONE) if (moves[id] && Object.values(moves[id]).some((v) => v !== undefined)) throw new Error(`${id}: part one is locked off (the design, section 5a), so it carries no move, punch or landing punch`);
   const n11 = clips.n11;
@@ -140,8 +139,8 @@ export function timeline(clips, map, { breath = BREATH, moves = {}, framings = {
     add(id, 1, t, t + clip + breath, [{ start: t, length: clip }], []);
     t += clip + breath;
   }
-  const p1 = t, at = (/** @type {number} */ musicTime) => p1 + (musicTime - map.firstNote.t);
-  const theme = handSet ?? /** @type {{ set?: number[] }} */ (map.blocks[2]).set ?? map.blocks[2].entries.map((/** @type {{ t: number }} */ e) => e.t);
+  const p1 = t, at = (/** @type {number} */ musicTime) => p1 + (musicTime - map.drone.start);
+  const theme = handSet ?? map.statements.filter((s) => s.block === 3).map((s) => s.start);
   for (const w of ws) {
     const start = at(w.start), end = at(w.end);
     if (w.gaps) {
@@ -162,7 +161,7 @@ export function timeline(clips, map, { breath = BREATH, moves = {}, framings = {
     windows: ws,
     slack,
     hits,
-    music: { start: p1, from: map.firstNote.t, until: map.coda.end.t, untilFilm: blackStart, codaStart: at(map.coda.chords[0].t) },
+    music: { start: p1, from: map.drone.start, until: map.coda.end.t, untilFilm: blackStart, codaStart: at(map.coda.chords[0].t) },
     part: { one: [0, p1], two: [p1, nine.start], three: [nine.start, blackStart], out: [blackStart, blackStart + black + card] },
     out: { blackStart, cardStart: blackStart + black, end: blackStart + black + card },
     total: blackStart + black + card,

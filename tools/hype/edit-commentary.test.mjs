@@ -2,7 +2,7 @@
  * The commentary edit's pure parts: the timeline, the captions, and the camera's moves
  * (docs/plans/2026-11-21-commentary-video-plan.md, tasks 8 and 8a). Nothing here runs ffmpeg.
  *
- * The made-up map is windows.test.mjs's: block 1 runs 10 to 70, block 2 70 to 100, block 3 100 to 130, the coda's chords sit at 130, 132,
+ * The made-up map is made-up.mjs's: block 1 runs 10 to 70, block 2 70 to 100, block 3 100 to 130, the coda's chords sit at 130, 132,
  * 140, 141 and 150, and the last chord ends at 155. The music's first note is at 10, so it is 0 on the film where node 5 begins.
  */
 import { test } from 'node:test';
@@ -11,18 +11,10 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { timeline, captions, srt, framesBetween, wrap, duckExpression, captionBand } from './edit-commentary.mjs';
 import * as ec from "./edit-commentary.mjs";
+import { madeUp } from './made-up.mjs';
 import { cutRect, moveRect, punchScale, refusePush, pushLimit, expressions, corners, maxPush } from './moves.mjs';
 
-const entries = (from, step) => Array.from({ length: 6 }, (_, i) => ({ t: from + i * step, confident: false, derived: true }));
-const map = {
-  firstNote: { t: 10, confident: true },
-  blocks: [
-    { id: 1, start: 10, end: 70, confident: false, entries: entries(10, 10) },
-    { id: 2, start: 70, end: 100, confident: false, entries: entries(70, 5) },
-    { id: 3, start: 100, end: 130, confident: true, entries: entries(100, 5) },
-  ],
-  coda: { chords: [130, 132, 140, 141, 150].map((t) => ({ t, confident: true })), end: { t: 155, confident: true } },
-};
+const map = madeUp();
 const clips = { n01: 8, n02: 6, n03: 5, n04: 7, n05: 20, n06: 20, n07: 10, n08: 8, n09: 14, n10: 10, n11: [1.5, 6, 8] };
 const F = 60;
 const near = (/** @type {number} */ a, /** @type {number} */ b, /** @type {string} */ what = '') => assert.ok(Math.abs(a - b) < 1e-9, `${what} ${a} is not ${b}`);
@@ -134,7 +126,7 @@ test('part three is cut to the theme: node 9 changes framing on every entry insi
   const t = timeline(clips, map, { framings: { n09: ['wide', 'tight', 'turned'] } });
   const n09 = t.nodes.find((n) => n.id === 'n09');
   const w = t.windows.find((x) => x.id === 'n09');
-  const inside = map.blocks[2].entries.map((e) => e.t).filter((x) => x > w.start + 1e-9 && x < w.end - 1e-9);
+  const inside = map.statements.filter((s) => s.block === 3).map((s) => s.start).filter((x) => x > w.start + 1e-9 && x < w.end - 1e-9);
   assert.equal(n09.cuts.length, inside.length + 1);
   assert.deepEqual(n09.cuts.map((c) => c.take).slice(0, 4), ['n09-wide', 'n09-tight', 'n09-turned', 'n09-wide']);
   for (const c of n09.cuts) near(c.from, c.at, 'every framing plays the same moment');
@@ -455,11 +447,6 @@ test('the music must be the recording the map was measured on: its length within
   assert.throws(() => ec.checkRecording(m, { seconds: 154.09, sha1: () => 'bbb' }), /bbb.*aaa/);
   assert.doesNotThrow(() => ec.checkRecording(m, { seconds: 154.09, sha1: () => 'bbb' }, true), '--any-recording waives the sha1');
   assert.throws(() => ec.checkRecording(m, { seconds: 160, sha1: () => 'aaa' }, true), /160\.000/, 'but never the length');
-});
-
-test("a map whose first note is not block 1's start, or whose block 3 does not end on the first chord, is refused by the timeline", () => {
-  assert.throws(() => timeline(clips, { ...map, firstNote: { t: 11, confident: true } }), /first note/);
-  assert.throws(() => timeline(clips, { ...map, blocks: [map.blocks[0], map.blocks[1], { ...map.blocks[2], end: 129 }] }), /block 3 ends/);
 });
 
 test('the sheet is made before an overrun can throw, and marks the clip that overruns by how much', () => {
