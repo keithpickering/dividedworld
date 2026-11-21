@@ -52,7 +52,7 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
   /* The parts the other players play, and what the rounds before a shot left on the post. */
   await cam.evaluate(`(() => {
     const { fake, target, cast, whoops, play, nodes, camera } = window.__kbStage;
-    const post = '#post-' + target.seq;
+    let post = '#post-' + target.seq, targetAct = target.act;
     /* The commentary video's parts hold on any screen of the stage: the Staff's beats are filmed on a board's index and a profile, which have no post. */
     const parts = {
       /*
@@ -125,7 +125,7 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       /** A Whoops! on the post by the named character, on top of what is there. Returns the play. */
       splat(layer, name, color, seed, message, live = true) {
         fake.clock.advance(60000);
-        return fake.seed.card(cast[name], target.act, 'whoops', { layer, config: { color, seed }, message, live });
+        return fake.seed.card(cast[name], targetAct, 'whoops', { layer, config: { color, seed }, message, live });
       },
       /** A coat washed clean, as its author saves one. */
       clean: (play) => saved(play, { strokes: [], clean: true }),
@@ -151,6 +151,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
         return { layers: el?.getAttribute('data-kb-layers') ?? null, pictures: el?.getAttribute('data-kb-pictures') ?? null, inks: document.querySelectorAll(post + ' canvas.kb-whoops-ink').length };
       },
       body,
+      /** Aims the ink helpers (splat, ink, inkAt, place, body, state) at another post than the round 1 target: aim(1, __kbStage.acts.first). */
+      aim(seq, act) { post = '#post-' + seq; targetAct = act; },
       /**
        * Where the ink is, as a hand's eye sees it: the body cut into cells \`cols\` across, and for each the coat on top there (its layer,
        * or -1 where the words show) and how thick it lies (0 to 1). Each coat's canvases are read at their own place and scale.
