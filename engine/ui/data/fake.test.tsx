@@ -4650,6 +4650,121 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
     });
   });
 
+  /* A lockout outcome (docs/plans/2026-11-21-so-very-happy-plan.md, Task 4): the Move that springs the back lands, and its character is locked out of the thread, as place_cast and not_locked_out say. */
+  describe('a lockout back', () => {
+    const lkBase = { ...base, validateConfig: (c: unknown) => ok(c ?? {}) };
+    const lkback = { ...lkBase, key: 'lkback', name: 'Lk Back', alignment: 'sweet' as const, rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const, 'pepperoni' as const], upTo: 'rare' as const }, outcome: { kind: 'lockout' as const, hours: 24 } }, canApply: () => ok(undefined) };
+    const lksalty = { ...lkBase, key: 'lksalty', name: 'Lk Salty', alignment: 'salty' as const, rarity: 'common' as const, stack: 6, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lksalty', stack: 6 }, t, e, now) };
+    const lkcutter = { ...lkBase, key: 'lkcutter', name: 'Lk Cutter', alignment: 'pepperoni' as const, rarity: 'rare' as const, replies: true as const, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lkcutter', reaches: ['post'] }, t, e, now) };
+    const lkWorld: Instance = { ...instance, cards: [lkback, lksalty, lkcutter] as unknown as CardRules[], machine: [], settings: { ...settings, economy: {} } };
+    function lk() {
+      const fake = createFake({ instance: lkWorld });
+      const ana = fake.seed.account('ana');
+      const bo = fake.seed.account('bo');
+      const root = fake.seed.account('root');
+      fake.seed.admin(root);
+      const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+      const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+      const boHeel = fake.seed.character(bo, 'Bo Heel', 'heel');
+      const { thread, act: post } = fake.seed.thread('general', anaFace, 'T1', 'Post 1');
+      const other = fake.seed.thread('general', anaFace, 'T2', 'Post 2');
+      fake.seed.wallet(ana, 900); fake.seed.wallet(bo, 900);
+      fake.seed.cards(ana, { lkback: 3 });
+      fake.seed.cards(bo, { lksalty: 6, lkcutter: 2, lkback: 1 });
+      fake.signInAs(ana);
+      return { fake, ana, bo, root, anaFace, boFace, boHeel, thread, post, otherThread: other.thread, otherPost: other.act };
+    }
+    const lockedWords = (until: string) => `Bo Face is locked out of this thread until ${refusalTime(new Date(Math.ceil(Date.parse(until) / MINUTE) * MINUTE).toISOString())}; the lockout ends by itself then, and it holds only this character, not your other characters`;
+    const springOf = async (fake: ReturnType<typeof lk>['fake'], post: string) => (await fake.cardsOn(post, 8)).find((a) => a.kind === 'spring')!;
+
+    test('the Move that springs it lands, and the spring says lockedOut with who it locks and until when, with no card handed anywhere', async () => {
+      const { fake, bo, anaFace, boFace, post } = lk();
+      const back = must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      const before = (await fake.myCards()).find((c) => c.card === 'lksalty')!.held;
+      const move = must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      expect(move.payload).not.toHaveProperty('caught');
+      expect(move.payload).not.toHaveProperty('rode');
+      const spring = await springOf(fake, post);
+      expect(spring.payload).toEqual({ card: 'lkback', trigger: 'cast', did: 'lockedOut', set: back.id, by: move.id, locks: boFace, until: new Date(Date.parse(spring.createdAt) + 24 * 3_600_000).toISOString() });
+      expect((await fake.myCards()).find((c) => c.card === 'lksalty')!.held).toBe(before - 1);
+      expect((await fake.log()).cards.filter((e) => e.kind === 'returned' || e.kind === 'caught')).toEqual([]);
+    });
+
+    test('the locked character is refused a post, a Move and a back in that thread in the SQL\'s words, until an admin ends it; its other mask and other threads are not held', async () => {
+      const { fake, bo, root, anaFace, boFace, boHeel, thread, post, otherPost, otherThread } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const spring = await springOf(fake, post);
+      const until = String(spring.payload.until);
+      expect(await fake.post(thread, boFace, 'Hello', null)).toEqual(refused(lockedWords(until)));
+      expect(await fake.playCard('lksalty', boFace, post, {}, '')).toMatchObject({ ok: false, error: lockedWords(until) });
+      /* Not held: another mask of the same account, another thread. */
+      must(await fake.post(thread, boHeel, 'Hello', null));
+      must(await fake.post(otherThread, boFace, 'Hello elsewhere', null));
+      must(await fake.playCard('lksalty', boFace, otherPost, {}, ''));
+      fake.signInAs(root);
+      must(await fake.reverseCard(spring.id));
+      fake.signInAs(bo);
+      must(await fake.post(thread, boFace, 'Hello again', null));
+    });
+
+    test('a back is not set by the locked character in that thread', async () => {
+      const { fake, bo, anaFace, boFace, thread, post } = lk();
+      const mine = fake.seed.post(thread, boFace, 'Mine');
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const until = String((await springOf(fake, post)).payload.until);
+      expect(await fake.setCard('lkback', boFace, mine, {})).toMatchObject({ ok: false, error: lockedWords(until) });
+    });
+
+    test('an admin ends a live lockout once; a second end is refused; the page and my characters carry it only while it holds', async () => {
+      const { fake, bo, root, anaFace, boFace, boHeel, thread, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const spring = await springOf(fake, post);
+      const until = String(spring.payload.until);
+      const lockedOf = async (id: string) => (await fake.threadPage(thread, { page: 1 }, null, []))!.people.find((p) => p.character.id === id)?.character.lockedUntil;
+      expect(await lockedOf(boFace)).toBe(until);
+      expect(await lockedOf(boHeel)).toBeUndefined();
+      expect((await fake.myCharacters()).find((c) => c.id === boFace)!.lockouts).toEqual([{ thread, until }]);
+      expect((await fake.myCharacters()).find((c) => c.id === boHeel)!.lockouts).toBeUndefined();
+      expect(await fake.reverseCard(spring.id)).toEqual(refused('only an admin ends a card'));
+      fake.signInAs(root);
+      must(await fake.reverseCard(spring.id));
+      expect(await fake.reverseCard(spring.id)).toEqual(refused('an admin has already ended that card'));
+      fake.signInAs(bo);
+      expect(await lockedOf(boFace)).toBeUndefined();
+      expect((await fake.myCharacters()).find((c) => c.id === boFace)!.lockouts).toBeUndefined();
+    });
+
+    test('a lockout that has run its time is over by itself, and cannot be ended', async () => {
+      const { fake, bo, root, anaFace, boFace, thread, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const spring = await springOf(fake, post);
+      fake.clock.advance(25 * 60 * MINUTE);
+      must(await fake.post(thread, boFace, 'Back', null));
+      fake.signInAs(root);
+      expect(await fake.reverseCard(spring.id)).toEqual(refused('that card has already worn off'));
+    });
+
+    test('the Move that springs it still writes the reply it carries', async () => {
+      const { fake, bo, anaFace, boFace, thread, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      const move = must(await fake.playCard('lkcutter', boFace, post, {}, '', undefined, undefined, undefined, { body: 'Excuse me.' }));
+      expect(move.payload).toHaveProperty('reply');
+      expect((await springOf(fake, post)).payload).toMatchObject({ did: 'lockedOut', locks: boFace });
+      const page = (await fake.threadPage(thread, { page: 1 }, null, []))!;
+      expect(page.under.map((u) => u.act.currentPayload)).toEqual([{ body: 'Excuse me.' }]);
+    });
+  });
+
   describe('a scored-as play', () => {
     const NEXT = START + DAY / 2;
     /* The last settlement ended now; the next is half a day on, the window after it a settlement's length (one day) long. */

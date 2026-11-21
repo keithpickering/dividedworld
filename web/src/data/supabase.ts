@@ -603,7 +603,13 @@ function toMyCharacter(r: Row): MyCharacter {
     presenceHidden: r['presence_hidden'] === true,
     ...(typeof r['banned_until'] === 'string' && Date.parse(r['banned_until']) > Date.now() ? { bannedUntil: r['banned_until'] } : {}),
     ...(toBars(r['bars']).length > 0 ? { bars: toBars(r['bars']) } : {}),
+    ...(toLockouts(r['lockouts']).length > 0 ? { lockouts: toLockouts(r['lockouts']) } : {}),
   };
+}
+
+/** The lockouts `my_characters.lockouts` carries, `[{ thread, until }]`; a malformed entry, or one whose time has passed, is left out. */
+function toLockouts(v: unknown): { thread: string; until: string }[] {
+  return Array.isArray(v) ? v.filter((x): x is { thread: string; until: string } => isObject(x) && typeof x['thread'] === 'string' && typeof x['until'] === 'string' && Date.parse(x['until']) > Date.now()).map((x) => ({ thread: x.thread, until: x.until })) : [];
 }
 
 /** The bars `my_characters.bars` carries: each board, the move, the group and when it ends; a malformed entry is left out. */
@@ -1061,6 +1067,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       joined: c['joined'] ?? '',
       ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
       ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
+      ...(typeof c['locked_until'] === 'string' && Date.parse(c['locked_until']) > Date.now() ? { lockedUntil: c['locked_until'] } : {}),
       ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
       group: typeof c['group'] === 'string' ? c['group'] : '',
     });

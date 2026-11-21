@@ -3605,7 +3605,7 @@ describe('reports, appeals and what a page says of a ban', () => {
     const h = harness((r) => {
       const name = r.url.pathname.replace(`${REST}/`, '');
       if (name === 'rpc/presence_box') return json({ names: [{ id: B, name: 'The Clerk', staff: true, visit_post: 41 }, { id: C, name: 'Spritey', staff: false }], others: 0 });
-      if (name === 'my_characters') return rows([{ id: B, name: 'Pipewrench', class: 'heel', class_since: past, class_shown_at: past, banned_until: future }, { id: C, name: 'Second', class: 'face', class_since: past, banned_until: past }]);
+      if (name === 'my_characters') return rows([{ id: B, name: 'Pipewrench', class: 'heel', class_since: past, class_shown_at: past, banned_until: future, lockouts: [{ thread: T, until: future }, { thread: C, until: past }, { thread: 7 }] }, { id: C, name: 'Second', class: 'face', class_since: past, banned_until: past }]);
       if (name === 'moves_log') return rows([
         { id: A, kind: 'visit', params: { post: 41, rule: 'Rule 2: No double posting', band: 'minor', cause: 'rule' }, demand: null, expires_at: past, thread: T, at: past, ended_why: 'filed', ended_by: null, ended_at: past, kept_by: null },
         { id: C, kind: 'renameBoard', params: {}, demand: null, expires_at: null, thread: T, at: past, ended_why: null, ended_by: null, ended_at: null, kept_by: null },
@@ -3619,10 +3619,16 @@ describe('reports, appeals and what a page says of a ban', () => {
     expect(mine[0]?.classShownAt).toBe(past);
     expect(mine[1]?.classShownAt).toBeNull();
     expect(mine[1]?.bannedUntil).toBeUndefined();
+    /* A lockout carries only while it holds: the live one is kept, a passed or malformed one is left out, and a character with none has no field. */
+    expect(mine[0]?.lockouts).toEqual([{ thread: T, until: future }]);
+    expect(mine[1]?.lockouts).toBeUndefined();
     /* A page's character carries its warn points and its ban while it holds (characters_public, 0104); a ban that has run out is none. */
     const page = (until: string) => harness((r) => (r.url.pathname === `${REST}/rpc/profile_page` ? json({ character: { id: B, name: 'Pipewrench', joined: '2026-10-01', warn_points: 6, banned_until: until }, profile: null }) : undefined));
     expect((await page(future).api.profilePage(B))?.character).toMatchObject({ warnPoints: 6, bannedUntil: future });
     expect((await page(past).api.profilePage(B))?.character.bannedUntil).toBeUndefined();
+    const locked = (until: string) => harness((r) => (r.url.pathname === `${REST}/rpc/profile_page` ? json({ character: { id: B, name: 'Pipewrench', joined: '2026-10-01', locked_until: until }, profile: null }) : undefined));
+    expect((await locked(future).api.profilePage(B))?.character.lockedUntil).toBe(future);
+    expect((await locked(past).api.profilePage(B))?.character.lockedUntil).toBeUndefined();
     const log = await h.api.movesLog('clerk');
     expect(log.rows[0]).toMatchObject({ kind: 'visit', outcome: 'filed', params: { post: 41 } });
     expect(log.rows[1]?.outcome).toBeUndefined();
