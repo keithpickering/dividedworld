@@ -8,7 +8,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { wordTime, resolveList, directCoda } from './cutlist.mjs';
-import { timeline, captions } from './edit-commentary.mjs';
+import { timeline, captions, speechNodes } from './edit-commentary.mjs';
 import { madeUp } from './made-up.mjs';
 
 const F = 60;
@@ -163,10 +163,10 @@ test('the committed list, read against the placeholder voice, falls: part one, t
   const real = JSON.parse(readFileSync(new URL('music-map.json', dir), 'utf8'));
   const { commentary: text } = await import(pathToFileURL(path.resolve('instances/divided-world/ui/hype/commentary.ts')).href);
   /* The placeholder voice's clip lengths (.runs/hype/voice, seconds), so the film this list is cut to is the one the edit makes of it; a new voice is new numbers here. */
-  const voice = { n01: 31.556, n02: 20.767, n03: 16.196, n04: 16.771, n05: 13.166, n06: 8.202, n07: 12.591, n08: 7.967, n09: 18.129, n10: 10.266, n11: [2.0, 1.4, 2.2, 2.4] };
+  const voice = { n01: 34.847, n02: 21.081, n02b: 2.351, n03: 15.308, n04: 16.771, n05: 13.714, n06: 8.202, n07: 12.591, n08: 7.967, n09: 18.286, n10: 10.188, n11: [1.567, 1.646, 1.959, 2.273] };
   assert.deepEqual(Object.keys(voice), text.map((/** @type {{ id: string }} */ n) => n.id), 'a clip for every node');
   const c = voice;
-  const t = timeline(c, real);
+  const t = timeline(c, real, { nodes: speechNodes(text) });
   /* Every take the list names is there and long enough; every landing it syncs to is where its `expect` says. */
   /** @type {Record<string, any>} */
   const have = {};

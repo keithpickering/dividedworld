@@ -1,6 +1,6 @@
 /**
  * The commentary video's script, exactly as docs/plans/2026-11-21-commentary-video-design.md (section 4) words it:
- * eleven nodes in order, each caption at most 90 characters (two rows), and the end card's sentence with WROLD in it.
+ * the nodes in order, each caption at most 90 characters (two rows), and the end card's sentence with WROLD in it.
  * The captions of a node, joined with single spaces, are the node's full text, so a dropped or altered caption fails.
  */
 import { test } from 'node:test';
@@ -17,8 +17,14 @@ const SCRIPT: readonly { id: string; part: number; text: string; firstSix: strin
   {
     id: 'n02',
     part: 1,
-    text: 'Early playtests showed us that people posting on a forum want to be liked. We found this resulted in a positive, nurturing environment - So instead, every character has a secret class, and some classes are paid for being disliked. This one is a Heel. Playtesters threw tomatoes at him and he made money. We then found they could hurt him by agreeing with him, politely. And that REALLY got him going!',
+    text: 'Early playtests showed us that people posting on a forum want to be liked. We found this resulted in a positive, nurturing environment - So instead, every character has a secret class, and some classes are paid for being disliked. This one is a Heel. Playtesters threw tomatoes at him and he made money. We then found they could hurt him by agreeing with him, politely.',
     firstSix: 'Early playtests showed us that people',
+  },
+  {
+    id: 'n02b',
+    part: 1,
+    text: 'And that REALLY got him going!',
+    firstSix: 'And that REALLY got him going!',
   },
   {
     id: 'n03',
@@ -76,7 +82,7 @@ const SCRIPT: readonly { id: string; part: number; text: string; firstSix: strin
   },
 ];
 
-test('the script has eleven nodes, n01 to n11, in order, in parts one to three', () => {
+test('the script has twelve nodes, n01 to n11 with n02b after n02, in order, in parts one to three', () => {
   assert.deepEqual(commentary.map((n) => n.id), SCRIPT.map((s) => s.id));
   assert.deepEqual(commentary.map((n) => n.part), SCRIPT.map((s) => s.part));
 });
@@ -112,6 +118,14 @@ test('no caption says "The System" or "nobody can see"', () => {
       assert.ok(!/nobody can see/i.test(line), `node ${n.id} says "nobody can see": "${line}"`);
     }
   }
+});
+
+test('n02b is its own node, one line, spoken after a pause of three seconds; every other node takes the usual breath', () => {
+  const n = commentary.find((x) => x.id === 'n02b');
+  assert.ok(n, 'n02b is missing');
+  assert.equal(n.after, 3);
+  assert.deepEqual(commentary.filter((x) => x.after !== undefined).map((x) => x.id), ['n02b']);
+  assert.ok(!commentary.find((x) => x.id === 'n02')?.lines.some((l) => /REALLY/.test(l)), 'n02 no longer says it');
 });
 
 test('node 11 has exactly its four fragments, one to a line', () => {

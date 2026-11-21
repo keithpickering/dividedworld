@@ -71,6 +71,14 @@ export const WPM = 150;
 export const TAIL = 1.2;
 export const FADE = 0.8;
 export const PART_ONE = ['n01', 'n02', 'n03', 'n04'];
+/** The spoken nodes as the timeline took them before the data gave their order: n01 to n10, a breath between. */
+const DEFAULT_NODES = ['n01', 'n02', 'n03', 'n04', 'n05', 'n06', 'n07', 'n08', 'n09', 'n10'].map((id, i) => ({ id, part: /** @type {1 | 2 | 3} */ (i < 4 ? 1 : i < 8 ? 2 : 3), after: undefined }));
+
+/**
+ * The spoken nodes (every node but the coda's n11) in the data's order, each with its part and the pause before it (`after`, seconds; absent: the usual breath).
+ * @param {{ id: string, part: 1 | 2 | 3, after?: number }[]} commentary
+ */
+export const speechNodes = (commentary) => commentary.filter((n) => n.id !== 'n11').map((n) => ({ id: n.id, part: n.part, after: n.after }));
 const CHORD_PUNCH = 10, LANDING_PUNCH = 5;
 
 /** The frames between two times of the film. @param {number} a @param {number} b */
@@ -98,18 +106,21 @@ export const framesBetween = (a, b) => Math.round(b * F) - Math.round(a * F);
  * `c-title-2` from the final strike to the film's end, which is the final chord's end plus `TAIL` s, the picture fading to black over the
  * last `FADE` s and the music's own decay left as recorded.
  *
+ * The spoken nodes are taken in the data's order (`nodes`: id, part, and `after`, the pause before a node, default `breath`); a node that follows a
+ * pause (n02b, three seconds after "politely.") starts that long after the clip before it ends, and the clip before it owns the silence.
+ *
  * Until the cut list gives them (cutlist.mjs) a node is one cut of its take; the coda is cut on its chords.
  *
  * @param {Record<string, number | number[]>} clips seconds a node (node 11: one a line)
  * @param {any} map the committed music map (music-map.json)
- * @param {{ recording?: string, breath?: number, moves?: Record<string, Camera>, framings?: Record<string, string[]>, sizes?: Record<string, number>, landed?: Record<string, { what: string, frame: number }[]> }} [options]
+ * @param {{ nodes?: { id: string, part: 1 | 2 | 3, after?: number }[], recording?: string, breath?: number, moves?: Record<string, Camera>, framings?: Record<string, string[]>, sizes?: Record<string, number>, landed?: Record<string, { what: string, frame: number }[]> }} [options]
  *   `recording`: `full`, `mk-a` or `mk-b` to fix the version; `moves`: the camera's moves by node; `framings`: the framings of a node with several (node 9's
  *   cut uses the first); `sizes`: each node's take's width in pixels (default 1920); `landed`: what lands in each node, and at which frame of its take.
  */
-export function timeline(clips, map, { recording, breath = BREATH, moves = {}, framings = {}, sizes = {}, landed = {} } = {}) {
-  const speech = [...PART_ONE, 'n05', 'n06', 'n07', 'n08', 'n09', 'n10'];
+export function timeline(clips, map, { nodes: order = DEFAULT_NODES, recording, breath = BREATH, moves = {}, framings = {}, sizes = {}, landed = {} } = {}) {
+  const speech = order.map((n) => n.id);
   for (const id of [...speech, 'n11']) if (clips[id] === undefined) throw new Error(`${id} has no clip: a length in seconds is needed for every node`);
-  for (const id of PART_ONE) if (moves[id] && Object.values(moves[id]).some((v) => v !== undefined)) throw new Error(`${id}: part one is locked off (the design, section 5a), so it carries no move, punch or landing punch`);
+  for (const id of order.filter((n) => n.part === 1).map((n) => n.id)) if (moves[id] && Object.values(moves[id]).some((v) => v !== undefined)) throw new Error(`${id}: part one is locked off (the design, section 5a), so it carries no move, punch or landing punch`);
   const n11 = clips.n11;
   if (!Array.isArray(n11)) throw new Error('n11 needs one length a line (an array)');
   for (const [k, v] of Object.entries(clips)) for (const seconds of Array.isArray(v) ? v : [v]) if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) throw new Error(`${k} has a clip length of ${JSON.stringify(seconds)}: a clip is a number of seconds, zero or more`);
@@ -118,8 +129,9 @@ export function timeline(clips, map, { recording, breath = BREATH, moves = {}, f
   /** @type {Record<string, number>} */
   const starts = {};
   let t = 0;
-  for (const id of speech) { starts[id] = t; t += /** @type {number} */ (clips[id]) + breath; }
-  const codaStart = starts.n10 + /** @type {number} */ (clips.n10) + CODA_AFTER;
+  order.forEach((n, i) => { if (i > 0) t += n.after ?? breath; starts[n.id] = t; t += /** @type {number} */ (clips[n.id]); });
+  const last = speech[speech.length - 1];
+  const codaStart = starts[last] + /** @type {number} */ (clips[last]) + CODA_AFTER;
 
   /* The music, laid from its end. */
   const notes = [];
@@ -169,7 +181,7 @@ export function timeline(clips, map, { recording, breath = BREATH, moves = {}, f
 
   speech.forEach((id, i) => {
     const start = starts[id], end = i + 1 < speech.length ? starts[speech[i + 1]] : codaStart;
-    add(id, i < 4 ? 1 : i < 8 ? 2 : 3, start, end, [{ start, length: /** @type {number} */ (clips[id]) }], []);
+    add(id, order[i].part, start, end, [{ start, length: /** @type {number} */ (clips[id]) }], []);
   });
   const chords = v.coda.chords.map((c) => c.t);
   let lineAt = strikes.first + gap;
@@ -353,7 +365,7 @@ export function resolveInputs({ commentary, voiceFiles, takeFiles, haveMusic }) 
   const all = ['wide', 'tight', 'turned'], have = all.filter((f) => has(`n09-${f}`));
   if (have.length) framings.n09 = have;
   if (have.length && have.length < all.length) notes.push(`node 9 has only ${have.join(', ')} of its three framings (missing ${all.filter((f) => !have.includes(f)).join(', ')}): its cuts rotate through those alone`);
-  const slates = commentary.map((n) => n.id).filter((id) => (id === 'n09' ? !have.length && !has('n09') : !has(id)));
+  const slates = commentary.map((n) => n.id).filter((id) => (id === 'n09' ? !have.length && !has('n09') : id === 'n02b' ? false : !has(id)));
   for (const id of slates) notes.push(`${id} has no take: a slate stands in for it, marked PLACEHOLDER PICTURE`);
   const titleSlates = ['c-title-1', 'c-title-2'].filter((t) => !takeFiles.includes(`${t}.mp4`));
   for (const t of titleSlates) notes.push(`${t} has no take: a slate stands in for it, marked PLACEHOLDER PICTURE`);
@@ -490,7 +502,7 @@ async function main() {
 
   const RECORDING = flag('recording', '');
   if (RECORDING && !VERSIONS.includes(RECORDING)) throw new Error(`--recording is ${VERSIONS.join(', ')}, not ${RECORDING}`);
-  const tl = timeline(clips, map, { recording: RECORDING || undefined, moves, framings, sizes, landed });
+  const tl = timeline(clips, map, { nodes: speechNodes(commentary), recording: RECORDING || undefined, moves, framings, sizes, landed });
   console.log(placementText(tl));
   /* The version's file: the recording itself, or the cut `music-cut.mjs` made of it beside it. */
   const musicFile = tl.music.version === 'full' ? MUSIC : path.join(path.dirname(MUSIC), `${tl.music.version}.flac`);

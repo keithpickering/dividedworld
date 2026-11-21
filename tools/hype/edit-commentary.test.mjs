@@ -45,6 +45,25 @@ test('the narration is continuous: each node is its clip and a breath of 0.35 s,
   near(t.nodes.find((n) => n.id === 'n10').voice[0].start + clips.n10, 111.15, 'the speech ends');
 });
 
+test('a node that follows a pause starts that pause after the clip before it, in the data\'s order: n02b, 3 s after "politely."', () => {
+  const nodes = [
+    { id: 'n01', part: 1 }, { id: 'n02', part: 1 }, { id: 'n02b', part: 1, after: 3 }, { id: 'n03', part: 1 }, { id: 'n04', part: 1 },
+    { id: 'n05', part: 2 }, { id: 'n06', part: 2 }, { id: 'n07', part: 2 }, { id: 'n08', part: 2 }, { id: 'n09', part: 3 }, { id: 'n10', part: 3 },
+  ];
+  const t = timeline({ ...clips, n02b: 2.3 }, map, { nodes });
+  const at = (/** @type {string} */ id) => /** @type {any} */ (t.nodes.find((n) => n.id === id));
+  assert.ok(t.nodes.some((n) => n.id === 'n02b'), 'n02b is a node of the timeline');
+  near(at('n02b').start, 8.35 + 6 + 3, 'n02b starts 3 s after n02 ends, not after a breath of 0.35');
+  near(at('n02b').voice[0].start, at('n02b').start);
+  near(at('n03').start, 8.35 + 6 + 3 + 2.3 + 0.35, 'n03 follows n02b by the usual breath');
+  near(at('n02').end, at('n02b').start, 'n02 runs to the pause end: its shot owns the silence');
+  assert.equal(at('n02b').part, 1);
+  assert.deepEqual(t.nodes.slice(0, 5).map((n) => n.id), ['n01', 'n02', 'n02b', 'n03', 'n04']);
+  assert.deepEqual(t.part.one, [0, at('n05').start], 'part one runs to node 5, n02b inside it');
+  assert.throws(() => timeline(clips, map, { nodes }), /n02b has no clip/);
+  assert.throws(() => timeline({ ...clips, n02b: 2.3 }, map, { nodes, moves: { n02b: { punch: 5 } } }), /n02b.*part one.*locked off/);
+});
+
 test('the music is laid from its end: the version`s first coda chord falls 0.2 s after node 10`s last word', () => {
   const t = timeline(clips, map);
   const n10 = t.nodes.find((n) => n.id === 'n10'), n11 = t.nodes.find((n) => n.id === 'n11');

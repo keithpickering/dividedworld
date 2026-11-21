@@ -8,6 +8,8 @@ export interface Node {
   readonly id: string;
   readonly part: 1 | 2 | 3;
   readonly lines: readonly string[];
+  /** Seconds of silence before the node, where it is not the usual breath (n02b: D-Guy types for three seconds before it is said). */
+  readonly after?: number;
 }
 
 export const commentary: readonly Node[] = [
@@ -42,8 +44,13 @@ export const commentary: readonly Node[] = [
       'This one is a Heel.',
       'Playtesters threw tomatoes at him and he made money.',
       'We then found they could hurt him by agreeing with him, politely.',
-      'And that REALLY got him going!',
     ],
+  },
+  {
+    id: 'n02b',
+    part: 1,
+    after: 3,
+    lines: ['And that REALLY got him going!'],
   },
   {
     id: 'n03',
