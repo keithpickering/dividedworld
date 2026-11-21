@@ -124,6 +124,7 @@ export const STEPS = [
   'npm run test:engine',
   'npm run test:ui',
   'npm run build:web',
+  'node tools/test-hype.mjs',
   'node tools/test-web-bundle.mjs',
   'node tools/check-web-bundle.mjs',
   'node tools/test-icons.mjs',
