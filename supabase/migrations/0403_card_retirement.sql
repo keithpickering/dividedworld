@@ -477,7 +477,7 @@ grant execute on function take_back(uuid, uuid, uuid) to service_role;
 
 -- ---- 9. card_leaves, seed_instance ----
 
--- A card leaves the game (0401): marks `old` gone, as renamed to `became` or as withdrawn with `refund` hundredths, and moves every copy an account holds, once. Every account that holds the key or a live back of it is locked first,
+-- A card leaves the game (0403): marks `old` gone, as renamed to `became` or as withdrawn with `refund` hundredths, and moves every copy an account holds, once. Every account that holds the key or a live back of it is locked first,
 -- `for no key update` in id order: the row play_card and take_back take, so no copy is played or taken back between the count and the write. A live back is a face-down card still up and not sprung or taken back; a held copy is as
 -- card_held counts it (an ended back that never sprang included). One statement counts them by account and writes every row: the held copies' rows (naming no Act), the live backs' rows (naming the back's play, since that play
 -- already took the copy out of the hand) and, for a rename, the new key's rows. A withdrawal then credits each account once, refund times copies, through wallet_move as every credit goes (the wallet's cap overflows as it does for
@@ -631,7 +631,7 @@ begin
   -- naming the card. The reaches are read against reachRarity and reachLasts as the settings above have just written them.
   select nullif(concat_ws('; ', card_kinds_problem(payload -> 'cards'), card_reach_problem(payload -> 'cards')), '') into unknown;
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
-  -- The three ways a card leaves (0401). A seed that carries `formerly` or `withdrawn` says where every card a seed wrote stands (from_seed), and is refused, naming the keys, where it does not: a key in none of cards, formerly and withdrawn,
+  -- The three ways a card leaves (0403). A seed that carries `formerly` or `withdrawn` says where every card a seed wrote stands (from_seed), and is refused, naming the keys, where it does not: a key in none of cards, formerly and withdrawn,
   -- a key in more than one, a renaming into a card the seed does not list (or into itself), a refund that is not a positive whole number, and a card that left listed as a card again (a card that comes back takes a new key).
   -- The refusal does not depend on who holds what. Nothing is written before it.
   if retiring then
@@ -678,11 +678,11 @@ begin
     rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, refunds = excluded.refunds, discipline = excluded.discipline, lasts = excluded.lasts,
     reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, replies = excluded.replies, keeps = excluded.keeps, skim = excluded.skim, scores_as = excluded.scores_as,
     draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface, from_seed = true;
-  -- Out of print (0401): the flag sets retired_at, kept while it stays and cleared when it goes.
+  -- Out of print (0403): the flag sets retired_at, kept while it stays and cleared when it goes.
   update card_kinds k set retired_at = case when coalesce((e.c ->> 'retired')::boolean, false) then coalesce(k.retired_at, now()) end
   from jsonb_array_elements(payload -> 'cards') e(c)
   where k.key = e.c ->> 'key' and k.retired_at is distinct from case when coalesce((e.c ->> 'retired')::boolean, false) then coalesce(k.retired_at, now()) end;
-  -- Renamed and withdrawn (0401): each key not yet gone is moved by card_leaves, once ever, and its copies are counted for the answer.
+  -- Renamed and withdrawn (0403): each key not yet gone is moved by card_leaves, once ever, and its copies are counted for the answer.
   if retiring then
     for moving in
       select f.e ->> 'key' as old, f.e ->> 'became' as became, null::integer as refund from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) f(e) join card_kinds k on k.key = f.e ->> 'key' where k.gone_at is null
@@ -704,7 +704,7 @@ begin
          case when jsonb_typeof(e -> 'contents') = 'array' then array(select jsonb_array_elements_text(e -> 'contents')) end
   from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e
   on conflict (key) do update set pulls = excluded.pulls, leaves = excluded.leaves, contents = excluded.contents;
-  -- A pack kind the payload does not list is out of print, one it lists is not (0401; a payload with no `packs` says nothing of pack kinds): its slot is left out of the machine, and a sealed pack of it still opens.
+  -- A pack kind the payload does not list is out of print, one it lists is not (0403; a payload with no `packs` says nothing of pack kinds): its slot is left out of the machine, and a sealed pack of it still opens.
   if retiring and payload ? 'packs' then
     update pack_kinds k set retired_at = x.want
     from (select p.key, case when l.key is null then coalesce(p.retired_at, now()) end as want

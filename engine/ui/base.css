@@ -113,6 +113,19 @@ canvas[data-kb-landing='page'] {
   pointer-events: none;
 }
 
+/* A box that is a landing place of its own (engine/ui/shine/landing.ts `landBox`: the thread's Reply box, which paints its own ground;
+   docs/plans/2026-11-21-glitter-hands-plan.md). As a post cell's (thread.css), the box is positioned so its tiles lie in it and
+   isolated so their z-index -1 puts them over its ground and under its content: a flake on its head bar, its text field or a button
+   lies under that and is not seen, and what the reader types is never covered. */
+[data-kb-land-box][data-kb-landed] {
+  position: relative;
+  isolation: isolate;
+}
+
+[data-kb-land-box] > canvas[data-kb-landing] {
+  z-index: -1;
+}
+
 /* The page: a column with the HUD's height kept clear at its foot. */
 .kb-page {
   box-sizing: border-box;

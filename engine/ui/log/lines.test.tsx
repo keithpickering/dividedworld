@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'vitest';
 import type { Act, Log, LogSettlement, MyCharacter, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { testCutter, testInstance } from '../test-world.tsx';
-import { actsFollowed, actsNamed, logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
+import { actsFollowed, actsNamed, lockoutEnd, logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
 import { around, mergeLogs } from './useLog.ts';
 import type { KayfaApi } from '../data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS, type PronounSet } from '../../rules/pronouns.ts';
@@ -249,6 +249,61 @@ describe('cards set face down, traps and catches', () => {
     const row = setRow('dud', { springs: false });
     expect(row.what).toBe('You set Dud face down');
     expect(text(row)).toBe('Dud set face down on your post #3. It never springs, and ends by itself.');
+  });
+
+  /* A lockout back (the lockout outcome): the Move landed and its character is locked out of the thread; each line branches on the spring's `did`, never a card's key. */
+  describe('a lockout', () => {
+    const until = '2026-11-01T10:00:00.000Z';
+    const move = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', lockedOut: 'sp' } });
+    const lock = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', did: 'lockedOut', set: 'set1', by: 'k1', locks: 's', until } });
+    const end = act('end', 'card_end', null, { targetActId: 'sp', createdAt: '2026-10-31T12:30:00.000Z' });
+    const setter = (extra: readonly Act[] = []) => {
+      const log = { ...empty, setEnds: [{ play: 'set1', card: 'snare', post: 'post3', spring: 'sp', endedAt: later, endedBy: 'sprung' as const }] };
+      return logRows(data({ log, mine, acts: new Map([...posts, move, lock, ...extra].map((a) => [a.id, a])), names }), w, 600, null)[0]!;
+    };
+    const caster = (extra: readonly Act[] = []) => {
+      const log = { ...empty, cards: [{ card: 'whoops', kind: 'played' as const, act: 'k1', price: 0, at }] };
+      return logRows(data({ log, mine: [char('s', 'Spritey', 'heel')], acts: new Map([...posts, move, lock, ...extra].map((a) => [a.id, a])), names: new Map([['p', 'Pipewrench']]) }), w, 600, null);
+    };
+    test('the setter\'s line says the Move landed and the caster is locked out until a time', () => {
+      const row = setter();
+      expect(row.kind).toBe('sprung');
+      expect(text(row)).toBe('Snare on your post #3 sprang when Spritey played Whoops! on it. Whoops! landed, and Spritey is locked out of the thread until Nov 1 · 10:00 UTC.');
+      expect([row.aura, row.wallet]).toEqual([0, null]);
+    });
+    test('an admin who ended it early is named plainly, with the time, in either line', () => {
+      expect(text(setter([end]))).toContain('Spritey was locked out of the thread until Nov 1 · 10:00 UTC. An admin ended it at Oct 31 · 12:30 UTC.');
+      const rows = caster([end]);
+      expect(text(rows.find((r) => r.kind === 'struck')!)).toContain('until Nov 1 · 10:00 UTC. An admin ended it at Oct 31 · 12:30 UTC.');
+    });
+    test('the caster\'s line is found through the play\'s `lockedOut`, whatever the spring\'s own `by` says', () => {
+      const other = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { ...lock.payload, by: 'elsewhere' } });
+      const log = { ...empty, cards: [{ card: 'whoops', kind: 'played' as const, act: 'k1', price: 0, at }] };
+      const rows = logRows(data({ log, mine: [char('s', 'Spritey', 'heel')], acts: new Map([...posts, move, other].map((a) => [a.id, a])), names: new Map([['p', 'Pipewrench']]) }), w, 600, null);
+      expect(text(rows.find((r) => r.kind === 'struck')!)).toBe('The Snare on Pipewrench\'s post #3 locked Spritey out of this thread until Nov 1 · 10:00 UTC.');
+    });
+    test('actsFollowed reaches the spring from the play\'s `lockedOut`', () => {
+      expect(actsFollowed(new Map([['k1', move]]))).toEqual(expect.arrayContaining(['sp']));
+    });
+    test('the log names the end of a lockout (`my_cards_ended`) so its Act is read, and the lockout\'s own lines say it; no line of "your card ended" is added', () => {
+      const entry = { cardEnd: 'end', play: 'sp', card: 'snare', at, side: 'onMine' as const, reach: 'post' as const, targetName: null, postAuthorName: 'Pipewrench', casterName: 'Pipewrench', character: 's' };
+      expect(actsNamed({ ...empty, ended: [entry] }, null, [])).toEqual(expect.arrayContaining(['sp', 'end']));
+      const log = { ...empty, cards: [{ card: 'whoops', kind: 'played' as const, act: 'k1', price: 0, at }], ended: [entry] };
+      const rows = logRows(data({ log, mine: [char('s', 'Spritey', 'heel')], acts: new Map([...posts, move, lock, end].map((a) => [a.id, a])), names: new Map([['p', 'Pipewrench']]) }), w, 600, null);
+      expect(rows.map((r) => r.kind)).toEqual(['played', 'struck']);
+      expect(text(rows.find((r) => r.kind === 'struck')!)).toContain('An admin ended it at Oct 31 · 12:30 UTC.');
+    });
+    test('the caster\'s line, after its play line, names the card, the post and the character', () => {
+      const rows = caster();
+      expect(rows.map((r) => r.kind)).toEqual(['played', 'struck']);
+      const row = rows.find((r) => r.kind === 'struck')!;
+      expect(text(row)).toBe('The Snare on Pipewrench\'s post #3 locked Spritey out of this thread until Nov 1 · 10:00 UTC.');
+      expect(row.details.some((d) => typeof d !== 'string')).toBe(true);
+      expect(row.characters).toEqual(['s']);
+    });
+    test('none of the new lines says "cast"', () => {
+      for (const r of [setter(), caster().find((x) => x.kind === 'struck')!, setter([end])]) expect(`${r.what} ${text(r)}`).not.toMatch(/cast/i);
+    });
   });
 
   test('a quote sprang a Move: what it landed on, and whose quote set it off', () => {
@@ -941,6 +996,21 @@ describe('the Mod Bots\' lines', () => {
     const refunded = rowsOf({ wallet: [paid('refund', 'r1', 25), paid('report', 'r1', -25)], reports: [{ ...base, refund: 'failed' }] })[0]!;
     expect(refunded.aura).toBe(0);
     expect(said(refunded)).toContain('could not hear it, so your Aura came back (0.25), and you can make it again.');
+  });
+
+  test('a visit verdict that opened no visit says why, that the Aura came back and that it still counts for the day; a free one has no amount; a visit with no refund says it sent one', () => {
+    const base = { report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: 'visit', verdictAt: '2099-10-29T17:00:03.000Z', mod: 'The Clerk', refund: null } as const;
+    const wallet = [paid('refund', 'r1', 25), paid('report', 'r1', -25)];
+    const veiled = rowsOf({ wallet, reports: [{ ...base, refund: 'veiled' }] })[0]!;
+    expect(veiled.aura).toBe(0);
+    expect(said(veiled)).toBe('Pipewrench reported post #42, for 0.25 Aura. The report is public. The Clerk judged it a visit, but no visit opened: the post\'s author was hidden when it was judged. Your Aura came back (0.25). It still counts as one of Pipewrench\'s reports for that day.');
+    const visited = rowsOf({ wallet, reports: [{ ...base, refund: 'visited' }] })[0]!;
+    expect(visited.aura).toBe(0);
+    expect(said(visited)).toBe('Pipewrench reported post #42, for 0.25 Aura. The report is public. The Clerk judged it a visit, but no visit opened: the post had already been visited after a report on that charge, and a post is not charged twice for one breach. Your Aura came back (0.25). It still counts as one of Pipewrench\'s reports for that day.');
+    const free = said(rowsOf({ reports: [{ ...base, refund: 'veiled' }] })[0]!);
+    expect(free).toContain('no visit opened: the post\'s author was hidden when it was judged. Your Aura came back. It still');
+    expect(free).not.toMatch(/\(/u);
+    expect(said(rowsOf({ wallet: [paid('report', 'r1', -25)], reports: [base] })[0]!)).toContain('The Clerk judged it and sent a visit.');
   });
 
   test('an appeal says what it was of, the ruling, the points and the price', () => {
@@ -1982,5 +2052,16 @@ describe('cards that left the game', () => {
       const rows = rowsOf([{ card: key, kind: 'played' as const, act: 'k1', price: 0, at }]);
       expect(rows.find((r) => r.kind === 'played')!.what).toBe(`You played ${old}`);
     }
+  });
+});
+
+describe('lockoutEnd', () => {
+  const base = { character: 'c', thread: 't', seq: null, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null } as const;
+  test('sees a card_end added to the same Map after an earlier call', () => {
+    const spring: Act = { ...base, id: 'sp', kind: 'spring', targetActId: 'p', createdAt: '2026-11-01T10:00:00.000Z', payload: { did: 'lockedOut', until: '2026-11-02T10:00:00.000Z' } };
+    const acts = new Map<string, Act>([[spring.id, spring]]);
+    expect(lockoutEnd(spring, acts).ended).toBeNull();
+    acts.set('en', { ...base, id: 'en', kind: 'card_end', targetActId: 'sp', createdAt: '2026-11-01T12:30:00.000Z' });
+    expect(lockoutEnd(spring, acts).ended).toBe('Nov 1 · 12:30 UTC');
   });
 });

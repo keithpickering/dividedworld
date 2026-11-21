@@ -696,7 +696,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('the Face\'s stolen thunder says when it is not charged: a booed post, or a card that answered a Salty play', () => {
     expect(instanceUi.reasonWords('face.stoleThunder', instance.settings.economy)).toBe('Stole the thunder: a card the character played on another\'s post drew more votes than the post this window. Not charged where the post\'s reactions are mostly negative, or where the card answered a Salty play');
-    expect(instanceUi.classLooks.face!.hurtsBy(instance.settings.economy, instance.settings.settlementLength)).toBe('Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.');
+    expect(instanceUi.classLooks.face!.hurtsBy(instance.settings.economy, instance.settings.settlementLength)).toBe('Hurt by bored reactions, and by stealing a non-Salty post\'s thunder.');
   });
   test('every pip style has images', () => {
     for (const p of instance.pipStyles) expect(instanceUi.pips[p.key], p.key).toBeDefined();
@@ -1245,6 +1245,15 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     retuned(payItForward, 'trap', { trigger: { on: 'cast' }, match: { flavors: ['salty'], upTo: 'common' }, outcome: { kind: 'refund' } }, () => {
       expect(pay.describe(instance.settings)).toContain('The first Salty Move, up to common, played on that post');
     });
+  });
+
+  test('So Very Happy is a face-down Reversal with every one\'s status, Salty\'s colors, no form and no effect, and its tagline is the glass\'s', () => {
+    const svh = ui('so-very-happy');
+    expect(svh.status).toBe('Set, face down to everyone else');
+    expect([svh.art.color, svh.art.ink]).toEqual([ui('steel-chair').art.color, ui('steel-chair').art.ink]);
+    expect(svh.art.tagline).toBe('Play it Sweet or get locked out');
+    expect(svh.Effect).toBeUndefined();
+    expect(svh.ConfigForm).toBeUndefined();
   });
 
   test('Kick Me is a Gimmick with Pepperoni\'s colors and an effect, and its words read the earn, the refunds and the span from its rules', () => {

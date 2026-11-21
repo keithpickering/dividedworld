@@ -30,6 +30,10 @@ describe('the moderation log\'s words for a Mod\'s acts', () => {
     assert.deepEqual([null, 'filed', 'intercepted', 'trapped', 'reversed', 'dropped', 'odd'].map(visit), ['open', 'filed', 'talked down', 'ended by a trap', 'ended by an admin', 'dropped, never filed', 'ended']);
     const report = (outcome: string | null) => endedModWords({ kind: 'report', outcome, params: {} });
     assert.deepEqual(['visit', 'dismissed', 'backfire', null].map(report), ['sent a visit', 'dismissed', 'backfired onto the reporter', 'judged']);
+    const visited = (outcome: string, v: boolean | undefined) => endedModWords({ kind: 'report', outcome, params: v === undefined ? {} : { visited: v } });
+    assert.equal(visited('visit', false), 'judged a visit, but none opened');
+    assert.equal(visited('backfire', false), 'backfired, but no visit opened');
+    assert.deepEqual([visited('visit', true), visited('backfire', true), visited('visit', undefined), visited('backfire', undefined), visited('dismissed', false)], ['sent a visit', 'backfired onto the reporter', 'sent a visit', 'backfired onto the reporter', 'dismissed']);
     const appeal = (outcome: string | null, points_delta: number | null = null) => endedModWords({ kind: 'appeal', outcome, params: { points_delta } });
     assert.deepEqual([appeal('overturned'), appeal('upheld'), appeal('reduced', -1), appeal('reduced'), appeal('increased', 2), appeal(null)], ['overturned', 'upheld', 'reduced by 1', 'reduced', 'increased by 2', 'ruled on']);
   });

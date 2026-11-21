@@ -106,7 +106,22 @@ test('a visit verdict: the report is opened as the player, judged on the reportJ
   assert.equal(out.body['verdict'], 'visit');
   assert.equal(out.body['report'], REPORT);
   assert.equal(out.body['visit'], VISIT);
+  assert.equal(out.body['refund'], null);
   assert.deepEqual(d.calls.filter((c) => c.db === 'service').map((c) => c.fn).filter((f) => f === 'open_report'), [], 'the service never opens a report for a player');
+});
+
+test('a visit verdict that opened no visit passes close_report\'s refund on, with no visit and no refund_report call', async () => {
+  for (const existing of [false, true]) {
+    const d = fakeDbs({ closeSays: { visit: undefined, refund: { why: 'veiled', amount: 25 }, ...(existing ? { closed: false, existing: true } : {}) } });
+    const out = await go(d, fakeModels(() => ({ verdict: 'visit', line: 'Rule 2, I think.', charge: { rule: 'Rule 2', band: 'minor' } })));
+    const label = existing ? 'existing' : 'closed';
+    assert.equal(out.status, 200, label);
+    assert.equal(out.body['visit'], null, label);
+    assert.deepEqual(out.body['refund'], { why: 'veiled', amount: 25 }, label);
+    assert.equal(out.body['verdict'], 'visit', label);
+    assert.equal(d.state.refunds, 0, label);
+    assert.equal(d.count('refund_report'), 0, label);
+  }
 });
 
 test('the three verdicts: dismissed draws no visit and keeps the Aura spent; backfire is sent as the Mod said it', async () => {
@@ -117,6 +132,7 @@ test('the three verdicts: dismissed draws no visit and keeps the Aura spent; bac
     assert.equal(d.state.closed[0].verdict, verdict);
     assert.equal(d.state.closed[0].charge, null, 'only a visit carries a charge');
     assert.equal(d.state.refunds, 0, 'a dismissal is not a failure: the Aura is spent');
+    assert.equal(out.body['refund'], null);
   }
 });
 

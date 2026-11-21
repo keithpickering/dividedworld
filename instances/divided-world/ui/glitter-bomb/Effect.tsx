@@ -16,8 +16,9 @@
  * `rootMargin`), and once it has stayed there `ARM_MS` by the loop's clock the rest fly out of it and land. A scroll that only
  * passes the spot fires nothing. The burst fires once per mount: leaving and coming back shows every flake landed. Out of view the flakes object is released and dropped (it is deterministic, so it is built
  * again from its seed when the post returns, at ~4,200 flakes a post this is the memory of a long scroll), and so is the cling
- * registration. The surface is `sticky` for cling (a mouse passing over picks glitter up, which lands loose on a post, the reader's own
+ * registration. The surface is `sticky` for cling (a mouse passing over, or a finger slid over it, picks glitter up, which lands loose on a post, the reader's own
  * and never saved or sent; the pointer is over it as the body it covers, since it takes none itself), and unmounting unregisters it and drops the loose glitter.
+ * What a pointer picks up is taken off the post, and the mount remembers it (`taken`), so its gap survives a rebuild from the seed.
  * A play's moment runs this same live effect (the engine gives it the moment's own clock and no reader; this effect never reads
  * either). A kept post (`kept`, docs/plans/2026-11-12-glitter-keeps-design.md,
  * section 4: written while the play was up, loaded after it wore off) starts as a post that has already fired: no burst point is
@@ -111,6 +112,9 @@ export function GlitterBombEffect({ post, plays, kept, children }: EffectProps) 
     if (!el || !face || !below || !lit || !above || !spot) return;
     /* This mount's glitter: its own burst point and resting places, kept until it unmounts. */
     const drawn = `${seed}:${loadSeed()}`;
+    /* The flakes a pointer took off this post during the mount (engine/ui/shine/flakes.ts `take`): a build from the seed leaves them out,
+       so a post that leaves view and returns shows the gaps a sweep left (docs/plans/2026-11-21-glitter-hands-plan.md). */
+    const taken = new Set<string>();
     let flakes: Flakes | null = null;
     let unclung: (() => void) | null = null;
     /* Whether this mount's burst has fired; whether the burst point is in the middle of the view, and since when by the loop's
@@ -151,7 +155,7 @@ export function GlitterBombEffect({ post, plays, kept, children }: EffectProps) 
     const ensure = (): Flakes | null => {
       if (flakes) return flakes;
       if (box.w <= 0 || box.h <= 0) return null;
-      flakes = makeFlakes({ seed: drawn, box, inks: GLITTER_INKS, holo: GLITTER_HOLO, density: AREA / (scale * scale), glint: GLITTER_GLINT });
+      flakes = makeFlakes({ seed: drawn, box, inks: GLITTER_INKS, holo: GLITTER_HOLO, density: AREA / (scale * scale), glint: GLITTER_GLINT, taken });
       /* The point the burst watches stands on the burst point, in the surface's px. */
       spot.style.left = `${flakes.origin.x}px`;
       spot.style.top = `${flakes.origin.y}px`;

@@ -169,6 +169,8 @@ interface Context {
   readonly offices: Readonly<Record<string, string>>;
   readonly characters: Readonly<Record<string, string>>;
   readonly boards: Readonly<Record<string, string>>;
+  /** Absent from an older `pool_context`: reads as none. */
+  readonly lockouts?: readonly { readonly staff: string; readonly thread: string }[];
 }
 
 interface Week {
@@ -237,7 +239,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
     boss: context.boss,
     predecessor: context.predecessor,
   };
-  const cands = candidates(signals, roster, memories, phase, { offices: context.offices, boards: context.boards, characters: context.characters });
+  const cands = candidates(signals, roster, memories, phase, { offices: context.offices, boards: context.boards, characters: context.characters, lockouts: context.lockouts ?? [] });
   const picked = pick(cands, priorities(signals.tallies), todays, threadsLeft, dayRng(day), { strengths: settings.pool.strengths, holdback: settings.pool.holdback });
 
   const slugs = new Set(Object.values(context.boards));

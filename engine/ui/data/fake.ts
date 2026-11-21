@@ -58,7 +58,7 @@ import type {
   SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct, Ballot, Poll, PollBallotsPage, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
-  AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogReport, NoVisit, ReportRefund, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Donated, DriveGift, DriveGifts, Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -78,6 +78,8 @@ const CODE_MESSAGE = 'If this address can sign in here, a code and a link to sig
 const ALREADY_PUBLIC = 'that character\'s class is already public; after a Turn, the new class can be revealed';
 const SYSTEM_BOARD = 'only the staff post here; spin a thread from what they said';
 const MINUTE = 60_000;
+/** The charge a report's visit carries: the match against earlier visits and the visit it opens share it. */
+const REPORT_CHARGE = { rule: 'Rule 2: No double posting', rule_number: 2 } as const;
 const DAY = 86_400_000;
 export const START = Date.UTC(2026, 9, 29, 12);
 
@@ -321,7 +323,7 @@ export interface Seed {
   /** The ban a full bar writes (`infract`): the character is banned until `until` (an Act of no character, as the server writes it), and its bar is emptied. */
   ban(character: Id, until: number, options?: { days?: number; infraction?: Id; at?: number }): Id;
   /** What the next report or appeal is answered with (the Mod's judgment, which the fake does not make): a report's verdict, an appeal's ruling. The defaults are `dismissed` and `upheld`. */
-  judging(answers: { readonly report?: ReportVerdict | 'failed'; readonly appeal?: AppealVerdict | 'failed' }): void;
+  judging(answers: { readonly report?: ReportVerdict | 'failed'; readonly appeal?: AppealVerdict | 'failed'; /** Run once after the report's price is taken and before its verdict (the model call's window, in which a veil can land), then cleared. */ readonly meanwhile?: () => void }): void;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
   /**
@@ -1021,6 +1023,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return latest;
   };
+  /** When a lockout spring ends (`lockout_ends`, 0402): the least of its `until` and the time of a `card_end` on it. */
+  const lockoutEnds = (spring: ActRec): number => {
+    const ends = [...acts.values()].filter((x) => x.kind === 'card_end' && x.target === spring.id).map((x) => x.at);
+    return Math.min(Date.parse(String(spring.payload.until)), ...ends);
+  };
+  /** The live lockout springs that lock a character, with when each ends (`locked_out_until`): a `lockedOut` spring, public as the Move that sprang it is. */
+  const lockoutsOf = (who: Id): { spring: ActRec; thread: Id; until: number }[] => [...acts.values()]
+    .filter((a) => a.kind === 'spring' && a.payload.did === 'lockedOut' && a.payload.locks === who && a.thread !== null)
+    .map((a) => ({ spring: a, thread: a.thread!, until: lockoutEnds(a) })).filter((l) => l.until > now());
+  /** The latest end of a character's lockouts in a thread, or null (`locked_out_until`). */
+  const lockedOutUntil = (who: Id, thread: Id): number | null => {
+    const mine = lockoutsOf(who).filter((l) => l.thread === thread).map((l) => l.until);
+    return mine.length === 0 ? null : Math.max(...mine);
+  };
+  /** `not_locked_out` (0402): the refusal a locked-out character meets in its thread, in the SQL's words, the time rounded up to the minute as `not_banned` says it. */
+  const lockedOutRefusal = (who: Id, thread: Id): Refusal | null => {
+    const until = lockedOutUntil(who, thread);
+    return until === null ? null : refuse(`${characters.get(who)?.name ?? 'this character'} is locked out of this thread until ${refusalTime(iso(Math.ceil(until / 60_000) * 60_000))}; the lockout ends by itself then, and it holds only this character, not your other characters`);
+  };
   function publicCharacter(c: CharRec): Character {
     return (options.face ?? ((x: Character) => x))({
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
@@ -1667,6 +1688,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const found = threadAndBoard(thread);
     if (isRefusal(found)) return found;
     if (found.board.isSystem) return refuse(SYSTEM_BOARD);
+    const lockedOut = lockedOutRefusal(character, thread);
+    if (lockedOut) return lockedOut;
     if (quote !== null && !acts.has(quote)) return refuse('there is no such Act to quote');
     const verdict = forgedQuotes(body, stamp ?? now());
     const stopped = stoppedQuote(thread, quote !== null && verdict.includes(quote) ? null : quote, body, '', verdict);
@@ -1891,7 +1914,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const DID_NOT_TAKE = 'That card didn\'t take, so there is nothing of it on this post.';
   /** The plays cut to a limit, as public Acts, and after them the `card_end` of each that has one (cardsOn, cardsOnMany): the ends ride in the same list. */
   const withEnds = (plays: readonly ActRec[]): Act[] => {
-    const wanted = new Set(plays.filter((p) => p.kind === 'card').map((p) => p.id));
+    /* A lockout's spring is ended as a card play is (thread_page's on_posts takes springs), so its card_end rides too. */
+    const wanted = new Set(plays.filter((p) => p.kind === 'card' || (p.kind === 'spring' && p.payload.did === 'lockedOut')).map((p) => p.id));
     const ends = [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order);
     return [...plays, ...ends].map(publicAct);
   };
@@ -2198,7 +2222,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     recordWallet(account.id, stamp ?? now(), { settlement: null, kind: 'refund', change: amount, overflow: 0, floored: 0, balanceAfter: account.wallet, ref });
   }
   /** The reports whose judgment failed and were refunded: they do not count toward the day's quota (open_report). */
-  const refundedReports = new Set<Id>();
+  const refundedReports = new Map<Id, ReportRefund>();
   /** The appeals whose judgment failed and were refunded: the punishment can be appealed again. */
   const refundedAppeals = new Set<Id>();
   /** `wallet_spend`'s refusal of a price the wallet does not hold, or nothing. */
@@ -2392,6 +2416,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const banned = bannedUntilOf(character);
       if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
     }
+    /* place_cast asks not_locked_out once the thread is known, before its back is met, so the Move that springs a lockout is not refused by it. */
+    const lockedOut = lockedOutRefusal(character, on.thread);
+    if (lockedOut) return lockedOut;
     if (reply !== undefined && !carries) return refuse('only a card that carries a reply takes one', 'body');
     if (carries && !/[\p{L}\p{N}]/u.test(reply?.body ?? '')) return refuse('write the reply this card carries', 'body');
     /* The reply is a post of the card's thread, and not on The System's board (write_reply). */
@@ -2423,7 +2450,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A refund back lets the cast land too, and the spring says it returned: no quadrant, and the card goes back to the caster, not the setter. */
     const returns = catches && outcome === 'refund';
     /* A cast lands where nothing caught it, or a ride or a refund back let it through. */
-    const lands = !catches || rides || returns;
+    /* A lockout back lets the cast land too, and the spring locks its character out of the thread; no card changes hands (spring_traps). */
+    const locks = catches && outcome === 'lockout';
+    const lands = !catches || rides || returns || locks;
     /* A skim play carries its end, as a Use's does (place_cast, 0151). */
     const at = stamp ?? now();
     /* The play's id is chosen first, so the spring can name it and be written before it, as play_card writes them (each takes its moment then). */
@@ -2434,6 +2463,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: rides
         ? { card: trap.card, trigger: 'cast', did: 'rode', ...(typeof faceDown.get(trap.set)!.quadrant === 'string' ? { quadrant: faceDown.get(trap.set)!.quadrant } : {}), set: trap.set, by: playId }
         : returns ? { card: trap.card, trigger: 'cast', did: 'returned', set: trap.set, by: playId }
+        : locks ? { card: trap.card, trigger: 'cast', did: 'lockedOut', set: trap.set, by: playId, locks: character, until: iso(at + (trapRules!.trap!.outcome as { hours: number }).hours * 3_600_000) }
         : { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
@@ -2458,7 +2488,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     const drive = !lands ? undefined : driveOf(rules, target, playId);
     const wardPassed = shot === null ? undefined : passedWard(rules, effects, 'post', shot.upTo, at);
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(shot === null ? {} : { pierce: { by: shot.play, card: shot.card, ...(wardPassed === undefined ? {} : { ward: wardPassed }) } }), ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(!lands ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(handed ? { handedBack: handed } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && lands ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(shot === null ? {} : { pierce: { by: shot.play, card: shot.card, ...(wardPassed === undefined ? {} : { ward: wardPassed }) } }), ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(!lands ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(spring && locks ? { lockedOut: spring.id } : {}), ...(handed ? { handedBack: handed } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && lands ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
     if (shot !== null) spentPierces.add(shot.play);
     if (passedBack) seededAlerts.push({ account: account.id, kind: 'trapStruck', sub: 'passed', act: written.id, character, at: written.at });
     /* What a landed play on a post writes beside its Act (land_rows, 0357): not for a caught one. */
@@ -2484,7 +2514,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (decided.value.draw !== undefined && lands) writeSurface('draw', written.id, character, first);
     if (spring) {
       /* The caught card is the setter's (a ride takes none): one more in the hand, and a `caught` row in their own ledger (nothing is paid). */
-      const setter = rides || returns ? undefined : accounts.get(faceDown.get(trap!.set)!.account);
+      const setter = rides || returns || locks ? undefined : accounts.get(faceDown.get(trap!.set)!.account);
       if (setter) {
         setter.cards[card] = (setter.cards[card] ?? 0) + 1;
         recordCard(setter.id, spring.at, { card, kind: 'caught', act: spring.id, price: 0 });
@@ -2727,6 +2757,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const banned = bannedUntilOf(character);
       if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
     }
+    /* A board card is written in the announcements thread and asks nothing; every other reach asks the thread it is written in (place_cast). */
+    if (reach !== 'board') {
+      const lockedOut = lockedOutRefusal(character, thread);
+      if (lockedOut) return lockedOut;
+    }
     const account = me()!;
     settleBacks(account);
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
@@ -2795,6 +2830,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const c = acting(character);
     if (isRefusal(c)) return c;
     if (on.character !== character) return refuse('a card is set face down on a post of your own character\'s');
+    const lockedOut = lockedOutRefusal(character, on.thread);
+    if (lockedOut) return lockedOut;
     const account = me()!;
     settleBacks(account);
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
@@ -3393,7 +3430,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           const v = all.find((x) => x.kind === 'report_verdict' && x.target === r.id);
           return {
             report: r.id, character: r.character!, at: iso(r.at), post: r.target!, postSeq: seqOf(r.target), thread: r.thread, verdict: (v?.payload.verdict as ReportVerdict | undefined) ?? null,
-            verdictAt: v ? iso(v.at) : null, mod: named(v?.character ?? null), refund: refundedReports.has(r.id) ? 'failed' : null,
+            verdictAt: v ? iso(v.at) : null, mod: named(v?.character ?? null), refund: refundedReports.get(r.id) ?? null,
           };
         }),
       appeals: newest(all.filter((a) => a.kind === 'appeal' && owned(a.character) && fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a })))
@@ -3411,10 +3448,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /** What the next report and appeal are answered with: the Mod's judgment, which the fake does not make (`Seed.judging`). */
   const judged: { report: ReportVerdict | 'failed'; appeal: AppealVerdict | 'failed' } = { report: 'dismissed', appeal: 'upheld' };
+  let meanwhile: (() => void) | undefined;
   /** my_reports_left (0111): the day's quota (UTC) less the character's reports since midnight, none counted for one refunded for a failed judgment. */
   const reportsLeftNow = (character: Id): number => {
     const midnight = Math.floor(now() / 86_400_000) * 86_400_000;
-    return Math.max(0, settings.modBots.reportsPerDay - [...acts.values()].filter((a) => a.kind === 'report' && a.character === character && a.at >= midnight && !refundedReports.has(a.id)).length);
+    return Math.max(0, settings.modBots.reportsPerDay - [...acts.values()].filter((a) => a.kind === 'report' && a.character === character && a.at >= midnight && refundedReports.get(a.id) !== 'failed').length);
   };
   /* ---------------------------------------------------------------- search ---- */
   /*
@@ -3727,7 +3765,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             expiresAt: typeof a.payload.ends_at === 'string' ? a.payload.ends_at : null, at: iso(a.at), thread: a.thread, end: null, keptBy: null, outcome: (e?.payload.outcome as string | undefined) ?? null };
         }
         if (a.kind === 'report_verdict') {
-          return { act: a.id, kind: 'report', params: { post: seqOf(acts.get(a.target ?? '')?.target), verdict: a.payload.verdict }, demand: null, expiresAt: null, at: iso(a.at), thread: a.thread, end: null, keptBy: null, outcome: String(a.payload.verdict) };
+          return { act: a.id, kind: 'report', params: { post: seqOf(acts.get(a.target ?? '')?.target), verdict: a.payload.verdict, visited: typeof a.payload.visit_act === 'string' }, demand: null, expiresAt: null, at: iso(a.at), thread: a.thread, end: null, keptBy: null, outcome: String(a.payload.verdict) };
         }
         if (a.kind === 'appeal_ruling') {
           const pun = acts.get(acts.get(a.target ?? '')?.target ?? '');
@@ -3910,6 +3948,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     reverseCard(play) {
       if (!me()?.admin) return refuse('only an admin ends a card');
       const p = acts.get(play);
+      /* A live lockout spring is ended as a card play is (reverse_card, 0402), with the same refusals. */
+      if (p?.kind === 'spring' && p.payload.did === 'lockedOut') {
+        if (reversedPlays.has(play)) return refuse('an admin has already ended that card');
+        if (Date.parse(String(p.payload.until)) <= now()) return refuse('that card has already worn off');
+        const end = write({ character: null, kind: 'card_end', thread: p.thread, target: play, payload: { why: 'reversed', by: 'admin' } });
+        sendAct(end);
+        return ok({ act: end.id, play });
+      }
       if (!p || p.kind !== 'card') return refuse('that is not a card play');
       if (p.payload.caught !== undefined) return refuse('that card was caught by a trap, so it never landed');
       const ends = reachPlays.get(play)?.endsAt ?? (typeof p.payload.ends === 'string' ? Date.parse(p.payload.ends) : null);
@@ -3990,18 +4036,41 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (short) return short;
       const report = write({ character: through, kind: 'report', thread: p.thread, target: post, payload: { reason: said } });
       spend(account, settings.modBots.reportPrice, 'report', report.id);
+      /* The window hook is taken and cleared here, so a judgment that failed never leaves it for the next report; it runs only when there is a verdict to come. */
+      const run = meanwhile;
+      meanwhile = undefined;
       /* A judgment that failed: the price goes back, the report stays with no verdict, and it can be made again (staff/report.ts). */
       if (judged.report === 'failed') {
         giveBack(account, settings.modBots.reportPrice, report.id);
-        refundedReports.add(report.id);
+        refundedReports.set(report.id, 'failed');
         return refuse('The Mod could not hear this report. Your Aura has been refunded, and you can make it again.');
       }
+      run?.();
       const verdict = judged.report;
-      const visit = verdict === 'visit' ? seed.visit(mod.id, post, { charges: [{ cause: 'report' }] }) : null;
+      /* A visit verdict opens no visit where the author is now hidden (`veiled`) or an earlier visit of the post carries this charge (`visited`, once it has ended not reversed; an open one is joined). The price goes back, the quota stays spent. */
+      let visit: Id | null = null;
+      let why: NoVisit | null = null;
+      if (verdict === 'visit') {
+        /* Mirrors start_visit (0357): the author veiled opens nothing; a repeat of the charge on a non-reversed visit of the post (ended or open) answers the post's open visit, any charge, or is `visited` when none is open; else a new one starts (the fake does not model a join). */
+        const onPost = [...acts.values()].filter((v) => v.kind === 'visit' && v.target === post).sort((x, y) => y.at - x.at);
+        const ended = (v: ActRec) => [...acts.values()].find((e) => e.kind === 'visit_end' && e.target === v.id);
+        const open = onPost.find((v) => !ended(v));
+        const repeats = onPost.some((v) => ended(v)?.payload.outcome !== 'reversed' && ((v.payload.charges ?? []) as { cause?: string; rule?: string; rule_number?: number | null }[])
+          .some((c) => c.cause === 'report' && (c.rule_number === REPORT_CHARGE.rule_number || (c.rule_number == null && c.rule === REPORT_CHARGE.rule))));
+        if (liveVeils(post, 'author').length > 0) why = 'veiled';
+        else if (repeats) { if (open) visit = open.id; else why = 'visited'; }
+        else visit = seed.visit(mod.id, post, { charges: [{ cause: 'report', rule: REPORT_CHARGE.rule, ruleNumber: REPORT_CHARGE.rule_number }] });
+      }
+      let refund: ReportResult['refund'] = null;
+      if (why) {
+        giveBack(account, settings.modBots.reportPrice, report.id);
+        refundedReports.set(report.id, why);
+        refund = { why, amount: settings.modBots.reportPrice };
+      }
       const line = verdict === 'visit' ? 'Noted. A visit is on its way.' : verdict === 'dismissed' ? 'Dismissed. Do not waste the staff\'s time.' : 'That report is a waste of the staff\'s time, and it will be remembered.';
       const given = write({ character: mod.id, kind: 'report_verdict', thread: p.thread, target: report.id, payload: { report_act: report.id, verdict, line, ...(visit ? { visit_act: visit } : {}) } });
       void given;
-      return ok<ReportResult>({ report: report.id, verdict, line, visit });
+      return ok<ReportResult>({ report: report.id, verdict, line, visit, refund });
     },
     fileAppeal(through, punishment, plea) {
       const who = acting(through);
@@ -4114,6 +4183,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const wanted = new Set(ids);
       return withEnds([...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit));
     },
+    cardEnds(targets) {
+      const wanted = new Set(targets);
+      return [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).map(publicAct);
+    },
     tails: (posts) => tails(posts),
     effectStates(plays) {
       const out: Record<Id, EffectState> = {};
@@ -4195,6 +4268,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
              (`onMine`); a reversal between two other players is in neither's view. */
           ended: newest([...acts.values()].filter((e) => e.kind === 'card_end' && e.target !== null && fits(e.at)).flatMap((e) => {
             const play = acts.get(e.target!);
+            /* A lockedOut spring an admin ended (my_cards_ended, 0402): the setter's player reads it as 'cast', the locked character's player as 'onMine'; no one else does. */
+            if (play?.kind === 'spring' && play.payload.did === 'lockedOut') {
+              const setter = characters.get(play.character ?? '')?.owner === account;
+              const locked = typeof play.payload.locks === 'string' ? play.payload.locks : '';
+              if (!setter && characters.get(locked)?.owner !== account) return [];
+              const targetPost = acts.get(play.target ?? '');
+              const targetAuthor = targetPost ? shownAuthor(targetPost, false) : undefined;
+              return [{ ms: e.at, order: e.order, e: {
+                cardEnd: e.id, play: play.id, card: String(play.payload.card), at: iso(e.at), side: setter ? 'cast' as const : 'onMine' as const, reach: 'post' as const, targetName: null,
+                postAuthorName: targetAuthor == null ? null : charOf(targetAuthor)?.name ?? null,
+                casterName: characters.get(play.character ?? '')?.name ?? null,
+                character: (setter ? play.character : locked) as Id,
+              } }];
+            }
             if (!play || play.kind !== 'card') return [];
             const cast = characters.get(play.character ?? '')?.owner === account;
             if (!cast && targetOwner(play) !== account) return [];
@@ -4401,6 +4488,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [...characters.values()].filter((c) => c.owner === account.id).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((c): MyCharacter => {
         const opens = turnOpens(c);
         const shown = classShownAt(c);
+        const locked = lockoutsOf(c.id);
         return {
           id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classShownAt: shown === null ? null : iso(shown), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
           turnOpensAt: opens === null ? null : iso(opens),
@@ -4409,6 +4497,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           presenceHidden: c.presenceHidden,
           ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
           ...(barsOf(c.id).length > 0 ? { bars: barsOf(c.id) } : {}),
+          ...(locked.length > 0 ? { lockouts: locked.map((l) => ({ thread: l.thread, until: iso(l.until) })) } : {}),
         };
       });
     },
@@ -4623,7 +4712,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return {
         thread: summary, page, acts: shownActs,
         people: chars.map((character): ThreadPerson => ({
-          character, posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
+          character: ((until) => (until === null ? character : { ...character, lockedUntil: iso(until) }))(lockedOutUntil(character.id, thread)), posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
         })),
         plays, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), veiled: myVeiled(posts.map((a) => a.id)),
@@ -5845,6 +5934,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     judging(answers) {
       if (answers.report) judged.report = answers.report;
       if (answers.appeal) judged.appeal = answers.appeal;
+      if (answers.meanwhile) meanwhile = answers.meanwhile;
     },
     text(play, version, result, o) {
       const k = acts.get(play);

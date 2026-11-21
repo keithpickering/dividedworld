@@ -119,7 +119,7 @@ export function ReportForm({ post, seq, ready }: { readonly post: Id; readonly s
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [result, setResult] = useState<{ readonly verdict: string; readonly line: string } | null>(null);
+  const [result, setResult] = useState<{ readonly verdict: string; readonly line: string; readonly refund: { readonly why: string; readonly amount: number } | null } | null>(null);
   const [left, setLeft] = useState<number | null>(ready.left);
   const judge = ready.judge;
   const ids = useId();
@@ -141,7 +141,7 @@ export function ReportForm({ post, seq, ready }: { readonly post: Id; readonly s
     try {
       const a = await api.fileReport(mask.id, post, reason);
       if (!a.ok) { setRefusal(a.error); return; }
-      setResult({ verdict: a.value.verdict ?? 'heard', line: a.value.line });
+      setResult({ verdict: a.value.verdict ?? 'heard', line: a.value.line, refund: a.value.refund });
       setReason('');
       void player.refresh();
       const again = await Promise.resolve(api.reportsLeft(mask.id)).catch(() => null);
@@ -153,7 +153,11 @@ export function ReportForm({ post, seq, ready }: { readonly post: Id; readonly s
     }
   };
 
-  const said = result === null ? null : {
+  const said = result === null ? null : result.verdict === 'visit' && result.refund?.why === 'veiled' ? (
+    <>Your report was judged a visit, but no visit opened: post #{seq}&apos;s author is hidden right now. Your {auraWords(result.refund.amount)} came back. It still counts toward {mask.name}&apos;s reports today.</>
+  ) : result.verdict === 'visit' && result.refund?.why === 'visited' ? (
+    <>Your report was judged a visit, but no visit opened: post #{seq} was already visited after a report on that charge. Your {auraWords(result.refund.amount)} came back. It still counts toward {mask.name}&apos;s reports today.</>
+  ) : {
     visit: <>Your report was heard: a visit is on its way to post #{seq}. Your {auraWords(price)} is spent.</>,
     dismissed: <>Your report was heard and dismissed. Your {auraWords(price)} is spent.</>,
     backfire: <>Your report backfired: a visit is on its way to {mask.name}&apos;s latest post, for wasting the staff&apos;s time. Your {auraWords(price)} is spent.</>,
@@ -165,7 +169,7 @@ export function ReportForm({ post, seq, ready }: { readonly post: Id; readonly s
       <div className="kb-lens-section kb-visit-state">
         <p className="kb-visit-facts">
           Your report is public: it names {mask.name}, and anyone can react to it. {judge ? <>{judge.mod}, on {judge.board}&apos;s beat, judges it now:</> : <>{role} on this board&apos;s beat judges it now:</>} a visit, dismissed, or it backfires onto {mask.name}&apos;s latest post.
-          If the Mod cannot judge it, your Aura comes back.
+          If the Mod cannot judge it, or judges it a visit and none can open, your Aura comes back.
         </p>
       </div>
       <div className="kb-lens-section kb-mod-field">

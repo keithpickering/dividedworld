@@ -1,4 +1,4 @@
--- Retiring a card (supabase/migrations/0401_card_retirement.sql; docs/plans/2026-11-20-card-retirement-plan.md, Task 2; design docs/plans/2026-11-20-card-retirement-design.md, sections 1 to 3, 5 and 8).
+-- Retiring a card (supabase/migrations/0403_card_retirement.sql; docs/plans/2026-11-20-card-retirement-plan.md, Task 2; design docs/plans/2026-11-20-card-retirement-design.md, sections 1 to 3, 5 and 8).
 -- A card leaves in one of three ways, each said in the instance's code and written by seed_instance: out of print (`retired_at`; nothing gives a new copy, every copy stays playable and the date is kept while the
 -- flag stays), renamed (`became`, `gone_at`; every copy an account holds, held or face down, moves to the new key) and withdrawn (`refund`, `gone_at`; every such copy is refunded once).
 --   * The columns and their checks; the ledger's three kinds and the wallet's `withdrawal`; the shape guard (a key the payload lists in none of its lists, a gone key listed as a card).

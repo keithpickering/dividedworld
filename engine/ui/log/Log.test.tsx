@@ -921,6 +921,21 @@ describe('My log: the Mod Bots\' lines (the design, section 9)', () => {
     expect(text).toMatch(/could not hear it, so your Aura came back \(0\.25\), and you can make it again\./u);
   });
 
+  test('a report whose visit opened none (a repeat after the earlier visit ended) shows its line in the character\'s tab, and nothing of it in another player\'s log', async () => {
+    const { fake, me, pipe, glo, thread, clerk } = modded();
+    const gp = fake.seed.post(thread, glo, 'Gloomba a third time.', { at: at(30, 16) });
+    const earlier = fake.seed.visit(clerk, gp, { at: at(30, 14), charges: [{ cause: 'report' }] });
+    fake.seed.visitEnd(earlier, { outcome: 'filed', line: 'Filed.', at: at(30, 15) });
+    fake.seed.judging({ report: 'visit' });
+    void fake.fileReport(pipe, gp, 'rude again');
+    await open(fake, me, pipe);
+    await screen.findByRole('table');
+    const text = bodyRows().map((r) => cells(r).join(' | ')).join('\n');
+    expect(text).toContain('The Clerk judged it a visit, but no visit opened: the post had already been visited after a report on that charge, and a post is not charged twice for one breach. Your Aura came back (0.25). It still counts as one of Pipewrench\'s reports for that day.');
+    fake.signInAs(fake.seed.account('rival3'));
+    expect((await fake.log()).reports).toEqual([]);
+  });
+
   test('an appeal and its ruling are a line of their own, and the player reads only their own characters\' lines', async () => {
     const { fake, me, pipe, clerk, inf } = modded();
     void fake.fileAppeal(pipe, inf, 'It was a mistake.');

@@ -54,6 +54,8 @@ interface World {
   walls?: { play: string; card: string; about: string }[];
   /** When set, pool_thread reports this many long posts (Poster0 oldest) instead of the one short one. */
   longThread?: number;
+  /** `pool_context`'s lockouts (staff character id, thread id); omitted from the context when unset. */
+  lockouts?: { staff: string; thread: string }[];
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any };
 
@@ -78,7 +80,7 @@ function fakeDb(w: World = {}) {
         case 'claim_pool_run': return (state.held ? null : 'run-0001') as T;
         case 'pool_context':
           return { season: { startsAt: Date.parse('2026-10-01T00:00:00Z'), endsAt: Date.parse('2026-12-30T00:00:00Z') }, boss: HYPE, predecessor: null,
-            offices: { [CLERK]: 'member', [HYPE]: 'boss', [SIGH]: 'mod', [MON]: 'mod' }, characters: {}, boards: w.boards ?? { [GENERAL]: 'general' } } as T;
+            offices: { [CLERK]: 'member', [HYPE]: 'boss', [SIGH]: 'mod', [MON]: 'mod' }, characters: { [SIGH]: 'char-sigh' }, boards: w.boards ?? { [GENERAL]: 'general' }, ...(w.lockouts ? { lockouts: w.lockouts } : {}) } as T;
         case 'pool_week': {
           const today = state.spends.filter((s) => s.day === args.today);
           const monday = new Date(Date.parse(String(args.today)) - ((new Date(String(args.today)).getUTCDay() + 6) % 7) * 86_400_000).toISOString().slice(0, 10);
@@ -305,6 +307,17 @@ test('a disabled System writes nothing and calls no model', async () => {
   assert.equal(m.chats.length + m.completions.length, 0);
   assert.deepEqual([...new Set(d.calls.map((c) => c.fn))], ['instance_settings']);
   assert.equal(d.state.acts.length + d.state.spends.length + d.state.notes.length, 0);
+});
+
+test('a persona locked out of its only candidate thread is skipped cleanly: no model call, no spend, no crash', async () => {
+  const d = fakeDb({ named: [SIGH], lockouts: [{ staff: 'char-sigh', thread: T1 }] });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(out.picks.length, 0);
+  assert.equal(m.chats.length, 0);
+  assert.equal(d.state.spends.length, 0);
+  assert.equal(d.count('write_staff_act'), 0);
 });
 
 test('a week whose pool is spent calls no model', async () => {

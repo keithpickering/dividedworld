@@ -1,8 +1,10 @@
 /*
  * Hot Rod, a tribute: the flames skin every kid made for their clan. A black ground, a column head that burns yellow to red, gold links,
  * and a banner of flames drawn from conic gradients (tongues in two dark reds fading to black toward the top, so the logo holds on both).
- * Its buttons are gray pillows lit from the center, with black lettering as typed. Dark only, so it sets its tokens on :root and in both
- * dark blocks alike (the board look design, section 1). The game's own pieces keep the house theme's colors.
+ * As on the red ezboards it pays homage to, the posts sit on black inside a red grid and the small print (dates, post counts) is red.
+ * Its buttons are dark gray pillows with a dim glow at the center and light lettering as typed; the primary one glows ember with gold
+ * lettering. The glows are as bright as a light label at 4.5:1 allows. Dark only, so it sets its tokens on :root and in both dark blocks
+ * alike (the board look design, section 1). The game's own pieces keep the house theme's colors.
  */
 :root {
   --kb-font-body: Verdana, Geneva, "DejaVu Sans", sans-serif;
@@ -12,7 +14,7 @@
   --kb-logo-spacing: 0.09em;
   --kb-logo-leading: 1;
   --kb-font-badge: Silkscreen, "Courier New", monospace;
-  --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.25), 1px 2px 3px rgb(0 0 0 / 0.35);
+  --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 -1px 0 rgb(0 0 0 / 0.5), 0 0 0 1px #3a3a3a;
   --kb-button-primary-shadow: var(--kb-button-shadow);
   --kb-button-weight: bold;
   --kb-button-tracking: 0.06em;
@@ -44,17 +46,17 @@
   --kb-fg: #f2e6d8;
   --kb-bg: #000;
   --kb-rule: #d9531e;
-  --kb-muted: #c2a98f;
+  --kb-muted: #ff5a4a;
   --kb-link: #ffcc00;
   --kb-link-visited: #e0a96d;
   --kb-focus: #ffcc00;
   --kb-selection-fg: #000;
   --kb-selection-bg: #ffcc00;
-  --kb-grid: #4a1606;
-  --kb-frame: #7a1e00;
-  --kb-row-1: #140906;
-  --kb-row-2: #1d0d07;
-  --kb-row-3: #26110a;
+  --kb-grid: #6e0000;
+  --kb-frame: #b00000;
+  --kb-row-1: #000;
+  --kb-row-2: #070101;
+  --kb-row-3: #0e0303;
   --kb-head-bg: linear-gradient(#ffe36a, #ffae00 35%, #ff5a00 65%, #cb5144);
   --kb-head-fg: #1a0500;
   --kb-head-focus: #1a0500;
@@ -79,18 +81,18 @@
   --kb-input-bg: #0a0403;
   --kb-input-edge: #7a1e00;
   --kb-input-shadow: inset 1px 1px 2px rgb(0 0 0 / 0.6);
-  --kb-button-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #f4f4f4 0%, #d2d2d2 40%, #9c9c9c 82%, #7f7f7f 100%);
+  --kb-button-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #5a5a5a 0%, #404040 40%, #262626 82%, #161616 100%);
   --kb-button-edge: #000;
-  --kb-button-fg: #000;
-  --kb-button-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.55);
+  --kb-button-fg: #ececec;
+  --kb-button-fg-shadow: 0 1px 0 #000;
   --kb-button-case: none;
-  --kb-button-primary-bg: linear-gradient(#ffe36a, #ffae00 48%, #ff5a00 52%, #ff8a1a);
-  --kb-button-primary-fg: #000;
-  --kb-button-primary-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.55);
-  --kb-button-hover-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #ffffff 0%, #e6e6e6 40%, #b4b4b4 82%, #8a8a8a 100%);
-  --kb-button-hover-fg: #000;
-  --kb-button-primary-hover-bg: linear-gradient(#fff08a, #ffc21a 48%, #ff7a1a 52%, #ffa03a);
-  --kb-button-primary-hover-fg: #000;
+  --kb-button-primary-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #8a2c00 0%, #5c1800 40%, #300a00 82%, #1c0500 100%);
+  --kb-button-primary-fg: #ffcc00;
+  --kb-button-primary-fg-shadow: 0 1px 0 #000;
+  --kb-button-hover-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #666666 0%, #4c4c4c 40%, #2e2e2e 82%, #1c1c1c 100%);
+  --kb-button-hover-fg: #fff;
+  --kb-button-primary-hover-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #a83a00 0%, #6e1e00 40%, #3a0c00 82%, #220600 100%);
+  --kb-button-primary-hover-fg: #ffe36a;
   --kb-badge-a: #ff5a00;
   --kb-badge-a-fg: #000;
   --kb-badge-b: #000;
@@ -109,7 +111,7 @@
     --kb-logo-spacing: 0.09em;
     --kb-logo-leading: 1;
     --kb-font-badge: Silkscreen, "Courier New", monospace;
-    --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.25), 1px 2px 3px rgb(0 0 0 / 0.35);
+    --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 -1px 0 rgb(0 0 0 / 0.5), 0 0 0 1px #3a3a3a;
     --kb-button-primary-shadow: var(--kb-button-shadow);
     --kb-button-weight: bold;
     --kb-button-tracking: 0.06em;
@@ -141,17 +143,17 @@
     --kb-fg: #f2e6d8;
     --kb-bg: #000;
     --kb-rule: #d9531e;
-    --kb-muted: #c2a98f;
+    --kb-muted: #ff5a4a;
     --kb-link: #ffcc00;
     --kb-link-visited: #e0a96d;
     --kb-focus: #ffcc00;
     --kb-selection-fg: #000;
     --kb-selection-bg: #ffcc00;
-    --kb-grid: #4a1606;
-    --kb-frame: #7a1e00;
-    --kb-row-1: #140906;
-    --kb-row-2: #1d0d07;
-    --kb-row-3: #26110a;
+    --kb-grid: #6e0000;
+    --kb-frame: #b00000;
+    --kb-row-1: #000;
+    --kb-row-2: #070101;
+    --kb-row-3: #0e0303;
     --kb-head-bg: linear-gradient(#ffe36a, #ffae00 35%, #ff5a00 65%, #cb5144);
     --kb-head-fg: #1a0500;
     --kb-head-focus: #1a0500;
@@ -176,18 +178,18 @@
     --kb-input-bg: #0a0403;
     --kb-input-edge: #7a1e00;
     --kb-input-shadow: inset 1px 1px 2px rgb(0 0 0 / 0.6);
-    --kb-button-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #f4f4f4 0%, #d2d2d2 40%, #9c9c9c 82%, #7f7f7f 100%);
+    --kb-button-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #5a5a5a 0%, #404040 40%, #262626 82%, #161616 100%);
     --kb-button-edge: #000;
-    --kb-button-fg: #000;
-    --kb-button-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.55);
+    --kb-button-fg: #ececec;
+    --kb-button-fg-shadow: 0 1px 0 #000;
     --kb-button-case: none;
-    --kb-button-primary-bg: linear-gradient(#ffe36a, #ffae00 48%, #ff5a00 52%, #ff8a1a);
-    --kb-button-primary-fg: #000;
-    --kb-button-primary-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.55);
-    --kb-button-hover-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #ffffff 0%, #e6e6e6 40%, #b4b4b4 82%, #8a8a8a 100%);
-    --kb-button-hover-fg: #000;
-    --kb-button-primary-hover-bg: linear-gradient(#fff08a, #ffc21a 48%, #ff7a1a 52%, #ffa03a);
-    --kb-button-primary-hover-fg: #000;
+    --kb-button-primary-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #8a2c00 0%, #5c1800 40%, #300a00 82%, #1c0500 100%);
+    --kb-button-primary-fg: #ffcc00;
+    --kb-button-primary-fg-shadow: 0 1px 0 #000;
+    --kb-button-hover-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #666666 0%, #4c4c4c 40%, #2e2e2e 82%, #1c1c1c 100%);
+    --kb-button-hover-fg: #fff;
+    --kb-button-primary-hover-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #a83a00 0%, #6e1e00 40%, #3a0c00 82%, #220600 100%);
+    --kb-button-primary-hover-fg: #ffe36a;
     --kb-badge-a: #ff5a00;
     --kb-badge-a-fg: #000;
     --kb-badge-b: #000;
@@ -206,7 +208,7 @@
   --kb-logo-spacing: 0.09em;
   --kb-logo-leading: 1;
   --kb-font-badge: Silkscreen, "Courier New", monospace;
-  --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 -1px 0 rgb(0 0 0 / 0.25), 1px 2px 3px rgb(0 0 0 / 0.35);
+  --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 -1px 0 rgb(0 0 0 / 0.5), 0 0 0 1px #3a3a3a;
   --kb-button-primary-shadow: var(--kb-button-shadow);
   --kb-button-weight: bold;
   --kb-button-tracking: 0.06em;
@@ -238,17 +240,17 @@
   --kb-fg: #f2e6d8;
   --kb-bg: #000;
   --kb-rule: #d9531e;
-  --kb-muted: #c2a98f;
+  --kb-muted: #ff5a4a;
   --kb-link: #ffcc00;
   --kb-link-visited: #e0a96d;
   --kb-focus: #ffcc00;
   --kb-selection-fg: #000;
   --kb-selection-bg: #ffcc00;
-  --kb-grid: #4a1606;
-  --kb-frame: #7a1e00;
-  --kb-row-1: #140906;
-  --kb-row-2: #1d0d07;
-  --kb-row-3: #26110a;
+  --kb-grid: #6e0000;
+  --kb-frame: #b00000;
+  --kb-row-1: #000;
+  --kb-row-2: #070101;
+  --kb-row-3: #0e0303;
   --kb-head-bg: linear-gradient(#ffe36a, #ffae00 35%, #ff5a00 65%, #cb5144);
   --kb-head-fg: #1a0500;
   --kb-head-focus: #1a0500;
@@ -273,18 +275,18 @@
   --kb-input-bg: #0a0403;
   --kb-input-edge: #7a1e00;
   --kb-input-shadow: inset 1px 1px 2px rgb(0 0 0 / 0.6);
-  --kb-button-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #f4f4f4 0%, #d2d2d2 40%, #9c9c9c 82%, #7f7f7f 100%);
+  --kb-button-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #5a5a5a 0%, #404040 40%, #262626 82%, #161616 100%);
   --kb-button-edge: #000;
-  --kb-button-fg: #000;
-  --kb-button-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.55);
+  --kb-button-fg: #ececec;
+  --kb-button-fg-shadow: 0 1px 0 #000;
   --kb-button-case: none;
-  --kb-button-primary-bg: linear-gradient(#ffe36a, #ffae00 48%, #ff5a00 52%, #ff8a1a);
-  --kb-button-primary-fg: #000;
-  --kb-button-primary-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.55);
-  --kb-button-hover-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #ffffff 0%, #e6e6e6 40%, #b4b4b4 82%, #8a8a8a 100%);
-  --kb-button-hover-fg: #000;
-  --kb-button-primary-hover-bg: linear-gradient(#fff08a, #ffc21a 48%, #ff7a1a 52%, #ffa03a);
-  --kb-button-primary-hover-fg: #000;
+  --kb-button-primary-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #8a2c00 0%, #5c1800 40%, #300a00 82%, #1c0500 100%);
+  --kb-button-primary-fg: #ffcc00;
+  --kb-button-primary-fg-shadow: 0 1px 0 #000;
+  --kb-button-hover-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #666666 0%, #4c4c4c 40%, #2e2e2e 82%, #1c1c1c 100%);
+  --kb-button-hover-fg: #fff;
+  --kb-button-primary-hover-bg: radial-gradient(ellipse 75% 70% at 50% 45%, #a83a00 0%, #6e1e00 40%, #3a0c00 82%, #220600 100%);
+  --kb-button-primary-hover-fg: #ffe36a;
   --kb-badge-a: #ff5a00;
   --kb-badge-a-fg: #000;
   --kb-badge-b: #000;

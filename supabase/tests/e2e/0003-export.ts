@@ -571,7 +571,7 @@ test('an instance exported and imported into a fresh database is the same instan
         perform tests.act(b, 'ballot', t, '{"picks": [0]}', secret, now() - interval '150 minutes');
         perform tests.act(a, 'ballot', t, '{"picks": [1]}', secret, now() - interval '2 hours');
       end;
-      -- Card retirement (0401): an out-of-print card, a card renamed to another key and a card withdrawn for a refund, each left as the seed leaves it (card_leaves writes the
+      -- Card retirement (0403): an out-of-print card, a card renamed to another key and a card withdrawn for a refund, each left as the seed leaves it (card_leaves writes the
       -- holders' rows, the new key's, and the withdrawal's wallet event), and an out-of-print pack kind. Each is named by its key in e2e's assertions.
       insert into card_kinds (key, name, alignment, rarity, play, retired_at) values ('expretired', 'Exported Retired', 'sweet', 'common', 'cast', now());
       insert into card_kinds (key, name, alignment, rarity, play) values ('expold', 'Exported Old Name', 'sweet', 'common', 'cast'), ('expnew', 'Exported New Name', 'sweet', 'common', 'cast'), ('expgone', 'Exported Gone', 'sweet', 'common', 'cast');
@@ -626,7 +626,7 @@ test('an instance exported and imported into a fresh database is the same instan
   const part3Held = 'author:false,author:true,totals:false,totals:true|expblind:totals:false,expreact:-:true,expveil:author:false|1|x-1f480:💀:excitedNegative:1:1';
   assert.equal(part3(from), part3Held, 'the fixture holds a live and an ended veil of each kind, a card kind with each flag, the stand-in, and a post-local reaction with a reaction and a tally of its kind');
   assert.equal(payouts(from), '1|1|1|1', 'the fixture holds the skim ledger row, the scored-as row, the play\'s starts and the rode spring\'s quadrant');
-  // Card retirement (0401), each row named by its key: an out-of-print card (retired_at), a card renamed to another key (gone_at and became, with the holder's renamedOut row and the new key's renamedIn),
+  // Card retirement (0403), each row named by its key: an out-of-print card (retired_at), a card renamed to another key (gone_at and became, with the holder's renamedOut row and the new key's renamedIn),
   // a card withdrawn for a refund (gone_at and refund, with the holder's withdrawn row and the withdrawal's wallet event), and an out-of-print pack kind (pack_kinds.retired_at).
   const retirement = (url: string) => psqlOn(url, `select
     (select string_agg(key || ':' || (retired_at is not null)::text || ':' || (gone_at is not null)::text || ':' || coalesce(became, '-') || ':' || coalesce(refund::text, '-'), ',' order by key) from card_kinds where key in ('expretired', 'expold', 'expnew', 'expgone')) || '|' ||

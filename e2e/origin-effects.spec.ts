@@ -731,11 +731,14 @@ test('11. under a glittered opening post the box is painted over the glitter, an
   await sweep(inBox);
   await expect(cling, 'a pointer across the box\'s words picks no glitter up').toHaveCount(0);
   /* The first pickup over the opening post's own words makes the layer. It is made in short stretches, until a few flakes are carried: a sweep across the words fills the layer to its cap (26),
-     and a pickup that is refused cannot then be told from one with no room left. */
-  const y = (own.top + own.bottom) / 2;
+     and a pickup that is refused cannot then be told from one with no room left. A pickup takes a real flake off the post, the nearest within REACH_PICK of the pointer
+     (docs/plans/2026-11-21-glitter-hands-plan.md), so a stretch swept once is bare: each stretch is on fresh ground, along the words a row at a time. */
+  const cols = Math.max(1, Math.floor((own.right - own.left - 20) / 70));
+  const rows = [0.3, 0.5, 0.7].map((k) => own.top + (own.bottom - own.top) * k);
   for (let i = 0; i < 40 && (await carried()) < 3; i++) {
-    await page.mouse.move(own.left + 10, y);
-    await page.mouse.move(own.left + 70, y, { steps: 3 });
+    const x = own.left + 10 + (i % cols) * 70, y = rows[Math.floor(i / cols) % rows.length]!;
+    await page.mouse.move(x, y);
+    await page.mouse.move(x + 60, y, { steps: 3 });
   }
   await expect(cling, 'the same over the opening post\'s own words picks glitter up').toHaveCount(1);
   const held = await carried();
