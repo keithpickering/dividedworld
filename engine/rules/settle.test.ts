@@ -2567,13 +2567,50 @@ test('a spark with a debate and a vote in the window but no member in it is hand
   assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: FROM - 2 * H, voice: 1 }]);
 });
 
-test('a debate is handed to the stretch its latest member or vote falls in, once', () => {
+const turned = (b: SettlementInput, at: number): SettlementInput => ({ ...b, characters: b.characters.map((c) => (c.id === 'ann-1' ? { ...c, classes: [{ class: 'quiet', from: 0 }, { class: 'quiet', from: at }] } : c)) });
+
+test('a character that Turns inside the window is handed the debate in both stretches, placed only in the stretch of the latest member', () => {
   const { rules, inputs } = spy();
   const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), post('b', 'cat-1', FROM + 9 * H)], [quote('a', 'p1'), quote('b', 'p1')]);
-  settle({ ...b, characters: b.characters.map((c) => (c.id === 'ann-1' ? { ...c, classes: [{ class: 'quiet', from: 0 }, { class: 'quiet', from: FROM + 5 * H }] } : c)) }, debateWorld(rules));
-  const mine = inputs.filter((i) => i.character === 'ann-1');
-  assert.equal(debatesOf(mine).length, 1);
-  assert.ok(mine.find((i) => i.debates.length)!.from === FROM + 5 * H, 'placed by Cat\'s post at +9H, in the later stretch');
+  settle(turned(b, FROM + 5 * H), debateWorld(rules));
+  const mine = inputs.filter((i) => i.character === 'ann-1').sort((x, y) => x.from - y.from);
+  assert.deepEqual(mine.map((i) => i.debates.map((d) => [d.act, d.placed])), [[['p1', false]], [['p1', true]]], 'placed by Cat\'s post at +9H, in the later stretch');
+  assert.deepEqual(mine.map((i) => i.debates[0]!.paid), [{}, {}], 'no sums, no paid');
+});
+
+test('a tallied earning comes back in `tallied`, summed by Act and reason across the stretches of a Turn, whole, with 0s left out', () => {
+  const tally: ClassRules = { key: 'quiet', name: 'Quiet', earn: (i) => (i.character !== 'ann-1' ? [] : [
+    { reason: 'quiet.fuse', amount: 7.4, act: 'p1', tally: true },
+    { reason: 'quiet.back', amount: -3, act: 'p1', tally: true },
+    { reason: 'quiet.fuse', amount: 0.2, act: 'a', tally: true },
+    { reason: 'quiet.plain', amount: 5, act: 'p1' },
+  ]) };
+  const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H)], [quote('a', 'p1')]);
+  const r = settle(turned(b, FROM + 5 * H), debateWorld(tally));
+  assert.deepEqual(r.tallied, [{ act: 'p1', reason: 'quiet.back', amount: -6 }, { act: 'p1', reason: 'quiet.fuse', amount: 15 }]);
+  assert.deepEqual(settle(debateBoard([post('p1', 'ann-1', FROM + 1 * H)], []), debateWorld(spy().rules)).tallied, []);
+});
+
+test('a spark older than debateDays with a nonzero tallied sum and a vote moved on it in the window is handed with its paid; without the sum it is not', () => {
+  const run = (tallied?: SettlementInput['tallied']) => {
+    const { rules, inputs } = spy();
+    settle(debateBoard(
+      [post('old', 'ann-1', FROM - 6 * DAY), post('e', 'bob-1', FROM - 5 * DAY)],
+      [quote('e', 'old')],
+      [react('old', 'cat', 'cat-1', 'fire', FROM + 2 * H)],
+      tallied ? { tallied } : {},
+    ), debateWorld(rules));
+    return debatesOf(inputs, 'old');
+  };
+  const d = run([{ act: 'old', reason: 'quiet.fuse', amount: 20 }, { act: 'old', reason: 'quiet.back', amount: -5 }]);
+  assert.equal(d.length, 1);
+  assert.deepEqual(d[0]!.paid, { 'quiet.fuse': 20, 'quiet.back': -5 });
+  assert.equal(d[0]!.placed, true, 'the vote placed it');
+  assert.deepEqual(run(), []);
+  assert.deepEqual(run([{ act: 'old', reason: 'quiet.fuse', amount: 0 }]), [], 'a zero sum is no sum');
+  const still = spy();
+  settle(debateBoard([post('old', 'ann-1', FROM - 6 * DAY), post('e', 'bob-1', FROM - 5 * DAY)], [quote('e', 'old')], [], { tallied: [{ act: 'old', reason: 'quiet.fuse', amount: 20 }] }), debateWorld(still.rules));
+  assert.deepEqual(debatesOf(still.inputs), [], 'no vote moved on it in the window');
 });
 
 test('a half cushion on the spark\'s character that ended before the window but after the spark is 0.5; one that ended before the spark is 0; two plays give the larger', () => {

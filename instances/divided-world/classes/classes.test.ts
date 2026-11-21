@@ -832,7 +832,7 @@ test('settled whole: a Tweener\'s card pays twice the smaller side of the player
 /* ---- Tweener: lit the fuse, and outvoted (docs/plans/2026-11-18-tweener-catalyst-plan.md, Task 3) ---- */
 const spark = (voices: readonly number[], over: Partial<SparkedDebate> = {}): SparkedDebate => ({
   act: 's1', at: 0, posts: voices.map((voice, i) => ({ at: (i + 1) * H, voice })), inOwnDebate: false,
-  standing: { before: [], now: [] }, cushioned: 0, ...over,
+  standing: { before: [], now: [] }, cushioned: 0, paid: {}, placed: true, ...over,
 });
 const calm = (n: number, weight = 1): Standing[] => Array.from({ length: n }, () => ({ ...none, calmPositive: weight }));
 const fuse = (debates: readonly SparkedDebate[], over: Partial<ClassInput> = {}, s = settings) =>
