@@ -29,13 +29,13 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(seed.cards, instance.cards.map((c) => ({
     key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
     rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, refunds: c.refunds, discipline: c.discipline, lasts: c.lasts, skim: c.skim, scoresAs: c.scoresAs, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined, replies: c.replies === true, keeps: c.keeps === true,
-    draws: c.draws, drive: c.drive, needsMessage: c.needsMessage, veil: c.veil, addsReaction: c.reaction === true, surface: c.surface !== undefined,
+    draws: c.draws, drive: c.drive, needsMessage: c.needsMessage, veil: c.veil, addsReaction: c.reaction === true, surface: c.surface !== undefined, retired: c.retired === true,
   })));
   assert.deepEqual(seed.cards.filter((c) => c.surface).map((c) => c.key), instance.cards.filter((c) => c.surface !== undefined).map((c) => c.key), 'the SQL knows which cards hold a wall by this flag alone');
   assert.ok(seed.cards.some((c) => c.surface), 'a surface card is flagged');
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
-    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, refunds: undefined, discipline: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, replies: false, keeps: false, draws: undefined, drive: undefined, needsMessage: undefined, veil: undefined, addsReaction: false, surface: false,
+    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, refunds: undefined, discipline: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, replies: false, keeps: false, draws: undefined, drive: undefined, needsMessage: undefined, veil: undefined, addsReaction: false, surface: false, retired: false,
   }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
   // A card that replies and a card that keeps (0348): the SQL knows only these two flags, never which card. A card of each the instance may not hold is seeded here too.
   assert.deepEqual(seed.cards.filter((c) => c.replies).map((c) => c.key), instance.cards.filter((c) => c.replies === true).map((c) => c.key), 'the SQL knows which cards carry a reply by this flag alone');
@@ -250,4 +250,24 @@ test('the seed carries the instance\'s Random Event lines, each with its key, ou
   assert.ok(eventLines.length > 0, 'the instance has event lines');
   assert.deepEqual(eventLines.map((l) => [l.key, l.outcome, l.text]), instance.events.lines.map((l) => [l.key, l.outcome, l.text]));
   assert.ok(['line', 'gear', 'card'].every((o) => eventLines.some((l) => l.outcome === o)), 'every outcome has a line to say');
+});
+
+test('the seed carries a card\'s retired flag, the cards\' former names as {key, name, became} and the withdrawn cards (0401)', () => {
+  const seed = instanceSeed(instance, conduct);
+  assert.deepEqual(seed.cards.filter((c) => c.retired).map((c) => c.key), instance.cards.filter((c) => c.retired === true).map((c) => c.key), 'the SQL knows which cards are out of print by this flag alone');
+  assert.ok(seed.cards.every((c) => typeof c.retired === 'boolean'), 'every card says whether it is out of print, so the seed can clear a flag that went');
+  assert.deepEqual(seed.formerly, instance.cards.flatMap((c) => (c.formerly ?? []).map((f) => ({ key: f.key, name: f.name, became: c.key }))), 'each former name carries the card that took it');
+  assert.deepEqual(seed.withdrawn, instance.withdrawn.map((w) => ({ key: w.key, name: w.name, refund: w.refund })), 'each withdrawn card carries its refund in hundredths');
+  // An out-of-print card, a renamed pair and a withdrawn card, built here: the payload says each.
+  const base = instance.cards[0]!;
+  const made = instanceSeed({
+    ...instance,
+    cards: [...instance.cards, { ...base, key: 'old-print', retired: true }, { ...base, key: 'new-name', formerly: [{ key: 'old-name', name: 'Old Name' }, { key: 'older-name', name: 'Older Name' }] }],
+    withdrawn: [...instance.withdrawn, { key: 'gone', name: 'Gone', refund: 150 }],
+  }, conduct);
+  assert.equal(made.cards.find((c) => c.key === 'old-print')!.retired, true, 'a retired card travels retired');
+  assert.deepEqual(made.formerly.slice(-2), [{ key: 'old-name', name: 'Old Name', became: 'new-name' }, { key: 'older-name', name: 'Older Name', became: 'new-name' }], 'a card\'s every former name travels with the card that took it');
+  assert.deepEqual(made.withdrawn.slice(-1), [{ key: 'gone', name: 'Gone', refund: 150 }]);
+  assert.equal(made.cards.some((c) => c.key === 'old-name' || c.key === 'gone'), false, 'a key that left is listed in its own list, never as a card');
+  assert.deepEqual(JSON.parse(JSON.stringify(made.withdrawn)).every((w: Record<string, unknown>) => Object.keys(w).sort().join() === 'key,name,refund'), true, 'nothing else rides on a withdrawal');
 });
