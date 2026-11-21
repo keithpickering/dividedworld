@@ -15,6 +15,7 @@ import { autocorrect, price as autocorrectPrice } from './autocorrect.ts';
 import { belowTheFold, price as belowTheFoldPrice } from './below-the-fold.ts';
 import { blindStudy, price as blindStudyPrice } from './blind-study.ts';
 import { cardCollector as cardCollectorBase, price as cardCollectorPrice } from './card-collector.ts';
+import { cheapShot, price as cheapShotPrice } from './cheap-shot.ts';
 import { classClown, price as classClownPrice } from './class-clown.ts';
 import { feelinFab, price as feelinFabPrice } from './feelin-fab.ts';
 import { feelinGlam, price as feelinGlamPrice } from './feelin-glam.ts';
@@ -64,6 +65,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [belowTheFold as CardRules, belowTheFoldPrice],
   [blindStudy as CardRules, blindStudyPrice],
   [cardCollectorBase as CardRules, cardCollectorPrice],
+  [cheapShot as CardRules, cheapShotPrice],
   [classClown as CardRules, classClownPrice],
   [feelinFab as CardRules, feelinFabPrice],
   [feelinGlam as CardRules, feelinGlamPrice],
