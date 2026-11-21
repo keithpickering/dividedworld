@@ -907,6 +907,12 @@ test('Outvoted: in the window the spark pays, the players arguing give back the 
   assert.equal(sumOf(outvoted([spark([1, 2, 1, 0, 2, 3], { standing: { before: [], now: calm(4) } })])), 0, 'voided');
   assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3], { inOwnDebate: true, standing: { before: [], now: calm(4) } })])), 0);
 });
+test('Outvoted is paid only in the stretch the debate is placed in; an unplaced stretch still pays the crossing inside it', () => {
+  const d = spark([1, 2, 1, 2, 3, 4], { placed: false, standing: { before: [], now: calm(2) } });
+  assert.deepEqual(outvoted([d]), [], 'unplaced: no refund, so a Turn inside the window never pays it twice');
+  assert.equal(sumOf(fuse([d])), 20, 'unplaced: the crossing inside it still pays');
+  assert.equal(sumOf(outvoted([{ ...d, placed: true }])), 10);
+});
 test('Outvoted moves with the debate and the nods in a later window, and takes back what a nod that moved away had given', () => {
   const later = (voices: number[], before: Standing[], now: Standing[], over: Partial<SparkedDebate> = {}) =>
     sumOf(outvoted([afterPaying(voices, before, now, over)], { from: 24 * H }));
