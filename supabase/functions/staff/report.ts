@@ -11,7 +11,7 @@
  *      row) is told the post, the thread, the board's premise, the rules in force, the reporter's public name and reason, and nothing about who owns anything.
  *   3. The answer is repaired (repairReport): a verdict that is none of the three, a charge naming no rule in force (the premise at the minor band), a line cut to
  *      280, the Mod's one move held to its office. The call's record is kept (`record_staff_call`, cause the report), then `close_report` writes the verdict and the
- *      visit, then the Mod's move is queued (`apply_mod_move`, caused by the report; a move the database refuses costs the verdict nothing).
+ *      visit (or, where the visit verdict opens none, the verdict and the price's refund, in one transaction), then the Mod's move is queued (`apply_mod_move`, caused by the report; a move the database refuses costs the verdict nothing).
  *   4. **A failed judgment refunds it.** A call that failed or was rejected, a verdict that cannot be repaired, a Mod who is not a Mod now, a database error before the
  *      verdict is written: `refund_report`, which acts once and refuses a report that already has a verdict, so a lost answer to `close_report` is never a double effect.
  *      The report Act stays, with no verdict, and the player can make it again. A report whose function died before it could refund is refunded by the filing run
@@ -60,6 +60,8 @@ interface Closed {
   readonly verdict_act?: string;
   readonly visit?: string | null;
   readonly line?: string;
+  /** A visit verdict that opened no visit: the price went back in the same transaction, and why. */
+  readonly refund?: { readonly why: 'veiled' | 'visited'; readonly amount: number };
 }
 
 const answer = (status: number, body: Record<string, unknown>): ReportAnswer => ({ status, body });
@@ -172,6 +174,7 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   }
   return answer(200, {
     report: opened.report, verdict: closed.verdict ?? verdict, line: closed.line ?? repaired.line, visit: closed.visit ?? null,
+    refund: closed.refund ?? null,
     ...(move !== undefined ? { move } : {}),
   });
 }
