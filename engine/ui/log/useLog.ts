@@ -69,6 +69,9 @@ export async function around(api: KayfaApi, log: Log, own: LogData): Promise<Log
     if (followed.length === 0) break;
     for (const a of await api.actsById(followed)) acts.set(a.id, a);
   }
+  /* What cut a Gimmick the page shows: its Act is named by no row of this page when the row that names it (a play on the player's post) is on another, so the Gimmicks' plays are asked for it, once. */
+  const gimmicks = [...new Set(log.cards.flatMap((c) => (c.act ? [c.act] : [])))];
+  if (gimmicks.length > 0) for (const a of await orElse(api.actsCutting(gimmicks), [] as readonly Act[])) acts.set(a.id, a);
   const names = new Map(own.names);
   const staff = new Set(own.staff ?? []);
   /* A play beyond a post carries its target's name (play_card, 0056); one written without reads it as it stands, so only those are asked

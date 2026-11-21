@@ -2827,6 +2827,21 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect((await blotted()).payload.handedBack).toBeUndefined();
   });
 
+  test('an older log page holds the cutting Act of a Gimmick it shows, though the row that names the cut is on a newer page', async () => {
+    const { fake, anaFace, mine, kicked, cutAt } = cutSetup();
+    const kickMe = await kicked();
+    fake.clock.advance(3_600_000);
+    const cut = must(await cutAt(kickMe.id));
+    expect(cut.createdAt > kickMe.createdAt).toBe(true);
+    const page = await fake.logPage(new Date(Date.parse(kickMe.createdAt) + 60_000).toISOString());
+    expect(page.log.cards.some((c) => c.act === kickMe.id)).toBe(true);
+    expect(page.log.playsOnMine.some((p) => p.play === cut.id)).toBe(false);
+    expect(page.acts.map((a) => a.id)).toContain(cut.id);
+    expect(await fake.actsCutting([kickMe.id])).toEqual([expect.objectContaining({ id: cut.id })]);
+    expect(await fake.actsCutting(['not-a-play'])).toEqual([]);
+    void anaFace; void mine;
+  });
+
   test('a second card that cuts lands on the same post for another Gimmick, and the cut one is no longer up', async () => {
     const { fake, anaFace, mine, kicked, cutAt } = cutSetup();
     const kickMe = await kicked();

@@ -1543,6 +1543,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (wanted.length === 0) return [];
       return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('id', part)))).map(toAct);
     },
+    async actsCutting(plays) {
+      const wanted = [...new Set(plays)].filter(idOk);
+      if (wanted.length === 0) return [];
+      return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('payload->cut->>play', part)))).map(toAct);
+    },
     async openingActs(threads) {
       const wanted = [...new Set(threads)].filter(idOk);
       if (wanted.length === 0) return [];

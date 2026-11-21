@@ -206,7 +206,7 @@ describe('cards set face down, traps and catches', () => {
     const log = { ...empty, cards: [{ card: 'whoops', kind: 'played' as const, act: 'set1', price: 0, at, springs: true, who: ['g1', 'g2'], whoExcept: false }] };
     const asked: string[][] = [];
     const api = {
-      actsById: async () => [],
+      actsById: async () => [], actsCutting: async () => [],
       effectStates: async () => ({}),
       characters: async (ids: readonly string[]) => { asked.push([...ids]); return ids.map((id) => ({ id, name: id === 'g1' ? 'Gloomba' : 'Gizmo' })); },
       thread: async () => null,
@@ -1615,7 +1615,7 @@ describe('the log of a surface', () => {
     const log = { ...empty, wallsDrawn: [draw({ act: 'd2', play: 'k3', post: 'post3', character: 'g', mine: 'p', cells: 600 })], draws: [draw({ act: 'w3', kind: 'cut', character: 'x', mine: 'p', cells: 300 })] };
     const asked: string[][] = [];
     const api = {
-      actsById: async () => [], effectStates: async () => ({}), thread: async () => null, board: async () => null,
+      actsById: async () => [], actsCutting: async () => [], effectStates: async () => ({}), thread: async () => null, board: async () => null,
       characters: async (ids: readonly string[]) => { asked.push([...ids]); return ids.map((id) => ({ id, name: id === 'g' ? 'Gloomba' : 'Xavier' })); },
     } as unknown as KayfaApi;
     const read = await around(api, log, data({ log, mine: [pipewrench], acts, names: new Map() }));
@@ -2047,6 +2047,26 @@ describe('a cutting card in the Gimmick\'s player\'s and the cutter\'s logs', ()
       expect(text(row(run('cast', cutter, '2026-12-15T10:00:00.000Z'), 'ended'))).not.toMatch(/back up|came back/u);
       expect(text(row(run('onMine', plain, '2026-12-15T10:00:00.000Z'), 'ended'))).toBe('An admin ended Quill\'s Cutter on your post #3.');
     });
+  });
+
+  test('around reads the cutting Acts of the page\'s own plays, once, and the row says it ended at the cut', async () => {
+    const asked: (readonly string[])[] = [];
+    const api = {
+      actsById: async () => [], effectStates: async () => ({}), characters: async () => [], thread: async () => null, board: async () => null,
+      actsCutting: async (plays: readonly string[]) => { asked.push(plays); return [cutter]; },
+    } as unknown as KayfaApi;
+    const log = { ...empty, cards: [{ card: 'gm', kind: 'played' as const, act: 'g1', price: 0, at: gimmickAt }] };
+    const own = data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([post, gimmick('2026-10-31T10:00:00.000Z')].map((a) => [a.id, a])) });
+    const read = await around(api, log, own);
+    expect(asked).toEqual([['g1']]);
+    const ended = row(logRows(read, w, 600, null), 'gimmickEnded');
+    expect([ended.at, text(ended)]).toEqual([cutAt, 'Some Card on your post #3. A Cutter ended it early.']);
+  });
+
+  test('a cut play of a card that keeps still says the posts written while it was up keep it', () => {
+    const keeps: Words = { ...w, instance: { ...w.instance, cards: w.instance.cards.map((c) => (c.key === 'gm' ? { ...c, keeps: true } : c)) } };
+    const rows = logRows(data({ log: { ...empty, cards: [{ card: 'gm', kind: 'played' as const, act: 'g1', price: 0, at: gimmickAt }] }, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([post, gimmick('2026-10-31T10:00:00.000Z'), cutter].map((a) => [a.id, a])) }), keeps, 600, null);
+    expect(text(row(rows, 'gimmickEnded'))).toBe('Some Card on your post #3. A Cutter ended it early. Posts written while it was up keep it.');
   });
 
   test('actsFollowed reaches the Gimmick a cutting Act names', () => {

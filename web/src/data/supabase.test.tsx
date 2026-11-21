@@ -2329,6 +2329,7 @@ describe('reads by many ids', () => {
 
   const reads: readonly (readonly [string, readonly string[], (api: KayfaApi) => Promise<unknown>])[] = [
     ['actsById', ['acts_public'], (api) => api.actsById(ids)],
+    ['actsCutting', ['acts_public'], (api) => api.actsCutting(ids)],
     ['effectStates', ['effect_state'], (api) => api.effectStates(ids)],
     ['characters', ['characters_public', 'character_profiles'], (api) => api.characters(ids)],
     ['spunFromMany', ['thread_list'], (api) => api.spunFromMany(ids, 20)],

@@ -4130,6 +4130,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     act: (id) => (acts.has(id) ? publicAct(acts.get(id)!) : null),
     openingActs: (threads) => [...acts.values()].filter((a) => a.seq === 1 && threads.includes(a.thread)).map(publicAct),
     actsById: (ids) => [...new Set(ids)].filter((id) => acts.has(id)).map((id) => publicAct(acts.get(id)!)),
+    actsCutting: (plays) => [...acts.values()].filter((a) => a.kind === 'card' && a.payload.caught === undefined && plays.includes(String((a.payload.cut as { play?: unknown } | undefined)?.play))).map(publicAct),
     history(id) {
       const original = acts.get(id);
       if (!original || original.kind !== 'post') return [];
@@ -4869,6 +4870,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const acts = new Map<Id, Act>();
       for (const a of core.actsById(actsNamed(log, null, turns))) acts.set(a.id, a);
       for (let round = 0; round < 2; round++) for (const a of core.actsById(actsFollowed(acts))) acts.set(a.id, a);
+      /* What cut a Gimmick the page shows is read beside its Acts, wherever its own row paged to (useLog's `around`). */
+      for (const a of core.actsCutting(log.cards.flatMap((c) => (c.act ? [c.act] : [])))) acts.set(a.id, a);
       const unnamed: { character: Id[]; thread: Id[]; board: Id[] } = { character: [], thread: [], board: [] };
       for (const a of acts.values()) {
         const reach = a.payload.reach;

@@ -986,7 +986,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
         key: `gimmickEnded:${e.act}`, kind: 'gimmickEnded', at: cutAct ? cutAct.createdAt : ends!, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
         /* A card that keeps (`CardRules.keeps`) says what it left: the posts written while it was up keep it. Not a play an admin ended (its `ended` entry, `my_cards_ended`): no post keeps that. A play cut early says what cut it, in place of its timed end. */
         details: cutAct
-          ? [`${cardName(e.card)} on `, link ?? 'your post', `. A ${cardName(cutAct.payload.card)} ended it early.`]
+          ? [`${cardName(e.card)} on `, link ?? 'your post', `. A ${cardName(cutAct.payload.card)} ended it early.${instance.cards.find((c) => c.key === e.card)?.keeps === true ? ' Posts written while it was up keep it.' : ''}`]
           : [`${cardName(e.card)} on `, link ?? 'your post', instance.cards.find((c) => c.key === e.card)?.keeps === true && !data.log.ended.some((x) => x.play === e.act) ? ' ended. Posts written while it was up keep it.' : ' ended.'],
         aura: 0, wallet: null, characters: caster ? [caster] : [],
       });
