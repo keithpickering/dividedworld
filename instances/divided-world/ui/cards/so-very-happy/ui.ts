@@ -1,7 +1,7 @@
 /** So Very Happy's entry in the screens' card list (`InstanceUi.cards`): its face and its rules in words. */
 import { alignmentTag } from '../../../../../engine/ui/cards/faces.ts';
 import type { CardUi } from '../../../../../engine/ui/cards/types.ts';
-import type { Settings } from '../../../../../engine/rules/types.ts';
+import { ALIGNMENTS, type Settings } from '../../../../../engine/rules/types.ts';
 import { soVeryHappy } from '../../../cards/so-very-happy.ts';
 import { setLastsWords } from '../words.ts';
 import soVeryHappyCanvas from './art.webp?url';
@@ -16,13 +16,23 @@ import soVeryHappyArt from './art.json';
  */
 /* Read when the words are said, not when this module loads, so they follow the rules. */
 const match = () => soVeryHappy.trap!.match!;
+/** The alignments the match leaves out, as the words say them ("Sweet"): the Move that springs it is not one of these. */
+const notWords = () => ALIGNMENTS.filter((a) => !match().flavors!.includes(a)).map(alignmentTag).join(' or ');
+/** How long the lockout lasts, in the rules' hours ("24 hours"). */
+const lockedFor = (): string => {
+  const outcome = soVeryHappy.trap?.outcome;
+  return outcome?.kind === 'lockout' ? `${outcome.hours} ${outcome.hours === 1 ? 'hour' : 'hours'}` : 'a while';
+};
 
 export const ui: CardUi = {
   key: 'so-very-happy',
   art: { color: '#ff3d7f', ink: '#14030a', canvas: soVeryHappyCanvas, mark: soVeryHappyMark, credit: soVeryHappyArt.credit, tagline: 'Play it Sweet or get locked out' },
-  summary: 'Set face down on your post. The first Move played there that isn\'t Sweet, up to rare, lands, and whoever played it is locked out of the thread for 24 hours.',
+  /* A getter, so the words are read from the rules when they are said, not when this module loads. */
+  get summary() {
+    return `Set face down on your post. The first Move played there that isn't ${notWords()}, up to ${match().upTo}, lands, and whoever played it is locked out of the thread for ${lockedFor()}.`;
+  },
   /* As every Reversal's: the same words, so none can be told from another. */
   status: 'Set, face down to everyone else',
   describe: (settings: Settings) =>
-    `A ${alignmentTag(soVeryHappy.alignment)} card, ${soVeryHappy.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Move played on that post that isn't Sweet, up to ${match().upTo}, springs it and shows it: that Move lands as usual, and whoever played it is locked out of that post's thread for 24 hours. A rarer Move passes over it, and a Move your post's ward turns away never reaches it. It springs once, or ends by itself after ${setLastsWords(settings)}. It costs nothing more to set.`,
+    `A ${alignmentTag(soVeryHappy.alignment)} card, ${soVeryHappy.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Move played on that post that isn't ${notWords()}, up to ${match().upTo}, springs it and shows it: that Move lands as usual, and whoever played it is locked out of that post's thread for ${lockedFor()}. A rarer Move passes over it, and a Move your post's ward turns away never reaches it. It springs once, or ends by itself after ${setLastsWords(settings)}. It costs nothing more to set.`,
 };

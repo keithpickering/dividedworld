@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'vitest';
 import { ui } from './ui.ts';
 import { instance } from '../../../index.ts';
+import { soVeryHappy } from '../../../cards/so-very-happy.ts';
 import { defaults as settings } from '../../../settings.ts';
 
 describe('So Very Happy', () => {
@@ -34,5 +35,21 @@ describe('So Very Happy', () => {
   test('its describe uses "play" and "Move", never "cast"', () => {
     expect(ui.describe!(instance.settings)).not.toMatch(/\bcast/iu);
     expect(ui.summary).not.toMatch(/\bcast/iu);
+  });
+
+  test('its summary and describe read the flavor it does not spring on, the rarity and the hours from its rules, so a retuned rule changes the words', () => {
+    const trap = soVeryHappy.trap! as Record<string, unknown>;
+    const held = { match: trap.match, outcome: trap.outcome };
+    try {
+      trap.match = { flavors: ['salty'], upTo: 'uncommon' };
+      trap.outcome = { kind: 'lockout', hours: 1 };
+      expect(ui.summary).toBe('Set face down on your post. The first Move played there that isn\'t Sweet or Pepperoni, up to uncommon, lands, and whoever played it is locked out of the thread for 1 hour.');
+      expect(ui.describe!(instance.settings)).toContain('The first Move played on that post that isn\'t Sweet or Pepperoni, up to uncommon, springs it');
+      expect(ui.describe!(instance.settings)).toContain('locked out of that post\'s thread for 1 hour.');
+    } finally {
+      trap.match = held.match;
+      trap.outcome = held.outcome;
+    }
+    expect(ui.summary).toContain('isn\'t Sweet, up to rare');
   });
 });
