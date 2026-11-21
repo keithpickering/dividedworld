@@ -59,6 +59,7 @@ test('the instance sells its cards at their prices', () => {
     ['off-day', 'salty', 500],
     ['overreaction', 'pepperoni', 100],
     ['pay-it-forward', 'sweet', 150],
+    ['pop-steal', 'salty', 100],
     ['publicity-tour', 'sweet', 150],
     ['required-reading', 'sweet', 100],
     ['rope-break', 'sweet', 100],
@@ -764,7 +765,7 @@ test("Heat Magnet pays three quarters of a vote on a heat vote, under any class,
   assert.equal(amountFor(tech, 'card.boost'), 8, '7.5, rounded');
   assert.deepEqual(tech.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'heat-magnet', flat: 0.75 });
   const heel = settle(flatBoard('heel', [useOnTom('g1', 'heat-magnet')], [heatFromBob]), instance);
-  assert.equal(amountFor(heel, 'heel.drewHeat'), 10);
+  assert.equal(amountFor(heel, 'heel.drewHeat'), 20, 'one vote of heat pays two votes\' worth');
   assert.equal(amountFor(heel, 'card.boost'), 8);
   assert.deepEqual(heel.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'heat-magnet', flat: 0.75 });
 });

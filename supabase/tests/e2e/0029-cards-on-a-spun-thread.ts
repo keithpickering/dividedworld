@@ -224,9 +224,9 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
   assert.ok(Number(skimOn(open)) > 0, `and it is paid: ${JSON.stringify(skimShares)}`);
   assert.equal(Number(sql(`select coalesce(sum(amount), 0) from ledger where reason = 'card.skim' and character = '${char('Cat')}'`)), Number(skimOn(open)) + Number(skimOn(reply)), 'Cat is paid the two skims and no more');
   const heat = (n: Who) => Number(sql(`select coalesce(sum(amount), 0) from ledger where reason = 'heel.drewHeat' and character = '${char(n)}'`));
-  assert.equal(heat('Ann'), 20, 'two votes on the opening post are heat for Ann, who spun it');
-  assert.equal(sql(`select coalesce(sum(s.amount), 0) from ledger_shares s join ledger l on l.id = s.ledger where l.reason = 'heel.drewHeat' and l.character = '${char('Ann')}' and s.act = '${open}'`), '20', 'drawn by the opening post itself');
-  assert.equal(heat('Bob'), 20, 'and two on the reply are heat for Bob, as before');
+  assert.equal(heat('Ann'), 40, 'two votes on the opening post are heat for Ann, who spun it, each two votes\' worth');
+  assert.equal(sql(`select coalesce(sum(s.amount), 0) from ledger_shares s join ledger l on l.id = s.ledger where l.reason = 'heel.drewHeat' and l.character = '${char('Ann')}' and s.act = '${open}'`), '40', 'drawn by the opening post itself');
+  assert.equal(heat('Bob'), 40, 'and two on the reply are heat for Bob, at the same rate');
 
   // ---- A way out: an admin ends Bob's Feelin' Fab on the opening post; a player's reversal is refused. ----
   const bobPlay = idOf(c1);

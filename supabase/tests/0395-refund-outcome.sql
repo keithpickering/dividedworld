@@ -1,4 +1,4 @@
--- The refund outcome and the refunds field (supabase/migrations/0394_refund_outcome.sql; docs/plans/2026-11-20-refund-outcome-plan.md, Task 2; design docs/plans/2026-11-20-refund-outcome-design.md, section 3).
+-- The refund outcome and the refunds field (supabase/migrations/0395_refund_outcome.sql; docs/plans/2026-11-20-refund-outcome-plan.md, Task 2; design docs/plans/2026-11-20-refund-outcome-design.md, section 3).
 -- Two ways a cast goes back to its caster's hand, both written in place_cast where the cast lands, both the same two things: the cast's own Act carries `handedBack: {by, card}` and the caster's account gets a
 -- `returned` row in card_ledger naming the cast's Act (price 0), so card_held is what it was before the cast.
 --   * A refund back (rfgift, a set card with a match and `outcome: {kind: refund}`): the first card it matches springs it, `did: returned` with no `quadrant`; the cast lands with its layer and no `caught`,

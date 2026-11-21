@@ -70,6 +70,8 @@ Pick the one that sounds like how you already post, or the one that sounds like 
 
 <!-- kayfabb:classes -->
 
+Each vote of heat pays the Heel {{setting:economy.heel.heatVotes}} votes' worth and each groan pays the Jabroni {{setting:economy.jabroni.groanVotes}}, because heat and the groan are the hard ones to draw. The Lurker is paid for reacting early where a post ends up, and charged when an early call goes the other way.
+
 ## Turns and reveals
 
 ### Turns
@@ -83,7 +85,7 @@ A class isn't a life sentence. A character can **Turn** into a different class, 
 
 Only you can make a character's class public, and only when you choose to.
 
-A **reveal** is something your character posts, in a thread you pick, with a line in the character's own words. It carries a badge The System checked, so it's the real thing and not just a character *saying* what its class is. A reveal can't be taken back, and it's dated: the badge says what the class was that day. Revealing doesn't earn or cost anything directly. The catch is that everybody can now play against a known class.
+A **reveal** is something your character posts, in a thread you pick, with a line in the character's own words. It carries a badge The System checked, so it's the real thing and not just a character *saying* what its class is. A reveal can't be taken back, and it's dated: the badge says what the class was that day. While a character's reveal is current, it earns more on what reactions to its posts and cards earn it, and on what its own early calls earn. Any Turn ends that, and a new reveal starts it again; the character's log says how much. The catch is that everybody can now play against a known class.
 
 ### New characters
 
