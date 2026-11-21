@@ -11,7 +11,8 @@ import { instance } from '../../index.ts';
 import { Camera, levelBoard, turnBoard } from './Camera.tsx';
 import { Nodes, nodes } from './Nodes.tsx';
 import { pendingOf } from './forecast.ts';
-import { playbook } from './stage-play.ts';
+import { FILM_ORDER, PILE, playbook } from './stage-play.ts';
+import { postTarget, type CardEffect, type CardTarget } from '../../../../engine/rules/cards.ts';
 import { buildStage } from './stage-world.ts';
 
 /** The stage, seeded and ready, with the film's player signed in as `as` (Snuckles's player when none). */
@@ -205,6 +206,58 @@ describe('a spring on a post written another way', () => {
     const sprang = await play.springsOn(made.posts['kind']!, wrote.value.id);
     expect((await fake.cardsOn(wrote.value.id, 30)).filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card)).toEqual(['steel-chair']);
     expect((await fake.cardsOn(made.acts['kind']!, 30)).find((a) => a.id === sprang.spring)?.payload).toMatchObject({ card: 'steel-chair', trigger: 'quote', did: 'landed' });
+  });
+});
+
+describe('the heap', () => {
+  /**
+   * Replays plays in the order the film lands them, each decided by the card's own `canApply` against the effects already on the post
+   * (or on the character, for a card that reaches one) at that moment, and the plays that are allowed added to them as the page holds them.
+   */
+  async function allowed(order: readonly string[]) {
+    const { fake, made } = await stage();
+    const first = (await fake.acts(made.thread, 1, 1))[0]!;
+    const body = (first.currentPayload as { body: string }).body;
+    const now = new Date(Date.now() + 1000);
+    const far = new Date(now.getTime() + 5 * 86_400_000).toISOString();
+    const post: CardEffect[] = [], character: CardEffect[] = [];
+    const verdicts: { what: string; ok: boolean; why?: string }[] = [];
+    for (const what of order) {
+      const step = PILE.find((p) => p.what === what)!;
+      const rules = instance.cards.find((c) => c.key === step.card)!;
+      const target: CardTarget = step.reach === 'character' ? { reach: 'character', character: made.target.character } : postTarget(made.acts['first']!, 'post', body, undefined, undefined, made.cast['Snuckles']);
+      const verdict = rules.canApply(target, step.reach === 'character' ? character : post, step.config, now);
+      verdicts.push({ what, ok: verdict.ok, ...(verdict.ok ? {} : { why: verdict.why }) });
+      if (verdict.ok) (step.reach === 'character' ? character : post).push({ card: step.card, act: what, ...(step.reach === 'character' ? { reach: 'character' as const } : {}), ...(rules.lasts !== undefined || step.reach === 'character' ? { ends: far } : {}), ...(rules.gimmick ? { gimmick: rules.gimmick } : {}) });
+    }
+    return verdicts;
+  }
+
+  test('every play of the heap is one the rules allow, in the order the film lands them', async () => {
+    for (const [take, order] of [['node 9', FILM_ORDER.n09], ['node 11 (the chairs, then the heap, on one page)', [...FILM_ORDER.n11.chairs, ...FILM_ORDER.n11.heap]]] as const) {
+      const verdicts = await allowed(order);
+      expect(verdicts.filter((v) => !v.ok), `${take}: ${JSON.stringify(verdicts.filter((v) => !v.ok))}`).toEqual([]);
+    }
+    /* At least three Whoops! and three Steel Chairs, and no play the order does not name. */
+    expect(FILM_ORDER.n09.filter((w) => w.startsWith('whoops'))).toHaveLength(3);
+    expect(FILM_ORDER.n09.filter((w) => w.startsWith('steel-chair'))).toHaveLength(3);
+    expect([...FILM_ORDER.n09].sort()).toEqual(PILE.map((p) => p.what).sort());
+  });
+
+  test('the rules do refuse a fourth Whoops!, a second Laugh Track and a play on a post that has no words to continue: the replay is not vacuous', async () => {
+    const verdicts = await allowed([...FILM_ORDER.n09, 'whoops-1', 'laugh-track']);
+    expect(verdicts.slice(-2).map((v) => v.ok)).toEqual([false, false]);
+    expect(verdicts.at(-2)!.why).toMatch(/already carries 3/);
+  });
+
+  test('the Rope Break face down on post 1 would catch the heap\'s first Salty cast, so the film springs it before the heap: a real cast is caught once, and the next lands', async () => {
+    const { fake, made, play } = await stage('D-Guy');
+    const caught = await play.cast('D-Guy', made.posts['first']!, 'whoops', { color: '#3d77ff' });
+    expect(caught.caught).toBe(true);
+    const lands = await play.cast('Serious Deer', made.posts['first']!, 'whoops', { color: '#19e3ff', seed: 202 });
+    expect(lands.caught).toBe(false);
+    expect(lands.rode).toBe(false);
+    expect((await fake.session()).account).toBe(made.viewer);
   });
 });
 

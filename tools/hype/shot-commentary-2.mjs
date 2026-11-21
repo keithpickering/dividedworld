@@ -19,16 +19,21 @@
  * Beside each take is `c-nNN.json`: the frames beats landed on, and the camera's moves (`move`, `punches`) for the edit to make.
  * Every "asserts" below reads the page and throws when the picture is not the rule.
  */
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { openFilm } from './camera.mjs';
 import { glide } from './pointer.mjs';
 import { OUT, flag, openStage, settle } from './stage.mjs';
+import { windows } from './windows.mjs';
+import { duration } from './cutting.mjs';
 
 const only = flag('only', null);
 const port = Number(flag('port', 4319));
 const SIZE = { width: 2880, height: 1620 };
-/* Seconds each node has in the film (the music's windows), and the take's extra still. */
-const WINDOWS = { 'c-n05': 39.3, 'c-n06': 24.5, 'c-n07': 22.0, 'c-n08': 13.9 };
+/* Seconds each node has in the film: the music's windows (music-map.json, split by the voice clips' lengths where the voice folder is there, else by the default shares), and the take's extra still. */
+const VOICE = flag('voice', '.runs/hype/voice');
+const clipLength = (stem) => { const hit = existsSync(VOICE) ? ['.mp3', '.wav', '.m4a', '.flac'].map((e) => `${VOICE}/${stem}${e}`).find(existsSync) : undefined; return hit ? duration(hit) : undefined; };
+const heard = Object.fromEntries(['n05', 'n06', 'n07', 'n08', 'n09', 'n10'].flatMap((id) => { const t = clipLength(id); return t === undefined ? [] : [[id, t]]; }));
+const WINDOWS = Object.fromEntries(windows(JSON.parse(readFileSync('instances/divided-world/ui/hype/music-map.json', 'utf8')), { clips: heard }).filter((w) => /^n0[5-8]$/u.test(w.id)).map((w) => [`c-${w.id}`, w.length]));
 const STILL = 2.5;
 
 /** Throws with `what` when `ok` is not so: the picture is the rule, not a staging of it. @param {unknown} ok @param {string} what */
@@ -161,7 +166,7 @@ const n05 = () => take('c-n05', {
     await d.until(`document.querySelectorAll('#post-14 canvas.kb-whoops-ink').length > 0`, 6, 'ink on post 14');
     d.mark('whoops');
     const ink = await d.page(`(() => { const body = document.querySelector('#post-14 .kb-act-main').getBoundingClientRect(); const c = [...document.querySelectorAll('#post-14 canvas.kb-whoops-ink')].map((e) => e.getBoundingClientRect()); return { body: [body.left, body.top, body.right, body.bottom], ink: [Math.min(...c.map((r) => r.left)), Math.min(...c.map((r) => r.top)), Math.max(...c.map((r) => r.right)), Math.max(...c.map((r) => r.bottom))] }; })()`);
-    assert(ink.ink[0] <= ink.body[0] + 2 && ink.ink[2] >= ink.body[2] - 2 && ink.ink[1] <= ink.body[1] + 2, `the ink canvas covering post 14's body ${JSON.stringify(ink)}`);
+    assert(ink.ink[0] <= ink.body[0] + 2 && ink.ink[2] >= ink.body[2] - 2 && ink.ink[1] <= ink.body[1] + 2 && ink.ink[3] >= ink.body[3] - 2, `the ink canvas covering post 14's body, border to border (left, top, right and bottom) ${JSON.stringify(ink)}`);
     /* The result: the card rode. The spring on D-Guy's review says so. */
     const rode = await d.page(`(async () => { const { fake, acts } = window.__kbStage; const on = await fake.cardsOn(acts.review, 30); return on.find((a) => a.kind === 'spring')?.payload ?? null; })()`);
     assert(rode?.did === 'rode' && rode?.card === '4d-chess', `the 4D Chess on post 14 says the Whoops! rode: ${JSON.stringify(rode)}`);
@@ -306,8 +311,9 @@ const n08 = () => take('c-n08', {
     })()`);
   },
   async body(d) {
-    /* Where each dressed post's effect is, so each can be seen to have drawn. */
-    const drew = () => d.page(`({ smoke: Boolean(document.querySelector('#post-15 .kb-hot-box, #post-15 [class*=hot-box], #post-15 canvas')), views: ['15','16','17','18','19'].map((s) => document.querySelector('#post-' + s + ' .kb-act-main')?.querySelector('canvas, svg, [class*=kb-fab], [class*=graffiti], [class*=glitter], [class*=autocorrect], [class*=hot]') ? 1 : 0) })`);
+    /* Where each dressed post's effect is, so each can be seen to have drawn: the take throws for any of the five that did not (the film says they are dressed). */
+    const EFFECTS = { 15: ['Hot Box', '.dw-hotbox-smoke'], 16: ['Glitter Bomb', '.dw-glitter-over'], 17: ["Feelin' Fab", '.dw-fab-foil'], 18: ['Graffiti', '.kb-graffiti-frame'], 19: ['Autocorrect', '.dw-ac-tape'] };
+    const drew = () => d.page(`Object.fromEntries(Object.entries(${JSON.stringify(EFFECTS)}).map(([seq, [, sel]]) => [seq, Boolean(document.querySelector('#post-' + seq + ' .kb-act-main ' + sel))]))`);
     const y0 = await d.page(`scrollY`);
     const foot = await d.page(`document.documentElement.scrollHeight - innerHeight`);
     /* The scroll ends with post 19 (the taped-over words, the last dressed post) in frame, not on the empty reply box at the thread's foot: its top 100 px down the view, or the foot if that is nearer. */
@@ -351,6 +357,7 @@ const n08 = () => take('c-n08', {
     assert(Math.abs(y1 - yEnd) < 3, `the page scrolled itself to post 19 (${y1} of ${yEnd})`);
     const fx = await drew();
     console.log('c-n08: effects on the posts at the end', JSON.stringify(fx));
+    for (const [seq, [name]] of Object.entries(EFFECTS)) assert(fx[seq] === true, `post ${seq} drew its ${name}: ${JSON.stringify(fx)}`);
     const seen = await d.page(`(() => { const r = document.querySelector('#post-19').getBoundingClientRect(); return Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) / r.height; })()`);
     assert(seen > 0.5, `post 19 is in frame at the end of the scroll (${(seen * 100).toFixed(0)}% of it)`);
     await d.shoot(0.5);

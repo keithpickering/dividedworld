@@ -3,7 +3,7 @@
  * Part one is locked off: a fixed frame, no camera move, no cut inside a node, and nothing in a take's json that moves it. It is a sober developer
  * commentary, and its stillness is what the rest of the film breaks. 1440 by 810 at double density, the default skin, the HUD in frame.
  *
- *   node tools/hype/shot-commentary-1.mjs [--only c-n01] [--port 4321]
+ *   node tools/hype/shot-commentary-1.mjs [--only c-n01] [--port 4319]
  *
  *   c-n01  The thread at rest, Snuckles's sprite sheet in frame, its Rope Break card back at the post's corner. A commentary node hangs over the
  *          post and bobs; the pointer travels to it, and clicks it, and it turns. Then nothing but the node turning.
@@ -26,7 +26,7 @@ import { glide } from './pointer.mjs';
 import { OUT, flag, openStage, settle } from './stage.mjs';
 
 const only = flag('only', null);
-const PORT = Number(flag('port', 4321));
+const PORT = Number(flag('port', 4319));
 const CSS = { width: 1440, height: 810 };
 /* Where each take stands on the page: Snuckles's first post with its corner and its sheet in frame (its foot is under the HUD), and D-Guy's review with its reaction bar. */
 const FIRST_POST_SCROLL = 130;
@@ -124,8 +124,19 @@ await take('c-n02', { as: 'D-Guy', scroll: 6161 - REVIEW_TOP, pointer: false, se
   const shown = await cam.evaluate(`(() => { const hud = document.querySelector('.kb-hud-glass')?.textContent ?? ''; return { heel: /heel/i.test(hud), only: /only you see this/i.test(hud), review: Boolean(document.querySelector('#post-14')) }; })()`);
   if (!shown.heel || !shown.only || !shown.review) throw new Error(`the HUD or the review is not in frame: ${JSON.stringify(shown)}`);
   const forecast = () => t.run('window.__shot.forecast()');
+  /* What the HUD itself says of the estimate (the orbs' "+0.30 est."), read from the page's text: the take claims the page shows it, so the page is asked, not only the backend. */
+  const ghost = () => t.run(`document.querySelector('.kb-orbs-pending')?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`);
+  const said = (hundredths) => (hundredths === 0 ? '' : `${hundredths > 0 ? '+' : '\u2212'}${(Math.abs(hundredths) / 100).toFixed(2)} est.`);
+  /** Waits for the HUD to say what the forecast is, and throws (with what it said before and after) if it never does or never changed. */
+  const hudSays = async (before, now, why) => {
+    const want = said(now);
+    try { await t.holds(`(document.querySelector('.kb-orbs-pending')?.textContent.replace(/\\s+/g, ' ').trim() ?? '') === ${JSON.stringify(want)}`, 2); } catch { throw new Error(`c-n02: the HUD does not show the forecast after ${why}: it says ${JSON.stringify(await ghost())}, the forecast is ${now} (${JSON.stringify(want)})`); }
+    if (want === before) throw new Error(`c-n02: the HUD's estimate did not change after ${why}: ${JSON.stringify(before)} then ${JSON.stringify(want)}`);
+  };
   let last = await forecast();
   if (last !== 0) throw new Error(`the Heel's forecast starts at ${last}, not nothing`);
+  let hud = await ghost();
+  if (hud !== '') throw new Error(`the HUD shows an estimate before any reaction: ${JSON.stringify(hud)}`);
   /* The reactions are other players': a character each, from the cast and the crowd. */
   const reactions = [['Snuckles', 'tomato'], ['Serious Deer', 'tomato'], ['Ringside', 'vomiting'], ['Front Row', 'tomato'], ['Nosebleeds', 'tomato']];
   for (const [i, [who, key]] of reactions.entries()) {
@@ -133,7 +144,9 @@ await take('c-n02', { as: 'D-Guy', scroll: 6161 - REVIEW_TOP, pointer: false, se
     await t.run(`window.__shot.react(${JSON.stringify(who)}, 14, ${JSON.stringify(key)})`);
     const now = await forecast();
     if (!(now > last)) throw new Error(`${who}'s ${key} did not raise the Heel's forecast: ${last} then ${now}`);
-    console.log(`c-n02: ${who}'s ${key}: forecast ${last} -> ${now}`);
+    await hudSays(hud, now, `${who}'s ${key}`);
+    hud = said(now);
+    console.log(`c-n02: ${who}'s ${key}: forecast ${last} -> ${now}; the HUD says ${JSON.stringify(hud)}`);
     t.mark('reaction-up');
     last = now;
   }
@@ -141,7 +154,8 @@ await take('c-n02', { as: 'D-Guy', scroll: 6161 - REVIEW_TOP, pointer: false, se
   await t.run(`window.__shot.react('Aisle Seat', 14, 'thumbs-up')`);
   const after = await forecast();
   if (!(after < last)) throw new Error(`the thumbs up did not lower the Heel's forecast: ${last} then ${after}`);
-  console.log(`c-n02: Aisle Seat's thumbs-up: forecast ${last} -> ${after}`);
+  await hudSays(hud, after, "Aisle Seat's thumbs-up");
+  console.log(`c-n02: Aisle Seat's thumbs-up: forecast ${last} -> ${after}; the HUD says ${JSON.stringify(said(after))}`);
   t.mark('reaction-down');
   await t.until(22);
 });

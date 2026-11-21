@@ -75,6 +75,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       /** One step of node 9's pile on Snuckles's first post, in order (\`pileSteps\` names them): the first call is step 0. Returns the step's name. */
       pile: (step) => play.pile(step),
       pileSteps: play.steps,
+      /** The order the film lands the pile in (stage-play.ts's FILM_ORDER): { n09: [...], n11: { chairs, heap } }. */
+      pileOrder: play.order,
       /** The pending Aura the orbs' ghost shows now for the film's player, in signed hundredths: what a take reads to prove the forecast moved. */
       forecast: () => play.forecast(),
       /** A commentary node hung at a point of the window as it is now (it stays at that place of the page, and scrolls with it); returns its id. */

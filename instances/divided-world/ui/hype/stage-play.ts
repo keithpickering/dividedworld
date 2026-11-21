@@ -29,7 +29,7 @@ export interface Cast { readonly play: string; readonly caught: boolean; readonl
 export interface Landed { readonly what: string; readonly ms: number; readonly frame: number }
 
 /** The steps of node 9's pile, in the order they land on Snuckles's first post: who plays each, which card, and what it is called. */
-const PILE: readonly { readonly what: string; readonly by: string; readonly card: string; readonly config?: Readonly<Record<string, unknown>>; readonly message?: string; readonly reach?: 'character'; readonly lastsMs?: number }[] = [
+export const PILE: readonly { readonly what: string; readonly by: string; readonly card: string; readonly config?: Readonly<Record<string, unknown>>; readonly message?: string; readonly reach?: 'character'; readonly lastsMs?: number }[] = [
   { what: 'whoops-1', by: 'D-Guy', card: 'whoops', config: { color: '#ff2bd6', seed: 101 } },
   { what: 'whoops-2', by: 'Serious Deer', card: 'whoops', config: { color: '#19e3ff', seed: 202 } },
   { what: 'whoops-3', by: 'Chadluminum', card: 'whoops', config: { color: '#ffd93d', seed: 303 } },
@@ -44,6 +44,15 @@ const PILE: readonly { readonly what: string; readonly by: string; readonly card
   { what: 'off-day', by: 'D-Guy', card: 'off-day', config: { class: 'face' }, reach: 'character' },
   { what: 'stick-around', by: 'D-Guy', card: 'stick-around', config: { sentence: 'I have read the whole walk cycle and I feel changed.' }, message: 'required reading' },
 ];
+
+/**
+ * The order the film lands the pile's plays in (tools/hype/shot-commentary-3.mjs reads it from the page): node 9 lands all twelve on a fresh
+ * post, a play about every 1.4 s with Stick Around last; node 11's one page lands the three chairs in its first stretch and the heap in its fourth.
+ */
+export const FILM_ORDER = {
+  n09: ['whoops-1', 'steel-chair-1', 'whoops-2', 'steel-chair-2', 'laugh-track', 'whoops-3', 'steel-chair-3', 'jimmy-wails', 'you-were-saying', 'off-day', 'hot-box', 'stick-around'],
+  n11: { chairs: ['steel-chair-1', 'steel-chair-2', 'steel-chair-3'], heap: ['whoops-1', 'whoops-2', 'whoops-3', 'laugh-track', 'jimmy-wails', 'you-were-saying', 'off-day'] },
+} as const;
 
 /** The words You Were Saying? runs on with, which type in as the play lands (the old voice's own, at the length of one step: a made-up sentence for a made-up model). */
 const TAIL = ' and then, honestly, the walk cycle just keeps going, because a sprite that stops walking is only a sprite, and nobody should be only a sprite.';
@@ -222,7 +231,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     return pendingOf(await fake.estimate());
   }
 
-  return { react, cast, told, quoteSprings, springsOn, staff, pile, steps, forecast, landed, zero: () => { zero = performance.now(); landed.length = 0; layers.clear(); } };
+  return { react, cast, told, quoteSprings, springsOn, staff, pile, steps, order: FILM_ORDER, forecast, landed, zero: () => { zero = performance.now(); landed.length = 0; layers.clear(); } };
 }
 
 export type Playbook = ReturnType<typeof playbook>;
