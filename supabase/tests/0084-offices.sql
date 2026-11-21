@@ -85,10 +85,11 @@ begin
   if exists (select 1 from jsonb_array_elements((select settings from screen_settings) -> 'groups') g where not g ? 'staff') then raise exception 'a group in screen_settings does not say whether it is the staff rung'; end if;
   -- staff_now lists exactly the mods; the Boss's office is never a row.
   if (select string_agg(staff, ',' order by staff) from staff_now) is distinct from 'of-mod' then raise exception 'staff_now should hold of-mod alone: %', (select string_agg(staff, ',') from staff_now); end if;
-  -- A reseed hires no one again and debuts no one.
+  -- A reseed hires no one again and debuts no one. (It lists the whole roster: a persona a reseed leaves out is benched, which supabase/tests/0401-departed-personas.sql holds.)
   perform seed_instance((select jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
       'firstBoss', 'of-boss', 'firstStaff', jsonb_build_array('of-mod'), 'staff', jsonb_build_array(
-        jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w1', 'name', 'Of W One'))))));
+        jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w1', 'name', 'Of W One'),
+        jsonb_build_object('key', 'of-w2', 'name', 'Of W Two'), jsonb_build_object('key', 'of-w3', 'name', 'Of W Three'))))));
   if (select count(*) from staff_offices) is distinct from 1 then raise exception 'a reseed wrote office rows'; end if;
   if exists (select 1 from characters where staff = 'of-w1' and debuted_at is not null) then raise exception 'a reseed debuted a waiting persona'; end if;
 end $$;
@@ -164,7 +165,8 @@ begin
   perform tests.unbecome();
   perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
       'firstBoss', 'of-boss', 'firstStaff', jsonb_build_array('of-mod', 'of-w1'), 'staff', jsonb_build_array(
-        jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w1', 'name', 'Of W One')))));
+        jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w1', 'name', 'Of W One'),
+        jsonb_build_object('key', 'of-w2', 'name', 'Of W Two'), jsonb_build_object('key', 'of-w3', 'name', 'Of W Three')))));
   perform tests.become(admin);
   if pg_temp.office('of-w1') is distinct from 'benched' then raise exception 'a reseed rehired a benched persona: %', pg_temp.office('of-w1'); end if;
   -- Refusals, each naming its predicate.
@@ -296,7 +298,8 @@ do $$
 declare
   late jsonb := jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
       'firstBoss', 'of-boss', 'firstStaff', jsonb_build_array('of-mod'), 'staff', jsonb_build_array(
-        jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w4', 'name', 'Of W Four'))));
+        jsonb_build_object('key', 'of-boss', 'name', 'Of Boss'), jsonb_build_object('key', 'of-mod', 'name', 'Of Mod'), jsonb_build_object('key', 'of-w1', 'name', 'Of W One'),
+        jsonb_build_object('key', 'of-w2', 'name', 'Of W Two'), jsonb_build_object('key', 'of-w3', 'name', 'Of W Three'), jsonb_build_object('key', 'of-w4', 'name', 'Of W Four'))));
 begin
   perform seed_instance(late);
   if pg_temp.office('of-w4') is distinct from 'waiting' or pg_temp.debuted('of-w4') then raise exception 'a persona outside firstStaff did not wait'; end if;
