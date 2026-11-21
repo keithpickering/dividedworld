@@ -2354,6 +2354,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
+    /* A staff character casts no card that ends a Gimmick (place_cast, 0403), said before the Ward is asked; the fake's acting() turns a staff character away anyway, so this mirrors the server's guard. */
+    if (rules.cuts !== undefined && characters.get(character)?.staff !== undefined) return refuse('a staff character casts no card that ends a Gimmick');
     /* A card that replies carries its reply; its words and their length are the act function's, above, and the rest of the reply's refusals are play_card's, below (0348). */
     const carries = rules.replies === true;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
@@ -2371,8 +2373,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     const c = acting(character);
     if (isRefusal(c)) return c;
-    /* A card that cuts is cast by a player's character (place_cast, 0403); the fake's acting() already turns a staff character away, so this mirrors the server's guard. */
-    if (rules.cuts !== undefined && c.staff !== undefined) return refuse('a staff character casts no card that ends a Gimmick');
     /* A fall is played on a player's post, never a staff character's (place_cast, 0361); a banned caster plays no discipline card (not_banned). */
     if (rules.discipline !== undefined) {
       /* Not on a post whose author is hidden, for every caster alike (place_cast, 0361): the author's own masks would otherwise meet the own-post words alone. */
@@ -2630,7 +2630,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * A relief or unban play, as `place_cast` writes it (0361): the Act, then the rows that do the work. A relief walks the target's live infractions oldest first and takes
    * `least(what is left, what is still wanted)` from each; an unban lifts every running ban. Neither leaves a time up or a `play_reach` row.
    */
-  function landInstant(rules: CardRules, account: AccountRec, price: number, message: string, config: unknown, character: Id, target: Id, from: ActRec, at: number): Answer<Act> {
+  function landInstant(rules: CardRules, account: AccountRec, price: number, message: string, config: unknown, character: Id, target: Id, from: ActRec, at: number, pierce?: Record<string, unknown>): Answer<Act> {
     /* A card that cuts has no discipline: its Act names the Gimmick it ended and nothing else is written (place_cast, 0403). */
     const effect = rules.discipline ?? { kind: 'cut' as const };
     const targetName = characters.get(target)?.name ?? null;
@@ -2640,7 +2640,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const wanted = effect.kind === 'relief' && effect.points === 'lightestBand' ? Math.min(settings.warnBar.bands.minor, settings.warnBar.bands.moderate, settings.warnBar.bands.severe) : total;
     const took = Math.min(wanted, total);
     const running = [...acts.values()].filter((a) => a.kind === 'ban' && a.payload.character === target && banEnd(a) > at);
-    const base = { card: rules.key, message, config, reach: 'character', character: target, targetName, instant: true };
+    const base = { card: rules.key, message, config, reach: 'character', character: target, targetName, instant: true, ...(pierce === undefined ? {} : { pierce }) };
     const named = rules.cuts === undefined ? undefined : (config as { play: string }).play;
     const written = write({ id, character, kind: 'card', thread: from.thread, target: from.id, at, payload: named !== undefined ? { ...base, cut: { play: named, card: String(acts.get(named)!.payload.card) } } : effect.kind === 'relief' ? { ...base, took } : { ...base, lifted: running.map((b) => ({ ban: b.id, until: iso(banEnd(b)) })) } });
     if (effect.kind === 'relief') {
@@ -2669,6 +2669,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    */
   function playBeyond(play: 'cast' | 'use', card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: BeyondPost, fromPost: Id | undefined): Answer<Act> {
     const rules = instance.cards.find((c) => c.key === card)!;
+    if (rules.cuts !== undefined && characters.get(character)?.staff !== undefined) return refuse('a staff character casts no card that ends a Gimmick');
     let thread: Id;
     let on: Id | null;
     let above: EffectsAbove;
@@ -2743,7 +2744,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     account.cards[card]! -= 1;
     /* A heart does its work the moment it lands: no time up, no `play_reach` row, and the Act says what it did (place_cast, 0361). */
-    if (instant(rules) && reach === 'character') return landInstant(rules, account, decided.value.price, decided.value.message, decided.value.config, character, target, from!, at);
+    /* A cast records the pierce it was made under and spends it, an instant one too (place_cast, 0403). */
+    const passed = shot === null ? undefined : passedWard(rules, effects, reach, shot.upTo, at);
+    const pierceNote = shot === null ? undefined : { by: shot.play, card: shot.card, ...(passed === undefined ? {} : { ward: passed }) };
+    if (instant(rules) && reach === 'character') {
+      const landed = landInstant(rules, account, decided.value.price, decided.value.message, decided.value.config, character, target, from!, at, pierceNote);
+      if (shot !== null) spentPierces.add(shot.play);
+      return landed;
+    }
     const bound = span(settings.reachLasts[reach]);
     /* A scored-as play lasts until its window closes, not a time from now, and names where the window starts. */
     const endsAt = window ? window.closes : at + Math.min(rules.lasts ? span(rules.lasts) : bound, bound);

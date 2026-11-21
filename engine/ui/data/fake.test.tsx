@@ -2793,9 +2793,10 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
   const kick = { ...base, key: 'kick', name: 'Kick Me', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'use' as const, refunds: { flavors: ['salty' as const], count: 3 }, lasts: { unit: 'day' as const, count: 7 }, canApply: () => ok(undefined) };
   const legend = { ...kick, key: 'legend', name: 'Legend', rarity: 'legendary' as const, refunds: undefined };
   const coat = { ...shield, key: 'coat', name: 'Sugar Coat', rarity: 'rare' as const, gimmick: { kind: 'ward' as const, upTo: 'rare' as const } };
+  const ccoat = { ...coat, key: 'ccoat', name: 'Sugar Coat', reaches: ['character' as const] };
   const csnare2 = { ...snare, key: 'csnare2', name: 'Cut Snare', rarity: 'rare' as const, catches: () => 'ctest' };
   function cutSetup() {
-    const fake = createFake({ instance: { ...world, cards: [...world.cards, lift, reachWard('twall', 'thread'), cutter, kick, legend, coat, csnare2] } });
+    const fake = createFake({ instance: { ...world, cards: [...world.cards, lift, reachWard('twall', 'thread'), cutter, kick, legend, coat, ccoat, csnare2] } });
     const ana = fake.seed.account('ana');
     const bo = fake.seed.account('bo');
     const boss = fake.seed.account('boss', { admin: true });
@@ -2803,8 +2804,8 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const { thread, act: mine } = fake.seed.thread('general', anaFace, 'Mine', 'Ana here.');
     const bare = fake.seed.post(thread, anaFace, 'Nothing is up here.');
-    fake.seed.cards(ana, { kick: 3, lift: 2, shield: 1, legend: 1, coat: 1, twall: 1, csnare2: 1, blot: 3 });
-    fake.seed.cards(bo, { ctest: 6, blot: 4 });
+    fake.seed.cards(ana, { kick: 3, lift: 2, shield: 1, legend: 1, coat: 1, ccoat: 1, twall: 1, csnare2: 1, blot: 3 });
+    fake.seed.cards(bo, { ctest: 6, blot: 4, lift: 1 });
     fake.signInAs(ana);
     const kicked = async () => must(await fake.useCard('kick', anaFace, mine, {}, ''));
     const lifted = async () => must(await fake.useCard('lift', anaFace, anaFace, {}, '', 'character', mine));
@@ -2846,9 +2847,13 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const { fake, anaFace, mine, kicked, cutAt } = cutSetup();
     const kickMe = await kicked();
     const wall = must(await fake.useCard('shield', anaFace, mine, {}, ''));
+    const third = await kicked();
     must(await cutAt(kickMe.id));
     expect(must(await cutAt(wall.id)).payload.cut).toEqual({ play: wall.id, card: 'shield' });
-    expect(await cutAt(kickMe.id)).toEqual(refused('there\'s no Gimmick up on this post for Cut Test to end', 'config'));
+    // A third Gimmick is still up, so the cut one is named and is not among them.
+    expect(await cutAt(kickMe.id)).toEqual(refused('that Gimmick isn\'t up on this post', 'config'));
+    expect(must(await cutAt(third.id)).payload.cut).toEqual({ play: third.id, card: 'kick' });
+    expect(await cutAt(third.id)).toEqual(refused('there\'s no Gimmick up on this post for Cut Test to end', 'config'));
   });
 
   test('each refusal of a card that cuts is said in its words', async () => {
@@ -2898,6 +2903,25 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(cut.payload.ends).toBeUndefined();
     expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === shot.id)).toBe(false);
     expect(must(await fake.playCard('blot', anaFace, bare, {}, '')).payload.pierce).toBeUndefined();
+  });
+
+  test('a ward on a character turns a card that cuts away in the ward\'s words', async () => {
+    const { fake, anaFace, mine, lifted, cutOn } = cutSetup();
+    const shot = await lifted();
+    must(await fake.useCard('ccoat', anaFace, anaFace, {}, '', 'character', mine));
+    expect(await cutOn(shot.id, anaFace)).toEqual(refused('this character\'s Sugar Coat turns away cards up to rare', 'config'));
+  });
+
+  test('a card that cuts on a character is a cast like any: it carries the caster\'s pierce and spends it', async () => {
+    const { fake, bo, boFace, anaFace, thread, mine, lifted } = cutSetup();
+    const shot = await lifted();
+    const bos = fake.seed.post(thread, boFace, 'Bo here.');
+    fake.signInAs(bo);
+    const pierce = must(await fake.useCard('lift', boFace, boFace, {}, '', 'character', bos));
+    expect((await fake.effectsAbove([boFace], null, null)).some((e) => e.play === pierce.id)).toBe(true);
+    const cut = must(await fake.playCard('ctest', boFace, anaFace, { play: shot.id }, '', 'character', mine));
+    expect(cut.payload).toMatchObject({ instant: true, cut: { play: shot.id, card: 'lift' }, pierce: { by: pierce.id, card: 'lift' } });
+    expect((await fake.effectsAbove([boFace], null, null)).some((e) => e.play === pierce.id)).toBe(false);
   });
 
   test('an admin who ends the card that cuts brings the Gimmick back, and reverse_card tells a cut, a spent and an ended play apart', async () => {
