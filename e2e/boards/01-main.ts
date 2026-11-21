@@ -103,7 +103,7 @@ const manifest: BoardManifest = {
      * The right side's restyle (PR #951, the owner's): the clock and Alerts over Menu and Hand are one step apart, the pair of rows centered on the
      * plate and the lower row stood left by the glass's lean, so Hand's edge carries on from Alerts' and Menu's from the clock (engine/ui/frame/frame.css,
      * `--kb-hud-lean`). Each part that moved is held to where it stands now: the clock 26px right and 13px down, over Menu's leaning edge; Alerts 13px
-     * down; Menu, its word and its key cap 17px up; Hand 17px up and 12.7px left by the lean. The clock's label is "Next settle", the owner's
+     * down; Menu, its word and its key cap 17px up and 3.3px right (the row's width now sets its left); Hand 17px up and 12.7px left by the lean. The clock's label is "Next settle", the owner's
      * old-video-game shortening, so it holds one line beside Alerts at 125% text and clears the hand's first card at 100%.
      */
     { id: 'hud-clock', role: 'text', name: 'Next settlement', buildName: 'Next settle', within: 'hud', box: 'position', buildShift: { x: 26, y: 13 } },
@@ -113,10 +113,10 @@ const manifest: BoardManifest = {
      * where the board sets aria-label over a visible key cap, which axe's label-in-name rule refuses;
      * so the button's first text differs between the two, and its type is read from each part instead.
      */
-    { id: 'hud-menu', role: 'button', name: 'Menu', within: 'hud', type: false, buildShift: { y: -17 } },
-    { id: 'hud-menu-word', role: 'text', name: 'Menu', within: 'hud-menu', buildShift: { y: -17 } },
+    { id: 'hud-menu', role: 'button', name: 'Menu', within: 'hud', type: false, buildShift: { x: 3.3, y: -17 } },
+    { id: 'hud-menu-word', role: 'text', name: 'Menu', within: 'hud-menu', buildShift: { x: 3.3, y: -17 } },
     /* The Menu button's Esc key cap, a <kbd> with no role. The AURA label beside the orbs is not in section 7's list. */
-    { id: 'hud-esc', role: 'text', name: 'ESC', within: 'hud', buildShift: { y: -17 } },
+    { id: 'hud-esc', role: 'text', name: 'ESC', within: 'hud', buildShift: { x: 3.3, y: -17 } },
     { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', buildName: 'Hand, 3 postcards, open', within: 'hud', buildShift: { x: -12.7, y: -17 } },
     /* The fanned postcards at -11, -1 and 10 degrees: each a button by its name, compared by the turned card's bounds. */
     { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', buildName: STICK, type: false, buildShift: { x: -12.7, y: -17 } },

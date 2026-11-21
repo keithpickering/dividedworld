@@ -194,7 +194,7 @@ test.describe('the HUD keeps its geometry', () => {
   test('at 1440', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, { name: 'HUD', path: '/b/general' });
-    /* The clock stands over Menu's leaning edge, 26px right and 13px down of where it stood before the right side's restyle (PR #951; engine/ui/frame/frame.css, `--kb-hud-clock-top`). */
+    /* The clock stands over Menu's leaning edge, 26px right and 13px down of where it stood before the right side's restyle (PR #951; engine/ui/frame/frame.css: `--kb-hud-row-width` sets its left, `--kb-hud-clock-top` its top). */
     nearly(await read(page), { height: 212, avatar: [59, 72, 84, 84], select: [256, 129, 151, 52], aura: [500, 10, 452, 29], orbs: [500, 47, 452, 113], clock: [1006, 72, 134, 34] });
   });
   test('at 390', async ({ page }) => {
