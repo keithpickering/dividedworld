@@ -240,6 +240,11 @@ describe('a trap', () => {
         { how: 'rode', setter: 'Pipewrench', card: null, laid: 'Whoops!', span: 'two days', setterStaff: false },
       ]);
     });
+    test('sprang (yours) with no quadrant on the spring says every reaction pays', () => {
+      const r = row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+      const bare = spring({ payload: { card: 'chess', trigger: 'cast', did: 'rode', set: 'set1', by: 'k' } });
+      expect(said(r, withChess([bare, act('post9', { seq: 9 })])).detail).toBe('A card it was waiting for was cast there and set it off. The cast landed, and every reaction to it pays you at each settlement. In Hobbies.');
+    });
     test('sprang (yours) says the cast landed and its reactions of the kind named pay at each settlement', () => {
       const r = row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
       expect(said(r, withChess([rode, act('post9', { seq: 9 })]))).toEqual({

@@ -31,6 +31,7 @@ import { feelinFab } from '../cards/feelin-fab.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
 import { ropeBreak } from '../cards/rope-break.ts';
+import { whoopeeCushion } from '../cards/whoopee-cushion.ts';
 import { STEEL_CHAIR_LASTS } from '../cards/steel-chair.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
 import { WORDS as THIS_WORDS, thisCard } from '../cards/this.ts';
@@ -1169,6 +1170,19 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(ui('4d-chess').describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day if nothing');
   });
 
+  test('Whoopee Cushion is a face-down Reversal with every one\'s status, Pepperoni\'s colors, no form and no effect, and its words say what springs it and what it pays', () => {
+    const cushion = ui('whoopee-cushion');
+    expect(cushion.status).toBe(ui('rope-break').status);
+    expect(cushion.status).toBe('Set, face down to everyone else');
+    expect(cushion.art.color).toBe('#d24a2c');
+    expect(cushion.art.ink).toBe('#0d0301');
+    expect(cushion.art.tagline).toBe('Get paid when a common card lands.');
+    expect(cushion.summary).toBe('Set face down on your post. The first common cast there lands, and every reaction to it pays you a quarter of a vote.');
+    expect(cushion.Effect).toBeUndefined();
+    expect(cushion.ConfigForm).toBeUndefined();
+    expect(cushion.describe(instance.settings)).toBe(`A Pepperoni card, ${whoopeeCushion.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first common card cast on that post, of any flavor, springs it and shows it: that card lands as usual and its caster keeps everything it earns, and from then on each vote it draws, of any kind, pays you a quarter of a vote. A card cast by one of your own characters springs it and pays you nothing. A rarer card passes over it, and a card your post's ward turns away never reaches it. It springs once, or comes back to your hand after 7 days if nothing springs it. It costs nothing more to set.`);
+  });
+
   test('Rope Break is a face-down Reversal with the same status as every one, its Sweet colors, no form and no effect, and its words say what it catches', () => {
     const rope = ui('rope-break');
     expect(rope.status).toBe('Set, face down to everyone else');
@@ -1210,6 +1224,7 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(said('card.skim', 'mooch')).toBe('Mooch: a tenth of a vote for each vote its post drew in the reactions it named, from players who first reacted after it');
     expect(said('card.ride', 'toll')).toBe('Toll: half a vote for each vote on a Move another player cast on the post');
     expect(said('card.ride', '4d-chess')).toBe('4D Chess: a vote for each vote, of the kind it named, on the Move that sprang it');
+    expect(said('card.ride', 'whoopee-cushion')).toBe('Whoopee Cushion: a quarter of a vote for each vote on the card whose cast sprang it');
     for (const reason of ['card.skim', 'card.ride']) {
       expect(said(reason, 'gone'), reason).toMatch(/^A card: what its payout on a reaction earned$/u);
       expect(said(reason, undefined)).toBe('A card: what its payout on a reaction earned');
