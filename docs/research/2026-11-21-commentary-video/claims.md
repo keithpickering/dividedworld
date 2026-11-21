@@ -231,3 +231,61 @@ From the plan's Task 9 and the design's sections 7 and 9.
    - What the picture gives away: **open**, and standing unless struck. Node 2 shows a Heel hurt by a thumbs up, which the onboarding
      design counts among the things players are meant to find.
    - The block timings: **open.** Estimates from the score; the plan measures them on the recording.
+
+## Revised, 2026-11-21
+
+The film was revised after the second rehearsal. This section records what the revised takes show and where they differ from the game. It
+adds to the record above and does not replace it; the entries above keep their verdicts as written.
+
+### The Staff's lines
+
+Every staff line the stage shows is now the second rehearsal's output. `instances/divided-world/ui/hype/staff-lines.json` holds each line
+twice: as `said`, the log's exact words, and as `text`, the same line with the cast's names put in for the posters it speaks of. The stage
+shows `text`. A test in `instances/divided-world/ui/hype/Stage.test.tsx` finds every `said` in the logs under
+`docs/research/2026-11-13-season-rehearsal-run-2/logs/`, character for character, in the log that names it; a filing's aimed-at post is
+checked the same way.
+
+The two lines round 1 wrote for ONTOPIC 5.0's visit and filing, which the final review of #914 found in no log, are removed.
+
+One line is not from a log. The quiz is the game's own fixture ("Which form is used to request another form?"), from
+`engine/ui/cards/Visit.board.stories.tsx`. The owner gave leave for it on 2026-11-21, because the rehearsal never ran a quiz. It is the only
+exception.
+
+The logs hold no report verdict, appeal ruling or apology. So the report and appeal takes show the game's own forms, and the fake backend's
+own invented answer line is hidden in those takes (see the departures below).
+
+### The GPT-2 text
+
+`instances/divided-world/ui/hype/gpt2-tail.txt` is real output of the You Were Saying? card: row 14 of `card_texts` on the owner's test
+instance, cast by the owner on 2026-11-21. The post it continues is "Seriously what the fuck is a video game", and the stage's post 20 is that
+post, word for word. So the film shows a true pair: a post, and what the card wrote after it. The owner stated the same day that the model is
+literally GPT-2 (see n09-46 above).
+
+The text was read once from the instance by the session the owner asked. No build session or subagent touched the instance.
+
+### Departures the new takes add
+
+What the new takes do that the game does not, beyond the departures listed above. None of these changes a line the film says, unless a line
+is named.
+
+- **The Hall Pass.** A real play sets it, but its spring and the trapped ending are seeded, because the fake backend never springs one. The
+  notice shown on screen is the game's own.
+- **Filings.** They are seeded, and aimed at posts written for them, with the words the rehearsal's posts had.
+- **The full warn bar.** It is five seeded filings on one character.
+- **The Autocorrect on the stage.** It is seeded as played 26 hours ago, so its author is past the 24-hour hold and can peel it.
+- **The report and appeal takes.** The fake backend's invented verdict line is drawn invisible. The words the reader sees are the game's forms.
+- **The card back.** Its turn to Rope Break or Hall Pass is an instant swap in the game, not an animation.
+- **The close-ups.** They are filmed at small viewports with high density, so the game is drawn large.
+
+### The music
+
+The film's music is the Musopen recording of Edvard Grieg's "In the Hall of the Mountain King" (Peer Gynt Suite No. 1, Op. 46), the Czech
+National Symphony Orchestra, 2012, 154.09 seconds whole. The source file is listed in `instances/divided-world/ui/hype/music-map.json`
+(`source`).
+
+The edit uses the whole recording, or a shortened version of it, made by removing two whole theme statements from the first block. The
+recipes are the `versions` in `music-map.json`: `mk-a` removes statements 2 and 3 (2:16.4 is the length it cuts to, from 2:34), and `mk-b`
+removes statements 2 and 5 (1:58.4). The edit chooses the longest version the narration allows.
+
+The joins were measured, not listened to. The analysis's README (`.runs/hype/musiccut`, ignored by git) holds the measurements, and the
+owner's ear is the test. Nobody building this has heard a join.
