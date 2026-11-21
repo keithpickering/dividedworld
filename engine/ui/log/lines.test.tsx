@@ -1896,3 +1896,57 @@ describe('merging pages with poll lines', () => {
     expect(mergeLogs({ ...empty }, { ...empty }).ballots).toBeUndefined();
   });
 });
+
+/**
+ * Cards that left the game (the card retirement design, section 4): the player's own log says, plainly and truly, what a seed did to their copies, once per seed per kind; a play from before the seed still
+ * names the card it was; an opened pack's refund is a line of its opening.
+ */
+describe('cards that left the game', () => {
+  const at = '2026-11-20T10:00:00.000Z';
+  const base = testInstance.cards[0]!;
+  const collector = { ...base, key: 'collector', name: 'Card Collector', formerly: [{ key: 'trap-card', name: 'Trap Card' }] };
+  const w: Words = { ...words, instance: { ...testInstance, cards: [...testInstance.cards, collector], withdrawn: [{ key: 'bluff', name: 'Bluff', refund: 100 }] } };
+  const text = (r: { what: string; details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+  const ev = (card: string, kind: 'renamedOut' | 'renamedIn' | 'withdrawn', over: Record<string, unknown> = {}) => ({ card, kind, act: null, price: 0, at, ...over }) as Log['cards'][number];
+  const rowsOf = (cards: Log['cards'], wallet: WalletEvent[] = []) => logRows(data({ log: { ...empty, cards, wallet }, mine: [char('c', 'Spritey', 'heel')] }), w, 600, null);
+  const refunded = (n: number): WalletEvent => ({ settlement: null, kind: 'withdrawal', change: n * 100, overflow: 0, floored: 0, balanceAfter: 500 + n * 100, ref: null, at });
+
+  test('a withdrawn card is one line for all the copies, with the refund', () => {
+    const [two, ...rest] = rowsOf([ev('bluff', 'withdrawn', { price: 100 }), ev('bluff', 'withdrawn', { price: 100 })], [refunded(2)]);
+    expect(rest).toEqual([]);
+    expect(two!.what).toBe('Bluff was withdrawn from the game');
+    expect(text(two!)).toBe('Your 2 copies were refunded 2.00 orbs.');
+    expect(two!.aura).toBe(200);
+    const [one] = rowsOf([ev('bluff', 'withdrawn', { price: 100 })], [refunded(1)]);
+    expect(text(one!)).toBe('Your copy was refunded 1.00 orb.');
+  });
+
+  test('a renamed card is one line for all the copies, naming the new card', () => {
+    const [two, ...rest] = rowsOf([ev('trap-card', 'renamedOut'), ev('trap-card', 'renamedOut'), ev('collector', 'renamedIn'), ev('collector', 'renamedIn')]);
+    expect(rest).toEqual([]);
+    expect(two!.what).toBe('Trap Card is now Card Collector');
+    expect(text(two!)).toBe('Your 2 copies are Card Collectors now.');
+    const [one] = rowsOf([ev('trap-card', 'renamedOut'), ev('collector', 'renamedIn')]);
+    expect(text(one!)).toBe('Your copy is a Card Collector now.');
+  });
+
+  test('a seed at another time is another line, and a back moved by a seed counts with the held copies', () => {
+    const later = '2026-11-21T10:00:00.000Z';
+    const rows = rowsOf([ev('trap-card', 'renamedOut'), ev('trap-card', 'renamedOut', { act: 'set1' }), ev('trap-card', 'renamedOut', { at: later }), ev('collector', 'renamedIn')]);
+    expect(rows.map(text).sort()).toEqual(['Your 2 copies are Card Collectors now.', 'Your copy is a Card Collector now.']);
+  });
+
+  test('a card withdrawn out of a pack is a line of the pack\'s opening, one card or several', () => {
+    const pack = (n: number) => rowsOf([ev('bluff', 'withdrawn', { pack: 'p1', price: 100, packKind: 'starter', packSource: 'welcome' }), ...(n > 1 ? [ev('bluff', 'withdrawn', { pack: 'p1', price: 100 })] : [])]);
+    expect(text(pack(1).find((r) => r.kind === 'pack')!)).toBe('Bluff. 1 card in it was withdrawn and refunded 1.00 orb.');
+    expect(text(pack(2).find((r) => r.kind === 'pack')!)).toContain('2 cards in it were withdrawn and refunded 2.00 orbs.');
+    expect(pack(1).filter((r) => r.kind === 'retired')).toEqual([]);
+  });
+
+  test('a play from before the seed names the card by its old name, never "a card"', () => {
+    for (const [key, old] of [['bluff', 'Bluff'], ['trap-card', 'Trap Card']] as const) {
+      const rows = rowsOf([{ card: key, kind: 'played' as const, act: 'k1', price: 0, at }]);
+      expect(rows.find((r) => r.kind === 'played')!.what).toBe(`You played ${old}`);
+    }
+  });
+});

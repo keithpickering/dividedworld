@@ -1500,6 +1500,12 @@ export interface AdminSlot {
   /** The admin's price, in hundredths of an orb. */
   readonly price: number;
   readonly move: Pick<SlotMove, 'kind' | 'act' | 'ends' | 'percent' | 'hours'> | null;
+  /** The slot's card or pack kind is no longer in the instance's list (out of print), or, for a card, became another card (`became`, its key) or was withdrawn. Always false for a card still in print. */
+  readonly retired: boolean;
+  /** For a card renamed away: the key of the card it is now; null otherwise. */
+  readonly became: string | null;
+  /** For a card withdrawn from the game (its refund paid at the seed). */
+  readonly withdrawn: boolean;
 }
 
 /** A pack opened: its id, the cards it gave in pull order, and the settled wallet after it (`buy_pack`'s answer). */
@@ -1517,6 +1523,8 @@ export interface Unsealed {
   readonly pack: Id;
   readonly kind: string;
   readonly contents: readonly string[];
+  /** The cards in `contents` that were withdrawn from the game, refunded at opening: each its 0-based index into `contents` and its refund in hundredths. Empty when none. */
+  readonly refunds: readonly { readonly index: number; readonly refund: number }[];
 }
 
 /** A pack the account holds and has not opened (`my_packs` where `opened_at` is null): its kind and when it was given. Its cards are not readable until it is open. */
@@ -1564,7 +1572,7 @@ export interface LogSettlement {
 export interface WalletEvent {
   readonly settlement: number | null;
   /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). `grant` is an admin's (0146): Aura given by the instance's operator, `ref` null. `crowd` is crowd pay (0384): the settlement's, `ref` null; the Acts are `Log.crowd`. */
-  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant' | 'gift_out' | 'gift_in' | 'crowd';
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant' | 'gift_out' | 'gift_in' | 'crowd' | 'withdrawal';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;
@@ -1587,7 +1595,12 @@ export interface CardEvent {
    * `returned`: a card back in the hand. A face-down card taken back (0148; its `act` is the take-back) or whose time passed unsprung (no
    * `act`), or a play whose old voice did not answer, so its price went back and its card with it (0149; its `act` is the play).
    */
-  readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned' | 'found';
+  /**
+   * `renamedOut`, `renamedIn` and `withdrawn` are a seed's (the card retirement design, sections 3 and 4). A held copy a seed moved is a `renamedOut` (or `withdrawn`) row with no `act`; a
+   * live face-down back it moved is one whose `act` is the back's set play, and that back shows no `returned` row when it ends. A `renamedIn` row (no `act`) adds a copy to the new key, one
+   * per copy moved. A `withdrawn` row's `price` is its refund, in hundredths, one row per copy. The hand fold: `renamedIn` +1; `renamedOut` and `withdrawn` -1 only when `act` is null (a back's play already took it).
+   */
+  readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned' | 'found' | 'renamedOut' | 'renamedIn' | 'withdrawn';
   /** The play's Act, or the spring for a caught card; null for a purchase and a pulled card. */
   readonly act: Id | null;
   /** The pack a pulled card came from; absent on any other row. */

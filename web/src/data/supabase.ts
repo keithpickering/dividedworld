@@ -425,9 +425,12 @@ const toAdminSlot = (r: Row): AdminSlot[] => {
     id: r['slot'], position: num(r['position']),
     item: typeof r['card'] === 'string' ? { card: r['card'] } : { pack: String(r['pack'] ?? '') },
     rarity: str(r['rarity']) as Slot['rarity'], availability, price: num(r['price']),
+    retired: r['retired'] === true, became: typeof r['became'] === 'string' ? r['became'] : null, withdrawn: r['withdrawn'] === true,
     move: m && kind && typeof m['act'] === 'string' ? { kind, act: m['act'], ends: orNull(m['ends']), percent: m['percent'] == null ? null : num(m['percent']), hours: m['hours'] == null ? null : num(m['hours']) } : null,
   }];
 };
+/** open_pack's `refunds`: each withdrawn card's index into the contents and its refund in hundredths; anything else is dropped. */
+const toRefunds = (v: unknown): Unsealed['refunds'] => (Array.isArray(v) ? (v as Row[]).filter((x) => isObject(x) && typeof x['index'] === 'number').map((x) => ({ index: num(x['index']), refund: num(x['refund']) })) : []);
 const toHeldCard = (r: Row): HeldCard => ({ card: r['card'], held: num(r['held']) });
 const toMyReaction = (r: Row): MyReaction => ({ act: r['act'], kind: r['kind'], character: r['character'] });
 const toPlayAbove = (x: Row): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) });
@@ -1630,7 +1633,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* Opening is a direct function of the account's own pack (open_pack), not an act: no Aura moves, and no balance comes back. */
     openPack: async (pack) => {
       const a = await rpcWrite(() => client.rpc('open_pack', { pack }));
-      return a.ok ? { ok: true, value: { pack: a.value['pack'], kind: a.value['kind'], contents: Array.isArray(a.value['contents']) ? a.value['contents'].filter((c): c is string => typeof c === 'string') : [] } satisfies Unsealed } : a;
+      return a.ok ? { ok: true, value: { pack: a.value['pack'], kind: a.value['kind'], contents: Array.isArray(a.value['contents']) ? a.value['contents'].filter((c): c is string => typeof c === 'string') : [], refunds: toRefunds(a.value['refunds']) } satisfies Unsealed } : a;
     },
     /* A gift: the Edge Function's answer is the gift's projection and the giver's own balance after. */
     donate: (character, drive, amount) => act({ action: 'donate', character, drive, amount }, (r): Donated => ({ act: toAct(r['gift'] as Row), balance: num(r['balance']) })),
