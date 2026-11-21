@@ -1,7 +1,7 @@
 /**
  * The commentary video's end card (docs/plans/2026-11-21-commentary-video-plan.md, Task 7; the design, section 4, node 13): a page of the tool's
  * own, not the game's. A rainbow across the whole frame, slowly scrolling and cycling for obnoxiousness, and over it, centered, wrapped and as
- * large as fits with margins, in Comic Sans MS, black with a white outline, the sentence of `END_CARD` (instances/divided-world/ui/hype/commentary.ts),
+ * large as fits with margins, in Comic Sans MS, black with a white outline, the sentence of `TITLE` and `TITLE_NOTE` (instances/divided-world/ui/hype/commentary.ts),
  * misspelled as it is meant to be.
  *
  *   node tools/hype/shot-commentary-end.mjs [--stand-in] [--port 4319]
@@ -18,7 +18,7 @@ import { OUT, flag } from './stage.mjs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const { END_CARD } = await import(pathToFileURL(path.resolve('instances/divided-world/ui/hype/commentary.ts')).href);
+const { TITLE, TITLE_NOTE } = await import(pathToFileURL(path.resolve('instances/divided-world/ui/hype/commentary.ts')).href);
 const standIn = process.argv.includes('--stand-in');
 const SECONDS = 12;
 const FPS = 60;
@@ -53,7 +53,7 @@ try {
   await cam.evaluate(`(() => {
     const words = document.getElementById('words'), card = document.getElementById('card'), bow = document.getElementById('bow');
     words.style.fontFamily = ${JSON.stringify(has ? `"${FONT}"` : STAND_IN)};
-    words.textContent = ${JSON.stringify(END_CARD)};
+    words.textContent = ${JSON.stringify(TITLE + " " + TITLE_NOTE)};
     /* Black words with a white outline all round: eight shadows, since a stroke would eat into the letters. */
     const o = (r) => [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]].map(([x, y]) => (x * r) + 'px ' + (y * r) + 'px 0 #fff').join(',');
     /* As large as fits inside the margins. */

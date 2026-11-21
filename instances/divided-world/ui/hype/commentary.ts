@@ -1,5 +1,5 @@
 /**
- * The commentary video's script as data, the words of docs/plans/2026-11-21-commentary-video-design.md (section 4),
+ * The commentary video's script as data, the words of docs/plans/2026-11-21-commentary-video-design.md (section 4, as the owner reworded it in section 9),
  * to the letter. Each node is a list of captions; each caption fits two rows (at most 90 characters) and is split only
  * at a comma, a dash or a full stop. Joined with single spaces, a node's captions are its full text.
  */
@@ -15,30 +15,34 @@ export const commentary: readonly Node[] = [
     id: 'n01',
     part: 1,
     lines: [
-      'Hi, my name is Gabe, and welcome to Divided World.',
-      'After nine years in development, hopefully it will have been worth the wait.',
-      'The last forum ran on code I wrote when I was twenty,',
-      "and it's not easy to open that up and wonder what you were thinking.",
-      'This is, I think, better.',
+      "Hi, I'm Gabe.",
+      'Over the last few years, people have been asking me what our company has been up to.',
+      "Why haven't we been making any games?",
+      "Well, I'm happy to announce that the indefinite delay of Half-Life: Nuts & Bolts",
+      'has not been in vain.',
+      "For the last nine years, we've been putting all of our resources into this:",
+      'Divided World.',
+      'And nobody can ever get that time back.',
       'To listen to a commentary node,',
       'put your cursor over the floating commentary symbol and click.',
-      'To stop a commentary node, click it again.',
-      'Some commentary nodes may take control of the forum in order to show something to you.',
-      'In these cases, simply click again to stop the commentary.',
+      'To stop one, click it again.',
+      'Some commentary nodes may take temporary control over the forum',
+      'in order to show you something.',
+      "It's best to just let those ones happen.",
     ],
   },
   {
     id: 'n02',
     part: 1,
     lines: [
-      'Early playtests showed that people on a forum want to be liked.',
-      'We considered this a design problem.',
-      'So every character has a secret class, and some classes are paid for being disliked.',
+      'Early playtests showed us that people posting on a forum want to be liked.',
+      'We found this resulted in a positive, nurturing environment -',
+      'So instead, every character has a secret class,',
+      'and some classes are paid for being disliked.',
       'This one is a Heel.',
       'Playtesters threw tomatoes at him and he made money.',
       'We then found they could hurt him by agreeing with him, politely.',
-      "We didn't design that.",
-      'We kept it.',
+      'And that REALLY got him going!',
     ],
   },
   {
@@ -50,7 +54,6 @@ export const commentary: readonly Node[] = [
       'Here, the gate is another player.',
       "Every card back looks the same, so you can't know what's waiting on a post.",
       'Playtesters described this as unfair.',
-      'We agree.',
     ],
   },
   {
@@ -73,8 +76,9 @@ export const commentary: readonly Node[] = [
       'This is a training arc.',
       'The player learns that a card can be caught,',
       'and then learns that being caught can be the plan.',
-      'We found that about one playtester in five understood this.',
-      "He won everything, and we couldn't work out who he was.",
+      'We found 1 in 5 players understood this.',
+      'He took the other four for everything they had,',
+      'and none of them ever logged in again.',
     ],
   },
   {
@@ -113,26 +117,38 @@ export const commentary: readonly Node[] = [
       "any time you do something new there's a normal distribution of pain,",
       "and this is— that's a chair.",
       'This is not in the middle of the curve. Okay.',
-      "This is GPT-2 finishing someone's post.",
-      'Do we... do we have a filter on that?',
-      'My god, there are laws about this stuff, you know.',
+      "This is... somebody's post continuing itself?",
+      'I guess?',
+      "Okay, I'm hoping at one point one of the, uh...",
     ],
   },
   {
     id: 'n10',
     part: 3,
     lines: [
-      "That's the moderator.",
-      "He's a Personality Core, we found him in a pile, he's the permanent Boss,",
-      "and nothing will go— he's merging the boards.",
-      "To stop a commentary node, put your cursor over— I'm doing that.",
+      "Okay good, here's a Moderator.",
+      "He's a personality core we pulled out of a pile,",
+      'he should be able to clean some of this up, aaand....',
+      "he's merging all the boards together.",
     ],
   },
   {
     id: 'n11',
     part: 3,
-    lines: ['Please let me know—', '—what you think—', '—after you have had a chance—'],
+    lines: [
+      'Please let me know...',
+      'what you think....',
+      "after you've had a chance....",
+      'to figure this stupid thing out!',
+    ],
   },
 ];
 
-export const END_CARD = "DIVIDED WROLD (misspelled) (put the misspelled word 'world' in there for real)";
+export const TITLE = 'DIVIDED WROLD';
+export const TITLE_NOTE = "(misspelled) (put the misspelled word 'world' in there for real)";
+
+/**
+ * @deprecated Read TITLE and TITLE_NOTE. The last reader is tools/hype/edit-commentary.mjs (and its test); the agent
+ * that owns that file removes it, and this export goes with it.
+ */
+export const END_CARD = TITLE + ' ' + TITLE_NOTE;
