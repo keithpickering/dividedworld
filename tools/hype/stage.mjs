@@ -5,17 +5,14 @@
  */
 import { mkdirSync } from 'node:fs';
 import { openCamera } from './camera.mjs';
+import { flag } from './cutting.mjs';
 
 export const OUT = '.runs/hype';
 
 /* The sprite sheet in Snuckles's first post (the owner's own, his first submission, from 2005): the address the post names, and the file the camera answers it with. */
 export const SERVE = { 'https://dw.gripe/hype/wiggler-sheet.gif': { file: 'instances/divided-world/ui/hype/wiggler-sheet.gif', type: 'image/gif' } };
 
-/** The value after a flag on the command line, or `otherwise`. */
-export function flag(name, otherwise) {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 && process.argv[i + 1] !== undefined ? process.argv[i + 1] : otherwise;
-}
+export { flag };
 
 /** Whether the target post's ink is built: a picture held for each live layer in each band near the viewport (e2e/whoops.spec.ts waits the same way). */
 export const BUILT = `(() => {

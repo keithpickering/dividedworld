@@ -93,7 +93,7 @@ test('a clip one frame too long throws, naming the node, the window and the over
 
 test('a line of node 11 that overruns its gap is cut off by the chord, not refused, and says how much', () => {
   const w = windows(map, { fragments: 3 });
-  const out = fit(w, { n11: [1, 8, 9.5] });
+  const out = /** @type {any} */ (fit(w, { n11: [1, 8, 9.5] }));
   assert.deepEqual(out.n11.map((x) => x.cut), [0, 0, 0.5]);
   assert.equal(out.n11[2].slack, 0);
 });
