@@ -64,6 +64,7 @@ test('the instance sells its cards at their prices', () => {
     ['publicity-tour', 'sweet', 150],
     ['required-reading', 'sweet', 100],
     ['rope-break', 'sweet', 100],
+    ['so-very-happy', 'salty', 300],
     ['steel-chair', 'salty', 100],
     ['stick-around', 'sweet', 100],
     ['sugar-coat', 'sweet', 300],
@@ -412,9 +413,10 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   // Card notes Part 5 added Happy Heart and Take the Fall (uncommon), Super Happy Heart and Tattle-Tale (rare) and Ultra Happy Heart (legendary), again with nothing listed in packs.ts.
   // Hype-Up (card notes, Hype-Up on a post) is now a common, so the hit pull leaves it out: twenty uncommons share the 74 (Front Row, Sweet Heat and Thick Skin, uncommons, joined them). Sugar Coat, Graffiti, Line Cutter, Feelin' Glam, Whodunnit?, Super Happy Heart and Tattle-Tale are the rares that share the 24 with Main Event: eight, at 0.03 each.
   // Off Day and Ultra Happy Heart are the legendaries that share the 2: two, at 0.01 each, so Ultra Happy Heart can be pulled.
+  // So Very Happy (rare, the so-very-happy plan's Task 7) joined them, so nine share the 24.
   const rares = cards.filter((c) => c.rarity === 'rare');
-  assert.deepEqual(rares.map((c) => c.key).sort(), ['feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'whodunnit']);
-  for (const c of rares) assert.ok(Math.abs(chance.get(c.key)! - 0.03) < 1e-9, `${c.name} at ${chance.get(c.key)}`);
+  assert.deepEqual(rares.map((c) => c.key).sort(), ['feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'so-very-happy', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'whodunnit']);
+  for (const c of rares) assert.ok(Math.abs(chance.get(c.key)! - 0.24 / rares.length) < 1e-9, `${c.name} at ${chance.get(c.key)}`);
   const legendaries = cards.filter((c) => c.rarity === 'legendary');
   assert.deepEqual(legendaries.map((c) => c.key).sort(), ['off-day', 'ultra-happy-heart']);
   for (const c of legendaries) assert.ok(Math.abs(chance.get(c.key)! - 0.01) < 1e-9, `${c.name} at ${chance.get(c.key)}`);
