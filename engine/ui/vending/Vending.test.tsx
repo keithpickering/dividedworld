@@ -951,6 +951,26 @@ describe('buying a pack opens the reveal', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent('All five are in your hand');
   });
 
+  test('a card the instance does not know is drawn on the instance\'s card back, with no art borrowed from a real card', async () => {
+    const fake = stockedWorld(562);
+    const real = fake.buyPack.bind(fake);
+    vi.spyOn(fake, 'buyPack').mockImplementation(async (slot) => {
+      const a = await real(slot);
+      return a.ok ? { ok: true, value: { ...a.value, contents: [...a.value.contents.slice(0, 4), 'ghost'] } } : a;
+    });
+    const withArt = stockedFaces.map((f, i) => (i === 0 ? { ...f, art: { ...f.art, canvas: '/first-card.webp' } } : f));
+    renderIn(fake, <Vending />, { instance: stocked, cards: withArt, packs: packsUi, path: '/vending', cardBack: { mark: '/coin.svg', canvas: '/back.webp' } });
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Booster · 3.00' }));
+    await screen.findByRole('dialog', { name: 'Opening a Booster' });
+    for (let i = 0; i < 5; i++) fireEvent.click(screen.getByRole('button', { name: /^Turn the next card$/u }));
+    const ghost = within(screen.getByRole('list', { name: 'The pack, in the order it was pulled' })).getAllByRole('listitem')[4]!;
+    const card = ghost.querySelector('.kb-postcard[data-kb-card="ghost"]')!;
+    expect(card.classList.contains('kb-postcard-back')).toBe(true);
+    expect(card.querySelector('.kb-postcard-art')).toHaveAttribute('src', '/back.webp');
+    expect(ghost.innerHTML).not.toContain('/first-card.webp');
+  });
+
   test('another account signing in while the reveal is open shows nothing of it', async () => {
     const fake = stockedWorld(562);
     const other = fake.seed.account('bo');

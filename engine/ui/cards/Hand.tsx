@@ -51,7 +51,7 @@
  * in the sheet's line.
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import type { HeldCard, SealedPack } from '../data/api.ts';
+import type { HeldCard, SealedPack, Unsealed } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { packHit } from '../../rules/packs.ts';
 import { PackArt } from '../vending/PackArt.tsx';
@@ -61,7 +61,7 @@ import { Layers } from '../glass/layer.tsx';
 import { useBoard } from '../glass/useBoard.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Postcard, cardLabel } from './Postcard.tsx';
-import { plainRefusal, type CardFace } from './faces.ts';
+import { plainRefusal, refundedFace, unknownFace, type CardFace } from './faces.ts';
 import { useSealedPacks } from './sealed.ts';
 import { CalmRegion } from '../glass/Calm.tsx';
 import { SWIPE_REACH, SWIPE_STEP, arcSlots, handOrder, placesOf, swipeKeyframes, swipeMiddle, swipePose } from './arc.ts';
@@ -120,17 +120,11 @@ function firstAtLeast(xs: readonly number[], x: number): number {
   return lo;
 }
 
-/** A card the instance no longer has, as the reveal shows it: its name alone, claiming no rarity or alignment. */
-const unknownFace = (key: string, like: CardFace | undefined): CardFace => ({
-  key, name: 'A card this machine no longer has', alignment: 'sweet', tag: '', extra: 0, stack: 1, tagline: '', summary: '', describe: '',
-  art: like?.art ?? { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, rarity: 'common', play: like?.play ?? 'set', kind: '', unknown: true,
-});
-
 /** A sealed pack's place is keyed apart from every card's. */
 const packKey = (p: SealedPack): string => `pack:${p.pack}`;
 
 /** A sealed pack that is being opened: the pack, the cards its answer gave in pull order, and the button it was pressed on, which the reveal rises from. */
-interface Opened { readonly pack: SealedPack; readonly contents: readonly string[] }
+interface Opened { readonly pack: SealedPack; readonly contents: readonly string[]; readonly refunds: Unsealed['refunds'] }
 
 export interface HandProps {
   readonly held: readonly HeldCard[];
@@ -378,7 +372,7 @@ export function Hand({ held, sealed: given, onOpened, handLink, faces, armed = n
         return;
       }
       setRefusal(null);
-      setOpened({ pack: p, contents: answer.value.contents });
+      setOpened({ pack: p, contents: answer.value.contents, refunds: answer.value.refunds });
     } catch {
       setRefusal('The pack could not be opened. Try again.');
     } finally {
@@ -546,7 +540,7 @@ export function Hand({ held, sealed: given, onOpened, handLink, faces, armed = n
               name={nameOf(opened.pack)}
               {...(lookOf(opened.pack)?.art ? { art: lookOf(opened.pack)!.art } : {})}
               note={null}
-              cards={opened.contents.map((k) => faces.find((f) => f.key === k) ?? unknownFace(k, faces[0]))}
+              cards={opened.contents.map((k, i) => { const refund = opened.refunds.find((r) => r.index === i); return refund ? refundedFace(k, ui.cardBack, refund.refund) : faces.find((f) => f.key === k) ?? unknownFace(k, ui.cardBack); })}
               riseFrom={() => pressed.current}
               {...(handLink ? { handLink } : {})}
               returnFocusTo={() => pressed.current}
