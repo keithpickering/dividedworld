@@ -119,8 +119,9 @@ export interface SoundPlay {
   /**
    * Plays the slot through the mixer and says its caption. Resolves with what the mixer answered (null when nothing sounded). A play
    * the mixer drops for being later than `lateMs` answers null like any skipped play, so it is captioned through the game-bus branch below.
+   * `voices` is the group's cap: how many of its voices may sound at once (1 when it is not given), the oldest fading out to make room.
    */
-  play(key: string, opts?: { group?: string; fadeMs?: number; tailMs?: number; lateMs?: number }): Promise<{ lengthMs: number } | null>;
+  play(key: string, opts?: { group?: string; fadeMs?: number; tailMs?: number; lateMs?: number; voices?: number }): Promise<{ lengthMs: number } | null>;
   /**
    * Starts a loop and returns its handle at once; the handle works before the sound has loaded (a gain set meanwhile applies when it does, the
    * latest winning; a `stop` meanwhile means it never sounds). The loop starts silent, and `setGain` holds the slot's caption under `id` while

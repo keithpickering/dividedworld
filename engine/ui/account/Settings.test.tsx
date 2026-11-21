@@ -1010,9 +1010,9 @@ describe('Settings › Sound', () => {
     fireEvent.input(slider, { target: { value: '30' } });
     await act(async () => { await Promise.resolve(); });
     /* The preview is warmed (fetched) once its bus is on, but nothing plays on input: no caption is said until the release. */
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
     fireEvent.change(slider, { target: { value: '30' } });
-    await waitFor(() => expect(captions.current()).not.toBeNull());
+    await waitFor(() => expect(captions.lines()).not.toEqual([]));
     expect(fetched).toHaveBeenCalledWith('/boo.mp3');
     await userEvent.click(radio('Interface sounds', 'On'));
     fireEvent.change(await screen.findByRole('slider', { name: 'Interface volume' }), { target: { value: '60' } });
