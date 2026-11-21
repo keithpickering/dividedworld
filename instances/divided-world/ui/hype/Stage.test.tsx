@@ -195,6 +195,7 @@ describe('the Staff\'s beats', () => {
     expect(page?.closed?.mergedInto?.slug).toBe(made.boards.minus);
     const announced = (await fake.acts((await fake.boardPage('announcements', 1, []))!.threads[0]!.id, 1, 60)).find((a) => a.id === move)!;
     expect(announced.kind).toBe('move');
+    expect(made.threads['announcements']).toBe((await fake.boardPage('announcements', 1, []))!.threads[0]!.id);
     expect(JSON.stringify(announced.payload)).toContain('Nobody posted on my board anyway');
   });
 
@@ -275,6 +276,8 @@ describe('the camera', () => {
     act(() => { turnBoard({ ry: 25, rx: 10, z: 40, scale: 0.9 }); });
     expect(outer.style.perspective).not.toBe('');
     expect(plane.style.transform).toBe('rotateX(10deg) rotateY(25deg) rotateZ(0deg) translateZ(40px) scale(0.9)');
+    act(() => { turnBoard({ x: -30, y: 12, scale: 1.4 }); });
+    expect(plane.style.transform).toBe('translate(-30px, 12px) rotateX(0deg) rotateY(0deg) rotateZ(0deg) translateZ(0px) scale(1.4)');
     expect(document.documentElement.style.background).toContain('rgb(0, 0, 0)');
     expect(plane.style.backgroundColor).toBe('rgb(10, 20, 30)');
     act(() => { levelBoard(); });

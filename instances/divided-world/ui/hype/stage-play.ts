@@ -29,14 +29,15 @@ export interface Cast { readonly play: string; readonly caught: boolean; readonl
 export interface Landed { readonly what: string; readonly ms: number; readonly frame: number }
 
 /** The steps of node 9's pile, in the order they land on Snuckles's first post: who plays each, which card, and what it is called. */
-const PILE: readonly { readonly what: string; readonly by: string; readonly card: string; readonly config?: Readonly<Record<string, unknown>>; readonly message?: string; readonly reach?: 'character' }[] = [
+const PILE: readonly { readonly what: string; readonly by: string; readonly card: string; readonly config?: Readonly<Record<string, unknown>>; readonly message?: string; readonly reach?: 'character'; readonly lastsMs?: number }[] = [
   { what: 'whoops-1', by: 'D-Guy', card: 'whoops', config: { color: '#ff2bd6', seed: 101 } },
   { what: 'whoops-2', by: 'Serious Deer', card: 'whoops', config: { color: '#19e3ff', seed: 202 } },
   { what: 'whoops-3', by: 'Chadluminum', card: 'whoops', config: { color: '#ffd93d', seed: 303 } },
   { what: 'steel-chair-1', by: 'Serious Deer', card: 'steel-chair' },
   { what: 'steel-chair-2', by: 'Human Josh', card: 'steel-chair' },
   { what: 'steel-chair-3', by: 'Chadluminum', card: 'steel-chair' },
-  { what: 'hot-box', by: 'D-Guy', card: 'hot-box', config: { color: '#32cd32' } },
+  /* The smoke thins as the card's days pass; the film's pile lets it last seconds, so the heap under it comes back into view. */
+  { what: 'hot-box', by: 'D-Guy', card: 'hot-box', config: { color: '#32cd32' }, lastsMs: 7000 },
   { what: 'laugh-track', by: 'Serious Deer', card: 'laugh-track', config: { cues: [{ phrase: 'walk cycle', sound: 'laugh' }], seed: 7 }, message: 'Laugh Track' },
   { what: 'jimmy-wails', by: 'Serious Deer', card: 'jimmy-wails', message: 'Please. He spent two weeks on twelve frames.' },
   { what: 'you-were-saying', by: 'Serious Deer', card: 'you-were-saying', config: { steps: 0 }, message: '' },
@@ -172,6 +173,9 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
       const move = fake.seed.move('fangame', { board: '', name: '', body: LINES.merged.text, lasting: { kind: 'mergeBoard', params: { board: palace, into: minus } } });
       fake.seed.closeBoard(palace, { mergedInto: minus });
       fake.broadcast.rejoin();
+      /* The move's notice is posted in the Staff Announcements thread: the stage can show it (`show('thread:announcements')`). */
+      const announcements = (await fake.boardPage('announcements', 1, []))?.threads[0]?.id;
+      if (announcements !== undefined) (made.threads as Record<string, string>)['announcements'] = announcements;
       mark('staff:merge');
       return move;
     },
@@ -200,7 +204,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     fake.clock.advance(1000);
     const layer = (layers.get(p.card) ?? 0) + 1;
     layers.set(p.card, layer);
-    const lasting = rules(p.card)?.lasts !== undefined ? { ends: new Date(Date.now() + 5 * DAY).toISOString() } : {};
+    const lasting = rules(p.card)?.lasts !== undefined ? { ends: new Date(Date.now() + (p.lastsMs ?? 5 * DAY)).toISOString() } : {};
     if (p.reach === 'character') {
       fake.seed.reach(characterOf(p.by), 'character', made.target.character, p.card, { post: first, ends: Date.now() + 5 * DAY, message: p.message ?? '', config: p.config, live: true });
     } else {

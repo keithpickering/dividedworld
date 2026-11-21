@@ -18,6 +18,9 @@ export interface Turn {
   readonly rz?: number;
   readonly z?: number;
   readonly scale?: number;
+  /** A slide of the picture across the window in px, before the turn (a tight framing puts the middle of what it films at the middle of the window). */
+  readonly x?: number;
+  readonly y?: number;
 }
 
 /** How far off the viewer the plane's picture sits, as a perspective: the nearer, the stronger the turn reads. */
@@ -39,7 +42,7 @@ const parts = () => {
 };
 
 /** Turns the board for the next frame. */
-export function turnBoard({ rx = 0, ry = 0, rz = 0, z = 0, scale = 1 }: Turn = {}): void {
+export function turnBoard({ rx = 0, ry = 0, rz = 0, z = 0, scale = 1, x = 0, y = 0 }: Turn = {}): void {
   const { outer, plane } = parts();
   const root = document.documentElement, body = document.body;
   if (kept === null) {
@@ -55,7 +58,7 @@ export function turnBoard({ rx = 0, ry = 0, rz = 0, z = 0, scale = 1 }: Turn = {
   outer.style.perspectiveOrigin = middle;
   outer.style.overflow = 'clip';
   plane.style.transformOrigin = middle;
-  plane.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg) translateZ(${z}px) scale(${scale})`;
+  plane.style.transform = `${x === 0 && y === 0 ? '' : `translate(${x}px, ${y}px) `}rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg) translateZ(${z}px) scale(${scale})`;
   plane.style.setProperty('--kb-cam-lift', `${scrollY + innerHeight - plane.offsetHeight}px`);
   plane.setAttribute('data-kb-turned', '');
 }

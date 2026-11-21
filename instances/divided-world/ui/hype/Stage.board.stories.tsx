@@ -39,6 +39,8 @@ interface Stage extends Made {
   readonly nodes: typeof nodes;
   /** The turn in space (Camera.tsx). */
   readonly camera: { readonly turn: typeof turnBoard; readonly level: typeof levelBoard };
+  /** Shows another screen of the stage in place (`thread`, `thread:<key>`, `index`, `profile:<key>`), drawn afresh from what the fake holds now: a navigation without a reload, so what was played stays played. */
+  readonly show: (view: string) => void;
 }
 declare global { interface Window { __kbStage?: Stage } }
 
@@ -64,6 +66,7 @@ const world: World = (fake, instance) => {
 function Staged() {
   const { api, ui, instance } = useKayfa();
   const [ready, setReady] = useState(false);
+  const [shown, setShown] = useState<{ readonly view: string; readonly epoch: number }>({ view: VIEW, epoch: 0 });
   useEffect(() => {
     let live = true;
     if (made) void made.ready.then(() => { if (live) setReady(true); }, (e: unknown) => { console.error('the stage could not be set', e); });
@@ -85,14 +88,14 @@ function Staged() {
   }, [api, ui, ready]);
   useEffect(() => {
     if (!made || !ready) return;
-    window.__kbStage = { ...made, fake: api as Fake, whoops: { packStroke, brushOf, BRUSH_PX }, play: playbook(api as Fake, instance, made), nodes, camera: { turn: turnBoard, level: levelBoard } };
+    window.__kbStage = { ...made, fake: api as Fake, whoops: { packStroke, brushOf, BRUSH_PX }, play: playbook(api as Fake, instance, made), nodes, camera: { turn: turnBoard, level: levelBoard }, show: (view) => { setShown((s) => ({ view, epoch: s.epoch + 1 })); } };
     return () => { delete window.__kbStage; nodes.clear(); };
   }, [api, instance, ready]);
   if (!made || !ready) return <Frame><div aria-busy="true" /></Frame>;
-  const [view, of = ''] = VIEW.split(':');
+  const [view, of = ''] = shown.view.split(':');
   return (
     <Camera>
-      <Frame>
+      <Frame key={shown.epoch}>
         {view === 'index' ? <LoadedIndex /> : view === 'profile' ? <LoadedProfile id={made.staff[of] ?? made.cast[of] ?? ''} /> : <LoadedThread thread={made.threads[of || 'main'] ?? made.thread} />}
       </Frame>
       <Nodes />

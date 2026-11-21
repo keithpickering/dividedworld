@@ -87,6 +87,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       level: () => camera.level(),
       /** The beats that landed, each \`{ what, ms, frame }\` from \`zero()\` (the page's virtual clock, a frame at 60 a second): the edit puts each on an entry of the theme. */
       landed: play.landed,
+      /** Shows another screen of the stage in place, drawn afresh from what the fake holds now (no reload): \`show('profile:fangame')\`, \`show('index')\`, \`show('thread')\`. */
+      show: (view) => window.__kbStage.show(view),
       /** Starts the beats' clock: call it as the film starts, so \`landed\`'s frames count from the first frame. */
       zero: () => play.zero(),
     };
