@@ -1,4 +1,4 @@
--- The readers of an Act's words pass the Act's verdict (supabase/migrations/0392_forged_quotes.sql, section 2; docs/plans/2026-11-20-forged-quotes-plan.md, Task 2). A real quote of a forged post is a counterfeit,
+-- The readers of an Act's words pass the Act's verdict (supabase/migrations/0393_forged_quotes.sql, section 2; docs/plans/2026-11-20-forged-quotes-plan.md, Task 2). A real quote of a forged post is a counterfeit,
 -- so its words are the poster's own in every reader: the search index and its snippets, a rule's judgment, the words a card writes on, and a card's Says condition. The verdict is the payload's `forged`;
 -- Task 3's trigger writes it, so here the test writes it into the payload by hand, as superuser. Each assertion has a twin with no verdict that must read the quote as a quote, so a reader that passes
 -- '{}' fails the first and one that always passes the verdict fails the second.

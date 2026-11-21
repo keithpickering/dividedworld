@@ -1,4 +1,4 @@
--- The writers and the guards (supabase/migrations/0392_forged_quotes.sql, section 4; docs/plans/2026-11-20-forged-quotes-plan.md, Task 4; docs/plans/2026-11-20-forged-quotes-design.md, sections 1, 6 and 11).
+-- The writers and the guards (supabase/migrations/0393_forged_quotes.sql, section 4; docs/plans/2026-11-20-forged-quotes-plan.md, Task 4; docs/plans/2026-11-20-forged-quotes-design.md, sections 1, 6 and 11).
 -- A real quote whose words are not in the post it names is a counterfeit, so the Act that holds it quotes no post: post() and write_staff_act spring no back and write no `quote` alert (the
 -- trigger wrote the Act with no target and they read the target from the row), No-quote does not refuse it, the conduct layer does not empty it, and the quoted post's author is told with a
 -- `framed` alert by post, start_thread and spin, counted with `framing` toward the same five. Each negative has a twin that must pass, so a writer that always or never treats a quote as forged fails one.

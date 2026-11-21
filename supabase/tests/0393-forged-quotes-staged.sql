@@ -1,4 +1,4 @@
--- The verdict worked out before the thread lock (supabase/migrations/0392_forged_quotes.sql, section 3: forged_verdict_stage, acts_forged_quotes; section 4: post; issue #898).
+-- The verdict worked out before the thread lock (supabase/migrations/0393_forged_quotes.sql, section 3: forged_verdict_stage, acts_forged_quotes; section 4: post; issue #898).
 --   reuse:  a staged verdict that matches the insert (the transaction, the body's digest, the instant) is the one written, and is cleared; a staged verdict with a wrong digest, a wrong txid or a wrong instant is
 --           ignored and the trigger searches for itself. The staged value here is a lie (a quote that holds, staged as forged, and the reverse), so that "used" and "ignored" cannot look alike.
 --   lock:   post() stages the verdict before lock_for_quote runs: lock_for_quote is wrapped in this transaction (DDL rolls back with the file) by a function that records whether a verdict was staged when it was

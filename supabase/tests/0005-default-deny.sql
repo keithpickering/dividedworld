@@ -118,7 +118,7 @@ declare
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
                            -- The search index's words (0117): the folded text an index of names and titles is written with, the stemming language and the words of a text, each reading nothing but a
-                           -- setting and its arguments; the search reads (security invoker) call them. act_forged (0392) reads an Act's verdict (its payload's `forged`) out of the payload it is given, which the readers pass to bbcode_plain and search_words.
+                           -- setting and its arguments; the search reads (security invoker) call them. act_forged (0393) reads an Act's verdict (its payload's `forged`) out of the payload it is given, which the readers pass to bbcode_plain and search_words.
                            'fold_text(text)', 'bbcode_plain(text,uuid[])', 'act_forged(jsonb)', 'quote_check(text)', 'bbcode_plain_u16len(text)', 'bbcode_plain_url_ok(text,text[],boolean)',
                            -- 0118: the helpers bbcode_plain calls for the tags it learned (quote heads, video addresses); each reads nothing but its arguments.
                            'bbcode_plain_trim(text)', 'bbcode_plain_quote_head(text)', 'bbcode_plain_pct(text)', 'bbcode_plain_query_v(text)', 'bbcode_plain_ipv4_number(text)', 'bbcode_plain_punycode_ok(text)', 'bbcode_plain_host_ok(text)', 'bbcode_plain_video_ok(text)',

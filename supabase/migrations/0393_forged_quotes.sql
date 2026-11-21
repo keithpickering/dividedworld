@@ -1177,7 +1177,7 @@ begin
   return claimed;
 end $function$;
 
--- place_set (0374)
+-- place_set (0392_ride_every, over 0374)
 create or replace function public.place_set(setter uuid, card text, target uuid, config jsonb, payer uuid, price integer, catches text DEFAULT NULL::text, phrase text DEFAULT NULL::text, passage text DEFAULT NULL::text, named uuid[] DEFAULT NULL::uuid[], who_except boolean DEFAULT NULL::boolean)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -1222,8 +1222,9 @@ begin
   if catches is not null and jsonb_typeof(kind_of.trap -> 'match') = 'object' then
     raise exception '% names a card or matches cards, never both', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
-  -- A ride is read in a quadrant, which the setter names when setting it.
+  -- A ride is read in a quadrant, which the setter names when setting it; a ride that pays on every quadrant names none.
   if kind_of.play = 'set' and jsonb_typeof(kind_of.trap -> 'outcome') = 'object'
+     and kind_of.trap -> 'outcome' -> 'every' is distinct from 'true'::jsonb
      and not coalesce(coalesce(config, '{}') ->> 'quadrant' = any (array['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative']), false) then
     raise exception 'this card names a reaction quadrant' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
@@ -1480,7 +1481,7 @@ revoke execute on function quote_holds(text, jsonb) from public, anon, authentic
 -- a body that asks for that much search is not an honest quote of posts as they were. The cap is the same for every caller and every body (nothing about who asks or who owns anything moves it), so the same body against
 -- the same posts is forged or not forged for everyone alike on one machine; on a slower machine the same honest body can run out of time, the cost of a bound in time and not in a measure that can be fooled.
 -- 100 ms is the plan's budget of 250 ms less what a post's insert spends beside the verdict (about 125 ms for a body of 20,000 characters, whose walk is part of it) and the one test that can run past the cap. An honest
--- quote of a post of 20,000 characters edited fifty times needs a few milliseconds of it (supabase/tests/0392-forged-quotes-scale.sql); the plan's busy case (300 posts, one quote each, three versions) about 20.
+-- quote of a post of 20,000 characters edited fifty times needs a few milliseconds of it (supabase/tests/0393-forged-quotes-scale.sql); the plan's busy case (300 posts, one quote each, three versions) about 20.
 create function quote_search_cap() returns interval language sql immutable parallel safe as $$ select interval '100 milliseconds' $$;
 revoke execute on function quote_search_cap() from public, anon, authenticated;
 

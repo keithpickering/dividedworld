@@ -1,4 +1,4 @@
--- The verdict in the two reads the cards and the History use (supabase/migrations/0392_forged_quotes.sql, section 4; plan Task 5): card_target (and card_target_reach through it) says `forged` of the post's current version,
+-- The verdict in the two reads the cards and the History use (supabase/migrations/0393_forged_quotes.sql, section 4; plan Task 5): card_target (and card_target_reach through it) says `forged` of the post's current version,
 -- and my_hidden_version says the verdict of the hidden version's own row, so a screen that draws the words draws each quote as the Act wrote it. Both answer [] where there is none.
 
 do $$

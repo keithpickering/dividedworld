@@ -6,7 +6,7 @@
  * `excerptOf` and an `excerpt`, that `bbcode_walk(body, excerptOf)` (supabase/migrations/0144_quote_conditions.sql, which
  * `bbcode_plain` now wraps) gives the same `plain` and that excerpt, and, for a fixture with `quotes`, that
  * `bbcode_walk(body, null).quotes` is that list of every real quote's Act, and, for a fixture with `held` or `source`, that `bbcode_walk(body, null).held` and `.source`
- * (supabase/migrations/0392_forged_quotes.sql) are the quote texts and the version source `quoteHeld` and `quoteSource` (engine/bbcode/quoted.ts) give.
+ * (supabase/migrations/0393_forged_quotes.sql) are the quote texts and the version source `quoteHeld` and `quoteSource` (engine/bbcode/quoted.ts) give.
  * A fixture's `forged` (the posts whose quotes in the body are counterfeits) is passed to every one of these walks, here and in the engine. The same
  * fixtures are held against `visibleText(parse(body))` and `excerptText(parse(body), excerptOf)` by engine/bbcode/plain.test.ts, so the two
  * walks of a post's words are one list in two languages ("Two lists that must agree are one list").

@@ -379,7 +379,7 @@ interface SeedAct {
   /** For The System's Acts: `tally` (default), `reveal`, or `post` (an Act written with no character, a post the staff's word names). */
   readonly kind?: 'tally' | 'reveal' | 'post';
   readonly payload?: Readonly<Record<string, unknown>>;
-  /** An Act written as one from before the verdict existed (0392 backfills no verdict): it is not judged, so its quotes are real quotes whatever their words. For a test of what the conceal layer does to such quotes. */
+  /** An Act written as one from before the verdict existed (0393 backfills no verdict): it is not judged, so its quotes are real quotes whatever their words. For a test of what the conceal layer does to such quotes. */
   readonly unjudged?: boolean;
 }
 

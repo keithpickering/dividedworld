@@ -1,4 +1,4 @@
--- The verdict's cost (supabase/migrations/0392_forged_quotes.sql, section 3; docs/plans/2026-11-20-forged-quotes-design.md, section 12). The budgets and the sizes are written once, here, at the top of the block:
+-- The verdict's cost (supabase/migrations/0393_forged_quotes.sql, section 3; docs/plans/2026-11-20-forged-quotes-design.md, section 12). The budgets and the sizes are written once, here, at the top of the block:
 --   hostile: a 20,000-character body quotes one post that has 20 distinct 20,000-character versions, in each of four shapes that make a string search slow (a run of one letter, `ab...`, `aaaaaaaab...`,
 --     `abcdefgh...`), the quote a near-miss of 10,000 characters (the shape's own words, then a letter the post never has), so every version is searched and none holds: quote_forged under SHAPE_BUDGET each.
 --   busy: 300 quotes of 300 posts with 3 versions each, doctored (all three versions searched for each) and authentic of the oldest version (the last one tried): under BUSY_BUDGET each.
@@ -145,7 +145,7 @@ begin
   if spent > MANY_BUDGET then raise exception 'many: 20 quotes took %, over the budget of %', spent, MANY_BUDGET; end if;
 end $$;
 
--- The time cap (final delta review, D1 and D2; supabase/migrations/0392_forged_quotes.sql, quote_search_cap). A count of characters cannot bound strpos, so the search stops by the clock: past 100 ms every post with an
+-- The time cap (final delta review, D1 and D2; supabase/migrations/0393_forged_quotes.sql, quote_search_cap). A count of characters cannot bound strpos, so the search stops by the clock: past 100 ms every post with an
 -- unmatched quote is forged. Three shapes whose full search takes seconds or whose rows cost a few hundred milliseconds, so a cap taken out or set far higher fails by the clock on every runner, and none of the
 -- assertions depends on a timing that a slow runner could miss by a little: the full search is 5 s or more (50 times the cap, and 20 times the budget asserted), and the budget asserted is the plan's 250 ms.
 --   front-odd, 200 versions: versions `vN ab ab ...` (20,000 characters), two quotes `zN ab ab ...` of about 9,000: a near-miss quote (not in any version) and the same quote that DOES hold in the oldest version
